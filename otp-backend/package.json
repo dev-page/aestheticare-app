@@ -1,0 +1,27 @@
+{
+  "name": "otp-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "backfill:owner-plans": "node scripts/backfill-owner-plans.mjs",
+    "backfill:staff-contact-cavite": "node scripts/backfill-staff-contact-cavite.mjs",
+    "setup:pins:scheduled-staff": "node scripts/setup-attendance-pins-for-scheduled-staff.mjs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
+    "archiver": "^7.0.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "firebase-admin": "^10.3.0",
+    "googleapis": "^148.0.0"
+  }
+}

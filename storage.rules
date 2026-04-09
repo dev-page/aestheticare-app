@@ -1,0 +1,78 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isImageUpload() {
+      return request.resource != null
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    function isDocumentUpload() {
+      return request.resource != null
+        && (request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/pdf')
+        && request.resource.size < 5 * 1024 * 1024;
+    }
+    
+    match /attendanceProofs/{branchId}/{userId}/{date}/{fileName} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId && isImageUpload();
+      allow update, delete: if false;
+    }
+
+    match /faceRegistrations/{userId}/{fileName} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId && isImageUpload();
+      allow update, delete: if false;
+    }
+
+    match /product-service-posts/{branchId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isImageUpload();
+      allow update, delete: if false;
+    }
+
+    match /clinicMedia/{clinicId}/{fileName} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource != null
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 5 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+
+    match /clinic-registration/{ownerId}/{documentType}/{fileName} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == ownerId && isDocumentUpload();
+      allow update, delete: if false;
+    }
+
+    match /support-tickets/{userId}/{ticketId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId && isImageUpload();
+      allow update, delete: if false;
+    }
+
+    match /purchase-receipts/{branchId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isImageUpload();
+      allow update, delete: if false;
+    }
+    
+    match /backups/{ownerId}/{backupId}/{fileName} {
+      allow read: if isSignedIn() && request.auth.uid == ownerId;
+      allow create: if isSignedIn() && request.auth.uid == ownerId;
+      allow update, delete: if false;
+    }
+
+    match /practitioner-licenses/{uploaderId}/{staffId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isDocumentUpload();
+      allow update, delete: if false;
+    }
+  }
+}

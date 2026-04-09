@@ -1,0 +1,352 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userData() {
+      return userDoc().data;
+    }
+
+    function roleKey() {
+      return (userData().role == 'Clinic Admin' || userData().role == 'Clinicadmin' || userData().role == 'clinicadmin')
+        ? 'Owner'
+        : (userData().role == 'Superadmin' || userData().role == 'SuperAdmin' || userData().role == 'superadmin')
+          ? 'Superadmin'
+          : userData().role;
+    }
+
+    function isSuperadmin() {
+      return userData().role == 'Superadmin' || userData().role == 'SuperAdmin' || userData().role == 'superadmin';
+    }
+
+    function rolePermissions() {
+      return exists(/databases/$(database)/documents/rolePermissions/$(roleKey()))
+        ? get(/databases/$(database)/documents/rolePermissions/$(roleKey())).data.permissions
+        : [];
+    }
+
+    function hasPermission(permission) {
+      return (userData().permissions != null && userData().permissions.hasAny([permission]))
+        || (rolePermissions() != null && rolePermissions().hasAny([permission]));
+    }
+
+    function clinicDoc(branchId) {
+      return get(/databases/$(database)/documents/clinics/$(branchId));
+    }
+
+    function isOwnerOfBranch(branchId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/clinics/$(branchId))
+        && clinicDoc(branchId).data.ownerId == request.auth.uid;
+    }
+
+    function isStaffOfBranch(branchId) {
+      return isSignedIn() && userData().branchId == branchId;
+    }
+
+    function canAccessBranch(branchId) {
+      return isOwnerOfBranch(branchId) || isStaffOfBranch(branchId);
+    }
+
+    function isPublicClinic(clinicId) {
+      return exists(/databases/$(database)/documents/clinics/$(clinicId))
+        && clinicDoc(clinicId).data.isPublished == true;
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn()
+        && (request.auth.uid == userId
+          || isSuperadmin()
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)));
+      allow create: if isSignedIn()
+        && (request.auth.uid == userId
+          || isSuperadmin()
+          || (request.resource.data.branchId != null
+            && canAccessBranch(request.resource.data.branchId)
+            && hasPermission('staff:create')));
+      allow update: if isSignedIn()
+        && (request.auth.uid == userId
+          || isSuperadmin()
+          || (resource.data.branchId != null
+            && canAccessBranch(resource.data.branchId)
+            && hasPermission('staff:update')));
+      allow delete: if isSignedIn()
+        && (isSuperadmin()
+          || (resource.data.branchId != null
+            && canAccessBranch(resource.data.branchId)
+            && hasPermission('staff:disable')));
+    }
+
+    match /clinics/{clinicId} {
+      allow read: if (resource.data.isPublished == true)
+        || (isSignedIn()
+          && (isSuperadmin() || isOwnerOfBranch(clinicId) || isStaffOfBranch(clinicId)));
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn()
+        && (isSuperadmin()
+          || isOwnerOfBranch(clinicId)
+          || (isOwnerOfBranch(clinicId) && hasPermission('clinic_profile:update')));
+      allow delete: if isSignedIn() && isSuperadmin();
+    }
+
+    match /rolePermissions/{roleId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isSuperadmin();
+    }
+
+    match /planPermissions/{planId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isSuperadmin();
+    }
+
+    match /subscriptionPlans/{planId} {
+      allow read: if true;
+      allow write: if isSignedIn() && isSuperadmin();
+    }
+
+    match /planPayments/{paymentId} {
+      allow read: if true;
+      allow create: if request.resource.data.source == 'paymongo_checkout';
+      allow update, delete: if isSignedIn() && isSuperadmin();
+    }
+
+    match /appointments/{appointmentId} {
+      allow read: if isSignedIn()
+        && (resource.data.customerId == request.auth.uid
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:view'))
+          || isSuperadmin());
+      allow create: if isSignedIn()
+        && ((request.resource.data.customerId == request.auth.uid)
+          || (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('appointments:create')));
+      allow update: if isSignedIn()
+        && ((resource.data.customerId == request.auth.uid)
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')));
+      allow delete: if isSignedIn()
+        && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')));
+    }
+
+    match /clients/{clientId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:view')) || isSuperadmin());
+      allow create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('clients:create'));
+      allow update: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:update'));
+      allow delete: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:disable'));
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('attendance:view')) || isSuperadmin());
+      allow create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('attendance:create'));
+      allow update: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('attendance:update'));
+      allow delete: if false;
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payments:view')) || isSuperadmin());
+      allow create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('payments:create'));
+      allow update: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payments:update'));
+      allow delete: if false;
+    }
+
+    match /inventoryItems/{itemId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view')) || isSuperadmin());
+      allow create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
+      allow update: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:update'));
+      allow delete: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
+    }
+
+    match /suppliers/{supplierId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view')) || isSuperadmin());
+      allow create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
+      allow update: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:update'));
+      allow delete: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
+    }
+
+    match /purchaseRequests/{requestId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view')) || isSuperadmin());
+      allow create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
+      allow update: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:update'));
+      allow delete: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
+    }
+
+    match /productServicePosts/{postId} {
+      allow read: if isPublicClinic(resource.data.branchId)
+        || (isSignedIn() && canAccessBranch(resource.data.branchId));
+      allow create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('services:create'));
+      allow update: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('services:update'));
+      allow delete: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('services:disable'));
+    }
+
+    match /archivedProductServicePosts/{postId} {
+      allow read: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('services:view'));
+      allow write: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('services:disable'));
+    }
+
+    match /archivedSuppliers/{supplierId} {
+      allow read: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view'));
+      allow write: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:disable'));
+    }
+
+    match /messages/{messageId} {
+      allow read: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId));
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId));
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if isPublicClinic(resource.data.branchId)
+        || (isSignedIn() && canAccessBranch(resource.data.branchId));
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId));
+    }
+
+    match /chatThreads/{threadId} {
+      allow read: if isSignedIn()
+        && ((resource.data.customerId == request.auth.uid)
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId))
+          || isSuperadmin());
+      allow create: if isSignedIn()
+        && request.resource.data.customerId == request.auth.uid;
+      allow update: if isSignedIn()
+        && ((resource.data.customerId == request.auth.uid)
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId))
+          || isSuperadmin());
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn()
+          && ((get(/databases/$(database)/documents/chatThreads/$(threadId)).data.customerId == request.auth.uid)
+            || (get(/databases/$(database)/documents/chatThreads/$(threadId)).data.branchId != null
+              && canAccessBranch(get(/databases/$(database)/documents/chatThreads/$(threadId)).data.branchId))
+            || isSuperadmin());
+        allow create: if isSignedIn()
+          && ((get(/databases/$(database)/documents/chatThreads/$(threadId)).data.customerId == request.auth.uid)
+            || (get(/databases/$(database)/documents/chatThreads/$(threadId)).data.branchId != null
+              && canAccessBranch(get(/databases/$(database)/documents/chatThreads/$(threadId)).data.branchId))
+            || isSuperadmin());
+        allow update, delete: if false;
+      }
+    }
+
+    match /activities/{activityId} {
+      allow read: if isSignedIn()
+        && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)));
+      allow create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId));
+      allow update, delete: if false;
+    }
+
+    match /shifts/{shiftId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:view')) || isSuperadmin());
+      allow create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('hr:create'));
+      allow update: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:update'));
+      allow delete: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:update'));
+    }
+
+    match /payrolls/{payrollId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
+      allow create, update: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update'));
+      allow delete: if false;
+    }
+
+    match /payrollSettingsAudit/{auditId} {
+      allow read, create: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update'));
+      allow update, delete: if false;
+    }
+
+
+    match /patients/{patientId} {
+      allow read: if isSignedIn()
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId));
+      allow create, update: if isSignedIn()
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId));
+      allow delete: if false;
+    }
+
+    match /backups/{backupId} {
+      allow read: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid || isSuperadmin() || hasPermission('backups:view'));
+      allow create: if isSignedIn()
+        && (request.resource.data.ownerId == request.auth.uid || isSuperadmin() || hasPermission('backups:create'));
+      allow update, delete: if false;
+    }
+
+    match /customerOrders/{orderId} {
+      allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid || isSuperadmin());
+      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
+      allow update: if isSignedIn() && request.auth.uid == resource.data.customerId;
+      allow delete: if false;
+    }
+
+    match /supportTickets/{ticketId} {
+      allow read: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isSuperadmin());
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && isSuperadmin();
+      allow delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn()
+        && (resource.data.recipientUserId == request.auth.uid
+          || resource.data.recipientRole == roleKey()
+          || isSuperadmin());
+      allow create: if isSignedIn()
+        && ((request.resource.data.senderId == request.auth.uid
+          && request.resource.data.recipientRole == 'Superadmin')
+          || (isSuperadmin() && request.resource.data.recipientUserId != null));
+      allow update: if isSignedIn()
+        && (resource.data.recipientUserId == request.auth.uid || isSuperadmin());
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
