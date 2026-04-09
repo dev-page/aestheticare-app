@@ -10,8 +10,6 @@ import archiver from 'archiver'
 import { PassThrough } from 'node:stream'
 import { google } from 'googleapis'
 
-dotenv.config()
-
 const app = express()
 const PORT = Number(process.env.PORT || 3000)
 const isDevelopment = String(process.env.NODE_ENV || 'development').toLowerCase() !== 'production'
@@ -23,6 +21,7 @@ const CHECK_USER_PATH = '/auth/check-user'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// Load backend-only environment variables from otp-backend/.env.
 dotenv.config({ path: path.resolve(__dirname, '.env') })
 
 console.log("Loaded ENV:", {

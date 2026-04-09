@@ -2,9 +2,9 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const GRACE_DAYS = 7
-const OTP_API_BASE = (import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
 const PLAN_CACHE_KEY = 'subscription:plan'
 const PLAN_FEATURES_CACHE_PREFIX = 'subscription:features:'
 const PLAN_CACHE_TTL_MS = 5 * 60 * 1000

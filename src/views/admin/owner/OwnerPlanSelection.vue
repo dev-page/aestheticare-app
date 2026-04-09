@@ -110,12 +110,10 @@ import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 
 const router = useRouter()
 const route = useRoute()
-const configuredApiBase = String(import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3002').replace(/\/$/, '')
-const OTP_API_BASE_CANDIDATES = Array.from(new Set([configuredApiBase, 'http://localhost:3002', 'http://localhost:3000']))
-
 const loading = ref(true)
 const submitting = ref(false)
 const error = ref('')

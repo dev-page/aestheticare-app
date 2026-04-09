@@ -11,12 +11,11 @@ import Modal from '@/components/common/Modal.vue'
 import Terms from '@/components/common/Terms.vue'
 import PrivacyPolicy from '@/components/common/PrivacyPolicy.vue'
 import RegisterCustomer from '@/views/public/RegisterCustomer.vue'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import axios from 'axios'
 
 const router = useRouter()
 const route = useRoute()
-const OTP_API_BASE = (import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
-
 const legacyClinicRoute = computed(() => {
   const name = String(route.name || '')
   const path = String(route.path || '').toLowerCase()

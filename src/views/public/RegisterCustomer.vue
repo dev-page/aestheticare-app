@@ -8,11 +8,10 @@ import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
 import Terms from '@/components/common/Terms.vue'
 import PrivacyPolicy from '@/components/common/PrivacyPolicy.vue'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import axios from 'axios'
 
 const router = useRouter()
-const OTP_API_BASE = (import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
-
 const goToRegisterChooser = async () => {
   await router.replace({ name: 'register' })
 }
@@ -1672,4 +1671,3 @@ onBeforeUnmount(() => {
   }
 }
 </style>
-

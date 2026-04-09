@@ -10,8 +10,8 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
 import { useSubscription } from '@/composables/useSubscription'
 import { storage } from '@/config/firebaseConfig'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
-const OTP_API_BASE = (import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
 const DEFAULT_STAFF_PASSWORD = 'password123'
 
 export default {

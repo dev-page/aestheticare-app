@@ -719,6 +719,7 @@ import { hasExpiredSuspension, restoreExpiredSuspension } from '@/utils/centerSu
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
 import { calculateCommissionAmount, calculateNetAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -2167,7 +2168,7 @@ const releaseBookingReservation = async (reservationId) => {
   try {
     const user = auth.currentUser
     if (!user) return
-    await fetch(`${(import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/appointments/reservations/${reservationId}`, {
+    await fetch(`${OTP_API_BASE}/appointments/reservations/${reservationId}`, {
       method: 'DELETE',
       headers: await (async () => {
         const token = await user.getIdToken()
@@ -2237,7 +2238,7 @@ const createBookingPayMongoCheckoutSession = async ({
     throw new Error('GCash payments require a valid mobile number.')
   }
 
-  const response = await fetch(`${(import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/paymongo/create-checkout-session`, {
+  const response = await fetch(`${OTP_API_BASE}/paymongo/create-checkout-session`, {
     method: 'POST',
     headers: await (async () => {
       const token = await user.getIdToken()
@@ -2338,7 +2339,7 @@ const finalizeSuccessfulBooking = async (pending, payload) => {
   const commissionAmount = Number(pending.commissionAmount || 0)
   const netAmount = Number(pending.netAmount || 0)
   if (pending.reservationId) {
-    const response = await fetch(`${(import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/appointments/finalize-booking`, {
+    const response = await fetch(`${OTP_API_BASE}/appointments/finalize-booking`, {
       method: 'POST',
       headers: await (async () => {
         const token = await user.getIdToken()
@@ -2455,7 +2456,7 @@ const handleBookingPayMongoReturn = async () => {
 
   bookingPaymentSaving.value = true
   try {
-    const response = await fetch(`${(import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/paymongo/checkout-session/${pending.checkoutSessionId}`, {
+    const response = await fetch(`${OTP_API_BASE}/paymongo/checkout-session/${pending.checkoutSessionId}`, {
       headers: await (async () => {
         const user = auth.currentUser
         if (!user) throw new Error('Please log in first.')

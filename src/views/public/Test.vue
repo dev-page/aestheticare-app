@@ -14,6 +14,7 @@
 <script setup>
 import { ref } from "vue"
 import axios from "axios"
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const selectedFile = ref(null)
 const imageUrl = ref(null)
@@ -29,7 +30,7 @@ async function handleFileUpload() {
   formData.append("file", selectedFile.value)
 
   try {
-    const response = await axios.post("http://localhost:3000/upload", formData, {
+    const response = await axios.post(`${OTP_API_BASE}/upload`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     })
 

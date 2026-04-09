@@ -120,9 +120,7 @@ import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { Icon } from '@iconify/vue'
-
-const BACKEND_URL = import.meta.env.VITE_OTP_BACKEND_URL || 'http://localhost:3001'
-const OTP_API_BASE = import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000'
+import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 
 export default {
   name: 'PractitionerOnlineConsultation',
@@ -140,18 +138,8 @@ export default {
     const creatingId = ref('')
     const isSeedingDemo = ref(false)
 
-    const getBackendCandidates = () => {
-      const candidates = [
-        String(BACKEND_URL || '').trim(),
-        String(OTP_API_BASE || '').trim(),
-        'http://localhost:3000',
-        'http://localhost:3001',
-      ].filter(Boolean)
-      return [...new Set(candidates)]
-    }
-
     const fetchFromBackend = async (path, options = {}) => {
-      const candidates = getBackendCandidates()
+      const candidates = OTP_BACKEND_CANDIDATES
       let lastError = null
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
       const authHeader = token ? { Authorization: `Bearer ${token}` } : {}

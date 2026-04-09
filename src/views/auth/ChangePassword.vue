@@ -6,6 +6,7 @@ import { doc, updateDoc, getDoc } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import axios from 'axios'
 import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const router = useRouter()
 
@@ -64,7 +65,7 @@ const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString()
 
 const sendOtpEmail = async (toEmail, otp) => {
   try {
-    const res = await axios.post('http://localhost:3000/send-otp', {
+    const res = await axios.post(`${OTP_API_BASE}/send-otp`, {
       recipient: toEmail,
       otp
     })

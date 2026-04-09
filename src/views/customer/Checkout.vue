@@ -92,6 +92,7 @@ import { calculateCommissionAmount, calculateNetAmount, getProductCommissionPerc
 import { toast } from 'vue3-toastify'
 import { onAuthStateChanged } from 'firebase/auth'
 import Swal from 'sweetalert2'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const router = useRouter()
 const route = useRoute()
@@ -99,7 +100,6 @@ const selectedItems = ref([])
 const paymentMethod = ref('GCash')
 const saving = ref(false)
 
-const OTP_API_BASE = (import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
 const PENDING_PAYMONGO_KEY = 'customer_checkout_pending_paymongo'
 
 const delivery = ref({

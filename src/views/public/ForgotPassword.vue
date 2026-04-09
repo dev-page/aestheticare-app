@@ -5,10 +5,9 @@ import { db } from '@/config/firebaseConfig'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import axios from 'axios'
 import { toast } from 'vue3-toastify'
+import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 
 const router = useRouter()
-const OTP_API_BASE = (import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
-
 const step = ref(1)
 const email = ref('')
 const otpDigits = ref(Array(6).fill(''))
@@ -35,18 +34,9 @@ const confirmPasswordVisible = ref(false)
 const togglePassword = () => { passwordVisible.value = !passwordVisible.value }
 const toggleConfirmPassword = () => { confirmPasswordVisible.value = !confirmPasswordVisible.value }
 
-const getBackendCandidates = () => {
-  const candidates = [
-    String(OTP_API_BASE || '').trim(),
-    'http://localhost:3000',
-    'http://localhost:3001',
-  ].filter(Boolean)
-  return [...new Set(candidates)]
-}
-
 const postToBackend = async (path, payload) => {
   let lastError = null
-  for (const baseUrl of getBackendCandidates()) {
+  for (const baseUrl of OTP_API_BASE_CANDIDATES) {
     try {
       const response = await axios.post(`${baseUrl}${path}`, payload)
       return response

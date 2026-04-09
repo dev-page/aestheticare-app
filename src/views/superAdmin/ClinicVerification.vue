@@ -160,8 +160,7 @@ import { getAuth } from 'firebase/auth'
 import Swal from 'sweetalert2'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
-const BACKEND_URL = import.meta.env.VITE_OTP_BACKEND_URL || 'http://localhost:3001'
-const OTP_API_BASE = import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000'
+import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 
 const normalizePlanLabel = (value) => {
   const raw = String(value || '').trim().toLowerCase()
@@ -226,18 +225,8 @@ export default {
     const forcedPlanByEmail = {
       'kenken.leon31@gmail.com': { plan: 'basic', paymentStatus: 'paid' },
     }
-    const getBackendCandidates = () => {
-      const candidates = [
-        String(BACKEND_URL || '').trim(),
-        String(OTP_API_BASE || '').trim(),
-        'http://localhost:3000',
-        'http://localhost:3001',
-      ].filter(Boolean)
-      return [...new Set(candidates)]
-    }
-
     const fetchFromBackend = async (path, options = {}) => {
-      const candidates = getBackendCandidates()
+      const candidates = OTP_BACKEND_CANDIDATES
       let lastError = null
 
       for (const baseUrl of candidates) {

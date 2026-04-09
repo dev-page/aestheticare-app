@@ -269,6 +269,7 @@ import { useRoute, useRouter } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { logActivity } from '@/utils/activityLogger'
+import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 
 export default {
   name: 'ReceptionistPOS',
@@ -279,7 +280,6 @@ export default {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
-    const BACKEND_URL = import.meta.env.VITE_OTP_BACKEND_URL || 'http://localhost:3001'
     const PENDING_PAYMONGO_KEY = 'receptionist_pos_pending_paymongo'
 
     const currentUserId = ref('')
@@ -492,13 +492,8 @@ export default {
 
     const toCentavos = (pesoAmount) => Math.round(Number(pesoAmount || 0) * 100)
 
-    const getBackendCandidates = () => {
-      const candidates = [String(BACKEND_URL || '').trim()].filter(Boolean)
-      return [...new Set(candidates)]
-    }
-
     const fetchFromBackend = async (path, options = {}) => {
-      const candidates = getBackendCandidates()
+      const candidates = OTP_BACKEND_CANDIDATES
       let lastError = null
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
       const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
@@ -893,4 +888,3 @@ export default {
   }
 }
 </script>
-

@@ -387,6 +387,7 @@ import Modal from '@/components/common/Modal.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { storage } from '@/config/firebaseConfig'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 export default {
   name: 'CustomerOrders',
@@ -394,8 +395,6 @@ export default {
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
-    const OTP_API_BASE = (import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
-
     const loading = ref(true)
     const search = ref('')
     const orders = ref([])

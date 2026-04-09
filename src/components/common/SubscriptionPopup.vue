@@ -87,6 +87,7 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const emit = defineEmits(['close'])
 const router = useRouter()
@@ -99,8 +100,6 @@ const showResume = ref(false)
 const resumeEmail = ref('')
 const resumeError = ref('')
 const resumeLoading = ref(false)
-const OTP_API_BASE = (import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
-
 const defaultPlans = () => [
   {
     id: 'free-trial',
@@ -712,4 +711,3 @@ onMounted(loadPlans)
   }
 }
 </style>
-

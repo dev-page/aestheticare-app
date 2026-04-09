@@ -142,13 +142,12 @@ import Swal from 'sweetalert2'
 import { auth, db } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
 import { useSubscriptionStore } from '@/stores/subscription'
+import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 
 const route = useRoute()
 const router = useRouter()
 const subscriptionStore = useSubscriptionStore()
 
-const configuredApiBase = String(import.meta.env.VITE_OTP_API_BASE_URL || 'http://localhost:3002').replace(/\/$/, '')
-const OTP_API_BASE_CANDIDATES = Array.from(new Set([configuredApiBase, 'http://localhost:3002', 'http://localhost:3000']))
 const PENDING_PAYMONGO_KEY = 'subscription_checkout_pending_paymongo'
 
 const saving = ref(false)
@@ -270,7 +269,7 @@ const fetchFromBackend = async (path, options = {}) => {
     }
   }
 
-  throw lastError || new Error('VITE_OTP_API_BASE_URL is not set.')
+  throw lastError || new Error('Subscription backend is not reachable.')
 }
 
 const getCurrentUser = async () => {
