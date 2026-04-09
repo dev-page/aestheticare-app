@@ -44,7 +44,12 @@ const sendGridApiKey = process.env.SENDGRID_API_KEY
 const senderEmail = process.env.SENDGRID_SENDER
 const payMongoSecretKey = process.env.PAYMONGO_SECRET_KEY || ''
 const frontendBaseUrl = process.env.FRONTEND_BASE_URL || 'http://localhost:5173'
-const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || path.join(__dirname, 'serviceAccountKey.json')
+const configuredServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim()
+const serviceAccountPath = configuredServiceAccountPath
+  ? path.isAbsolute(configuredServiceAccountPath)
+    ? configuredServiceAccountPath
+    : path.resolve(__dirname, configuredServiceAccountPath)
+  : path.join(__dirname, 'serviceAccountKey.json')
 const googleOauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || ''
 const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || ''
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || ''
@@ -66,20 +71,43 @@ const backupDailyRetentionDays = Number(process.env.BACKUP_DAILY_RETENTION_DAYS 
 const backupMonthlyRetentionDays = Number(process.env.BACKUP_MONTHLY_RETENTION_DAYS || 365)
 
 try {
-  const serviceAccountRaw = fs.readFileSync(serviceAccountPath, 'utf8')
-  const serviceAccount = JSON.parse(serviceAccountRaw)
-  firebaseProjectId = String(serviceAccount?.project_id || '').trim()
-  firebaseStorageBucket =
-    process.env.FIREBASE_STORAGE_BUCKET ||
-    String(serviceAccount?.storageBucket || '').trim() ||
-    (firebaseProjectId ? `${firebaseProjectId}.firebasestorage.app` : '') ||
-    (firebaseProjectId ? `${firebaseProjectId}.appspot.com` : '')
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    ...(firebaseStorageBucket ? { storageBucket: firebaseStorageBucket } : {}),
-  })
+  if (fs.existsSync(serviceAccountPath)) {
+    const serviceAccountRaw = fs.readFileSync(serviceAccountPath, 'utf8')
+    const serviceAccount = JSON.parse(serviceAccountRaw)
+    firebaseProjectId = String(serviceAccount?.project_id || '').trim()
+    firebaseStorageBucket =
+      process.env.FIREBASE_STORAGE_BUCKET ||
+      String(serviceAccount?.storageBucket || '').trim() ||
+      (firebaseProjectId ? `${firebaseProjectId}.firebasestorage.app` : '') ||
+      (firebaseProjectId ? `${firebaseProjectId}.appspot.com` : '')
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      ...(firebaseStorageBucket ? { storageBucket: firebaseStorageBucket } : {}),
+    })
+  } else {
+    firebaseProjectId = String(
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.GOOGLE_CLOUD_PROJECT ||
+      process.env.GCLOUD_PROJECT ||
+      ''
+    ).trim()
+    firebaseStorageBucket =
+      process.env.FIREBASE_STORAGE_BUCKET ||
+      (firebaseProjectId ? `${firebaseProjectId}.firebasestorage.app` : '') ||
+      (firebaseProjectId ? `${firebaseProjectId}.appspot.com` : '')
+    admin.initializeApp({
+      credential: admin.credential.applicationDefault(),
+      ...(firebaseProjectId ? { projectId: firebaseProjectId } : {}),
+      ...(firebaseStorageBucket ? { storageBucket: firebaseStorageBucket } : {}),
+    })
+  }
   adminReady = true
-  console.log('firebase-admin initialized:', { serviceAccountPath })
+  console.log('firebase-admin initialized:', {
+    serviceAccountPath: fs.existsSync(serviceAccountPath) ? serviceAccountPath : null,
+    usingApplicationDefaultCredentials: !fs.existsSync(serviceAccountPath),
+    firebaseProjectId,
+    firebaseStorageBucket,
+  })
 } catch (error) {
   adminReady = false
   adminInitError = error?.message || 'Failed to initialize firebase-admin'
