@@ -14,7 +14,7 @@
           </button>
         </div>
 
-        <div class="p-2 overflow-y-auto flex-1">
+        <div :class="['p-2 overflow-y-auto flex-1', bodyClass]">
           <slot name="body">
             <slot />
           </slot>
@@ -58,6 +58,10 @@ const props = defineProps({
     default: ''
   },
   panelClass: {
+    type: String,
+    default: ''
+  },
+  bodyClass: {
     type: String,
     default: ''
   }

@@ -263,6 +263,8 @@ let locationAutocomplete = null
 let locationMap = null
 let locationMarker = null
 let approvalCheckInterval = null
+let registrationDraftSaveTimer = null
+let lastSavedRegistrationDraft = ''
 
 const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -743,6 +745,11 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', onWindowClick)
   stopOtpCountdown()
   stopApprovalCheck()
+  if (registrationDraftSaveTimer) {
+    clearTimeout(registrationDraftSaveTimer)
+    registrationDraftSaveTimer = null
+  }
+  saveRegistrationDraft()
   Object.values(documentPreviewUrls.value).forEach((previewUrl) => {
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl)
   })
@@ -1142,14 +1149,27 @@ const saveRegistrationDraft = () => {
     authorizedRepPositionOther: authorizedRepPositionOther.value || '',
     companyType: companyType.value || '',
   }
+  const serialized = JSON.stringify(payload)
+  if (serialized === lastSavedRegistrationDraft) return
   try {
-    sessionStorage.setItem(REGISTRATION_DRAFT_KEY, JSON.stringify(payload))
+    sessionStorage.setItem(REGISTRATION_DRAFT_KEY, serialized)
     if (payload.email) {
       sessionStorage.setItem('resume_email', payload.email)
     }
+    lastSavedRegistrationDraft = serialized
   } catch (_error) {
     // Ignore session storage failures
   }
+}
+
+const scheduleRegistrationDraftSave = () => {
+  if (registrationDraftSaveTimer) {
+    clearTimeout(registrationDraftSaveTimer)
+  }
+  registrationDraftSaveTimer = setTimeout(() => {
+    registrationDraftSaveTimer = null
+    saveRegistrationDraft()
+  }, 250)
 }
 
 const applyDraftIfEmpty = (draft) => {
@@ -1284,7 +1304,7 @@ watch(
     authorizedRepPositionOther,
     companyType,
   ],
-  saveRegistrationDraft
+  scheduleRegistrationDraftSave
 )
 
 const verifyRegistrationEmail = async (options = {}) => {
@@ -2355,23 +2375,7 @@ const submitDocuments = async () => {
       <div class="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-cream-300/40 blur-3xl"></div>
     </div>
 
-    <nav class="fixed top-0 inset-x-0 z-50 bg-gradient-to-r from-cream-50/95 via-cream-100/95 to-gold-50/95 backdrop-blur-md border-b border-gold-200/70 shadow-[0_6px_18px_rgba(54,34,22,0.08)]">
-      <div class="relative max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-        <router-link to="/" class="flex items-center gap-2 text-charcoal-700 hover:text-gold-700 transition-colors rounded-md px-2 py-1 hover:bg-gold-100/70">
-          <svg class="hidden lg:block w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-          <svg class="w-5 h-5 lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10.5l9-7 9 7M5.25 9.75V20.25H18.75V9.75" />
-          </svg>
-        </router-link>
-
-        <span class="nav-brand absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-lg sm:text-xl tracking-wide">AesthetiCare</span>
-        <div class="w-8"></div>
-      </div>
-    </nav>
-
-    <div class="relative z-10 flex items-center justify-center px-4 pt-24 pb-8 lg:pt-20 lg:pb-2 lg:min-h-[calc(100dvh-4rem)] text-sm">
+    <div class="relative z-10 flex items-center justify-center px-4 pt-12 pb-8 lg:pt-10 lg:pb-6 lg:min-h-[100dvh] text-sm">
       <div class="register-clinic-card relative w-full max-w-6xl rounded-3xl overflow-hidden bg-white/68 backdrop-blur-xl border border-gold-200/60 shadow-2xl shadow-gold-900/15 lg:h-[calc(100dvh-5rem)]">
         <div class="compact-desktop register-form-panel relative z-10 flex items-center justify-center h-full px-4 pt-8 pb-8 lg:pt-3 lg:pb-3 sm:px-8">
           <span class="form-side-bubble f-bubble-1 hidden lg:block" aria-hidden="true"></span>
@@ -2928,62 +2932,63 @@ const submitDocuments = async () => {
       </Modal>
 
       <Modal
-        panelClass="bg-slate-900 text-white w-full max-w-4xl"
+        panelClass="bg-cream-50 border border-gold-200/80 w-full max-w-4xl shadow-2xl shadow-gold-900/15"
+        bodyClass="location-modal-body"
         :isOpen="showLocationModal"
         :title="'Select Clinic Location'"
         @close="closeLocationModal"
         :showConfirm="false"
       >
         <div class="space-y-4">
-          <div ref="locationMapCanvas" class="w-full h-[380px] rounded-xl border border-slate-700"></div>
+          <div ref="locationMapCanvas" class="w-full h-[380px] rounded-2xl border border-gold-200/80 bg-cream-100 shadow-[0_12px_28px_rgba(54,34,22,0.08)] overflow-hidden"></div>
           <div
             v-if="locationError"
             class="rounded-2xl border px-4 py-3 shadow-lg"
-            :class="isOutsideCaviteLocationError ? 'border-rose-400/50 bg-rose-500/12' : 'border-amber-400/50 bg-amber-500/12'"
+            :class="isOutsideCaviteLocationError ? 'border-rose-300 bg-rose-50' : 'border-amber-300 bg-amber-50'"
           >
             <div class="flex items-start gap-3">
               <div
                 class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                :class="isOutsideCaviteLocationError ? 'bg-rose-500/20 text-rose-200' : 'bg-amber-500/20 text-amber-200'"
+                :class="isOutsideCaviteLocationError ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'"
               >
                 <Icon :icon="isOutsideCaviteLocationError ? 'mdi:map-marker-off-outline' : 'mdi:alert-circle-outline'" class="h-5 w-5" />
               </div>
               <div class="min-w-0">
                 <p
                   class="text-sm font-semibold uppercase tracking-[0.14em]"
-                  :class="isOutsideCaviteLocationError ? 'text-rose-200' : 'text-amber-200'"
+                  :class="isOutsideCaviteLocationError ? 'text-rose-700' : 'text-amber-700'"
                 >
                   {{ locationErrorTitle }}
                 </p>
-                <p class="mt-1 text-sm text-white">{{ locationError }}</p>
-                <p class="mt-2 text-xs text-slate-300">{{ locationErrorHint }}</p>
+                <p class="mt-1 text-sm text-charcoal-700">{{ locationError }}</p>
+                <p class="mt-2 text-xs text-charcoal-500">{{ locationErrorHint }}</p>
               </div>
             </div>
           </div>
-          <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4 space-y-3">
+          <div class="rounded-2xl border border-gold-200/80 bg-gradient-to-br from-cream-100 to-gold-100 p-4 space-y-3 shadow-[0_10px_24px_rgba(54,34,22,0.06)]">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Pinned Full Address</p>
-              <p class="mt-1 text-sm text-white">{{ modalPinnedAddressLabel }}</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Pinned Full Address</p>
+              <p class="mt-1 text-sm text-charcoal-700">{{ modalPinnedAddressLabel }}</p>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
               <div>
-                <p class="text-slate-400 text-xs uppercase tracking-wide">Barangay</p>
-                <p class="mt-1 text-slate-200">{{ clinicBarangay || '-' }}</p>
+                <p class="text-gold-700/80 text-xs uppercase tracking-wide">Barangay</p>
+                <p class="mt-1 text-charcoal-700">{{ clinicBarangay || '-' }}</p>
               </div>
               <div>
-                <p class="text-slate-400 text-xs uppercase tracking-wide">City/Municipality</p>
-                <p class="mt-1 text-slate-200">{{ clinicLocation || '-' }}</p>
+                <p class="text-gold-700/80 text-xs uppercase tracking-wide">City/Municipality</p>
+                <p class="mt-1 text-charcoal-700">{{ clinicLocation || '-' }}</p>
               </div>
               <div>
-                <p class="text-slate-400 text-xs uppercase tracking-wide">Postal Code</p>
-                <p class="mt-1 text-slate-200">{{ clinicPostalCode || '-' }}</p>
+                <p class="text-gold-700/80 text-xs uppercase tracking-wide">Postal Code</p>
+                <p class="mt-1 text-charcoal-700">{{ clinicPostalCode || '-' }}</p>
               </div>
             </div>
           </div>
           <div class="flex justify-end gap-2">
             <button
               type="button"
-              class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white"
+              class="px-4 py-2 rounded-lg border border-gold-300 bg-cream-100 text-charcoal-700 hover:bg-cream-200 transition"
               @click="closeLocationModal"
             >
               Close
@@ -3028,20 +3033,42 @@ const submitDocuments = async () => {
     </nav>
 
     <main class="relative z-10 min-h-[100dvh] px-4 pt-24 pb-10 flex items-center justify-center">
-      <section class="w-full max-w-5xl rounded-[2rem] border border-gold-200/70 bg-white/70 backdrop-blur-xl shadow-2xl shadow-gold-900/10 overflow-hidden">
+      <section class="w-full max-w-5xl rounded-[2rem] border border-amber-100 bg-[rgba(255,255,255,0.88)] shadow-xl shadow-amber-900/10 overflow-hidden">
         <div class="p-8 sm:p-10 lg:p-12">
-            <p class="text-xs uppercase tracking-[0.28em] text-gold-700 font-semibold">Create Your Account</p>
-            <h1 class="register-title mt-3 text-4xl sm:text-5xl leading-tight">Choose how you want to register.</h1>
+            <p class="text-xs uppercase tracking-[0.28em] text-[#a56b44] font-semibold">Create Your Account</p>
+            <h1 class="register-title mt-3 text-4xl sm:text-5xl leading-tight text-[#4a2c1e]">Choose how you want to register.</h1>
             <p class="mt-4 max-w-2xl text-sm sm:text-base text-charcoal-600">
               Start with the account type that fits you. Customers can create a personal account, while clinic admins can continue with clinic onboarding and verification.
             </p>
 
             <div class="mt-8 grid gap-4 lg:grid-cols-2">
               <button type="button" class="choice-card" @click="chooseCustomer">
-                <div>
-                  <span class="choice-icon" aria-hidden="true">
-                    <Icon icon="mdi:account-group-outline" class="h-7 w-7" />
-                  </span>
+                <div class="choice-art choice-art-customer" aria-hidden="true">
+                  <svg viewBox="0 0 240 160" class="choice-illustration" role="img" aria-label="">
+                    <defs>
+                      <linearGradient id="customerBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#fff7ee" />
+                        <stop offset="100%" stop-color="#f1dcc0" />
+                      </linearGradient>
+                      <filter id="customerShadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#8c5a3a" flood-opacity="0.12" />
+                      </filter>
+                    </defs>
+                    <rect x="24" y="22" width="192" height="116" rx="28" fill="url(#customerBg)" filter="url(#customerShadow)" />
+                    <circle cx="52" cy="42" r="14" fill="#f3cfa8" opacity="0.38" />
+                    <circle cx="190" cy="40" r="10" fill="#e2b989" opacity="0.24" />
+                    <circle cx="184" cy="114" r="12" fill="#d9a87b" opacity="0.18" />
+                    <circle cx="112" cy="62" r="18" fill="#fffaf3" stroke="#7b4e35" stroke-width="4.5" />
+                    <path d="M84 108c5-15 16-25 28-25s23 10 28 25" fill="none" stroke="#7b4e35" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+                    <rect x="142" y="40" width="42" height="46" rx="11" fill="#fffaf3" stroke="#c99673" stroke-width="3.5" />
+                    <path d="M150 49h26M150 59h18M150 69h22" stroke="#d8b59c" stroke-width="3.3" stroke-linecap="round" />
+                    <rect x="38" y="86" width="52" height="22" rx="9" fill="#fffaf3" stroke="#c99673" stroke-width="3.5" />
+                    <path d="M48 97h16" stroke="#9f6946" stroke-width="3.2" stroke-linecap="round" />
+                    <path d="M94 92c4 4 11 7 18 7s14-3 18-7" fill="none" stroke="#9f6946" stroke-width="3.2" stroke-linecap="round" />
+                    <path d="M40 44c0 6-4 10-10 10" fill="none" stroke="#d8b59c" stroke-width="3" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <div class="choice-body">
                   <p class="choice-kicker">Personal Access</p>
                   <h2 class="choice-title">Register as Customer</h2>
                   <p class="choice-copy">Create your account to browse clinics, book appointments, and manage your profile.</p>
@@ -3050,10 +3077,42 @@ const submitDocuments = async () => {
               </button>
 
               <button type="button" class="choice-card" @click="chooseClinic">
-                <div>
-                  <span class="choice-icon" aria-hidden="true">
-                    <Icon icon="mdi:clinic" class="h-7 w-7" />
-                  </span>
+                <div class="choice-art choice-art-clinic" aria-hidden="true">
+                  <svg viewBox="0 0 240 160" class="choice-illustration" role="img" aria-label="">
+                    <defs>
+                      <linearGradient id="clinicBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#fff7ee" />
+                        <stop offset="100%" stop-color="#ecd0a7" />
+                      </linearGradient>
+                      <linearGradient id="clinicRoof" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#c99673" />
+                        <stop offset="100%" stop-color="#9f6946" />
+                      </linearGradient>
+                      <filter id="clinicShadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#8c5a3a" flood-opacity="0.12" />
+                      </filter>
+                    </defs>
+                    <rect x="24" y="22" width="192" height="116" rx="28" fill="url(#clinicBg)" filter="url(#clinicShadow)" />
+                    <rect x="78" y="34" width="84" height="70" rx="18" fill="#fffaf3" stroke="#c99673" stroke-width="4" />
+                    <path d="M120 24l18 14h-36z" fill="url(#clinicRoof)" />
+                    <path d="M98 48h44" stroke="#c99673" stroke-width="3.5" stroke-linecap="round" />
+                    <rect x="95" y="56" width="14" height="14" rx="3" fill="#d8b59c" />
+                    <rect x="113" y="56" width="14" height="14" rx="3" fill="#c99673" />
+                    <rect x="131" y="56" width="14" height="14" rx="3" fill="#d8b59c" />
+                    <rect x="95" y="74" width="14" height="14" rx="3" fill="#c99673" />
+                    <rect x="113" y="74" width="14" height="14" rx="3" fill="#d8b59c" />
+                    <rect x="131" y="74" width="14" height="14" rx="3" fill="#c99673" />
+                    <path d="M101 101h38" stroke="#7b4e35" stroke-width="4" stroke-linecap="round" />
+
+                    <rect x="38" y="104" width="50" height="22" rx="9" fill="#fffaf3" stroke="#c99673" stroke-width="3.5" />
+                    <path d="M50 115h14" stroke="#9f6946" stroke-width="3.2" stroke-linecap="round" />
+
+                    <circle cx="184" cy="98" r="13" fill="#fffaf3" stroke="#c99673" stroke-width="4" />
+                    <path d="M184 91v14" stroke="#9f6946" stroke-width="3.2" stroke-linecap="round" />
+                    <path d="M177 98h14" stroke="#9f6946" stroke-width="3.2" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <div class="choice-body">
                   <p class="choice-kicker">Business Access</p>
                   <h2 class="choice-title">Register as Clinic Admin</h2>
                   <p class="choice-copy">Continue with clinic registration, account verification, and document submission for approval.</p>
@@ -3097,35 +3156,37 @@ const submitDocuments = async () => {
   font-family: "Playfair Display", "Times New Roman", serif;
   font-weight: 700;
   letter-spacing: 0.02em;
-  background: linear-gradient(120deg, #4a2c1e 0%, #996341 40%, #c89066 72%, #7b4e35 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
 .choice-card {
   width: 100%;
   text-align: left;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 1.25rem;
+  justify-content: flex-start;
+  gap: 0.85rem;
   padding: 1.4rem 1.5rem;
   border-radius: 1.4rem;
-  border: 1px solid rgba(212, 175, 55, 0.24);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(247, 234, 216, 0.82));
-  box-shadow: 0 14px 36px rgba(54, 34, 22, 0.08);
+  border: 1px solid rgba(198, 148, 108, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(54, 34, 22, 0.06);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .choice-card:hover {
-  transform: translateY(-3px);
-  border-color: rgba(159, 105, 70, 0.42);
-  box-shadow: 0 18px 40px rgba(54, 34, 22, 0.14);
+  transform: translateY(-2px);
+  border-color: rgba(159, 105, 70, 0.3);
+  box-shadow: 0 14px 30px rgba(54, 34, 22, 0.09);
+}
+
+.choice-body {
+  width: 100%;
+  text-align: center;
 }
 
 .choice-kicker {
-  margin-top: 0.9rem;
+  margin-top: 0.15rem;
   font-size: 0.72rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -3133,17 +3194,17 @@ const submitDocuments = async () => {
   font-weight: 700;
 }
 
-.choice-icon {
-  display: inline-flex;
-  align-items: center;
+.choice-art {
+  width: min(100%, 17.5rem);
+  display: flex;
   justify-content: center;
-  width: 3.25rem;
-  height: 3.25rem;
-  border-radius: 1rem;
-  background: linear-gradient(145deg, rgba(159, 105, 70, 0.14), rgba(201, 150, 115, 0.28));
-  border: 1px solid rgba(159, 105, 70, 0.18);
-  color: #7b4e35;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.choice-illustration {
+  width: 100%;
+  max-width: 16.5rem;
+  height: auto;
+  display: block;
 }
 
 .choice-title {
@@ -3162,18 +3223,18 @@ const submitDocuments = async () => {
 }
 
 .choice-cta {
-  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 6.75rem;
+  min-width: 7rem;
   height: 2.8rem;
   padding: 0 1rem;
   border-radius: 999px;
-  background: linear-gradient(120deg, #9f6946 0%, #c99673 100%);
+  background: #9f6946;
   color: #fff;
   font-size: 0.88rem;
   font-weight: 700;
+  margin-top: 0.15rem;
 }
 
 .business-type-card {
@@ -3293,6 +3354,30 @@ const submitDocuments = async () => {
 
 .register-form-panel::-webkit-scrollbar {
   display: none;
+}
+
+.location-modal-body {
+  scrollbar-width: thin;
+  scrollbar-color: #c99673 rgba(248, 229, 189, 0.65);
+}
+
+.location-modal-body::-webkit-scrollbar {
+  width: 0.72rem;
+}
+
+.location-modal-body::-webkit-scrollbar-track {
+  background: rgba(248, 229, 189, 0.65);
+  border-radius: 999px;
+}
+
+.location-modal-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid rgba(248, 229, 189, 0.65);
+  background: linear-gradient(180deg, #c99673 0%, #9f6946 100%);
+}
+
+.location-modal-body::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #b8825f 0%, #8c5a3a 100%);
 }
 
 .register-visual-pane {
@@ -4055,6 +4140,14 @@ const submitDocuments = async () => {
     align-items: flex-start;
   }
 
+  .choice-art {
+    width: min(100%, 16rem);
+  }
+
+  .choice-illustration {
+    max-width: 100%;
+  }
+
   .choice-cta {
     min-width: 0;
     width: 100%;
@@ -4097,3 +4190,4 @@ const submitDocuments = async () => {
   }
 }
 </style>
+

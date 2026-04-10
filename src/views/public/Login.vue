@@ -1,16 +1,14 @@
 
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
-import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence, browserLocalPersistence, signInWithPopup, GoogleAuthProvider, FacebookAuthProvider, signOut } from 'firebase/auth'
+import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence, browserLocalPersistence, signInWithPopup, GoogleAuthProvider, FacebookAuthProvider } from 'firebase/auth'
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import { useAuth } from '@/composables/useAuth'
-import { getSuspendedCenterAccess } from '@/utils/centerAccess'
 
 const router = useRouter()
-const route = useRoute()
 const { user, isLoading } = useAuth()
 
 const email = ref('')
@@ -28,13 +26,6 @@ const roleRoutes = {
   Superadmin: "/superadmin/dashboard",
   Owner: "/owner/dashboard",
   "Clinic Admin": "/owner/dashboard",
-  Manager: "/manager/dashboard",
-  Receptionist: "/receptionist/dashboard",
-  Practitioner: "/practitioner/dashboard",
-  Admin: "/admin/dashboard",
-  HR: "/hr/dashboard",
-  Finance: "/finance/dashboard",
-  Supply: "/supply/dashboard",
   Customer: "/customer/home"
 }
 
@@ -45,7 +36,6 @@ const normalizeRoleKey = (value) => {
     .replace(/[\s_-]+/g, '')
 
   if (!compact) return 'Customer'
-  if (compact === 'hr') return 'HR'
   if (compact === 'crm') return 'CRM'
   if (compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Clinic Admin'
   if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') {
@@ -60,13 +50,13 @@ const resolveRedirectPath = async (userData) => {
     return '/employee/change-password'
   }
 
+  if (userType === 'staff') {
+    return '/employee/dashboard'
+  }
+
   const role = normalizeRoleKey(userData?.role || userData?.customRoleName || userData?.userType)
   if (roleRoutes[role]) {
     return roleRoutes[role]
-  }
-
-  if (userType === 'staff') {
-    return '/employee/dashboard'
   }
 
   return '/customer/home'
@@ -99,17 +89,6 @@ const startRedirectFlow = (redirectPath) => {
     await router.push(redirectPath)
     setProcessLoading(false)
   }, REDIRECT_DELAY)
-}
-
-const ensureCenterAccessAllowed = async (firebaseUser, userData) => {
-  const suspendedCenter = await getSuspendedCenterAccess(firebaseUser.uid, userData)
-  if (!suspendedCenter) return true
-
-  await signOut(auth)
-  clearFormFields()
-  toast.error('Account suspended.')
-  setProcessLoading(false)
-  return false
 }
 
 const handleLogin = async () => {
@@ -149,10 +128,6 @@ const handleLogin = async () => {
         if (userData.status === 'Pending') {
           toast.error('Your account is still pending verification. Please check your email for the OTP.')
           setProcessLoading(false)
-          return
-        }
-
-        if (!(await ensureCenterAccessAllowed(userCredentials.user, userData))) {
           return
         }
 
@@ -250,10 +225,6 @@ onBeforeUnmount(() => {
   if (redirectTimeout) clearTimeout(redirectTimeout)
   setProcessLoading(false)
 })
-
-if (route.query.suspended) {
-  toast.error('Account suspended.')
-}
 
 let leaveInProgress = false
 onBeforeRouteLeave((to, from, next) => {

@@ -33,7 +33,6 @@ export default {
         icon: 'box',
         children: [
           { label: 'Verified Clinics', icon: 'shield', to: '/superadmin/clinics/verified' },
-          { label: 'Suspended Centers', icon: 'reportIssue', to: '/superadmin/clinics/suspended' },
           { label: 'Clinic Verification', icon: 'clipboard', to: '/superadmin/clinics/verification' },
           { label: 'Archived Clinics', icon: 'archive', to: '/superadmin/clinics/archived' }
         ]

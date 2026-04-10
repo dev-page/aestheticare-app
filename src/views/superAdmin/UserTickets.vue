@@ -130,24 +130,23 @@
           </a>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-slate-400 text-xs uppercase tracking-wide mb-2">Status</label>
-            <select
-              v-model="statusDraft"
-              class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-            >
-              <option value="Open">Open</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Under Review">Under Review</option>
-              <option value="Resolved">Resolved</option>
-              <option value="Dismissed">Dismissed</option>
-              <option value="Suspended">Suspended</option>
-            </select>
-          </div>
-          <div class="flex items-end">
-            <button
-              type="button"
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-slate-400 text-xs uppercase tracking-wide mb-2">Status</label>
+              <select
+                v-model="statusDraft"
+                class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+              >
+                <option value="Open">Open</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Under Review">Under Review</option>
+                <option value="Resolved">Resolved</option>
+                <option value="Dismissed">Dismissed</option>
+              </select>
+            </div>
+            <div class="flex items-end">
+              <button
+                type="button"
               class="px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-60"
               :disabled="savingStatus"
               @click="saveStatus"
@@ -157,53 +156,8 @@
           </div>
         </div>
         <div class="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Recommended Handling</p>
-          <p class="mt-2 text-sm text-slate-200">{{ moderationGuidance }}</p>
-        </div>
-        <div v-if="selectedIssue?.centerId" class="space-y-3">
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Moderation Actions</p>
-          <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="px-3 py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700 disabled:opacity-60"
-              :disabled="savingStatus"
-              @click="warnClinicAdmin"
-            >
-              Warn Clinic Admin
-            </button>
-            <button
-              type="button"
-              class="px-3 py-2 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 disabled:opacity-60"
-              :disabled="savingStatus"
-              @click="markUnderReview"
-            >
-              Mark Under Review
-            </button>
-            <button
-              type="button"
-              class="px-3 py-2 rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 disabled:opacity-60"
-              :disabled="savingStatus"
-              @click="suspendCenter"
-            >
-              Suspend Center
-            </button>
-            <button
-              type="button"
-              class="px-3 py-2 rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-60"
-              :disabled="savingStatus"
-              @click="restoreCenter"
-            >
-              Restore Center
-            </button>
-            <button
-              type="button"
-              class="px-3 py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700 disabled:opacity-60"
-              :disabled="savingStatus"
-              @click="dismissIssue"
-            >
-              Dismiss Report
-            </button>
-          </div>
+          <p class="text-slate-400 text-xs uppercase tracking-wide">Handling Note</p>
+          <p class="mt-2 text-sm text-slate-200">Use the status selector above to manage this support ticket.</p>
         </div>
         <p v-if="statusMessage" class="text-xs text-emerald-300">{{ statusMessage }}</p>
         <p v-if="statusError" class="text-xs text-rose-300">{{ statusError }}</p>
@@ -213,8 +167,8 @@
 </template>
 
 <script>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { addDoc, collection, deleteField, doc, getDoc, getDocs, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
@@ -234,13 +188,6 @@ export default {
     const savingStatus = ref(false)
     const statusMessage = ref('')
     const statusError = ref('')
-    const moderationGuidance = computed(() => {
-      const severity = String(selectedIssue.value?.severity || '').toLowerCase()
-      if (severity === 'critical') return 'Critical reports should be reviewed immediately. Suspend the center if the issue looks credible, then notify the clinic admin.'
-      if (severity === 'high') return 'High-severity reports should usually be marked under review and may need a warning or temporary suspension while evidence is checked.'
-      if (severity === 'low') return 'Low-severity reports can usually be reviewed, clarified, and dismissed or resolved after checking the details.'
-      return 'Medium-severity reports should be reviewed, acknowledged, and escalated to the clinic admin when needed.'
-    })
 
     const formatDate = (value) => {
       if (!value) return '-'
@@ -270,80 +217,9 @@ export default {
       const normalized = String(status || '').toLowerCase()
       if (normalized === 'resolved') return 'bg-emerald-500/20 text-emerald-300'
       if (normalized === 'dismissed') return 'bg-slate-500/20 text-slate-300'
-      if (normalized === 'suspended') return 'bg-rose-500/20 text-rose-300'
       if (normalized === 'under review') return 'bg-violet-500/20 text-violet-300'
       if (normalized === 'in progress') return 'bg-amber-500/20 text-amber-300'
       return 'bg-slate-500/20 text-slate-300'
-    }
-
-    const notifyClinicAdmins = async (issue, title, message) => {
-      if (!issue?.centerId) return
-      const recipients = new Set()
-      const clinicSnap = await getDoc(doc(db, 'clinics', issue.centerId))
-      if (clinicSnap.exists()) {
-        const clinicData = clinicSnap.data() || {}
-        const ownerId = String(clinicData.ownerId || '').trim()
-        if (ownerId) {
-          recipients.add(ownerId)
-        }
-      }
-      const snapshot = await getDocs(query(collection(db, 'users'), where('branchId', '==', issue.centerId)))
-      snapshot.docs.forEach((docSnap) => {
-        const data = docSnap.data() || {}
-        const normalizedRole = String(data.role || '').trim().toLowerCase()
-        if (['owner', 'clinic admin', 'clinicadmin', 'clinicadministrator'].includes(normalizedRole)) {
-          recipients.add(docSnap.id)
-        }
-      })
-
-      await Promise.all(
-        Array.from(recipients)
-          .filter((recipientUserId) => recipientUserId && recipientUserId !== (auth.currentUser?.uid || ''))
-          .map((recipientUserId) =>
-          addDoc(collection(db, 'notifications'), {
-            recipientUserId,
-            senderId: auth.currentUser?.uid || 'superadmin',
-            type: 'support_issue_moderation',
-            title,
-            message,
-            link: '/notifications',
-            read: false,
-            createdAt: serverTimestamp()
-          })
-        )
-      )
-    }
-
-    const toJsDate = (value) => {
-      if (!value) return null
-      if (typeof value?.toDate === 'function') return value.toDate()
-      if (value instanceof Date) return value
-      if (typeof value === 'number') return new Date(value)
-      if (typeof value === 'string') {
-        const parsed = new Date(value)
-        return Number.isNaN(parsed.getTime()) ? null : parsed
-      }
-      return null
-    }
-
-    const syncCenterReportCounts = async (centerId) => {
-      if (!centerId) return
-      const reportsSnap = await getDocs(query(collection(db, 'supportTickets'), where('centerId', '==', centerId)))
-      const reports = reportsSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-      const windowStart = Date.now() - (REPORT_WINDOW_DAYS * 24 * 60 * 60 * 1000)
-      const validReports = reports.filter((report) => {
-        const createdAt = toJsDate(report.createdAt)
-        if (!createdAt) return false
-        if (createdAt.getTime() < windowStart) return false
-        if (String(report.reportTargetType || '').trim().toLowerCase() !== 'clinic_center') return false
-        return String(report.status || '').trim().toLowerCase() !== 'dismissed'
-      })
-
-      await updateDoc(doc(db, 'clinics', centerId), {
-        reportCount: reports.length,
-        validReportCount: validReports.length,
-        updatedAt: serverTimestamp()
-      })
     }
 
     const refreshIssueInList = (issueId, updates) => {
@@ -445,122 +321,6 @@ export default {
       }
     }
 
-    const applyModeration = async ({ status, clinicTitle, clinicMessage, customerMessage, centerStatus, centerModerationStatus, centerPublishedState, clearSuspensionFields, successMessage }) => {
-      if (!selectedIssue.value) return
-      savingStatus.value = true
-      statusMessage.value = ''
-      statusError.value = ''
-
-      try {
-        await updateDoc(doc(db, 'supportTickets', selectedIssue.value.id), {
-          status,
-          moderationAction: status,
-          updatedAt: serverTimestamp()
-        })
-
-        if (selectedIssue.value.centerId && centerStatus) {
-          const clinicUpdates = {
-            status: centerStatus,
-            moderationStatus: centerModerationStatus || status,
-            updatedAt: serverTimestamp()
-          }
-          if (typeof centerPublishedState === 'boolean') {
-            clinicUpdates.isPublished = centerPublishedState
-          }
-          if (clearSuspensionFields) {
-            clinicUpdates.suspendedAt = deleteField()
-            clinicUpdates.suspensionEndsAt = deleteField()
-            clinicUpdates.suspensionReason = deleteField()
-            clinicUpdates.suspensionSource = deleteField()
-          }
-          await updateDoc(doc(db, 'clinics', selectedIssue.value.centerId), clinicUpdates)
-        }
-
-        if (clinicTitle && clinicMessage) {
-          await notifyClinicAdmins(selectedIssue.value, clinicTitle, clinicMessage)
-        }
-
-        if (selectedIssue.value.userId && customerMessage) {
-          await addDoc(collection(db, 'notifications'), {
-            recipientUserId: selectedIssue.value.userId,
-            senderId: auth.currentUser?.uid || 'superadmin',
-            type: 'support_issue_status',
-            title: 'Report Update',
-            message: customerMessage,
-            link: '/notifications',
-            read: false,
-            createdAt: serverTimestamp()
-          })
-        }
-
-        statusDraft.value = status
-        if (selectedIssue.value.centerId) {
-          await syncCenterReportCounts(selectedIssue.value.centerId)
-        }
-        refreshIssueInList(selectedIssue.value.id, {
-          status,
-          moderationAction: status,
-          centerStatus: centerStatus || selectedIssue.value.centerStatus || '',
-          centerModerationStatus: centerModerationStatus || status
-        })
-        refreshSelectedIssue({ status })
-        statusMessage.value = successMessage
-      } catch (err) {
-        console.error('Failed to apply moderation:', err)
-        statusError.value = 'Failed to apply moderation action.'
-      } finally {
-        savingStatus.value = false
-      }
-    }
-
-    const warnClinicAdmin = async () => applyModeration({
-      status: 'In Progress',
-      clinicTitle: 'Center Report Warning',
-      clinicMessage: `${selectedIssue.value?.centerName || 'Your center'} has an active customer report. Please review and respond as needed.`,
-      customerMessage: 'Your report has been escalated to the clinic admin for follow-up.',
-      successMessage: 'Clinic admin notified and ticket marked in progress.'
-    })
-
-    const markUnderReview = async () => applyModeration({
-      status: 'Under Review',
-      clinicTitle: 'Center Under Review',
-      clinicMessage: `${selectedIssue.value?.centerName || 'Your center'} is now under super admin review because of a customer report.`,
-      customerMessage: 'Your report is now under review by the platform team.',
-      centerModerationStatus: 'Under Review',
-      successMessage: 'Ticket marked under review.'
-    })
-
-    const suspendCenter = async () => applyModeration({
-      status: 'Suspended',
-      clinicTitle: 'Center Suspended',
-      clinicMessage: `${selectedIssue.value?.centerName || 'Your center'} has been temporarily suspended while the reported issue is being handled.`,
-      customerMessage: 'The reported center has been temporarily suspended while the issue is being reviewed.',
-      centerStatus: 'Suspended',
-      centerModerationStatus: 'Suspended',
-      centerPublishedState: false,
-      successMessage: 'Center suspended successfully.'
-    })
-
-    const restoreCenter = async () => applyModeration({
-      status: 'Resolved',
-      clinicTitle: 'Center Restored',
-      clinicMessage: `${selectedIssue.value?.centerName || 'Your center'} has been restored after review.`,
-      customerMessage: 'The reported center has been restored and the issue was marked resolved.',
-      centerStatus: 'Active',
-      centerModerationStatus: 'Resolved',
-      centerPublishedState: true,
-      clearSuspensionFields: true,
-      successMessage: 'Center restored and ticket resolved.'
-    })
-
-    const dismissIssue = async () => applyModeration({
-      status: 'Dismissed',
-      clinicTitle: 'Report Dismissed',
-      clinicMessage: `The report filed for ${selectedIssue.value?.centerName || 'your center'} was dismissed after review.`,
-      customerMessage: 'Your report was reviewed and dismissed after verification.',
-      successMessage: 'Report dismissed.'
-    })
-
     onMounted(loadIssues)
     onUnmounted(() => {
       if (unsubscribe) unsubscribe()
@@ -576,15 +336,9 @@ export default {
       savingStatus,
       statusMessage,
       statusError,
-      moderationGuidance,
       openIssue,
       closeIssue,
-      saveStatus,
-      warnClinicAdmin,
-      markUnderReview,
-      suspendCenter,
-      restoreCenter,
-      dismissIssue
+      saveStatus
     }
   }
 }

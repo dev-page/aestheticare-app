@@ -321,7 +321,6 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
 import { toast } from 'vue3-toastify'
 import { useSubscription } from '@/composables/useSubscription'
-import { hasExpiredSuspension, restoreExpiredSuspension } from '@/utils/centerSuspension'
 
 export default {
   name: 'ClinicPage',
@@ -507,20 +506,6 @@ export default {
         branches.value = await Promise.all(
           clinicsSnapshot.docs.map(async (snap) => {
             const data = snap.data()
-            if (hasExpiredSuspension(data)) {
-              await restoreExpiredSuspension(db, snap.id, data)
-              return {
-                id: snap.id,
-                ...data,
-                status: 'Active',
-                moderationStatus: 'Resolved',
-                isPublished: true,
-                suspendedAt: null,
-                suspensionEndsAt: null,
-                suspensionReason: '',
-                suspensionSource: ''
-              }
-            }
             return { id: snap.id, ...data, isPublished: data.isPublished === true }
           })
         )
@@ -665,13 +650,6 @@ export default {
 
     const togglePublish = async () => {
       if (!selectedBranch.value?.id || saving.value || isExpired.value) return
-      const normalizedStatus = String(selectedBranch.value.status || '').trim().toLowerCase()
-      const normalizedModerationStatus = String(selectedBranch.value.moderationStatus || '').trim().toLowerCase()
-      const isSuspended = normalizedStatus.includes('suspend') || normalizedModerationStatus.includes('suspend')
-      if (isSuspended) {
-        toast.error('This center is suspended and cannot be published until super admin restores it.')
-        return
-      }
       saving.value = true
       try {
         const nextState = !(selectedBranch.value.isPublished === true)

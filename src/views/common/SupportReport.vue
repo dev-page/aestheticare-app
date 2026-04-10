@@ -171,11 +171,6 @@ import EmployeeTopbar from '@/components/common/EmployeeTopbar.vue'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
-import ReceptionistSidebar from '@/components/sidebar/ReceptionistSidebar.vue'
-import HRSidebar from '@/components/sidebar/HRSidebar.vue'
-import FinanceSidebar from '@/components/sidebar/FinanceSidebar.vue'
-import ManagerSidebar from '@/components/sidebar/ManagerSidebar.vue'
-import PractitionerSidebar from '@/components/sidebar/PractitionerSidebar.vue'
 
 export default {
   name: 'SupportReport',
@@ -183,12 +178,7 @@ export default {
     EmployeeTopbar,
     CustomerSidebar,
     OwnerSidebar,
-    EmployeeSidebar,
-    ReceptionistSidebar,
-    HRSidebar,
-    FinanceSidebar,
-    ManagerSidebar,
-    PractitionerSidebar
+    EmployeeSidebar
   },
   setup() {
     const db = getFirestore(getApp())
@@ -219,11 +209,6 @@ export default {
       if (typeValue === 'customer' || roleValue === 'customer') return 'customer'
       if (typeValue === 'staff') return 'employee'
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return 'owner'
-      if (roleValue === 'receptionist') return 'receptionist'
-      if (roleValue === 'hr') return 'hr'
-      if (roleValue === 'finance') return 'finance'
-      if (roleValue === 'manager') return 'manager'
-      if (roleValue === 'practitioner') return 'practitioner'
       return ''
     })
 
@@ -265,12 +250,6 @@ export default {
       if (typeValue === 'customer' || roleValue === 'customer') return CustomerSidebar
       if (typeValue === 'staff') return EmployeeSidebar
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return OwnerSidebar
-      if (roleValue === 'receptionist') return ReceptionistSidebar
-      if (roleValue === 'hr') return HRSidebar
-      if (roleValue === 'finance') return FinanceSidebar
-      if (roleValue === 'manager') return ManagerSidebar
-      if (roleValue === 'practitioner') return PractitionerSidebar
-
       return CustomerSidebar
     })
 

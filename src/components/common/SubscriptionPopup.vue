@@ -33,16 +33,10 @@
         :key="plan.id"
         type="button"
         class="plan-card group"
-        :class="{
-          'plan-card-active': selectedPlan === plan.id,
-          'plan-card-free': plan.id === 'free-trial',
-          'plan-card-basic': plan.id === 'basic',
-          'plan-card-premium': plan.id === 'premium'
-        }"
+        :class="cardClass(plan)"
         @click="selectedPlan = plan.id"
       >
         <span v-if="plan.id !== 'free-trial'" class="card-shine"></span>
-        <span v-if="plan.id === 'premium'" class="plan-badge">Recommended</span>
         <p class="plan-name">{{ plan.name }}</p>
         <p class="plan-price">
           {{ plan.priceLabel }}
@@ -52,12 +46,6 @@
         <ul class="plan-features">
           <li v-for="item in plan.features" :key="item">{{ item }}</li>
         </ul>
-        <span
-          v-if="selectedPlan === plan.id"
-          class="plan-selected"
-        >
-          Selected
-        </span>
       </button>
     </div>
 
@@ -82,27 +70,29 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
+import { buildSubscriptionPlanCatalog, filterActiveSubscriptionPlans } from '@/utils/subscriptionPlans'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const emit = defineEmits(['close'])
 const router = useRouter()
 
 const plans = ref([])
-const selectedPlan = ref('free-trial')
+const selectedPlan = ref('free')
 const error = ref('')
 const isLoading = ref(true)
 const showResume = ref(false)
 const resumeEmail = ref('')
 const resumeError = ref('')
 const resumeLoading = ref(false)
+let unsubscribePlans = null
 const defaultPlans = () => [
   {
-    id: 'free-trial',
+    id: 'free',
     name: 'FreePlan',
     price: 0,
     billingCycle: 'trial',
@@ -133,61 +123,38 @@ const defaultPlans = () => [
   },
 ]
 
-const formatCurrency = (amount) => {
-  const value = Number(amount)
-  const safe = Number.isFinite(value) ? value : 0
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP', currencyDisplay: 'code',
-    maximumFractionDigits: 0,
-  }).format(safe)
-}
-
-const formatCycle = (cycle) => {
-  const normalized = String(cycle || '').trim().toLowerCase()
-  if (!normalized || normalized === 'trial') return ''
-  if (normalized.startsWith('/')) return normalized
-  return `/${normalized}`
-}
-
-const mergePlans = (dbPlansMap) => {
-  return defaultPlans().map((basePlan) => {
-    const dbPlan = dbPlansMap.get(basePlan.id) || {}
-    const merged = {
-      ...basePlan,
-      ...dbPlan,
-      id: basePlan.id,
-      features: Array.isArray(dbPlan.features) ? dbPlan.features : basePlan.features,
-    }
-
-    return {
-      ...merged,
-      priceLabel: formatCurrency(merged.price),
-      cycleLabel: formatCycle(merged.billingCycle),
-      isActive: merged.isActive !== false,
-      trialDays: Number(merged.trialDays || 0),
-    }
-  })
-}
-
 const loadPlans = async () => {
   error.value = ''
   isLoading.value = true
   try {
-    const snapshot = await getDocs(collection(db, 'subscriptionPlans'))
-    const dbPlans = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
-    const merged = mergePlans(dbPlans)
-    const activePlans = merged.filter((plan) => plan.isActive)
-    plans.value = activePlans.length ? activePlans : merged
-
-    if (!plans.value.some((plan) => plan.id === selectedPlan.value)) {
-      selectedPlan.value = plans.value[0]?.id || 'free-trial'
+    if (unsubscribePlans) {
+      unsubscribePlans()
+      unsubscribePlans = null
     }
+    unsubscribePlans = onSnapshot(
+      collection(db, 'subscriptionPlans'),
+      (snapshot) => {
+        const merged = buildSubscriptionPlanCatalog(defaultPlans(), snapshot.docs)
+        plans.value = filterActiveSubscriptionPlans(merged)
+        if (isLoading.value) {
+          isLoading.value = false
+        }
+
+        if (!plans.value.some((plan) => plan.id === selectedPlan.value)) {
+          selectedPlan.value = plans.value[0]?.id || 'free'
+        }
+      },
+      (err) => {
+        console.error('Failed to load subscription plans for popup:', err)
+        error.value = 'Unable to load latest plans right now.'
+        plans.value = filterActiveSubscriptionPlans(buildSubscriptionPlanCatalog(defaultPlans(), []))
+        isLoading.value = false
+      }
+    )
   } catch (err) {
-    console.error('Failed to load subscription plans for popup:', err)
+    console.error('Failed to start subscription plan listener for popup:', err)
     error.value = 'Unable to load latest plans right now.'
-    plans.value = mergePlans(new Map())
-  } finally {
+    plans.value = filterActiveSubscriptionPlans(buildSubscriptionPlanCatalog(defaultPlans(), []))
     isLoading.value = false
   }
 }
@@ -197,7 +164,7 @@ const selectedPlanData = computed(() => plans.value.find((plan) => plan.id === s
 const ctaLabel = computed(() => {
   const current = selectedPlanData.value
   if (!current) return 'Continue'
-  if (current.id === 'free-trial') {
+  if (current.id === 'free-trial' || current.id === 'free') {
     return `Proceed to FreePlan`
   }
   return 'Continue with Selected Plan'
@@ -206,25 +173,25 @@ const ctaLabel = computed(() => {
 const cardClass = (plan) => {
   const selected = selectedPlan.value === plan.id
 
-  if (plan.id === 'free-trial') {
+  if (plan.id === 'free-trial' || plan.id === 'free') {
     return selected
-      ? 'bg-gray-100/80 border-2 border-gold-600 text-gray-800 shadow-lg'
+      ? 'bg-gray-100/80 border-4 border-gold-600 text-gray-800 shadow-lg'
       : 'bg-gray-100/70 border border-gray-300 text-gray-800 shadow-lg hover:shadow-[0_0_25px_rgba(255,255,255,0.6)]'
   }
 
   if (plan.id === 'premium') {
     return selected
-      ? 'bg-gradient-to-br from-yellow-500 via-yellow-600 to-yellow-700 text-white border-2 border-yellow-300 shadow-[0_0_45px_rgba(255,215,0,1)]'
+      ? 'bg-gradient-to-br from-yellow-500 via-yellow-600 to-yellow-700 text-white border-4 border-yellow-300 shadow-[0_0_45px_rgba(255,215,0,1)]'
       : 'bg-gradient-to-br from-yellow-500 via-yellow-600 to-yellow-700 text-white border-2 border-yellow-400 shadow-lg hover:shadow-[0_0_45px_rgba(255,215,0,1)]'
   }
 
   return selected
-    ? 'bg-gradient-to-br from-yellow-400 via-yellow-500 to-yellow-600 text-white border-2 border-yellow-300'
+    ? 'bg-gradient-to-br from-yellow-400 via-yellow-500 to-yellow-600 text-white border-4 border-yellow-300'
     : 'bg-gradient-to-br from-yellow-400 via-yellow-500 to-yellow-600 text-white border border-yellow-500'
 }
 
 const continueWithPlan = () => {
-  if (selectedPlan.value === 'free-trial') {
+  if (selectedPlan.value === 'free-trial' || selectedPlan.value === 'free') {
     router.push({ name: 'register', query: { account: 'clinic' } })
     emit('close')
     return
@@ -338,6 +305,13 @@ const resumeRegistration = async () => {
 }
 
 onMounted(loadPlans)
+
+onBeforeUnmount(() => {
+  if (unsubscribePlans) {
+    unsubscribePlans()
+    unsubscribePlans = null
+  }
+})
 </script>
 
 <style scoped>
@@ -530,19 +504,6 @@ onMounted(loadPlans)
 
 .group:hover .card-shine {
   transform: translateX(120%);
-}
-
-.plan-badge {
-  position: absolute;
-  top: 0.7rem;
-  right: 0.7rem;
-  font-size: 0.62rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: #fff;
-  background: linear-gradient(120deg, #9f6946 0%, #7b4e35 100%);
-  border-radius: 999px;
-  padding: 0.2rem 0.5rem;
 }
 
 .plan-name {

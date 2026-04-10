@@ -6,9 +6,6 @@ import { getApp } from 'firebase/app'
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
-import { Chart, registerables } from 'chart.js'
-
-Chart.register(...registerables)
 
 export default {
   name: 'OwnerDashboard',
@@ -39,6 +36,20 @@ export default {
     const employeeChartRef = ref(null)
     let revenueChartInstance = null
     let employeeChartInstance = null
+    let chartModulePromise = null
+    let chartModule = null
+
+    const loadChartModule = async () => {
+      if (chartModule) return chartModule
+      if (!chartModulePromise) {
+        chartModulePromise = import('chart.js').then((module) => {
+          chartModule = module
+          chartModule.Chart.register(...module.registerables)
+          return module
+        })
+      }
+      return chartModulePromise
+    }
 
     const chunkArray = (items, size = 10) => {
       const chunks = []
@@ -183,7 +194,7 @@ export default {
 
       if(revenueChartInstance) revenueChartInstance.destroy()
 
-      revenueChartInstance = new Chart(revenueChartRef.value, {
+      revenueChartInstance = new chartModule.Chart(revenueChartRef.value, {
         type: 'bar',
         data: {
           labels,
@@ -266,7 +277,7 @@ const renderEmployeeChart = () => {
 
   if (employeeChartInstance) employeeChartInstance.destroy()
 
-  employeeChartInstance = new Chart(employeeChartRef.value, {
+  employeeChartInstance = new chartModule.Chart(employeeChartRef.value, {
     type: 'doughnut',
     data: {
       labels: labels.length > 0 ? labels : ['No Data'],
@@ -315,9 +326,10 @@ const renderEmployeeChart = () => {
   })
 }
 
-      onMounted(() => {
+    onMounted(() => {
       onAuthStateChanged(auth, async (user) => {
         if (!user) return
+        await loadChartModule()
         await loadDashboardData()
       })
     })

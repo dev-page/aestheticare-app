@@ -49,7 +49,15 @@ console.log("Loaded ENV:", {
   GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID || "primary",
 });
 
-app.use(cors())
+const corsOptions = {
+  origin: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 204,
+}
+
+app.use(cors(corsOptions))
+app.options(/.*/, cors(corsOptions))
 app.use(express.json())
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && Object.prototype.hasOwnProperty.call(error, 'body')) {
@@ -1229,10 +1237,6 @@ app.post(OTP_PATH, async (req, res) => {
     }
 
     if (!sendGridApiKey || !senderEmail) {
-      if (isDevelopment) {
-        console.warn(`[DEV OTP BYPASS] Missing SendGrid config. OTP for ${normalizedRecipient}: ${normalizedOtp}`)
-        return res.json({ success: true, devMode: true })
-      }
       return res.status(500).json({
         success: false,
         error: 'SENDGRID_API_KEY or SENDGRID_SENDER is missing',
@@ -1262,23 +1266,11 @@ app.post(OTP_PATH, async (req, res) => {
         to: normalizedRecipient,
         error: providerMessage,
       })
-      if (isDevelopment) {
-        console.warn(`[DEV OTP BYPASS] SendGrid failed. OTP for ${normalizedRecipient}: ${normalizedOtp}`)
-        return res.json({ success: true, devMode: true, warning: providerMessage })
-      }
       return res.status(500).json({ success: false, error: providerMessage })
     }
   } catch (error) {
     const unexpectedMessage = error?.message || 'Unexpected OTP route error'
     console.error('OTP route error:', unexpectedMessage)
-    if (isDevelopment) {
-      const safeRecipient = String(req.body?.recipient || '').trim()
-      const safeOtp = String(req.body?.otp || '').trim()
-      if (safeRecipient && safeOtp) {
-        console.warn(`[DEV OTP BYPASS] Route-level failure. OTP for ${safeRecipient}: ${safeOtp}`)
-        return res.json({ success: true, devMode: true, warning: unexpectedMessage })
-      }
-    }
     return res.status(500).json({ success: false, error: unexpectedMessage })
   }
 })

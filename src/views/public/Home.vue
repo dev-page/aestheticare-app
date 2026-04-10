@@ -55,7 +55,7 @@
             Login
           </router-link>
           <router-link
-            to="/clinic/register"
+            to="/register"
             class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-gold-700 text-white text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-800 transition"
           >
             Register
@@ -119,7 +119,7 @@
                 Login
               </router-link>
               <router-link
-                to="/clinic/register"
+                to="/register"
                 @click="closeMobileMenu"
                 class="px-4 py-3 rounded-full bg-gold-700 text-white text-center transition hover:bg-gold-800"
               >
@@ -160,15 +160,8 @@
             <p class="text-charcoal-600 max-w-xl mb-6 text-sm sm:text-base leading-relaxed">
               Your skin deserves the best. Discover elegant, clinic-ready solutions crafted for modern aesthetic centers.
             </p>
-            <div class="inline-flex items-center gap-3 rounded-full border border-gold-300/70 bg-white/70 px-3 py-2 mb-5 shadow-[0_10px_18px_rgba(54,34,22,0.08)]">
-              <img :src="clinicAdminBadge" alt="Clinic admin badge" class="h-10 w-10 rounded-full object-contain" />
-              <div class="text-left">
-                <p class="text-[10px] uppercase tracking-[0.22em] text-gold-700">For Clinic Admin</p>
-                <p class="text-sm text-charcoal-700">Register and manage your aesthetic center.</p>
-              </div>
-            </div>
             <div class="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-8">
-              <router-link to="/clinic/register" class="bg-charcoal-900 text-cream-50 px-6 py-3 rounded-full text-xs sm:text-sm tracking-widest uppercase hover:bg-charcoal-800 transition w-full sm:w-auto text-center">
+              <router-link to="/register" class="bg-charcoal-900 text-cream-50 px-6 py-3 rounded-full text-xs sm:text-sm tracking-widest uppercase hover:bg-charcoal-800 transition w-full sm:w-auto text-center">
                 Get Started
               </router-link>
               <router-link to="/subscription-features" class="px-6 py-3 rounded-full border border-gold-700 text-gold-700 text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-700 hover:text-white transition w-full sm:w-auto text-center">
@@ -214,14 +207,22 @@
 
     <section id="features-section" class="relative h-[54vh] sm:h-[62vh] md:h-[72vh] overflow-hidden">
       <video
+        v-if="showHeroVideo"
         class="absolute inset-0 w-full h-full object-cover"
         autoplay
         muted
         loop
         playsinline
+        preload="metadata"
+        :poster="bg"
       >
         <source src="@/assets/home_vid.mp4" type="video/mp4" />
       </video>
+      <div
+        v-else
+        class="absolute inset-0 bg-cover bg-center"
+        :style="{ backgroundImage: `url(${bg})` }"
+      ></div>
       <div class="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,11,9,0.38)_0%,rgba(24,16,12,0.18)_34%,rgba(21,14,11,0.18)_66%,rgba(16,11,9,0.34)_100%)]"></div>
       <div class="absolute inset-0 bg-black/18"></div>
       <div class="relative z-10 h-full">
@@ -452,7 +453,7 @@
               Join modern aesthetic centers using intelligent systems to manage bookings, treatment journeys, staff visibility, and clinic growth in one elegant platform.
             </p>
             <div class="footer-cta-actions">
-              <router-link to="/clinic/register" class="footer-primary-btn">
+              <router-link to="/register" class="footer-primary-btn">
                 Register
               </router-link>
               <router-link to="/subscription-features" class="footer-secondary-btn">
@@ -554,7 +555,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAuth } from "@/composables/useAuth";
 import bg from '@/assets/bg.jpg'
 import appointmentLanding from '@/assets/apointment_landing.jpg'
-import clinicAdminBadge from '@/assets/clinic_admin_badge.png'
 import inventoryLanding from '@/assets/inventory_landing.jpg'
 import meetingRoomLanding from '@/assets/meetingroom_landing.jpg'
 import staffInsightLanding from '@/assets/staffinsight_landing.jpg'
@@ -564,6 +564,7 @@ export default {
   setup() {
     const { user, isLoading, initAuth } = useAuth();
     const isMobileMenuOpen = ref(false);
+    const showHeroVideo = ref(false);
     const currentCapabilityIndex = ref(3);
     const miniStartIndex = ref(3);
     const isCapabilitySwitching = ref(false);
@@ -572,6 +573,7 @@ export default {
     let capabilityTimer = null;
     let capabilitySwitchTimer = null;
     let miniSwitchTimer = null;
+    let heroVideoTimer = null;
     const closeMobileMenu = () => {
       isMobileMenuOpen.value = false;
     };
@@ -702,6 +704,16 @@ export default {
 
     onMounted(() => {
       initAuth()
+      const revealHeroVideo = () => {
+        showHeroVideo.value = true
+      }
+
+      if ('requestIdleCallback' in window) {
+        heroVideoTimer = window.requestIdleCallback(revealHeroVideo, { timeout: 1500 })
+      } else {
+        heroVideoTimer = window.setTimeout(revealHeroVideo, 800)
+      }
+
       capabilityTimer = window.setInterval(() => {
         nextCapability();
       }, 5000);
@@ -719,22 +731,28 @@ export default {
       if (miniSwitchTimer) {
         window.clearTimeout(miniSwitchTimer);
       }
+      if (typeof window.cancelIdleCallback === 'function' && heroVideoTimer) {
+        window.cancelIdleCallback(heroVideoTimer)
+      } else if (heroVideoTimer) {
+        window.clearTimeout(heroVideoTimer)
+      }
     });
 
     return {
+      bg,
       capabilities,
       currentCapability,
       currentCapabilityIndex,
       isCapabilitySwitching,
       isMiniSwitching,
       miniMotionTick,
+      showHeroVideo,
       visibleMiniCapabilities,
       setCapability,
       nextCapability,
       prevCapability,
       nextMini,
       prevMini,
-      clinicAdminBadge,
       scrollToSection,
       user,
       isLoading,

@@ -30,8 +30,8 @@ const normalizeHostedApiUrl = (configured) => {
 
 const resolveRuntimeUrl = (envValue, localFallback) => {
   const configured = normalizeHostedApiUrl(trimTrailingSlash(envValue))
-  if (configured) return configured
   if (isLocalBrowser) return localFallback
+  if (configured) return configured
   return hostedApiBase
 }
 

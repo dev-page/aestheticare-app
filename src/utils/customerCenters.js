@@ -1,10 +1,21 @@
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
-import { hasExpiredSuspension, isSuspendedStatus, restoreExpiredSuspension, toDate } from '@/utils/centerSuspension'
 
 const FALLBACK_SERVICE = 'General Services'
 
 const toText = (value) => String(value || '').trim()
+
+const toDate = (value) => {
+  if (!value) return null
+  if (typeof value?.toDate === 'function') return value.toDate()
+  if (value instanceof Date) return value
+  if (typeof value === 'number') return new Date(value)
+  if (typeof value === 'string') {
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+  return null
+}
 
 const extractCity = (location) => {
   const raw = toText(location)
@@ -16,29 +27,9 @@ export const fetchCustomerCenters = async () => {
   const clinicsSnapshot = await getDocs(collection(db, 'clinics'))
 
   const clinics = clinicsSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-  const restoreTargets = clinics.filter((clinic) => hasExpiredSuspension(clinic))
-  if (restoreTargets.length) {
-    await Promise.all(
-      restoreTargets.map((clinic) => restoreExpiredSuspension(db, clinic.id, clinic))
-    )
-  }
 
   const serviceMap = new Map()
-  const activeClinics = clinics.map((clinic) => (
-    hasExpiredSuspension(clinic)
-      ? {
-          ...clinic,
-          status: 'Active',
-          moderationStatus: 'Resolved',
-          isPublished: true,
-          suspendedAt: null,
-          suspensionEndsAt: null,
-          suspensionReason: '',
-          suspensionSource: ''
-        }
-      : clinic
-  ))
-  const clinicIds = activeClinics.map((clinic) => clinic.id)
+  const clinicIds = clinics.map((clinic) => clinic.id)
   const chunkArray = (items, size = 10) => {
     const chunks = []
     for (let i = 0; i < items.length; i += size) {
@@ -69,19 +60,16 @@ export const fetchCustomerCenters = async () => {
     }
   }
 
-  const centers = activeClinics
+  const centers = clinics
     .filter((clinic) => {
       const ownerId = toText(clinic.ownerId)
       const status = toText(clinic.status).toLowerCase()
-      const moderationStatus = toText(clinic.moderationStatus).toLowerCase()
       const isPublished = clinic.isPublished === true
       const expiresAt = toDate(clinic.subscriptionExpiresAt)
       const isExpired = expiresAt ? Date.now() > expiresAt.getTime() : false
       return (
         Boolean(ownerId) &&
         status !== 'inactive' &&
-        !isSuspendedStatus(status) &&
-        !isSuspendedStatus(moderationStatus) &&
         isPublished &&
         !isExpired
       )

@@ -2,10 +2,8 @@ import { createRouter, createWebHistory } from "vue-router";
 import { useAuth } from "@/composables/useAuth";
 import { usePermissions } from "@/composables/usePermissions";
 import { useSubscription } from "@/composables/useSubscription";
-import { signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "@/config/firebaseConfig";
-import { getSuspendedCenterAccess } from "@/utils/centerAccess";
+import { db } from "@/config/firebaseConfig";
 
 const routes = [
   // Public routes
@@ -139,7 +137,6 @@ const routes = [
   { path: "/superadmin/subscription/payments", name: "superadmin-subscription-payments", component: () => import("@/views/superAdmin/SubscriptionPayments.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/clinics/verification", name: "superadmin-clinic-verification", component: () => import("@/views/superAdmin/ClinicVerification.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/clinics/verified", name: "superadmin-clinics-verified", component: () => import("@/views/superAdmin/VerifiedClinics.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/clinics/suspended", name: "superadmin-clinics-suspended", component: () => import("@/views/superAdmin/SuspendedClinics.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/clinics/archived", name: "superadmin-clinics-archived", component: () => import("@/views/superAdmin/ArchivedClinics.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/accounts/users", name: "superadmin-accounts-users", component: () => import("@/views/superAdmin/AccountManagement.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/activity-logs", name: "superadmin-activity-logs", component: () => import("@/views/superAdmin/ActivityLogs.vue"), meta: { requiresAuth: true } },
@@ -177,21 +174,6 @@ router.beforeEach(async (to, from, next) => {
   // Auth-required routes
   if (to.meta.requiresAuth && !user.value) {
     return next("/login");
-  }
-
-  if (user.value?.uid) {
-    try {
-      const userSnap = await getDoc(doc(db, "users", user.value.uid));
-      const userData = userSnap.exists() ? userSnap.data() || {} : {};
-      const suspendedCenter = await getSuspendedCenterAccess(user.value.uid, userData);
-
-      if (suspendedCenter) {
-        await signOut(auth);
-        return next("/login?suspended=1");
-      }
-    } catch (error) {
-      console.error("Error verifying suspended center access in route guard:", error);
-    }
   }
 
   let forcedEmployeePasswordChange = false

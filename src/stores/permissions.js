@@ -36,14 +36,13 @@ export const usePermissionsStore = defineStore('permissions', () => {
     const compact = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
     if (!compact) return ''
     if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') return 'Superadmin'
-    if (compact === 'hr') return 'HR'
     if (isOwnerLikeRole(compact)) return 'Owner'
     return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
   }
 
   const CACHE_TTL_MS = 5 * 60 * 1000
 
-  const loadCachedPermissions = (uid, role) => {
+  const loadCachedPermissions = (uid, role, shouldLoadRoleCache = true) => {
     try {
       if (uid) {
         const userCache = JSON.parse(localStorage.getItem(`permissions:user:${uid}`) || 'null')
@@ -54,7 +53,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
           }
         }
       }
-      if (role) {
+      if (shouldLoadRoleCache && role) {
         const roleCache = JSON.parse(localStorage.getItem(`permissions:role:${role}`) || 'null')
         if (roleCache && Array.isArray(roleCache.data) && roleCache.ts) {
           const isFresh = Date.now() - roleCache.ts < CACHE_TTL_MS
@@ -68,7 +67,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     }
   }
 
-  const persistPermissions = (uid, role) => {
+  const persistPermissions = (uid, role, shouldPersistRoleCache = true) => {
     try {
       if (uid) {
         localStorage.setItem(
@@ -76,7 +75,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
           JSON.stringify({ data: userPermissions.value || [], ts: Date.now() })
         )
       }
-      if (role) {
+      if (shouldPersistRoleCache && role) {
         localStorage.setItem(
           `permissions:role:${role}`,
           JSON.stringify({ data: rolePermissions.value || [], ts: Date.now() })
@@ -136,15 +135,17 @@ export const usePermissionsStore = defineStore('permissions', () => {
           const data = snapshot.exists() ? snapshot.data() || {} : {}
           userPermissions.value = Array.isArray(data.permissions) ? data.permissions : []
           const nextCustomRoleId = String(data.customRoleId || '').trim()
+          const nextUserType = String(data.userType || '').trim().toLowerCase()
+          const isStaffUser = nextUserType === 'staff'
           const nextRole = normalizeRoleKey(data.role || data.userType || '')
           if (nextRole !== roleKey.value) {
             roleKey.value = nextRole
-            loadCachedPermissions(newUser.uid, roleKey.value)
+            loadCachedPermissions(newUser.uid, roleKey.value, !isStaffUser)
             if (unsubscribeRole) {
               unsubscribeRole()
               unsubscribeRole = null
             }
-            if (roleKey.value) {
+            if (roleKey.value && !isStaffUser) {
               unsubscribeRole = onSnapshot(
                 doc(db, 'rolePermissions', roleKey.value),
                 (roleSnap) => {
@@ -187,7 +188,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
               customRolePermissions.value = []
             }
           }
-          persistPermissions(newUser.uid, roleKey.value)
+          if (isStaffUser) {
+            rolePermissions.value = []
+          }
+          persistPermissions(newUser.uid, roleKey.value, !isStaffUser)
           loading.value = false
         },
         (error) => {
@@ -202,7 +206,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
       )
       const initialRole = normalizeRoleKey(newUser?.role || newUser?.userType || '')
       roleKey.value = initialRole
-      loadCachedPermissions(newUser.uid, initialRole)
+      loadCachedPermissions(newUser.uid, initialRole, String(newUser?.userType || '').trim().toLowerCase() !== 'staff')
     },
     { immediate: true }
   )

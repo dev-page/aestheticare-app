@@ -732,27 +732,7 @@ onBeforeUnmount(() => {
       <div class="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-cream-300/40 blur-3xl"></div>
     </div>
 
-    <nav class="fixed top-0 inset-x-0 z-50 bg-gradient-to-r from-cream-50/95 via-cream-100/95 to-gold-50/95 backdrop-blur-md border-b border-gold-200/70 shadow-[0_6px_18px_rgba(54,34,22,0.08)]">
-      <div class="relative max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-        <button
-          type="button"
-          @click="goToRegisterChooser"
-          class="flex items-center gap-2 text-charcoal-700 hover:text-gold-700 transition-colors rounded-md px-2 py-1 hover:bg-gold-100/70"
-        >
-          <svg class="hidden lg:block w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-          <svg class="w-5 h-5 lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10.5l9-7 9 7M5.25 9.75V20.25H18.75V9.75" />
-          </svg>
-        </button>
-
-        <span class="nav-brand absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-lg sm:text-xl tracking-wide">AesthetiCare</span>
-        <div class="w-8"></div>
-      </div>
-    </nav>
-
-    <div class="relative z-10 flex items-center justify-center px-4 pt-24 pb-12 text-sm">
+    <div class="relative z-10 flex items-center justify-center px-4 pt-12 pb-10 text-sm">
       <div class="relative w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[60%_40%] rounded-3xl overflow-hidden bg-white/68 backdrop-blur-xl border border-gold-200/60 shadow-2xl shadow-gold-900/15">
         <div class="register-form-panel relative z-10 flex items-center justify-center px-4 pt-10 pb-10 sm:px-8">
           <span class="form-side-bubble f-bubble-1 hidden lg:block" aria-hidden="true"></span>

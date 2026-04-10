@@ -41,13 +41,11 @@
               <p class="plan-kicker">{{ planKicker(plan) }}</p>
               <p class="plan-name">{{ plan.name }}</p>
             </div>
-            <span v-if="plan.recommended" class="plan-badge">Recommended</span>
-            <span v-else class="plan-flag">{{ planFlag(plan) }}</span>
           </div>
 
           <div class="plan-price-wrap">
-            <p class="plan-price">{{ plan.price }}</p>
-            <span class="plan-cycle">{{ plan.cycle }}</span>
+            <p class="plan-price">{{ plan.priceLabel }}</p>
+            <span class="plan-cycle">{{ plan.cycleLabel || plan.cycle || '-' }}</span>
           </div>
 
           <p class="plan-desc">{{ plan.description }}</p>
@@ -61,7 +59,6 @@
             <span class="plan-select-indicator">
               {{ selectedPlan === plan.id ? "Selected plan" : "Click to select" }}
             </span>
-            <span class="plan-arrow">+</span>
           </div>
         </button>
       </div>
@@ -77,18 +74,33 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
+import {
+  buildSubscriptionPlanCatalog,
+  filterActiveSubscriptionPlans,
+} from "@/utils/subscriptionPlans";
 
 const router = useRouter();
 
 const plans = ref([]);
 const error = ref("");
-const selectedPlan = ref("basic");
+const selectedPlan = ref("free");
+let unsubscribePlans = null;
 
 const defaultPlans = () => [
+  {
+    id: "free",
+    name: "Free Plan",
+    price: 0,
+    billingCycle: "trial",
+    description: "Try the platform before choosing a paid plan.",
+    features: ["Core modules", "Limited users", "Email support"],
+    trialDays: 14,
+    isActive: true,
+  },
   {
     id: "basic",
     name: "Basic",
@@ -113,63 +125,33 @@ const defaultPlans = () => [
   },
 ];
 
-const formatCurrency = (amount) => {
-  const value = Number(amount);
-  const safeValue = Number.isFinite(value) ? value : 0;
-  return new Intl.NumberFormat("en-PH", {
-    style: "currency",
-    currency: "PHP",
-    currencyDisplay: "code",
-    maximumFractionDigits: 0,
-  }).format(safeValue);
-};
-
-const formatCycle = (cycle) => {
-  const normalized = String(cycle || "").trim().toLowerCase();
-  if (!normalized || normalized === "trial") return "";
-  if (normalized.startsWith("/")) return normalized;
-  return `/${normalized}`;
-};
-
-const mergePlans = (dbPlansMap) => {
-  return defaultPlans().map((basePlan) => {
-    const dbPlan = dbPlansMap.get(basePlan.id) || {};
-    const merged = {
-      ...basePlan,
-      ...dbPlan,
-      id: basePlan.id,
-      recommended: basePlan.id === "premium",
-      features: Array.isArray(dbPlan.features) ? dbPlan.features : basePlan.features,
-    };
-
-    return {
-      ...merged,
-      name: merged.name || basePlan.name,
-      price: formatCurrency(merged.price),
-      cycle: formatCycle(merged.billingCycle),
-      description: merged.description || basePlan.description,
-      trialDays: Number(merged.trialDays || 0),
-      isActive: merged.isActive !== false,
-    };
-  });
-};
-
 const loadPlans = async () => {
   error.value = "";
   try {
-    const snapshot = await getDocs(collection(db, "subscriptionPlans"));
-    const dbPlans = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]));
-    const merged = mergePlans(dbPlans);
-    const activePlans = merged.filter((plan) => plan.isActive);
-    plans.value = activePlans.length ? activePlans : merged;
-
-    if (!plans.value.some((plan) => plan.id === selectedPlan.value)) {
-      selectedPlan.value = plans.value[0]?.id || "basic";
+    if (unsubscribePlans) {
+      unsubscribePlans();
+      unsubscribePlans = null;
     }
+    unsubscribePlans = onSnapshot(
+      collection(db, "subscriptionPlans"),
+      (snapshot) => {
+        const merged = buildSubscriptionPlanCatalog(defaultPlans(), snapshot.docs);
+        plans.value = filterActiveSubscriptionPlans(merged);
+
+        if (!plans.value.some((plan) => plan.id === selectedPlan.value)) {
+          selectedPlan.value = plans.value[0]?.id || "free";
+        }
+      },
+      (err) => {
+        console.error("Failed to load public subscription plans:", err);
+        error.value = "Unable to load latest plans right now.";
+        plans.value = filterActiveSubscriptionPlans(buildSubscriptionPlanCatalog(defaultPlans(), []));
+      }
+    );
   } catch (err) {
-    console.error("Failed to load public subscription plans:", err);
+    console.error("Failed to start public subscription listener:", err);
     error.value = "Unable to load latest plans right now.";
-    plans.value = defaultPlans();
+    plans.value = filterActiveSubscriptionPlans(buildSubscriptionPlanCatalog(defaultPlans(), []));
   }
 };
 
@@ -190,26 +172,34 @@ const maybeLater = () => {
 };
 
 const planCardClass = (plan) => {
+  if (plan.id === "free-trial" || plan.id === "free") return "plan-card-free";
   if (plan.id === "basic") return "plan-card-basic";
+  if (plan.id === "premium") return "plan-card-premium";
   return "plan-card-premium";
 };
 
 const planKicker = (plan) => {
+  if (plan.id === "free-trial" || plan.id === "free") return "For first-time clinics";
   if (plan.id === "basic") return "For growing clinics";
-  return "For full operations";
-};
-
-const planFlag = (plan) => {
-  if (plan.id === "basic") return "Single branch";
-  return "Multi branch";
+  if (plan.id === "premium") return "For full operations";
+  return plan.recommended ? "Featured option" : "Flexible option";
 };
 
 const planCaption = (plan) => {
+  if (plan.id === "free-trial" || plan.id === "free") return "A no-cost starting point for exploring the platform.";
   if (plan.id === "basic") return "Best fit for clinics focusing on daily bookings, staffing, and reporting.";
-  return "Built for teams that need deeper visibility, support, and multi-branch control.";
+  if (plan.id === "premium") return "Built for teams that need deeper visibility, support, and multi-branch control.";
+  return "A saved custom plan configured in Setup Plans.";
 };
 
 onMounted(loadPlans);
+
+onBeforeUnmount(() => {
+  if (unsubscribePlans) {
+    unsubscribePlans();
+    unsubscribePlans = null;
+  }
+});
 </script>
 
 <style scoped>
@@ -353,7 +343,26 @@ onMounted(loadPlans);
 
 .plan-card-active {
   transform: translateY(-4px);
+  border-width: 3px;
   box-shadow: 0 20px 40px rgba(111, 63, 42, 0.14);
+}
+
+.plan-card-free {
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(145deg, #f7f2ea 0%, #ede1cf 52%, #dac4a6 100%);
+  box-shadow: 0 18px 34px rgba(116, 89, 63, 0.12);
+}
+
+.plan-card-free .plan-name,
+.plan-card-free .plan-price,
+.plan-card-free .plan-desc,
+.plan-card-free .plan-features,
+.plan-card-free .plan-caption,
+.plan-card-free .plan-cycle,
+.plan-card-free .plan-kicker,
+.plan-card-free .plan-select-indicator {
+  color: #4d3426;
 }
 
 .plan-card-basic {
@@ -370,9 +379,7 @@ onMounted(loadPlans);
 .plan-card-basic .plan-caption,
 .plan-card-basic .plan-cycle,
 .plan-card-basic .plan-kicker,
-.plan-card-basic .plan-select-indicator,
-.plan-card-basic .plan-arrow,
-.plan-card-basic .plan-flag {
+.plan-card-basic .plan-select-indicator {
   color: #fff9ee;
 }
 
@@ -391,15 +398,8 @@ onMounted(loadPlans);
 .plan-card-premium .plan-caption,
 .plan-card-premium .plan-cycle,
 .plan-card-premium .plan-kicker,
-.plan-card-premium .plan-select-indicator,
-.plan-card-premium .plan-arrow {
+.plan-card-premium .plan-select-indicator {
   color: #fff7ea;
-}
-
-.plan-card-premium .plan-flag {
-  color: rgba(255, 247, 234, 0.92);
-  border-color: rgba(255, 247, 234, 0.22);
-  background: rgba(255, 247, 234, 0.1);
 }
 
 .plan-orb {
@@ -442,35 +442,6 @@ onMounted(loadPlans);
   text-transform: uppercase;
   letter-spacing: 0.18em;
   color: #9d6947;
-}
-
-.plan-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.58rem;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: #fff;
-  background: rgba(96, 49, 24, 0.48);
-  border-radius: 999px;
-  padding: 0.34rem 0.62rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-.plan-flag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 0.34rem 0.62rem;
-  border: 1px solid rgba(159, 105, 70, 0.16);
-  background: rgba(255, 255, 255, 0.44);
-  font-size: 0.58rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: #8d5e3f;
 }
 
 .plan-name {
@@ -561,24 +532,6 @@ onMounted(loadPlans);
   font-weight: 700;
   letter-spacing: 0.03em;
   color: #8d664b;
-}
-
-.plan-arrow {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.8rem;
-  height: 1.8rem;
-  border-radius: 999px;
-  border: 1px solid rgba(159, 105, 70, 0.18);
-  background: rgba(255, 255, 255, 0.34);
-  color: #7b4e35;
-  font-size: 0.95rem;
-  font-weight: 700;
-}
-
-.plan-card-active .plan-arrow {
-  transform: rotate(45deg);
 }
 
 .popup-actions {

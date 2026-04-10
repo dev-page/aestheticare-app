@@ -104,7 +104,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
-import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
@@ -127,8 +127,10 @@ const planData = ref(null)
 const autoRenew = ref(false)
 const pendingPlan = ref('')
 const pendingApplyAt = ref(null)
+const planDocs = ref(new Map())
 let unsubscribeUser = null
 let unsubscribeClinic = null
+let unsubscribePlans = null
 
 const formatCurrency = (amount) => {
   const value = Number(amount)
@@ -145,6 +147,10 @@ const formatCycle = (cycle) => {
   if (!normalized || normalized === 'trial') return 'Trial'
   if (normalized.startsWith('/')) return normalized.slice(1)
   return normalized
+}
+
+const syncPlanData = () => {
+  planData.value = planDocs.value.get(planKey.value) || planDocs.value.get('free-trial') || null
 }
 
 const toDateValue = (value) => {
@@ -286,22 +292,25 @@ const loadSubscription = async () => {
       return
     }
 
-    const [userSnap, clinicSnap, plansSnap] = await Promise.all([
+    const [userSnap, clinicSnap] = await Promise.all([
       getDoc(doc(db, 'users', currentUser.uid)),
       getDoc(doc(db, 'clinics', currentUser.uid)),
-      getDocs(collection(db, 'subscriptionPlans')),
     ])
 
     const userData = userSnap.exists() ? userSnap.data() : {}
     const clinicData = clinicSnap.exists() ? clinicSnap.data() : {}
     await applySubscriptionData(userData, clinicData)
+    syncPlanData()
 
-    const plansMap = new Map(plansSnap.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
-    planData.value = plansMap.get(planKey.value) || plansMap.get('free-trial') || null
+    if (unsubscribePlans) unsubscribePlans()
+    unsubscribePlans = onSnapshot(collection(db, 'subscriptionPlans'), (snapshot) => {
+      planDocs.value = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
+      syncPlanData()
+      if (loading.value) loading.value = false
+    })
   } catch (err) {
     console.error('Failed to load subscription info:', err)
     error.value = 'Failed to load subscription information.'
-  } finally {
     loading.value = false
   }
 }
@@ -323,6 +332,7 @@ const subscribeToUpdates = async () => {
     const clinicSnap = await getDoc(doc(db, 'clinics', currentUser.uid))
     const clinicData = clinicSnap.exists() ? clinicSnap.data() : {}
     await applySubscriptionData(userData, clinicData)
+    syncPlanData()
     await subscriptionStore.refreshSubscription()
   })
 
@@ -331,6 +341,7 @@ const subscribeToUpdates = async () => {
     const userSnap = await getDoc(doc(db, 'users', currentUser.uid))
     const userData = userSnap.exists() ? userSnap.data() : {}
     await applySubscriptionData(userData, clinicData)
+    syncPlanData()
     await subscriptionStore.refreshSubscription()
   })
 }
@@ -370,6 +381,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (unsubscribeUser) unsubscribeUser()
   if (unsubscribeClinic) unsubscribeClinic()
+  if (unsubscribePlans) unsubscribePlans()
 })
 </script>
 

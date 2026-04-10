@@ -90,7 +90,6 @@
 
 <script>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { Html5Qrcode } from 'html5-qrcode'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
@@ -334,6 +333,7 @@ export default {
 
       await nextTick()
       try {
+        const { Html5Qrcode } = await import('html5-qrcode')
         if (!html5QrCode.value) {
           html5QrCode.value = new Html5Qrcode(READER_ID)
         }

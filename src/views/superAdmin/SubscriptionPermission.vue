@@ -126,11 +126,15 @@ import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/f
 import Swal from 'sweetalert2'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import {
+  buildSubscriptionPlanCatalog,
+  filterActiveSubscriptionPlans,
+} from '@/utils/subscriptionPlans'
 
-const planCatalog = [
-  { key: 'free', label: 'Free Plan' },
-  { key: 'basic', label: 'Basic' },
-  { key: 'premium', label: 'Premium' },
+const defaultPlanCatalog = [
+  { id: 'free', key: 'free', label: 'Free Plan' },
+  { id: 'basic', key: 'basic', label: 'Basic' },
+  { id: 'premium', key: 'premium', label: 'Premium' },
 ]
 
 const planFeatureCatalog = [
@@ -155,29 +159,65 @@ export default {
     const loading = ref(false)
     const error = ref('')
     const savingPlan = ref('')
+    const planCatalog = ref([])
     const planPermissions = ref({})
+    const planCatalogLoaded = ref(false)
+    const planPermissionsLoaded = ref(false)
+
+    const finishLoading = () => {
+      if (planCatalogLoaded.value && planPermissionsLoaded.value) {
+        loading.value = false
+      }
+    }
 
     const planEntries = computed(() =>
-      planCatalog.map((plan) => ({
-        ...plan,
-        permissions: Array.isArray(planPermissions.value[plan.key])
-          ? [...planPermissions.value[plan.key]]
-          : [],
-      }))
+      planCatalog.value.map((plan) => {
+        const key = plan.id || plan.key
+        return {
+          ...plan,
+          key,
+          label: plan.label || plan.name || plan.id || plan.key,
+          permissions: Array.isArray(planPermissions.value[key])
+            ? [...planPermissions.value[key]]
+            : [],
+        }
+      })
     )
 
-    let unsubscribe = null
+    let unsubscribePermissions = null
+    let unsubscribePlans = null
 
     const loadPermissions = () => {
       loading.value = true
       error.value = ''
-      if (unsubscribe) {
-        unsubscribe()
-        unsubscribe = null
+      planCatalogLoaded.value = false
+      planPermissionsLoaded.value = false
+      if (unsubscribePermissions) {
+        unsubscribePermissions()
+        unsubscribePermissions = null
+      }
+      if (unsubscribePlans) {
+        unsubscribePlans()
+        unsubscribePlans = null
       }
 
       try {
-        unsubscribe = onSnapshot(
+        unsubscribePlans = onSnapshot(
+          collection(db, 'subscriptionPlans'),
+          (snapshot) => {
+            const merged = buildSubscriptionPlanCatalog(defaultPlanCatalog, snapshot.docs)
+            planCatalog.value = filterActiveSubscriptionPlans(merged)
+            planCatalogLoaded.value = true
+            finishLoading()
+          },
+          (err) => {
+            console.error('Error loading subscription plans:', err)
+            error.value = 'Failed to load subscription plans. Please try again.'
+            loading.value = false
+          }
+        )
+
+        unsubscribePermissions = onSnapshot(
           collection(db, 'planPermissions'),
           (snapshot) => {
             const map = {}
@@ -186,7 +226,8 @@ export default {
               map[docSnap.id] = Array.isArray(data.permissions) ? data.permissions : []
             })
             planPermissions.value = map
-            loading.value = false
+            planPermissionsLoaded.value = true
+            finishLoading()
           },
           (err) => {
             console.error('Error loading plan permissions:', err)
@@ -288,7 +329,8 @@ export default {
     onMounted(loadPermissions)
 
     onUnmounted(() => {
-      if (unsubscribe) unsubscribe()
+      if (unsubscribePermissions) unsubscribePermissions()
+      if (unsubscribePlans) unsubscribePlans()
     })
 
     return {

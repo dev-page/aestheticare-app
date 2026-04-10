@@ -29,15 +29,6 @@
                   <h1 class="text-2xl md:text-5xl font-bold text-white">{{ center.name || 'Center' }}</h1>
                   <p class="text-slate-300 mt-1">{{ center.location || 'Location not set' }}</p>
                 </div>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-2 self-start rounded-full border border-rose-300/70 bg-rose-500/25 px-4 py-2 text-sm font-semibold text-rose-50 shadow-lg shadow-rose-950/25 transition hover:bg-rose-500/35 hover:border-rose-200 hover:text-white"
-                  title="Report this center"
-                  @click="openReportModal"
-                >
-                  <Icon icon="mdi:flag-outline" class="h-5 w-5" />
-                  <span>Report Center</span>
-                </button>
               </div>
             </div>
           </div>
@@ -595,113 +586,6 @@
         </div>
       </div>
     </div>
-
-    <div v-if="showReportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div class="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-800 shadow-xl">
-        <div class="flex items-center justify-between border-b border-slate-700 px-5 py-4">
-          <div>
-            <h3 class="text-lg font-semibold text-white">Report This Center</h3>
-            <p class="text-xs text-slate-400">Share any issue you encountered with this clinic page or center.</p>
-          </div>
-          <button type="button" class="text-slate-300 hover:text-white" @click="closeReportModal">
-            <Icon icon="mdi:close" class="h-5 w-5" />
-          </button>
-        </div>
-
-        <form class="space-y-4 px-5 py-5" @submit.prevent="submitCenterReport">
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Category</label>
-              <select
-                v-model="reportForm.category"
-                class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                required
-              >
-                <option disabled value="">Select category</option>
-                <option>Fraud or Scam Concern</option>
-                <option>False Information</option>
-                <option>Unprofessional Conduct</option>
-                <option>Pricing or Billing Issue</option>
-                <option>Safety Concern</option>
-                <option>Other</option>
-              </select>
-            </div>
-            <div>
-              <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Severity</label>
-              <select
-                v-model="reportForm.severity"
-                class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-              >
-                <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
-                <option value="High">High</option>
-                <option value="Critical">Critical</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Subject</label>
-            <input
-              v-model.trim="reportForm.subject"
-              type="text"
-              class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              placeholder="Short summary of your report"
-              required
-            />
-          </div>
-
-          <div>
-            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Description</label>
-            <textarea
-              v-model.trim="reportForm.description"
-              rows="4"
-              class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              placeholder="Tell us what happened."
-              required
-            ></textarea>
-          </div>
-
-          <div>
-            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Proof Photo (optional)</label>
-            <div class="rounded-xl border border-dashed border-slate-600 bg-slate-900/60 p-4">
-              <input
-                type="file"
-                accept="image/*"
-                class="text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-amber-600/90 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-amber-500"
-                @change="handleReportFileChange"
-              />
-              <p class="mt-2 text-xs text-slate-500">PNG or JPG, up to 5MB.</p>
-              <div v-if="reportProofPreview" class="mt-3 flex items-center gap-4">
-                <img :src="reportProofPreview" alt="Report proof preview" class="h-24 w-28 rounded-lg border border-slate-700 object-cover" />
-                <button type="button" class="text-xs text-amber-300 hover:text-white" @click="clearReportProof">Remove file</button>
-              </div>
-              <p v-if="reportFileError" class="mt-2 text-xs text-rose-400">{{ reportFileError }}</p>
-            </div>
-          </div>
-
-          <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
-            <p class="text-xs text-slate-400">This report goes to the system administrator for review.</p>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700"
-                @click="closeReportModal"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="isSubmittingReport"
-                class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {{ isSubmittingReport ? 'Submitting...' : 'Submit Report' }}
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -710,12 +594,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
-import { auth, db, storage } from '@/config/firebaseConfig'
+import { auth, db } from '@/config/firebaseConfig'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { addCartItem, readCart } from '@/utils/customerCart'
-import { hasExpiredSuspension, restoreExpiredSuspension } from '@/utils/centerSuspension'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
 import { calculateCommissionAmount, calculateNetAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
@@ -741,23 +623,8 @@ const chatScrollRef = ref(null)
 const customerProfile = ref(null)
 const unreadChatCount = ref(0)
 const customerLastReadAt = ref(null)
-const showReportModal = ref(false)
-const isSubmittingReport = ref(false)
-const reportProofFile = ref(null)
-const reportProofPreview = ref('')
-const reportFileError = ref('')
-const reportForm = ref({
-  category: '',
-  severity: 'Medium',
-  subject: '',
-  description: '',
-})
 let savedPageBodyOverflow = ''
 let savedPageHtmlOverflow = ''
-const REPORT_WINDOW_DAYS = 90
-const AUTO_SUSPEND_REPORT_THRESHOLD = 4
-const AUTO_SUSPEND_DURATION_DAYS = 7
-const CLINIC_ADMIN_ROLES = ['owner', 'clinic admin', 'clinicadmin', 'clinicadministrator']
 const quickQuestions = [
   { key: 'services', label: 'What services do you offer?' },
   { key: 'contact', label: 'How can I contact you?' },
@@ -1019,8 +886,6 @@ const selectBranch = async () => {
   }
 }
 
-const isCenterSuspended = (value) => String(value || '').trim().toLowerCase().includes('suspend')
-
 const bookingForm = ref({
   slotKey: '',
   date: '',
@@ -1029,152 +894,6 @@ const bookingForm = ref({
   contactNumber: '',
   notes: '',
 })
-
-const resetReportForm = () => {
-  reportForm.value = {
-    category: '',
-    severity: 'Medium',
-    subject: '',
-    description: '',
-  }
-  clearReportProof()
-}
-
-const clearReportProofPreview = () => {
-  if (reportProofPreview.value) {
-    URL.revokeObjectURL(reportProofPreview.value)
-  }
-  reportProofPreview.value = ''
-}
-
-const clearReportProof = () => {
-  reportProofFile.value = null
-  reportFileError.value = ''
-  clearReportProofPreview()
-}
-
-const handleReportFileChange = (event) => {
-  const file = event.target.files?.[0]
-  reportFileError.value = ''
-
-  if (!file) {
-    clearReportProof()
-    return
-  }
-
-  if (!file.type.startsWith('image/')) {
-    reportFileError.value = 'Please upload a valid image file.'
-    clearReportProof()
-    return
-  }
-
-  if (file.size > 5 * 1024 * 1024) {
-    reportFileError.value = 'Image size must be below 5MB.'
-    clearReportProof()
-    return
-  }
-
-  clearReportProofPreview()
-  reportProofFile.value = file
-  reportProofPreview.value = URL.createObjectURL(file)
-}
-
-const openReportModal = () => {
-  if (!auth.currentUser) {
-    toast.error('Please log in first.')
-    router.push('/login')
-    return
-  }
-  showReportModal.value = true
-}
-
-const closeReportModal = () => {
-  showReportModal.value = false
-  resetReportForm()
-}
-
-const toJsDate = (value) => {
-  if (!value) return null
-  if (typeof value?.toDate === 'function') return value.toDate()
-  if (value instanceof Date) return value
-  if (typeof value === 'number') return new Date(value)
-  if (typeof value === 'string') {
-    const parsed = new Date(value)
-    return Number.isNaN(parsed.getTime()) ? null : parsed
-  }
-  return null
-}
-
-const isCountedReportStatus = (value) => String(value || '').trim().toLowerCase() !== 'dismissed'
-
-const getClinicAdminRecipients = async (branchId) => {
-  const recipients = new Set()
-  const clinicSnap = await getDoc(doc(db, 'clinics', branchId))
-  if (clinicSnap.exists()) {
-    const clinicData = clinicSnap.data() || {}
-    const ownerId = String(clinicData.ownerId || '').trim()
-    if (ownerId) {
-      recipients.add(ownerId)
-    }
-  }
-
-  const staffSnap = await getDocs(query(collection(db, 'users'), where('branchId', '==', branchId)))
-  staffSnap.docs.forEach((docSnap) => {
-    const data = docSnap.data() || {}
-    const normalizedRole = String(data.role || '').trim().toLowerCase()
-    if (CLINIC_ADMIN_ROLES.includes(normalizedRole)) {
-      recipients.add(docSnap.id)
-    }
-  })
-
-  return recipients
-}
-
-const syncCenterReportSummary = async (branchId) => {
-  const reportsSnap = await getDocs(query(collection(db, 'supportTickets'), where('centerId', '==', branchId)))
-  const reports = reportsSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-  const windowStart = Date.now() - (REPORT_WINDOW_DAYS * 24 * 60 * 60 * 1000)
-  const validReports = reports.filter((report) => {
-    const createdAt = toJsDate(report.createdAt)
-    if (!createdAt) return false
-    if (createdAt.getTime() < windowStart) return false
-    if (String(report.reportTargetType || '').trim().toLowerCase() !== 'clinic_center') return false
-    return isCountedReportStatus(report.status)
-  })
-
-  const clinicRef = doc(db, 'clinics', branchId)
-  const clinicSnap = await getDoc(clinicRef)
-  if (!clinicSnap.exists()) {
-    return { validReportCount: validReports.length, autoSuspended: false }
-  }
-
-  const clinicData = clinicSnap.data() || {}
-  const normalizedStatus = String(clinicData.status || '').trim().toLowerCase()
-  const normalizedModerationStatus = String(clinicData.moderationStatus || '').trim().toLowerCase()
-  const alreadySuspended = normalizedStatus.includes('suspend') || normalizedModerationStatus.includes('suspend')
-
-  const updates = {
-    reportCount: reports.length,
-    validReportCount: validReports.length,
-    lastReportedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }
-
-  let autoSuspended = false
-  if (!alreadySuspended && validReports.length >= AUTO_SUSPEND_REPORT_THRESHOLD) {
-    autoSuspended = true
-    updates.status = 'Suspended'
-    updates.moderationStatus = 'Auto Suspended'
-    updates.isPublished = false
-    updates.suspendedAt = serverTimestamp()
-    updates.suspensionEndsAt = new Date(Date.now() + (AUTO_SUSPEND_DURATION_DAYS * 24 * 60 * 60 * 1000))
-    updates.suspensionReason = `Automatically suspended after ${validReports.length} valid reports within ${REPORT_WINDOW_DAYS} days.`
-    updates.suspensionSource = 'auto_reports'
-  }
-
-  await updateDoc(clinicRef, updates)
-  return { validReportCount: validReports.length, autoSuspended }
-}
 
 const setPageScrollLocked = (locked) => {
   if (typeof document === 'undefined') return
@@ -1364,25 +1083,11 @@ const loadBranchData = async (branchId) => {
   }
 
   const data = clinicSnap.data() || {}
-  if (hasExpiredSuspension(data)) {
-    await restoreExpiredSuspension(db, branchId, data)
-    data.status = 'Active'
-    data.moderationStatus = 'Resolved'
-    data.isPublished = true
-    data.suspendedAt = null
-    data.suspensionEndsAt = null
-    data.suspensionReason = ''
-    data.suspensionSource = ''
-  }
 
   const clinicStatus = String(data.status || '').trim()
   const moderationStatus = String(data.moderationStatus || '').trim()
   const published = data.isPublished === true
-  const centerBlocked =
-    !published ||
-    String(clinicStatus).toLowerCase() === 'inactive' ||
-    isCenterSuspended(clinicStatus) ||
-    isCenterSuspended(moderationStatus)
+  const centerBlocked = !published || String(clinicStatus).toLowerCase() === 'inactive'
 
   if (centerBlocked) {
     throw new Error('Center unavailable.')
@@ -1695,10 +1400,6 @@ watch(availableDates, (dates) => {
 
   setBookingCalendarMonth(bookingForm.value.date)
 }, { immediate: true })
-
-watch(showReportModal, (isOpen) => {
-  setPageScrollLocked(isOpen)
-})
 
 const openChat = () => {
   if (!auth.currentUser) {
@@ -2503,9 +2204,7 @@ const submitBooking = async () => {
   }
   if (
     center.value.isPublished !== true ||
-    String(center.value.status || '').trim().toLowerCase() === 'inactive' ||
-    isCenterSuspended(center.value.status) ||
-    isCenterSuspended(center.value.moderationStatus)
+    String(center.value.status || '').trim().toLowerCase() === 'inactive'
   ) {
     toast.error('This center is currently unavailable for booking.')
     router.replace({ name: 'centers' })
@@ -2608,144 +2307,6 @@ const submitBooking = async () => {
   }
 }
 
-const submitCenterReport = async () => {
-  const user = auth.currentUser
-  if (!user) {
-    toast.error('Please log in first.')
-    router.push('/login')
-    return
-  }
-
-  if (!reportForm.value.category || !reportForm.value.subject || !reportForm.value.description) {
-    toast.error('Please complete the report details.')
-    return
-  }
-
-  isSubmittingReport.value = true
-
-  try {
-    const profile = await resolveCustomerProfile()
-    const ticketRef = doc(collection(db, 'supportTickets'))
-    let proofPath = ''
-    let proofUrl = ''
-
-    if (reportProofFile.value) {
-      proofPath = `support-tickets/${user.uid}/${ticketRef.id}/${reportProofFile.value.name}`
-      const fileRef = storageRef(storage, proofPath)
-      await uploadBytes(fileRef, reportProofFile.value)
-      proofUrl = await getDownloadURL(fileRef)
-    }
-
-    await setDoc(ticketRef, {
-      userId: user.uid,
-      userEmail: profile?.email || user.email || '',
-      userName: profile?.name || 'Customer',
-      role: 'Customer',
-      userType: 'customer',
-      branchId: activeBranchId.value,
-      subject: reportForm.value.subject,
-      category: reportForm.value.category,
-      severity: reportForm.value.severity,
-      location: `Customer Center Page > ${center.value.name || 'Center'}`,
-      description: reportForm.value.description,
-      steps: '',
-      proofUrl,
-      proofPath,
-      status: 'Open',
-      centerId: activeBranchId.value,
-      centerName: center.value.name || 'Center',
-      reportTargetType: 'clinic_center',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    })
-
-    await addDoc(collection(db, 'notifications'), {
-      recipientRole: 'Superadmin',
-      senderId: user.uid,
-      type: 'center_report',
-      title: 'Center Report Submitted',
-      message: `${center.value.name || 'Center'} was reported by ${profile?.name || 'Customer'}.`,
-      link: '/superadmin/tickets',
-      read: false,
-      createdAt: serverTimestamp(),
-    })
-
-    const clinicAdminRecipients = await getClinicAdminRecipients(activeBranchId.value)
-
-    await Promise.all(
-      Array.from(clinicAdminRecipients)
-        .filter((recipientUserId) => recipientUserId && recipientUserId !== user.uid)
-        .map((recipientUserId) =>
-          addDoc(collection(db, 'notifications'), {
-            recipientUserId,
-            senderId: user.uid,
-            type: 'center_report_notice',
-            title: 'Center Report Filed',
-            message: `${center.value.name || 'Your center'} has been reported and is awaiting super admin review.`,
-            link: '/notifications',
-            read: false,
-            createdAt: serverTimestamp(),
-          })
-        )
-    )
-
-    const moderationSummary = await syncCenterReportSummary(activeBranchId.value)
-
-    if (moderationSummary.autoSuspended) {
-      await Promise.all(
-        Array.from(clinicAdminRecipients)
-          .filter((recipientUserId) => recipientUserId && recipientUserId !== user.uid)
-          .map((recipientUserId) =>
-            addDoc(collection(db, 'notifications'), {
-              recipientUserId,
-              senderId: user.uid,
-              type: 'center_auto_suspension',
-              title: 'Center Automatically Suspended',
-              message: `${center.value.name || 'Your center'} was automatically suspended after reaching ${moderationSummary.validReportCount} valid reports.`,
-              link: '/notifications',
-              read: false,
-              createdAt: serverTimestamp(),
-            })
-          )
-      )
-
-      await addDoc(collection(db, 'notifications'), {
-        recipientRole: 'Superadmin',
-        senderId: user.uid,
-        type: 'center_auto_suspension',
-        title: 'Center Automatically Suspended',
-        message: `${center.value.name || 'Center'} reached ${moderationSummary.validReportCount} valid reports and was automatically suspended for ${AUTO_SUSPEND_DURATION_DAYS} days.`,
-        link: '/superadmin/tickets',
-        read: false,
-        createdAt: serverTimestamp(),
-      })
-    }
-
-    await addDoc(collection(db, 'notifications'), {
-      recipientUserId: user.uid,
-      senderId: user.uid,
-      type: 'center_report',
-      title: 'Center Report Submitted',
-      message: `Your report for ${center.value.name || 'this center'} has been received.`,
-      link: '/notifications',
-      read: false,
-      createdAt: serverTimestamp(),
-    })
-
-    toast.success(
-      moderationSummary.autoSuspended
-        ? `Your report has been submitted. This center is now automatically suspended for ${AUTO_SUSPEND_DURATION_DAYS} days pending review.`
-        : 'Your report has been submitted.'
-    )
-    closeReportModal()
-  } catch (error) {
-    console.error(error)
-    toast.error('Failed to submit the report.')
-  } finally {
-    isSubmittingReport.value = false
-  }
-}
-
 onMounted(async () => {
   loading.value = true
   try {
@@ -2769,7 +2330,7 @@ onMounted(async () => {
         const status = String(data.status || '').trim().toLowerCase()
         const moderationStatus = String(data.moderationStatus || '').trim().toLowerCase()
         const published = data.isPublished === true
-        const available = published && status !== 'inactive' && !isCenterSuspended(status) && !isCenterSuspended(moderationStatus)
+        const available = published && status !== 'inactive'
         return {
           id: snap.id,
           name: data.clinicBranch || data.clinicName || 'Center',
@@ -2820,7 +2381,6 @@ onMounted(async () => {
 onUnmounted(() => {
   setPageScrollLocked(false)
   stopBranchSensitiveListeners()
-  clearReportProofPreview()
 })
 
 const formatChatTime = (timestamp) => {

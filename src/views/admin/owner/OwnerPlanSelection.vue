@@ -47,19 +47,6 @@
               <p class="text-xs uppercase tracking-[0.22em] text-amber-300 mb-2">{{ plan.id }}</p>
               <h2 class="text-2xl font-semibold text-white">{{ plan.name }}</h2>
             </div>
-            <span
-              v-if="getPlanBadge(plan.id)"
-              class="rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]"
-              :class="isCurrentPlanCard(plan.id)
-                ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300'
-                : isPendingPlanCard(plan.id)
-                  ? 'border-sky-400/40 bg-sky-500/15 text-sky-300'
-                  : isBlockedDowngradeCard(plan.id)
-                    ? 'border-rose-400/40 bg-rose-500/15 text-rose-300'
-                    : 'border-amber-400/40 bg-amber-500/15 text-amber-300'"
-            >
-              {{ getPlanBadge(plan.id) }}
-            </span>
           </div>
 
           <div class="mb-4">
@@ -104,12 +91,17 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
+import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import {
+  buildSubscriptionPlanCatalog,
+  filterActiveSubscriptionPlans,
+  getSubscriptionPlanPriority,
+} from '@/utils/subscriptionPlans'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 
 const router = useRouter()
@@ -118,16 +110,12 @@ const loading = ref(true)
 const submitting = ref(false)
 const error = ref('')
 const selectedPlan = ref('basic')
+const allPlans = ref([])
 const plans = ref([])
 const currentPlan = ref('free')
 const currentPlanExpiresAt = ref(null)
 const pendingPlan = ref('')
-
-const PLAN_PRIORITIES = {
-  free: 0,
-  basic: 1,
-  premium: 2,
-}
+let unsubscribePlans = null
 
 const defaultPlans = () => [
   {
@@ -150,24 +138,6 @@ const defaultPlans = () => [
   },
 ]
 
-const formatCurrency = (amount) => {
-  const value = Number(amount)
-  const safe = Number.isFinite(value) ? value : 0
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    currencyDisplay: 'code',
-    maximumFractionDigits: 0,
-  }).format(safe)
-}
-
-const formatCycle = (cycle) => {
-  const normalized = String(cycle || '').trim().toLowerCase()
-  if (!normalized || normalized === 'trial') return ''
-  if (normalized.startsWith('/')) return normalized
-  return `/${normalized}`
-}
-
 const normalizePlanId = (value) => {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return 'free'
@@ -177,7 +147,7 @@ const normalizePlanId = (value) => {
   return raw
 }
 
-const getPlanPriority = (value) => PLAN_PRIORITIES[normalizePlanId(value)] ?? 0
+const getPlanPriority = (value) => getSubscriptionPlanPriority(normalizePlanId(value), allPlans.value)
 
 const toDateValue = (value) => {
   if (!value) return null
@@ -207,36 +177,10 @@ const isBlockedDowngradeCard = (planId) =>
 const isPlanDisabled = (planId) =>
   isCurrentPlanCard(planId) || isPendingPlanCard(planId) || isBlockedDowngradeCard(planId)
 
-const getPlanBadge = (planId) => {
-  if (isCurrentPlanCard(planId)) return 'Current Plan'
-  if (isPendingPlanCard(planId)) return 'Scheduled'
-  if (isBlockedDowngradeCard(planId)) return 'Locked'
-  if (selectedPlan.value === planId) return 'Selected'
-  return ''
-}
-
 const selectPlan = (planId) => {
   if (isPlanDisabled(planId)) return
   selectedPlan.value = planId
 }
-
-const mergePlans = (dbPlansMap) =>
-  defaultPlans().map((basePlan) => {
-    const dbPlan = dbPlansMap.get(basePlan.id) || {}
-    const merged = {
-      ...basePlan,
-      ...dbPlan,
-      id: basePlan.id,
-      features: Array.isArray(dbPlan.features) ? dbPlan.features : basePlan.features,
-    }
-
-    return {
-      ...merged,
-      priceLabel: formatCurrency(merged.price),
-      cycleLabel: formatCycle(merged.billingCycle),
-      isActive: merged.isActive !== false,
-    }
-  })
 
 const loadPlans = async () => {
   error.value = ''
@@ -252,8 +196,7 @@ const loadPlans = async () => {
       selectedPlan.value = requestedPlan
     }
 
-    const [snapshot, userSnap, clinicSnap] = await Promise.all([
-      getDocs(collection(db, 'subscriptionPlans')),
+    const [userSnap, clinicSnap] = await Promise.all([
       getDoc(doc(db, 'users', currentUser.uid)),
       getDoc(doc(db, 'clinics', currentUser.uid)),
     ])
@@ -264,21 +207,38 @@ const loadPlans = async () => {
     currentPlanExpiresAt.value = clinicData.subscriptionExpiresAt || userData.subscriptionExpiresAt || null
     pendingPlan.value = normalizePlanId(clinicData.pendingSubscriptionPlan || userData.pendingSubscriptionPlan || '')
 
-    const dbPlans = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
-    const merged = mergePlans(dbPlans)
-    const activePlans = merged.filter((plan) => plan.isActive)
-    plans.value = activePlans.length ? activePlans : merged
-
-    const requestedPlanIsSelectable = plans.value.some((plan) => plan.id === selectedPlan.value && !isPlanDisabled(plan.id))
-    if (!requestedPlanIsSelectable) {
-      const firstSelectablePlan = plans.value.find((plan) => !isPlanDisabled(plan.id))
-      selectedPlan.value = firstSelectablePlan?.id || ''
+    if (unsubscribePlans) {
+      unsubscribePlans()
+      unsubscribePlans = null
     }
+
+    unsubscribePlans = onSnapshot(
+      collection(db, 'subscriptionPlans'),
+      (snapshot) => {
+        const merged = buildSubscriptionPlanCatalog(defaultPlans(), snapshot.docs)
+        allPlans.value = merged
+        plans.value = filterActiveSubscriptionPlans(merged)
+        loading.value = false
+
+        const requestedPlanIsSelectable = plans.value.some((plan) => plan.id === selectedPlan.value && !isPlanDisabled(plan.id))
+        if (!requestedPlanIsSelectable) {
+          const firstSelectablePlan = plans.value.find((plan) => !isPlanDisabled(plan.id))
+          selectedPlan.value = firstSelectablePlan?.id || ''
+        }
+      },
+      (planErr) => {
+        console.error('Failed to load owner subscription plans:', planErr)
+        error.value = 'Unable to load plans right now.'
+        allPlans.value = buildSubscriptionPlanCatalog(defaultPlans(), [])
+        plans.value = filterActiveSubscriptionPlans(allPlans.value)
+        loading.value = false
+      }
+    )
   } catch (err) {
-    console.error('Failed to load owner subscription plans:', err)
+    console.error('Failed to start owner subscription listener:', err)
     error.value = 'Unable to load plans right now.'
-    plans.value = mergePlans(new Map())
-  } finally {
+    allPlans.value = buildSubscriptionPlanCatalog(defaultPlans(), [])
+    plans.value = filterActiveSubscriptionPlans(allPlans.value)
     loading.value = false
   }
 }
@@ -324,6 +284,13 @@ const fetchBackendJson = async (path, options = {}) => {
 
   throw lastError || new Error('Unable to reach the subscription backend.')
 }
+
+onBeforeUnmount(() => {
+  if (unsubscribePlans) {
+    unsubscribePlans()
+    unsubscribePlans = null
+  }
+})
 
 const continueWithPlan = async () => {
   if (!selectedPlan.value) return

@@ -24,34 +24,26 @@ const currentPasswordVisible = ref(false)
 const roleRoutes = {
   Owner: '/owner/dashboard',
   'Clinic Admin': '/owner/dashboard',
-  Manager: '/manager/dashboard',
-  Receptionist: '/receptionist/dashboard',
-  Practitioner: '/practitioner/dashboard',
-  Admin: '/admin/dashboard',
-  HR: '/hr/dashboard',
-  Finance: '/finance/dashboard',
-  Supply: '/supply/dashboard',
   Customer: '/customer/home'
 }
 
 const normalizeRoleKey = (value) => {
   const rawRole = String(value || '').trim().toLowerCase()
   if (!rawRole) return 'Customer'
-  if (rawRole === 'hr') return 'HR'
   if (rawRole === 'crm') return 'CRM'
   if (rawRole === 'clinic admin' || rawRole === 'clinicadmin' || rawRole === 'clinic administrator') return 'Clinic Admin'
   return `${rawRole.charAt(0).toUpperCase()}${rawRole.slice(1)}`
 }
 
 const resolveRedirectPath = async (userData) => {
-  const role = normalizeRoleKey(userData?.role || userData?.customRoleName || userData?.userType)
-  if (roleRoutes[role]) {
-    return roleRoutes[role]
-  }
-
   const userType = String(userData?.userType || '').trim().toLowerCase()
   if (userType === 'staff') {
     return '/employee/dashboard'
+  }
+
+  const role = normalizeRoleKey(userData?.role || userData?.customRoleName || userData?.userType)
+  if (roleRoutes[role]) {
+    return roleRoutes[role]
   }
 
   return '/customer/home'

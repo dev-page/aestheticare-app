@@ -1,9 +1,8 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
-import { getSuspendedCenterAccess } from '@/utils/centerAccess'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -25,13 +24,6 @@ export const useAuthStore = defineStore('auth', () => {
         const userSnap = await getDoc(userRef)
         if (!userSnap.exists()) return
         const data = userSnap.data() || {}
-
-        const suspendedCenter = await getSuspendedCenterAccess(firebaseUser.uid, data)
-        if (suspendedCenter) {
-          await signOut(auth)
-          user.value = null
-          return
-        }
 
         if (!data.welcomeNotificationSent) {
           await updateDoc(userRef, {

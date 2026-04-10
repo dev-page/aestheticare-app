@@ -127,7 +127,7 @@
             </div>
           </div>
 
-          <div v-else class="summary-empty">No paid plan selected. Please go back and choose Basic or Premium.</div>
+          <div v-else class="summary-empty">No paid plan selected. Please go back and choose an active plan.</div>
         </section>
       </Transition>
     </div>
@@ -135,13 +135,18 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { addDoc, collection, deleteField, doc, getDoc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore'
+import { addDoc, collection, deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { auth, db } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
 import { useSubscriptionStore } from '@/stores/subscription'
+import {
+  buildSubscriptionPlanCatalog,
+  filterActiveSubscriptionPlans,
+  getSubscriptionPlanPriority,
+} from '@/utils/subscriptionPlans'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 
 const route = useRoute()
@@ -152,8 +157,10 @@ const PENDING_PAYMONGO_KEY = 'subscription_checkout_pending_paymongo'
 
 const saving = ref(false)
 const error = ref('')
+const allPlans = ref([])
 const plans = ref([])
 const showPanels = ref(false)
+let unsubscribePlans = null
 
 const payerFirstName = ref('')
 const payerLastName = ref('')
@@ -193,7 +200,7 @@ const validateField = (field) => {
 
 const defaultPlans = () => [
   {
-    id: 'free-trial',
+    id: 'free',
     name: 'FreePlan',
     price: 0,
     billingCycle: 'trial',
@@ -227,15 +234,8 @@ const toCentavos = (pesoAmount) => Math.round(Number(pesoAmount || 0) * 100)
 const selectedPlanId = computed(() => normalizePlanId(route.query.plan))
 
 const selectedPlan = computed(() => {
-  return plans.value.find((plan) => plan.id === selectedPlanId.value && plan.id !== 'free-trial') || null
+  return plans.value.find((plan) => plan.id === selectedPlanId.value && plan.id !== 'free-trial' && plan.id !== 'free') || null
 })
-
-const PLAN_PRIORITIES = {
-  free: 0,
-  'free-trial': 0,
-  basic: 1,
-  premium: 2,
-}
 
 const formatCurrency = (amount) => {
   const value = Number(amount)
@@ -311,32 +311,37 @@ const clearPendingPayMongoState = () => {
   localStorage.removeItem(PENDING_PAYMONGO_KEY)
 }
 
-const getPlanPriority = (planId) => PLAN_PRIORITIES[normalizePlanId(planId)] ?? 0
+const getPlanPriority = (planId) => getSubscriptionPlanPriority(normalizePlanId(planId), allPlans.value)
 
 const loadPlans = async () => {
   try {
-    const snapshot = await getDocs(collection(db, 'subscriptionPlans'))
-    const dbPlans = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
-
-    plans.value = defaultPlans().map((base) => {
-      const dbPlan = dbPlans.get(base.id) || {}
-      return {
-        ...base,
-        ...dbPlan,
-        id: base.id,
-        features: Array.isArray(dbPlan.features) ? dbPlan.features : base.features,
-        isActive: dbPlan.isActive !== false,
+    if (unsubscribePlans) {
+      unsubscribePlans()
+      unsubscribePlans = null
+    }
+    unsubscribePlans = onSnapshot(
+      collection(db, 'subscriptionPlans'),
+      (snapshot) => {
+        const merged = buildSubscriptionPlanCatalog(defaultPlans(), snapshot.docs)
+        allPlans.value = merged
+        plans.value = filterActiveSubscriptionPlans(merged)
+      },
+      (err) => {
+        console.error('Failed to load plans for checkout:', err)
+        allPlans.value = buildSubscriptionPlanCatalog(defaultPlans(), [])
+        plans.value = filterActiveSubscriptionPlans(allPlans.value)
       }
-    })
+    )
   } catch (err) {
-    console.error('Failed to load plans for checkout:', err)
-    plans.value = defaultPlans()
+    console.error('Failed to start checkout plan listener:', err)
+    allPlans.value = buildSubscriptionPlanCatalog(defaultPlans(), [])
+    plans.value = filterActiveSubscriptionPlans(allPlans.value)
   }
 }
 
 const validateForm = () => {
   if (!selectedPlan.value) {
-    error.value = 'Please select Basic or Premium plan first.'
+    error.value = 'Please select a plan first.'
     return false
   }
   if (!selectedPlan.value.isActive) {
@@ -599,7 +604,7 @@ const handlePayMongoReturn = async () => {
         getPlanPriority(targetPlan) >= getPlanPriority(currentPlan)
 
       if (shouldApplyImmediateFallback) {
-        const planDays = targetPlan === 'free-trial' ? 14 : 30
+        const planDays = targetPlan === 'free-trial' || targetPlan === 'free' ? 14 : 30
         const startedAt = subscriptionAction?.effectiveAt ? new Date(subscriptionAction.effectiveAt) : new Date()
         const parsedExpiresAt = subscriptionAction?.expiresAt ? new Date(subscriptionAction.expiresAt) : null
         const expiresAt =
@@ -703,6 +708,13 @@ onMounted(async () => {
   await loadPlans()
   await handlePayMongoReturn()
   await prefillFromAccount()
+})
+
+onBeforeUnmount(() => {
+  if (unsubscribePlans) {
+    unsubscribePlans()
+    unsubscribePlans = null
+  }
 })
 
 onBeforeRouteLeave((_to, _from, next) => {
