@@ -244,172 +244,607 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-gold-100 via-cream-200 to-rose-100">
-    <div class="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
-      <h2 class="text-xl font-semibold text-gold-700 mb-4">
-        Recover Account
-      </h2>
+  <div class="forgot-shell">
+    <div class="forgot-shell-glow forgot-glow-left"></div>
+    <div class="forgot-shell-glow forgot-glow-right"></div>
 
-      <!-- Step 1: Enter Email -->
-      <div v-if="step === 1" class="space-y-4">
-        <p class="text-sm text-gray-600">Enter your registered email address to receive an OTP.</p>
-        <input
-          v-model="email"
-          type="email"
-          placeholder="Email Address"
-          class="w-full border rounded px-3 py-2"
-        />
+    <div class="forgot-layout">
+      <section class="forgot-hero">
+        <p class="forgot-kicker">Account recovery</p>
+        <h1 class="forgot-title">Reset your password with a clean, secure OTP flow.</h1>
+        <p class="forgot-copy">
+          We'll verify your email, send a one-time code, and let you create a fresh password without affecting your account data.
+        </p>
 
-        <div class="flex gap-2">
-          <button
-            @click="cancelReset"
-            class="w-full py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-          >
-            Cancel
-          </button>
-          <button
-            @click="sendOtp"
-            class="w-full py-2 bg-gold-700 text-white rounded hover:bg-gold-800"
-          >
-            Send OTP
-          </button>
+        <div class="forgot-points">
+          <div class="forgot-point">
+            <span class="forgot-point-icon">1</span>
+            <div>
+              <p class="forgot-point-title">Verify email</p>
+              <p class="forgot-point-copy">We check that the email exists in our records.</p>
+            </div>
+          </div>
+          <div class="forgot-point">
+            <span class="forgot-point-icon">2</span>
+            <div>
+              <p class="forgot-point-title">Confirm OTP</p>
+              <p class="forgot-point-copy">Enter the six-digit code sent to your inbox.</p>
+            </div>
+          </div>
+          <div class="forgot-point">
+            <span class="forgot-point-icon">3</span>
+            <div>
+              <p class="forgot-point-title">Set new password</p>
+              <p class="forgot-point-copy">Choose a stronger password and sign back in.</p>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Step 2: Verify OTP -->
-      <div v-if="step === 2" class="space-y-4">
-        <p class="text-sm text-gray-600">We sent an OTP to <strong>{{ email }}</strong>. Enter it below to verify.</p>
-        <div class="otp-boxes">
-          <input
-            v-for="(_, index) in OTP_LENGTH"
-            :key="`forgot-otp-${index}`"
-            :ref="(el) => setOtpInputRef(el, index)"
-            v-model="otpDigits[index]"
-            type="text"
-            inputmode="numeric"
-            pattern="[0-9]*"
-            maxlength="1"
-            autocomplete="one-time-code"
-            class="otp-digit"
-            :class="{ 'otp-digit-filled': otpDigits[index] }"
-            @input="handleOtpInput(index, $event)"
-            @keydown="handleOtpKeydown(index, $event)"
-            @paste="handleOtpPaste"
-          />
+      <section class="forgot-card">
+        <div class="forgot-card-header">
+          <div>
+            <p class="forgot-card-kicker">Recover account</p>
+            <h2 class="forgot-card-title">Password reset</h2>
+          </div>
+          <div class="forgot-step-badge">Step {{ step }} of 3</div>
         </div>
 
-        <div class="flex gap-2">
-          <button
-            @click="cancelReset"
-            class="w-full py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-          >
-            Cancel
-          </button>
-          <button
-            @click="verifyOtp"
-            class="w-full py-2 bg-gold-700 text-white rounded hover:bg-gold-800"
-          >
-            Verify OTP
-          </button>
+        <div class="forgot-step-track" aria-hidden="true">
+          <span :class="['forgot-step-dot', { active: step >= 1 }]"></span>
+          <span :class="['forgot-step-line', { active: step >= 2 }]"></span>
+          <span :class="['forgot-step-dot', { active: step >= 2 }]"></span>
+          <span :class="['forgot-step-line', { active: step >= 3 }]"></span>
+          <span :class="['forgot-step-dot', { active: step >= 3 }]"></span>
         </div>
-        <div class="space-y-2">
-          <button
-            @click="resendOtp"
-            type="button"
-            :disabled="resendCountdown > 0"
-            class="w-full py-2 border border-gold-700 text-gold-700 rounded hover:bg-gold-50 disabled:border-gray-300 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
-          >
-            Resend OTP
-          </button>
-          <p class="text-center text-xs text-gray-500">
-            <span v-if="resendCountdown > 0">You can resend another OTP in {{ resendCountdownLabel }}.</span>
-            <span v-else>You can request another OTP now.</span>
+
+        <div v-if="step === 1" class="forgot-step-panel">
+          <p class="forgot-step-label">Step 1</p>
+          <p class="forgot-step-copy">
+            Enter your registered email address so we can send a one-time code.
           </p>
-        </div>
-      </div>
+          <label class="forgot-field">
+            <span class="forgot-field-label">Email Address</span>
+            <input
+              v-model="email"
+              type="email"
+              placeholder="you@example.com"
+              class="forgot-input"
+            />
+          </label>
 
-      <!-- Step 3: Reset Password -->
-      <div v-if="step === 3" class="space-y-4">
-        <p class="text-sm text-gray-600">Enter your new password below.</p>
-        <div class="relative">
-          <input
-            v-model="newPassword"
-            :type="passwordVisible ? 'text' : 'password'"
-            placeholder="New Password"
-            class="w-full border rounded px-3 py-2 pr-10"
-          />
-          <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500" @click="togglePassword">
-            <svg v-if="!passwordVisible" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a9.956 9.956 0 012.114-3.592m3.665-2.697A9.956 9.956 0 0112 5c4.477 0 8.268 2.943 9.542 7a9.958 9.958 0 01-4.043 5.274M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18" />
-            </svg>
-          </button>
-        </div>
-        <div class="relative">
-          <input
-            v-model="confirmPassword"
-            :type="confirmPasswordVisible ? 'text' : 'password'"
-            placeholder="Confirm Password"
-            class="w-full border rounded px-3 py-2 pr-10"
-          />
-          <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500" @click="toggleConfirmPassword">
-            <svg v-if="!confirmPasswordVisible" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a9.956 9.956 0 012.114-3.592m3.665-2.697A9.956 9.956 0 0112 5c4.477 0 8.268 2.943 9.542 7a9.958 9.958 0 01-4.043 5.274M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18" />
-            </svg>
-          </button>
+          <div class="forgot-actions">
+            <button
+              type="button"
+              @click="cancelReset"
+              class="forgot-button forgot-button-ghost"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              @click="sendOtp"
+              class="forgot-button forgot-button-primary"
+            >
+              Send OTP
+            </button>
+          </div>
         </div>
 
-        <div class="flex gap-2">
-          <button
-            @click="cancelReset"
-            class="w-full py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-          >
-            Cancel
-          </button>
-          <button
-            @click="resetPassword"
-            class="w-full py-2 bg-gold-700 text-white rounded hover:bg-gold-800"
-          >
-            Reset Password
-          </button>
+        <div v-if="step === 2" class="forgot-step-panel">
+          <p class="forgot-step-label">Step 2</p>
+          <p class="forgot-step-copy">
+            We sent an OTP to <strong>{{ email }}</strong>. Enter it below to verify.
+          </p>
+          <div class="otp-boxes">
+            <input
+              v-for="(_, index) in OTP_LENGTH"
+              :key="`forgot-otp-${index}`"
+              :ref="(el) => setOtpInputRef(el, index)"
+              v-model="otpDigits[index]"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="1"
+              autocomplete="one-time-code"
+              class="otp-digit"
+              :class="{ 'otp-digit-filled': otpDigits[index] }"
+              @input="handleOtpInput(index, $event)"
+              @keydown="handleOtpKeydown(index, $event)"
+              @paste="handleOtpPaste"
+            />
+          </div>
+
+          <div class="forgot-actions">
+            <button
+              type="button"
+              @click="cancelReset"
+              class="forgot-button forgot-button-ghost"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              @click="verifyOtp"
+              class="forgot-button forgot-button-primary"
+            >
+              Verify OTP
+            </button>
+          </div>
+
+          <div class="forgot-resend-card">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="forgot-resend-title">Didn't receive it?</p>
+                <p class="forgot-resend-copy">
+                  <span v-if="resendCountdown > 0">You can resend another OTP in {{ resendCountdownLabel }}.</span>
+                  <span v-else>You can request another OTP now.</span>
+                </p>
+              </div>
+              <button
+                @click="resendOtp"
+                type="button"
+                :disabled="resendCountdown > 0"
+                class="forgot-button forgot-button-secondary"
+              >
+                Resend
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <div v-if="step === 3" class="forgot-step-panel">
+          <p class="forgot-step-label">Step 3</p>
+          <p class="forgot-step-copy">
+            Enter your new password below and confirm it before saving.
+          </p>
+
+          <label class="forgot-field">
+            <span class="forgot-field-label">New Password</span>
+            <div class="forgot-password-field">
+              <input
+                v-model="newPassword"
+                :type="passwordVisible ? 'text' : 'password'"
+                placeholder="New Password"
+                class="forgot-input forgot-input-with-icon"
+              />
+              <button type="button" class="forgot-eye-button" @click="togglePassword" aria-label="Toggle password visibility">
+                <svg v-if="!passwordVisible" xmlns="http://www.w3.org/2000/svg" class="forgot-eye-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="forgot-eye-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a9.956 9.956 0 012.114-3.592m3.665-2.697A9.956 9.956 0 0112 5c4.477 0 8.268 2.943 9.542 7a9.958 9.958 0 01-4.043 5.274M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18" />
+                </svg>
+              </button>
+            </div>
+          </label>
+
+          <label class="forgot-field">
+            <span class="forgot-field-label">Confirm Password</span>
+            <div class="forgot-password-field">
+              <input
+                v-model="confirmPassword"
+                :type="confirmPasswordVisible ? 'text' : 'password'"
+                placeholder="Confirm Password"
+                class="forgot-input forgot-input-with-icon"
+              />
+              <button type="button" class="forgot-eye-button" @click="toggleConfirmPassword" aria-label="Toggle password visibility">
+                <svg v-if="!confirmPasswordVisible" xmlns="http://www.w3.org/2000/svg" class="forgot-eye-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="forgot-eye-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a9.956 9.956 0 012.114-3.592m3.665-2.697A9.956 9.956 0 0112 5c4.477 0 8.268 2.943 9.542 7a9.958 9.958 0 01-4.043 5.274M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18" />
+                </svg>
+              </button>
+            </div>
+          </label>
+
+          <div class="forgot-actions">
+            <button
+              type="button"
+              @click="cancelReset"
+              class="forgot-button forgot-button-ghost"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              @click="resetPassword"
+              class="forgot-button forgot-button-primary"
+            >
+              Reset Password
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </template>
 
 <style scoped>
+.forgot-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 2rem 1rem;
+  background:
+    radial-gradient(circle at top left, rgba(201, 162, 77, 0.18), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(232, 210, 185, 0.35), transparent 32%),
+    linear-gradient(135deg, #f7e8c4 0%, #f5ebda 52%, #f1e0ca 100%);
+}
+
+.forgot-shell-glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(56px);
+  pointer-events: none;
+}
+
+.forgot-glow-left {
+  top: -4rem;
+  left: -3rem;
+  width: 16rem;
+  height: 16rem;
+  background: rgba(201, 162, 77, 0.22);
+}
+
+.forgot-glow-right {
+  right: -2rem;
+  bottom: -5rem;
+  width: 18rem;
+  height: 18rem;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.forgot-layout {
+  position: relative;
+  z-index: 1;
+  max-width: 78rem;
+  margin: 0 auto;
+  display: grid;
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+.forgot-hero,
+.forgot-card {
+  border-radius: 2rem;
+  border: 1px solid rgba(193, 143, 85, 0.2);
+  box-shadow: 0 24px 60px rgba(73, 42, 18, 0.12);
+}
+
+.forgot-hero {
+  background: linear-gradient(180deg, rgba(52, 32, 20, 0.96), rgba(37, 23, 15, 0.96));
+  color: #f8ecd8;
+  padding: 2rem;
+}
+
+.forgot-kicker,
+.forgot-card-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.forgot-kicker {
+  color: #e4c18d;
+}
+
+.forgot-title {
+  margin-top: 0.75rem;
+  font-family: "Playfair Display", serif;
+  font-size: clamp(2rem, 4vw, 3.3rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  max-width: 14ch;
+}
+
+.forgot-copy {
+  margin-top: 1rem;
+  max-width: 42rem;
+  font-size: 0.98rem;
+  line-height: 1.7;
+  color: rgba(248, 236, 216, 0.84);
+}
+
+.forgot-points {
+  margin-top: 1.75rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.forgot-point {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding: 0.95rem 1rem;
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(232, 194, 133, 0.12);
+}
+
+.forgot-point-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: rgba(201, 162, 77, 0.16);
+  color: #f3d7a2;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.forgot-point-title {
+  font-weight: 700;
+  color: #fff3de;
+}
+
+.forgot-point-copy {
+  margin-top: 0.15rem;
+  color: rgba(248, 236, 216, 0.76);
+  font-size: 0.92rem;
+}
+
+.forgot-card {
+  background: rgba(252, 246, 236, 0.95);
+  backdrop-filter: blur(16px);
+  padding: 1.5rem;
+}
+
+.forgot-card-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.forgot-card-kicker {
+  color: #a66a3c;
+}
+
+.forgot-card-title {
+  margin-top: 0.4rem;
+  font-family: "Playfair Display", serif;
+  font-size: 1.8rem;
+  color: #3c2416;
+}
+
+.forgot-step-badge {
+  flex: 0 0 auto;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(201, 162, 77, 0.14);
+  color: #8a5a37;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.forgot-step-track {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 1.2rem;
+  margin-bottom: 1.35rem;
+}
+
+.forgot-step-dot {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  background: rgba(180, 148, 114, 0.25);
+  border: 1px solid rgba(180, 148, 114, 0.4);
+}
+
+.forgot-step-dot.active {
+  background: #a96e43;
+  border-color: #a96e43;
+  box-shadow: 0 0 0 4px rgba(169, 110, 67, 0.14);
+}
+
+.forgot-step-line {
+  flex: 1;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(180, 148, 114, 0.2);
+}
+
+.forgot-step-line.active {
+  background: linear-gradient(90deg, #b88357, #d2b27d);
+}
+
+.forgot-step-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.forgot-step-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #a66a3c;
+  font-weight: 700;
+}
+
+.forgot-step-copy {
+  color: #6e4a34;
+  line-height: 1.7;
+  font-size: 0.98rem;
+}
+
+.forgot-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.forgot-field-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #7d563d;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.forgot-input {
+  width: 100%;
+  border: 1px solid rgba(180, 148, 114, 0.45);
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(253, 251, 247, 0.98), rgba(243, 236, 225, 0.96));
+  color: #2f1d13;
+  padding: 0.95rem 1rem;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+}
+
+.forgot-input:focus {
+  border-color: #b57a47;
+  box-shadow: 0 0 0 4px rgba(181, 122, 71, 0.16);
+  transform: translateY(-1px);
+}
+
+.forgot-password-field {
+  position: relative;
+}
+
+.forgot-input-with-icon {
+  padding-right: 3rem;
+}
+
+.forgot-eye-button {
+  position: absolute;
+  right: 0.8rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #936242;
+  transition: background 0.2s, color 0.2s, transform 0.2s;
+}
+
+.forgot-eye-button:hover {
+  background: rgba(201, 162, 77, 0.12);
+  color: #6f412a;
+  transform: translateY(-50%) scale(1.04);
+}
+
+.forgot-eye-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.forgot-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-top: 0.25rem;
+}
+
+.forgot-button {
+  min-height: 2.95rem;
+  border-radius: 1rem;
+  padding: 0.8rem 1rem;
+  font-weight: 700;
+  transition: transform 0.16s, box-shadow 0.2s, background 0.2s, border-color 0.2s, opacity 0.2s;
+}
+
+.forgot-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.forgot-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.forgot-button-ghost {
+  border: 1px solid rgba(160, 117, 80, 0.22);
+  background: rgba(255, 255, 255, 0.62);
+  color: #6f4a32;
+}
+
+.forgot-button-ghost:hover:not(:disabled) {
+  background: rgba(248, 236, 216, 0.9);
+}
+
+.forgot-button-primary {
+  border: 1px solid #a96e43;
+  background: linear-gradient(180deg, #b97b4d, #99613d);
+  color: #fff8ef;
+  box-shadow: 0 14px 28px rgba(153, 97, 61, 0.2);
+}
+
+.forgot-button-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #c48351, #8e5836);
+}
+
+.forgot-button-secondary {
+  min-height: 2.7rem;
+  padding-inline: 1rem;
+  border: 1px solid rgba(169, 110, 67, 0.22);
+  background: rgba(201, 162, 77, 0.12);
+  color: #8a5a37;
+}
+
+.forgot-button-secondary:hover:not(:disabled) {
+  background: rgba(201, 162, 77, 0.18);
+}
+
+.forgot-resend-card {
+  margin-top: 0.25rem;
+  padding: 1rem;
+  border-radius: 1.25rem;
+  background: linear-gradient(180deg, rgba(249, 242, 231, 0.96), rgba(241, 232, 218, 0.92));
+  border: 1px solid rgba(180, 148, 114, 0.2);
+}
+
+.forgot-resend-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #5e3d2a;
+}
+
+.forgot-resend-copy {
+  margin-top: 0.2rem;
+  color: #8a6b53;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .otp-boxes {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.45rem;
-  max-width: 18.75rem;
+  max-width: 20rem;
   margin: 0 auto;
 }
 
 .otp-digit {
-  height: 2.95rem;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(214, 186, 152, 0.8);
-  background: linear-gradient(180deg, rgba(243, 241, 237, 0.98), rgba(234, 230, 223, 0.95));
+  height: 3.2rem;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(214, 186, 152, 0.9);
+  background: linear-gradient(180deg, rgba(250, 247, 242, 0.98), rgba(241, 233, 223, 0.95));
   color: #6f3f2a;
   text-align: center;
-  font-size: 1.35rem;
+  font-size: 1.4rem;
   font-weight: 700;
   line-height: 1;
   outline: none;
@@ -418,11 +853,73 @@ onBeforeUnmount(() => {
 
 .otp-digit:focus {
   border-color: #c9a24d;
-  box-shadow: 0 0 0 3px rgba(201, 162, 77, 0.22);
+  box-shadow: 0 0 0 4px rgba(201, 162, 77, 0.2);
   transform: translateY(-1px);
 }
 
 .otp-digit-filled {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 237, 226, 0.96));
+}
+
+@media (min-width: 1024px) {
+  .forgot-layout {
+    grid-template-columns: 1.05fr 0.95fr;
+    padding-top: 1rem;
+  }
+
+  .forgot-hero,
+  .forgot-card {
+    min-height: 42rem;
+  }
+
+  .forgot-hero {
+    padding: 2.5rem;
+  }
+
+  .forgot-card {
+    padding: 1.9rem;
+  }
+}
+
+@media (max-width: 639px) {
+  .forgot-shell {
+    padding: 1rem 0.75rem 1.5rem;
+  }
+
+  .forgot-hero,
+  .forgot-card {
+    border-radius: 1.5rem;
+  }
+
+  .forgot-hero {
+    padding: 1.35rem;
+  }
+
+  .forgot-card {
+    padding: 1.15rem;
+  }
+
+  .forgot-title {
+    max-width: none;
+  }
+
+  .forgot-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .forgot-card-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .otp-boxes {
+    gap: 0.35rem;
+  }
+
+  .otp-digit {
+    height: 2.75rem;
+    border-radius: 0.8rem;
+    font-size: 1.2rem;
+  }
 }
 </style>
