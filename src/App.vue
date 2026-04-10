@@ -354,7 +354,7 @@ const graceEndsAtDisplay = computed(() => {
 const planLabel = computed(() => {
   const raw = String(activePlan.value || '').trim().toLowerCase()
   if (!raw) return 'Plan'
-  if (raw.includes('free')) return 'Free Trial'
+  if (raw.includes('free')) return 'FreePlan'
   if (raw.includes('basic')) return 'Basic'
   if (raw.includes('premium')) return 'Premium'
   return activePlan.value

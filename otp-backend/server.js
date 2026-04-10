@@ -13,13 +13,25 @@ import { google } from 'googleapis'
 const app = express()
 const PORT = Number(process.env.PORT || 3000)
 const isDevelopment = String(process.env.NODE_ENV || 'development').toLowerCase() !== 'production'
+const DAY_MS = 24 * 60 * 60 * 1000
+const EMAIL_ADDRESS_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const REGISTRATION_OTP_EXPIRY_MINUTES = 10
+const REGISTRATION_OTP_COOLDOWN_SECONDS = 60
+const CLINIC_REGISTRATION_OTP_PURPOSE = 'clinic-registration'
+const CUSTOMER_REGISTRATION_OTP_PURPOSE = 'customer-registration'
 const OTP_PATH = '/send-otp'
+const REQUEST_REGISTRATION_OTP_PATH = '/auth/request-registration-otp'
+const VERIFY_REGISTRATION_OTP_PATH = '/auth/verify-registration-otp'
+const REQUEST_CUSTOMER_OTP_PATH = '/auth/request-customer-otp'
+const VERIFY_CUSTOMER_OTP_PATH = '/auth/verify-customer-otp'
+const CHECK_CUSTOMER_REGISTRATION_STATUS_PATH = '/auth/check-customer-registration-status'
 const ATTENDANCE_PIN_PATH = '/send-attendance-pin'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const isDirectRun = process.argv[1] ? path.resolve(process.argv[1]) === __filename : false
 
 // Load backend-only environment variables from otp-backend/.env.
 dotenv.config({ path: path.resolve(__dirname, '.env') })
@@ -39,6 +51,15 @@ console.log("Loaded ENV:", {
 
 app.use(cors())
 app.use(express.json())
+app.use((error, _req, res, next) => {
+  if (error instanceof SyntaxError && Object.prototype.hasOwnProperty.call(error, 'body')) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid JSON request body',
+    })
+  }
+  return next(error)
+})
 
 const sendGridApiKey = process.env.SENDGRID_API_KEY
 const senderEmail = process.env.SENDGRID_SENDER
@@ -55,6 +76,8 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || ''
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || ''
 const googleCalendarId = process.env.GOOGLE_CALENDAR_ID || 'primary'
 const googleMeetDefaultTimezone = process.env.GOOGLE_MEET_DEFAULT_TIMEZONE || 'Asia/Manila'
+const firebaseServiceAccountJson = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim()
+const firebaseServiceAccountBase64 = String(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || '').trim()
 
 if (sendGridApiKey) {
   sgMail.setApiKey(sendGridApiKey)
@@ -70,10 +93,53 @@ const backupMonthlyDay = Number(process.env.BACKUP_MONTHLY_DAY || 1)
 const backupDailyRetentionDays = Number(process.env.BACKUP_DAILY_RETENTION_DAYS || 30)
 const backupMonthlyRetentionDays = Number(process.env.BACKUP_MONTHLY_RETENTION_DAYS || 365)
 
+const normalizeServiceAccount = (serviceAccount) => {
+  if (!serviceAccount || typeof serviceAccount !== 'object') return null
+  const normalized = { ...serviceAccount }
+  if (typeof normalized.private_key === 'string') {
+    normalized.private_key = normalized.private_key.replace(/\\n/g, '\n')
+  }
+  return normalized
+}
+
+const parseServiceAccountFromEnv = () => {
+  try {
+    if (firebaseServiceAccountJson) {
+      return normalizeServiceAccount(JSON.parse(firebaseServiceAccountJson))
+    }
+    if (firebaseServiceAccountBase64) {
+      const decoded = Buffer.from(firebaseServiceAccountBase64, 'base64').toString('utf8')
+      return normalizeServiceAccount(JSON.parse(decoded))
+    }
+  } catch (error) {
+    adminInitError = `Invalid Firebase service account env: ${error?.message || 'Unable to parse service account'}`
+  }
+  return null
+}
+
 try {
-  if (fs.existsSync(serviceAccountPath)) {
+  const envServiceAccount = parseServiceAccountFromEnv()
+  if (envServiceAccount) {
+    firebaseProjectId = String(
+      envServiceAccount?.project_id ||
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.GOOGLE_CLOUD_PROJECT ||
+      process.env.GCLOUD_PROJECT ||
+      ''
+    ).trim()
+    firebaseStorageBucket =
+      process.env.FIREBASE_STORAGE_BUCKET ||
+      String(envServiceAccount?.storageBucket || '').trim() ||
+      (firebaseProjectId ? `${firebaseProjectId}.firebasestorage.app` : '') ||
+      (firebaseProjectId ? `${firebaseProjectId}.appspot.com` : '')
+    admin.initializeApp({
+      credential: admin.credential.cert(envServiceAccount),
+      ...(firebaseProjectId ? { projectId: firebaseProjectId } : {}),
+      ...(firebaseStorageBucket ? { storageBucket: firebaseStorageBucket } : {}),
+    })
+  } else if (fs.existsSync(serviceAccountPath)) {
     const serviceAccountRaw = fs.readFileSync(serviceAccountPath, 'utf8')
-    const serviceAccount = JSON.parse(serviceAccountRaw)
+    const serviceAccount = normalizeServiceAccount(JSON.parse(serviceAccountRaw))
     firebaseProjectId = String(serviceAccount?.project_id || '').trim()
     firebaseStorageBucket =
       process.env.FIREBASE_STORAGE_BUCKET ||
@@ -103,8 +169,9 @@ try {
   }
   adminReady = true
   console.log('firebase-admin initialized:', {
-    serviceAccountPath: fs.existsSync(serviceAccountPath) ? serviceAccountPath : null,
-    usingApplicationDefaultCredentials: !fs.existsSync(serviceAccountPath),
+    serviceAccountSource: envServiceAccount ? 'env' : (fs.existsSync(serviceAccountPath) ? 'file' : 'application-default'),
+    serviceAccountPath: envServiceAccount ? null : (fs.existsSync(serviceAccountPath) ? serviceAccountPath : null),
+    usingApplicationDefaultCredentials: !envServiceAccount && !fs.existsSync(serviceAccountPath),
     firebaseProjectId,
     firebaseStorageBucket,
   })
@@ -145,6 +212,182 @@ const sendSendGridMessage = async (message) => {
     statusCode: response?.statusCode || null,
     messageId,
   }
+}
+
+const extractProviderError = (error) =>
+  error?.response?.body?.errors?.[0]?.message ||
+  error?.response?.body?.errors?.[0]?.field ||
+  error?.message ||
+  'Unknown SendGrid error'
+
+const generateSixDigitOtp = () =>
+  Math.floor(100000 + Math.random() * 900000).toString()
+
+const getRegistrationOtpDocRef = (purpose, email) =>
+  admin.firestore().collection('registration_otps').doc(`${String(purpose || '').trim()}:${String(email || '').trim().toLowerCase()}`)
+
+const getAuthUserByEmail = async (email) => {
+  try {
+    return await admin.auth().getUserByEmail(email)
+  } catch (error) {
+    if (String(error?.code || '') === 'auth/user-not-found') {
+      return null
+    }
+    throw error
+  }
+}
+
+const getUserDocByEmail = async (firestore, email) => {
+  const snap = await firestore
+    .collection('users')
+    .where('email', '==', email)
+    .limit(1)
+    .get()
+
+  return snap.empty ? null : snap.docs[0]
+}
+
+const getCustomerRegistrationState = async (email) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const firestore = admin.firestore()
+  const authUser = await getAuthUserByEmail(normalizedEmail)
+
+  let uid = String(authUser?.uid || '').trim()
+  let userSnap = null
+
+  if (uid) {
+    const directUserSnap = await firestore.collection('users').doc(uid).get()
+    if (directUserSnap.exists) {
+      userSnap = directUserSnap
+    }
+  }
+
+  if (!userSnap) {
+    userSnap = await getUserDocByEmail(firestore, normalizedEmail)
+    if (userSnap?.id && !uid) {
+      uid = userSnap.id
+    }
+  }
+
+  const userData = userSnap?.data?.() || {}
+  const role = String(userData.role || userData.userType || '').trim()
+  const status = String(userData.status || '').trim()
+  const emailVerified = Boolean(userData.emailVerified || authUser?.emailVerified)
+
+  return {
+    exists: Boolean(authUser || userSnap),
+    uid,
+    authUser,
+    userSnap,
+    userData,
+    role,
+    status,
+    emailVerified,
+  }
+}
+
+const sendRegistrationOtpMessage = async ({
+  email,
+  uid,
+  purpose,
+  subject,
+  introLine,
+}) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const normalizedUid = String(uid || '').trim()
+  const otpRef = getRegistrationOtpDocRef(purpose, normalizedEmail)
+  const existingSnap = await otpRef.get()
+  const existingData = existingSnap.data() || {}
+  const now = new Date()
+  const lastSentAt = getTimestampDate(existingData.lastSentAt)
+  const secondsSinceLastSend = lastSentAt
+    ? Math.floor((now.getTime() - lastSentAt.getTime()) / 1000)
+    : Number.POSITIVE_INFINITY
+
+  if (secondsSinceLastSend < REGISTRATION_OTP_COOLDOWN_SECONDS) {
+    const retryAfterSeconds = Math.max(REGISTRATION_OTP_COOLDOWN_SECONDS - secondsSinceLastSend, 1)
+    const rateLimitError = new Error(`Please wait ${retryAfterSeconds}s before requesting a new OTP.`)
+    rateLimitError.statusCode = 429
+    rateLimitError.retryAfterSeconds = retryAfterSeconds
+    throw rateLimitError
+  }
+
+  const otp = generateSixDigitOtp()
+  const expiresAt = new Date(now.getTime() + REGISTRATION_OTP_EXPIRY_MINUTES * 60 * 1000)
+  const message = {
+    to: normalizedEmail,
+    from: senderEmail,
+    subject,
+    text:
+      `${introLine} ${otp}.\n\n` +
+      `This code expires in ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes. ` +
+      `Only the most recent OTP will work.`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;">
+        <p>${introLine}</p>
+        <p style="font-size:28px;font-weight:700;letter-spacing:4px;">${otp}</p>
+        <p>This code expires in ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes.</p>
+        <p><strong>Only the most recent OTP will work.</strong></p>
+      </div>
+    `,
+  }
+
+  const delivery = await sendSendGridMessage(message)
+  await otpRef.set({
+    email: normalizedEmail,
+    uid: normalizedUid || String(existingData.uid || '').trim(),
+    purpose,
+    otp,
+    used: false,
+    attempts: 0,
+    messageId: delivery.messageId || null,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true })
+
+  return {
+    delivery,
+    expiresAt,
+    expiresInSeconds: REGISTRATION_OTP_EXPIRY_MINUTES * 60,
+    retryAfterSeconds: REGISTRATION_OTP_COOLDOWN_SECONDS,
+  }
+}
+
+const getTimestampDate = (value) => {
+  if (!value) return null
+  if (typeof value?.toDate === 'function') return value.toDate()
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+const maskEmailAddress = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized || !normalized.includes('@')) return normalized
+  const [localPart, domain] = normalized.split('@')
+  if (!localPart || !domain) return normalized
+  const visiblePrefix = localPart.slice(0, 2)
+  const hiddenLength = Math.max(localPart.length - visiblePrefix.length, 2)
+  return `${visiblePrefix}${'*'.repeat(hiddenLength)}@${domain}`
+}
+
+const trimTrailingSlash = (value) => String(value || '').trim().replace(/\/+$/, '')
+
+const resolveFrontendBaseUrl = (req) => {
+  const configured = trimTrailingSlash(frontendBaseUrl)
+  if (configured && !configured.includes('localhost')) return configured
+
+  const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim()
+  const forwardedHost = String(req?.headers?.['x-forwarded-host'] || '').split(',')[0].trim()
+  const host = forwardedHost || String(req?.headers?.host || '').trim()
+  const protocol = forwardedProto || (req?.protocol ? String(req.protocol).trim() : '')
+
+  if (host && protocol) {
+    return `${protocol}://${host}`
+  }
+
+  return configured || 'http://localhost:5173'
 }
 
 const requireAuth = async (req, res, next) => {
@@ -968,13 +1211,20 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
 app.post(OTP_PATH, async (req, res) => {
   try {
     const { recipient, otp } = req.body ?? {}
-    const normalizedRecipient = String(recipient || '').trim()
+    const normalizedRecipient = String(recipient || '').trim().toLowerCase()
     const normalizedOtp = String(otp || '').trim()
 
     if (!normalizedRecipient || !normalizedOtp) {
       return res.status(400).json({
         success: false,
         error: 'recipient and otp are required',
+      })
+    }
+
+    if (!EMAIL_ADDRESS_REGEX.test(normalizedRecipient)) {
+      return res.status(400).json({
+        success: false,
+        error: 'recipient must be a valid email address',
       })
     }
 
@@ -998,16 +1248,20 @@ app.post(OTP_PATH, async (req, res) => {
     }
 
     try {
-      await sgMail.send(message)
-      return res.json({ success: true })
+      const delivery = await sendSendGridMessage(message)
+      console.log('SendGrid registration OTP sent', {
+        status: delivery.statusCode || 'unknown',
+        messageId: delivery.messageId || 'unknown',
+        to: normalizedRecipient,
+      })
+      return res.json({ success: true, ...delivery })
     } catch (error) {
-      const providerMessage =
-        error?.response?.body?.errors?.[0]?.message ||
-        error?.response?.body?.errors?.[0]?.field ||
-        error?.message ||
-        'Unknown SendGrid error'
+      const providerMessage = extractProviderError(error)
 
-      console.error('SendGrid error:', providerMessage)
+      console.error('SendGrid registration OTP error:', {
+        to: normalizedRecipient,
+        error: providerMessage,
+      })
       if (isDevelopment) {
         console.warn(`[DEV OTP BYPASS] SendGrid failed. OTP for ${normalizedRecipient}: ${normalizedOtp}`)
         return res.json({ success: true, devMode: true, warning: providerMessage })
@@ -1026,6 +1280,189 @@ app.post(OTP_PATH, async (req, res) => {
       }
     }
     return res.status(500).json({ success: false, error: unexpectedMessage })
+  }
+})
+
+app.post(REQUEST_REGISTRATION_OTP_PATH, async (req, res) => {
+  const { email, uid } = req.body ?? {}
+
+  if (!adminReady) {
+    return res.status(500).json({
+      success: false,
+      error: adminInitError || 'firebase-admin is not ready',
+    })
+  }
+
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const normalizedUid = String(uid || '').trim()
+  if (!normalizedEmail) {
+    return res.status(400).json({
+      success: false,
+      error: 'email is required',
+    })
+  }
+
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail)) {
+    return res.status(400).json({
+      success: false,
+      error: 'email must be a valid email address',
+    })
+  }
+
+  if (!sendGridApiKey || !senderEmail) {
+    return res.status(500).json({
+      success: false,
+      error: 'SENDGRID_API_KEY or SENDGRID_SENDER is missing',
+    })
+  }
+
+  try {
+    const otpResult = await sendRegistrationOtpMessage({
+      email: normalizedEmail,
+      uid: normalizedUid,
+      purpose: CLINIC_REGISTRATION_OTP_PURPOSE,
+      subject: 'Your AestheticCare registration OTP',
+      introLine: 'Your AestheticCare registration OTP is:',
+    })
+
+    console.log('Registration OTP sent', {
+      to: normalizedEmail,
+      maskedTo: maskEmailAddress(normalizedEmail),
+      status: otpResult.delivery.statusCode || 'unknown',
+      messageId: otpResult.delivery.messageId || 'unknown',
+      expiresAt: otpResult.expiresAt.toISOString(),
+    })
+
+    return res.json({
+      success: true,
+      recipient: normalizedEmail,
+      expiresInSeconds: otpResult.expiresInSeconds,
+      retryAfterSeconds: otpResult.retryAfterSeconds,
+      messageId: otpResult.delivery.messageId || null,
+    })
+  } catch (error) {
+    if (error?.statusCode === 429) {
+      return res.status(429).json({
+        success: false,
+        error: error.message,
+        retryAfterSeconds: error.retryAfterSeconds,
+      })
+    }
+    const providerMessage = extractProviderError(error)
+    console.error('Registration OTP request error:', {
+      email: normalizedEmail,
+      error: providerMessage,
+    })
+    return res.status(500).json({
+      success: false,
+      error: providerMessage,
+    })
+  }
+})
+
+app.post(REQUEST_CUSTOMER_OTP_PATH, async (req, res) => {
+  const { email, uid } = req.body ?? {}
+
+  if (!adminReady) {
+    return res.status(500).json({
+      success: false,
+      error: adminInitError || 'firebase-admin is not ready',
+    })
+  }
+
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const normalizedUid = String(uid || '').trim()
+  if (!normalizedEmail) {
+    return res.status(400).json({
+      success: false,
+      error: 'email is required',
+    })
+  }
+
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail)) {
+    return res.status(400).json({
+      success: false,
+      error: 'email must be a valid email address',
+    })
+  }
+
+  if (!sendGridApiKey || !senderEmail) {
+    return res.status(500).json({
+      success: false,
+      error: 'SENDGRID_API_KEY or SENDGRID_SENDER is missing',
+    })
+  }
+
+  try {
+    const customerState = await getCustomerRegistrationState(normalizedEmail)
+    const role = String(customerState.role || '').trim().toLowerCase()
+    const status = String(customerState.status || '').trim().toLowerCase()
+    const resolvedUid = normalizedUid || customerState.uid
+
+    if (customerState.exists && role && role !== 'customer') {
+      return res.status(409).json({
+        success: false,
+        error: 'This email is already used by another account type.',
+      })
+    }
+
+    if (customerState.emailVerified || status === 'active') {
+      return res.status(409).json({
+        success: false,
+        error: 'This customer account is already verified. Please sign in.',
+      })
+    }
+
+    if (!resolvedUid) {
+      return res.status(400).json({
+        success: false,
+        error: 'No customer registration was found for this email.',
+      })
+    }
+
+    const otpResult = await sendRegistrationOtpMessage({
+      email: normalizedEmail,
+      uid: resolvedUid,
+      purpose: CUSTOMER_REGISTRATION_OTP_PURPOSE,
+      subject: 'Your AestheticCare customer verification OTP',
+      introLine: 'Your AestheticCare customer verification OTP is:',
+    })
+
+    console.log('Customer registration OTP sent', {
+      uid: resolvedUid,
+      to: normalizedEmail,
+      maskedTo: maskEmailAddress(normalizedEmail),
+      status: otpResult.delivery.statusCode || 'unknown',
+      messageId: otpResult.delivery.messageId || 'unknown',
+      expiresAt: otpResult.expiresAt.toISOString(),
+    })
+
+    return res.json({
+      success: true,
+      recipient: normalizedEmail,
+      uid: resolvedUid,
+      expiresInSeconds: otpResult.expiresInSeconds,
+      retryAfterSeconds: otpResult.retryAfterSeconds,
+      messageId: otpResult.delivery.messageId || null,
+    })
+  } catch (error) {
+    if (error?.statusCode === 429) {
+      return res.status(429).json({
+        success: false,
+        error: error.message,
+        retryAfterSeconds: error.retryAfterSeconds,
+      })
+    }
+
+    const providerMessage = extractProviderError(error)
+    console.error('Customer registration OTP request error:', {
+      email: normalizedEmail,
+      error: providerMessage,
+    })
+    return res.status(500).json({
+      success: false,
+      error: providerMessage,
+    })
   }
 })
 
@@ -1100,6 +1537,57 @@ app.post(CHECK_USER_PATH, async (req, res) => {
       success: false,
       error: error?.message || 'Failed to check user.',
       code,
+    })
+  }
+})
+
+app.post(CHECK_CUSTOMER_REGISTRATION_STATUS_PATH, async (req, res) => {
+  const { email } = req.body ?? {}
+
+  if (!adminReady) {
+    return res.status(500).json({
+      success: false,
+      error: adminInitError || 'firebase-admin is not ready',
+    })
+  }
+
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  if (!normalizedEmail) {
+    return res.status(400).json({
+      success: false,
+      error: 'email is required',
+    })
+  }
+
+  try {
+    const customerState = await getCustomerRegistrationState(normalizedEmail)
+    if (!customerState.exists) {
+      return res.json({ success: true, exists: false })
+    }
+
+    const role = String(customerState.role || '').trim()
+    const status = String(customerState.status || '').trim()
+    const normalizedRole = role.toLowerCase()
+    const normalizedStatus = status.toLowerCase()
+    const canResumeOtp =
+      normalizedRole === 'customer' &&
+      !customerState.emailVerified &&
+      normalizedStatus !== 'active'
+
+    return res.json({
+      success: true,
+      exists: true,
+      uid: customerState.uid,
+      role,
+      status,
+      emailVerified: customerState.emailVerified,
+      canResumeOtp,
+    })
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error?.message || 'Failed to check customer registration status.',
+      code: error?.code || '',
     })
   }
 })
@@ -1184,8 +1672,8 @@ app.post('/auth/check-registration-status', async (req, res) => {
   }
 })
 
-app.post('/auth/verify-registration-otp', async (req, res) => {
-  const { uid, email } = req.body ?? {}
+app.post(VERIFY_REGISTRATION_OTP_PATH, async (req, res) => {
+  const { uid, email, otp } = req.body ?? {}
 
   if (!adminReady) {
     return res.status(500).json({
@@ -1196,23 +1684,79 @@ app.post('/auth/verify-registration-otp', async (req, res) => {
 
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedUid = String(uid || '').trim()
-  if (!normalizedEmail || !normalizedUid) {
+  const normalizedOtp = String(otp || '').trim()
+  if (!normalizedEmail || !normalizedOtp) {
     return res.status(400).json({
       success: false,
-      error: 'uid and email are required',
+      error: 'email and otp are required',
+    })
+  }
+
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail)) {
+    return res.status(400).json({
+      success: false,
+      error: 'email must be a valid email address',
     })
   }
 
   try {
     let resolvedUid = normalizedUid
     let userRecord = null
+    const firestore = admin.firestore()
+    const otpRef = getRegistrationOtpDocRef(CLINIC_REGISTRATION_OTP_PURPOSE, normalizedEmail)
+    const otpSnap = await otpRef.get()
 
-    try {
-      userRecord = await admin.auth().getUser(normalizedUid)
-    } catch (error) {
-      const code = String(error?.code || '')
-      if (code !== 'auth/user-not-found') {
-        throw error
+    if (!otpSnap.exists) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active OTP found. Please request a new OTP.',
+      })
+    }
+
+    const otpData = otpSnap.data() || {}
+    if (!resolvedUid) {
+      resolvedUid = String(otpData.uid || '').trim()
+    }
+    const expiresAt = getTimestampDate(otpData.expiresAt)
+    if (otpData.used) {
+      return res.status(400).json({
+        success: false,
+        error: 'This OTP was already used. Please request a new OTP.',
+      })
+    }
+
+    if (expiresAt && expiresAt.getTime() < Date.now()) {
+      await otpRef.set({
+        used: true,
+        expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
+      return res.status(400).json({
+        success: false,
+        error: 'OTP expired. Please request a new OTP.',
+      })
+    }
+
+    if (String(otpData.otp || '').trim() !== normalizedOtp) {
+      await otpRef.set({
+        attempts: admin.firestore.FieldValue.increment(1),
+        lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid OTP. Please try again.',
+      })
+    }
+
+    if (resolvedUid) {
+      try {
+        userRecord = await admin.auth().getUser(resolvedUid)
+      } catch (error) {
+        const code = String(error?.code || '')
+        if (code !== 'auth/user-not-found') {
+          throw error
+        }
       }
     }
 
@@ -1224,7 +1768,6 @@ app.post('/auth/verify-registration-otp', async (req, res) => {
 
     let recordEmail = String(userRecord?.email || '').trim().toLowerCase()
     if (!emailUserRecord?.uid && (!resolvedUid || !recordEmail || recordEmail !== normalizedEmail)) {
-      const firestore = admin.firestore()
       const matchingUsersSnap = await firestore
         .collection('users')
         .where('email', '==', normalizedEmail)
@@ -1246,7 +1789,13 @@ app.post('/auth/verify-registration-otp', async (req, res) => {
       })
     }
 
-    const firestore = admin.firestore()
+    if (!resolvedUid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Unable to resolve the registration account for this OTP.',
+      })
+    }
+
     await Promise.all([
       firestore.collection('users').doc(resolvedUid).set({
         status: 'Pending Document Submission',
@@ -1256,7 +1805,149 @@ app.post('/auth/verify-registration-otp', async (req, res) => {
       firestore.collection('clinics').doc(resolvedUid).set({
         approvalStatus: 'Pending Document Submission',
       }, { merge: true }),
+      otpRef.set({
+        uid: resolvedUid,
+        used: true,
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }),
     ])
+
+    console.log('Registration OTP verified', {
+      uid: resolvedUid,
+      email: normalizedEmail,
+      maskedTo: maskEmailAddress(normalizedEmail),
+    })
+
+    return res.json({ success: true, data: { uid: resolvedUid } })
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error?.message || 'Failed to verify OTP.',
+      code: error?.code || '',
+    })
+  }
+})
+
+app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
+  const { uid, email, otp } = req.body ?? {}
+
+  if (!adminReady) {
+    return res.status(500).json({
+      success: false,
+      error: adminInitError || 'firebase-admin is not ready',
+    })
+  }
+
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const normalizedUid = String(uid || '').trim()
+  const normalizedOtp = String(otp || '').trim()
+  if (!normalizedEmail || !normalizedOtp) {
+    return res.status(400).json({
+      success: false,
+      error: 'email and otp are required',
+    })
+  }
+
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail)) {
+    return res.status(400).json({
+      success: false,
+      error: 'email must be a valid email address',
+    })
+  }
+
+  try {
+    let resolvedUid = normalizedUid
+    const firestore = admin.firestore()
+    const otpRef = getRegistrationOtpDocRef(CUSTOMER_REGISTRATION_OTP_PURPOSE, normalizedEmail)
+    const otpSnap = await otpRef.get()
+
+    if (!otpSnap.exists) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active OTP found. Please request a new OTP.',
+      })
+    }
+
+    const otpData = otpSnap.data() || {}
+    if (!resolvedUid) {
+      resolvedUid = String(otpData.uid || '').trim()
+    }
+    const expiresAt = getTimestampDate(otpData.expiresAt)
+    if (otpData.used) {
+      return res.status(400).json({
+        success: false,
+        error: 'This OTP was already used. Please request a new OTP.',
+      })
+    }
+
+    if (expiresAt && expiresAt.getTime() < Date.now()) {
+      await otpRef.set({
+        used: true,
+        expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
+      return res.status(400).json({
+        success: false,
+        error: 'OTP expired. Please request a new OTP.',
+      })
+    }
+
+    if (String(otpData.otp || '').trim() !== normalizedOtp) {
+      await otpRef.set({
+        attempts: admin.firestore.FieldValue.increment(1),
+        lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid OTP. Please try again.',
+      })
+    }
+
+    const customerState = await getCustomerRegistrationState(normalizedEmail)
+    const role = String(customerState.role || '').trim().toLowerCase()
+    const status = String(customerState.status || '').trim().toLowerCase()
+
+    if (customerState.exists && role && role !== 'customer') {
+      return res.status(403).json({
+        success: false,
+        error: 'This email is already used by another account type.',
+      })
+    }
+
+    if (!resolvedUid) {
+      resolvedUid = customerState.uid
+    }
+
+    if (!resolvedUid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Unable to resolve the customer account for this OTP.',
+      })
+    }
+
+    await Promise.all([
+      firestore.collection('users').doc(resolvedUid).set({
+        role: 'Customer',
+        status: 'Active',
+        emailVerified: true,
+        emailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }),
+      otpRef.set({
+        uid: resolvedUid,
+        used: true,
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }),
+    ])
+
+    console.log('Customer registration OTP verified', {
+      uid: resolvedUid,
+      email: normalizedEmail,
+      maskedTo: maskEmailAddress(normalizedEmail),
+      previousStatus: status || 'unknown',
+    })
 
     return res.json({ success: true, data: { uid: resolvedUid } })
   } catch (error) {
@@ -1805,7 +2496,7 @@ app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), asy
     })
   }
 
-  const loginUrl = `${String(frontendBaseUrl || '').replace(/\/$/, '')}/login`
+  const loginUrl = `${resolveFrontendBaseUrl(req)}/login`
   const message = {
     to: normalizedRecipient,
     from: senderEmail,
@@ -2454,10 +3145,10 @@ app.post('/paymongo/create-checkout-session', optionalAuth, async (req, res) => 
         },
         success_url:
           successUrl ||
-          `${frontendBaseUrl}/receptionist/pos?paymongo_status=success`,
+          `${resolveFrontendBaseUrl(req)}/receptionist/pos?paymongo_status=success`,
         cancel_url:
           cancelUrl ||
-          `${frontendBaseUrl}/receptionist/pos?paymongo_status=cancelled`,
+          `${resolveFrontendBaseUrl(req)}/receptionist/pos?paymongo_status=cancelled`,
       },
     },
   }
@@ -2796,6 +3487,10 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
   }
 })
 
-app.listen(PORT, () => {
-  console.log(`OTP backend running on http://localhost:${PORT}`)
-})
+if (isDirectRun) {
+  app.listen(PORT, () => {
+    console.log(`OTP backend running on http://localhost:${PORT}`)
+  })
+}
+
+export default app

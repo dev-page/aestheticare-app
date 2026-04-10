@@ -89,7 +89,7 @@ import { hasExpiredSuspension, restoreExpiredSuspension } from '@/utils/centerSu
 const normalizePlanLabel = (value) => {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return '-'
-  if (raw.includes('free')) return 'Free Trial'
+  if (raw.includes('free')) return 'FreePlan'
   if (raw.includes('basic')) return 'Basic'
   if (raw.includes('premium')) return 'Premium'
   return value

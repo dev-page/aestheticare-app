@@ -103,7 +103,7 @@ const resumeLoading = ref(false)
 const defaultPlans = () => [
   {
     id: 'free-trial',
-    name: 'Free Trial',
+    name: 'FreePlan',
     price: 0,
     billingCycle: 'trial',
     description: 'Try all features for 14 days. No credit card required.',
@@ -198,8 +198,7 @@ const ctaLabel = computed(() => {
   const current = selectedPlanData.value
   if (!current) return 'Continue'
   if (current.id === 'free-trial') {
-    const days = Number(current.trialDays || 14)
-    return `Proceed to ${days}-day Free Trial`
+    return `Proceed to FreePlan`
   }
   return 'Continue with Selected Plan'
 })
