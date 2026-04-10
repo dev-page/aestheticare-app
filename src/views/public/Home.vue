@@ -11,19 +11,19 @@
 
         <ul class="hidden lg:flex items-center gap-6 lg:gap-10 text-[11px] tracking-[0.2em] uppercase text-charcoal-600">
           <li>
-            <a class="relative text-charcoal-700 hover:text-gold-700 hover:font-bold transition-all duration-300
+            <button @click="scrollToSection('features')" class="relative text-charcoal-700 hover:text-gold-700 hover:font-bold transition-all duration-300
                       before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
                       before:transition-all before:duration-300 hover:before:w-full">
               Features
-            </a>
+            </button>
           </li>
 
           <li>
-            <a class="relative text-charcoal-700 hover:text-gold-700 hover:font-bold transition-all duration-300
+            <button @click="scrollToSection('solutions')" class="relative text-charcoal-700 hover:text-gold-700 hover:font-bold transition-all duration-300
                       before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
                       before:transition-all before:duration-300 hover:before:w-full">
               Solutions
-            </a>
+            </button>
           </li>
           <li>
             <router-link to="/subscription-features" class="relative text-charcoal-700 hover:text-gold-700 hover:font-bold transition-all duration-300
@@ -55,10 +55,10 @@
             Login
           </router-link>
           <router-link
-            to="/register"
+            to="/clinic/register"
             class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-gold-700 text-white text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-800 transition"
           >
-            Free Trial
+            Register
           </router-link>
         </div>
 
@@ -104,8 +104,8 @@
 
           <div class="flex-1 overflow-y-auto p-5 flex flex-col text-xs tracking-[0.2em] uppercase text-charcoal-700">
             <div class="flex flex-col gap-2">
-              <a class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Features</a>
-              <a class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Solutions</a>
+              <button @click="scrollToSection('features'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left transition-all duration-200 hover:text-gold-700 hover:pl-1">Features</button>
+              <button @click="scrollToSection('solutions'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left transition-all duration-200 hover:text-gold-700 hover:pl-1">Solutions</button>
               <router-link to="/subscription-features" @click="closeMobileMenu" class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Pricing</router-link>
               <router-link to="/centers" @click="closeMobileMenu" class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Centers</router-link>
             </div>
@@ -119,11 +119,11 @@
                 Login
               </router-link>
               <router-link
-                to="/register"
+                to="/clinic/register"
                 @click="closeMobileMenu"
                 class="px-4 py-3 rounded-full bg-gold-700 text-white text-center transition hover:bg-gold-800"
               >
-                Free Trial
+                Register
               </router-link>
             </div>
           </div>
@@ -160,12 +160,19 @@
             <p class="text-charcoal-600 max-w-xl mb-6 text-sm sm:text-base leading-relaxed">
               Your skin deserves the best. Discover elegant, clinic-ready solutions crafted for modern aesthetic centers.
             </p>
+            <div class="inline-flex items-center gap-3 rounded-full border border-gold-300/70 bg-white/70 px-3 py-2 mb-5 shadow-[0_10px_18px_rgba(54,34,22,0.08)]">
+              <img :src="clinicAdminBadge" alt="Clinic admin badge" class="h-10 w-10 rounded-full object-contain" />
+              <div class="text-left">
+                <p class="text-[10px] uppercase tracking-[0.22em] text-gold-700">For Clinic Admin</p>
+                <p class="text-sm text-charcoal-700">Register and manage your aesthetic center.</p>
+              </div>
+            </div>
             <div class="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-8">
-              <button @click="showSubscriptionPopup = true" class="bg-charcoal-900 text-cream-50 px-6 py-3 rounded-full text-xs sm:text-sm tracking-widest uppercase hover:bg-charcoal-800 transition w-full sm:w-auto">
+              <router-link to="/clinic/register" class="bg-charcoal-900 text-cream-50 px-6 py-3 rounded-full text-xs sm:text-sm tracking-widest uppercase hover:bg-charcoal-800 transition w-full sm:w-auto text-center">
                 Get Started
-              </button>
-              <router-link to="/centers" class="px-6 py-3 rounded-full border border-gold-700 text-gold-700 text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-700 hover:text-white transition w-full sm:w-auto text-center">
-                View Centers
+              </router-link>
+              <router-link to="/subscription-features" class="px-6 py-3 rounded-full border border-gold-700 text-gold-700 text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-700 hover:text-white transition w-full sm:w-auto text-center">
+                View Plans
               </router-link>
             </div>
           </div>
@@ -205,7 +212,7 @@
       </div>
     </section>
 
-    <section class="relative h-[54vh] sm:h-[62vh] md:h-[72vh] overflow-hidden">
+    <section id="features-section" class="relative h-[54vh] sm:h-[62vh] md:h-[72vh] overflow-hidden">
       <video
         class="absolute inset-0 w-full h-full object-cover"
         autoplay
@@ -258,7 +265,7 @@
     </section>
 
     <!-- SOLUTIONS -->
-    <section class="solutions-section py-16 sm:py-24 md:py-32 text-charcoal-800">
+    <section id="solutions-section" class="solutions-section py-16 sm:py-24 md:py-32 text-charcoal-800">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         <div class="solutions-header text-center">
           <p class="solutions-kicker">Tailored platform modes</p>
@@ -445,15 +452,15 @@
               Join modern aesthetic centers using intelligent systems to manage bookings, treatment journeys, staff visibility, and clinic growth in one elegant platform.
             </p>
             <div class="footer-cta-actions">
-              <button @click="showSubscriptionPopup = true" class="footer-primary-btn">
-                Try 14-Day Free Trial
-              </button>
+              <router-link to="/clinic/register" class="footer-primary-btn">
+                Register
+              </router-link>
               <router-link to="/subscription-features" class="footer-secondary-btn">
                 View Plans
               </router-link>
             </div>
             <div class="footer-cta-highlights">
-              <span class="footer-highlight-chip">14-day free trial</span>
+              <span class="footer-highlight-chip">FreePlan available</span>
               <span class="footer-highlight-chip">Clinic-ready setup</span>
             </div>
           </div>
@@ -538,14 +545,6 @@
       </div>
     </section>
 
-    <Modal
-      :isOpen="showSubscriptionPopup"
-      @close="showSubscriptionPopup = false"
-      :showConfirm="false"
-      panelClass="bg-white"
-    >
-      <SubscriptionPopup @close="showSubscriptionPopup = false" />
-    </Modal>
   </div>
 </template>
 
@@ -553,23 +552,17 @@
 <script>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAuth } from "@/composables/useAuth";
-import Modal from "@/components/common/Modal.vue";
-import SubscriptionPopup from "@/components/common/SubscriptionPopup.vue";
 import bg from '@/assets/bg.jpg'
 import appointmentLanding from '@/assets/apointment_landing.jpg'
+import clinicAdminBadge from '@/assets/clinic_admin_badge.png'
 import inventoryLanding from '@/assets/inventory_landing.jpg'
 import meetingRoomLanding from '@/assets/meetingroom_landing.jpg'
 import staffInsightLanding from '@/assets/staffinsight_landing.jpg'
 
 export default {
   name: "HomePage",
-  components: {
-    Modal,
-    SubscriptionPopup,
-  },
   setup() {
     const { user, isLoading, initAuth } = useAuth();
-    const showSubscriptionPopup = ref(false);
     const isMobileMenuOpen = ref(false);
     const currentCapabilityIndex = ref(3);
     const miniStartIndex = ref(3);
@@ -581,6 +574,11 @@ export default {
     let miniSwitchTimer = null;
     const closeMobileMenu = () => {
       isMobileMenuOpen.value = false;
+    };
+
+    const scrollToSection = (section) => {
+      const sectionId = section === "solutions" ? "solutions-section" : "features-section";
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
     };
 
     watch(isMobileMenuOpen, (isOpen) => {
@@ -736,7 +734,8 @@ export default {
       prevCapability,
       nextMini,
       prevMini,
-      showSubscriptionPopup,
+      clinicAdminBadge,
+      scrollToSection,
       user,
       isLoading,
       isMobileMenuOpen,

@@ -70,7 +70,6 @@ const resumeCancelled = ref(false)
 const REGISTRATION_DRAFT_KEY = 'register_clinic_draft'
 const OTP_SENT_AT_KEY = 'register_clinic_otp_sent_at'
 const REGISTRATION_UID_KEY = 'register_clinic_uid'
-const REGISTRATION_OTP_KEY = 'register_clinic_generated_otp'
 const REGISTRATION_OTP_EMAIL_KEY = 'register_clinic_otp_email'
 
 const contactNumber = ref('')
@@ -159,7 +158,6 @@ const otpVerifiedForRegistration = ref(false)
 const pendingApprovalMode = ref(false)
 
 const otpDigits = ref(Array(6).fill(''))
-const generatedOtp = ref('')
 const userUid = ref('')
 const otpRecipientEmail = ref('')
 const otpInputRefs = ref([])
@@ -785,27 +783,31 @@ const sendOtpEmail = async (toEmail, otp) => {
 
 const sendOtpEmail = async (toEmail) => {
   try {
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
-
     const res = await axios.post(
-      `${OTP_API_BASE}/send-otp`,
+      `${OTP_API_BASE}/auth/request-registration-otp`,
       {
-        recipient: toEmail,
-        otp: otpCode,
+        email: String(toEmail || '').trim().toLowerCase(),
+        uid: String(userUid.value || '').trim(),
       },
       { timeout: 20000 }
     )
 
     if (res?.data?.success) {
-      console.log('OTP email sent successfully')
-      return { success: true, otp: otpCode, error: '' }
+      console.log('Registration OTP sent successfully')
+      return {
+        success: true,
+        error: '',
+        recipient: String(res?.data?.recipient || toEmail || '').trim().toLowerCase(),
+        retryAfterSeconds: Number(res?.data?.retryAfterSeconds || OTP_COOLDOWN_SECONDS),
+      }
     }
 
     console.error('Error sending OTP:', res?.data?.error)
     return {
       success: false,
-      otp: '',
       error: res?.data?.error || 'OTP API returned an unsuccessful response.',
+      recipient: String(toEmail || '').trim().toLowerCase(),
+      retryAfterSeconds: Number(res?.data?.retryAfterSeconds || 0),
     }
   } catch (err) {
     const providerError =
@@ -814,9 +816,46 @@ const sendOtpEmail = async (toEmail) => {
       err?.message ||
       'Unexpected OTP send error'
     console.error('Error sending OTP email:', providerError)
-    return { success: false, otp: '', error: providerError }
+    return {
+      success: false,
+      error: providerError,
+      recipient: String(toEmail || '').trim().toLowerCase(),
+      retryAfterSeconds: Number(err?.response?.data?.retryAfterSeconds || 0),
+    }
   }
 }
+
+const handleClinicOtpResult = (otpResult, successMessage, failureMessage = 'Unable to send OTP') => {
+  if (otpResult.success) {
+    beginOtpCooldown()
+    toast.info(successMessage)
+    return true
+  }
+
+  if (otpResult.retryAfterSeconds > 0) {
+    startOtpCountdown(otpResult.retryAfterSeconds)
+    toast.info(otpResult.error || 'A recent OTP is still active. Please use the latest code in your email.')
+    return true
+  }
+
+  stopOtpCountdown()
+  toast.warning(`${failureMessage}: ${otpResult.error}`)
+  return false
+}
+
+const maskEmailAddress = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized || !normalized.includes('@')) return ''
+  const [localPart, domain] = normalized.split('@')
+  if (!localPart || !domain) return normalized
+  const visiblePrefix = localPart.slice(0, 2)
+  const hiddenLength = Math.max(localPart.length - visiblePrefix.length, 2)
+  return `${visiblePrefix}${'*'.repeat(hiddenLength)}@${domain}`
+}
+
+const otpRecipientLabel = computed(() =>
+  maskEmailAddress(otpRecipientEmail.value || email.value)
+)
 
 const setOtpInputRef = (el, index) => {
   if (el) otpInputRefs.value[index] = el
@@ -1169,24 +1208,13 @@ const setStoredOtpRecipientEmail = (value) => {
   sessionStorage.setItem(REGISTRATION_OTP_EMAIL_KEY, normalized)
 }
 
-const getStoredGeneratedOtp = () => String(sessionStorage.getItem(REGISTRATION_OTP_KEY) || '').trim()
-
-const setStoredGeneratedOtp = (otp) => {
-  const value = String(otp || '').trim()
-  if (!value) {
-    sessionStorage.removeItem(REGISTRATION_OTP_KEY)
-    return
-  }
-  sessionStorage.setItem(REGISTRATION_OTP_KEY, value)
-}
-
 const markOtpSentNow = () => {
   sessionStorage.setItem(OTP_SENT_AT_KEY, String(Date.now()))
 }
 
 const restoreOtpCountdown = () => {
   const lastSentAt = getLastOtpSentAt()
-  if (!lastSentAt || !generatedOtp.value) {
+  if (!lastSentAt) {
     stopOtpCountdown()
     otpResendCountdown.value = 0
     return
@@ -1209,7 +1237,6 @@ const beginOtpCooldown = () => {
   startOtpCountdown()
 }
 
-generatedOtp.value = getStoredGeneratedOtp()
 otpRecipientEmail.value = getStoredOtpRecipientEmail()
 
 watch([currentStep, userUid], ([step, uid]) => {
@@ -1281,8 +1308,6 @@ const verifyRegistrationEmail = async (options = {}) => {
   try {
     userUid.value = ''
     setStoredRegistrationUid('')
-    generatedOtp.value = ''
-    setStoredGeneratedOtp('')
     clearOtpInputs()
     stopOtpCountdown()
     secCertificateFile.value = null
@@ -1353,20 +1378,12 @@ const verifyRegistrationEmail = async (options = {}) => {
         currentStep.value = 2
         const lastSentAt = getLastOtpSentAt()
         const now = Date.now()
-        const canSend = !lastSentAt || (now - lastSentAt) > (OTP_COOLDOWN_SECONDS * 1000) || !generatedOtp.value
+        const canSend = !lastSentAt || (now - lastSentAt) > (OTP_COOLDOWN_SECONDS * 1000)
         if (canSend) {
           const otpResult = await sendOtpEmail(normalizedEmail)
           clearOtpInputs()
           focusOtpInput(0)
-          if (otpResult.success) {
-            generatedOtp.value = otpResult.otp
-            setStoredGeneratedOtp(otpResult.otp)
-            beginOtpCooldown()
-            toast.info('We found an account. Please verify the OTP to continue.')
-          } else {
-            stopOtpCountdown()
-            toast.warning(`Unable to send OTP: ${otpResult.error}`)
-          }
+          handleClinicOtpResult(otpResult, 'We found an account. Please verify the OTP to continue.')
         } else {
           clearOtpInputs()
           focusOtpInput(0)
@@ -1452,15 +1469,7 @@ const verifyRegistrationEmail = async (options = {}) => {
           const otpResult = await sendOtpEmail(normalizedEmail)
           clearOtpInputs()
           focusOtpInput(0)
-          if (otpResult.success) {
-            generatedOtp.value = otpResult.otp
-            setStoredGeneratedOtp(otpResult.otp)
-            beginOtpCooldown()
-            toast.info('We found an account. Please verify the OTP to continue.')
-          } else {
-            stopOtpCountdown()
-            toast.warning(`Unable to send OTP: ${otpResult.error}`)
-          }
+          handleClinicOtpResult(otpResult, 'We found an account. Please verify the OTP to continue.')
           return
         }
       }
@@ -1535,8 +1544,6 @@ const verifyRegistrationEmail = async (options = {}) => {
       clearOtpInputs()
       focusOtpInput(0)
       if (otpResult.success) {
-        generatedOtp.value = otpResult.otp
-        setStoredGeneratedOtp(otpResult.otp)
         beginOtpCooldown()
         toast.info('Welcome back. A new OTP was sent to your email.')
       } else {
@@ -1563,8 +1570,6 @@ const handleEmailDraftInput = () => {
     otpVerifiedForRegistration.value = false
     userUid.value = ''
     setStoredRegistrationUid('')
-    generatedOtp.value = ''
-    setStoredGeneratedOtp('')
     otpRecipientEmail.value = ''
     setStoredOtpRecipientEmail('')
     clearOtpInputs()
@@ -1962,19 +1967,13 @@ const resendOtp = async () => {
   setStoredOtpRecipientEmail(recipientEmail)
 
   const otpResult = await sendOtpEmail(recipientEmail)
-
-  if (!otpResult.success) {
-    toast.error(`Unable to resend OTP: ${otpResult.error}`)
-    return
-  }
-
-  generatedOtp.value = otpResult.otp
-  setStoredGeneratedOtp(otpResult.otp)
-
-  beginOtpCooldown()
   clearOtpInputs()
   focusOtpInput(0)
-  toast.info('OTP resent. Please check your email.')
+  handleClinicOtpResult(
+    otpResult,
+    `OTP resent to ${otpRecipientLabel.value || 'your email'}. Check your inbox or spam folder. Only the latest OTP will work.`,
+    'Unable to resend OTP'
+  )
 }
 
 const registerClinic = async () => {
@@ -2059,8 +2058,6 @@ const registerClinic = async () => {
         clearOtpInputs()
         focusOtpInput(0)
         if (otpResult.success) {
-          generatedOtp.value = otpResult.otp
-          setStoredGeneratedOtp(otpResult.otp)
           beginOtpCooldown()
           toast.info('Account is already in progress. A new OTP was sent.')
         } else {
@@ -2164,24 +2161,12 @@ const registerClinic = async () => {
       sendOtpPromise,
     ])
 
-    if (otpResult.success) {
-      generatedOtp.value = otpResult.otp
-      setStoredGeneratedOtp(otpResult.otp)
-      toast.info('OTP sent to your email! Please verify to complete registration.')
-    } else {
-      toast.warning(`Unable to send OTP: ${otpResult.error}`)
-    }
-
     // 🔹 Open OTP modal
     currentStep.value = 2
     syncStepRoute(2)
     clearOtpInputs()
     focusOtpInput(0)
-    if (otpResult.success) {
-      beginOtpCooldown()
-    } else {
-      stopOtpCountdown()
-    }
+    handleClinicOtpResult(otpResult, 'OTP sent to your email! Please verify to complete registration.')
 
   } catch (err) {
     console.error(err)
@@ -2210,15 +2195,7 @@ const registerClinic = async () => {
         syncStepRoute(2)
         clearOtpInputs()
         focusOtpInput(0)
-        if (otpResult.success) {
-          generatedOtp.value = otpResult.otp
-          setStoredGeneratedOtp(otpResult.otp)
-          beginOtpCooldown()
-          toast.info('Account exists. A new OTP was sent.')
-        } else {
-          stopOtpCountdown()
-          toast.warning(`Unable to send OTP: ${otpResult.error}`)
-        }
+        handleClinicOtpResult(otpResult, 'Account exists. Please verify the latest OTP to continue.')
         return
       }
     }
@@ -2237,77 +2214,59 @@ const verifyOtp = async () => {
     return
   }
 
-  if (otpCode.value === generatedOtp.value) {
-    try {
-      const lookupEmail = String(otpRecipientEmail.value || email.value || '').trim().toLowerCase()
-      const currentAuthUid = auth?.currentUser?.uid || ''
-      const currentAuthEmail = String(auth?.currentUser?.email || '').trim().toLowerCase()
+  try {
+    const lookupEmail = String(otpRecipientEmail.value || email.value || '').trim().toLowerCase()
+    const currentAuthUid = auth?.currentUser?.uid || ''
+    const currentAuthEmail = String(auth?.currentUser?.email || '').trim().toLowerCase()
 
-      if (currentAuthUid && lookupEmail && currentAuthEmail === lookupEmail) {
-        userUid.value = currentAuthUid
-        setStoredRegistrationUid(userUid.value)
-      }
-
-      if (!userUid.value) {
-        if (lookupEmail) {
-          const statusResult = await checkRegistrationStatus(lookupEmail)
-          if (statusResult?.uid) {
-            userUid.value = String(statusResult.uid).trim()
-            setStoredRegistrationUid(userUid.value)
-          }
-        }
-        if (!userUid.value) {
-          const storedUid = getStoredRegistrationUid()
-          if (storedUid) {
-            userUid.value = storedUid
-          }
-        }
-      }
-
-      if (!userUid.value) {
-        toast.error('User ID not found. Please verify your email again.')
-        return
-      }
-
-        if (currentAuthUid && currentAuthUid === userUid.value) {
-          await updateDoc(doc(db, 'users', userUid.value), {
-            status: 'Pending Document Submission',
-            emailVerified: true,
-            emailVerifiedAt: serverTimestamp(),
-          })
-          await updateDoc(doc(db, 'clinics', userUid.value), {
-            approvalStatus: 'Pending Document Submission',
-          })
-        } else {
-          const verifyRes = await axios.post(`${OTP_API_BASE}/auth/verify-registration-otp`, {
-            uid: userUid.value,
-            email: String(otpRecipientEmail.value || email.value || '').trim().toLowerCase(),
-          })
-          if (!verifyRes?.data?.success) {
-            throw new Error(verifyRes?.data?.error || 'Failed to verify OTP')
-          }
-          if (verifyRes?.data?.data?.uid) {
-            userUid.value = String(verifyRes.data.data.uid).trim()
-            setStoredRegistrationUid(userUid.value)
-          }
-      }
-
-      otpVerifiedForRegistration.value = true
-      setStoredGeneratedOtp('')
-      setStoredOtpRecipientEmail('')
-      toast.success('Email verified. Continue to document upload.')
-      currentStep.value = 3
-      clearOtpInputs()
-    } catch (err) {
-      console.error(err)
-      const verifyError =
-        err?.response?.data?.error ||
-        err?.message ||
-        'Failed to verify OTP, please try again'
-      toast.error(verifyError)
+    if (currentAuthUid && lookupEmail && currentAuthEmail === lookupEmail) {
+      userUid.value = currentAuthUid
+      setStoredRegistrationUid(userUid.value)
     }
-  } else {
-    toast.error('Invalid OTP, please try again')
+
+    if (!userUid.value) {
+      if (lookupEmail) {
+        const statusResult = await checkRegistrationStatus(lookupEmail)
+        if (statusResult?.uid) {
+          userUid.value = String(statusResult.uid).trim()
+          setStoredRegistrationUid(userUid.value)
+        }
+      }
+      if (!userUid.value) {
+        const storedUid = getStoredRegistrationUid()
+        if (storedUid) {
+          userUid.value = storedUid
+        }
+      }
+    }
+
+    const verifyRes = await axios.post(`${OTP_API_BASE}/auth/verify-registration-otp`, {
+      uid: userUid.value,
+      email: lookupEmail,
+      otp: otpCode.value,
+    })
+
+    if (!verifyRes?.data?.success) {
+      throw new Error(verifyRes?.data?.error || 'Failed to verify OTP')
+    }
+
+    if (verifyRes?.data?.data?.uid) {
+      userUid.value = String(verifyRes.data.data.uid).trim()
+      setStoredRegistrationUid(userUid.value)
+    }
+
+    otpVerifiedForRegistration.value = true
+    setStoredOtpRecipientEmail('')
+    toast.success('Email verified. Continue to document upload.')
+    currentStep.value = 3
+    clearOtpInputs()
+  } catch (err) {
+    console.error(err)
+    const verifyError =
+      err?.response?.data?.error ||
+      err?.message ||
+      'Failed to verify OTP, please try again'
+    toast.error(verifyError)
   }
 }
 
@@ -2375,7 +2334,6 @@ const submitDocuments = async () => {
     pendingApprovalMode.value = true
 
     currentStep.value = 4
-    setStoredGeneratedOtp('')
     setStoredOtpRecipientEmail('')
     stopOtpCountdown()
     toast.success('Documents submitted. Please wait for approval.')
@@ -2772,9 +2730,14 @@ const submitDocuments = async () => {
 
             <transition name="step-slide" mode="out-in" appear>
             <section v-if="currentStep === 2" key="step-2" class="registration-step-panel space-y-5">
-              <p class="text-sm text-charcoal-600">
-                We've sent a One-Time Password (OTP) to your email. Please enter it below to continue.
-              </p>
+                <div class="space-y-1">
+                  <p class="text-sm text-charcoal-600">
+                    We've sent a One-Time Password (OTP) to your email. Please enter it below to continue.
+                  </p>
+                  <p v-if="otpRecipientLabel" class="text-xs text-charcoal-500">
+                    Sent to {{ otpRecipientLabel }}. Check spam or promotions if it does not appear in your inbox.
+                  </p>
+                </div>
 
               <div class="otp-boxes">
                 <input

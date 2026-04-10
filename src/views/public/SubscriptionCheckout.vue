@@ -194,7 +194,7 @@ const validateField = (field) => {
 const defaultPlans = () => [
   {
     id: 'free-trial',
-    name: 'Free Trial',
+    name: 'FreePlan',
     price: 0,
     billingCycle: 'trial',
     description: 'For new clinics trying the platform.',

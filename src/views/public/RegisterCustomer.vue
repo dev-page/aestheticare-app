@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
 import Terms from '@/components/common/Terms.vue'
@@ -56,13 +56,12 @@ const termsAccepted = ref(false)
 
 const otpSent = ref(false)
 const otpDigits = ref(Array(6).fill(''))
-const generatedOtp = ref('')
 const userUid = ref('')
 const otpRecipientEmail = ref('')
 const otpInputRefs = ref([])
 const otpResendCountdown = ref(0)
 const OTP_LENGTH = 6
-const OTP_COOLDOWN_SECONDS = 600
+const OTP_COOLDOWN_SECONDS = 60
 let otpResendInterval = null
 
 const calendarOpen = ref(false)
@@ -372,27 +371,9 @@ const clearFormFields = () => {
 const resetOtpState = () => {
   otpSent.value = false
   otpDigits.value = Array(OTP_LENGTH).fill('')
-  generatedOtp.value = ''
   userUid.value = ''
   otpRecipientEmail.value = ''
   stopOtpCountdown()
-}
-
-const generateOtp = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString()
-}
-
-const sendOtpEmail = async (toEmail, otp) => {
-  try {
-    const res = await axios.post(`${OTP_API_BASE}/send-otp`, {
-      recipient: toEmail,
-      otp: otp,
-    }, { timeout: 10000 })
-    return Boolean(res?.data?.success)
-  } catch (err) {
-    console.error('Error sending OTP email:', err?.response?.data || err?.message || err)
-    return false
-  }
 }
 
 const setOtpInputRef = (el, index) => {
@@ -430,6 +411,72 @@ const startOtpCountdown = (seconds = OTP_COOLDOWN_SECONDS) => {
 const closeOtpModal = () => {
   otpSent.value = false
   clearOtpInputs()
+}
+
+const checkCustomerRegistrationStatus = async (emailValue) => {
+  try {
+    const res = await axios.post(`${OTP_API_BASE}/auth/check-customer-registration-status`, {
+      email: String(emailValue || '').trim().toLowerCase(),
+    })
+    return res?.data || null
+  } catch (error) {
+    console.error('Failed to check customer registration status:', error)
+    return null
+  }
+}
+
+const requestCustomerOtp = async (emailValue, uidValue = '') => {
+  try {
+    const res = await axios.post(`${OTP_API_BASE}/auth/request-customer-otp`, {
+      email: String(emailValue || '').trim().toLowerCase(),
+      uid: String(uidValue || '').trim(),
+    })
+
+    return {
+      success: Boolean(res?.data?.success),
+      error: '',
+      retryAfterSeconds: Number(res?.data?.retryAfterSeconds || OTP_COOLDOWN_SECONDS),
+      uid: String(res?.data?.uid || '').trim(),
+    }
+  } catch (error) {
+    const responseData = error?.response?.data || {}
+    return {
+      success: false,
+      error: responseData?.error || error?.message || 'Failed to send OTP.',
+      retryAfterSeconds: Number(responseData?.retryAfterSeconds || 0),
+      uid: '',
+    }
+  }
+}
+
+const showOtpModalForVerification = () => {
+  otpSent.value = true
+  clearOtpInputs()
+  focusOtpInput(0)
+}
+
+const applyOtpRequestResult = (otpResult, successMessage, fallbackMessage) => {
+  showOtpModalForVerification()
+
+  if (otpResult?.uid) {
+    userUid.value = String(otpResult.uid).trim()
+  }
+
+  if (otpResult?.success) {
+    startOtpCountdown(otpResult.retryAfterSeconds || OTP_COOLDOWN_SECONDS)
+    toast.info(successMessage)
+    return true
+  }
+
+  if (otpResult?.retryAfterSeconds > 0) {
+    startOtpCountdown(otpResult.retryAfterSeconds)
+    toast.info(otpResult.error || 'A recent OTP was already sent. Please use the latest code.')
+    return true
+  }
+
+  stopOtpCountdown()
+  toast.warning(otpResult?.error || fallbackMessage)
+  return false
 }
 
 const handleOtpInput = (index, event) => {
@@ -506,17 +553,12 @@ const resendOtp = async () => {
     return
   }
 
-  generatedOtp.value = generateOtp()
-  const sent = await sendOtpEmail(otpRecipientEmail.value, generatedOtp.value)
-  if (!sent) {
-    toast.error('Unable to resend OTP right now. Please make sure backend is running.')
-    return
-  }
-
-  startOtpCountdown()
-  clearOtpInputs()
-  focusOtpInput(0)
-  toast.info('OTP resent. Please check your email.')
+  const otpResult = await requestCustomerOtp(otpRecipientEmail.value, userUid.value)
+  applyOtpRequestResult(
+    otpResult,
+    'OTP resent. Please check your email.',
+    'Unable to resend OTP right now. Please try again shortly.'
+  )
 }
 
 const register = async () => {
@@ -561,43 +603,73 @@ const register = async () => {
   isSubmitting.value = true
 
   try {
-    const userCredentials = await createUserWithEmailAndPassword(auth, email.value, password.value)
+    const normalizedEmail = email.value.trim().toLowerCase()
+    const userCredentials = await createUserWithEmailAndPassword(auth, normalizedEmail, password.value)
     const uid = userCredentials.user.uid
     userUid.value = uid
 
     await setDoc(doc(db, 'users', uid), {
       firstName: firstName.value.trim(),
       lastName: lastName.value.trim(),
-      email: email.value.trim(),
+      email: normalizedEmail,
       birthDate: birthDate.value ? new Date(birthDate.value) : null,
       role: 'Customer',
       status: 'Pending',
       createdAt: serverTimestamp(),
     })
 
-    otpRecipientEmail.value = email.value.trim()
-    generatedOtp.value = generateOtp()
-    const sent = await sendOtpEmail(otpRecipientEmail.value, generatedOtp.value)
-
-    otpSent.value = true
-    startOtpCountdown()
-    clearOtpInputs()
-    focusOtpInput(0)
-    if (sent) {
-      toast.info('OTP sent to your email. Please verify to complete registration.')
-    } else {
-      toast.warning('Unable to send OTP right now. You can retry using Resend OTP.')
-    }
+    otpRecipientEmail.value = normalizedEmail
+    const otpResult = await requestCustomerOtp(otpRecipientEmail.value, uid)
+    applyOtpRequestResult(
+      otpResult,
+      'OTP sent to your email. Please verify to complete registration.',
+      'Unable to send OTP right now. You can retry using Resend OTP.'
+    )
 
     clearFormFields()
   } catch (err) {
     console.error(err)
+    const errorCode = String(err?.code || '')
     const friendlyMessages = {
       'auth/email-already-in-use': 'An account with this email already exists.',
       'auth/invalid-email': 'Invalid email format.',
       'auth/weak-password': 'Password is too weak.',
     }
-    toast.error(friendlyMessages[err.code] || 'Failed to register, please try again')
+
+    if (errorCode === 'auth/email-already-in-use') {
+      const normalizedEmail = email.value.trim().toLowerCase()
+      const statusResult = await checkCustomerRegistrationStatus(normalizedEmail)
+
+      if (statusResult?.exists) {
+        const role = String(statusResult.role || '').trim().toLowerCase()
+        const status = String(statusResult.status || '').trim().toLowerCase()
+        const isActiveCustomer = role === 'customer' && (Boolean(statusResult.emailVerified) || status === 'active')
+
+        if (role && role !== 'customer') {
+          toast.error('This email is already used by another account type.')
+          return
+        }
+
+        if (isActiveCustomer) {
+          toast.info('This customer account is already verified. Please sign in instead.')
+          return
+        }
+
+        if (role === 'customer' || statusResult.canResumeOtp) {
+          userUid.value = String(statusResult.uid || '').trim()
+          otpRecipientEmail.value = normalizedEmail
+          const otpResult = await requestCustomerOtp(otpRecipientEmail.value, userUid.value)
+          applyOtpRequestResult(
+            otpResult,
+            'We found your customer account. Please verify the OTP to continue.',
+            'Unable to send OTP right now. Please try again shortly.'
+          )
+          return
+        }
+      }
+    }
+
+    toast.error(friendlyMessages[errorCode] || 'Failed to register, please try again')
   } finally {
     isSubmitting.value = false
   }
@@ -609,30 +681,41 @@ const verifyOtp = async () => {
     return
   }
 
-  if (otpCode.value === generatedOtp.value) {
-    try {
-      if (!userUid.value) {
-        toast.error('User ID not found. Please register again.')
-        return
-      }
-
-      await updateDoc(doc(db, 'users', userUid.value), {
-        status: 'Active',
-      })
-      toast.success('Email verified! You can now log in.')
-      clearFormFields()
-      resetOtpState()
-      otpSent.value = false
-
-      setTimeout(() => {
-        router.push('/login')
-      }, 3000)
-    } catch (err) {
-      console.error(err)
-      toast.error('Failed to verify OTP, please try again')
+  try {
+    const lookupEmail = String(otpRecipientEmail.value || email.value || '').trim().toLowerCase()
+    if (!lookupEmail) {
+      toast.error('Missing recipient email. Please register again.')
+      return
     }
-  } else {
-    toast.error('Invalid OTP, please try again')
+
+    const verifyRes = await axios.post(`${OTP_API_BASE}/auth/verify-customer-otp`, {
+      uid: userUid.value,
+      email: lookupEmail,
+      otp: otpCode.value,
+    })
+
+    if (!verifyRes?.data?.success) {
+      throw new Error(verifyRes?.data?.error || 'Failed to verify OTP')
+    }
+
+    if (verifyRes?.data?.data?.uid) {
+      userUid.value = String(verifyRes.data.data.uid).trim()
+    }
+
+    toast.success('Email verified! You can now log in.')
+    clearFormFields()
+    resetOtpState()
+
+    setTimeout(() => {
+      router.push('/login')
+    }, 3000)
+  } catch (err) {
+    console.error(err)
+    const verifyError =
+      err?.response?.data?.error ||
+      err?.message ||
+      'Failed to verify OTP, please try again'
+    toast.error(verifyError)
   }
 }
 

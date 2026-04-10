@@ -1,15 +1,56 @@
 # Deployment Guide
 
-This project is structured for:
+This repo now supports a single-project Vercel deployment:
 
-- Frontend: Firebase Hosting
-- Backend: Google Cloud Run
+- Frontend: Vite static build on Vercel
+- Backend: `otp-backend` served through a Vercel Function at `/api/*`
 - Database/Storage/Auth: Firebase
-- Domain: optional custom domain from Hostinger DNS
 
-## Why this setup
+The important production detail is that the frontend must call `/api/...` on the same Vercel host unless you intentionally deploy the backend elsewhere.
 
-The frontend is a Vite SPA and deploys cleanly to Firebase Hosting. The `otp-backend` directory is a Node/Express server, which is not a good fit for regular Hostinger shared hosting. Cloud Run is the simplest production target without rewriting the backend into Firebase Functions.
+## Vercel deployment
+
+1. Import the repository into Vercel.
+2. Keep the default root directory at the repo root.
+3. Set these frontend environment variables in the Vercel project:
+
+```env
+VITE_OTP_API_BASE_URL=/api
+VITE_OTP_BACKEND_URL=/api
+VITE_PAYMONGO_PUBLIC_KEY=...
+VITE_FACE_API_SCRIPT_URL=...
+VITE_FACE_API_MODEL_URL=...
+VITE_GOOGLE_MAPS_API_KEY=...
+VITE_GOOGLE_MAP_ID=...
+```
+
+4. Set these backend/runtime environment variables in the same Vercel project:
+
+```env
+SENDGRID_API_KEY=...
+SENDGRID_SENDER=...
+PAYMONGO_SECRET_KEY=...
+PAYMONGO_PUBLIC_KEY=...
+FRONTEND_BASE_URL=https://YOUR-VERCEL-DOMAIN
+GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
+GOOGLE_OAUTH_REFRESH_TOKEN=...
+GOOGLE_CALENDAR_ID=primary
+FIREBASE_PROJECT_ID=aesthetic-db
+FIREBASE_STORAGE_BUCKET=aesthetic-db.firebasestorage.app
+FIREBASE_SERVICE_ACCOUNT_JSON={...}
+```
+
+5. Redeploy after saving the environment variables.
+
+Notes:
+
+- Google Maps/location search will fail on Vercel if `VITE_GOOGLE_MAPS_API_KEY` or `VITE_GOOGLE_MAP_ID` is missing in the Vercel dashboard, even if they exist in your local `.env`.
+- The backend falls back to `otp-backend/serviceAccountKey.json` for local use, but that file is ignored by git. In Vercel, set `FIREBASE_SERVICE_ACCOUNT_JSON` or `FIREBASE_SERVICE_ACCOUNT_BASE64` so `firebase-admin` can initialize without a local key file.
+
+## Alternative setup
+
+If you prefer Firebase Hosting + Cloud Run, the older setup below still applies.
 
 ## Prerequisites
 
