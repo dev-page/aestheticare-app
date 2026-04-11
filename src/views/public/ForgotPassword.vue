@@ -209,10 +209,26 @@ const clearOtpInputs = () => {
 }
 
 const handleOtpInput = (index, event) => {
-  const input = event?.target?.value || ''
-  const digits = input.replace(/\D/g, '').slice(-1)
-  otpDigits.value[index] = digits
-  if (digits && index < OTP_LENGTH - 1) focusOtpInput(index + 1)
+  const digits = String(event?.target?.value || '').replace(/\D/g, '')
+
+  if (!digits) {
+    otpDigits.value[index] = ''
+    return
+  }
+
+  if (digits.length === 1) {
+    otpDigits.value[index] = digits
+    if (index < OTP_LENGTH - 1) focusOtpInput(index + 1)
+    return
+  }
+
+  const spread = digits.slice(0, OTP_LENGTH - index).split('')
+  spread.forEach((digit, offset) => {
+    otpDigits.value[index + offset] = digit
+  })
+
+  const nextIndex = Math.min(index + spread.length, OTP_LENGTH - 1)
+  focusOtpInput(nextIndex)
 }
 
 const handleOtpKeydown = (index, event) => {
@@ -229,8 +245,10 @@ const handleOtpKeydown = (index, event) => {
 }
 
 const handleOtpPaste = (event) => {
+  event.preventDefault()
   const pastedDigits = event.clipboardData?.getData('text')?.replace(/\D/g, '').slice(0, OTP_LENGTH) || ''
   if (!pastedDigits) return
+  clearOtpInputs()
   pastedDigits.split('').forEach((digit, offset) => {
     if (offset < OTP_LENGTH) otpDigits.value[offset] = digit
   })

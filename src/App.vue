@@ -82,20 +82,47 @@
 
   <div
     v-if="showConnectionModal"
-    class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
+    class="fixed inset-0 z-[9999] flex items-center justify-center bg-[#140b06]/70 p-4 backdrop-blur-[6px]"
   >
-    <div class="w-full max-w-md rounded-3xl border border-amber-500/50 bg-[#1b0f08] p-8 shadow-2xl">
-      <div class="flex flex-col items-center text-center gap-6">
-        <img
-          :src="disconnectIllustration"
-          alt="Connection issue"
-          class="w-64 h-64 object-contain"
-        />
-        <div>
-          <h2 class="text-white text-3xl font-semibold tracking-wide">Oops...</h2>
-          <p class="text-amber-200/90 text-base mt-3 leading-relaxed">
-            Network connection is slow or unstable. This message will disappear once the network is restored.
-          </p>
+    <div class="connection-modal-shell w-full max-w-2xl overflow-hidden rounded-[2rem] border border-amber-200/70 bg-gradient-to-br from-[#fff8ee] via-white to-[#fdf0db] shadow-[0_30px_80px_rgba(27,15,8,0.36)]">
+      <div class="h-1.5 bg-gradient-to-r from-amber-500 via-gold-500 to-rose-300"></div>
+      <div class="relative p-6 sm:p-8">
+        <div class="absolute right-6 top-6 h-24 w-24 rounded-full bg-amber-200/30 blur-2xl"></div>
+        <div class="absolute -left-10 bottom-0 h-36 w-36 rounded-full bg-[#f1c27a]/20 blur-3xl"></div>
+
+        <div class="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+          <div class="relative flex items-center justify-center">
+            <div class="absolute inset-6 rounded-full bg-amber-100/65 blur-2xl"></div>
+            <div class="relative flex h-48 w-48 items-center justify-center rounded-full border border-amber-200/80 bg-white/70 shadow-[0_16px_40px_rgba(111,63,42,0.12)]">
+              <img
+                :src="disconnectIllustration"
+                alt="Connection issue"
+                class="h-40 w-40 object-contain drop-shadow-[0_10px_18px_rgba(69,40,18,0.16)]"
+              />
+            </div>
+          </div>
+
+          <div class="relative text-center md:text-left">
+            <div class="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-800 shadow-sm">
+              <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+              {{ isOnline ? 'Connection Slow' : 'Offline' }}
+            </div>
+            <h2 class="mt-4 text-3xl font-semibold tracking-tight text-charcoal-900 sm:text-4xl">
+              {{ isOnline ? 'Holding on to your progress' : 'You are offline' }}
+            </h2>
+            <p class="mt-3 max-w-lg text-base leading-relaxed text-charcoal-700">
+              {{ connectionMessage || 'We are checking your connection.' }}
+            </p>
+            <p class="mt-3 text-sm text-charcoal-500">
+              This screen will close automatically once the connection is stable again.
+            </p>
+
+            <div class="mt-6 flex flex-wrap items-center justify-center gap-2 md:justify-start">
+              <span class="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-xs font-medium text-charcoal-700">Secure session</span>
+              <span class="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-xs font-medium text-charcoal-700">Auto-retry enabled</span>
+              <span class="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-xs font-medium text-charcoal-700">No action needed</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

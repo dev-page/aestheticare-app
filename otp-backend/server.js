@@ -222,6 +222,157 @@ const sendSendGridMessage = async (message) => {
   }
 }
 
+const formatPhilippineCurrency = (value) =>
+  new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    currencyDisplay: 'code',
+  }).format(Number(value || 0))
+
+const isPayMongoPaidAppointment = (appointmentData = {}) => {
+  const paymentId = String(appointmentData.paymongoPaymentId || '').trim()
+  const paymentStatus = String(appointmentData.paymentStatus || '').trim().toLowerCase()
+  const source = String(appointmentData.source || '').trim().toLowerCase()
+  return Boolean(paymentId) && paymentStatus === 'paid' && source === 'paymongo_checkout'
+}
+
+const getAppointmentCustomerProfile = async (firestore, appointmentData = {}) => {
+  const customerId = String(appointmentData.customerId || '').trim()
+  let customerSnap = null
+
+  if (customerId) {
+    customerSnap = await firestore.collection('users').doc(customerId).get()
+  }
+
+  const customerData = customerSnap?.exists ? customerSnap.data() || {} : {}
+  const customerEmail = String(customerData.email || appointmentData.customerEmail || '').trim().toLowerCase()
+  const customerName =
+    String(appointmentData.customerName || customerData.fullName || '').trim() ||
+    `${String(customerData.firstName || '').trim()} ${String(customerData.lastName || '').trim()}`.trim() ||
+    customerEmail ||
+    'Customer'
+
+  return {
+    customerId,
+    customerData,
+    customerEmail,
+    customerName,
+  }
+}
+
+const getAppointmentBranchName = async (firestore, branchId, fallback = 'Clinic') => {
+  const normalizedBranchId = String(branchId || '').trim()
+  if (!normalizedBranchId) return fallback
+
+  const snap = await firestore.collection('clinics').doc(normalizedBranchId).get()
+  if (!snap.exists) return fallback
+
+  const data = snap.data() || {}
+  return String(data.clinicName || data.clinicBranch || fallback).trim() || fallback
+}
+
+const getStaffDisplayName = (userData = {}) =>
+  String(userData.fullName || '').trim() ||
+  `${String(userData.firstName || '').trim()} ${String(userData.lastName || '').trim()}`.trim() ||
+  'Clinic Staff'
+
+const sendAppointmentDecisionEmail = async ({
+  recipient,
+  customerName,
+  branchName,
+  appointmentLabel,
+  requestType,
+  refundAmount,
+  commissionAmount,
+  isPayMongoPaid,
+  appointmentDate,
+  appointmentTime,
+}) => {
+  const normalizedRecipient = String(recipient || '').trim().toLowerCase()
+  if (!normalizedRecipient) {
+    return { skipped: true, reason: 'Missing recipient email' }
+  }
+
+  if (!sendGridApiKey || !senderEmail) {
+    return { skipped: true, reason: 'SendGrid not configured' }
+  }
+
+  const safeCustomerName = String(customerName || 'Customer').trim() || 'Customer'
+  const safeBranchName = String(branchName || 'Clinic').trim() || 'Clinic'
+  const safeAppointmentLabel = String(appointmentLabel || 'appointment').trim() || 'appointment'
+  const safeDate = String(appointmentDate || '').trim()
+  const safeTime = String(appointmentTime || '').trim()
+  const timingText = 'Depending on your payment method, the refund may reflect within 24 hours or a few business days.'
+  const refundSummary = isPayMongoPaid
+    ? refundAmount > 0
+      ? `We initiated a refund of ${formatPhilippineCurrency(refundAmount)}. The system commission of ${formatPhilippineCurrency(commissionAmount)} was excluded from the refund.`
+      : 'No refundable amount remained after excluding the system commission.'
+    : 'No online refund was available for this appointment.'
+  const subject =
+    requestType === 'cancel'
+      ? 'Your appointment cancellation was approved'
+      : 'Your appointment reschedule was approved'
+
+  const intro =
+    requestType === 'cancel'
+      ? `Hi ${safeCustomerName}, your cancellation request for ${safeAppointmentLabel} was approved by ${safeBranchName}.`
+      : `Hi ${safeCustomerName}, your reschedule request for ${safeAppointmentLabel} was approved by ${safeBranchName}.`
+
+  const scheduleLine = safeDate || safeTime
+    ? `<p><strong>New schedule:</strong> ${[safeDate, safeTime].filter(Boolean).join(' ')}</p>`
+    : ''
+  const text =
+    `${intro}\n\n` +
+    `${refundSummary}\n` +
+    `${timingText}\n\n` +
+    (safeDate || safeTime ? `Schedule: ${[safeDate, safeTime].filter(Boolean).join(' ')}\n\n` : '') +
+    `If you have questions, please contact the clinic.`
+
+  const message = {
+    to: normalizedRecipient,
+    from: senderEmail,
+    subject,
+    text,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;">
+        <p>${intro}</p>
+        <p>${refundSummary}</p>
+        <p>${timingText}</p>
+        ${scheduleLine}
+        <p>If you have questions, please contact the clinic.</p>
+      </div>
+    `,
+  }
+
+  const delivery = await sendSendGridMessage(message)
+  return { skipped: false, delivery }
+}
+
+const createAppointmentNotification = async ({
+  firestore,
+  customerId,
+  title,
+  message,
+  link = '/customer/appointments',
+}) => {
+  const normalizedCustomerId = String(customerId || '').trim()
+  if (!normalizedCustomerId) {
+    return { skipped: true, reason: 'Missing customer id' }
+  }
+
+  await firestore.collection('notifications').add({
+    recipientUserId: normalizedCustomerId,
+    title: String(title || 'Notification').trim() || 'Notification',
+    message: String(message || '').trim(),
+    link,
+    read: false,
+    deleted: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  })
+
+  return { skipped: false }
+}
+
 const extractProviderError = (error) =>
   error?.response?.body?.errors?.[0]?.message ||
   error?.response?.body?.errors?.[0]?.field ||
@@ -2907,6 +3058,277 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Forbidden' })
     }
     return res.status(400).json({ success: false, error: error?.message || 'Failed to finalize booking' })
+  }
+})
+
+app.post('/appointments/:id/approve-request', requireAuth, requirePermission('appointments:review'), async (req, res) => {
+  if (!adminReady) {
+    return res.status(500).json({
+      success: false,
+      error: adminInitError || 'firebase-admin is not ready',
+    })
+  }
+
+  const appointmentId = String(req.params.id || '').trim()
+  const decisionNote = String(req.body?.decisionNote || req.body?.note || '').trim()
+  if (!appointmentId) {
+    return res.status(400).json({ success: false, error: 'appointment id is required' })
+  }
+
+  const firestore = admin.firestore()
+  const appointmentRef = firestore.collection('appointments').doc(appointmentId)
+  let appointmentData = null
+  let branchName = 'Clinic'
+  let customerProfile = null
+  let requestType = ''
+  let refundAmount = 0
+  let commissionAmount = 0
+  let paymongoRefundId = null
+  let paymongoRefundStatus = null
+  const warnings = []
+
+  try {
+    const appointmentSnap = await appointmentRef.get()
+    if (!appointmentSnap.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Appointment not found.',
+      })
+    }
+
+    appointmentData = appointmentSnap.data() || {}
+    const status = String(appointmentData.status || '').trim().toLowerCase()
+    requestType = status.includes('cancellation requested')
+      ? 'cancel'
+      : status.includes('reschedule requested')
+        ? 'reschedule'
+        : ''
+
+    if (!requestType) {
+      return res.status(400).json({
+        success: false,
+        error: 'This appointment is not awaiting approval.',
+      })
+    }
+
+    const userSnap = await firestore.collection('users').doc(req.user.uid).get()
+    const userData = userSnap.exists ? userSnap.data() || {} : {}
+    const userBranchId = String(userData.branchId || '').trim()
+    const appointmentBranchId = String(appointmentData.branchId || '').trim()
+    const staffDisplayName = getStaffDisplayName(userData)
+    if (userBranchId && appointmentBranchId && userBranchId !== appointmentBranchId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+      })
+    }
+
+    branchName = await getAppointmentBranchName(firestore, appointmentBranchId, 'Clinic')
+    customerProfile = await getAppointmentCustomerProfile(firestore, appointmentData)
+
+    if (requestType === 'cancel') {
+      const totalAmount = Number(appointmentData.totalAmount || appointmentData.amountPaid || appointmentData.amount || 0)
+      commissionAmount = Number(appointmentData.commissionAmount || appointmentData.refundCommissionAmount || 0)
+      refundAmount = Math.max(0, Number(appointmentData.refundRequestedAmount || totalAmount - commissionAmount))
+
+      const isPayMongoPaid = isPayMongoPaidAppointment(appointmentData)
+      const paymentId = String(appointmentData.paymongoPaymentId || '').trim()
+
+      if (isPayMongoPaid && paymentId && refundAmount > 0) {
+        const refundResponse = await fetch('https://api.paymongo.com/v1/refunds', {
+          method: 'POST',
+          headers: buildPayMongoHeaders(),
+          body: JSON.stringify({
+            data: {
+              attributes: {
+                amount: Math.round(refundAmount * 100),
+                payment_id: paymentId,
+                reason: 'requested_by_customer',
+              },
+            },
+          }),
+        })
+
+        const refundData = await refundResponse.json()
+        if (!refundResponse.ok) {
+          return res.status(refundResponse.status).json({
+            success: false,
+            error: refundData?.errors?.[0]?.detail || 'Failed to refund appointment payment via PayMongo',
+            provider: refundData,
+          })
+        }
+
+        paymongoRefundId = refundData?.data?.id || null
+        paymongoRefundStatus = refundData?.data?.attributes?.status || 'pending'
+      }
+
+      await appointmentRef.update({
+        status: 'Cancelled',
+        requestDecisionStatus: 'Approved',
+        requestDecisionNote: decisionNote,
+        requestDecisionAt: admin.firestore.FieldValue.serverTimestamp(),
+        requestDecisionById: req.user.uid,
+        requestDecisionByName: staffDisplayName,
+        refundStatus: 'Approved',
+        refundApprovedAmount: refundAmount,
+        refundCommissionAmount: commissionAmount,
+        refundDecisionNote: decisionNote,
+        refundDecisionAt: admin.firestore.FieldValue.serverTimestamp(),
+        refundDecisionById: req.user.uid,
+        refundDecisionByName: staffDisplayName,
+        cancellationApprovedAt: admin.firestore.FieldValue.serverTimestamp(),
+        cancellationApprovedById: req.user.uid,
+        cancellationApprovedByName: staffDisplayName,
+        paymongoRefundId: paymongoRefundId || appointmentData.paymongoRefundId || null,
+        paymongoRefundStatus: paymongoRefundStatus || appointmentData.paymongoRefundStatus || null,
+        paymentStatus: isPayMongoPaid && refundAmount > 0 ? 'Refunded' : String(appointmentData.paymentStatus || ''),
+        refundedAt: isPayMongoPaid && refundAmount > 0 ? admin.firestore.FieldValue.serverTimestamp() : appointmentData.refundedAt || null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+
+      if (isPayMongoPaid && refundAmount > 0) {
+        await firestore.collection('transactions').add({
+          branchId: appointmentBranchId,
+          amount: -Math.abs(refundAmount),
+          method: appointmentData.paymentMethod || 'PayMongo',
+          status: 'Refunded',
+          type: 'appointment_refund',
+          appointmentId,
+          clientName: appointmentData.customerName || customerProfile?.customerName || 'Customer',
+          service: appointmentData.service || 'Appointment Cancellation Refund',
+          paymongoPaymentId: paymentId,
+          paymongoRefundId,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+      }
+
+      try {
+        const notificationMessage = isPayMongoPaid && refundAmount > 0
+          ? `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved. A refund of ${formatPhilippineCurrency(refundAmount)} was initiated and may reflect within 24 hours or a few business days. The system commission of ${formatPhilippineCurrency(commissionAmount)} was excluded from the refund.`
+          : `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved.`
+
+        await createAppointmentNotification({
+          firestore,
+          customerId: customerProfile?.customerId || appointmentData.customerId || '',
+          title: 'Cancellation Approved',
+          message: notificationMessage,
+          link: '/customer/appointments',
+        })
+      } catch (notificationError) {
+        warnings.push(notificationError?.message || 'Failed to create appointment notification.')
+      }
+
+      try {
+        const emailResult = await sendAppointmentDecisionEmail({
+          recipient: customerProfile?.customerEmail || appointmentData.customerEmail || '',
+          customerName: customerProfile?.customerName || appointmentData.customerName || 'Customer',
+          branchName,
+          appointmentLabel: appointmentData.service || 'your appointment',
+          requestType: 'cancel',
+          refundAmount,
+          commissionAmount,
+          isPayMongoPaid,
+          appointmentDate: appointmentData.date || '',
+          appointmentTime: appointmentData.time || '',
+        })
+        if (emailResult?.skipped) {
+          warnings.push(emailResult.reason || 'Appointment cancellation email was skipped.')
+        }
+      } catch (emailError) {
+        warnings.push(emailError?.message || 'Failed to send cancellation email.')
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          appointmentId,
+          requestType,
+          status: 'Cancelled',
+          refundAmount,
+          commissionAmount,
+          paymongoRefundId,
+          paymongoRefundStatus,
+          warnings,
+        },
+      })
+    }
+
+    const requestedDate = String(appointmentData.requestedDate || '').trim()
+    const requestedTime = String(appointmentData.requestedTime || '').trim()
+    const requestedPractitionerId = String(
+      appointmentData.requestedPractitionerId || appointmentData.practitionerId || appointmentData.assignedPractitionerId || ''
+    ).trim()
+    const requestedPractitionerName = String(
+      appointmentData.requestedPractitionerName || appointmentData.practitionerName || appointmentData.assignedPractitionerName || ''
+    ).trim()
+
+    await appointmentRef.update({
+      status: 'Scheduled',
+      date: requestedDate,
+      time: requestedTime,
+      practitionerId: requestedPractitionerId,
+      assignedPractitionerId: requestedPractitionerId,
+      practitionerName: requestedPractitionerName,
+      assignedPractitionerName: requestedPractitionerName,
+      requestDecisionStatus: 'Approved',
+      requestDecisionNote: decisionNote,
+      requestDecisionAt: admin.firestore.FieldValue.serverTimestamp(),
+      requestDecisionById: req.user.uid,
+      requestDecisionByName: staffDisplayName,
+      rescheduleDecisionNote: decisionNote,
+      rescheduleApprovedAt: admin.firestore.FieldValue.serverTimestamp(),
+      rescheduleApprovedById: req.user.uid,
+      rescheduleApprovedByName: staffDisplayName,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+
+    try {
+      await createAppointmentNotification({
+        firestore,
+        customerId: customerProfile?.customerId || appointmentData.customerId || '',
+        title: 'Reschedule Approved',
+        message: `Your reschedule request for ${appointmentData.service || 'your appointment'} was approved. Your new schedule is ${[requestedDate, requestedTime].filter(Boolean).join(' ')}.`,
+        link: '/customer/appointments',
+      })
+    } catch (notificationError) {
+      warnings.push(notificationError?.message || 'Failed to create appointment notification.')
+    }
+
+    try {
+      const emailResult = await sendAppointmentDecisionEmail({
+        recipient: customerProfile?.customerEmail || appointmentData.customerEmail || '',
+        customerName: customerProfile?.customerName || appointmentData.customerName || 'Customer',
+        branchName,
+        appointmentLabel: appointmentData.service || 'your appointment',
+        requestType: 'reschedule',
+        refundAmount: 0,
+        commissionAmount: 0,
+        isPayMongoPaid: false,
+        appointmentDate: requestedDate,
+        appointmentTime: requestedTime,
+      })
+      if (emailResult?.skipped) {
+        warnings.push(emailResult.reason || 'Appointment reschedule email was skipped.')
+      }
+    } catch (emailError) {
+      warnings.push(emailError?.message || 'Failed to send reschedule email.')
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        appointmentId,
+        requestType,
+        status: 'Scheduled',
+        warnings,
+      },
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Failed to approve appointment request',
+    })
   }
 })
 

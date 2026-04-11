@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Icon } from '@iconify/vue'
 import { auth, db } from '@/config/firebaseConfig'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
@@ -55,6 +56,11 @@ const showPrivacy = ref(false)
 const termsAccepted = ref(false)
 const contactNumber = ref('')
 const address = ref('')
+const addressStreet = ref('')
+const addressBarangay = ref('')
+const addressCity = ref('')
+const addressProvince = ref('')
+const addressPostalCode = ref('')
 const addressLat = ref('')
 const addressLng = ref('')
 const showLocationModal = ref(false)
@@ -108,9 +114,31 @@ const otpCountdownLabel = computed(() => {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 })
 const pad = (value) => String(value).padStart(2, '0')
-const selectedAddressLabel = computed(() => address.value || 'Select your address using the map')
+const selectedAddressLabel = computed(() => addressCity.value || 'Select City/Municipality')
 const toIsoDate = (year, month, day) => `${year}-${pad(month + 1)}-${pad(day)}`
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
+const flattenAddressComponents = (entries = []) => (entries || []).flatMap((entry) => entry?.address_components || [])
+const getAddressComponentValue = (components, type, mode = 'long') => {
+  const preferredTypes = Array.isArray(type) ? type : [type]
+  const match = (components || []).find((component) =>
+    preferredTypes.some((preferredType) => component.types?.includes(preferredType))
+  )
+  if (!match) return ''
+  return mode === 'short'
+    ? String(match.short_name || match.shortName || '')
+    : String(match.long_name || match.longName || '')
+}
+const extractPostalCode = (components = [], ...fallbackTexts) => {
+  const componentPostalCode = getAddressComponentValue(components, 'postal_code')
+  if (componentPostalCode) return componentPostalCode
+
+  for (const text of fallbackTexts) {
+    const match = String(text || '').match(/\b\d{4}\b/)
+    if (match) return match[0]
+  }
+
+  return ''
+}
 const isFutureIsoDate = (isoDate) => {
   const [year, month, day] = String(isoDate || '').split('-').map(Number)
   if (!year || !month || !day) return false
@@ -198,19 +226,6 @@ const sanitizeContactNumber = (event) => {
   contactNumber.value = digits.slice(0, 10)
 }
 
-const flattenAddressComponents = (entries = []) => (entries || []).flatMap((entry) => entry?.address_components || [])
-
-const getAddressComponentValue = (components, type, mode = 'long') => {
-  const preferredTypes = Array.isArray(type) ? type : [type]
-  const match = (components || []).find((component) =>
-    preferredTypes.some((preferredType) => component.types?.includes(preferredType))
-  )
-  if (!match) return ''
-  return mode === 'short'
-    ? String(match.short_name || match.shortName || '')
-    : String(match.long_name || match.longName || '')
-}
-
 const philippinesBounds = {
   north: 21.5,
   south: 4.3,
@@ -275,15 +290,41 @@ const loadMapsScript = (apiKey) =>
     document.head.appendChild(script)
   })
 
-const applyResolvedAddress = ({ lat, lng, components = [], formattedAddress = '' }) => {
+const applyResolvedAddress = ({ lat, lng, components = [], formattedAddress = '', fallbackName = '' }) => {
   if (!isWithinPhilippinesBounds(lat, lng) || !isPhilippinesAddress(components)) {
     locationError.value = 'Please select a location within the Philippines.'
     return false
   }
 
+  const cityName =
+    getAddressComponentValue(components, 'locality') ||
+    getAddressComponentValue(components, 'administrative_area_level_3') ||
+    getAddressComponentValue(components, 'administrative_area_level_2')
+  const barangayName =
+    getAddressComponentValue(components, [
+      'sublocality_level_1',
+      'sublocality_level_2',
+      'sublocality',
+      'administrative_area_level_4'
+    ]) ||
+    getAddressComponentValue(components, 'neighborhood')
+  const provinceName =
+    getAddressComponentValue(components, 'administrative_area_level_2') ||
+    getAddressComponentValue(components, 'administrative_area_level_1')
+  const postalCode = extractPostalCode(components, formattedAddress, fallbackName)
+  const streetNumber = getAddressComponentValue(components, 'street_number')
+  const routeName = getAddressComponentValue(components, 'route')
+  const streetAddress = [streetNumber, routeName].filter(Boolean).join(' ').trim()
+  const fullAddress = String(formattedAddress || fallbackName || '').trim()
+
   addressLat.value = String(lat)
   addressLng.value = String(lng)
-  address.value = String(formattedAddress || '').trim() || 'Pinned location in the Philippines'
+  address.value = fullAddress || streetAddress || 'Pinned location in the Philippines'
+  addressStreet.value = fullAddress || streetAddress || ''
+  addressBarangay.value = barangayName || ''
+  addressCity.value = cityName || ''
+  addressProvince.value = provinceName || ''
+  addressPostalCode.value = postalCode || ''
   locationError.value = ''
   return true
 }
@@ -305,6 +346,7 @@ const reverseGeocodeLocation = (lat, lng) => {
         lng,
         components,
         formattedAddress: results[0].formatted_address || results[0].name || '',
+        fallbackName: results[0].formatted_address || results[0].name || '',
       })) {
         if (locationMap?.setCenter) {
           locationMap.setCenter(defaultPhilippinesCenter)
@@ -645,6 +687,11 @@ const clearFormFields = () => {
   birthDateError.value = ''
   contactNumber.value = ''
   address.value = ''
+  addressStreet.value = ''
+  addressBarangay.value = ''
+  addressCity.value = ''
+  addressProvince.value = ''
+  addressPostalCode.value = ''
   addressLat.value = ''
   addressLng.value = ''
   locationError.value = ''
@@ -908,6 +955,11 @@ const register = async () => {
       birthDate: birthDate.value ? new Date(birthDate.value) : null,
       contactNumber: `+63${String(contactNumber.value || '').trim()}`,
       address: String(address.value || '').trim(),
+      addressStreet: String(addressStreet.value || '').trim(),
+      addressBarangay: String(addressBarangay.value || '').trim(),
+      addressCity: String(addressCity.value || '').trim(),
+      addressProvince: String(addressProvince.value || '').trim(),
+      addressPostalCode: String(addressPostalCode.value || '').trim(),
       addressLat: addressLat.value,
       addressLng: addressLng.value,
       role: 'Customer',
@@ -1162,8 +1214,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div class="space-y-2">
-                <label for="customer-phone" class="field-label">Mobile Number</label>
+              <div class="relative">
                 <div class="flex items-center overflow-hidden rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/55 focus-within:border-gold-700 focus-within:bg-white/75 focus-within:shadow-[0_0_0_3px_rgba(201,162,77,0.16)]">
                   <span class="inline-flex h-16 items-center border-r border-[rgba(232,167,58,0.22)] bg-cream-100/80 px-3 text-sm font-semibold tracking-[0.08em] text-charcoal-700 select-none sm:px-4">
                     +63
@@ -1176,41 +1227,55 @@ onBeforeUnmount(() => {
                     pattern="[0-9]*"
                     maxlength="10"
                     autocomplete="tel-national"
-                    placeholder="9123456789"
+                    placeholder=" "
                     required
                     class="h-16 min-w-0 flex-1 bg-transparent px-3 text-charcoal-700 placeholder:text-charcoal-400 focus:outline-none"
                     @input="sanitizeContactNumber"
                   />
                 </div>
-                <p class="field-help">Enter 10 digits after +63.</p>
+                <label class="floating-label floating-label-prefix">Mobile Number</label>
               </div>
 
-              <div class="space-y-2">
-                <label for="customer-address" class="field-label">Address</label>
-                <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_3.75rem]">
-                  <input
-                    id="customer-address"
-                    :value="selectedAddressLabel"
-                    readonly
-                    placeholder="Select your address using the map"
-                    class="input h-16 w-full px-3 pr-4 text-left"
-                    :class="{ 'text-charcoal-500': !address }"
-                  />
-                  <button
-                    type="button"
-                    class="inline-flex h-16 w-full items-center justify-center gap-2 rounded-xl border border-gold-300/80 bg-gold-700 px-4 text-sm font-semibold text-white transition hover:bg-gold-800 hover:-translate-y-0.5 sm:w-[3.75rem] sm:px-0"
-                    @click="openLocationModal"
-                    title="Choose address on map"
-                    aria-label="Choose address on map"
-                  >
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21s6-5.6 6-11.2A6 6 0 1012 9a6 6 0 00-6-6.2C6 15.4 12 21 12 21z" />
-                      <circle cx="12" cy="9" r="2.1" fill="currentColor" stroke="none" />
-                    </svg>
-                    <span class="sm:hidden">Map</span>
-                  </button>
-                </div>
-                <p class="field-help">Choose a location in the Philippines using the map.</p>
+              <div class="relative">
+                <label for="customer-address" class="floating-label floating-label-raised">City / Municipality</label>
+                <button
+                  id="customer-address"
+                  type="button"
+                  class="input custom-dropdown-trigger h-16 pt-4 pb-2 px-3 pr-10 text-left"
+                  :class="{ 'custom-dropdown-placeholder': !address }"
+                  @click="openLocationModal"
+                >
+                  {{ selectedAddressLabel }}
+                </button>
+                <Icon
+                  icon="mdi:map-marker-outline"
+                  class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-charcoal-700"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="relative">
+                <input :value="addressStreet || ''" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
+                <label class="floating-label floating-label-raised">Full Address</label>
+              </div>
+              <div class="relative">
+                <input :value="addressBarangay" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
+                <label class="floating-label floating-label-raised">Barangay</label>
+              </div>
+              <div class="relative">
+                <input :value="addressProvince" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
+                <label class="floating-label floating-label-raised">Province</label>
+              </div>
+              <div class="relative">
+                <input
+                  v-model="addressPostalCode"
+                  inputmode="numeric"
+                  maxlength="4"
+                  placeholder=" "
+                  class="peer input h-16 pt-4 pb-2 px-3"
+                />
+                <label class="floating-label">Postal Code</label>
               </div>
             </div>
 
@@ -1427,22 +1492,29 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="rounded-2xl border border-gold-200/80 bg-gradient-to-br from-cream-100 to-gold-100 p-4 space-y-3 shadow-[0_10px_24px_rgba(54,34,22,0.06)]">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Pinned Address</p>
-              <p class="mt-1 text-sm text-charcoal-700">{{ selectedAddressLabel }}</p>
+            <div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
+                {{ selectedAddressLabel }}
+              </div>
+              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
+                {{ addressBarangay || '-' }}
+              </div>
+              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
+                {{ addressCity || '-' }}
+              </div>
+              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
+                {{ addressProvince || '-' }}
+              </div>
             </div>
             <div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-              <div>
-                <p class="text-xs uppercase tracking-wide text-gold-700/80">Latitude</p>
-                <p class="mt-1 text-charcoal-700">{{ addressLat || '-' }}</p>
+              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
+                {{ addressPostalCode || '-' }}
               </div>
-              <div>
-                <p class="text-xs uppercase tracking-wide text-gold-700/80">Longitude</p>
-                <p class="mt-1 text-charcoal-700">{{ addressLng || '-' }}</p>
+              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
+                {{ addressLat || '-' }}
               </div>
-              <div>
-                <p class="text-xs uppercase tracking-wide text-gold-700/80">Country</p>
-                <p class="mt-1 text-charcoal-700">Philippines</p>
+              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
+                {{ addressLng || '-' }}
               </div>
             </div>
           </div>
@@ -2012,20 +2084,8 @@ onBeforeUnmount(() => {
   transition: all 0.2s ease;
 }
 
-.field-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #6f3f2a;
-}
-
-.field-help {
-  font-size: 0.72rem;
-  line-height: 1.3;
-  color: #7f6554;
+.floating-label-prefix {
+  left: 4.75rem;
 }
 
 .peer:placeholder-shown + .floating-label {
@@ -2048,6 +2108,20 @@ onBeforeUnmount(() => {
   transform: translateY(0);
   font-size: 0.68rem !important;
   color: #8c5a3a;
+}
+
+.custom-dropdown-trigger {
+  color: #6b4a34;
+  cursor: pointer;
+}
+
+.custom-dropdown-trigger:focus {
+  border-color: #d4af37;
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.2);
+}
+
+.custom-dropdown-placeholder {
+  color: #9b7a5f;
 }
 
 .otp-boxes {

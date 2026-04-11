@@ -234,6 +234,7 @@ import { getApp } from 'firebase/app'
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { getFirestore } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 
 const db = getFirestore(getApp())
@@ -256,6 +257,34 @@ let unsubscribeAuth = null
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
+
+const fetchFromBackend = async (path, options = {}) => {
+  const baseUrl = String(OTP_API_BASE || '').trim()
+  if (!baseUrl) {
+    throw new Error('VITE_OTP_API_BASE_URL is not set.')
+  }
+
+  const response = await fetch(`${baseUrl}${path}`, options)
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.toLowerCase().includes('application/json')) {
+    throw new Error(`Non-JSON response from ${baseUrl}`)
+  }
+
+  return response
+}
+
+const buildAuthHeaders = async (headers = {}) => {
+  const user = auth.currentUser
+  if (!user) {
+    throw new Error('You must be logged in to continue.')
+  }
+
+  const token = await user.getIdToken()
+  return {
+    ...headers,
+    Authorization: `Bearer ${token}`,
+  }
+}
 
 const normalizeStatus = (value) => String(value || '').trim().toLowerCase()
 
@@ -392,41 +421,29 @@ const approveSelectedRequest = async () => {
 
   processing.value = true
   try {
-    if (request.requestType === 'cancel') {
-      const totalAmount = Number(request.totalAmount || request.amountPaid || request.amount || 0)
-      const commissionAmount = Number(request.commissionAmount || request.refundCommissionAmount || 0)
-      const refundAmount = Number(request.refundRequestedAmount || Math.max(0, totalAmount - commissionAmount))
+    const response = await fetchFromBackend(`/appointments/${request.id}/approve-request`, {
+      method: 'POST',
+      headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        decisionNote: decisionNote.value.trim(),
+      }),
+    })
 
-      await updateDoc(doc(db, 'appointments', request.id), {
-        status: 'Cancelled',
-        refundStatus: 'Approved',
-        refundApprovedAmount: refundAmount,
-        refundCommissionAmount: commissionAmount,
-        refundDecisionNote: decisionNote.value.trim(),
-        refundDecisionAt: serverTimestamp(),
-        refundDecisionById: currentUserId.value,
-        refundDecisionByName: currentUserName.value || 'Clinic Staff',
-        cancellationApprovedAt: serverTimestamp(),
-        cancellationApprovedById: currentUserId.value,
-        cancellationApprovedByName: currentUserName.value || 'Clinic Staff',
-        updatedAt: serverTimestamp(),
-      })
+    const raw = await response.text()
+    let payload = null
+    try {
+      payload = JSON.parse(raw)
+    } catch (_error) {
+      throw new Error(`Backend returned non-JSON response (${response.status}).`)
+    }
+
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || 'Failed to approve the request.')
+    }
+
+    if (request.requestType === 'cancel') {
       toast.success('Cancellation request approved.')
     } else {
-      await updateDoc(doc(db, 'appointments', request.id), {
-        status: 'Scheduled',
-        date: request.requestedDate,
-        time: request.requestedTime,
-        practitionerId: request.requestedPractitionerId || request.practitionerId || request.assignedPractitionerId || '',
-        assignedPractitionerId: request.requestedPractitionerId || request.practitionerId || request.assignedPractitionerId || '',
-        practitionerName: request.requestedPractitionerName || request.practitionerName || request.assignedPractitionerName || '',
-        assignedPractitionerName: request.requestedPractitionerName || request.practitionerName || request.assignedPractitionerName || '',
-        rescheduleDecisionNote: decisionNote.value.trim(),
-        rescheduleApprovedAt: serverTimestamp(),
-        rescheduleApprovedById: currentUserId.value,
-        rescheduleApprovedByName: currentUserName.value || 'Clinic Staff',
-        updatedAt: serverTimestamp(),
-      })
       toast.success('Reschedule request approved.')
     }
 
