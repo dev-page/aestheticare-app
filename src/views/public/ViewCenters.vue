@@ -37,7 +37,7 @@
           </div>
 
           <div class="mt-6 rounded-[1.75rem] border border-white/70 bg-white/76 p-4 shadow-[0_18px_60px_rgba(96,64,43,0.08)] backdrop-blur-xl md:p-5">
-            <div class="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_0.75fr_0.75fr_auto]">
+            <div class="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_0.75fr_0.75fr_auto_auto]">
               <label class="filter-shell">
                 <span class="filter-label">Search</span>
                 <div class="filter-search-wrap">
@@ -69,6 +69,35 @@
                 </select>
               </label>
 
+              <div class="filter-shell">
+                <span class="filter-label">Nearby</span>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="inline-flex h-[3.5rem] flex-1 items-center justify-center gap-2 rounded-[1.1rem] border border-gold-300/80 bg-gold-700 px-4 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-70"
+                    :disabled="locationLoading"
+                    @click="toggleNearbyCenters"
+                  >
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21s6-5.6 6-11.2A6 6 0 1012 9a6 6 0 00-6-6.2C6 15.4 12 21 12 21z" />
+                      <circle cx="12" cy="9" r="2.1" fill="currentColor" stroke="none" />
+                    </svg>
+                    {{ userLocation ? 'Location on' : 'Use my location' }}
+                  </button>
+
+                  <select
+                    v-model="radiusKm"
+                    class="filter-input max-w-[7.5rem]"
+                    :disabled="!userLocation"
+                    aria-label="Distance radius"
+                  >
+                    <option v-for="option in radiusOptions" :key="option" :value="option">
+                      {{ option }} km
+                    </option>
+                  </select>
+                </div>
+              </div>
+
               <button
                 type="button"
                 class="h-full min-h-[72px] rounded-2xl border border-gold-300/70 bg-gold-700 px-5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-gold-800"
@@ -93,6 +122,14 @@
             Browse centers with published profiles and active listings. Select a card to view full details, products, services, and chat options.
           </p>
         </div>
+        <transition name="fade">
+          <div
+            v-if="locationMessage"
+            class="mt-3 inline-flex max-w-full rounded-2xl border border-gold-200/80 bg-gold-50 px-4 py-3 text-sm leading-6 text-gold-900 shadow-[0_10px_24px_rgba(126,87,57,0.08)]"
+          >
+            {{ locationMessage }}
+          </div>
+        </transition>
       </section>
 
       <section class="mt-8">
@@ -143,6 +180,9 @@
                   <p class="text-sm font-medium text-charcoal-700">{{ center.location || 'Location not set' }}</p>
                   <p class="mt-1 text-sm text-charcoal-500">
                     {{ center.services.length }} {{ center.services.length === 1 ? 'service area' : 'service areas' }} available
+                  </p>
+                  <p v-if="center.distanceKm !== null" class="mt-2 inline-flex rounded-full border border-gold-200/80 bg-gold-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-800">
+                    {{ formatDistance(center.distanceKm) }} away
                   </p>
                 </div>
                 <div class="text-right">
@@ -219,7 +259,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth } from '@/config/firebaseConfig'
 import { fetchCustomerCenters } from '@/utils/customerCenters'
@@ -232,29 +272,126 @@ const showRedirectPopup = ref(false)
 const search = ref('')
 const city = ref('')
 const service = ref('')
+const userLocation = ref(null)
+const radiusKm = ref(15)
+const locationLoading = ref(false)
+const locationMessage = ref('')
+const radiusOptions = [5, 10, 15, 25, 50]
 let redirectTimeout = null
+
+const toRadians = (value) => (value * Math.PI) / 180
+
+const getDistanceKm = (from, to) => {
+  if (!from || !to) return null
+  const earthRadiusKm = 6371
+  const dLat = toRadians(to.lat - from.lat)
+  const dLng = toRadians(to.lng - from.lng)
+  const lat1 = toRadians(from.lat)
+  const lat2 = toRadians(to.lat)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2)
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+const formatDistance = (distanceKm) => {
+  if (distanceKm === null || Number.isNaN(distanceKm)) return ''
+  if (distanceKm < 1) {
+    return `${Math.max(Math.round(distanceKm * 1000), 100)} m`
+  }
+  return `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`
+}
 
 const cities = computed(() => [...new Set(centers.value.map((item) => item.city).filter(Boolean))])
 const services = computed(() => [...new Set(centers.value.flatMap((item) => item.services).filter(Boolean))])
 
 const filteredCenters = computed(() => {
   const keyword = search.value.trim().toLowerCase()
-  return centers.value.filter((center) => {
-    const matchesSearch =
-      !keyword ||
-      center.name.toLowerCase().includes(keyword) ||
-      center.location.toLowerCase().includes(keyword) ||
-      center.services.some((entry) => entry.toLowerCase().includes(keyword))
-    const matchesCity = !city.value || center.city === city.value
-    const matchesService = !service.value || center.services.includes(service.value)
-    return matchesSearch && matchesCity && matchesService
-  })
+  const locationFilterActive = Boolean(userLocation.value)
+
+  return centers.value
+    .map((center) => ({
+      ...center,
+      distanceKm:
+        locationFilterActive && Number.isFinite(center.lat) && Number.isFinite(center.lng)
+          ? getDistanceKm(userLocation.value, { lat: center.lat, lng: center.lng })
+          : null,
+    }))
+    .filter((center) => {
+      const matchesSearch =
+        !keyword ||
+        center.name.toLowerCase().includes(keyword) ||
+        center.location.toLowerCase().includes(keyword) ||
+        center.services.some((entry) => entry.toLowerCase().includes(keyword))
+      const matchesCity = !city.value || center.city === city.value
+      const matchesService = !service.value || center.services.includes(service.value)
+      const withinRadius =
+        !locationFilterActive ||
+        (center.distanceKm !== null && center.distanceKm <= radiusKm.value)
+      return matchesSearch && matchesCity && matchesService && withinRadius
+    })
+    .sort((a, b) => {
+      if (!locationFilterActive) return a.name.localeCompare(b.name)
+      if (a.distanceKm === null && b.distanceKm === null) return a.name.localeCompare(b.name)
+      if (a.distanceKm === null) return 1
+      if (b.distanceKm === null) return -1
+      return a.distanceKm - b.distanceKm || a.name.localeCompare(b.name)
+    })
 })
 
 const clearFilters = () => {
   search.value = ''
   city.value = ''
   service.value = ''
+  userLocation.value = null
+  radiusKm.value = 15
+  locationMessage.value = ''
+}
+
+const clearNearbyFilter = () => {
+  userLocation.value = null
+  locationMessage.value = 'Location-based sorting is off. You can still browse centers using the text filters.'
+}
+
+const toggleNearbyCenters = () => {
+  if (locationLoading.value) return
+
+  if (userLocation.value) {
+    clearNearbyFilter()
+    return
+  }
+
+  if (!navigator.geolocation) {
+    locationMessage.value = 'Your browser does not support location access, so nearby sorting is unavailable.'
+    return
+  }
+
+  locationLoading.value = true
+  locationMessage.value = 'Finding your location to sort the nearest centers...'
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      userLocation.value = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      }
+      locationMessage.value = `Showing centers within ${radiusKm.value} km, ordered from nearest to farthest.`
+      locationLoading.value = false
+    },
+    (error) => {
+      userLocation.value = null
+      const denied = error?.code === 1
+      locationMessage.value = denied
+        ? 'Location access was denied. You can still use the other filters.'
+        : 'We could not get your location right now. Please try again.'
+      locationLoading.value = false
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 5 * 60 * 1000,
+    }
+  )
 }
 
 const getInitials = (name) => {
@@ -294,6 +431,12 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (redirectTimeout) clearTimeout(redirectTimeout)
+})
+
+watch(radiusKm, () => {
+  if (userLocation.value) {
+    locationMessage.value = `Showing centers within ${radiusKm.value} km, ordered from nearest to farthest.`
+  }
 })
 </script>
 
@@ -437,6 +580,13 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
 }
 
+.filter-input:disabled {
+  cursor: not-allowed;
+  background: rgba(248, 240, 231, 0.86);
+  color: #8d7a6b;
+  opacity: 0.9;
+}
+
 .center-card {
   overflow: hidden;
   border-radius: 1.75rem;
@@ -567,6 +717,10 @@ onBeforeUnmount(() => {
   .centers-home-icon {
     height: 2.35rem;
     width: 2.35rem;
+  }
+
+  .filter-input {
+    height: 3.25rem;
   }
 }
 </style>
