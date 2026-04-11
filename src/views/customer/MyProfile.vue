@@ -43,7 +43,10 @@
             </div>
 
             <div>
-              <label class="profile-field-label">Address</label>
+              <div class="flex items-center justify-between">
+                <label class="profile-field-label">Address</label>
+                <button type="button" class="text-sm text-gold-700 hover:underline" @click.prevent="openLocationPicker">Edit Location on Map</button>
+              </div>
               <textarea v-model="customer.address" rows="3" class="profile-input profile-textarea"></textarea>
             </div>
 
@@ -59,6 +62,15 @@
         </section>
       </div>
     </main>
+
+    <LocationPicker
+      :isOpen="showLocationPicker"
+      @close="showLocationPicker = false"
+      @update-location="handleLocationUpdate"
+      :initialAddress="customer.address"
+      :initialLat="customer.addressLat"
+      :initialLng="customer.addressLng"
+    />
   </div>
 </template>
 
@@ -68,6 +80,7 @@ import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firest
 import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import { toast } from 'vue3-toastify'
+import LocationPicker from '@/components/common/LocationPicker.vue'
 
 const customer = ref({
   firstName: '',
@@ -75,11 +88,15 @@ const customer = ref({
   email: '',
   contactNumber: '',
   address: '',
+  addressLat: '',
+  addressLng: '',
   bio: '',
   profilePicture: '',
 })
 
 const fullName = computed(() => `${customer.value.firstName || ''} ${customer.value.lastName || ''}`.trim())
+
+const showLocationPicker = ref(false)
 
 const handleFileUpload = (event) => {
   const file = event.target.files?.[0]
@@ -90,6 +107,17 @@ const handleFileUpload = (event) => {
     customer.value.profilePicture = loadEvent.target?.result || ''
   }
   reader.readAsDataURL(file)
+}
+
+const openLocationPicker = () => {
+  showLocationPicker.value = true
+}
+
+const handleLocationUpdate = ({ address, lat, lng }) => {
+  customer.value.address = address || customer.value.address
+  customer.value.addressLat = lat || customer.value.addressLat
+  customer.value.addressLng = lng || customer.value.addressLng
+  toast.success('Address updated.')
 }
 
 const loadCustomerProfile = async () => {
@@ -130,6 +158,8 @@ const saveCustomerProfile = async () => {
       email: customer.value.email || '',
       contactNumber: customer.value.contactNumber || '',
       address: customer.value.address || '',
+      addressLat: customer.value.addressLat || '',
+      addressLng: customer.value.addressLng || '',
       bio: customer.value.bio || '',
       profilePicture: customer.value.profilePicture || '',
       updatedAt: serverTimestamp(),
