@@ -1162,37 +1162,43 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div class="relative">
-                <div class="flex items-center rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/45 focus-within:border-gold-700">
-                  <span class="inline-flex items-center px-3 text-charcoal-700 select-none">+63</span>
+              <div class="space-y-2">
+                <label for="customer-phone" class="field-label">Mobile Number</label>
+                <div class="flex items-center overflow-hidden rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/55 focus-within:border-gold-700 focus-within:bg-white/75 focus-within:shadow-[0_0_0_3px_rgba(201,162,77,0.16)]">
+                  <span class="inline-flex h-16 items-center border-r border-[rgba(232,167,58,0.22)] bg-cream-100/80 px-3 text-sm font-semibold tracking-[0.08em] text-charcoal-700 select-none sm:px-4">
+                    +63
+                  </span>
                   <input
+                    id="customer-phone"
                     v-model="contactNumber"
                     type="tel"
                     inputmode="numeric"
                     pattern="[0-9]*"
                     maxlength="10"
-                    placeholder=" "
+                    autocomplete="tel-national"
+                    placeholder="9123456789"
                     required
-                    class="peer flex-1 h-16 pt-4 pb-2 px-3 bg-transparent text-charcoal-700 placeholder-transparent focus:outline-none"
+                    class="h-16 min-w-0 flex-1 bg-transparent px-3 text-charcoal-700 placeholder:text-charcoal-400 focus:outline-none"
                     @input="sanitizeContactNumber"
                   />
-                  <label class="floating-label contact-label">Mobile Number</label>
                 </div>
-                <p class="mt-1 text-xs text-charcoal-500">Enter 10 digits after +63.</p>
+                <p class="field-help">Enter 10 digits after +63.</p>
               </div>
 
-              <div class="relative">
-                <div class="flex items-stretch gap-2">
+              <div class="space-y-2">
+                <label for="customer-address" class="field-label">Address</label>
+                <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_3.75rem]">
                   <input
+                    id="customer-address"
                     :value="selectedAddressLabel"
                     readonly
                     placeholder="Select your address using the map"
-                    class="peer input h-16 flex-1 pt-4 pb-2 px-3 pr-12"
+                    class="input h-16 w-full px-3 pr-4 text-left"
                     :class="{ 'text-charcoal-500': !address }"
                   />
                   <button
                     type="button"
-                    class="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-gold-300/80 bg-gold-700 text-white transition hover:bg-gold-800 hover:-translate-y-0.5"
+                    class="inline-flex h-16 w-full items-center justify-center gap-2 rounded-xl border border-gold-300/80 bg-gold-700 px-4 text-sm font-semibold text-white transition hover:bg-gold-800 hover:-translate-y-0.5 sm:w-[3.75rem] sm:px-0"
                     @click="openLocationModal"
                     title="Choose address on map"
                     aria-label="Choose address on map"
@@ -1201,10 +1207,10 @@ onBeforeUnmount(() => {
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21s6-5.6 6-11.2A6 6 0 1012 9a6 6 0 00-6-6.2C6 15.4 12 21 12 21z" />
                       <circle cx="12" cy="9" r="2.1" fill="currentColor" stroke="none" />
                     </svg>
+                    <span class="sm:hidden">Map</span>
                   </button>
                 </div>
-                <label class="floating-label">Address</label>
-                <p class="mt-1 text-xs text-charcoal-500">Choose a location in the Philippines using the map.</p>
+                <p class="field-help">Choose a location in the Philippines using the map.</p>
               </div>
             </div>
 
@@ -2004,6 +2010,22 @@ onBeforeUnmount(() => {
   color: #8c5a3a;
   pointer-events: none;
   transition: all 0.2s ease;
+}
+
+.field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #6f3f2a;
+}
+
+.field-help {
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: #7f6554;
 }
 
 .peer:placeholder-shown + .floating-label {
