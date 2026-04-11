@@ -57,161 +57,153 @@
 
             <button type="submit" class="profile-save-button">
               Save Changes
-            </button>
-          </form>
-        </section>
-      </div>
-    </main>
+            <template>
+              <div class="profile-shell">
+                <CustomerSidebar />
 
-    <LocationPicker
-      :isOpen="showLocationPicker"
-      @close="showLocationPicker = false"
-      @update-location="handleLocationUpdate"
-      :initialAddress="customer.address"
-      :initialLat="customer.addressLat"
-      :initialLng="customer.addressLng"
-    />
-  </div>
-</template>
+                <main class="profile-main">
+                  <div class="profile-content">
+                    <section class="profile-panel">
+                      <div class="profile-header">
+                        <h1 class="profile-title">My Profile</h1>
+                        <p class="profile-subtitle">Keep your customer details updated for smoother orders and appointments.</p>
+                      </div>
 
-<script setup>
-import { computed, onMounted, ref } from 'vue'
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
-import { auth, db } from '@/config/firebaseConfig'
-import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
-import { toast } from 'vue3-toastify'
-import LocationPicker from '@/components/common/LocationPicker.vue'
+                      <div class="profile-avatar-block">
+                        <div class="profile-avatar">
+                          <img v-if="customer.profilePicture" :src="customer.profilePicture" alt="Customer profile" class="w-full h-full object-cover" />
+                          <span v-else class="profile-avatar-fallback">{{ fullName ? fullName.charAt(0) : 'U' }}</span>
+                        </div>
+                        <label class="profile-upload-label">
+                          Upload Profile Picture
+                          <input type="file" @change="handleFileUpload" class="hidden" />
+                        </label>
+                      </div>
 
-const customer = ref({
-  firstName: '',
-  lastName: '',
-  email: '',
-  contactNumber: '',
-  address: '',
-  addressLat: '',
-  addressLng: '',
-  bio: '',
-  profilePicture: '',
-})
+                      <form @submit.prevent="saveCustomerProfile" class="profile-form">
+                        <div>
+                          <label class="profile-field-label">First Name</label>
+                          <input v-model="customer.firstName" type="text" class="profile-input" />
+                        </div>
 
-const fullName = computed(() => `${customer.value.firstName || ''} ${customer.value.lastName || ''}`.trim())
+                        <div>
+                          <label class="profile-field-label">Last Name</label>
+                          <input v-model="customer.lastName" type="text" class="profile-input" />
+                        </div>
 
-const showLocationPicker = ref(false)
+                        <div>
+                          <label class="profile-field-label">Email</label>
+                          <input v-model="customer.email" type="email" class="profile-input" />
+                        </div>
 
-const handleFileUpload = (event) => {
-  const file = event.target.files?.[0]
-  if (!file) return
+                        <div>
+                          <label class="profile-field-label">Phone Number</label>
+                          <input v-model="customer.contactNumber" type="tel" class="profile-input" />
+                        </div>
 
-  const reader = new FileReader()
-  reader.onload = (loadEvent) => {
-    customer.value.profilePicture = loadEvent.target?.result || ''
-  }
-  reader.readAsDataURL(file)
-}
+                        <div>
+                          <label class="profile-field-label">Address</label>
+                          <textarea v-model="customer.address" rows="3" class="profile-input profile-textarea"></textarea>
+                        </div>
 
-const openLocationPicker = () => {
-  showLocationPicker.value = true
-}
+                        <div>
+                          <label class="profile-field-label">Bio</label>
+                          <textarea v-model="customer.bio" rows="4" class="profile-input profile-textarea"></textarea>
+                        </div>
 
-const handleLocationUpdate = ({ address, lat, lng }) => {
-  customer.value.address = address || customer.value.address
-  customer.value.addressLat = lat || customer.value.addressLat
-  customer.value.addressLng = lng || customer.value.addressLng
-  toast.success('Address updated.')
-}
+                        <button type="submit" class="profile-save-button">
+                          Save Changes
+                        </button>
+                      </form>
+                    </section>
+                  </div>
+                </main>
+              </div>
+            </template>
 
-const loadCustomerProfile = async () => {
-  const user = auth.currentUser
-  if (!user) return
+            <script setup>
+            import { computed, onMounted, ref } from 'vue'
+            import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+            import { auth, db } from '@/config/firebaseConfig'
+            import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
+            import { toast } from 'vue3-toastify'
 
-  try {
-    const userRef = doc(db, 'users', user.uid)
-    const userSnap = await getDoc(userRef)
-    if (userSnap.exists()) {
-      customer.value = { ...customer.value, ...userSnap.data(), email: user.email || '' }
-    } else {
-      await setDoc(userRef, {
-        ...customer.value,
-        email: user.email || '',
-        role: 'Customer',
-        createdAt: serverTimestamp(),
-      })
-      customer.value.email = user.email || ''
-    }
-  } catch (error) {
-    console.error(error)
-    toast.error('Failed to load profile.')
-  }
-}
+            const customer = ref({
+              firstName: '',
+              lastName: '',
+              email: '',
+              contactNumber: '',
+              address: '',
+              bio: '',
+              profilePicture: '',
+            })
 
-const saveCustomerProfile = async () => {
-  const user = auth.currentUser
-  if (!user) {
-    toast.error('User not authenticated.')
-    return
-  }
+            const fullName = computed(() => `${customer.value.firstName || ''} ${customer.value.lastName || ''}`.trim())
 
-  try {
-    await updateDoc(doc(db, 'users', user.uid), {
-      firstName: customer.value.firstName || '',
-      lastName: customer.value.lastName || '',
-      email: customer.value.email || '',
-      contactNumber: customer.value.contactNumber || '',
-      address: customer.value.address || '',
-      addressLat: customer.value.addressLat || '',
-      addressLng: customer.value.addressLng || '',
-      bio: customer.value.bio || '',
-      profilePicture: customer.value.profilePicture || '',
-      updatedAt: serverTimestamp(),
-    })
-    toast.success('Profile updated successfully.')
-  } catch (error) {
-    console.error(error)
-    toast.error('Failed to save profile.')
-  }
-}
+            const handleFileUpload = (event) => {
+              const file = event.target.files?.[0]
+              if (!file) return
 
-onMounted(loadCustomerProfile)
-</script>
+              const reader = new FileReader()
+              reader.onload = (loadEvent) => {
+                customer.value.profilePicture = loadEvent.target?.result || ''
+              }
+              reader.readAsDataURL(file)
+            }
 
-<style scoped>
-input[type="file"]::file-selector-button {
-  display: none;
-}
+            const loadCustomerProfile = async () => {
+              const user = auth.currentUser
+              if (!user) return
 
-.profile-shell {
-  display: flex;
-  min-height: 100vh;
-  background: linear-gradient(180deg, #fbf5e8 0%, #f8ecd9 52%, #f4e1c6 100%);
-}
+              try {
+                const userRef = doc(db, 'users', user.uid)
+                const userSnap = await getDoc(userRef)
+                if (userSnap.exists()) {
+                  customer.value = { ...customer.value, ...userSnap.data(), email: user.email || '' }
+                } else {
+                  await setDoc(userRef, {
+                    ...customer.value,
+                    email: user.email || '',
+                    role: 'Customer',
+                    createdAt: serverTimestamp(),
+                  })
+                  customer.value.email = user.email || ''
+                }
+              } catch (error) {
+                console.error(error)
+                toast.error('Failed to load profile.')
+              }
+            }
 
-.profile-main {
-  flex: 1;
-  min-width: 0;
-  background:
-    radial-gradient(circle at top left, rgba(241, 212, 170, 0.34), transparent 26%),
-    radial-gradient(circle at 82% 8%, rgba(198, 148, 108, 0.2), transparent 20%),
-    linear-gradient(180deg, #fbf5e8 0%, #f8ecd9 52%, #f4e1c6 100%);
-}
+            const saveCustomerProfile = async () => {
+              const user = auth.currentUser
+              if (!user) {
+                toast.error('User not authenticated.')
+                return
+              }
 
-.profile-content {
-  display: flex;
-  justify-content: center;
-  padding: 1.5rem 1.4rem 2rem;
-}
+              try {
+                await updateDoc(doc(db, 'users', user.uid), {
+                  firstName: customer.value.firstName || '',
+                  lastName: customer.value.lastName || '',
+                  email: customer.value.email || '',
+                  contactNumber: customer.value.contactNumber || '',
+                  address: customer.value.address || '',
+                  bio: customer.value.bio || '',
+                  profilePicture: customer.value.profilePicture || '',
+                  updatedAt: serverTimestamp(),
+                })
+                toast.success('Profile updated successfully.')
+              } catch (error) {
+                console.error(error)
+                toast.error('Failed to save profile.')
+              }
+            }
 
-.profile-panel {
-  width: 100%;
-  max-width: 52rem;
-  padding: 1.35rem;
-  border-radius: 1.75rem;
-  border: 1px solid rgba(230, 193, 150, 0.8);
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 18px 44px rgba(87, 56, 35, 0.08);
-}
+            onMounted(loadCustomerProfile)
+            </script>
 
-.profile-title {
-  margin: 0;
+            <style scoped>
   color: #3d281d;
   font-family: "Playfair Display", "Times New Roman", serif;
   font-size: clamp(2rem, 3vw, 2.8rem);
