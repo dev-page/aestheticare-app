@@ -76,12 +76,10 @@
                     type="button"
                     class="inline-flex h-[3.5rem] flex-1 items-center justify-center gap-2 rounded-[1.1rem] border border-gold-300/80 bg-gold-700 px-4 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-70"
                     :disabled="locationLoading"
+                    aria-label="Toggle nearby centers"
                     @click="toggleNearbyCenters"
                   >
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21s6-5.6 6-11.2A6 6 0 1012 9a6 6 0 00-6-6.2C6 15.4 12 21 12 21z" />
-                      <circle cx="12" cy="9" r="2.1" fill="currentColor" stroke="none" />
-                    </svg>
+                    <Icon icon="mdi:map-marker-radius-outline" class="h-5 w-5 shrink-0" aria-hidden="true" />
                     {{ userLocation ? 'Location on' : 'Use my location' }}
                   </button>
 
@@ -100,10 +98,11 @@
 
               <button
                 type="button"
-                class="h-full min-h-[72px] rounded-2xl border border-gold-300/70 bg-gold-700 px-5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-gold-800"
+                class="filter-icon-button self-end inline-flex h-[3.5rem] min-h-[3.5rem] items-center justify-center rounded-[1.1rem] border border-gold-300/70 bg-gold-700 text-white transition hover:-translate-y-0.5 hover:bg-gold-800"
+                aria-label="Reset filters"
                 @click="clearFilters"
               >
-                Reset filters
+                <Icon icon="mdi:filter-off-outline" class="h-6 w-6" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -246,10 +245,10 @@
   </main>
 
   <transition name="fade">
-    <div v-if="showRedirectPopup" class="fixed inset-0 z-[80] bg-[rgba(28,15,7,0.45)] backdrop-blur-sm flex items-center justify-center px-4">
-      <div class="w-full max-w-md rounded-[1.75rem] border border-gold-200/70 bg-white/92 shadow-[0_28px_80px_rgba(48,26,12,0.24)] p-6">
+    <div v-if="showRedirectPopup" class="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(28,15,7,0.62)] px-4 backdrop-blur-md">
+      <div class="w-full max-w-md rounded-[1.75rem] border border-gold-200/80 bg-[#fff7ec] shadow-[0_28px_80px_rgba(48,26,12,0.34)] p-6">
         <h3 class="text-lg font-semibold text-charcoal-800">Redirecting to sign in</h3>
-        <p class="mt-1 text-sm text-charcoal-500">Please wait while we prepare your center view and login path.</p>
+        <p class="mt-1 text-sm text-charcoal-600">Please wait while we prepare your center view and login path.</p>
         <div class="mt-5 h-2.5 w-full overflow-hidden rounded-full bg-gold-100">
           <div class="redirect-bar h-full rounded-full bg-gradient-to-r from-gold-600 via-gold-500 to-cream-300"></div>
         </div>
@@ -261,6 +260,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Icon } from '@iconify/vue'
 import { auth } from '@/config/firebaseConfig'
 import { fetchCustomerCenters } from '@/utils/customerCenters'
 
@@ -585,6 +585,17 @@ watch(radiusKm, () => {
   background: rgba(248, 240, 231, 0.86);
   color: #8d7a6b;
   opacity: 0.9;
+}
+
+.filter-icon-button {
+  min-width: 3.5rem;
+  padding-left: 0.9rem;
+  padding-right: 0.9rem;
+}
+
+.filter-icon-button :deep(svg),
+.filter-icon-button :deep(.iconify) {
+  display: block;
 }
 
 .center-card {

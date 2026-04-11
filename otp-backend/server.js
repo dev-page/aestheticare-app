@@ -3061,7 +3061,7 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
   }
 })
 
-app.post('/appointments/:id/approve-request', requireAuth, requirePermission('appointments:review'), async (req, res) => {
+app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
   if (!adminReady) {
     return res.status(500).json({
       success: false,
@@ -3102,7 +3102,7 @@ app.post('/appointments/:id/approve-request', requireAuth, requirePermission('ap
       ? 'cancel'
       : status.includes('reschedule requested')
         ? 'reschedule'
-        : ''
+      : ''
 
     if (!requestType) {
       return res.status(400).json({
@@ -3111,12 +3111,32 @@ app.post('/appointments/:id/approve-request', requireAuth, requirePermission('ap
       })
     }
 
+    req.userContext = req.userContext || await loadUserContext(req.user.uid)
     const userSnap = await firestore.collection('users').doc(req.user.uid).get()
     const userData = userSnap.exists ? userSnap.data() || {} : {}
     const userBranchId = String(userData.branchId || '').trim()
     const appointmentBranchId = String(appointmentData.branchId || '').trim()
     const staffDisplayName = getStaffDisplayName(userData)
-    if (userBranchId && appointmentBranchId && userBranchId !== appointmentBranchId) {
+    const roleKey = String(req.userContext?.roleKey || '').trim()
+    const canReviewRequests =
+      req.userContext.permissions.has('appointments:review') ||
+      roleKey === 'Owner' ||
+      roleKey === 'Superadmin'
+
+    if (!canReviewRequests) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+      })
+    }
+
+    if (
+      roleKey !== 'Owner' &&
+      roleKey !== 'Superadmin' &&
+      userBranchId &&
+      appointmentBranchId &&
+      userBranchId !== appointmentBranchId
+    ) {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',

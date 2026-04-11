@@ -1,8 +1,8 @@
 <template>
-  <div class="customer-center-page flex customer-theme min-h-screen bg-slate-900">
+  <div class="customer-center-page flex customer-theme min-h-screen bg-[#efe3d0]">
     <CustomerSidebar class="flex-shrink-0" />
 
-    <main class="flex-1 p-4 md:p-8">
+    <main class="center-main flex-1 p-4 md:p-8">
       <button
         type="button"
         class="mb-4 inline-flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
@@ -12,39 +12,40 @@
         <span class="text-sm font-medium">Back</span>
       </button>
 
-      <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <div class="relative h-56 md:h-64 bg-slate-700">
+      <div class="center-shell overflow-hidden">
+        <div class="relative h-56 md:h-72">
           <img v-if="center.bannerPicture" :src="center.bannerPicture" alt="Clinic banner" class="w-full h-full object-cover" />
-          <div v-else class="absolute inset-0 bg-gradient-to-r from-slate-700 via-slate-600 to-slate-500"></div>
+          <div v-else class="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(249,227,197,0.95),_rgba(196,149,107,0.88)_42%,_rgba(113,74,50,0.94)_100%)]"></div>
+          <div class="absolute inset-0 bg-gradient-to-t from-[rgba(33,18,10,0.48)] via-[rgba(33,18,10,0.08)] to-transparent"></div>
         </div>
 
         <div class="px-4 md:px-8 pb-8">
           <div class="relative -mt-16 md:-mt-20 z-10 flex flex-col md:flex-row md:items-end gap-4">
-            <div class="h-28 w-28 md:h-36 md:w-36 rounded-full border-4 border-slate-800 bg-slate-700 overflow-hidden shadow-xl">
+            <div class="center-avatar h-28 w-28 md:h-36 md:w-36 rounded-full overflow-hidden shadow-[0_18px_40px_rgba(72,43,26,0.22)]">
               <img v-if="center.profilePicture" :src="center.profilePicture" alt="Clinic profile" class="w-full h-full object-cover" />
             </div>
             <div class="flex-1 pt-1 md:pt-0">
               <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <h1 class="text-2xl md:text-5xl font-bold text-white">{{ center.name || 'Center' }}</h1>
-                  <p class="text-slate-300 mt-1">{{ center.location || 'Location not set' }}</p>
+                  <h1 class="text-3xl md:text-5xl font-bold text-[#3d281d]">{{ center.name || 'Center' }}</h1>
+                  <p class="mt-2 text-[#6f4a2d]">{{ center.location || 'Location not set' }}</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div v-if="branchOptions.length > 1" class="mt-5 rounded-2xl border border-slate-600 bg-slate-900/50 p-4">
+          <div v-if="branchOptions.length > 1" class="mt-5 rounded-[1.5rem] border border-[#e0c09a] bg-[rgba(255,250,243,0.95)] p-4 shadow-[0_18px_44px_rgba(87,56,35,0.08)]">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Branch Selector</p>
-                <p class="mt-1 text-sm text-slate-300">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Branch Selector</p>
+                <p class="mt-1 text-sm text-[#6f4a2d]">
                   Choose a branch to view its products, services, and booking availability.
                 </p>
               </div>
               <div class="w-full md:w-[340px]">
                 <select
                   v-model="selectedBranchId"
-                  class="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white"
+                  class="w-full rounded-2xl border border-[#e0c09a] bg-[#fffaf3] px-4 py-3 text-[#3d281d] shadow-sm outline-none transition focus:border-[#c99563] focus:ring-4 focus:ring-[#e8bf8a]/30"
                   @change="selectBranch"
                 >
                   <option v-for="branch in branchOptions" :key="branch.id" :value="branch.id">
@@ -53,22 +54,22 @@
                 </select>
               </div>
             </div>
-            <p class="mt-3 text-xs text-slate-400">
-              Showing: <span class="text-slate-200">{{ selectedBranchLabel }}</span>
+            <p class="mt-3 text-xs text-[#8b6a4d]">
+              Showing: <span class="font-semibold text-[#3d281d]">{{ selectedBranchLabel }}</span>
             </p>
           </div>
 
-          <div class="mt-6 border-t border-slate-700 pt-4">
+          <div class="mt-6 border-t border-[#ebd6bc] pt-4">
             <div class="flex flex-wrap gap-2">
               <button
                 v-for="tab in tabs"
                 :key="tab"
                 @click="activeTab = tab"
                 :class="[
-                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  'center-tab-button px-4 py-2 rounded-full text-sm font-semibold transition-colors',
                   activeTab === tab
-                    ? 'bg-gold-700 text-white'
-                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    ? 'is-active'
+                    : ''
                 ]"
               >
                 {{ tab }}
@@ -78,133 +79,133 @@
 
           <div class="mt-6">
           <div v-if="activeTab === 'About Us'">
-            <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600">
-              <h3 class="text-white font-semibold mb-2">Description</h3>
-              <p class="text-slate-200 leading-relaxed">
+            <div class="center-panel p-5">
+              <h3 class="center-panel-title mb-2">Description</h3>
+              <p class="center-panel-copy leading-relaxed">
                 {{ center.description || 'No description available yet.' }}
               </p>
             </div>
 
-            <div class="mt-4 bg-slate-700/60 rounded-xl p-5 border border-slate-600">
-              <h3 class="text-white font-semibold mb-2">Offered Services</h3>
+            <div class="center-panel mt-4 p-5">
+              <h3 class="center-panel-title mb-2">Offered Services</h3>
               <div v-if="center.services.length" class="flex flex-wrap gap-2">
                 <span
                   v-for="(service, index) in center.services"
                   :key="`center-service-${index}-${service}`"
-                  class="inline-flex items-center px-3 py-1 rounded-full border border-[#9a7d5c] bg-[#d8c2a2] text-[#4d3724] text-xs font-medium"
+                  class="center-service-pill inline-flex items-center px-3 py-1 rounded-full text-xs font-medium"
                 >
                   {{ service }}
                 </span>
               </div>
-              <p v-else class="text-slate-400 text-sm">No services listed yet.</p>
+              <p v-else class="center-panel-copy text-sm">No services listed yet.</p>
             </div>
 
-            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600">
-                <h4 class="text-slate-200 font-medium mb-2">Contact</h4>
-                <p class="text-slate-300 text-sm">Email: {{ center.businessEmail || center.email || 'Not set' }}</p>
-                <p class="text-slate-300 text-sm mt-1">Phone: {{ center.contactNumber || 'Not set' }}</p>
+            <div class="center-panel-grid mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="center-panel p-5">
+                <h4 class="center-panel-title mb-2">Contact</h4>
+                <p class="center-panel-copy text-sm">Email: {{ center.businessEmail || center.email || 'Not set' }}</p>
+                <p class="center-panel-copy text-sm mt-1">Phone: {{ center.contactNumber || 'Not set' }}</p>
               </div>
-              <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600">
-                <h4 class="text-slate-200 font-medium mb-2">Address</h4>
-                <p class="text-slate-300 text-sm">{{ center.location || 'Not set' }}</p>
+              <div class="center-panel p-5">
+                <h4 class="center-panel-title mb-2">Address</h4>
+                <p class="center-panel-copy text-sm">{{ center.location || 'Not set' }}</p>
               </div>
             </div>
           </div>
 
           <div v-if="activeTab === 'Products & Services'">
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
+            <div class="center-toolbar flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
               <div class="flex w-full md:w-auto gap-3">
                 <input
                   v-model="searchQuery"
                   type="text"
                   placeholder="Search..."
-                  class="px-3 py-2 rounded-lg bg-slate-800 text-[#4d3724] placeholder:text-[#7a5a3d] border border-slate-500 focus:outline-none focus:ring-2 focus:ring-gold-500"
+                  class="center-search-input px-3 py-2 rounded-2xl"
                 />
               </div>
-              <button @click="goToCart" class="px-4 py-2 rounded-lg bg-gold-700 hover:bg-gold-800 text-white">
+              <button @click="goToCart" class="center-cart-button px-4 py-2 rounded-2xl text-white">
                 My Cart ({{ cartCount }})
               </button>
             </div>
 
-            <div v-if="loading" class="text-slate-400 py-10">Loading products and services...</div>
-            <div v-else-if="!filteredProducts.length && !filteredServices.length && !filteredConsultations.length" class="text-slate-400 py-10">
+            <div v-if="loading" class="center-muted-state py-10">Loading products and services...</div>
+            <div v-else-if="!filteredProducts.length && !filteredServices.length && !filteredConsultations.length" class="center-muted-state py-10">
               No matching products, services, or consultations found.
             </div>
 
             <div v-else class="space-y-8">
-              <section class="rounded-2xl border border-slate-600 bg-slate-700/35 p-5">
+              <section class="center-section-card p-5">
                 <div class="mb-5 flex items-center justify-between gap-3">
                   <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-gold-300">Products</p>
-                    <h3 class="mt-1 text-xl font-semibold text-white">Available Products</h3>
+                    <p class="center-kicker">Products</p>
+                    <h3 class="mt-1 text-xl font-semibold text-[#3d281d]">Available Products</h3>
                   </div>
-                  <span class="rounded-full border border-slate-500 bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300">
+                  <span class="center-count-pill px-3 py-1 text-xs font-medium">
                     {{ filteredProducts.length }}
                   </span>
                 </div>
 
                 <div v-if="filteredProducts.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div v-for="item in filteredProducts" :key="item.id" class="bg-slate-700/60 rounded-xl border border-slate-600 overflow-hidden">
+                  <div v-for="item in filteredProducts" :key="item.id" class="center-item-card overflow-hidden">
                     <img :src="item.imageUrl || fallbackImage" alt="Item image" class="w-full h-40 object-cover rounded mb-4" />
                     <div class="p-4">
-                      <h3 class="text-xl font-semibold text-white">{{ item.title || item.name }}</h3>
-                      <p class="text-[#5a3925] mt-2">PHP {{ Number(item.price || 0).toFixed(2) }}</p>
-                      <p class="text-slate-300 text-sm mt-1">{{ item.description || 'No description.' }}</p>
+                      <h3 class="text-xl font-semibold text-[#3d281d]">{{ item.title || item.name }}</h3>
+                      <p class="mt-2 text-[#8b6a4d]">PHP {{ Number(item.price || 0).toFixed(2) }}</p>
+                      <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
 
                       <div class="mt-4 flex items-center space-x-2">
-                        <button @click="addToCart(item)" class="px-3 py-2 rounded-lg bg-gold-700 hover:bg-gold-800 text-white">
+                        <button @click="addToCart(item)" class="center-action-button px-3 py-2 rounded-xl text-white">
                           Add to Cart
                         </button>
-                        <input type="number" min="1" v-model.number="item.quantity" class="w-16 px-2 py-1 rounded-lg bg-slate-800 text-white border border-slate-500" />
+                        <input type="number" min="1" v-model.number="item.quantity" class="center-qty-input w-16 px-2 py-1 rounded-xl" />
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <p v-else class="text-sm text-slate-400">No products posted yet.</p>
+                <p v-else class="center-muted-state text-sm">No products posted yet.</p>
               </section>
 
-              <section class="rounded-2xl border border-slate-600 bg-slate-700/35 p-5">
+              <section class="center-section-card p-5">
                 <div class="mb-5 flex items-center justify-between gap-3">
                   <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Services</p>
-                    <h3 class="mt-1 text-xl font-semibold text-white">Services Offered</h3>
+                    <p class="center-kicker">Services</p>
+                    <h3 class="mt-1 text-xl font-semibold text-[#3d281d]">Services Offered</h3>
                   </div>
-                  <span class="rounded-full border border-slate-500 bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300">
+                  <span class="center-count-pill px-3 py-1 text-xs font-medium">
                     {{ filteredServices.length }}
                   </span>
                 </div>
 
                 <div v-if="filteredServices.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div v-for="item in filteredServices" :key="item.id" class="bg-slate-700/60 rounded-xl border border-slate-600 overflow-hidden">
+                  <div v-for="item in filteredServices" :key="item.id" class="center-item-card overflow-hidden">
                     <img :src="item.imageUrl || fallbackImage" alt="Item image" class="w-full h-40 object-cover rounded mb-4" />
                     <div class="p-4">
-                      <h3 class="text-xl font-semibold text-white">{{ item.title || item.name }}</h3>
-                      <p class="text-[#5a3925] mt-2">PHP {{ Number(item.price || 0).toFixed(2) }}</p>
-                      <p class="text-slate-300 text-sm mt-1">{{ item.description || 'No description.' }}</p>
+                      <h3 class="text-xl font-semibold text-[#3d281d]">{{ item.title || item.name }}</h3>
+                      <p class="mt-2 text-[#8b6a4d]">PHP {{ Number(item.price || 0).toFixed(2) }}</p>
+                      <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
                       <div class="mt-3 flex flex-wrap gap-2">
                         <span
                           v-if="item.requiresConsultationFirst"
-                          class="rounded-full border border-amber-300/40 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-200"
+                          class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium"
                         >
                           Consultation required
                         </span>
                         <span
                           v-if="item.requiresConsultationFirst && item.consultationFee != null"
-                          class="rounded-full border border-orange-300/40 bg-orange-500/10 px-2 py-1 text-[11px] font-medium text-orange-200"
+                          class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium"
                         >
                           Fee PHP {{ Number(item.consultationFee || 0).toFixed(2) }}
                         </span>
                         <span
                           v-if="item.followUpAllowed"
-                          class="rounded-full border border-emerald-300/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-200"
+                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
                         >
                           Follow-up allowed
                         </span>
                         <span
                           v-if="item.durationMinutes"
-                          class="rounded-full border border-sky-300/40 bg-sky-500/10 px-2 py-1 text-[11px] font-medium text-sky-200"
+                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
                         >
                           {{ item.durationMinutes }} mins
                         </span>
@@ -214,10 +215,10 @@
                         <button
                           @click="toggleServiceForBooking(item)"
                           :class="[
-                            'px-3 py-2 rounded-lg text-white',
+                            'center-action-button px-3 py-2 rounded-xl text-white',
                             isServiceSelected(item)
-                              ? 'bg-amber-600 hover:bg-amber-500'
-                              : 'bg-emerald-600 hover:bg-emerald-700'
+                              ? 'is-warm'
+                              : 'is-cool'
                           ]"
                         >
                           {{ isServiceSelected(item) ? 'Selected for Booking' : 'Add to Booking' }}
@@ -227,49 +228,49 @@
                   </div>
                 </div>
 
-                <p v-else class="text-sm text-slate-400">No services posted yet.</p>
+                <p v-else class="center-muted-state text-sm">No services posted yet.</p>
               </section>
 
-              <section class="rounded-2xl border border-slate-600 bg-slate-700/35 p-5">
+              <section class="center-section-card p-5">
                 <div class="mb-5 flex items-center justify-between gap-3">
                   <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-orange-300">Consultations</p>
-                    <h3 class="mt-1 text-xl font-semibold text-white">Consultation Posts</h3>
+                    <p class="center-kicker">Consultations</p>
+                    <h3 class="mt-1 text-xl font-semibold text-[#3d281d]">Consultation Posts</h3>
                   </div>
-                  <span class="rounded-full border border-slate-500 bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300">
+                  <span class="center-count-pill px-3 py-1 text-xs font-medium">
                     {{ filteredConsultations.length }}
                   </span>
                 </div>
 
                 <div v-if="filteredConsultations.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div v-for="item in filteredConsultations" :key="item.id" class="bg-slate-700/60 rounded-xl border border-slate-600 overflow-hidden">
+                  <div v-for="item in filteredConsultations" :key="item.id" class="center-item-card overflow-hidden">
                     <img :src="item.imageUrl || fallbackImage" alt="Item image" class="w-full h-40 object-cover rounded mb-4" />
                     <div class="p-4">
-                      <h3 class="text-xl font-semibold text-white">{{ item.title || item.name }}</h3>
-                      <p class="text-[#5a3925] mt-2">PHP {{ Number(item.consultationFee || item.price || 0).toFixed(2) }}</p>
-                      <p class="text-slate-300 text-sm mt-1">{{ item.description || 'No description.' }}</p>
+                      <h3 class="text-xl font-semibold text-[#3d281d]">{{ item.title || item.name }}</h3>
+                      <p class="mt-2 text-[#8b6a4d]">PHP {{ Number(item.consultationFee || item.price || 0).toFixed(2) }}</p>
+                      <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
                       <div class="mt-3 flex flex-wrap gap-2">
-                        <span class="rounded-full border border-amber-300/40 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-200">
+                        <span class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium">
                           Consultation
                         </span>
                         <span
                           v-if="item.durationMinutes"
-                          class="rounded-full border border-sky-300/40 bg-sky-500/10 px-2 py-1 text-[11px] font-medium text-sky-200"
+                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
                         >
                           {{ item.durationMinutes }} mins
                         </span>
                       </div>
-                      <p class="mt-3 text-xs font-semibold text-orange-200">
+                      <p class="mt-3 text-xs font-semibold text-[#8b6a4d]">
                         Book this separately from regular services.
                       </p>
                       <div class="mt-4">
                         <button
                           @click="toggleConsultationForBooking(item)"
                           :class="[
-                            'px-3 py-2 rounded-lg text-white',
+                            'center-action-button px-3 py-2 rounded-xl text-white',
                             isConsultationSelected(item)
-                              ? 'bg-amber-600 hover:bg-amber-500'
-                              : 'bg-orange-600 hover:bg-orange-700'
+                              ? 'is-warm'
+                              : 'is-cool'
                           ]"
                         >
                           {{ isConsultationSelected(item) ? 'Selected for Booking' : 'Book Consultation' }}
@@ -279,36 +280,36 @@
                   </div>
                 </div>
 
-                <p v-else class="text-sm text-slate-400">No consultation posts yet.</p>
+                <p v-else class="center-muted-state text-sm">No consultation posts yet.</p>
               </section>
             </div>
 
-            <div v-if="selectedServices.length" class="booking-panel mt-8 rounded-2xl border p-6">
+            <div v-if="selectedServices.length" class="booking-panel center-booking-panel mt-8 rounded-2xl border p-6">
               <div>
-                <h4 class="text-lg font-semibold text-white mb-1">Book Appointment</h4>
-                <p class="text-xs text-slate-300">Choose one or more services, then pick a schedule from the calendar.</p>
+                <h4 class="center-panel-title text-lg font-semibold mb-1">Book Appointment</h4>
+                <p class="center-panel-copy text-xs">Choose one or more services, then pick a schedule from the calendar.</p>
               </div>
 
               <div class="mt-5 grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_340px] gap-4 items-start">
                 <div>
-                  <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">Appointment Date</label>
+                  <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Appointment Date</label>
                   <div class="booking-calendar rounded-2xl border p-4">
-                    <p v-if="bookingAvailabilityHint" class="mb-4 rounded-xl border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                    <p v-if="bookingAvailabilityHint" class="mb-4 rounded-xl border border-[#e8c494]/70 bg-[#fff5e6] px-3 py-2 text-xs text-[#8b6a4d]">
                       {{ bookingAvailabilityHint }}
                     </p>
                     <div class="mb-4 flex items-center justify-between gap-3">
                       <button
                         type="button"
-                        class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-600 text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#e0c09a] text-[#6f4a2d] transition hover:bg-[#f6ead8] disabled:cursor-not-allowed disabled:opacity-40"
                         :disabled="!canGoToPreviousBookingMonth"
                         @click="changeBookingCalendarMonth(-1)"
                       >
                         <Icon icon="mdi:chevron-left" class="h-5 w-5" />
                       </button>
-                      <p class="text-sm font-semibold text-white">{{ bookingCalendarMonthLabel }}</p>
+                      <p class="text-sm font-semibold text-[#3d281d]">{{ bookingCalendarMonthLabel }}</p>
                       <button
                         type="button"
-                        class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-600 text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#e0c09a] text-[#6f4a2d] transition hover:bg-[#f6ead8] disabled:cursor-not-allowed disabled:opacity-40"
                         :disabled="!canGoToNextBookingMonth"
                         @click="changeBookingCalendarMonth(1)"
                       >
@@ -316,7 +317,7 @@
                       </button>
                     </div>
 
-                    <div class="grid grid-cols-7 gap-2 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+                    <div class="grid grid-cols-7 gap-2 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">
                       <span v-for="day in bookingCalendarWeekdays" :key="day">{{ day }}</span>
                     </div>
                     <div class="mt-2 grid grid-cols-7 gap-2">
@@ -341,12 +342,12 @@
                         ></span>
                       </button>
                     </div>
-                    <p class="mt-4 text-xs text-slate-300">{{ selectedBookingDateLabel }}</p>
+                    <p class="mt-4 text-xs text-[#8b6a4d]">{{ selectedBookingDateLabel }}</p>
                   </div>
                 </div>
                 <div class="space-y-4">
-                  <div class="booking-sidecard rounded-2xl border p-4 text-white">
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">Selected Services</p>
+                  <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Selected Services</p>
                     <div class="mt-3 flex flex-wrap gap-2">
                       <span
                         v-for="service in selectedServices"
@@ -361,58 +362,67 @@
                     </div>
                     <p v-if="bookingRulesNotice" class="mt-3 text-xs text-amber-200">{{ bookingRulesNotice }}</p>
                   </div>
-                  <div class="booking-sidecard rounded-2xl border p-4 text-white">
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">Selected Schedule</p>
-                    <p class="mt-3 text-sm font-semibold text-white">{{ bookingScheduleSummary }}</p>
-                    <p class="mt-2 text-sm text-slate-300">
+                  <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Selected Schedule</p>
+                    <p class="mt-3 text-sm font-semibold text-[#3d281d]">{{ bookingScheduleSummary }}</p>
+                    <p class="mt-2 text-sm text-[#8b6a4d]">
                       Assigned Practitioner:
-                      <span class="ml-1 font-semibold text-white">{{ assignedPractitioner?.fullName || '-' }}</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">{{ assignedPractitioner?.fullName || '-' }}</span>
                     </p>
-                    <p class="mt-3 text-xs text-slate-300">
+                    <p class="mt-3 text-xs text-[#8b6a4d]">
                       Full payment due:
-                      <span class="ml-1 font-semibold text-white">PHP {{ bookingDueAmount.toFixed(2) }}</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">PHP {{ bookingDueAmount.toFixed(2) }}</span>
                     </p>
-                    <p class="mt-1 text-xs text-slate-300">
+                    <p class="mt-1 text-xs text-[#8b6a4d]">
                       System commission ({{ serviceCommissionPercent }}%):
-                      <span class="ml-1 font-semibold text-white">PHP {{ bookingCommissionAmount.toFixed(2) }}</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">PHP {{ bookingCommissionAmount.toFixed(2) }}</span>
                     </p>
-                    <p class="mt-1 text-xs text-slate-300">
+                    <p class="mt-1 text-xs text-[#8b6a4d]">
                       Clinic share:
-                      <span class="ml-1 font-semibold text-white">PHP {{ bookingNetAmount.toFixed(2) }}</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">PHP {{ bookingNetAmount.toFixed(2) }}</span>
                     </p>
-                    <p v-if="selectedServiceDurationMinutes" class="mt-1 text-xs text-slate-300">
+                    <p v-if="selectedServiceDurationMinutes" class="mt-1 text-xs text-[#8b6a4d]">
                       Total duration:
-                      <span class="ml-1 font-semibold text-white">{{ selectedServiceDurationMinutes }} mins</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">{{ selectedServiceDurationMinutes }} mins</span>
                     </p>
-                    <div class="mt-4 border-t border-slate-700 pt-4">
-                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">Available Schedules</p>
+                    <div class="mt-4 border-t border-[#e6cfb0] pt-4">
+                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Time Slots</p>
                       <div v-if="slotsForSelectedDate.length" class="mt-3 grid grid-cols-1 gap-2 max-h-72 overflow-y-auto pr-1">
                         <button
                           v-for="slot in slotsForSelectedDate"
                           :key="slot.key"
                           type="button"
                           class="booking-slot rounded-xl border px-3 py-3 text-left transition"
-                          :class="bookingForm.slotKey === slot.key ? 'is-selected' : ''"
-                          @click="bookingForm.slotKey = slot.key"
+                          :class="[
+                            bookingForm.slotKey === slot.key ? 'is-selected' : '',
+                            slot.isAvailable ? '' : 'is-disabled'
+                          ]"
+                          :disabled="!slot.isAvailable"
+                          @click="selectBookingSlot(slot)"
                         >
-                          <p class="text-sm font-semibold">
-                            Starts at {{ minutesToTime12(parseClockToMinutes(slot.time)) }}
-                          </p>
+                          <div class="flex items-center justify-between gap-3">
+                            <p class="text-sm font-semibold">
+                              Starts at {{ minutesToTime12(parseClockToMinutes(slot.time)) }}
+                            </p>
+                            <span v-if="!slot.isAvailable" class="rounded-full border border-[#d9be9b] bg-[#fff7ec] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b6a4d]">
+                              Unavailable
+                            </span>
+                          </div>
                         </button>
                       </div>
-                      <div v-else class="mt-3 rounded-xl border border-dashed border-slate-600 bg-slate-900/50 px-4 py-6 text-sm text-slate-300">
+                      <div v-else class="mt-3 rounded-xl border border-dashed border-[#d9be9b] bg-[#fff7ec] px-4 py-6 text-sm text-[#6f4a2d]">
                         {{ hasBookingAvailability ? 'No available time slots for the selected date.' : 'No booking schedule is available yet for this branch.' }}
                       </div>
                     </div>
-                    <div class="mt-4 border-t border-slate-700 pt-4">
-                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">Payment Method</p>
+                    <div class="mt-4 border-t border-[#e6cfb0] pt-4">
+                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">Payment Method</p>
                       <div class="mt-2 grid grid-cols-1 gap-2">
                         <button
                           type="button"
                           class="rounded-xl border px-3 py-3 text-left text-sm transition"
                           :class="bookingPaymentMethod === 'E-Wallet'
-                            ? 'border-emerald-300 bg-emerald-500/15 text-emerald-100'
-                            : 'border-slate-700 bg-slate-900/50 text-slate-300 hover:bg-slate-800'"
+                            ? 'border-[#c99563] bg-[#fff1df] text-[#3d281d]'
+                            : 'border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]'"
                           @click="bookingPaymentMethod = 'E-Wallet'"
                         >
                           <span class="block font-semibold">E-Wallet</span>
@@ -422,8 +432,8 @@
                           type="button"
                           class="rounded-xl border px-3 py-3 text-left text-sm transition"
                           :class="bookingPaymentMethod === 'Card'
-                            ? 'border-emerald-300 bg-emerald-500/15 text-emerald-100'
-                            : 'border-slate-700 bg-slate-900/50 text-slate-300 hover:bg-slate-800'"
+                            ? 'border-[#c99563] bg-[#fff1df] text-[#3d281d]'
+                            : 'border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]'"
                           @click="bookingPaymentMethod = 'Card'"
                         >
                           <span class="block font-semibold">Card</span>
@@ -433,8 +443,8 @@
                           type="button"
                           class="rounded-xl border px-3 py-3 text-left text-sm transition"
                           :class="bookingPaymentMethod === 'Bank Transfer'
-                            ? 'border-emerald-300 bg-emerald-500/15 text-emerald-100'
-                            : 'border-slate-700 bg-slate-900/50 text-slate-300 hover:bg-slate-800'"
+                            ? 'border-[#c99563] bg-[#fff1df] text-[#3d281d]'
+                            : 'border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]'"
                           @click="bookingPaymentMethod = 'Bank Transfer'"
                         >
                           <span class="block font-semibold">Bank Transfer</span>
@@ -442,11 +452,11 @@
                         </button>
                       </div>
                       <div class="mt-3">
-                        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">
+                        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">
                           Mobile Number <span v-if="bookingPaymentMethod === 'E-Wallet'">*</span>
                         </label>
-                        <div class="mt-1 flex items-stretch overflow-hidden rounded-xl border bg-slate-900" :class="bookingPhoneError ? 'border-rose-400' : 'border-slate-700'">
-                          <span class="inline-flex items-center border-r border-slate-700 px-3 text-sm font-semibold text-slate-300">+63</span>
+                        <div class="mt-1 flex items-stretch overflow-hidden rounded-xl border bg-[#fffaf3]" :class="bookingPhoneError ? 'border-rose-400' : 'border-[#e0c09a]'">
+                          <span class="inline-flex items-center border-r border-[#e0c09a] px-3 text-sm font-semibold text-[#6f4a2d]">+63</span>
                           <input
                             v-model.trim="bookingForm.contactNumber"
                             type="tel"
@@ -455,7 +465,7 @@
                             maxlength="10"
                             pattern="[0-9]{10}"
                             placeholder="9123456789"
-                            class="w-full bg-transparent px-3 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none"
+                            class="w-full bg-transparent px-3 py-3 text-sm text-[#3d281d] placeholder:text-[#a78a6e] focus:outline-none"
                             :required="bookingPaymentMethod === 'E-Wallet'"
                             :aria-invalid="Boolean(bookingPhoneError)"
                             :aria-describedby="bookingPhoneError ? 'booking-phone-error' : undefined"
@@ -463,40 +473,40 @@
                             @blur="validateBookingPhoneNumber"
                           />
                         </div>
-                        <p class="mt-1 text-xs text-slate-400">
+                        <p class="mt-1 text-xs text-[#8b6a4d]">
                           {{ bookingPaymentMethod === 'E-Wallet' ? 'Required for GCash checkout.' : 'Optional unless you want to prefill your contact number.' }}
                         </p>
-                        <p v-if="bookingPhoneError" id="booking-phone-error" class="mt-1 text-xs text-rose-300">{{ bookingPhoneError }}</p>
+                        <p v-if="bookingPhoneError" id="booking-phone-error" class="mt-1 text-xs text-rose-600">{{ bookingPhoneError }}</p>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
               <p v-if="availabilityMessage" class="booking-notice mt-2 text-xs">{{ availabilityMessage }}</p>
-              <textarea v-model="bookingForm.notes" rows="3" class="mt-4 w-full px-3 py-2 rounded-lg bg-slate-900 text-white border border-slate-600 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="Notes (optional)"></textarea>
+              <textarea v-model="bookingForm.notes" rows="3" class="mt-4 w-full px-3 py-3 rounded-2xl bg-[#fffaf3] text-[#3d281d] border border-[#e0c09a] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20" placeholder="Notes (optional)"></textarea>
               <div class="mt-4 flex gap-3">
                 <button
                   @click="submitBooking"
                   :disabled="bookingPaymentSaving"
-                  class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white shadow-md shadow-amber-950/30 disabled:cursor-not-allowed disabled:opacity-60"
+                  class="px-4 py-2 rounded-2xl bg-[#8d5a3b] hover:bg-[#6f4329] text-white shadow-md shadow-amber-950/20 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {{ bookingPaymentSaving ? 'Processing...' : 'Confirm Booking' }}
                 </button>
-                <button @click="clearBookingSelection" class="px-4 py-2 rounded-lg border border-slate-600 bg-transparent text-slate-200 hover:bg-slate-800">Cancel</button>
+                <button @click="clearBookingSelection" class="px-4 py-2 rounded-2xl border border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]">Cancel</button>
               </div>
             </div>
           </div>
 
           <div v-if="activeTab === 'Reviews'">
-            <div v-if="reviews.length === 0" class="text-slate-300 italic">No reviews yet.</div>
+            <div v-if="reviews.length === 0" class="center-muted-state italic">No reviews yet.</div>
             <div v-else class="space-y-3">
               <article
                 v-for="review in reviews"
                 :key="review.id"
-                class="bg-slate-700/60 rounded-xl border border-slate-600 p-4"
+                class="center-review-card p-4"
               >
-                <p class="text-white font-medium">{{ review.reviewerName || 'Anonymous' }}</p>
-                <p class="text-slate-300 mt-2">"{{ review.comment || 'No comment' }}"</p>
+                <p class="font-medium text-[#3d281d]">{{ review.reviewerName || 'Anonymous' }}</p>
+                <p class="mt-2 text-[#6f4a2d]">"{{ review.comment || 'No comment' }}"</p>
               </article>
             </div>
           </div>
@@ -506,7 +516,7 @@
     </main>
     <button
       type="button"
-      class="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-gold-700 text-white shadow-lg hover:bg-gold-800 transition flex items-center justify-center"
+      class="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#8d5a3b] text-white shadow-lg hover:bg-[#6f4329] transition flex items-center justify-center"
       title="Chat with clinic"
       @click="openChat"
     >
@@ -519,25 +529,25 @@
       </span>
     </button>
 
-    <div v-if="showChatModal" class="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-4">
-      <div class="w-full max-w-lg rounded-2xl bg-slate-800 border border-slate-700 shadow-xl">
-        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+    <div v-if="showChatModal" class="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-[rgba(31,18,11,0.55)] p-4 backdrop-blur-sm">
+      <div class="w-full max-w-lg rounded-[1.75rem] border border-[#e0c09a] bg-[#fffaf3] shadow-[0_30px_80px_rgba(60,34,18,0.26)]">
+        <div class="flex items-center justify-between border-b border-[#efd7ba] px-4 py-3">
           <div>
-            <h3 class="text-white font-semibold">Chat with {{ center.name || 'Clinic' }}</h3>
-            <p class="text-xs text-slate-400">This chat is for inquiries and appointments.</p>
+            <h3 class="font-semibold text-[#3d281d]">Chat with {{ center.name || 'Clinic' }}</h3>
+            <p class="text-xs text-[#8b6a4d]">This chat is for inquiries and appointments.</p>
           </div>
-          <button type="button" class="text-slate-300 hover:text-white" @click="closeChat">
+          <button type="button" class="text-[#8b6a4d] hover:text-[#3d281d]" @click="closeChat">
             <Icon icon="mdi:close" class="h-5 w-5" />
           </button>
         </div>
         <div class="px-4 pt-4">
-          <p class="text-xs text-slate-400 mb-2">Quick questions</p>
+          <p class="mb-2 text-xs text-[#8b6a4d]">Quick questions</p>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="question in quickQuestions"
               :key="question.key"
               type="button"
-              class="px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-200 hover:bg-slate-600 transition"
+              class="rounded-full border border-[#e0c09a] bg-[#fff2e1] px-3 py-1.5 text-xs text-[#6f4a2d] transition hover:bg-[#ffe8cc]"
               @click="sendQuickQuestion(question)"
             >
               {{ question.label }}
@@ -545,7 +555,7 @@
           </div>
         </div>
         <div ref="chatScrollRef" class="px-4 py-4 max-h-[45vh] overflow-y-auto space-y-3">
-          <div v-if="chatMessages.length === 0" class="text-sm text-slate-400 text-center">No messages yet. Say hello!</div>
+          <div v-if="chatMessages.length === 0" class="text-center text-sm text-[#8b6a4d]">No messages yet. Say hello!</div>
           <div
             v-for="message in chatMessages"
             :key="message.id"
@@ -555,29 +565,29 @@
             <div
               class="max-w-[75%] rounded-2xl px-3 py-2 text-sm"
               :class="message.senderRole === 'system'
-                ? 'bg-emerald-700 text-white'
+                ? 'bg-[#8d5a3b] text-white'
                 : message.senderId === currentUserId
-                  ? 'bg-gold-700 text-white'
-                  : 'bg-slate-700 text-slate-100'"
+                  ? 'bg-[#6f4329] text-white'
+                  : 'bg-[#f5eadc] text-[#3d281d]'"
             >
               <p class="whitespace-pre-wrap">{{ message.text }}</p>
-              <p class="mt-1 text-[10px] text-slate-300/80">
+              <p class="mt-1 text-[10px] text-[#a78a6e]">
                 {{ formatChatTime(message.createdAt) }}
               </p>
             </div>
           </div>
         </div>
-        <div class="px-4 py-3 border-t border-slate-700">
+        <div class="border-t border-[#efd7ba] px-4 py-3">
           <div class="flex items-center gap-2">
             <input
               v-model="chatInput"
               type="text"
               placeholder="Type your message..."
-              class="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-gold-500"
+              class="flex-1 rounded-2xl border border-[#e0c09a] bg-white px-3 py-2 text-[#3d281d] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20"
             />
             <button
               type="button"
-              class="px-3 py-2 rounded-lg bg-gold-700 text-white hover:bg-gold-800 transition"
+              class="rounded-2xl bg-[#8d5a3b] px-3 py-2 text-white transition hover:bg-[#6f4329]"
               @click="sendChat"
             >
               Send
@@ -671,7 +681,7 @@ const appointments = ref([])
 const bookingReservations = ref([])
 const assignedPractitioner = ref(null)
 const availabilityMessage = ref('')
-const hasBookingAvailability = computed(() => availableSlots.value.length > 0)
+const hasBookingAvailability = computed(() => bookingSlots.value.length > 0)
 const bookingAvailabilityHint = computed(() => {
   if (hasBookingAvailability.value) return ''
   if (!practitioners.value.length) {
@@ -1129,7 +1139,7 @@ const loadBranchData = async (branchId) => {
   }
 }
 
-const availableSlots = computed(() => {
+const bookingSlots = computed(() => {
   if (!practitioners.value.length) return []
   const slotDurationMinutes = Number(bookingDurationMinutes.value || 0)
   if (slotDurationMinutes <= 0) return []
@@ -1170,9 +1180,6 @@ const availableSlots = computed(() => {
         const time = minutesToTime(normalizedMinutes)
         const key = `${dateKey}|${time}|${practitioner.id}`
         const endMinutes = (normalizedMinutes + slotDurationMinutes) % (24 * 60)
-        if (overlapsBlockedRange(normalizedMinutes, normalizedMinutes + slotDurationMinutes, blockedRanges)) {
-          continue
-        }
         slots.push({
           key,
           date: dateKey,
@@ -1181,7 +1188,8 @@ const availableSlots = computed(() => {
           practitionerId: practitioner.id,
           practitionerName: practitioner.fullName,
           endLabel: `${dateKey} - until ${minutesToTime12(endMinutes)} - ${practitioner.fullName}`,
-          label: `${dateKey} • ${minutesToTime12(normalizedMinutes)} - ${minutesToTime12(endMinutes)} • ${practitioner.fullName}`
+          label: `${dateKey} • ${minutesToTime12(normalizedMinutes)} - ${minutesToTime12(endMinutes)} • ${practitioner.fullName}`,
+          isAvailable: !overlapsBlockedRange(normalizedMinutes, normalizedMinutes + slotDurationMinutes, blockedRanges),
         })
       }
     })
@@ -1190,7 +1198,7 @@ const availableSlots = computed(() => {
   return slots
 })
 
-const availableDates = computed(() => [...new Set(availableSlots.value.map((slot) => slot.date))])
+const availableDates = computed(() => [...new Set(bookingSlots.value.map((slot) => slot.date))])
 const availableDateSet = computed(() => new Set(availableDates.value))
 const bookingCalendarMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
 
@@ -1210,7 +1218,7 @@ const selectedBookingDateLabel = computed(() => {
   const parsed = parseDateInput(bookingForm.value.date)
   return parsed
     ? parsed.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-    : 'Choose an available date from the calendar.'
+    : 'Choose a date from the calendar.'
 })
 
 const bookingScheduleSummary = computed(() => {
@@ -1280,16 +1288,24 @@ const selectBookingDate = (dateKey) => {
 
 const slotsForSelectedDate = computed(() => {
   if (!bookingForm.value.date) return []
-  return availableSlots.value.filter((slot) => slot.date === bookingForm.value.date)
+  return bookingSlots.value.filter((slot) => slot.date === bookingForm.value.date)
 })
+
+const selectBookingSlot = (slot) => {
+  if (!slot?.isAvailable) return
+  bookingForm.value.slotKey = slot.key
+}
 
 const syncSelectedSlot = () => {
   availabilityMessage.value = ''
-  const slot = availableSlots.value.find((entry) => entry.key === bookingForm.value.slotKey)
-  if (!slot) {
+  const slot = bookingSlots.value.find((entry) => entry.key === bookingForm.value.slotKey)
+  if (!slot || !slot.isAvailable) {
     assignedPractitioner.value = null
     bookingForm.value.time = ''
     bookingForm.value.endTime = ''
+    if (bookingForm.value.slotKey) {
+      bookingForm.value.slotKey = ''
+    }
     if (selectedServices.value.length) {
       availabilityMessage.value = 'Select an available schedule to continue.'
     }
@@ -1365,12 +1381,12 @@ watch(() => bookingForm.value.date, () => {
   if (bookingForm.value.date) {
     setBookingCalendarMonth(bookingForm.value.date)
   }
-  const nextSlot = slotsForSelectedDate.value[0]
+  const nextSlot = slotsForSelectedDate.value.find((slot) => slot.isAvailable)
   if (nextSlot) {
     bookingForm.value.slotKey = nextSlot.key
   }
-  if (selectedServices.value.length && bookingForm.value.date && !slotsForSelectedDate.value.length) {
-    availabilityMessage.value = 'No practitioner slots are available on that date.'
+  if (selectedServices.value.length && bookingForm.value.date && !nextSlot) {
+    availabilityMessage.value = 'No available time slots are open on that date.'
   } else if (selectedServices.value.length) {
     availabilityMessage.value = 'Select an available schedule to continue.'
   } else {
@@ -1918,7 +1934,8 @@ const createBookingPayMongoCheckoutSession = async ({
   if (Number(amountPeso || 0) <= 0) {
     throw new Error('The selected service needs a valid price before payment can continue.')
   }
-  if (!bookingForm.value.slotKey || !bookingForm.value.date || !bookingForm.value.time || !assignedPractitioner.value) {
+  const selectedSlot = bookingSlots.value.find((entry) => entry.key === bookingForm.value.slotKey)
+  if (!selectedSlot || !selectedSlot.isAvailable || !bookingForm.value.date || !bookingForm.value.time || !assignedPractitioner.value) {
     throw new Error('Please choose an available schedule.')
   }
 
@@ -2210,7 +2227,8 @@ const submitBooking = async () => {
     router.replace({ name: 'centers' })
     return
   }
-  if (!selectedServices.value.length || !bookingForm.value.slotKey || !bookingForm.value.date || !bookingForm.value.time || !assignedPractitioner.value) {
+  const selectedSlot = bookingSlots.value.find((entry) => entry.key === bookingForm.value.slotKey)
+  if (!selectedServices.value.length || !selectedSlot || !selectedSlot.isAvailable || !bookingForm.value.date || !bookingForm.value.time || !assignedPractitioner.value) {
     toast.error('Please choose an available schedule.')
     return
   }
@@ -2391,102 +2409,243 @@ const formatChatTime = (timestamp) => {
 
 <style scoped>
 .customer-center-page {
-  color: #f8fafc;
+  color: #3d281d;
 }
 
 .customer-center-page main {
   background:
-    radial-gradient(circle at top left, rgba(217, 119, 6, 0.14), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(15, 23, 42, 0.35), transparent 28%),
-    linear-gradient(180deg, #1b120d 0%, #120c09 100%);
+    radial-gradient(circle at top left, rgba(241, 212, 170, 0.38), transparent 28%),
+    radial-gradient(circle at 82% 8%, rgba(198, 148, 108, 0.16), transparent 20%),
+    linear-gradient(180deg, #fbf5e8 0%, #f8ecd9 52%, #f4e1c6 100%);
 }
 
-.customer-center-page main :deep(.booking-panel) {
-  background: rgba(15, 23, 42, 0.92);
-  border-color: rgba(148, 163, 184, 0.22);
-  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.22);
+.center-shell {
+  overflow: hidden;
+  border: 1px solid rgba(224, 192, 154, 0.8);
+  border-radius: 1.75rem;
+  background: rgba(255, 251, 244, 0.95);
+  box-shadow: 0 24px 60px rgba(84, 54, 34, 0.14);
 }
 
-.customer-center-page main :deep(.booking-card) {
-  background: linear-gradient(180deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.98));
-  border-color: rgba(148, 163, 184, 0.25);
+.center-avatar {
+  border: 4px solid rgba(255, 250, 243, 0.98);
+  background: linear-gradient(180deg, #fff9f2 0%, #f6e5cb 100%);
+}
+
+.center-title {
+  letter-spacing: -0.03em;
+}
+
+.center-tab-button {
+  border: 1px solid rgba(224, 192, 154, 0.85);
+  background: rgba(255, 251, 244, 0.9);
+  color: #7b5534;
+  box-shadow: 0 8px 18px rgba(84, 54, 34, 0.08);
+}
+
+.center-tab-button.is-active {
+  background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%);
+  color: #fff8eb;
+  border-color: rgba(111, 67, 41, 0.95);
+  box-shadow: 0 12px 28px rgba(111, 63, 42, 0.18);
+}
+
+.center-panel,
+.center-section-card,
+.center-item-card,
+.center-review-card,
+.center-branch-card,
+.center-toolbar,
+.center-search-input,
+.center-cart-button {
+  border-color: rgba(224, 192, 154, 0.85);
+}
+
+.center-panel,
+.center-section-card,
+.center-item-card,
+.center-review-card,
+.center-branch-card {
+  background: rgba(255, 251, 244, 0.96);
+  border: 1px solid rgba(224, 192, 154, 0.85);
+  border-radius: 1.5rem;
+  box-shadow: 0 18px 44px rgba(87, 56, 35, 0.08);
+}
+
+.center-panel-title {
+  color: #3d281d;
+  font-weight: 700;
+}
+
+.center-panel-copy,
+.center-muted-state {
+  color: #6f4a2d;
+}
+
+.center-service-pill,
+.center-badge,
+.center-count-pill {
+  border: 1px solid rgba(224, 192, 154, 0.85);
+  background: #fff4e6;
+  color: #7b5534;
+}
+
+.center-badge-warm {
+  background: #fff1df;
+}
+
+.center-badge-soft {
+  background: #f8efe2;
+}
+
+.center-count-pill {
+  background: #fffaf3;
+}
+
+.center-search-input {
+  background: #fffaf3;
+  border: 1px solid rgba(224, 192, 154, 0.95);
+  color: #3d281d;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.center-search-input::placeholder {
+  color: #a78a6e;
+}
+
+.center-cart-button,
+.center-action-button {
+  background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%);
+  box-shadow: 0 14px 26px rgba(111, 63, 42, 0.14);
+}
+
+.center-action-button.is-cool {
+  background: linear-gradient(135deg, #b57f5c 0%, #8d5a3b 100%);
+}
+
+.center-action-button.is-warm {
+  background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%);
+}
+
+.center-qty-input {
+  background: #fffaf3;
+  border: 1px solid rgba(224, 192, 154, 0.95);
+  color: #3d281d;
+}
+
+.center-kicker {
+  color: #8b6a4d;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.booking-panel {
+  background: linear-gradient(180deg, rgba(255, 251, 244, 0.98), rgba(251, 241, 228, 0.98)) !important;
+  border: 1px solid rgba(224, 192, 154, 0.95) !important;
+  box-shadow: 0 24px 60px rgba(84, 54, 34, 0.12) !important;
 }
 
 .customer-center-page main :deep(.booking-calendar) {
-  background: rgba(15, 23, 42, 0.94);
-  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(255, 250, 243, 0.98);
+  border-color: rgba(224, 192, 154, 0.95);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
 .customer-center-page main :deep(.booking-day) {
-  background: rgba(30, 41, 59, 0.96);
-  color: #f8fafc;
-  border-color: rgba(100, 116, 139, 0.35);
+  background: rgba(255, 250, 243, 0.98);
+  color: #6f4a2d;
+  border-color: rgba(224, 192, 154, 0.95);
 }
 
 .customer-center-page main :deep(.booking-day:hover) {
-  background: rgba(71, 85, 105, 0.95);
+  background: #f8efe2;
 }
 
 .customer-center-page main :deep(.booking-day.is-selected) {
-  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  background: linear-gradient(135deg, #8d5a3b, #6f4329);
   color: #fff;
-  border-color: rgba(45, 212, 191, 0.95);
-  box-shadow: 0 12px 28px rgba(13, 148, 136, 0.35);
+  border-color: rgba(111, 67, 41, 0.95);
+  box-shadow: 0 12px 28px rgba(111, 63, 42, 0.22);
 }
 
 .customer-center-page main :deep(.booking-day.is-available) {
-  background: rgba(16, 185, 129, 0.12);
-  color: #d1fae5;
-  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(251, 241, 228, 0.96);
+  color: #6f4a2d;
+  border-color: rgba(224, 192, 154, 0.95);
 }
 
 .customer-center-page main :deep(.booking-day.is-disabled) {
-  background: rgba(15, 23, 42, 0.55);
-  color: rgba(148, 163, 184, 0.7);
-}
-
-.customer-center-page main :deep(.booking-day-dot) {
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 9999px;
-  margin-top: 0.3rem;
-  transition: transform 0.18s ease, opacity 0.18s ease, background-color 0.18s ease;
+  background: rgba(248, 240, 231, 0.92);
+  color: rgba(139, 106, 77, 0.55);
 }
 
 .customer-center-page main :deep(.booking-day-dot-available) {
-  background: #34d399;
+  background: #b57f5c;
   opacity: 0.95;
 }
 
 .customer-center-page main :deep(.booking-day-dot-selected) {
-  background: #fbbf24;
+  background: #8d5a3b;
   transform: scale(1.1);
   opacity: 1;
 }
 
 .customer-center-page main :deep(.booking-day-dot-disabled) {
-  background: rgba(148, 163, 184, 0.35);
+  background: rgba(167, 138, 110, 0.35);
   opacity: 0.6;
 }
 
 .customer-center-page main :deep(.booking-slot) {
-  background: rgba(15, 23, 42, 0.94);
-  border-color: rgba(100, 116, 139, 0.35);
-  color: #f8fafc;
+  background: rgba(255, 250, 243, 0.98);
+  border-color: rgba(224, 192, 154, 0.95);
+  color: #3d281d;
 }
 
 .customer-center-page main :deep(.booking-slot.is-selected) {
-  background: rgba(217, 119, 6, 0.18);
-  border-color: rgba(251, 191, 36, 0.9);
-  color: #fff;
+  background: rgba(141, 90, 59, 0.12);
+  border-color: rgba(141, 90, 59, 0.95);
+  color: #3d281d;
+}
+
+.customer-center-page main :deep(.booking-slot.is-disabled) {
+  background: rgba(248, 240, 231, 0.9);
+  border-color: rgba(217, 190, 155, 0.85);
+  color: rgba(139, 106, 77, 0.7);
+  cursor: not-allowed;
+  opacity: 0.82;
 }
 
 .customer-center-page main :deep(.booking-sidecard) {
-  background: rgba(15, 23, 42, 0.92);
-  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(255, 250, 243, 0.98);
+  border-color: rgba(224, 192, 154, 0.95);
 }
 
 .customer-center-page main :deep(.booking-notice) {
-  color: #fde68a;
+  color: #8b6a4d;
+}
+
+.customer-center-page main .bg-slate-700\/60,
+.customer-center-page main .bg-slate-700\/35,
+.customer-center-page main .bg-slate-700\/50,
+.customer-center-page main .bg-slate-900\/50 {
+  background: rgba(255, 251, 244, 0.96) !important;
+  border-color: rgba(224, 192, 154, 0.85) !important;
+  color: #3d281d !important;
+}
+
+.customer-center-page main .text-white {
+  color: #3d281d !important;
+}
+
+.customer-center-page main .text-slate-200,
+.customer-center-page main .text-slate-300 {
+  color: #6f4a2d !important;
+}
+
+.customer-center-page main .text-slate-400 {
+  color: #8b6a4d !important;
 }
 </style>

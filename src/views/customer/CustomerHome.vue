@@ -16,9 +16,7 @@
                     placeholder="Center, treatment, or keyword"
                     class="filter-input filter-input-search"
                   />
-                  <svg class="filter-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1110.5 3a7.5 7.5 0 016.15 13.65z" />
-                  </svg>
+                  <Icon icon="mdi:magnify" class="filter-search-icon" aria-hidden="true" />
                 </div>
               </label>
 
@@ -37,9 +35,54 @@
                   <option v-for="option in services" :key="option" :value="option">{{ option }}</option>
                 </select>
               </label>
+
+              <div class="filter-shell">
+                <span class="filter-label">Nearby</span>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="inline-flex h-[3.5rem] flex-1 items-center justify-center gap-2 rounded-[1.1rem] border border-gold-300/80 bg-gold-700 px-4 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-70"
+                    :disabled="locationLoading"
+                    aria-label="Toggle nearby centers"
+                    @click="toggleNearbyCenters"
+                  >
+                    <Icon icon="mdi:map-marker-radius-outline" class="h-5 w-5 shrink-0" aria-hidden="true" />
+                    {{ userLocation ? 'Location on' : 'Use my location' }}
+                  </button>
+
+                  <select
+                    v-model="radiusKm"
+                    class="filter-input max-w-[6.75rem]"
+                    :disabled="!userLocation"
+                    aria-label="Distance radius"
+                  >
+                    <option v-for="option in radiusOptions" :key="option" :value="option">
+                      {{ option }} km
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                class="filter-icon-button inline-flex h-[3.5rem] min-h-[3.5rem] items-center justify-center rounded-[1.1rem] border border-gold-300/70 bg-gold-700 text-white transition hover:-translate-y-0.5 hover:bg-gold-800"
+                aria-label="Reset filters"
+                @click="clearFilters"
+              >
+                <Icon icon="mdi:filter-off-outline" class="h-6 w-6" aria-hidden="true" />
+              </button>
             </div>
           </div>
         </section>
+
+        <transition name="fade">
+          <div
+            v-if="locationMessage"
+            class="inline-flex max-w-full rounded-2xl border border-gold-200/80 bg-gold-50 px-4 py-3 text-sm leading-6 text-gold-900 shadow-[0_10px_24px_rgba(126,87,57,0.08)]"
+          >
+            {{ locationMessage }}
+          </div>
+        </transition>
 
         <section class="customer-results-section">
           <div class="customer-results-head">
@@ -84,34 +127,37 @@
                 </div>
               </div>
 
-              <div class="center-card-body">
-                <div>
-                  <h3 class="center-title">{{ center.name }}</h3>
-                  <p class="center-location">{{ center.location || 'Location not set' }}</p>
-                </div>
+            <div class="center-card-body">
+              <div>
+                <h3 class="center-title">{{ center.name }}</h3>
+                <p class="center-location">{{ center.location || 'Location not set' }}</p>
+                <p v-if="center.distanceKm !== null" class="mt-2 inline-flex rounded-full border border-gold-200/80 bg-gold-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-800">
+                  {{ formatDistance(center.distanceKm) }} away
+                </p>
+              </div>
 
-                <div class="center-tags">
-                  <span
-                    v-for="tag in center.services.slice(0, 4)"
-                    :key="`${center.id}-${tag}`"
-                    class="center-tag"
-                  >
-                    {{ tag }}
-                  </span>
-                  <span
-                    v-if="center.services.length > 4"
-                    class="center-tag center-tag-muted"
-                  >
-                    +{{ center.services.length - 4 }} more
-                  </span>
-                </div>
+              <div class="center-tags">
+                <span
+                  v-for="tag in center.services.slice(0, 4)"
+                  :key="`${center.id}-${tag}`"
+                  class="center-tag"
+                >
+                  {{ tag }}
+                </span>
+                <span
+                  v-if="center.services.length > 4"
+                  class="center-tag center-tag-muted"
+                >
+                  +{{ center.services.length - 4 }} more
+                </span>
+              </div>
 
-                <div class="center-footer">
-                  <span class="center-location">{{ center.city || 'Clinic location' }}</span>
-                  <button @click="openCenter(center.id)" class="customer-center-button">
-                    View Center
-                  </button>
-                </div>
+              <div class="center-footer">
+                <span class="center-location">{{ center.city || 'Clinic location' }}</span>
+                <button @click="openCenter(center.id)" class="customer-center-button">
+                  View Center
+                </button>
+              </div>
               </div>
             </article>
           </div>
@@ -127,8 +173,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Icon } from '@iconify/vue'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import { fetchCustomerCenters } from '@/utils/customerCenters'
 
@@ -140,22 +187,130 @@ const centers = ref([])
 const search = ref('')
 const city = ref('')
 const service = ref('')
+const userLocation = ref(null)
+const radiusKm = ref(15)
+const locationLoading = ref(false)
+const locationMessage = ref('')
+const radiusOptions = [5, 10, 15, 25, 50]
 
 const cities = computed(() => [...new Set(centers.value.map((item) => item.city).filter(Boolean))])
 const services = computed(() => [...new Set(centers.value.flatMap((item) => item.services).filter(Boolean))])
 
+const toRadians = (value) => (value * Math.PI) / 180
+
+const getDistanceKm = (from, to) => {
+  if (!from || !to) return null
+  const earthRadiusKm = 6371
+  const dLat = toRadians(to.lat - from.lat)
+  const dLng = toRadians(to.lng - from.lng)
+  const lat1 = toRadians(from.lat)
+  const lat2 = toRadians(to.lat)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2)
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+const formatDistance = (distanceKm) => {
+  if (distanceKm === null || Number.isNaN(distanceKm)) return ''
+  if (distanceKm < 1) {
+    return `${Math.max(Math.round(distanceKm * 1000), 100)} m`
+  }
+  return `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`
+}
+
 const filteredCenters = computed(() => {
   const keyword = search.value.trim().toLowerCase()
-  return centers.value.filter((center) => {
-    const matchesKeyword =
-      !keyword ||
-      center.name.toLowerCase().includes(keyword) ||
-      center.services.some((entry) => entry.toLowerCase().includes(keyword))
-    const matchesCity = !city.value || center.city === city.value
-    const matchesService = !service.value || center.services.includes(service.value)
-    return matchesKeyword && matchesCity && matchesService
-  })
+  const locationFilterActive = Boolean(userLocation.value)
+  return centers.value
+    .map((center) => {
+      const distanceKm =
+        locationFilterActive && Number.isFinite(center.lat) && Number.isFinite(center.lng)
+          ? getDistanceKm(userLocation.value, { lat: center.lat, lng: center.lng })
+          : null
+      const matchesKeyword =
+        !keyword ||
+        center.name.toLowerCase().includes(keyword) ||
+        center.location.toLowerCase().includes(keyword) ||
+        center.services.some((entry) => entry.toLowerCase().includes(keyword))
+      const matchesCity = !city.value || center.city === city.value
+      const matchesService = !service.value || center.services.includes(service.value)
+      const withinRadius =
+        !locationFilterActive ||
+        (distanceKm !== null && distanceKm <= radiusKm.value)
+      return {
+        ...center,
+        distanceKm,
+        matchesKeyword,
+        matchesCity,
+        matchesService,
+        withinRadius,
+      }
+    })
+    .filter((center) => center.matchesKeyword && center.matchesCity && center.matchesService && center.withinRadius)
+    .sort((a, b) => {
+      if (!locationFilterActive) return a.name.localeCompare(b.name)
+      if (a.distanceKm === null && b.distanceKm === null) return a.name.localeCompare(b.name)
+      if (a.distanceKm === null) return 1
+      if (b.distanceKm === null) return -1
+      return a.distanceKm - b.distanceKm || a.name.localeCompare(b.name)
+    })
 })
+
+const clearFilters = () => {
+  search.value = ''
+  city.value = ''
+  service.value = ''
+  userLocation.value = null
+  radiusKm.value = 15
+  locationMessage.value = ''
+}
+
+const clearNearbyFilter = () => {
+  userLocation.value = null
+  locationMessage.value = 'Location-based sorting is off. You can still browse centers using the text filters.'
+}
+
+const toggleNearbyCenters = () => {
+  if (locationLoading.value) return
+
+  if (userLocation.value) {
+    clearNearbyFilter()
+    return
+  }
+
+  if (!navigator.geolocation) {
+    locationMessage.value = 'Your browser does not support location access, so nearby sorting is unavailable.'
+    return
+  }
+
+  locationLoading.value = true
+  locationMessage.value = 'Finding your location to sort the nearest centers...'
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      userLocation.value = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      }
+      locationMessage.value = `Showing centers within ${radiusKm.value} km, ordered from nearest to farthest.`
+      locationLoading.value = false
+    },
+    (error) => {
+      userLocation.value = null
+      const denied = error?.code === 1
+      locationMessage.value = denied
+        ? 'Location access was denied. You can still use the other filters.'
+        : 'We could not get your location right now. Please try again.'
+      locationLoading.value = false
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 5 * 60 * 1000,
+    }
+  )
+}
 
 const openCenter = (centerId) => {
   router.push({ name: 'customer-center', params: { id: centerId } })
@@ -171,6 +326,12 @@ onMounted(async () => {
     errorMessage.value = 'Failed to load centers.'
   } finally {
     loading.value = false
+  }
+})
+
+watch(radiusKm, () => {
+  if (userLocation.value) {
+    locationMessage.value = `Showing centers within ${radiusKm.value} km, ordered from nearest to farthest.`
   }
 })
 </script>
@@ -200,8 +361,8 @@ onMounted(async () => {
 .state-panel {
   border-radius: 1.75rem;
   border: 1px solid rgba(230, 193, 150, 0.8);
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 18px 44px rgba(87, 56, 35, 0.08);
+  background: rgba(255, 251, 244, 0.92);
+  box-shadow: 0 24px 60px rgba(84, 54, 34, 0.12);
 }
 
 .customer-filter-panel {
@@ -262,6 +423,16 @@ onMounted(async () => {
 .filter-input:focus {
   border-color: rgba(198, 148, 108, 0.9);
   box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
+}
+
+.filter-icon-button {
+  min-width: 3.5rem;
+  padding-left: 0.9rem;
+  padding-right: 0.9rem;
+}
+
+.customer-filter-panel {
+  padding: 1rem;
 }
 
 .customer-results-section {
@@ -415,11 +586,22 @@ onMounted(async () => {
 
 @media (min-width: 900px) {
   .customer-filter-grid {
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.75fr) minmax(0, 0.75fr);
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.75fr) minmax(0, 0.75fr) auto;
   }
 
   .customer-results-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1180px) {
+  .customer-filter-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.74fr) minmax(0, 0.74fr) minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .customer-filter-grid .filter-shell:last-of-type {
+    min-width: 0;
   }
 }
 

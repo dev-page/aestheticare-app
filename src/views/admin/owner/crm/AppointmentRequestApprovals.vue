@@ -453,7 +453,7 @@ const approveSelectedRequest = async () => {
     selectedRequestId.value = nextSelected?.id || ''
   } catch (error) {
     console.error(error)
-    toast.error('Failed to approve the request.')
+    toast.error(error?.message || 'Failed to approve the request.')
   } finally {
     processing.value = false
   }
