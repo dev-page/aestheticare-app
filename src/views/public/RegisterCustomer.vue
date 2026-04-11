@@ -53,6 +53,14 @@ const confirmPasswordFocused = ref(false)
 const showTerms = ref(false)
 const showPrivacy = ref(false)
 const termsAccepted = ref(false)
+const contactNumber = ref('')
+const address = ref('')
+const addressLat = ref('')
+const addressLng = ref('')
+const showLocationModal = ref(false)
+const locationMapCanvas = ref(null)
+const locationError = ref('')
+const locationLoading = ref(false)
 
 const otpSent = ref(false)
 const otpDigits = ref(Array(6).fill(''))
@@ -63,6 +71,9 @@ const otpResendCountdown = ref(0)
 const OTP_LENGTH = 6
 const OTP_COOLDOWN_SECONDS = 60
 let otpResendInterval = null
+let mapsReady = false
+let locationMap = null
+let locationMarker = null
 
 const calendarOpen = ref(false)
 const calendarMonth = ref(new Date().getMonth())
@@ -97,6 +108,7 @@ const otpCountdownLabel = computed(() => {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 })
 const pad = (value) => String(value).padStart(2, '0')
+const selectedAddressLabel = computed(() => address.value || 'Select your address using the map')
 const toIsoDate = (year, month, day) => `${year}-${pad(month + 1)}-${pad(day)}`
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
 const isFutureIsoDate = (isoDate) => {
@@ -176,6 +188,272 @@ const parseBirthInputToIso = (formattedValue) => {
   if (isFutureIsoDate(iso)) return null
   return iso
 }
+const sanitizeContactNumber = (event) => {
+  let digits = String(event?.target?.value || contactNumber.value || '').replace(/\D/g, '')
+  if (digits.startsWith('63')) {
+    digits = digits.slice(2)
+  } else if (digits.startsWith('0')) {
+    digits = digits.slice(1)
+  }
+  contactNumber.value = digits.slice(0, 10)
+}
+
+const flattenAddressComponents = (entries = []) => (entries || []).flatMap((entry) => entry?.address_components || [])
+
+const getAddressComponentValue = (components, type, mode = 'long') => {
+  const preferredTypes = Array.isArray(type) ? type : [type]
+  const match = (components || []).find((component) =>
+    preferredTypes.some((preferredType) => component.types?.includes(preferredType))
+  )
+  if (!match) return ''
+  return mode === 'short'
+    ? String(match.short_name || match.shortName || '')
+    : String(match.long_name || match.longName || '')
+}
+
+const philippinesBounds = {
+  north: 21.5,
+  south: 4.3,
+  east: 127.5,
+  west: 116.0,
+}
+
+const defaultPhilippinesCenter = { lat: 12.8797, lng: 121.774 }
+
+const isWithinPhilippinesBounds = (lat, lng) => {
+  const latitude = Number(lat)
+  const longitude = Number(lng)
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false
+  return (
+    latitude >= philippinesBounds.south &&
+    latitude <= philippinesBounds.north &&
+    longitude >= philippinesBounds.west &&
+    longitude <= philippinesBounds.east
+  )
+}
+
+const isPhilippinesAddress = (components = []) => {
+  const country = getAddressComponentValue(components, 'country')
+  return /philippines/i.test(country)
+}
+
+const loadMapsScript = (apiKey) =>
+  new Promise((resolve, reject) => {
+    if (window.google?.maps) {
+      resolve()
+      return
+    }
+
+    const existing = document.getElementById('google-maps-js')
+    if (existing) {
+      existing.addEventListener('load', resolve)
+      existing.addEventListener('error', reject)
+      return
+    }
+
+    const script = document.createElement('script')
+    script.id = 'google-maps-js'
+    script.async = true
+    script.defer = true
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&loading=async&v=weekly`
+    script.onload = () => {
+      const start = Date.now()
+      const waitForMaps = () => {
+        if (window.google?.maps?.Map) {
+          resolve()
+          return
+        }
+        if (Date.now() - start > 5000) {
+          reject(new Error('Google Maps JS API loaded but maps object was not initialized.'))
+          return
+        }
+        setTimeout(waitForMaps, 50)
+      }
+      waitForMaps()
+    }
+    script.onerror = () => reject(new Error('Failed to load Google Maps JS API.'))
+    document.head.appendChild(script)
+  })
+
+const applyResolvedAddress = ({ lat, lng, components = [], formattedAddress = '' }) => {
+  if (!isWithinPhilippinesBounds(lat, lng) || !isPhilippinesAddress(components)) {
+    locationError.value = 'Please select a location within the Philippines.'
+    return false
+  }
+
+  addressLat.value = String(lat)
+  addressLng.value = String(lng)
+  address.value = String(formattedAddress || '').trim() || 'Pinned location in the Philippines'
+  locationError.value = ''
+  return true
+}
+
+const reverseGeocodeLocation = (lat, lng) => {
+  if (!window.google?.maps?.Geocoder) return Promise.resolve(false)
+  const geocoder = new window.google.maps.Geocoder()
+  return new Promise((resolve) => {
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status !== 'OK' || !results?.length) {
+        locationError.value = 'Unable to resolve an address for the selected pin.'
+        resolve(false)
+        return
+      }
+
+      const components = flattenAddressComponents(results)
+      if (!applyResolvedAddress({
+        lat,
+        lng,
+        components,
+        formattedAddress: results[0].formatted_address || results[0].name || '',
+      })) {
+        if (locationMap?.setCenter) {
+          locationMap.setCenter(defaultPhilippinesCenter)
+        }
+        resolve(false)
+        return
+      }
+
+      resolve(true)
+    })
+  })
+}
+
+const initLocationMap = async () => {
+  if (!locationMapCanvas.value) return
+  locationError.value = ''
+  locationLoading.value = true
+
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+  if (!apiKey) {
+    locationError.value = 'Missing Google Maps API key in frontend env.'
+    locationLoading.value = false
+    return
+  }
+
+  if (!mapsReady) {
+    try {
+      await loadMapsScript(apiKey)
+      mapsReady = true
+    } catch (error) {
+      console.error(error)
+      const existing = document.getElementById('google-maps-js')
+      if (existing) existing.remove()
+      try {
+        await loadMapsScript(apiKey)
+        mapsReady = true
+      } catch (retryError) {
+        console.error(retryError)
+        locationError.value = 'Failed to load Google Maps. Check API key and referrer restrictions.'
+        locationLoading.value = false
+        return
+      }
+    }
+  }
+
+  if (!window.google?.maps?.Map) {
+    locationError.value = 'Google Maps failed to initialize.'
+    locationLoading.value = false
+    return
+  }
+
+  locationMap = new window.google.maps.Map(locationMapCanvas.value, {
+    center: defaultPhilippinesCenter,
+    zoom: 6,
+    restriction: { latLngBounds: philippinesBounds, strictBounds: true },
+    mapId: import.meta.env.VITE_GOOGLE_MAP_ID,
+    streetViewControl: false,
+    fullscreenControl: false,
+    mapTypeControl: false,
+  })
+
+  if (window.google.maps.importLibrary) {
+    const { AdvancedMarkerElement } = await window.google.maps.importLibrary('marker')
+    locationMarker = new AdvancedMarkerElement({
+      position: defaultPhilippinesCenter,
+      map: locationMap,
+      gmpDraggable: true,
+    })
+  } else if (window.google.maps.Marker) {
+    locationMarker = new window.google.maps.Marker({
+      position: defaultPhilippinesCenter,
+      map: locationMap,
+      draggable: true,
+    })
+  }
+
+  const savedLat = Number(addressLat.value)
+  const savedLng = Number(addressLng.value)
+  if (isWithinPhilippinesBounds(savedLat, savedLng)) {
+    const savedLocation = { lat: savedLat, lng: savedLng }
+    if (locationMarker?.position) {
+      locationMarker.position = savedLocation
+    } else if (locationMarker?.setPosition) {
+      locationMarker.setPosition(savedLocation)
+    }
+    if (locationMap?.setCenter) locationMap.setCenter(savedLocation)
+  }
+
+  locationMap.addListener('click', (event) => {
+    const latLng = event?.latLng
+    if (!latLng) return
+    const lat = latLng.lat()
+    const lng = latLng.lng()
+    if (locationMarker?.position) {
+      locationMarker.position = { lat, lng }
+    } else if (locationMarker?.setPosition) {
+      locationMarker.setPosition({ lat, lng })
+    }
+    reverseGeocodeLocation(lat, lng)
+  })
+
+  if (locationMarker?.addListener) {
+    locationMarker.addListener('dragend', () => {
+      const pos = locationMarker?.getPosition ? locationMarker.getPosition() : locationMarker?.position
+      if (!pos) return
+      const lat = typeof pos.lat === 'function' ? pos.lat() : pos.lat
+      const lng = typeof pos.lng === 'function' ? pos.lng() : pos.lng
+      reverseGeocodeLocation(lat, lng)
+    })
+  }
+
+  locationLoading.value = false
+}
+
+const openLocationModal = () => {
+  locationError.value = ''
+  showLocationModal.value = true
+  nextTick(() => initLocationMap())
+}
+
+const closeLocationModal = () => {
+  showLocationModal.value = false
+  locationError.value = ''
+  locationLoading.value = false
+  locationMap = null
+  locationMarker = null
+}
+
+const usePinnedLocation = async () => {
+  if (!locationMarker) {
+    locationError.value = 'Pin a location on the map first.'
+    return
+  }
+
+  const pos = locationMarker?.position || (locationMarker?.getPosition ? locationMarker.getPosition() : null)
+  if (!pos) {
+    locationError.value = 'Pin a location on the map first.'
+    return
+  }
+
+  const lat = typeof pos.lat === 'function' ? pos.lat() : pos.lat
+  const lng = typeof pos.lng === 'function' ? pos.lng() : pos.lng
+  const resolved = await reverseGeocodeLocation(lat, lng)
+  if (!resolved) return
+
+  closeLocationModal()
+  toast.success('Address selected successfully.')
+}
+
 const syncManualBirthDate = () => {
   manualBirthDate.value = formatIsoToBirthInput(birthDate.value)
 }
@@ -365,6 +643,11 @@ const clearFormFields = () => {
   birthDate.value = ''
   manualBirthDate.value = ''
   birthDateError.value = ''
+  contactNumber.value = ''
+  address.value = ''
+  addressLat.value = ''
+  addressLng.value = ''
+  locationError.value = ''
   termsAccepted.value = false
 }
 
@@ -582,6 +865,16 @@ const register = async () => {
     return
   }
 
+  if (!/^[1-9]\d{9}$/.test(String(contactNumber.value || '').trim())) {
+    toast.error('Please enter a valid 10-digit mobile number after +63.')
+    return
+  }
+
+  if (!String(address.value || '').trim() || !addressLat.value || !addressLng.value) {
+    toast.error('Please select your address using the map.')
+    return
+  }
+
   if (!termsAccepted.value) {
     toast.error('You must agree to the terms and conditions and privacy policy')
     return
@@ -613,6 +906,10 @@ const register = async () => {
       lastName: lastName.value.trim(),
       email: normalizedEmail,
       birthDate: birthDate.value ? new Date(birthDate.value) : null,
+      contactNumber: `+63${String(contactNumber.value || '').trim()}`,
+      address: String(address.value || '').trim(),
+      addressLat: addressLat.value,
+      addressLng: addressLng.value,
       role: 'Customer',
       status: 'Pending',
       createdAt: serverTimestamp(),
@@ -722,6 +1019,9 @@ const verifyOtp = async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('click', onWindowClick)
   stopOtpCountdown()
+  locationMap = null
+  locationMarker = null
+  locationLoading.value = false
 })
 </script>
 
@@ -859,6 +1159,53 @@ onBeforeUnmount(() => {
                 </transition>
               </div>
               <p v-if="birthDateError" class="mt-1 text-xs text-red-600">{{ birthDateError }}</p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div class="relative">
+                <div class="flex items-center rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/45 focus-within:border-gold-700">
+                  <span class="inline-flex items-center px-3 text-charcoal-700 select-none">+63</span>
+                  <input
+                    v-model="contactNumber"
+                    type="tel"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="10"
+                    placeholder=" "
+                    required
+                    class="peer flex-1 h-16 pt-4 pb-2 px-3 bg-transparent text-charcoal-700 placeholder-transparent focus:outline-none"
+                    @input="sanitizeContactNumber"
+                  />
+                  <label class="floating-label contact-label">Mobile Number</label>
+                </div>
+                <p class="mt-1 text-xs text-charcoal-500">Enter 10 digits after +63.</p>
+              </div>
+
+              <div class="relative">
+                <div class="flex items-stretch gap-2">
+                  <input
+                    :value="selectedAddressLabel"
+                    readonly
+                    placeholder="Select your address using the map"
+                    class="peer input h-16 flex-1 pt-4 pb-2 px-3 pr-12"
+                    :class="{ 'text-charcoal-500': !address }"
+                  />
+                  <button
+                    type="button"
+                    class="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-gold-300/80 bg-gold-700 text-white transition hover:bg-gold-800 hover:-translate-y-0.5"
+                    @click="openLocationModal"
+                    title="Choose address on map"
+                    aria-label="Choose address on map"
+                  >
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21s6-5.6 6-11.2A6 6 0 1012 9a6 6 0 00-6-6.2C6 15.4 12 21 12 21z" />
+                      <circle cx="12" cy="9" r="2.1" fill="currentColor" stroke="none" />
+                    </svg>
+                  </button>
+                </div>
+                <label class="floating-label">Address</label>
+                <p class="mt-1 text-xs text-charcoal-500">Choose a location in the Philippines using the map.</p>
+              </div>
             </div>
 
             <div class="relative">
@@ -1038,6 +1385,79 @@ onBeforeUnmount(() => {
           <button @click="verifyOtp" class="w-full py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition">
             Verify OTP
           </button>
+        </div>
+      </Modal>
+
+      <Modal
+        panelClass="bg-cream-50 border border-gold-200/80 w-[92vw] max-w-5xl shadow-2xl shadow-gold-900/15"
+        :isOpen="showLocationModal"
+        :title="'Select Address in the Philippines'"
+        @close="closeLocationModal"
+        :showConfirm="false"
+      >
+        <div class="space-y-4 p-1">
+          <p class="text-sm text-charcoal-600">
+            Pin your address on the map. The picker is restricted to the Philippines only.
+          </p>
+
+          <div class="relative">
+            <div
+              ref="locationMapCanvas"
+              class="h-[380px] overflow-hidden rounded-2xl border border-gold-200/80 bg-cream-100 shadow-[0_12px_28px_rgba(54,34,22,0.08)]"
+            ></div>
+            <div
+              v-if="locationLoading"
+              class="absolute inset-0 flex items-center justify-center rounded-2xl bg-[rgba(255,248,240,0.72)] text-sm font-semibold text-gold-800 backdrop-blur-[2px]"
+            >
+              Loading map...
+            </div>
+          </div>
+
+          <div
+            v-if="locationError"
+            class="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm"
+          >
+            {{ locationError }}
+          </div>
+
+          <div class="rounded-2xl border border-gold-200/80 bg-gradient-to-br from-cream-100 to-gold-100 p-4 space-y-3 shadow-[0_10px_24px_rgba(54,34,22,0.06)]">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Pinned Address</p>
+              <p class="mt-1 text-sm text-charcoal-700">{{ selectedAddressLabel }}</p>
+            </div>
+            <div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-gold-700/80">Latitude</p>
+                <p class="mt-1 text-charcoal-700">{{ addressLat || '-' }}</p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-gold-700/80">Longitude</p>
+                <p class="mt-1 text-charcoal-700">{{ addressLng || '-' }}</p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-gold-700/80">Country</p>
+                <p class="mt-1 text-charcoal-700">Philippines</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              class="rounded-lg border border-gold-300 bg-cream-100 px-4 py-2 text-charcoal-700 transition hover:bg-cream-200"
+              @click="closeLocationModal"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              class="rounded-lg bg-gold-700 px-4 py-2 text-white transition hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="locationLoading"
+              @click="usePinnedLocation"
+            >
+              Use Pin
+            </button>
+          </div>
         </div>
       </Modal>
 
