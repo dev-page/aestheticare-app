@@ -111,6 +111,7 @@
   <Modal
     :isOpen="showNotificationModal"
     panelClass="notifications-modal-panel"
+    bodyClass="notifications-modal-body-shell"
     @close="closeNotificationModal"
   >
     <template #header>
@@ -120,11 +121,11 @@
       <div v-if="selectedNotification" class="notifications-modal-body">
         <div>
           <p class="notifications-modal-label">Title</p>
-          <p class="notifications-modal-text mt-1">{{ selectedNotification.title || 'Notification' }}</p>
+          <p class="notifications-modal-text mt-1 break-words">{{ selectedNotification.title || 'Notification' }}</p>
         </div>
         <div>
           <p class="notifications-modal-label">Description</p>
-          <p class="notifications-modal-text mt-1 whitespace-pre-line">{{ selectedNotification.message || '-' }}</p>
+          <p class="notifications-modal-text mt-1 whitespace-pre-wrap break-words leading-6">{{ selectedNotification.message || '-' }}</p>
         </div>
         <div>
           <p class="notifications-modal-label">Date & Time</p>
@@ -687,14 +688,19 @@ export default {
   box-shadow: 0 24px 60px rgba(87, 56, 35, 0.18);
 }
 
+.notifications-modal-body-shell {
+  padding: 0;
+}
+
 .notifications-modal-heading {
   font-size: 1.4rem;
 }
 
 .notifications-modal-body {
   display: grid;
-  gap: 0.9rem;
-  font-size: 0.92rem;
+  gap: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.65;
 }
 
 .notifications-modal-label {

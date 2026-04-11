@@ -302,15 +302,15 @@ const sendAppointmentDecisionEmail = async ({
   const safeAppointmentLabel = String(appointmentLabel || 'appointment').trim() || 'appointment'
   const safeDate = String(appointmentDate || '').trim()
   const safeTime = String(appointmentTime || '').trim()
-  const timingText = 'Depending on your payment method, the refund may reflect within 24 hours or a few business days.'
+  const timingText = 'The refund may take 3 to 5 business days to reflect, depending on your bank or payment method.'
   const refundSummary = isPayMongoPaid
     ? refundAmount > 0
-      ? `We initiated a refund of ${formatPhilippineCurrency(refundAmount)}. The system commission of ${formatPhilippineCurrency(commissionAmount)} was excluded from the refund.`
-      : 'No refundable amount remained after excluding the system commission.'
+      ? `We initiated a refund of ${formatPhilippineCurrency(refundAmount)}. The platform commission of ${formatPhilippineCurrency(commissionAmount)} is non-refundable and was retained according to platform policy.`
+      : 'No refundable amount remained after excluding the non-refundable platform commission.'
     : 'No online refund was available for this appointment.'
   const subject =
     requestType === 'cancel'
-      ? 'Your appointment cancellation was approved'
+      ? 'Your appointment cancellation was approved and refund processing started'
       : 'Your appointment reschedule was approved'
 
   const intro =
@@ -3224,9 +3224,9 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       }
 
       try {
-        const notificationMessage = isPayMongoPaid && refundAmount > 0
-          ? `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved. A refund of ${formatPhilippineCurrency(refundAmount)} was initiated and may reflect within 24 hours or a few business days. The system commission of ${formatPhilippineCurrency(commissionAmount)} was excluded from the refund.`
-          : `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved.`
+      const notificationMessage = isPayMongoPaid && refundAmount > 0
+          ? `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved. A refund of ${formatPhilippineCurrency(refundAmount)} has been initiated. The platform commission of ${formatPhilippineCurrency(commissionAmount)} is non-refundable and was retained according to platform policy. The refund may take 3 to 5 business days to reflect, depending on your bank or payment method.`
+          : `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved. The refund may take 3 to 5 business days to reflect, depending on your bank or payment method. If your appointment was not paid online, no refund will be issued.`
 
         await createAppointmentNotification({
           firestore,
