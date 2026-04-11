@@ -26,7 +26,6 @@
     "googleapis": "^148.0.0",
     "html5-qrcode": "^2.3.8",
     "pinia": "^3.0.4",
-    "node-domexception": "file:vendor/node-domexception",
     "qrcode": "^1.5.4",
     "sweetalert2": "^11.26.23",
     "toastify-js": "^1.12.0",
@@ -42,8 +41,5 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "vite": "^7.2.4"
-  },
-  "overrides": {
-    "node-domexception": "file:vendor/node-domexception"
   }
 }
