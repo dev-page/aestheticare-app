@@ -189,86 +189,142 @@
       </div>
     </Modal>
 
-    <Modal :isOpen="showReceiveModal" @close="closeReceiveModal" :showConfirm="false" panelClass="bg-slate-900 border border-slate-700">
-      <div class="text-slate-200">
-        <h2 class="text-xl font-semibold text-white mb-2">Confirm Order Received</h2>
-        <p class="text-sm text-slate-400 mb-4">
-          Upload a proof photo and leave a short review to confirm that you already received this order.
-        </p>
+    <Modal :isOpen="showReceiveModal" @close="closeReceiveModal" :showConfirm="false" panelClass="bg-[#fbf1e3] border border-[#d9b58d] shadow-[0_30px_80px_rgba(60,34,18,0.26)] w-full max-w-3xl">
+      <div class="text-[#3d281d]">
+        <div class="mb-4 rounded-2xl border border-[#d9b58d] bg-gradient-to-br from-[#f4d9b4] via-[#fff5ea] to-[#e4c09a] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] sm:p-5">
+          <div class="flex items-start gap-4">
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#8d5a3b]/15 text-[#7b4f37] ring-1 ring-[#b57f5c]/25">
+              <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 12l5 5L20 7" />
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <h2 class="text-xl font-semibold tracking-tight text-[#3d281d] sm:text-2xl">Confirm Order Received</h2>
+              <p class="mt-1 max-w-xl text-sm leading-6 text-[#6f4a2d]">
+                Upload proof, leave a short review, and confirm the order arrived in good condition.
+              </p>
+            </div>
+          </div>
+        </div>
 
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm text-slate-400 mb-2">Proof of Delivery Photo</label>
-            <input
-              type="file"
-              accept="image/*"
-              class="block w-full text-sm text-slate-200 file:mr-3 file:rounded file:border-0 file:bg-gold-700 file:px-3 file:py-2 file:text-white hover:file:bg-gold-800"
-              @change="handleProofFileChange"
-            />
-            <p v-if="receiveForm.fileName" class="mt-2 text-xs text-slate-400">Selected: {{ receiveForm.fileName }}</p>
+        <div class="space-y-4 sm:space-y-5">
+          <div class="rounded-2xl border border-[#d9b58d] bg-[#fff8ef] p-4 shadow-sm">
+            <label class="mb-3 block text-sm font-semibold text-[#7b4f37]">Proof of Delivery Photo</label>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label class="inline-flex cursor-pointer items-center justify-center rounded-xl border border-[#d9b58d] bg-[#f7e2c6] px-4 py-3 text-sm font-semibold text-[#6f4a2d] transition hover:border-[#b57f5c] hover:bg-[#efcfaa]">
+                <input
+                  type="file"
+                  accept="image/*"
+                  class="sr-only"
+                  @change="handleProofFileChange"
+                />
+                Choose Photo
+              </label>
+              <div class="min-w-0 flex-1 rounded-xl border border-[#d9b58d] bg-[#fff3e4] px-4 py-3">
+                <p class="text-sm font-medium text-[#3d281d]">
+                  {{ receiveForm.fileName || 'No file selected yet' }}
+                </p>
+                <p class="mt-1 text-xs text-[#8b6a4d]">Upload a clear photo showing the delivered item or package.</p>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label class="block text-sm text-slate-400 mb-2">Delivery Rating</label>
-            <div class="flex items-center gap-2">
+          <div class="rounded-2xl border border-[#d9b58d] bg-[#fff8ef] p-4 shadow-sm">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <label class="block text-sm font-semibold text-[#7b4f37]">Delivery Rating</label>
+              <span class="rounded-full border border-[#d9b58d] bg-[#f8e7d1] px-3 py-1 text-xs font-medium text-[#8b6a4d]">
+                {{ receiveForm.rating ? `${receiveForm.rating}/5 selected` : 'Select a rating' }}
+              </span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
               <button
                 v-for="star in 5"
                 :key="`input-star-${star}`"
                 type="button"
-                class="text-3xl leading-none transition"
-                :class="star <= receiveForm.rating ? 'text-amber-300' : 'text-slate-500 hover:text-amber-200'"
+                class="group inline-flex h-12 w-12 items-center justify-center rounded-xl border text-2xl leading-none transition-all duration-200"
+                :class="star <= receiveForm.rating
+                  ? 'border-[#9f6946] bg-[#8d5a3b] text-[#fff8eb] shadow-[0_10px_24px_rgba(141,90,59,0.28)] scale-105'
+                  : 'border-[#ead6bb] bg-[#fffaf3] text-[#cfb190] hover:border-[#c6946c] hover:bg-[#fff0dd] hover:text-[#a7724c] hover:shadow-[0_8px_18px_rgba(198,148,108,0.14)] hover:-translate-y-0.5'"
                 @click="receiveForm.rating = star"
+                :aria-label="`Rate ${star} star${star > 1 ? 's' : ''}`"
               >
-                ★
+                <span class="transition-transform group-hover:scale-110">★</span>
               </button>
             </div>
-            <p class="mt-2 text-xs text-slate-400">Choose a rating from 1 to 5 stars.</p>
+            <p class="mt-3 text-xs text-[#8b6a4d]">A quick rating helps us know how the delivery went.</p>
           </div>
 
-          <div>
-            <label class="block text-sm text-slate-400 mb-2">Delivery Review</label>
+          <div class="rounded-2xl border border-[#d9b58d] bg-[#fff8ef] p-4 shadow-sm">
+            <label class="mb-3 block text-sm font-semibold text-[#7b4f37]">Delivery Review</label>
             <textarea
               v-model="receiveForm.review"
               rows="4"
-              class="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-gold-500"
-              placeholder="Describe the condition of the order and confirm that you received it."
+              class="w-full rounded-2xl border border-[#d9b58d] bg-[#fff3e4] px-4 py-3 text-[#3d281d] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#d9b58d]/20"
+              placeholder="Tell us how the package arrived and anything notable about the delivery..."
             />
           </div>
 
-          <div class="flex items-center gap-3">
+          <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button
               type="button"
-              :disabled="isSubmittingReceive"
-              class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white"
-              @click="confirmOrderReceived"
-            >
-              {{ isSubmittingReceive ? 'Submitting...' : 'Submit and Complete Order' }}
-            </button>
-            <button
-              type="button"
-              class="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
+              class="rounded-xl border border-[#d9b58d] bg-[#fff3e4] px-5 py-3 font-medium text-[#6f4a2d] transition hover:bg-[#f7e2c6] hover:text-[#3d281d]"
               @click="closeReceiveModal"
             >
               Cancel
+            </button>
+            <button
+              type="button"
+              :disabled="isSubmittingReceive"
+              class="rounded-xl bg-[#7b4f37] px-5 py-3 font-semibold text-white shadow-md shadow-amber-950/20 transition hover:bg-[#623d2a] disabled:cursor-not-allowed disabled:opacity-60"
+              @click="confirmOrderReceived"
+            >
+              {{ isSubmittingReceive ? 'Submitting...' : 'Submit and Complete Order' }}
             </button>
           </div>
         </div>
       </div>
     </Modal>
 
-    <Modal :isOpen="showRefundModal" @close="closeRefundModal" :showConfirm="false" panelClass="bg-slate-900 border border-slate-700">
-      <div class="text-slate-200">
-        <h2 class="text-xl font-semibold text-white mb-2">Request Refund</h2>
-        <p class="text-sm text-slate-400 mb-4">
-          Submit your refund concern with supporting proof. The clinic owner/admin will review it and issue a voucher if approved.
-        </p>
+    <Modal :isOpen="showRefundModal" @close="closeRefundModal" :showConfirm="false" panelClass="bg-[#fbf1e3] border border-[#d9b58d] shadow-[0_30px_80px_rgba(60,34,18,0.26)] w-full max-w-3xl">
+      <div class="text-[#3d281d]">
+        <div class="mb-4 rounded-2xl border border-[#d9b58d] bg-gradient-to-br from-[#f4d9b4] via-[#fff5ea] to-[#e4c09a] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] sm:p-5">
+          <div class="flex items-start gap-4">
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#8d5a3b]/15 text-[#7b4f37] ring-1 ring-[#b57f5c]/25">
+              <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 9v4m0 4h.01M10.29 3.86l-8.2 14.2A1.5 1.5 0 0 0 3.39 20h17.22a1.5 1.5 0 0 0 1.3-1.94l-8.2-14.2a1.5 1.5 0 0 0-2.62 0Z" />
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <h2 class="text-xl font-semibold tracking-tight text-[#3d281d] sm:text-2xl">Request Refund</h2>
+              <p class="mt-1 max-w-xl text-sm leading-6 text-[#6f4a2d]">
+                Submit your refund concern with proof so the team can review the issue and decide whether a voucher or other resolution is appropriate.
+              </p>
+            </div>
+          </div>
+        </div>
 
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm text-slate-400 mb-2">Reason</label>
+        <div class="mb-4 rounded-2xl border border-[#d8b07e] bg-[#fff4df] px-4 py-3 text-[#6f4a2d] shadow-sm">
+          <div class="flex items-start gap-3">
+            <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#8d5a3b]/15 text-[#8d5a3b]">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M10.29 3.86l-8.2 14.2A1.5 1.5 0 0 0 3.39 20h17.22a1.5 1.5 0 0 0 1.3-1.94l-8.2-14.2a1.5 1.5 0 0 0-2.62 0Z" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-[#5d3925]">Before you submit</p>
+              <p class="mt-1 text-sm leading-6">
+                Please attach clear proof and describe the issue carefully. Refund requests are reviewed before any voucher or follow-up action is issued.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-4 sm:space-y-5">
+          <div class="rounded-2xl border border-[#d9b58d] bg-[#fff8ef] p-4 shadow-sm">
+            <label class="mb-3 block text-sm font-semibold text-[#7b4f37]">Reason</label>
             <select
               v-model="refundRequestForm.issueType"
-              class="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              class="w-full rounded-xl border border-[#d9b58d] bg-[#fff3e4] px-4 py-3 text-[#3d281d] outline-none transition focus:border-[#c6946c] focus:ring-4 focus:ring-[#d9b58d]/20"
             >
               <option value="">Select a refund reason</option>
               <option value="Damaged Item">Damaged Item</option>
@@ -279,42 +335,52 @@
             </select>
           </div>
 
-          <div>
-            <label class="block text-sm text-slate-400 mb-2">Details</label>
+          <div class="rounded-2xl border border-[#d9b58d] bg-[#fff8ef] p-4 shadow-sm">
+            <label class="mb-3 block text-sm font-semibold text-[#7b4f37]">Details</label>
             <textarea
               v-model="refundRequestForm.reason"
               rows="4"
-              class="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              class="w-full rounded-2xl border border-[#d9b58d] bg-[#fff3e4] px-4 py-3 text-[#3d281d] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#d9b58d]/20"
               placeholder="Describe what went wrong with the order."
             />
           </div>
 
-          <div>
-            <label class="block text-sm text-slate-400 mb-2">Proof Photo</label>
-            <input
-              type="file"
-              accept="image/*"
-              class="block w-full text-sm text-slate-200 file:mr-3 file:rounded file:border-0 file:bg-purple-700 file:px-3 file:py-2 file:text-white hover:file:bg-purple-800"
-              @change="handleRefundProofFileChange"
-            />
-            <p v-if="refundRequestForm.fileName" class="mt-2 text-xs text-slate-400">Selected: {{ refundRequestForm.fileName }}</p>
+          <div class="rounded-2xl border border-[#d9b58d] bg-[#fff8ef] p-4 shadow-sm">
+            <label class="mb-3 block text-sm font-semibold text-[#7b4f37]">Proof Photo</label>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label class="inline-flex cursor-pointer items-center justify-center rounded-xl border border-[#d9b58d] bg-[#f7e2c6] px-4 py-3 text-sm font-semibold text-[#6f4a2d] transition hover:border-[#b57f5c] hover:bg-[#efcfaa]">
+                <input
+                  type="file"
+                  accept="image/*"
+                  class="sr-only"
+                  @change="handleRefundProofFileChange"
+                />
+                Choose Photo
+              </label>
+              <div class="min-w-0 flex-1 rounded-xl border border-[#d9b58d] bg-[#fff3e4] px-4 py-3">
+                <p class="text-sm font-medium text-[#3d281d]">
+                  {{ refundRequestForm.fileName || 'No file selected yet' }}
+                </p>
+                <p class="mt-1 text-xs text-[#8b6a4d]">Upload a clear photo showing the issue with the order.</p>
+              </div>
+            </div>
           </div>
 
-          <div class="flex items-center gap-3">
+          <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button
               type="button"
-              :disabled="isSubmittingRefundRequest"
-              class="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white"
-              @click="submitRefundRequest"
-            >
-              {{ isSubmittingRefundRequest ? 'Submitting...' : 'Submit Refund Request' }}
-            </button>
-            <button
-              type="button"
-              class="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
+              class="rounded-xl border border-[#d9b58d] bg-[#fff3e4] px-5 py-3 font-medium text-[#6f4a2d] transition hover:bg-[#f7e2c6] hover:text-[#3d281d]"
               @click="closeRefundModal"
             >
               Cancel
+            </button>
+            <button
+              type="button"
+              :disabled="isSubmittingRefundRequest"
+              class="rounded-xl bg-[#7b4f37] px-5 py-3 font-semibold text-white shadow-md shadow-amber-950/20 transition hover:bg-[#623d2a] disabled:cursor-not-allowed disabled:opacity-60"
+              @click="submitRefundRequest"
+            >
+              {{ isSubmittingRefundRequest ? 'Submitting...' : 'Submit Refund Request' }}
             </button>
           </div>
         </div>

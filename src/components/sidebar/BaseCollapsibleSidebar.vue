@@ -187,12 +187,6 @@
                 ]"
               >
                 <Icon :icon="item.locked ? 'mdi:lock-outline' : iconName(item.icon)" class="w-4 h-4" />
-                <span
-                  v-if="item.badge && Number(item.badge) > 0"
-                  class="absolute -top-1 -right-1 h-4 min-w-[1rem] px-1 rounded-full bg-red-500 text-[10px] leading-4 text-white font-semibold flex items-center justify-center"
-                >
-                  {{ item.badge }}
-                </span>
               </span>
               <span v-if="!collapsed" class="text-sm font-medium truncate">{{ item.label }}</span>
               <Icon
@@ -202,7 +196,13 @@
               />
               <span
                 v-else-if="!collapsed && item.badge && Number(item.badge) > 0"
-                class="ml-auto rounded-full bg-red-500 text-white text-[10px] font-semibold px-2 py-0.5"
+                class="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold leading-4 text-white"
+              >
+                {{ item.badge }}
+              </span>
+              <span
+                v-if="collapsed && item.badge && Number(item.badge) > 0"
+                class="absolute right-2 top-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-white shadow"
               >
                 {{ item.badge }}
               </span>
