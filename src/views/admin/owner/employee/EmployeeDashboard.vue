@@ -198,7 +198,6 @@ export default {
           { label: 'Sales', to: '/finance/sales', permission: 'reports:view', feature: 'reports', description: 'Open the sales analytics view.' },
           { label: 'Refunds', to: '/finance/refunds', permission: 'payments:view', feature: 'reports', description: 'Manage refund workflows.' },
           { label: 'Reports', to: '/finance/reports', permission: 'reports:view', feature: 'reports', description: 'See finance reports and summaries.' },
-          { label: 'HR Sales', to: '/hr/sales', permission: 'reports:view', feature: 'reports', description: 'Open the HR reports page.' },
         ],
       },
       {

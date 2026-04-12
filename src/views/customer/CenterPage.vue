@@ -348,6 +348,9 @@
                 <div class="space-y-4">
                   <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Selected Services</p>
+                    <p v-if="isFollowUpBookingFlow" class="mt-2 text-xs font-medium text-amber-200">
+                      Follow-up booking linked to a previous appointment.
+                    </p>
                     <div class="mt-3 flex flex-wrap gap-2">
                       <span
                         v-for="service in selectedServices"
@@ -714,6 +717,16 @@ const selectedServicesRequireConsultation = computed(() =>
 const selectedServicesAllowFollowUp = computed(() =>
   selectedServices.value.some((service) => Boolean(service.followUpAllowed))
 )
+const parseFollowUpQueryList = (value, separator = ',') =>
+  String(value || '')
+    .split(separator)
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean)
+const followUpSourceAppointmentId = computed(() => String(route.query.followupOf || '').trim())
+const followUpPreferredPractitionerId = computed(() => String(route.query.preferredPractitionerId || '').trim())
+const followUpSourceServiceIds = computed(() => parseFollowUpQueryList(route.query.followupServiceIds))
+const followUpSourceServiceNames = computed(() => parseFollowUpQueryList(route.query.followupServiceNames, '|'))
+const isFollowUpBookingFlow = computed(() => Boolean(followUpSourceAppointmentId.value))
 
 const normalizeAppointmentStatus = (value) => String(value || '').trim().toLowerCase()
 
@@ -1134,12 +1147,21 @@ const loadBranchData = async (branchId) => {
   await startAppointmentsListener(branchId)
   await startBookingReservationsListener(branchId)
   await loadPractitioners(branchId)
+  await applyFollowUpSelectionFromQuery()
   if (selectedServices.value.length) {
     syncSelectedSlot()
   }
 }
 
 const bookingSlots = computed(() => {
+  const preferredPractitioner = followUpPreferredPractitionerId.value
+    ? practitioners.value.find((practitioner) => String(practitioner.id || '').trim() === followUpPreferredPractitionerId.value)
+    : null
+  if (preferredPractitioner) {
+    const preferredSlots = buildBookingSlotsForPractitioners([preferredPractitioner])
+    if (preferredSlots.length) return preferredSlots
+  }
+
   if (!practitioners.value.length) return []
   const slotDurationMinutes = Number(bookingDurationMinutes.value || 0)
   if (slotDurationMinutes <= 0) return []
@@ -1316,6 +1338,107 @@ const syncSelectedSlot = () => {
   bookingForm.value.date = slot.date
   bookingForm.value.time = slot.time
   bookingForm.value.endTime = slot.endTime
+}
+
+const buildBookingSlotsForPractitioners = (practitionerList = []) => {
+  if (!practitionerList.length) return []
+
+  const slotDurationMinutes = Number(bookingDurationMinutes.value || 0)
+  if (slotDurationMinutes <= 0) return []
+
+  const blockedMap = buildBlockedRanges([...appointments.value, ...bookingReservations.value])
+  const slots = []
+  const today = new Date()
+  const todayKey = toDateInput(today)
+  const nowMinutes = today.getHours() * 60 + today.getMinutes()
+
+  for (let offset = 0; offset < SLOT_DAYS_LOOKAHEAD; offset += 1) {
+    const date = new Date(today)
+    date.setDate(today.getDate() + offset)
+    const dateKey = toDateInput(date)
+    const weekKey = getWeekStartKey(date)
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
+
+    practitionerList.forEach((practitioner) => {
+      const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitioner.id] || {}, weekKey)
+      const shiftLabel = String(assignments?.[dayName] || '').trim()
+      if (!shiftLabel) return
+
+      const windowMinutes = extractShiftWindowMinutes(shiftLabel)
+      if (!windowMinutes) return
+
+      let { start, end } = windowMinutes
+      if (end < start) {
+        end += 24 * 60
+      }
+
+      let slotStart = start
+      if (dateKey === todayKey && slotStart <= nowMinutes) {
+        slotStart = nowMinutes + SLOT_STEP_MINUTES
+      }
+
+      const blockedRanges = blockedMap.get(`${dateKey}|${practitioner.id}`) || []
+
+      for (let minutes = slotStart; minutes + slotDurationMinutes <= end; minutes += SLOT_STEP_MINUTES) {
+        const normalizedMinutes = minutes % (24 * 60)
+        const time = minutesToTime(normalizedMinutes)
+        const key = `${dateKey}|${time}|${practitioner.id}`
+        const endMinutes = (normalizedMinutes + slotDurationMinutes) % (24 * 60)
+        slots.push({
+          key,
+          date: dateKey,
+          time,
+          endTime: minutesToTime(endMinutes),
+          practitionerId: practitioner.id,
+          practitionerName: practitioner.fullName,
+          endLabel: `${dateKey} - until ${minutesToTime12(endMinutes)} - ${practitioner.fullName}`,
+          label: `${dateKey} â€¢ ${minutesToTime12(normalizedMinutes)} - ${minutesToTime12(endMinutes)} â€¢ ${practitioner.fullName}`,
+          isAvailable: !overlapsBlockedRange(normalizedMinutes, normalizedMinutes + slotDurationMinutes, blockedRanges),
+        })
+      }
+    })
+  }
+
+  return slots
+}
+
+const applyFollowUpSelectionFromQuery = async () => {
+  if (!isFollowUpBookingFlow.value || !items.value.length) return false
+  if (selectedServices.value.length) return false
+
+  const matchedById = followUpSourceServiceIds.value.length
+    ? items.value.filter((item) => followUpSourceServiceIds.value.includes(item.id))
+    : []
+  const matchedByName = followUpSourceServiceNames.value.length
+    ? items.value.filter((item) => {
+        const itemName = String(item.title || item.name || '').trim().toLowerCase()
+        return followUpSourceServiceNames.value.some((name) => name.toLowerCase() === itemName)
+      })
+    : []
+
+  const selection = [...new Map([...matchedById, ...matchedByName].map((item) => [item.id, item])).values()]
+  if (!selection.length) return false
+
+  selectedServices.value = selection
+  activeTab.value = 'Products & Services'
+  await nextTick()
+
+  if (!bookingForm.value.slotKey) {
+    const firstAvailableSlot =
+      slotsForSelectedDate.value.find((slot) => slot.isAvailable) ||
+      bookingSlots.value.find((slot) => slot.isAvailable)
+    if (firstAvailableSlot) {
+      bookingForm.value.slotKey = firstAvailableSlot.key
+    }
+  } else {
+    syncSelectedSlot()
+  }
+
+  if (selection.length) {
+    availabilityMessage.value = 'Select an available schedule to continue your follow-up booking.'
+  }
+
+  return true
 }
 
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase())
@@ -1980,6 +2103,11 @@ const createBookingPayMongoCheckoutSession = async ({
         module: 'customer_order',
         source: 'paymongo_checkout',
         flowType,
+        bookingType: isFollowUpBookingFlow.value ? 'follow-up' : 'standard',
+        followUpOf: followUpSourceAppointmentId.value,
+        preferredPractitionerId: followUpPreferredPractitionerId.value,
+        followUpSourceServiceIds: followUpSourceServiceIds.value.join(','),
+        followUpSourceServiceNames: followUpSourceServiceNames.value.join('|'),
         customerId: user.uid,
         customerEmail: user.email || '',
         customerName,
@@ -2095,6 +2223,7 @@ const finalizeSuccessfulBooking = async (pending, payload) => {
       customerId: user.uid,
       customerName,
       clientName: customerName,
+      customerEmail: user.email || profile?.email || '',
       practitionerId: pending.practitionerId || '',
       assignedPractitionerId: pending.practitionerId || '',
       practitionerName: pending.practitionerName || '',
@@ -2113,6 +2242,11 @@ const finalizeSuccessfulBooking = async (pending, payload) => {
       status: 'Scheduled',
       paymentStatus: 'Paid',
       source: 'paymongo_checkout',
+      bookingType: pending.bookingType || 'standard',
+      followUpOf: pending.followUpOf || '',
+      preferredPractitionerId: pending.preferredPractitionerId || '',
+      followUpSourceServiceIds: Array.isArray(pending.followUpSourceServiceIds) ? pending.followUpSourceServiceIds : [],
+      followUpSourceServiceNames: Array.isArray(pending.followUpSourceServiceNames) ? pending.followUpSourceServiceNames : [],
       paymentMethod: pending.paymentMethod || paymentMethodType || 'GCash',
       paymentCoverage: 'full',
       amount: totalAmount,
@@ -2141,10 +2275,16 @@ const finalizeSuccessfulBooking = async (pending, payload) => {
   }
 
   await createBookingNotification({
-    title: flowType === 'consultation' ? 'Consultation Scheduled' : 'Booking Confirmed',
+    title: flowType === 'consultation'
+      ? 'Consultation Scheduled'
+      : isFollowUpBookingFlow.value
+        ? 'Follow-up Booking Confirmed'
+        : 'Booking Confirmed',
     message: flowType === 'consultation'
       ? `Your online consultation for ${selectedServiceNames.join(', ') || 'selected service'} has been paid and scheduled.`
-      : `Your booking for ${selectedServiceNames.join(', ') || 'selected service'} has been paid and confirmed.`,
+      : isFollowUpBookingFlow.value
+        ? `Your follow-up booking for ${selectedServiceNames.join(', ') || 'selected service'} has been paid and confirmed.`
+        : `Your booking for ${selectedServiceNames.join(', ') || 'selected service'} has been paid and confirmed.`,
     link: '/customer/appointments',
   })
 }
@@ -2288,6 +2428,11 @@ const submitBooking = async () => {
       reservationId: heldReservationId,
       selectedServices: selectedServices.value,
       flowType,
+      bookingType: isFollowUpBookingFlow.value ? 'follow-up' : 'standard',
+      followUpOf: followUpSourceAppointmentId.value,
+      preferredPractitionerId: followUpPreferredPractitionerId.value,
+      followUpSourceServiceIds: followUpSourceServiceIds.value,
+      followUpSourceServiceNames: followUpSourceServiceNames.value,
       date: bookingForm.value.date,
       time: bookingForm.value.time,
       endTime: bookingForm.value.endTime || '',

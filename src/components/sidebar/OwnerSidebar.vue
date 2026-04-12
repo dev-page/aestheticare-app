@@ -112,7 +112,6 @@ export default {
         moduleKey: 'finance',
         feature: 'reports',
         children: [
-          { label: 'HR Sales', icon: 'report', to: '/hr/sales', feature: 'reports', permission: 'reports:view' },
           { label: 'Finance Sales', icon: 'report', to: '/finance/sales', feature: 'reports', permission: 'reports:view' },
           { label: 'Refunds', icon: 'card', to: '/finance/refunds', feature: 'reports', permission: 'payments:view' },
           { label: 'Reports', icon: 'report', to: '/finance/reports', feature: 'reports', permission: 'reports:view' },

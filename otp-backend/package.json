@@ -8,6 +8,7 @@
     "dev": "node server.js",
     "backfill:owner-plans": "node scripts/backfill-owner-plans.mjs",
     "backfill:staff-contact-cavite": "node scripts/backfill-staff-contact-cavite.mjs",
+    "backfill:client-contact-info": "node scripts/backfill-client-contact-info.mjs",
     "setup:pins:scheduled-staff": "node scripts/setup-attendance-pins-for-scheduled-staff.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

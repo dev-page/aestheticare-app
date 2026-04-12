@@ -507,6 +507,8 @@ export default {
         await addDoc(collection(db, 'appointments'), {
           clientId: selectedClient.id,
           clientName: selectedClient.fullName || `${selectedClient.firstName || ''} ${selectedClient.lastName || ''}`.trim(),
+          clientEmail: selectedClient.email || '',
+          clientPhone: selectedClient.phone || '',
           practitionerId: selectedPractitioner.id,
           assignedPractitionerId: selectedPractitioner.id,
           practitionerName: selectedPractitioner.fullName,

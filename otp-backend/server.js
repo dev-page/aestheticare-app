@@ -107,6 +107,7 @@ const normalizeServiceAccount = (serviceAccount) => {
   if (typeof normalized.private_key === 'string') {
     normalized.private_key = normalized.private_key.replace(/\\n/g, '\n')
   }
+  delete normalized.universe_domain
   return normalized
 }
 
@@ -271,6 +272,83 @@ const getAppointmentCustomerProfile = async (firestore, appointmentData = {}) =>
   }
 }
 
+const normalizeClientPhone = (value) => {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (!digits) return ''
+  if (digits.startsWith('63') && digits.length > 2) return `+${digits}`
+  if (digits.length === 10 && digits.startsWith('9')) return `+63${digits}`
+  return digits.startsWith('+') ? digits : `+${digits}`
+}
+
+const upsertBranchClientFromAppointment = async (firestore, {
+  branchId,
+  appointmentData = {},
+  customerProfile = {},
+  createdBy = '',
+} = {}) => {
+  const normalizedBranchId = String(branchId || appointmentData.branchId || '').trim()
+  const customerId = String(customerProfile.customerId || appointmentData.customerId || '').trim()
+  const customerEmail = String(customerProfile.customerEmail || appointmentData.customerEmail || '').trim().toLowerCase()
+  const customerPhone = normalizeClientPhone(
+    customerProfile.customerData?.contactNumber ||
+    customerProfile.customerData?.phone ||
+    appointmentData.customerPhone ||
+    appointmentData.phone ||
+    ''
+  )
+  const customerName = String(customerProfile.customerName || appointmentData.customerName || appointmentData.clientName || 'Customer').trim() || 'Customer'
+  const [firstName, ...rest] = customerName.split(/\s+/)
+  const lastName = rest.join(' ').trim()
+  const clientsCol = firestore.collection('clients')
+
+  const matchers = []
+  if (customerId) {
+    matchers.push(clientsCol.where('branchId', '==', normalizedBranchId).where('customerId', '==', customerId))
+  }
+  if (customerEmail) {
+    matchers.push(clientsCol.where('branchId', '==', normalizedBranchId).where('email', '==', customerEmail))
+  }
+  if (customerPhone) {
+    matchers.push(clientsCol.where('branchId', '==', normalizedBranchId).where('phone', '==', customerPhone))
+  }
+
+  let existingSnap = null
+  for (const matcher of matchers) {
+    const snap = await matcher.limit(1).get()
+    if (!snap.empty) {
+      existingSnap = snap.docs[0]
+      break
+    }
+  }
+
+  const payload = {
+    firstName: firstName || customerName,
+    lastName,
+    fullName: customerName,
+    email: customerEmail,
+    phone: customerPhone,
+    branchId: normalizedBranchId,
+    customerId,
+    source: 'appointment',
+    status: 'Active',
+    createdBy: String(createdBy || appointmentData.createdBy || customerId || '').trim(),
+    lastAppointmentId: String(appointmentData.id || '').trim(),
+    lastAppointmentAt: appointmentData.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }
+
+  if (existingSnap?.ref) {
+    await existingSnap.ref.set(payload, { merge: true })
+    return { id: existingSnap.id, updated: true }
+  }
+
+  const createdRef = await clientsCol.add({
+    ...payload,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  })
+  return { id: createdRef.id, created: true }
+}
+
 const getAppointmentBranchName = async (firestore, branchId, fallback = 'Clinic') => {
   const normalizedBranchId = String(branchId || '').trim()
   if (!normalizedBranchId) return fallback
@@ -280,6 +358,211 @@ const getAppointmentBranchName = async (firestore, branchId, fallback = 'Clinic'
 
   const data = snap.data() || {}
   return String(data.clinicName || data.clinicBranch || fallback).trim() || fallback
+}
+
+const normalizeBackfillLookupKey = (value) => String(value || '').trim().toLowerCase()
+
+const getBackfillAppointmentLookupKeys = (appointment = {}) => {
+  const keys = [
+    appointment.customerId,
+    appointment.clientId,
+    appointment.patientId,
+    appointment.customerEmail,
+    appointment.clientEmail,
+    appointment.patientEmail,
+    appointment.email,
+    appointment.customerPhone,
+    appointment.clientPhone,
+    appointment.patientPhone,
+    appointment.phone,
+    appointment.customerName,
+    appointment.clientName,
+    appointment.patientName,
+    appointment.id,
+  ]
+    .map(normalizeBackfillLookupKey)
+    .filter(Boolean)
+
+  return [...new Set(keys)]
+}
+
+const getBackfillAppointmentSortValue = (appointment = {}) => {
+  const candidate = appointment.createdAt || appointment.paidAt || appointment.completedAt || appointment.updatedAt || appointment.date || null
+  if (!candidate) return 0
+  if (typeof candidate?.toMillis === 'function') return candidate.toMillis()
+  if (typeof candidate?.toDate === 'function') return candidate.toDate().getTime()
+  if (typeof candidate === 'number') return candidate
+  if (typeof candidate === 'string') {
+    const parsed = Date.parse(candidate)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+  return 0
+}
+
+const runClientContactBackfill = async (firestore) => {
+  const [appointmentsSnapshot, clientsSnapshot] = await Promise.all([
+    firestore.collection('appointments').get(),
+    firestore.collection('clients').get(),
+  ])
+
+  const appointments = []
+  const appointmentUpdates = []
+
+  for (const docSnap of appointmentsSnapshot.docs) {
+    const original = docSnap.data() || {}
+    const appointment = { id: docSnap.id, ...original }
+    let customerProfile = null
+
+    if (String(appointment.customerId || '').trim()) {
+      try {
+        customerProfile = await getAppointmentCustomerProfile(firestore, appointment)
+      } catch (error) {
+        console.warn('Client backfill customer lookup failed:', error?.message || error)
+      }
+    }
+
+    const updates = {}
+    const profileEmail = String(customerProfile?.customerEmail || '').trim().toLowerCase()
+    const profileName = String(customerProfile?.customerName || '').trim()
+    const profilePhone = normalizeClientPhone(
+      customerProfile?.customerData?.contactNumber ||
+      customerProfile?.customerData?.phone ||
+      ''
+    )
+
+    if (profileEmail && !String(appointment.customerEmail || '').trim()) updates.customerEmail = profileEmail
+    if (profileEmail && !String(appointment.clientEmail || '').trim()) updates.clientEmail = profileEmail
+    if (profileName && !String(appointment.customerName || '').trim()) updates.customerName = profileName
+    if (profileName && !String(appointment.clientName || '').trim()) updates.clientName = profileName
+    if (profilePhone && !String(appointment.customerPhone || '').trim()) updates.customerPhone = profilePhone
+    if (profilePhone && !String(appointment.clientPhone || '').trim()) updates.clientPhone = profilePhone
+
+    if (Object.keys(updates).length) {
+      updates.updatedAt = admin.firestore.FieldValue.serverTimestamp()
+      appointmentUpdates.push(docSnap.ref.update(updates))
+      appointments.push({ ...appointment, ...updates })
+    } else {
+      appointments.push(appointment)
+    }
+  }
+
+  if (appointmentUpdates.length) {
+    await Promise.all(appointmentUpdates)
+  }
+
+  const appointmentIndex = new Map()
+  appointments.forEach((appointment) => {
+    const branchId = String(appointment.branchId || '').trim()
+    if (!branchId) return
+    for (const lookupKey of getBackfillAppointmentLookupKeys(appointment)) {
+      const mapKey = `${branchId}::${lookupKey}`
+      const existing = appointmentIndex.get(mapKey)
+      if (!existing) {
+        appointmentIndex.set(mapKey, appointment)
+        continue
+      }
+
+      const currentScore = getBackfillAppointmentSortValue(existing)
+      const nextScore = getBackfillAppointmentSortValue(appointment)
+      if (nextScore >= currentScore) {
+        appointmentIndex.set(mapKey, appointment)
+      }
+    }
+  })
+
+  let scanned = 0
+  let updated = 0
+  let skipped = 0
+
+  for (const docSnap of clientsSnapshot.docs) {
+    scanned += 1
+    const client = docSnap.data() || {}
+    const branchId = String(client.branchId || '').trim()
+    const lookupKeys = [
+      client.customerId,
+      client.email,
+      client.phone,
+      client.fullName,
+      `${String(client.firstName || '').trim()} ${String(client.lastName || '').trim()}`.trim(),
+      docSnap.id,
+    ]
+      .map(normalizeBackfillLookupKey)
+      .filter(Boolean)
+
+    let matchedAppointment = null
+    for (const lookupKey of lookupKeys) {
+      const candidate = appointmentIndex.get(`${branchId}::${lookupKey}`)
+      if (candidate) {
+        matchedAppointment = candidate
+        break
+      }
+    }
+
+    if (!matchedAppointment) {
+      skipped += 1
+      continue
+    }
+
+    const appointmentName = String(
+      matchedAppointment.customerName ||
+      matchedAppointment.clientName ||
+      matchedAppointment.patientName ||
+      ''
+    ).trim()
+    const appointmentEmail = String(
+      matchedAppointment.customerEmail ||
+      matchedAppointment.clientEmail ||
+      matchedAppointment.patientEmail ||
+      matchedAppointment.email ||
+      ''
+    ).trim().toLowerCase()
+    const appointmentPhone = normalizeClientPhone(
+      matchedAppointment.customerPhone ||
+      matchedAppointment.clientPhone ||
+      matchedAppointment.patientPhone ||
+      matchedAppointment.phone ||
+      ''
+    )
+    const clientFullName = String(
+      client.fullName ||
+      `${String(client.firstName || '').trim()} ${String(client.lastName || '').trim()}`.trim() ||
+      appointmentName ||
+      'Customer'
+    ).trim() || 'Customer'
+    const [firstName, ...rest] = clientFullName.split(/\s+/)
+    const lastName = rest.join(' ').trim()
+
+    const updates = {}
+
+    if (!String(client.fullName || '').trim() && clientFullName) updates.fullName = clientFullName
+    if (!String(client.firstName || '').trim() && firstName) updates.firstName = firstName
+    if (!String(client.lastName || '').trim() && lastName) updates.lastName = lastName
+    if (!String(client.email || '').trim() && appointmentEmail) updates.email = appointmentEmail
+    if (!String(client.phone || '').trim() && appointmentPhone) updates.phone = appointmentPhone
+    if (!String(client.customerId || '').trim() && String(matchedAppointment.customerId || '').trim()) {
+      updates.customerId = String(matchedAppointment.customerId || '').trim()
+    }
+    if (!String(client.source || '').trim()) updates.source = 'appointment'
+    if (!String(client.lastAppointmentId || '').trim() && String(matchedAppointment.id || '').trim()) {
+      updates.lastAppointmentId = String(matchedAppointment.id || '').trim()
+    }
+    if (!client.lastAppointmentAt) {
+      updates.lastAppointmentAt = matchedAppointment.createdAt || matchedAppointment.paidAt || matchedAppointment.completedAt || matchedAppointment.updatedAt || matchedAppointment.date || admin.firestore.FieldValue.serverTimestamp()
+    }
+
+    if (!Object.keys(updates).length) {
+      skipped += 1
+      continue
+    }
+
+    updates.updatedAt = admin.firestore.FieldValue.serverTimestamp()
+    updates.backfilledAt = admin.firestore.FieldValue.serverTimestamp()
+
+    await docSnap.ref.set(updates, { merge: true })
+    updated += 1
+  }
+
+  return { scannedAppointments: appointments.length, scannedClients: scanned, updatedAppointments: appointmentUpdates.length, updatedClients: updated, skippedClients: skipped }
 }
 
 const getStaffDisplayName = (userData = {}) =>
@@ -994,6 +1277,8 @@ const buildBookingAppointmentPayload = ({
     customerId: reservation.customerId || '',
     customerName: reservation.customerName || reservation.customerEmail || 'Customer',
     clientName: reservation.customerName || reservation.customerEmail || 'Customer',
+    customerEmail: String(reservation.customerEmail || '').trim().toLowerCase(),
+    customerPhone: String(reservation.customerPhone || '').trim(),
     practitionerId: reservation.practitionerId || '',
     assignedPractitionerId: reservation.practitionerId || '',
     practitionerName: reservation.practitionerName || '',
@@ -1022,6 +1307,11 @@ const buildBookingAppointmentPayload = ({
     requiresConsultationFirst: Boolean(reservation.requiresConsultationFirst),
     followUpAllowed: Boolean(reservation.followUpAllowed),
     followUpWindowDays: reservation.followUpWindowDays != null ? Number(reservation.followUpWindowDays) : null,
+    bookingType: reservation.bookingType || 'standard',
+    followUpOf: reservation.followUpOf || '',
+    preferredPractitionerId: reservation.preferredPractitionerId || '',
+    followUpSourceServiceIds: Array.isArray(reservation.followUpSourceServiceIds) ? reservation.followUpSourceServiceIds : [],
+    followUpSourceServiceNames: Array.isArray(reservation.followUpSourceServiceNames) ? reservation.followUpSourceServiceNames : [],
     branchId: reservation.branchId || '',
     centerId: reservation.centerId || reservation.branchId || '',
     paymongoCheckoutSessionId: reservation.checkoutSessionId || null,
@@ -1049,6 +1339,11 @@ const buildBookingAppointmentPayload = ({
         consultationForServiceDurationMinutes: totalServiceDurationMinutes,
         followUpAllowed: false,
         followUpWindowDays: null,
+        bookingType: 'consultation',
+        followUpOf: reservation.followUpOf || '',
+        preferredPractitionerId: reservation.preferredPractitionerId || '',
+        followUpSourceServiceIds: Array.isArray(reservation.followUpSourceServiceIds) ? reservation.followUpSourceServiceIds : [],
+        followUpSourceServiceNames: Array.isArray(reservation.followUpSourceServiceNames) ? reservation.followUpSourceServiceNames : [],
       }
     : basePayload
 }
@@ -2258,6 +2553,30 @@ app.post('/admin/unpublish-expired-clinics', requireAuth, requireRole(['superadm
   }
 })
 
+app.post('/dev/backfill-client-contact-info', async (_req, res) => {
+  if (!isDevelopment) {
+    return res.status(404).json({
+      success: false,
+      error: 'Not available in production.',
+    })
+  }
+
+  try {
+    const firestore = admin.firestore()
+    const result = await runClientContactBackfill(firestore)
+    return res.json({
+      success: true,
+      ...result,
+    })
+  } catch (error) {
+    console.error('Client contact backfill failed:', error?.message || error)
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Failed to backfill client contact info.',
+    })
+  }
+})
+
 app.post('/owner/subscription/plan-change-preview', requireAuth, async (req, res) => {
   const ownerUid = String(req.user?.uid || '').trim()
   const rawTargetPlan = String(req.body?.targetPlan || '').trim()
@@ -2801,6 +3120,15 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
   const requiresConsultationFirst = Boolean(body.requiresConsultationFirst)
   const followUpAllowed = Boolean(body.followUpAllowed)
   const followUpWindowDays = body.followUpWindowDays != null ? Number(body.followUpWindowDays) : null
+  const bookingType = String(body.bookingType || 'standard').trim().toLowerCase()
+  const followUpOf = String(body.followUpOf || '').trim()
+  const preferredPractitionerId = String(body.preferredPractitionerId || '').trim()
+  const followUpSourceServiceIds = Array.isArray(body.followUpSourceServiceIds)
+    ? body.followUpSourceServiceIds.map((value) => String(value || '').trim()).filter(Boolean)
+    : []
+  const followUpSourceServiceNames = Array.isArray(body.followUpSourceServiceNames)
+    ? body.followUpSourceServiceNames.map((value) => String(value || '').trim()).filter(Boolean)
+    : []
 
   if (!customerId || !req.user?.uid || customerId !== req.user.uid) {
     return res.status(403).json({ success: false, error: 'Forbidden' })
@@ -2905,6 +3233,11 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
         requiresConsultationFirst,
         followUpAllowed,
         followUpWindowDays,
+        bookingType,
+        followUpOf,
+        preferredPractitionerId,
+        followUpSourceServiceIds,
+        followUpSourceServiceNames,
         notes,
         status: 'held',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -3000,6 +3333,7 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
   const firestore = admin.firestore()
   const reservationRef = firestore.collection(BOOKING_RESERVATIONS_COLLECTION).doc(reservationId)
   let appointmentId = ''
+  let appointmentPayload = null
 
   try {
     await firestore.runTransaction(async (transaction) => {
@@ -3046,7 +3380,7 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
       })
 
       const finalAppointmentRef = firestore.collection('appointments').doc()
-      const appointmentPayload = buildBookingAppointmentPayload({
+      appointmentPayload = buildBookingAppointmentPayload({
         reservation: {
           ...reservation,
           id: reservationId,
@@ -3101,6 +3435,25 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
       reservationId,
       appointmentId,
     })
+
+    if (appointmentPayload) {
+      try {
+        const customerProfile = await getAppointmentCustomerProfile(firestore, appointmentPayload)
+        await upsertBranchClientFromAppointment(firestore, {
+          branchId: appointmentPayload.branchId || '',
+          appointmentData: {
+            ...appointmentPayload,
+            id: appointmentId,
+            createdBy: req.user?.uid || '',
+          },
+          customerProfile,
+          createdBy: req.user?.uid || '',
+        })
+      } catch (clientError) {
+        console.error('Failed to sync client record from appointment:', clientError)
+      }
+    }
+
     return res.json({ success: true, data: { appointmentId } })
   } catch (error) {
     if (String(error?.message || '') === 'Forbidden') {
@@ -4030,4 +4383,5 @@ if (isDirectRun) {
   })
 }
 
+export { admin, runClientContactBackfill }
 export default app

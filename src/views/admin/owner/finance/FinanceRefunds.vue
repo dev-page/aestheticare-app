@@ -5,7 +5,7 @@
     <main class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Refund Management</h1>
-        <p class="text-slate-400">Review customer refund requests and issue voucher-based refunds for approved purchases.</p>
+        <p class="text-slate-400">Review customer refunds for orders, appointments, and services.</p>
       </div>
 
       <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)] gap-6">
@@ -17,7 +17,7 @@
                 <input
                   v-model="search"
                   type="text"
-                  placeholder="Order, customer, branch..."
+                  placeholder="Order, appointment, customer..."
                   class="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
@@ -153,6 +153,59 @@
                         {{ order.refundVoucherId ? 'View Refund' : order.refundRequestStatus === 'Pending' ? 'Review Request' : 'View Details' }}
                       </button>
                     </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+              <div class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+            <div class="border-b border-slate-700 px-6 py-4">
+              <h2 class="text-lg font-semibold text-white">Appointments & Services</h2>
+              <p class="mt-1 text-sm text-slate-400">Refunded consultations, appointments, and service bookings.</p>
+            </div>
+            <div v-if="loading" class="px-6 py-6">
+              <PageSectionSkeleton variant="table" :rows="6" :columns="7" />
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full min-w-[900px]">
+                <thead class="bg-slate-700">
+                  <tr>
+                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Record</th>
+                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Customer</th>
+                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Branch</th>
+                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Service</th>
+                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Refund</th>
+                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Status</th>
+                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Date</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700">
+                  <tr v-if="refundedAppointments.length === 0">
+                    <td colspan="7" class="px-6 py-8 text-center text-slate-400">No refunded appointments or services yet.</td>
+                  </tr>
+                  <tr
+                    v-for="entry in refundedAppointments"
+                    :key="entry.id"
+                    class="transition hover:bg-slate-700/40"
+                  >
+                    <td class="px-6 py-4 text-slate-200">
+                      <p class="font-semibold text-white">{{ entry.id }}</p>
+                      <p class="text-xs text-slate-400">{{ entry.recordType }}</p>
+                    </td>
+                    <td class="px-6 py-4 text-slate-300">
+                      <p class="text-white">{{ entry.customerName || 'Customer' }}</p>
+                      <p class="text-xs text-slate-400">{{ entry.customerEmail || 'No email' }}</p>
+                    </td>
+                    <td class="px-6 py-4 text-slate-300">{{ entry.branchName || 'Unknown' }}</td>
+                    <td class="px-6 py-4 text-slate-300">{{ entry.service || entry.title || 'Appointment' }}</td>
+                    <td class="px-6 py-4 font-medium text-amber-300">{{ formatCurrency(entry.refundAmount) }}</td>
+                    <td class="px-6 py-4">
+                      <span class="rounded-full px-3 py-1 text-xs font-medium" :class="statusClass(entry.status)">
+                        {{ entry.status || 'Refunded' }}
+                      </span>
+                    </td>
+                    <td class="px-6 py-4 text-slate-300">{{ formatDate(entry.refundedAt || entry.updatedAt || entry.createdAt) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -330,6 +383,7 @@ export default {
     const branchMap = ref({})
     const refundRequestMap = ref({})
     const orders = ref([])
+    const appointments = ref([])
     const selectedOrder = ref(null)
     const search = ref('')
     const statusFilter = ref('')
@@ -383,12 +437,15 @@ export default {
 
     const refundedOrders = computed(() => orders.value.filter((order) => Boolean(order.refundVoucherId)))
 
+    const refundedAppointments = computed(() => appointments.value.filter((entry) => Boolean(entry.refundedAt) || String(entry.paymentStatus || '').trim().toLowerCase() === 'refunded' || Boolean(entry.paymongoRefundId) || Boolean(entry.refundVoucherId)))
+
     const pendingRefundRequests = computed(() =>
       orders.value.filter((order) => String(order.refundRequestStatus || '').trim().toLowerCase() === 'pending')
     )
 
     const totalRefundValue = computed(() =>
-      refundedOrders.value.reduce((sum, order) => sum + Number(order.refundAmount || 0), 0)
+      refundedOrders.value.reduce((sum, order) => sum + Number(order.refundAmount || 0), 0) +
+      refundedAppointments.value.reduce((sum, entry) => sum + Number(entry.refundAmount || entry.amount || entry.totalAmount || 0), 0)
     )
 
     const filteredOrders = computed(() => {
@@ -450,6 +507,9 @@ export default {
         const snapshot = await getDocs(collection(db, 'customerOrders'))
         const allOrders = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
 
+        const appointmentSnapshot = await getDocs(collection(db, 'appointments'))
+        const allAppointments = appointmentSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+
         orders.value = allOrders
           .map((order) => {
             const items = Array.isArray(order.items) ? order.items : []
@@ -474,6 +534,47 @@ export default {
           .sort((a, b) => {
             const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
             const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
+            return bTime - aTime
+          })
+
+        appointments.value = allAppointments
+          .map((appointment) => {
+            const branchId = String(appointment.branchId || '').trim()
+            if (!accessibleBranchIds.value.includes(branchId)) return null
+
+            const paymentStatus = String(appointment.paymentStatus || '').trim()
+            const isRefunded =
+              paymentStatus.toLowerCase() === 'refunded' ||
+              Boolean(appointment.refundedAt) ||
+              Boolean(appointment.paymongoRefundId) ||
+              Boolean(appointment.refundVoucherId)
+
+            if (!isRefunded) return null
+
+            return {
+              ...appointment,
+              recordType: String(appointment.type || appointment.bookingType || appointment.consultationMode || 'appointment')
+                .trim()
+                .replace(/_/g, ' '),
+              branchId,
+              branchName: branchMap.value[branchId] || appointment.branchName || 'Branch',
+              customerName: appointment.customerName || appointment.clientName || 'Customer',
+              customerEmail: appointment.customerEmail || appointment.clientEmail || '',
+              service: appointment.service || appointment.services?.join(', ') || 'Appointment',
+              refundAmount: Number(
+                appointment.refundAmount ||
+                appointment.refundRequestedAmount ||
+                appointment.totalAmount ||
+                appointment.amountPaid ||
+                appointment.amount ||
+                0
+              ),
+            }
+          })
+          .filter(Boolean)
+          .sort((a, b) => {
+            const aTime = a.refundedAt?.toDate ? a.refundedAt.toDate().getTime() : new Date(a.refundedAt || a.updatedAt || a.createdAt || 0).getTime()
+            const bTime = b.refundedAt?.toDate ? b.refundedAt.toDate().getTime() : new Date(b.refundedAt || b.updatedAt || b.createdAt || 0).getTime()
             return bTime - aTime
           })
       } catch (error) {
@@ -686,6 +787,7 @@ export default {
       eligibleOrders,
       pendingRefundRequests,
       refundedOrders,
+      refundedAppointments,
       totalRefundValue,
       formatCurrency,
       formatDate,

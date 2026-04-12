@@ -52,7 +52,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
+import { getFirestore, collection, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -70,6 +70,7 @@ export default {
     const currentUserId = ref('')
     const searchQuery = ref('')
     const appointments = ref([])
+    let unsubscribeAppointments = null
 
     const isAssignedToPractitioner = (appointment) => {
       const assignedIds = [
@@ -125,12 +126,24 @@ export default {
       })
     })
 
-    const loadAppointments = async () => {
+    const startAppointmentsListener = () => {
       if (!currentBranchId.value) return
-      const snapshot = await getDocs(
-        query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
+
+      if (unsubscribeAppointments) {
+        unsubscribeAppointments()
+        unsubscribeAppointments = null
+      }
+
+      unsubscribeAppointments = onSnapshot(
+        query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
+        (snapshot) => {
+          appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
+        },
+        (error) => {
+          console.error(error)
+          toast.error('Failed to load clients.')
+        }
       )
-      appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
     }
 
     let unsubscribeAuth = null
@@ -147,11 +160,12 @@ export default {
           return
         }
 
-        await loadAppointments()
+        startAppointmentsListener()
       })
     })
 
     onUnmounted(() => {
+      if (unsubscribeAppointments) unsubscribeAppointments()
       if (unsubscribeAuth) unsubscribeAuth()
     })
 

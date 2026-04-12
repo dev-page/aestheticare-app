@@ -12,9 +12,9 @@
           <div class="panel-head">
             <div>
               <p class="panel-kicker">Virtual Visits</p>
-              <h2 class="panel-title">Online Consultations</h2>
+              <h2 class="panel-title">Upcoming Online Consultations</h2>
             </div>
-            <p class="panel-note">{{ loading ? 'Loading consultations...' : `${onlineConsultations.length} consultation${onlineConsultations.length === 1 ? '' : 's'}` }}</p>
+            <p class="panel-note">{{ loading ? 'Loading consultations...' : `${upcomingOnlineConsultations.length} consultation${upcomingOnlineConsultations.length === 1 ? '' : 's'}` }}</p>
           </div>
 
           <div v-if="loading" class="state-panel">
@@ -34,7 +34,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="appt in onlineConsultations" :key="appt.id">
+                <tr v-for="appt in upcomingOnlineConsultations" :key="appt.id">
                   <td class="appointment-service-cell">
                     <div class="table-primary">{{ formatAppointmentServices(appt) }}</div>
                     <div class="table-secondary">Online consultation</div>
@@ -71,7 +71,7 @@
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
                   </td>
                 </tr>
-                <tr v-if="!onlineConsultations.length">
+                <tr v-if="!upcomingOnlineConsultations.length">
                   <td colspan="6" class="table-empty-cell">No online consultations yet.</td>
                 </tr>
               </tbody>
@@ -148,13 +148,13 @@
           <div class="panel-head">
             <div>
               <p class="panel-kicker">History</p>
-              <h2 class="panel-title">Past Appointments</h2>
+              <h2 class="panel-title">Past Appointments &amp; Online Consultations</h2>
             </div>
-            <p class="panel-note">{{ loading ? 'Loading appointments...' : `${pastAppointments.length} appointment${pastAppointments.length === 1 ? '' : 's'}` }}</p>
+            <p class="panel-note">{{ loading ? 'Loading appointments...' : `${pastRecords.length} record${pastRecords.length === 1 ? '' : 's'}` }}</p>
           </div>
 
           <div v-if="loading" class="state-panel">
-            <PageSectionSkeleton variant="table" :rows="4" :columns="5" />
+            <PageSectionSkeleton variant="table" :rows="4" :columns="6" />
           </div>
 
           <div v-else class="appointments-table-wrap">
@@ -166,12 +166,18 @@
                   <th>Date</th>
                   <th>Time</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="appt in pastAppointments" :key="appt.id">
+                <tr v-for="appt in pastRecords" :key="appt.id">
                   <td class="appointment-service-cell">
                     <div class="table-primary">{{ formatAppointmentServices(appt) }}</div>
+                    <div v-if="appt.followUpRecommended" class="mt-2">
+                      <span class="inline-flex items-center rounded-full border border-emerald-300/60 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                        Follow-up recommended
+                      </span>
+                    </div>
                   </td>
                   <td>
                     <div class="table-primary">{{ appt.clinic }}</div>
@@ -181,9 +187,28 @@
                   <td>
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
                   </td>
+                  <td>
+                    <div class="table-actions">
+                      <button
+                        v-if="canBookFollowUp(appt)"
+                        type="button"
+                        class="appointment-button appointment-button-secondary"
+                        @click="bookFollowUp(appt)"
+                      >
+                        Book Follow-up
+                      </button>
+                      <span
+                        v-else-if="normalizeAppointmentStatus(appt.status) === 'completed' && (appt.followUpAllowed || (Array.isArray(appt.serviceDetails) && appt.serviceDetails.some((service) => Boolean(service.followUpAllowed))))"
+                        class="table-secondary"
+                      >
+                        Awaiting clinic recommendation
+                      </span>
+                      <span v-else class="table-secondary">No follow-up available</span>
+                    </div>
+                  </td>
                 </tr>
-                <tr v-if="!pastAppointments.length">
-                  <td colspan="5" class="table-empty-cell">No past appointments.</td>
+                <tr v-if="!pastRecords.length">
+                  <td colspan="6" class="table-empty-cell">No past records.</td>
                 </tr>
               </tbody>
             </table>
@@ -365,9 +390,11 @@ import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { onAuthStateChanged } from 'firebase/auth'
+import { useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 
 const loading = ref(true)
+const router = useRouter()
 const upcomingAppointments = ref([])
 const pastAppointments = ref([])
 const onlineConsultations = ref([])
@@ -836,6 +863,151 @@ const formatAppointmentServices = (appointment) => {
   return appointment?.service || 'Service not set'
 }
 
+const getAppointmentTimestampMillis = (value) => {
+  if (value?.toDate) return value.toDate().getTime()
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime()
+}
+
+const getAppointmentFollowUpWindowDays = (appointment) => {
+  const direct = Number(appointment?.followUpWindowDays || 0)
+  if (Number.isFinite(direct) && direct > 0) return direct
+
+  if (Array.isArray(appointment?.serviceDetails)) {
+    const serviceWindow = appointment.serviceDetails
+      .map((service) => Number(service?.followUpWindowDays || 0))
+      .find((value) => Number.isFinite(value) && value > 0)
+    if (serviceWindow) return serviceWindow
+  }
+
+  return 0
+}
+
+const getAppointmentCompletedAtMillis = (appointment) => {
+  const candidates = [
+    appointment?.completedAt,
+    appointment?.updatedAt,
+    appointment?.approvedAt,
+    appointment?.paidAt,
+    appointment?.createdAt,
+  ]
+
+  for (const candidate of candidates) {
+    const timestamp = getAppointmentTimestampMillis(candidate)
+    if (timestamp !== null) return timestamp
+  }
+
+  const fallback = toDateTime(appointment?.date, appointment?.time).getTime()
+  return Number.isNaN(fallback) ? null : fallback
+}
+
+const extractAppointmentServiceIds = (appointment) => {
+  const ids = []
+
+  if (Array.isArray(appointment?.serviceIds)) {
+    ids.push(
+      ...appointment.serviceIds
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+  }
+
+  if (Array.isArray(appointment?.serviceDetails)) {
+    ids.push(
+      ...appointment.serviceDetails
+        .map((service) => String(service?.id || service?.serviceId || '').trim())
+        .filter(Boolean)
+    )
+  }
+
+  return [...new Set(ids)]
+}
+
+const extractAppointmentServiceNames = (appointment) => {
+  const names = []
+
+  if (Array.isArray(appointment?.services)) {
+    names.push(
+      ...appointment.services
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+  }
+
+  if (Array.isArray(appointment?.serviceDetails)) {
+    names.push(
+      ...appointment.serviceDetails
+        .map((service) => String(service?.title || service?.name || service?.serviceName || '').trim())
+        .filter(Boolean)
+    )
+  }
+
+  return [...new Set(names)]
+}
+
+const isFollowUpEligible = (appointment) => {
+  const status = normalizeAppointmentStatus(appointment?.status)
+  if (status !== 'completed') return false
+  if (isCancelledAppointment(appointment)) return false
+  if (!appointment?.followUpRecommended) return false
+
+  const allowed = Boolean(appointment?.followUpAllowed) || (
+    Array.isArray(appointment?.serviceDetails) &&
+    appointment.serviceDetails.some((service) => Boolean(service?.followUpAllowed))
+  )
+  if (!allowed) return false
+
+  const windowDays = getAppointmentFollowUpWindowDays(appointment)
+  if (!windowDays) return true
+
+  const completedAt = getAppointmentCompletedAtMillis(appointment)
+  if (completedAt === null) return true
+
+  const windowMillis = windowDays * 24 * 60 * 60 * 1000
+  return Date.now() - completedAt <= windowMillis
+}
+
+const canBookFollowUp = (appointment) => {
+  if (!isFollowUpEligible(appointment)) return false
+  if (!String(appointment?.branchId || '').trim()) return false
+  return extractAppointmentServiceIds(appointment).length > 0 || extractAppointmentServiceNames(appointment).length > 0
+}
+
+const bookFollowUp = (appointment) => {
+  if (!canBookFollowUp(appointment)) {
+    toast.error('This appointment is not eligible for a follow-up booking.')
+    return
+  }
+
+  const branchId = String(appointment?.branchId || '').trim()
+  const serviceIds = extractAppointmentServiceIds(appointment)
+  const serviceNames = extractAppointmentServiceNames(appointment)
+
+  const query = {
+    branch: branchId,
+    followupOf: String(appointment?.id || '').trim(),
+  }
+
+  const preferredPractitionerId = String(appointment?.assignedPractitionerId || appointment?.practitionerId || '').trim()
+  if (preferredPractitionerId) {
+    query.preferredPractitionerId = preferredPractitionerId
+  }
+
+  if (serviceIds.length) {
+    query.followupServiceIds = serviceIds.join(',')
+  }
+  if (serviceNames.length) {
+    query.followupServiceNames = serviceNames.join('|')
+  }
+
+  router.push({
+    name: 'customer-center',
+    params: { id: branchId },
+    query,
+  }).catch(() => {})
+}
+
 const openMeetLink = (meetLink) => {
   const url = String(meetLink || '').trim()
   if (!url) return
@@ -878,6 +1050,23 @@ const statusToneClass = (status) => {
   if (normalized.includes('request')) return 'status-badge-warning'
   return 'status-badge-primary'
 }
+
+const upcomingOnlineConsultations = computed(() => {
+  const now = new Date()
+  return onlineConsultations.value.filter((appt) => !isCancelledAppointment(appt) && toDateTime(appt.date, appt.time) >= now)
+})
+
+const pastOnlineConsultations = computed(() => {
+  const now = new Date()
+  return onlineConsultations.value.filter((appt) => isCancelledAppointment(appt) || toDateTime(appt.date, appt.time) < now)
+})
+
+const pastRecords = computed(() =>
+  sortRecordsNewestFirst([
+    ...pastAppointments.value,
+    ...pastOnlineConsultations.value,
+  ])
+)
 
 const requestPolicyText = computed(() => {
   if (!requestModal.value.appointment) return ''
@@ -1100,6 +1289,7 @@ onMounted(() => {
     if (!user) {
       upcomingAppointments.value = []
       pastAppointments.value = []
+      onlineConsultations.value = []
       loading.value = false
       return
     }

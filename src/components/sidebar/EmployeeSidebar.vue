@@ -102,7 +102,6 @@ export default {
           { label: 'Sales', icon: 'money', to: '/finance/sales', permission: 'reports:view', feature: 'reports' },
           { label: 'Refunds', icon: 'money', to: '/finance/refunds', permission: 'payments:view', feature: 'reports' },
           { label: 'Finance Reports', icon: 'chart', to: '/finance/reports', permission: 'reports:view', feature: 'reports' },
-          { label: 'HR Sales', icon: 'chart', to: '/hr/sales', permission: 'reports:view', feature: 'reports' }
         ]
       },
       {

@@ -44,6 +44,7 @@
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Service</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Schedule</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Status</th>
+                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Follow-up</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-700">
@@ -56,12 +57,28 @@
                     {{ appointment.status || 'Scheduled' }}
                   </span>
                 </td>
+                <td class="px-6 py-4">
+                  <div class="flex items-center gap-3">
+                    <button
+                      v-if="canRecommendFollowUp(appointment)"
+                      type="button"
+                      class="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/30"
+                      @click="recommendFollowUp(appointment)"
+                    >
+                      Recommend Follow-up
+                    </button>
+                    <span v-else-if="appointment.followUpRecommended" class="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-300">
+                      Recommended
+                    </span>
+                    <span v-else class="text-xs text-slate-400">Not recommended</span>
+                  </div>
+                </td>
               </tr>
               <tr v-if="assignedAppointments.length === 0">
-                <td colspan="4" class="px-6 py-8 text-center text-slate-400">No assigned appointments yet.</td>
+                <td colspan="5" class="px-6 py-8 text-center text-slate-400">No assigned appointments yet.</td>
               </tr>
               <tr v-else-if="filteredAppointments.length === 0">
-                <td colspan="4" class="px-6 py-8 text-center text-slate-400">No matching appointments.</td>
+                <td colspan="5" class="px-6 py-8 text-center text-slate-400">No matching appointments.</td>
               </tr>
             </tbody>
           </table>
@@ -73,7 +90,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -126,6 +143,33 @@ export default {
       if (status === 'Completed') return 'px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400'
       if (status === 'Cancelled') return 'px-3 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-400'
       return 'px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400'
+    }
+
+    const canRecommendFollowUp = (appointment) => {
+      const status = String(appointment?.status || '').trim().toLowerCase()
+      const allowed = Boolean(appointment?.followUpAllowed) || (
+        Array.isArray(appointment?.serviceDetails) &&
+        appointment.serviceDetails.some((service) => Boolean(service?.followUpAllowed))
+      )
+      return status === 'completed' && allowed && !appointment?.followUpRecommended
+    }
+
+    const recommendFollowUp = async (appointment) => {
+      if (!appointment?.id || !canRecommendFollowUp(appointment)) return
+
+      try {
+        await updateDoc(doc(db, 'appointments', appointment.id), {
+          followUpRecommended: true,
+          followUpRecommendedAt: new Date().toISOString(),
+          followUpRecommendedById: currentUserId.value,
+          updatedAt: new Date().toISOString(),
+        })
+        toast.success('Follow-up recommended.')
+        await loadAppointments()
+      } catch (error) {
+        console.error(error)
+        toast.error('Failed to recommend follow-up.')
+      }
     }
 
     const loadAppointments = async () => {
@@ -224,7 +268,9 @@ export default {
       dateFilter,
       assignedAppointments,
       filteredAppointments,
-      statusClass
+      statusClass,
+      canRecommendFollowUp,
+      recommendFollowUp
     }
   }
 }
