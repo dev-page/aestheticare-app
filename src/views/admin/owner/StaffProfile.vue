@@ -7,6 +7,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'OwnerStaff',
@@ -63,15 +64,16 @@ export default {
       }
 
       staffDocs = staffDocs.filter((user) => !user.archived)
-      staffList.value = staffDocs.map(staff => {
+      staffList.value = sortRecordsNewestFirst(staffDocs.map(staff => {
         const branch = branches.value.find(b => b.id === staff.branchId)
         return {
           ...staff,
           clinicBranch: branch ? branch.clinicBranch : '',
           clinicLocation: branch ? branch.clinicLocation : '',
-          customRoleName: String(staff.customRoleName || '').trim()
+          customRoleName: String(staff.customRoleName || '').trim(),
+          createdAt: staff.archivedAt || staff.createdAt || staff.updatedAt || null,
         }
-      })
+      }))
     }
 
     const loadBranches = async () => {

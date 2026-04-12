@@ -7,6 +7,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'Branch Info',
@@ -75,7 +76,7 @@ export default {
       )
       const snapshot = await getDocs(clinicsQuery)
       ownerProfile.value = await loadOwnerProfile(user.uid)
-      branches.value = snapshot.docs.map((docSnap) => {
+      branches.value = sortRecordsNewestFirst(snapshot.docs.map((docSnap) => {
         const data = docSnap.data() || {}
         const rawStatus = String(data.status || '').trim()
         const isMainBranch = Boolean(data.isMainBranch)
@@ -89,8 +90,9 @@ export default {
           isMainBranch,
           branchAdminId: branchAdminId || (isMainBranch ? ownerProfile.value.branchAdminId : ''),
           branchAdminName: branchAdminName || (isMainBranch ? ownerProfile.value.branchAdminName : ''),
+          createdAt: data.archivedAt || data.createdAt || data.updatedAt || null,
         }
-      })
+      }))
 
       const branchIds = branches.value.map((branch) => branch.id).filter(Boolean)
       if (!branchIds.length) {

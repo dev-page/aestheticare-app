@@ -139,6 +139,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { classifyAttendanceRecord } from '@/utils/attendanceStatus'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'HRAttendanceReports',
@@ -214,7 +215,7 @@ export default {
     }
 
     const displayRecords = computed(() =>
-      attendanceRecords.value.map((record) => {
+      sortRecordsNewestFirst(attendanceRecords.value).map((record) => {
         const dateValue = record.date || ''
         return {
           ...record,
@@ -261,9 +262,18 @@ export default {
             lateMinutes: Number(dayRecord?.lateMinutes ?? attendanceMeta.lateMinutes ?? 0),
             overtimeMinutes: Number(dayRecord?.overtimeMinutes ?? attendanceMeta.overtimeMinutes ?? 0),
             undertimeMinutes: Number(dayRecord?.undertimeMinutes ?? attendanceMeta.undertimeMinutes ?? 0),
+            createdAt: dayRecord?.createdAt || staff.createdAt || null,
+            updatedAt: dayRecord?.updatedAt || staff.updatedAt || null,
           }
         })
-        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort((a, b) => {
+          const left = a.updatedAt || a.createdAt || null
+          const right = b.updatedAt || b.createdAt || null
+          const leftMs = typeof left?.toDate === 'function' ? left.toDate().getTime() : left instanceof Date ? left.getTime() : left?.seconds ? left.seconds * 1000 : 0
+          const rightMs = typeof right?.toDate === 'function' ? right.toDate().getTime() : right instanceof Date ? right.getTime() : right?.seconds ? right.seconds * 1000 : 0
+          if (rightMs !== leftMs) return rightMs - leftMs
+          return a.name.localeCompare(b.name)
+        })
     })
 
     const todaySummary = computed(() =>

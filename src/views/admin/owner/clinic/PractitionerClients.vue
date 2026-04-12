@@ -57,6 +57,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'PractitionerClients',
@@ -97,17 +98,19 @@ export default {
               fullName: displayName,
               email: item.clientEmail || item.email || '',
               phone: item.clientPhone || item.phone || '',
-              lastAppointment: nextDate
+              lastAppointment: nextDate,
+              createdAt: nextDate || null,
             })
             return
           }
 
           if (nextDate > (current.lastAppointment || '')) {
             current.lastAppointment = nextDate
+            current.createdAt = nextDate || current.createdAt || null
           }
         })
 
-      return [...map.values()].sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''))
+      return sortRecordsNewestFirst([...map.values()])
     })
 
     const filteredClients = computed(() => {
@@ -127,7 +130,7 @@ export default {
       const snapshot = await getDocs(
         query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
       )
-      appointments.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
     }
 
     let unsubscribeAuth = null

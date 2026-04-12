@@ -81,6 +81,7 @@ import { computed, onMounted, ref } from 'vue'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 const normalizeRoleKey = (value) => {
   const compact = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
@@ -163,11 +164,11 @@ export default {
               userType: user.userType || '-',
               status: user.status || 'Unknown',
               createdLabel: formatDate(user.createdAt),
+              createdAt: user.createdAt || null,
             }
           })
-          .sort((a, b) => a.fullName.localeCompare(b.fullName))
 
-        accounts.value = mapped
+        accounts.value = sortRecordsNewestFirst(mapped)
       } catch (err) {
         console.error('Error loading user accounts:', err)
         error.value = 'Failed to load user accounts. Please try again.'

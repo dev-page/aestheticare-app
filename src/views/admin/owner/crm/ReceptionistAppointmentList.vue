@@ -110,6 +110,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'ReceptionistAppointmentList',
@@ -152,7 +153,7 @@ export default {
         ? appointments.value.filter((item) => isAssignedToPractitioner(item))
         : appointments.value
 
-      return list.slice().sort((a, b) => `${a.date || ''} ${a.time || ''}`.localeCompare(`${b.date || ''} ${b.time || ''}`))
+      return sortRecordsNewestFirst(list)
     })
 
     const filteredAppointments = computed(() => {
@@ -230,15 +231,15 @@ export default {
         })
       )
 
-      appointments.value = rawAppointments.map((appt) => ({
+      appointments.value = sortRecordsNewestFirst(rawAppointments.map((appt) => ({
         ...appt,
         clientName: appt.clientName
           || appt.customerName
           || appt.patientName
           || customerNameMap.get(String(appt.customerId))
           || clientNameMap.get(String(appt.clientId))
-          || ''
-      }))
+          || '',
+      })))
     }
 
     const updateStatus = async (appointment, nextStatus) => {

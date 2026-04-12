@@ -1,4 +1,4 @@
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 
 const FALLBACK_SERVICE = 'General Services'
@@ -23,44 +23,16 @@ const extractCity = (location) => {
   return raw.split(',')[0].trim()
 }
 
-export const fetchCustomerCenters = async () => {
-  const clinicsSnapshot = await getDocs(collection(db, 'clinics'))
-
-  const clinics = clinicsSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-
-  const serviceMap = new Map()
-  const clinicIds = clinics.map((clinic) => clinic.id)
-  const chunkArray = (items, size = 10) => {
-    const chunks = []
-    for (let i = 0; i < items.length; i += size) {
-      chunks.push(items.slice(i, i + size))
-    }
-    return chunks
+const chunkArray = (items, size = 10) => {
+  const chunks = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
   }
+  return chunks
+}
 
-  if (clinicIds.length) {
-    const chunks = chunkArray(clinicIds, 10)
-    for (const chunk of chunks) {
-      const postsSnapshot = await getDocs(
-        query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk))
-      )
-      postsSnapshot.forEach((snap) => {
-        const post = snap.data() || {}
-        const branchId = toText(post.branchId)
-        if (!branchId) return
-
-        const serviceLabel = toText(post.serviceName || post.productName || post.title)
-        if (!serviceLabel) return
-
-        if (!serviceMap.has(branchId)) {
-          serviceMap.set(branchId, new Set())
-        }
-        serviceMap.get(branchId).add(serviceLabel)
-      })
-    }
-  }
-
-  const centers = clinics
+const buildCenters = (clinics, serviceMap) =>
+  clinics
     .filter((clinic) => {
       const ownerId = toText(clinic.ownerId)
       const status = toText(clinic.status).toLowerCase()
@@ -96,5 +68,120 @@ export const fetchCustomerCenters = async () => {
     })
     .sort((a, b) => a.name.localeCompare(b.name))
 
-  return centers
+const buildServiceMap = async (clinicIds) => {
+  const serviceMap = new Map()
+  if (!clinicIds.length) return serviceMap
+
+  const chunks = chunkArray(clinicIds, 10)
+  for (const chunk of chunks) {
+    const postsSnapshot = await getDocs(
+      query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk))
+    )
+    postsSnapshot.forEach((snap) => {
+      const post = snap.data() || {}
+      const branchId = toText(post.branchId)
+      if (!branchId) return
+
+      const serviceLabel = toText(post.serviceName || post.productName || post.title)
+      if (!serviceLabel) return
+
+      if (!serviceMap.has(branchId)) {
+        serviceMap.set(branchId, new Set())
+      }
+      serviceMap.get(branchId).add(serviceLabel)
+    })
+  }
+
+  return serviceMap
+}
+
+export const fetchCustomerCenters = async () => {
+  const clinicsSnapshot = await getDocs(collection(db, 'clinics'))
+  const clinics = clinicsSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+  const serviceMap = await buildServiceMap(clinics.map((clinic) => clinic.id))
+  return buildCenters(clinics, serviceMap)
+}
+
+export const subscribeCustomerCenters = (onChange, onError) => {
+  let clinicUnsubscribe = null
+  let serviceUnsubscribers = []
+  let serviceSnapshots = new Map()
+  let disposed = false
+
+  const emit = (clinics) => {
+    if (disposed) return
+    const serviceMap = new Map()
+    serviceSnapshots.forEach((posts, sourceKey) => {
+      posts.forEach((post) => {
+        const branchId = toText(post.branchId)
+        if (!branchId) return
+        const serviceLabel = toText(post.serviceName || post.productName || post.title)
+        if (!serviceLabel) return
+        if (!serviceMap.has(branchId)) {
+          serviceMap.set(branchId, new Set())
+        }
+        serviceMap.get(branchId).add(serviceLabel)
+      })
+    })
+    onChange(buildCenters(clinics, serviceMap))
+  }
+
+  const stopServiceListeners = () => {
+    serviceUnsubscribers.forEach((unsubscribe) => {
+      try {
+        unsubscribe()
+      } catch (_error) {
+        // ignore cleanup failures
+      }
+    })
+    serviceUnsubscribers = []
+    serviceSnapshots = new Map()
+  }
+
+  clinicUnsubscribe = onSnapshot(
+    collection(db, 'clinics'),
+    (snapshot) => {
+      const clinics = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      stopServiceListeners()
+
+      if (!clinics.length) {
+        emit([])
+        return
+      }
+
+      const clinicIds = clinics.map((clinic) => clinic.id)
+      const chunks = chunkArray(clinicIds, 10)
+      chunks.forEach((chunk) => {
+        const sourceKey = chunk.join('|')
+        const unsubscribe = onSnapshot(
+          query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk)),
+          (postsSnapshot) => {
+            serviceSnapshots.set(
+              sourceKey,
+              postsSnapshot.docs.map((docSnap) => docSnap.data() || {})
+            )
+            emit(clinics)
+          },
+          (error) => {
+            if (typeof onError === 'function') onError(error)
+          }
+        )
+        serviceUnsubscribers.push(unsubscribe)
+      })
+
+      emit(clinics)
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error)
+    }
+  )
+
+  return () => {
+    disposed = true
+    stopServiceListeners()
+    if (clinicUnsubscribe) {
+      clinicUnsubscribe()
+      clinicUnsubscribe = null
+    }
+  }
 }

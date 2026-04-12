@@ -93,7 +93,7 @@
           </div>
 
           <div v-if="loading" class="state-panel">
-            <p class="state-title">Loading centers...</p>
+            <PageSectionSkeleton variant="split" />
           </div>
 
           <div v-else-if="errorMessage" class="state-panel">
@@ -173,11 +173,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
-import { fetchCustomerCenters } from '@/utils/customerCenters'
+import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
+import { subscribeCustomerCenters } from '@/utils/customerCenters'
 
 const router = useRouter()
 const loading = ref(true)
@@ -192,6 +193,7 @@ const radiusKm = ref(15)
 const locationLoading = ref(false)
 const locationMessage = ref('')
 const radiusOptions = [5, 10, 15, 25, 50]
+let unsubscribeCenters = null
 
 const cities = computed(() => [...new Set(centers.value.map((item) => item.city).filter(Boolean))])
 const services = computed(() => [...new Set(centers.value.flatMap((item) => item.services).filter(Boolean))])
@@ -316,17 +318,24 @@ const openCenter = (centerId) => {
   router.push({ name: 'customer-center', params: { id: centerId } })
 }
 
-onMounted(async () => {
+onMounted(() => {
   loading.value = true
   errorMessage.value = ''
-  try {
-    centers.value = await fetchCustomerCenters()
-  } catch (error) {
-    console.error(error)
-    errorMessage.value = 'Failed to load centers.'
-  } finally {
-    loading.value = false
-  }
+  unsubscribeCenters = subscribeCustomerCenters(
+    (nextCenters) => {
+      centers.value = nextCenters
+      loading.value = false
+    },
+    (error) => {
+      console.error(error)
+      errorMessage.value = 'Failed to load centers.'
+      loading.value = false
+    }
+  )
+})
+
+onUnmounted(() => {
+  if (unsubscribeCenters) unsubscribeCenters()
 })
 
 watch(radiusKm, () => {

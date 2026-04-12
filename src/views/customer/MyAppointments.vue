@@ -11,6 +11,77 @@
         <section class="appointments-panel">
           <div class="panel-head">
             <div>
+              <p class="panel-kicker">Virtual Visits</p>
+              <h2 class="panel-title">Online Consultations</h2>
+            </div>
+            <p class="panel-note">{{ loading ? 'Loading consultations...' : `${onlineConsultations.length} consultation${onlineConsultations.length === 1 ? '' : 's'}` }}</p>
+          </div>
+
+          <div v-if="loading" class="state-panel">
+            <PageSectionSkeleton variant="table" :rows="4" :columns="6" />
+          </div>
+
+          <div v-else class="appointments-table-wrap">
+            <table class="appointments-table">
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Clinic</th>
+                  <th>Date</th>
+                  <th>Time</th>
+                  <th>Meeting Link</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="appt in onlineConsultations" :key="appt.id">
+                  <td class="appointment-service-cell">
+                    <div class="table-primary">{{ formatAppointmentServices(appt) }}</div>
+                    <div class="table-secondary">Online consultation</div>
+                  </td>
+                  <td>
+                    <div class="table-primary">{{ appt.clinic }}</div>
+                  </td>
+                  <td>{{ appt.date }}</td>
+                  <td>{{ appt.time }}</td>
+                  <td>
+                    <div class="table-actions">
+                      <button
+                        v-if="appt.meetLink"
+                        type="button"
+                        class="appointment-button appointment-button-secondary"
+                        :disabled="isCancelledAppointment(appt)"
+                        @click="openMeetLink(appt.meetLink)"
+                      >
+                        Join Call
+                      </button>
+                      <button
+                        v-if="appt.meetLink"
+                        type="button"
+                        class="appointment-button appointment-button-secondary"
+                        :disabled="isCancelledAppointment(appt)"
+                        @click="copyMeetLink(appt.meetLink)"
+                      >
+                        Copy Link
+                      </button>
+                      <span v-else class="table-secondary">No meeting link yet</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
+                  </td>
+                </tr>
+                <tr v-if="!onlineConsultations.length">
+                  <td colspan="6" class="table-empty-cell">No online consultations yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="appointments-panel">
+          <div class="panel-head">
+            <div>
               <p class="panel-kicker">Active Bookings</p>
               <h2 class="panel-title">Upcoming Appointments</h2>
             </div>
@@ -18,7 +89,7 @@
           </div>
 
           <div v-if="loading" class="state-panel">
-            <p class="state-title">Loading appointments...</p>
+            <PageSectionSkeleton variant="table" :rows="4" :columns="6" />
           </div>
 
           <div v-else class="appointments-table-wrap">
@@ -83,7 +154,7 @@
           </div>
 
           <div v-if="loading" class="state-panel">
-            <p class="state-title">Loading appointments...</p>
+            <PageSectionSkeleton variant="table" :rows="4" :columns="5" />
           </div>
 
           <div v-else class="appointments-table-wrap">
@@ -286,16 +357,20 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { auth, db } from '@/config/firebaseConfig'
-import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
+import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { onAuthStateChanged } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 
 const loading = ref(true)
 const upcomingAppointments = ref([])
 const pastAppointments = ref([])
+const onlineConsultations = ref([])
 const clinicsById = ref({})
 const requestModal = ref({
   open: false,
@@ -314,6 +389,9 @@ const requestModalSchedules = ref({})
 const requestModalAppointments = ref([])
 const requestModalReservations = ref([])
 const requestModalLoadSeq = ref(0)
+let unsubscribeAuth = null
+let unsubscribeAppointments = null
+let unsubscribeClinics = null
 
 const SLOT_STEP_MINUTES = 30
 const SLOT_DAYS_LOOKAHEAD = 365
@@ -322,6 +400,26 @@ const requestCalendarWeekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'
 const toDateTime = (date, time) => new Date(`${date}T${time || '00:00'}`)
 
 const normalizeAppointmentStatus = (value) => String(value || '').trim().toLowerCase()
+
+const isCancelledAppointment = (appointment) => normalizeAppointmentStatus(appointment?.status) === 'cancelled'
+
+const isOnlineConsultationAppointment = (appointment) => {
+  const mode = normalizeAppointmentStatus(appointment?.consultationMode)
+  const serviceText = [
+    appointment?.service,
+    appointment?.type,
+    appointment?.serviceName,
+    appointment?.serviceType,
+  ]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ')
+
+  return (
+    mode === 'online' ||
+    Boolean(appointment?.meetLink) ||
+    serviceText.includes('online consultation')
+  )
+}
 
 const parseClockToMinutes = (value) => {
   const raw = String(value || '').trim()
@@ -417,7 +515,7 @@ const getAppointmentDurationMinutes = (appointment) => {
 
 const buildBlockedRanges = (appointmentList = [], options = {}) => {
   const blocked = new Map()
-  const blockingStatuses = new Set(['scheduled', 'approved', 'paid', 'completed', 'in progress', 'ongoing', 'held'])
+  const blockingStatuses = new Set(['scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
   const skipAppointmentId = String(options.skipAppointmentId || '').trim()
 
   appointmentList.forEach((appointment) => {
@@ -738,6 +836,25 @@ const formatAppointmentServices = (appointment) => {
   return appointment?.service || 'Service not set'
 }
 
+const openMeetLink = (meetLink) => {
+  const url = String(meetLink || '').trim()
+  if (!url) return
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+const copyMeetLink = async (meetLink) => {
+  const url = String(meetLink || '').trim()
+  if (!url) return
+
+  try {
+    await navigator.clipboard.writeText(url)
+    toast.success('Meet link copied.')
+  } catch (error) {
+    console.error('Failed to copy meet link:', error)
+    toast.error('Failed to copy meeting link.')
+  }
+}
+
 const getClinicPolicy = (appointment, kind) => {
   const clinic = clinicsById.value[appointment?.branchId] || {}
   if (kind === 'cancel') {
@@ -799,26 +916,75 @@ const closeRequestModal = () => {
   resetRequestModalState()
 }
 
-const loadAppointments = async () => {
-  const user = auth.currentUser
-  if (!user) {
+const startAppointmentsListener = (userId) => {
+  if (!userId) {
     upcomingAppointments.value = []
     pastAppointments.value = []
+    onlineConsultations.value = []
     loading.value = false
     return
   }
 
   loading.value = true
-  try {
-    const [appointmentsSnap, clinicsSnap] = await Promise.all([
-      getDocs(query(collection(db, 'appointments'), where('customerId', '==', user.uid))),
-      getDocs(collection(db, 'clinics')),
-    ])
+  if (unsubscribeAppointments) {
+    unsubscribeAppointments()
+    unsubscribeAppointments = null
+  }
 
+  const appointmentsQuery = query(collection(db, 'appointments'), where('customerId', '==', userId))
+  unsubscribeAppointments = onSnapshot(
+    appointmentsQuery,
+    (snapshot) => {
+      const clinicMap = new Map(Object.entries(clinicsById.value).map(([id, data]) => [id, data]))
+      const now = new Date()
+      const all = snapshot.docs.map((snap) => {
+        const data = snap.data()
+        return {
+          id: snap.id,
+          ...data,
+          clinic: clinicMap.get(data.branchId)?.name || 'Clinic',
+        }
+      })
+
+      onlineConsultations.value = sortRecordsNewestFirst(
+        all.filter((appt) => isOnlineConsultationAppointment(appt))
+      )
+
+      upcomingAppointments.value = all
+        .filter((appt) => appt.status !== 'Cancelled' && !isOnlineConsultationAppointment(appt) && toDateTime(appt.date, appt.time) >= now)
+        .sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
+          return bTime - aTime
+        })
+
+      pastAppointments.value = all
+        .filter((appt) => !isOnlineConsultationAppointment(appt) && (appt.status === 'Cancelled' || toDateTime(appt.date, appt.time) < now))
+        .sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
+          return bTime - aTime
+        })
+      loading.value = false
+    },
+    (error) => {
+      console.error(error)
+      toast.error('Failed to load appointments.')
+      loading.value = false
+    }
+  )
+}
+
+const startClinicsListener = () => {
+  if (unsubscribeClinics) {
+    unsubscribeClinics()
+    unsubscribeClinics = null
+  }
+
+  unsubscribeClinics = onSnapshot(collection(db, 'clinics'), (snapshot) => {
     const clinicMap = new Map()
-    clinicsSnap.docs.forEach((snap) => {
-      const data = snap.data()
-      clinicMap.set(snap.id, {
+    sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))).forEach((data) => {
+      clinicMap.set(data.id, {
         name: data.clinicName || data.clinicBranch || 'Clinic',
         cancellationPolicy: String(data.cancellationPolicy || '').trim(),
         reschedulePolicy: String(data.reschedulePolicy || '').trim(),
@@ -826,30 +992,7 @@ const loadAppointments = async () => {
       })
     })
     clinicsById.value = Object.fromEntries(clinicMap.entries())
-
-    const now = new Date()
-    const all = appointmentsSnap.docs.map((snap) => {
-      const data = snap.data()
-      return {
-        id: snap.id,
-        ...data,
-        clinic: clinicMap.get(data.branchId)?.name || 'Clinic',
-      }
-    })
-
-    upcomingAppointments.value = all
-      .filter((appt) => appt.status !== 'Cancelled' && toDateTime(appt.date, appt.time) >= now)
-      .sort((a, b) => toDateTime(a.date, a.time) - toDateTime(b.date, b.time))
-
-    pastAppointments.value = all
-      .filter((appt) => appt.status === 'Cancelled' || toDateTime(appt.date, appt.time) < now)
-      .sort((a, b) => toDateTime(b.date, b.time) - toDateTime(a.date, a.time))
-  } catch (error) {
-    console.error(error)
-    toast.error('Failed to load appointments.')
-  } finally {
-    loading.value = false
-  }
+  })
 }
 
 const submitRequest = async () => {
@@ -951,7 +1094,24 @@ const reschedule = async (appt) => {
   }
 }
 
-onMounted(loadAppointments)
+onMounted(() => {
+  startClinicsListener()
+  unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      upcomingAppointments.value = []
+      pastAppointments.value = []
+      loading.value = false
+      return
+    }
+    startAppointmentsListener(user.uid)
+  })
+})
+
+onUnmounted(() => {
+  if (unsubscribeAppointments) unsubscribeAppointments()
+  if (unsubscribeClinics) unsubscribeClinics()
+  if (unsubscribeAuth) unsubscribeAuth()
+})
 </script>
 
 <style scoped>

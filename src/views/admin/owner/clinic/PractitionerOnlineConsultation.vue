@@ -67,7 +67,7 @@
                     <button
                       type="button"
                       class="inline-flex items-center justify-center h-7 w-7 rounded-md bg-slate-700 text-slate-200 hover:bg-slate-600 disabled:opacity-60"
-                      :disabled="isExpiredAppointment(appointment)"
+                      :disabled="isExpiredAppointment(appointment) || isCancelledAppointment(appointment)"
                       @click="copyMeetLink(appointment.meetLink)"
                       title="Copy link"
                     >
@@ -81,7 +81,7 @@
                     <button
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs hover:bg-sky-500 disabled:opacity-60"
-                      :disabled="creatingId === appointment.id || isExpiredAppointment(appointment)"
+                      :disabled="creatingId === appointment.id || isExpiredAppointment(appointment) || isCancelledAppointment(appointment)"
                       @click="createMeetLink(appointment)"
                     >
                       {{ creatingId === appointment.id ? 'Creating...' : (appointment.meetLink ? 'Regenerate Link' : 'Create Link') }}
@@ -90,7 +90,7 @@
                       v-if="appointment.meetLink"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-500 disabled:opacity-60"
-                      :disabled="isExpiredAppointment(appointment)"
+                      :disabled="isExpiredAppointment(appointment) || isCancelledAppointment(appointment)"
                       @click="joinCall(appointment.meetLink)"
                     >
                       Join Call
@@ -121,6 +121,7 @@ import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { Icon } from '@iconify/vue'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'PractitionerOnlineConsultation',
@@ -179,9 +180,9 @@ export default {
     }
 
     const assignedAppointments = computed(() =>
-      appointments.value
-        .filter((item) => isAssignedToPractitioner(item))
-        .sort((a, b) => `${a.date || ''} ${a.time || ''}`.localeCompare(`${b.date || ''} ${b.time || ''}`))
+      sortRecordsNewestFirst(
+        appointments.value.filter((item) => isAssignedToPractitioner(item))
+      )
     )
 
     const filteredAppointments = computed(() =>
@@ -199,7 +200,7 @@ export default {
     const loadAppointments = async () => {
       if (!currentBranchId.value) return
       const snapshot = await getDocs(query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)))
-      appointments.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
     }
 
     const parseDateTime = (dateValue, timeValue) => {
@@ -218,6 +219,9 @@ export default {
       const end = new Date(start.getTime() + 60 * 60 * 1000)
       return Date.now() > end.getTime()
     }
+
+    const isCancelledAppointment = (appointment) =>
+      String(appointment?.status || '').trim().toLowerCase() === 'cancelled'
 
     const createMeetLink = async (appointment) => {
       if (!appointment?.id) return
@@ -395,6 +399,7 @@ export default {
       copyMeetLink,
       seedDemoConsultation,
       isExpiredAppointment,
+      isCancelledAppointment,
     }
   },
 }

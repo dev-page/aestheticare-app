@@ -161,6 +161,7 @@ import Swal from 'sweetalert2'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 const normalizePlanLabel = (value) => {
   const raw = String(value || '').trim().toLowerCase()
@@ -329,11 +330,12 @@ export default {
               planLabel: normalizePlanLabel(resolvedPlan),
               paymentStatus: resolvedPayment,
               documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
+              createdAt: clinic.createdAt || user.createdAt || null,
             }
           })
         )
 
-        pendingClinics.value = rows.sort((a, b) => a.fullName.localeCompare(b.fullName))
+        pendingClinics.value = sortRecordsNewestFirst(rows)
       } catch (err) {
         console.error('Failed to load pending clinic registrations:', err)
         error.value = 'Failed to load clinic verification list. Please try again.'

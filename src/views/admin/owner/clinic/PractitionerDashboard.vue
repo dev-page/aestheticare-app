@@ -136,6 +136,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'PractitionerDashboard',
@@ -176,9 +177,9 @@ export default {
     }
 
     const assignedAppointments = computed(() =>
-      appointments.value
-        .filter((item) => isAssignedToPractitioner(item))
-        .sort((a, b) => `${a.date || ''} ${a.time || ''}`.localeCompare(`${b.date || ''} ${b.time || ''}`))
+      sortRecordsNewestFirst(
+        appointments.value.filter((item) => isAssignedToPractitioner(item))
+      )
     )
 
     const selectedDateAppointments = computed(() =>
@@ -320,7 +321,7 @@ export default {
       const snapshot = await getDocs(
         query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
       )
-      appointments.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
     }
 
     let unsubscribeAuth = null

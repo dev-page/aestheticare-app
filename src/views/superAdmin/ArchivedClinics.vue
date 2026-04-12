@@ -84,6 +84,7 @@ import { computed, onMounted, ref } from 'vue'
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 const normalizePlanLabel = (value) => {
   const raw = String(value || '').trim().toLowerCase()
@@ -174,11 +175,12 @@ export default {
               archived,
               planLabel: normalizePlanLabel(clinic.subscriptionPlan || clinic.plan || ''),
               location: clinic.clinicLocation || clinic.location || '',
+              createdAt: clinic.archivedAt || clinic.updatedAt || clinic.createdAt || null,
             }
           })
         )
 
-        clinics.value = enriched.filter((clinic) => clinic.archived)
+        clinics.value = sortRecordsNewestFirst(enriched.filter((clinic) => clinic.archived))
       } catch (err) {
         console.error('Error loading archived clinics:', err)
         error.value = 'Failed to load archived clinics. Please try again.'

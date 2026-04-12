@@ -269,6 +269,7 @@ import { useRoute, useRouter } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { logActivity } from '@/utils/activityLogger'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 
 export default {
@@ -578,6 +579,7 @@ export default {
           referenceNumber,
           metadata: {
             saleMode: snapshot.saleMode,
+            source: 'paymongo_checkout',
             branchId: currentBranchId.value,
             receptionistId: currentUserId.value
           },
@@ -695,7 +697,7 @@ export default {
       items.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .filter((item) => Number(item.unitPrice || 0) > 0 && Boolean(item.name))
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      items.value = sortRecordsNewestFirst(items.value)
     }
 
     const loadAppointments = async () => {
@@ -707,9 +709,7 @@ export default {
       const snapshot = await getDocs(
         query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
       )
-      appointments.value = snapshot.docs
-        .map((snap) => ({ id: snap.id, ...snap.data() }))
-        .sort((a, b) => `${a.date || ''} ${a.time || ''}`.localeCompare(`${b.date || ''} ${b.time || ''}`))
+      appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
     }
 
     const syncAppointmentFieldsFromSelection = () => {

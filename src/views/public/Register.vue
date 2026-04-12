@@ -4,8 +4,8 @@ import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { collection, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
+import { collection, deleteField, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
 import Terms from '@/components/common/Terms.vue'
@@ -204,14 +204,14 @@ const documentPreviewUrls = ref({
 })
 const isSubmittingDocuments = ref(false)
 const documentUploadState = ref({
-  secCertificate: { uploading: false, error: '' },
-  articlesOfIncorporation: { uploading: false, error: '' },
-  businessPermit: { uploading: false, error: '' },
-  governmentIdRepresentativeFront: { uploading: false, error: '' },
-  governmentIdRepresentativeBack: { uploading: false, error: '' },
-  dohAccreditation: { uploading: false, error: '' },
-  fdaApproval: { uploading: false, error: '' },
-  prcIdMedicalDirector: { uploading: false, error: '' },
+  secCertificate: { uploading: false, progress: 0, error: '' },
+  articlesOfIncorporation: { uploading: false, progress: 0, error: '' },
+  businessPermit: { uploading: false, progress: 0, error: '' },
+  governmentIdRepresentativeFront: { uploading: false, progress: 0, error: '' },
+  governmentIdRepresentativeBack: { uploading: false, progress: 0, error: '' },
+  dohAccreditation: { uploading: false, progress: 0, error: '' },
+  fdaApproval: { uploading: false, progress: 0, error: '' },
+  prcIdMedicalDirector: { uploading: false, progress: 0, error: '' },
 })
 const documentFileMap = {
   secCertificate: secCertificateFile,
@@ -244,6 +244,15 @@ const documentInputKeys = ref({
   prcIdMedicalDirector: 0,
 })
 const approvalRedirecting = ref(false)
+const approvalReviewState = ref('pending')
+const approvalReviewMessage = ref('Your registration is under review. Please allow at least 24 hours for admin review.')
+const approvalReviewReason = ref('')
+const approvalUserExists = ref(false)
+const approvalClinicExists = ref(false)
+const approvalUserStatus = ref('')
+const approvalClinicStatus = ref('')
+let unsubscribeApprovalUser = null
+let unsubscribeApprovalClinic = null
 
 const togglePassword = () => passwordVisible.value = !passwordVisible.value
 const toggleConfirmPassword = () => confirmPasswordVisible.value = !confirmPasswordVisible.value
@@ -262,7 +271,6 @@ let mapsReady = false
 let locationAutocomplete = null
 let locationMap = null
 let locationMarker = null
-let approvalCheckInterval = null
 let registrationDraftSaveTimer = null
 let lastSavedRegistrationDraft = ''
 
@@ -885,33 +893,49 @@ const stopOtpCountdown = () => {
 }
 
 const stopApprovalCheck = () => {
-  if (approvalCheckInterval) {
-    clearInterval(approvalCheckInterval)
-    approvalCheckInterval = null
+  if (unsubscribeApprovalUser) {
+    unsubscribeApprovalUser()
+    unsubscribeApprovalUser = null
+  }
+  if (unsubscribeApprovalClinic) {
+    unsubscribeApprovalClinic()
+    unsubscribeApprovalClinic = null
   }
 }
 
 const startApprovalCheck = () => {
   if (!userUid.value) return
   stopApprovalCheck()
-  approvalCheckInterval = setInterval(async () => {
-    try {
-      const [userSnap, clinicSnap] = await Promise.all([
-        getDoc(doc(db, 'users', userUid.value)),
-        getDoc(doc(db, 'clinics', userUid.value)),
-      ])
-      const userStatus = String(userSnap.data()?.status || '').toLowerCase()
-      const clinicStatus = String(clinicSnap.data()?.approvalStatus || '').toLowerCase()
-      const isApproved = userStatus === 'active' || clinicStatus.includes('approved')
-      if (isApproved) {
-        stopApprovalCheck()
-        approvalRedirecting.value = true
-        setTimeout(() => router.push('/login'), 1800)
-      }
-    } catch (_error) {
-      // Silent retry while waiting for approval
+  approvalReviewState.value = 'reviewing'
+  approvalReviewMessage.value = 'Your registration is under review. Please allow at least 24 hours for admin review.'
+  approvalReviewReason.value = ''
+
+  unsubscribeApprovalUser = onSnapshot(
+    doc(db, 'users', userUid.value),
+    (snapshot) => {
+      approvalUserExists.value = snapshot.exists()
+      approvalUserStatus.value = snapshot.exists() ? String(snapshot.data()?.status || '') : ''
+      updateApprovalReviewState()
+    },
+    (error) => {
+      console.error('Failed to listen to user registration status:', error)
     }
-  }, 8000)
+  )
+
+  unsubscribeApprovalClinic = onSnapshot(
+    doc(db, 'clinics', userUid.value),
+    (snapshot) => {
+      approvalClinicExists.value = snapshot.exists()
+      approvalClinicStatus.value = snapshot.exists() ? String(snapshot.data()?.approvalStatus || '') : ''
+      if (snapshot.exists()) {
+        approvalReviewReason.value = String(snapshot.data()?.rejectionReason || '')
+      }
+      updateApprovalReviewState()
+    },
+    (error) => {
+      console.error('Failed to listen to clinic registration status:', error)
+    }
+  )
 }
 
 const startOtpCountdown = (seconds = OTP_COOLDOWN_SECONDS) => {
@@ -952,9 +976,16 @@ const handleDocumentFileChange = async (key, event) => {
   }
 
   const docKey = previewKey
-  documentUploadState.value[docKey] = { uploading: true, error: '' }
+  documentUploadState.value[docKey] = { uploading: true, progress: 0, error: '' }
   try {
-    const uploadedDoc = await uploadDocumentForClinic(userUid.value, selectedFile, docKey)
+    const uploadedDoc = await uploadDocumentForClinic(userUid.value, selectedFile, docKey, (progress) => {
+      documentUploadState.value[docKey] = {
+        ...documentUploadState.value[docKey],
+        uploading: true,
+        progress,
+        error: '',
+      }
+    })
     if (!uploadedDoc) throw new Error('Upload failed')
 
     existingSubmittedDocuments.value[docKey] = uploadedDoc
@@ -962,12 +993,12 @@ const handleDocumentFileChange = async (key, event) => {
       [`draftDocuments.${docKey}`]: uploadedDoc,
       draftDocumentsUpdatedAt: serverTimestamp(),
     })
-    documentUploadState.value[docKey] = { uploading: false, error: '' }
+    documentUploadState.value[docKey] = { uploading: false, progress: 100, error: '' }
     toast.success('Document uploaded. You can safely leave and continue later.')
   } catch (err) {
     console.error(err)
     const errorMessage = err?.message || 'Failed to upload document. Please try again.'
-    documentUploadState.value[docKey] = { uploading: false, error: errorMessage }
+    documentUploadState.value[docKey] = { uploading: false, progress: 0, error: errorMessage }
     toast.error(errorMessage)
   }
 }
@@ -1160,6 +1191,62 @@ const saveRegistrationDraft = () => {
   } catch (_error) {
     // Ignore session storage failures
   }
+}
+
+const hasAnyDocumentUploadInProgress = computed(() =>
+  Object.values(documentUploadState.value).some((item) => Boolean(item?.uploading))
+)
+
+const isApprovalUnderReview = computed(() =>
+  approvalReviewState.value === 'pending' || approvalReviewState.value === 'reviewing'
+)
+const isApprovalApproved = computed(() =>
+  approvalRedirecting.value || approvalReviewState.value === 'approved'
+)
+const isApprovalRejected = computed(() => approvalReviewState.value === 'rejected')
+const approvalStateIcon = computed(() => {
+  if (isApprovalApproved.value) return 'mdi:check-circle-outline'
+  if (isApprovalRejected.value) return 'mdi:close-circle-outline'
+  return 'mdi:clock-outline'
+})
+const approvalStateIconTone = computed(() => {
+  if (isApprovalApproved.value) return 'text-emerald-600'
+  if (isApprovalRejected.value) return 'text-rose-600'
+  return 'text-gold-700'
+})
+
+const updateApprovalReviewState = () => {
+  const userStatus = String(approvalUserStatus.value || '').trim().toLowerCase()
+  const clinicStatus = String(approvalClinicStatus.value || '').trim().toLowerCase()
+
+  if (userStatus === 'active' || clinicStatus.includes('approved')) {
+    approvalReviewState.value = 'approved'
+    approvalReviewMessage.value = 'Your registration has been approved. Redirecting you to the login page now.'
+    approvalReviewReason.value = ''
+    if (!approvalRedirecting.value) {
+      approvalRedirecting.value = true
+      stopApprovalCheck()
+      setTimeout(() => router.push('/login'), 1800)
+    }
+    return
+  }
+
+  const isRejected =
+    userStatus.includes('rejected') ||
+    clinicStatus.includes('rejected') ||
+    (!approvalUserExists.value && !approvalClinicExists.value && currentStep.value === 4)
+
+  if (isRejected) {
+    approvalReviewState.value = 'rejected'
+    approvalReviewMessage.value = 'Your registration was rejected by the platform admin. Please contact support if you need help or submit a new application.'
+    approvalRedirecting.value = false
+    return
+  }
+
+  approvalReviewState.value = 'reviewing'
+  approvalReviewMessage.value = 'Your registration is under review. Please allow at least 24 hours for admin review.'
+  approvalReviewReason.value = ''
+  approvalRedirecting.value = false
 }
 
 const scheduleRegistrationDraftSave = () => {
@@ -1614,6 +1701,15 @@ const handleEmailDraftInput = () => {
     }
     syncExistingDocumentPreviews()
     pendingApprovalMode.value = false
+    approvalRedirecting.value = false
+    approvalReviewState.value = 'pending'
+    approvalReviewMessage.value = 'Your registration is under review. Please allow at least 24 hours for admin review.'
+    approvalReviewReason.value = ''
+    approvalUserExists.value = false
+    approvalClinicExists.value = false
+    approvalUserStatus.value = ''
+    approvalClinicStatus.value = ''
+    stopApprovalCheck()
   }
 }
 
@@ -1624,6 +1720,54 @@ const openLocationModal = () => {
 
 const closeLocationModal = () => {
   showLocationModal.value = false
+}
+
+const resetClinicRegistrationFlow = () => {
+  stopApprovalCheck()
+  stopOtpCountdown()
+  approvalRedirecting.value = false
+  approvalReviewState.value = 'pending'
+  approvalReviewMessage.value = 'Your registration is under review. Please allow at least 24 hours for admin review.'
+  approvalReviewReason.value = ''
+  approvalUserExists.value = false
+  approvalClinicExists.value = false
+  approvalUserStatus.value = ''
+  approvalClinicStatus.value = ''
+  pendingApprovalMode.value = false
+  otpVerifiedForRegistration.value = false
+  emailChecked.value = false
+  currentStep.value = 1
+  userUid.value = ''
+  setStoredRegistrationUid('')
+  setStoredOtpRecipientEmail('')
+  otpRecipientEmail.value = ''
+  clearOtpInputs()
+  secCertificateFile.value = null
+  articlesOfIncorporationFile.value = null
+  businessPermitFile.value = null
+  governmentIdRepresentativeFrontFile.value = null
+  governmentIdRepresentativeBackFile.value = null
+  dohAccreditationFile.value = null
+  fdaApprovalFile.value = null
+  prcIdMedicalDirectorFile.value = null
+  existingSubmittedDocuments.value = {
+    secCertificate: null,
+    articlesOfIncorporation: null,
+    businessPermit: null,
+    governmentIdRepresentativeFront: null,
+    governmentIdRepresentativeBack: null,
+    dohAccreditation: null,
+    fdaApproval: null,
+    prcIdMedicalDirector: null,
+  }
+  Object.keys(documentPreviewUrls.value).forEach((key) => {
+    const currentPreview = documentPreviewUrls.value[key]
+    if (currentPreview?.startsWith('blob:')) URL.revokeObjectURL(currentPreview)
+    documentPreviewUrls.value[key] = ''
+  })
+  Object.keys(documentUploadState.value).forEach((key) => {
+    documentUploadState.value[key] = { uploading: false, progress: 0, error: '' }
+  })
 }
 
 const loadMapsScript = (apiKey) =>
@@ -2290,13 +2434,28 @@ const verifyOtp = async () => {
   }
 }
 
-const uploadDocumentForClinic = async (uid, file, documentKey) => {
+const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () => {}) => {
   if (!file) return null
   const safeName = `${Date.now()}-${String(file.name || 'document').replace(/\s+/g, '_')}`
   const filePath = `clinic-registration/${uid}/${documentKey}/${safeName}`
   const fileRef = storageRef(storage, filePath)
-  await uploadBytes(fileRef, file)
-  const url = await getDownloadURL(fileRef)
+
+  const snapshot = await new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(fileRef, file)
+    task.on(
+      'state_changed',
+      (snap) => {
+        const percent = snap.totalBytes
+          ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100)
+          : 0
+        onProgress(percent)
+      },
+      reject,
+      () => resolve(task.snapshot)
+    )
+  })
+
+  const url = await getDownloadURL(snapshot.ref)
   return {
     name: file.name || '',
     size: file.size || 0,
@@ -2317,6 +2476,11 @@ const submitDocuments = async () => {
 
   if (!userUid.value) {
     toast.error('User ID not found. Please restart registration.')
+    return
+  }
+
+  if (hasAnyDocumentUploadInProgress.value) {
+    toast.info('Please wait for the current upload to finish.')
     return
   }
 
@@ -2352,6 +2516,8 @@ const submitDocuments = async () => {
     existingSubmittedDocuments.value = submittedDocumentsPayload
     syncExistingDocumentPreviews()
     pendingApprovalMode.value = true
+    approvalReviewState.value = 'reviewing'
+    approvalReviewMessage.value = 'Your registration is under review. Please allow at least 24 hours for admin review.'
 
     currentStep.value = 4
     setStoredOtpRecipientEmail('')
@@ -2831,6 +2997,18 @@ const submitDocuments = async () => {
                     <p class="upload-file-name">
                       {{ documentFileMap.governmentIdRepresentativeFront?.value?.name || existingSubmittedDocuments.governmentIdRepresentativeFront?.name || 'No file selected' }}
                     </p>
+                    <div v-if="documentUploadState.governmentIdRepresentativeFront.uploading" class="mt-3 space-y-1">
+                      <div class="flex items-center justify-between text-[11px] text-charcoal-500">
+                        <span>Uploading...</span>
+                        <span>{{ documentUploadState.governmentIdRepresentativeFront.progress || 0 }}%</span>
+                      </div>
+                      <div class="h-2 overflow-hidden rounded-full bg-gold-100">
+                        <div
+                          class="h-full rounded-full bg-gold-600 transition-all duration-200"
+                          :style="{ width: `${documentUploadState.governmentIdRepresentativeFront.progress || 0}%` }"
+                        ></div>
+                      </div>
+                    </div>
                   </div>
                   <div class="upload-card">
                     <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeBack }}</p>
@@ -2844,6 +3022,18 @@ const submitDocuments = async () => {
                     <p class="upload-file-name">
                       {{ documentFileMap.governmentIdRepresentativeBack?.value?.name || existingSubmittedDocuments.governmentIdRepresentativeBack?.name || 'No file selected' }}
                     </p>
+                    <div v-if="documentUploadState.governmentIdRepresentativeBack.uploading" class="mt-3 space-y-1">
+                      <div class="flex items-center justify-between text-[11px] text-charcoal-500">
+                        <span>Uploading...</span>
+                        <span>{{ documentUploadState.governmentIdRepresentativeBack.progress || 0 }}%</span>
+                      </div>
+                      <div class="h-2 overflow-hidden rounded-full bg-gold-100">
+                        <div
+                          class="h-full rounded-full bg-gold-600 transition-all duration-200"
+                          :style="{ width: `${documentUploadState.governmentIdRepresentativeBack.progress || 0}%` }"
+                        ></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div
@@ -2862,6 +3052,18 @@ const submitDocuments = async () => {
                   <p class="upload-file-name">
                     {{ documentFileMap[docKey]?.value?.name || existingSubmittedDocuments[docKey]?.name || 'No file selected' }}
                   </p>
+                  <div v-if="documentUploadState[docKey]?.uploading" class="mt-3 space-y-1">
+                    <div class="flex items-center justify-between text-[11px] text-charcoal-500">
+                      <span>Uploading...</span>
+                      <span>{{ documentUploadState[docKey]?.progress || 0 }}%</span>
+                    </div>
+                    <div class="h-2 overflow-hidden rounded-full bg-gold-100">
+                      <div
+                        class="h-full rounded-full bg-gold-600 transition-all duration-200"
+                        :style="{ width: `${documentUploadState[docKey]?.progress || 0}%` }"
+                      ></div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2875,11 +3077,11 @@ const submitDocuments = async () => {
                 </button>
                 <button
                   type="button"
-                  :disabled="isSubmittingDocuments"
+                  :disabled="isSubmittingDocuments || hasAnyDocumentUploadInProgress"
                   class="flex-1 h-12 px-5 rounded-xl bg-gold-700 text-white font-semibold hover:bg-gold-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
                   @click="submitDocuments"
                 >
-                  {{ isSubmittingDocuments ? 'Submitting...' : 'Submit Documents' }}
+                  {{ isSubmittingDocuments ? 'Submitting...' : (hasAnyDocumentUploadInProgress ? 'Finish Uploads First' : 'Submit Documents') }}
                 </button>
               </div>
             </section>
@@ -2887,10 +3089,46 @@ const submitDocuments = async () => {
 
             <transition name="step-slide" mode="out-in" appear>
             <section v-if="currentStep === 4" key="step-4" class="registration-step-panel space-y-4 rounded-2xl border border-gold-200/80 bg-cream-50/80 p-6">
-              <h2 class="text-xl font-semibold text-charcoal-700">Waiting for Approval</h2>
-              <p class="text-sm text-charcoal-600">
-                Registration submitted. Please wait for admin review and approval of your clinic.
-              </p>
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 class="text-xl font-semibold text-charcoal-700">Registration Status</h2>
+                  <p class="mt-1 text-sm text-charcoal-600">
+                    {{ approvalReviewMessage }}
+                  </p>
+                </div>
+                <Icon :icon="approvalStateIcon" class="h-10 w-10 shrink-0" :class="approvalStateIconTone" aria-hidden="true" />
+              </div>
+
+              <div v-if="isApprovalUnderReview" class="rounded-2xl border border-gold-200 bg-white/70 p-4 text-sm text-charcoal-600">
+                We are still waiting on the platform admin. You do not need to refresh this page, and this step will update automatically once a decision is made.
+              </div>
+
+              <div v-else-if="isApprovalApproved" class="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-800">
+                Your clinic has been approved. You will be redirected to the login page shortly.
+              </div>
+
+              <div v-else-if="isApprovalRejected" class="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-800 space-y-2">
+                <p>Your registration was rejected.</p>
+                <p class="text-rose-700/90">
+                  Reason: {{ approvalReviewReason || 'Please contact support if you want to ask about the decision or submit a new registration.' }}
+                </p>
+                <div class="flex flex-col gap-3 pt-2 sm:flex-row">
+                  <button
+                    type="button"
+                    class="h-11 rounded-xl border border-rose-200 bg-white px-4 font-semibold text-rose-700 transition hover:bg-rose-100"
+                    @click="resetClinicRegistrationFlow"
+                  >
+                    Start New Registration
+                  </button>
+                  <button
+                    type="button"
+                    class="h-11 rounded-xl bg-rose-700 px-4 font-semibold text-white transition hover:bg-rose-800"
+                    @click="router.push('/login')"
+                  >
+                    Go to Login
+                  </button>
+                </div>
+              </div>
             </section>
             </transition>
           </form>

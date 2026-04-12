@@ -34,7 +34,12 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="!loading && filteredOrders.length === 0">
+                <tr v-if="loading">
+                  <td colspan="7" class="orders-empty-cell">
+                    <PageSectionSkeleton variant="table" :rows="5" :columns="7" />
+                  </td>
+                </tr>
+                <tr v-else-if="filteredOrders.length === 0">
                   <td colspan="7" class="orders-empty-cell">No orders found.</td>
                 </tr>
                 <tr v-for="order in filteredOrders" :key="order.id">
@@ -377,13 +382,14 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
-import { addDoc, getFirestore, collection, getDocs, query, where, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { addDoc, getFirestore, collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
+import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { storage } from '@/config/firebaseConfig'
@@ -391,7 +397,7 @@ import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 export default {
   name: 'CustomerOrders',
-  components: { CustomerSidebar, Modal },
+  components: { CustomerSidebar, Modal, PageSectionSkeleton },
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -425,6 +431,7 @@ export default {
       reasonType: '',
       reasonDetails: '',
     })
+    let unsubscribeOrders = null
 
     const formatDate = (value) => {
       if (!value) return 'N/A'
@@ -822,23 +829,33 @@ export default {
       }
     }
 
-    const loadOrders = async (userId) => {
+    const loadOrders = (userId) => {
       if (!userId) return
       loading.value = true
-      try {
-        const snapshot = await getDocs(query(collection(db, 'customerOrders'), where('customerId', '==', userId)))
-        orders.value = snapshot.docs
-          .map((snap) => ({ id: snap.id, ...snap.data() }))
-          .sort((a, b) => {
-            const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
-            const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
-            return bTime - aTime
-          })
-      } catch (error) {
-        console.error('Failed to load orders:', error)
-      } finally {
-        loading.value = false
+      if (unsubscribeOrders) {
+        unsubscribeOrders()
+        unsubscribeOrders = null
       }
+
+      const ordersQuery = query(collection(db, 'customerOrders'), where('customerId', '==', userId))
+      unsubscribeOrders = onSnapshot(
+        ordersQuery,
+        (snapshot) => {
+          orders.value = snapshot.docs
+            .map((snap) => ({ id: snap.id, ...snap.data() }))
+            .sort((a, b) => {
+              const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
+              const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
+              return bTime - aTime
+            })
+          loading.value = false
+        },
+        (error) => {
+          console.error('Failed to load orders:', error)
+          toast.error('Failed to load orders.')
+          loading.value = false
+        }
+      )
     }
 
     const filteredOrders = computed(() => {
@@ -864,9 +881,17 @@ export default {
 
     onMounted(() => {
       onAuthStateChanged(auth, async (user) => {
-        if (!user) return
+        if (!user) {
+          orders.value = []
+          loading.value = false
+          return
+        }
         await loadOrders(user.uid)
       })
+    })
+
+    onUnmounted(() => {
+      if (unsubscribeOrders) unsubscribeOrders()
     })
 
     return {

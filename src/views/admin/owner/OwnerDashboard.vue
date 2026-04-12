@@ -6,6 +6,7 @@ import { getApp } from 'firebase/app'
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'OwnerDashboard',
@@ -139,11 +140,11 @@ export default {
           fetchByBranchIds('messages', branchIds)
         ])
 
-        appointments.value = appointmentsData
-        transactions.value = transactionsData
-        inventoryItems.value = inventoryData
-        purchaseRequests.value = purchaseRequestData
-        messages.value = messageData
+        appointments.value = sortRecordsNewestFirst(appointmentsData)
+        transactions.value = sortRecordsNewestFirst(transactionsData)
+        inventoryItems.value = sortRecordsNewestFirst(inventoryData)
+        purchaseRequests.value = sortRecordsNewestFirst(purchaseRequestData)
+        messages.value = sortRecordsNewestFirst(messageData)
 
         totalClients.value = clientsData.length
         unreadMessages.value = messages.value.filter((item) => !item.isRead).length
@@ -337,7 +338,11 @@ const renderEmployeeChart = () => {
     const upcomingAppointments = computed(() =>
       [...appointments.value]
         .filter((item) => (item.date || '') >= todayKey())
-        .sort((a, b) => `${a.date || ''} ${a.time || ''}`.localeCompare(`${b.date || ''} ${b.time || ''}`))
+        .sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
+          return bTime - aTime
+        })
         .slice(0, 6)
     )
 

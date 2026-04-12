@@ -739,7 +739,7 @@ const getAppointmentDurationMinutes = (appointment) => {
 
 const buildBlockedRanges = (appointmentList = []) => {
   const blocked = new Map()
-  const blockingStatuses = new Set(['scheduled', 'approved', 'paid', 'completed', 'in progress', 'ongoing', 'held'])
+  const blockingStatuses = new Set(['scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
 
   appointmentList.forEach((appointment) => {
     const date = String(appointment?.date || '').trim()
@@ -1978,6 +1978,7 @@ const createBookingPayMongoCheckoutSession = async ({
       },
       metadata: {
         module: 'customer_order',
+        source: 'paymongo_checkout',
         flowType,
         customerId: user.uid,
         customerEmail: user.email || '',
@@ -2111,6 +2112,7 @@ const finalizeSuccessfulBooking = async (pending, payload) => {
       notes: pending.notes || '',
       status: 'Scheduled',
       paymentStatus: 'Paid',
+      source: 'paymongo_checkout',
       paymentMethod: pending.paymentMethod || paymentMethodType || 'GCash',
       paymentCoverage: 'full',
       amount: totalAmount,

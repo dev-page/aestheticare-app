@@ -156,6 +156,7 @@ import { db } from '@/config/firebaseConfig'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 const DEFAULT_ADMIN_PASSWORD = 'password123'
 
@@ -243,8 +244,10 @@ export default {
             role: normalizeRoleKey(user.role) || 'Superadmin',
             status: user.status || 'Unknown',
             createdLabel: formatDate(user.createdAt),
+            createdAt: user.createdAt || null,
           }))
-          .sort((a, b) => a.fullName.localeCompare(b.fullName))
+
+        admins.value = sortRecordsNewestFirst(admins.value)
       } catch (err) {
         console.error('Error loading admin accounts:', err)
         error.value = 'Failed to load admin accounts. Please try again.'

@@ -5,57 +5,78 @@
     <main class="profile-main">
       <div class="profile-content">
         <section class="profile-panel">
-          <div class="profile-header">
-            <h1 class="profile-title">My Profile</h1>
-            <p class="profile-subtitle">Keep your customer details updated for smoother orders and appointments.</p>
-          </div>
-
-          <div class="profile-avatar-block">
-            <div class="profile-avatar">
-              <img v-if="customer.profilePicture" :src="customer.profilePicture" alt="Customer profile" class="w-full h-full object-cover" />
-              <span v-else class="profile-avatar-fallback">{{ fullName ? fullName.charAt(0) : 'U' }}</span>
-            </div>
-            <label class="profile-upload-label">
-              Upload Profile Picture
-              <input type="file" @change="handleFileUpload" class="hidden" />
-            </label>
-          </div>
-
-          <form @submit.prevent="saveCustomerProfile" class="profile-form">
-            <div>
-              <label class="profile-field-label">First Name</label>
-              <input v-model="customer.firstName" type="text" class="profile-input" />
+          <template v-if="loading">
+            <div class="profile-header">
+              <div class="profile-skeleton-line profile-skeleton-title"></div>
+              <div class="profile-skeleton-line profile-skeleton-subtitle"></div>
             </div>
 
-            <div>
-              <label class="profile-field-label">Last Name</label>
-              <input v-model="customer.lastName" type="text" class="profile-input" />
+            <div class="profile-avatar-block">
+              <div class="profile-avatar profile-avatar-skeleton"></div>
+              <div class="profile-skeleton-line profile-skeleton-pill"></div>
             </div>
 
-            <div>
-              <label class="profile-field-label">Email</label>
-              <input v-model="customer.email" type="email" class="profile-input" />
+            <div class="profile-form">
+              <div v-for="field in 6" :key="field" class="profile-skeleton-field">
+                <div class="profile-skeleton-line profile-skeleton-label"></div>
+                <div class="profile-skeleton-input"></div>
+              </div>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="profile-header">
+              <h1 class="profile-title">My Profile</h1>
+              <p class="profile-subtitle">Keep your customer details updated for smoother orders and appointments.</p>
             </div>
 
-            <div>
-              <label class="profile-field-label">Phone Number</label>
-              <input v-model="customer.contactNumber" type="tel" class="profile-input" />
+            <div class="profile-avatar-block">
+              <div class="profile-avatar">
+                <img v-if="customer.profilePicture" :src="customer.profilePicture" alt="Customer profile" class="w-full h-full object-cover" />
+                <span v-else class="profile-avatar-fallback">{{ fullName ? fullName.charAt(0) : 'U' }}</span>
+              </div>
+              <label class="profile-upload-label">
+                Upload Profile Picture
+                <input type="file" @change="handleFileUpload" class="hidden" />
+              </label>
             </div>
 
-            <div>
-              <label class="profile-field-label">Address</label>
-              <textarea v-model="customer.address" rows="3" class="profile-input profile-textarea"></textarea>
-            </div>
+            <form @submit.prevent="saveCustomerProfile" class="profile-form">
+              <div>
+                <label class="profile-field-label">First Name</label>
+                <input v-model="customer.firstName" type="text" class="profile-input" />
+              </div>
 
-            <div>
-              <label class="profile-field-label">Bio</label>
-              <textarea v-model="customer.bio" rows="4" class="profile-input profile-textarea"></textarea>
-            </div>
+              <div>
+                <label class="profile-field-label">Last Name</label>
+                <input v-model="customer.lastName" type="text" class="profile-input" />
+              </div>
 
-            <button type="submit" class="profile-save-button">
-              Save Changes
-            </button>
-          </form>
+              <div>
+                <label class="profile-field-label">Email</label>
+                <input v-model="customer.email" type="email" class="profile-input" />
+              </div>
+
+              <div>
+                <label class="profile-field-label">Phone Number</label>
+                <input v-model="customer.contactNumber" type="tel" class="profile-input" />
+              </div>
+
+              <div>
+                <label class="profile-field-label">Address</label>
+                <textarea v-model="customer.address" rows="3" class="profile-input profile-textarea"></textarea>
+              </div>
+
+              <div>
+                <label class="profile-field-label">Bio</label>
+                <textarea v-model="customer.bio" rows="4" class="profile-input profile-textarea"></textarea>
+              </div>
+
+              <button type="submit" class="profile-save-button">
+                Save Changes
+              </button>
+            </form>
+          </template>
         </section>
       </div>
     </main>
@@ -63,8 +84,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import { toast } from 'vue3-toastify'
@@ -78,6 +100,9 @@ const customer = ref({
   bio: '',
   profilePicture: '',
 })
+const loading = ref(true)
+let unsubscribeProfile = null
+let unsubscribeAuth = null
 
 const fullName = computed(() => `${customer.value.firstName || ''} ${customer.value.lastName || ''}`.trim())
 
@@ -92,28 +117,42 @@ const handleFileUpload = (event) => {
   reader.readAsDataURL(file)
 }
 
-const loadCustomerProfile = async () => {
+const loadCustomerProfile = () => {
   const user = auth.currentUser
-  if (!user) return
-
-  try {
-    const userRef = doc(db, 'users', user.uid)
-    const userSnap = await getDoc(userRef)
-    if (userSnap.exists()) {
-      customer.value = { ...customer.value, ...userSnap.data(), email: user.email || '' }
-    } else {
-      await setDoc(userRef, {
-        ...customer.value,
-        email: user.email || '',
-        role: 'Customer',
-        createdAt: serverTimestamp(),
-      })
-      customer.value.email = user.email || ''
-    }
-  } catch (error) {
-    console.error(error)
-    toast.error('Failed to load profile.')
+  if (!user) {
+    loading.value = false
+    return
   }
+
+  loading.value = true
+  const userRef = doc(db, 'users', user.uid)
+  if (unsubscribeProfile) {
+    unsubscribeProfile()
+    unsubscribeProfile = null
+  }
+
+  unsubscribeProfile = onSnapshot(
+    userRef,
+    async (userSnap) => {
+      if (userSnap.exists()) {
+        customer.value = { ...customer.value, ...userSnap.data(), email: user.email || '' }
+      } else {
+        await setDoc(userRef, {
+          ...customer.value,
+          email: user.email || '',
+          role: 'Customer',
+          createdAt: serverTimestamp(),
+        })
+        customer.value.email = user.email || ''
+      }
+      loading.value = false
+    },
+    (error) => {
+      console.error(error)
+      toast.error('Failed to load profile.')
+      loading.value = false
+    }
+  )
 }
 
 const saveCustomerProfile = async () => {
@@ -141,7 +180,20 @@ const saveCustomerProfile = async () => {
   }
 }
 
-onMounted(loadCustomerProfile)
+onMounted(() => {
+  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      loading.value = false
+      return
+    }
+    loadCustomerProfile()
+  })
+})
+
+onUnmounted(() => {
+  if (unsubscribeProfile) unsubscribeProfile()
+  if (unsubscribeAuth) unsubscribeAuth()
+})
 </script>
 
 <style scoped>
@@ -178,6 +230,63 @@ input[type="file"]::file-selector-button {
   border: 1px solid rgba(230, 193, 150, 0.8);
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 18px 44px rgba(87, 56, 35, 0.08);
+}
+
+.profile-skeleton-line,
+.profile-skeleton-input,
+.profile-avatar-skeleton {
+  background: linear-gradient(90deg, rgba(230, 193, 150, 0.48), rgba(244, 228, 205, 0.98), rgba(230, 193, 150, 0.48));
+  background-size: 200% 100%;
+  animation: profile-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.profile-skeleton-line {
+  border-radius: 999px;
+}
+
+.profile-skeleton-title {
+  width: 12rem;
+  height: 2.6rem;
+}
+
+.profile-skeleton-subtitle {
+  width: min(100%, 28rem);
+  height: 1rem;
+  margin-top: 0.8rem;
+}
+
+.profile-avatar-skeleton {
+  border-radius: 999px;
+}
+
+.profile-skeleton-pill {
+  width: 10rem;
+  height: 1.8rem;
+  margin-top: 1rem;
+}
+
+.profile-skeleton-field {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.profile-skeleton-label {
+  width: 6rem;
+  height: 0.9rem;
+}
+
+.profile-skeleton-input {
+  height: 3rem;
+  border-radius: 1rem;
+}
+
+@keyframes profile-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .profile-title {

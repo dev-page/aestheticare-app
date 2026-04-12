@@ -4,6 +4,8 @@ const BLOCKING_STATUSES = new Set([
   'scheduled',
   'approved',
   'paid',
+  'cancellation requested',
+  'reschedule requested',
   'completed',
   'in progress',
   'ongoing',

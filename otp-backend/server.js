@@ -229,6 +229,17 @@ const formatPhilippineCurrency = (value) =>
     currencyDisplay: 'code',
   }).format(Number(value || 0))
 
+const maskLogValue = (value, visible = 6) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw.length <= visible) return raw
+  return `${'*'.repeat(Math.max(0, raw.length - visible))}${raw.slice(-visible)}`
+}
+
+const logPayMongoEvent = (event, details = {}) => {
+  console.log(`[PayMongo] ${event}`, details)
+}
+
 const isPayMongoPaidAppointment = (appointmentData = {}) => {
   const paymentId = String(appointmentData.paymongoPaymentId || '').trim()
   const paymentStatus = String(appointmentData.paymentStatus || '').trim().toLowerCase()
@@ -674,6 +685,8 @@ const BOOKING_BLOCKING_STATUSES = new Set([
   'scheduled',
   'approved',
   'paid',
+  'cancellation requested',
+  'reschedule requested',
   'completed',
   'in progress',
   'ongoing',
@@ -997,6 +1010,7 @@ const buildBookingAppointmentPayload = ({
     notes: reservation.notes || '',
     status: 'Scheduled',
     paymentStatus: 'Paid',
+    source: 'paymongo_checkout',
     paymentMethod: paymentMethod || paymentMethodType || reservation.paymentMethod || 'GCash',
     paymentCoverage: 'full',
     amount: totalAmount,
@@ -2968,6 +2982,17 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
   const paymongoPaymentMethodType = String(body.paymongoPaymentMethodType || '').trim() || null
   const paymentMethod = String(body.paymentMethod || '').trim() || null
 
+  logPayMongoEvent('Finalize booking request received', {
+    reservationId,
+    paymongoCheckoutSessionId,
+    paymongoStatus,
+    paymongoPaidAt,
+    paymongoPaymentId: maskLogValue(paymongoPaymentId),
+    paymongoPaymentMethodType,
+    paymentMethod,
+    source: String(body.source || body.paymentSource || '').trim(),
+  })
+
   if (!reservationId) {
     return res.status(400).json({ success: false, error: 'reservation id is required' })
   }
@@ -3037,6 +3062,26 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
         paymentMethod,
       })
 
+      const computedPaymentId = String(appointmentPayload.paymongoPaymentId || '').trim()
+      const computedPaymentStatus = String(appointmentPayload.paymentStatus || '').trim()
+      const computedSource = String(appointmentPayload.source || 'paymongo_checkout').trim().toLowerCase()
+      const isPaidAppointment =
+        Boolean(computedPaymentId) &&
+        computedPaymentStatus.toLowerCase() === 'paid' &&
+        computedSource === 'paymongo_checkout'
+
+      logPayMongoEvent('Booking payload prepared', {
+        reservationId,
+        appointmentId: finalAppointmentRef.id,
+        paymongoCheckoutSessionId: appointmentPayload.paymongoCheckoutSessionId || null,
+        paymongoStatus: appointmentPayload.paymongoStatus || null,
+        paymongoPaidAt: appointmentPayload.paymongoPaidAt || null,
+        paymongoPaymentId: maskLogValue(computedPaymentId),
+        paymentStatus: computedPaymentStatus,
+        source: computedSource,
+        isPaidAppointment,
+      })
+
       transaction.set(finalAppointmentRef, appointmentPayload)
       transaction.update(reservationRef, {
         status: 'consumed',
@@ -3052,6 +3097,10 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
       appointmentId = finalAppointmentRef.id
     })
 
+    logPayMongoEvent('Finalize booking completed', {
+      reservationId,
+      appointmentId,
+    })
     return res.json({ success: true, data: { appointmentId } })
   } catch (error) {
     if (String(error?.message || '') === 'Forbidden') {
@@ -3154,6 +3203,16 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       const isPayMongoPaid = isPayMongoPaidAppointment(appointmentData)
       const paymentId = String(appointmentData.paymongoPaymentId || '').trim()
 
+      logPayMongoEvent('Cancellation refund eligibility evaluated', {
+        appointmentId,
+        isPayMongoPaid,
+        paymentStatus: String(appointmentData.paymentStatus || '').trim(),
+        source: String(appointmentData.source || '').trim(),
+        paymongoPaymentId: maskLogValue(paymentId),
+        refundAmount,
+        commissionAmount,
+      })
+
       if (isPayMongoPaid && paymentId && refundAmount > 0) {
         const refundResponse = await fetch('https://api.paymongo.com/v1/refunds', {
           method: 'POST',
@@ -3240,6 +3299,17 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       }
 
       try {
+        logPayMongoEvent('Cancellation email payload', {
+          appointmentId,
+          recipient: customerProfile?.customerEmail || appointmentData.customerEmail || '',
+          requestType: 'cancel',
+          refundAmount,
+          commissionAmount,
+          isPayMongoPaid,
+          appointmentDate: appointmentData.date || '',
+          appointmentTime: appointmentData.time || '',
+          source: String(appointmentData.source || '').trim(),
+        })
         const emailResult = await sendAppointmentDecisionEmail({
           recipient: customerProfile?.customerEmail || appointmentData.customerEmail || '',
           customerName: customerProfile?.customerName || appointmentData.customerName || 'Customer',
@@ -3596,12 +3666,28 @@ app.post('/paymongo/create-checkout-session', optionalAuth, async (req, res) => 
 
     const data = await response.json()
     if (!response.ok) {
+      logPayMongoEvent('Checkout session creation failed', {
+        moduleKey,
+        referenceNumber: String(referenceNumber || ''),
+        amount: normalizedAmount,
+        status: response.status,
+        error: data?.errors?.[0]?.detail || 'Failed to create checkout session',
+      })
       return res.status(response.status).json({
         success: false,
         error: data?.errors?.[0]?.detail || 'Failed to create checkout session',
         provider: data,
       })
     }
+
+    logPayMongoEvent('Checkout session created', {
+      checkoutSessionId: data?.data?.id || null,
+      moduleKey,
+      referenceNumber: String(referenceNumber || ''),
+      amount: normalizedAmount,
+      customerId: String(metadata?.customerId || '').trim(),
+      source: String(metadata?.source || '').trim(),
+    })
 
     return res.json({
       success: true,
@@ -3638,6 +3724,11 @@ app.get('/paymongo/checkout-session/:id', optionalAuth, async (req, res) => {
 
     const data = await response.json()
     if (!response.ok) {
+      logPayMongoEvent('Checkout session lookup failed', {
+        checkoutSessionId,
+        status: response.status,
+        error: data?.errors?.[0]?.detail || 'Failed to retrieve checkout session',
+      })
       return res.status(response.status).json({
         success: false,
         error: data?.errors?.[0]?.detail || 'Failed to retrieve checkout session',
@@ -3653,6 +3744,18 @@ app.get('/paymongo/checkout-session/:id', optionalAuth, async (req, res) => {
     const isCustomerBookingCheckout =
       moduleKey === 'customer_appointment' ||
       moduleKey === 'customer_consultation'
+
+    logPayMongoEvent('Checkout session status fetched', {
+      checkoutSessionId,
+      moduleKey,
+      status: attributes?.status || null,
+      paidAt: attributes?.paid_at || null,
+      paymentCount: Array.isArray(attributes?.payments) ? attributes.payments.length : 0,
+      isPaid,
+      paymentId: maskLogValue(attributes?.payments?.[0]?.id || metadata?.paymongoPaymentId || ''),
+      customerId: String(metadata?.customerId || '').trim(),
+      source: String(metadata?.source || '').trim(),
+    })
 
     if (isCustomerOrderCheckout || isCustomerBookingCheckout) {
       if (!req.user?.uid) {

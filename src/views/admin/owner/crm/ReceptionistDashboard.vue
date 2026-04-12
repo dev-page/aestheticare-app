@@ -115,6 +115,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { toast } from 'vue3-toastify'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'ReceptionistDashboard',
@@ -155,13 +156,13 @@ export default {
     )
 
     const upcomingAppointments = computed(() =>
-      [...appointments.value]
-        .filter((item) => (item.date || '') >= todayKey.value)
-        .sort((a, b) => `${a.date || ''} ${a.time || ''}`.localeCompare(`${b.date || ''} ${b.time || ''}`))
+      sortRecordsNewestFirst(
+        [...appointments.value].filter((item) => (item.date || '') >= todayKey.value)
+      )
     )
 
     const recentTransactions = computed(() =>
-      [...transactions.value].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+      sortRecordsNewestFirst(transactions.value)
     )
 
     const formatAmount = (amount) => {
@@ -215,10 +216,10 @@ export default {
         getDocs(query(collection(db, 'transactions'), where('branchId', '==', currentBranchId.value)))
       ])
 
-      clients.value = clientSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-      appointments.value = appointmentSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-      messages.value = inboxSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-      transactions.value = transactionSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      clients.value = sortRecordsNewestFirst(clientSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
+      appointments.value = sortRecordsNewestFirst(appointmentSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
+      messages.value = sortRecordsNewestFirst(inboxSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
+      transactions.value = sortRecordsNewestFirst(transactionSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
     }
 
     const startMessageListener = () => {
@@ -226,7 +227,7 @@ export default {
       if (unsubscribeMessages) unsubscribeMessages()
       const messageQuery = query(collection(db, 'messages'), where('branchId', '==', currentBranchId.value))
       unsubscribeMessages = onSnapshot(messageQuery, (snapshot) => {
-        messages.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+        messages.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
       })
     }
 

@@ -226,6 +226,7 @@ const createPayMongoCheckoutSession = async () => {
       },
       metadata: {
         module: 'customer_order',
+        source: 'paymongo_checkout',
         customerId: user.uid,
         customerEmail: auth.currentUser?.email || '',
         customerName: delivery.value.fullName || '',

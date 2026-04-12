@@ -272,6 +272,7 @@ import { getFirestore, collection, getDocs, doc, updateDoc, query, where, getDoc
 import { getApp } from 'firebase/app';
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { logActivity } from '@/utils/activityLogger'
 import { auth } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -366,7 +367,7 @@ export default {
           .map(doc => ({ id: doc.id, ...doc.data() }))
           .filter(u => !u.archived && u.id !== currentUserId.value)
 
-        employees.value = staffData.map((staff) => ({
+        employees.value = sortRecordsNewestFirst(staffData.map((staff) => ({
           id: staff.id,
           firstName: staff.firstName || '',
           lastName: staff.lastName || '',
@@ -379,8 +380,9 @@ export default {
           position: String(staff.customRoleName || staff.role || staff.position || '').trim(),
           customRoleId: String(staff.customRoleId || '').trim(),
           customRoleName: String(staff.customRoleName || '').trim(),
-          status: staff.status || 'Active'
-        }))
+          status: staff.status || 'Active',
+          createdAt: staff.archivedAt || staff.createdAt || staff.updatedAt || null,
+        })))
       } catch (err) {
         console.error("Error loading employees:", err)
       }

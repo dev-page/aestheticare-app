@@ -101,6 +101,7 @@ import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firesto
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import Swal from 'sweetalert2'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 const normalizeRoleKey = (value) => {
   const compact = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
@@ -165,9 +166,11 @@ export default {
               role: normalizeRoleKey(user.role) || 'User',
               userType: user.userType || '-',
               status: user.status || 'Inactive',
+              createdAt: user.archivedAt || user.updatedAt || user.createdAt || null,
             }
           })
-          .sort((a, b) => a.fullName.localeCompare(b.fullName))
+
+        accounts.value = sortRecordsNewestFirst(accounts.value)
       } catch (err) {
         console.error('Error loading archived accounts:', err)
         error.value = 'Failed to load archived accounts. Please try again.'

@@ -61,6 +61,7 @@ import { onMounted, ref } from 'vue'
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'SuperAdminVerifiedClinics',
@@ -120,12 +121,13 @@ export default {
               planLabel: normalizePlanLabel(resolvedPlan),
               paymentStatus: resolvedPayment,
               centerStatus: clinic.status || clinic.moderationStatus || 'Active',
-              approvedAtLabel: formatDate(approvedAt)
+              approvedAtLabel: formatDate(approvedAt),
+              approvedAt: approvedAt || null,
             }
           })
         )
 
-        verifiedClinics.value = rows.sort((a, b) => a.ownerName.localeCompare(b.ownerName))
+        verifiedClinics.value = sortRecordsNewestFirst(rows)
       } catch (error) {
         console.error('Failed to load verified clinics:', error)
         verifiedClinics.value = []

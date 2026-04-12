@@ -6,6 +6,7 @@ import QRCode from 'qrcode'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth } from '@/config/firebaseConfig'
 import { classifyAttendanceRecord } from '@/utils/attendanceStatus'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'AttendanceReports',
@@ -207,7 +208,7 @@ export default {
     const activeStaffIds = computed(() => new Set(staffUsers.value.map((staff) => staff.id)))
 
     const displayRecords = computed(() =>
-      attendanceRecords.value
+      sortRecordsNewestFirst(attendanceRecords.value)
         .filter((record) => activeStaffIds.value.has(record.employeeId))
         .map((record) => {
         const branchName = branchMap.value[record.branchId] || record.branchId || 'N/A'
@@ -273,9 +274,18 @@ export default {
             lateMinutes: Number(dayRecord?.lateMinutes ?? attendanceMeta.lateMinutes ?? 0),
             overtimeMinutes: Number(dayRecord?.overtimeMinutes ?? attendanceMeta.overtimeMinutes ?? 0),
             undertimeMinutes: Number(dayRecord?.undertimeMinutes ?? attendanceMeta.undertimeMinutes ?? 0),
+            createdAt: dayRecord?.createdAt || staff.createdAt || null,
+            updatedAt: dayRecord?.updatedAt || staff.updatedAt || null,
           }
         })
-        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort((a, b) => {
+          const left = a.updatedAt || a.createdAt || null
+          const right = b.updatedAt || b.createdAt || null
+          const leftMs = typeof left?.toDate === 'function' ? left.toDate().getTime() : left instanceof Date ? left.getTime() : left?.seconds ? left.seconds * 1000 : 0
+          const rightMs = typeof right?.toDate === 'function' ? right.toDate().getTime() : right instanceof Date ? right.getTime() : right?.seconds ? right.seconds * 1000 : 0
+          if (rightMs !== leftMs) return rightMs - leftMs
+          return a.name.localeCompare(b.name)
+        })
     })
 
     const todaySummary = computed(() =>
