@@ -136,6 +136,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useSubscription } from '@/composables/useSubscription'
 import EmployeeTopbar from '@/components/common/EmployeeTopbar.vue'
 import disconnectIllustration from '@/assets/disconnect.png'
+import { lockPageScroll, unlockPageScroll } from '@/utils/scrollLock'
 
 // Initialize auth state globally
 const { isLoading, user, initAuth } = useAuth()
@@ -342,6 +343,17 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => showConnectionModal.value,
+  (isOpen) => {
+    if (isOpen) {
+      lockPageScroll()
+    } else {
+      unlockPageScroll()
+    }
+  }
+)
+
 onUnmounted(() => {
   window.removeEventListener('online', updateConnectionStatus)
   window.removeEventListener('offline', updateConnectionStatus)
@@ -362,6 +374,9 @@ onUnmounted(() => {
   }
   if (processHandler) {
     window.removeEventListener('app-process-loading', processHandler)
+  }
+  if (showConnectionModal.value) {
+    unlockPageScroll()
   }
 })
 

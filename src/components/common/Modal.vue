@@ -35,10 +35,7 @@
 <script setup>
 import { defineEmits, defineProps, onBeforeUnmount, watch } from 'vue'
 import Button from './Button.vue'
-
-let openModalCount = 0
-let savedBodyOverflow = ''
-let savedHtmlOverflow = ''
+import { lockPageScroll, unlockPageScroll } from '@/utils/scrollLock'
 
 const props = defineProps({
   isOpen: {
@@ -78,34 +75,19 @@ const handleBackdropClick = () => {
   closeModal()
 }
 
-const lockBodyScroll = (shouldLock) => {
-  if (typeof document === 'undefined') return
-  if (shouldLock) {
-    if (openModalCount === 0) {
-      savedBodyOverflow = document.body.style.overflow
-      savedHtmlOverflow = document.documentElement.style.overflow
-    }
-    openModalCount += 1
-    document.body.style.overflow = 'hidden'
-    document.documentElement.style.overflow = 'hidden'
-  } else {
-    openModalCount = Math.max(0, openModalCount - 1)
-    if (openModalCount === 0) {
-      document.body.style.overflow = savedBodyOverflow || ''
-      document.documentElement.style.overflow = savedHtmlOverflow || ''
-    }
-  }
-}
-
 watch(
   () => props.isOpen,
   (isOpen) => {
-    lockBodyScroll(isOpen)
+    if (isOpen) {
+      lockPageScroll()
+    } else {
+      unlockPageScroll()
+    }
   },
   { immediate: true }
 )
 
 onBeforeUnmount(() => {
-  lockBodyScroll(false)
+  unlockPageScroll()
 })
 </script>

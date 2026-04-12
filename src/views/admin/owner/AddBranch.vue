@@ -1,6 +1,6 @@
 <script>
-import { ref, computed, onMounted, nextTick } from 'vue'
-import { getFirestore, collection, addDoc, getDocs, getDoc, query, serverTimestamp, where, writeBatch, doc } from 'firebase/firestore'
+import { ref, computed, nextTick } from 'vue'
+import { getFirestore, collection, addDoc, getDocs, query, serverTimestamp, where, writeBatch } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
@@ -16,11 +16,6 @@ export default {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const branches = ref([])
-    const branchAdmins = ref([])
-    const ownerProfile = ref({
-      branchAdminId: '',
-      branchAdminName: ''
-    })
 
     const currentBranch = ref({
       id: null,
@@ -34,9 +29,7 @@ export default {
       clinicBarangay: '',
       clinicProvince: '',
       clinicPostalCode: '',
-      isMainBranch: false,
-      branchAdminId: '',
-      branchAdminName: ''
+      isMainBranch: false
     })
     const showLocationModal = ref(false)
     const locationMapCanvas = ref(null)
@@ -94,69 +87,6 @@ export default {
 
     const caviteLocationSet = new Set(caviteLocations.map(normalizeLocationName))
 
-    const formatFullName = (data = {}) =>
-      String(data.fullName || '').trim() ||
-      `${String(data.firstName || '').trim()} ${String(data.lastName || '').trim()}`.trim() ||
-      data.email ||
-      'Owner'
-
-    const refreshOwnerProfile = async () => {
-      const user = auth.currentUser
-      if (!user) return
-
-      const userSnap = await getDoc(doc(db, 'users', user.uid))
-      const data = userSnap.exists() ? userSnap.data() || {} : {}
-      ownerProfile.value = {
-        branchAdminId: user.uid,
-        branchAdminName: formatFullName(data)
-      }
-    }
-
-    const loadBranchAdmins = async () => {
-      const user = auth.currentUser
-      if (!user) {
-        branchAdmins.value = []
-        return
-      }
-
-      const branchIds = branches.value.map((branch) => branch.id).filter(Boolean)
-      const results = []
-
-      results.push({
-        id: ownerProfile.value.branchAdminId || user.uid,
-        fullName: ownerProfile.value.branchAdminName || 'Owner',
-        role: 'Clinic Admin',
-        branchId: '',
-        isOwner: true
-      })
-
-      for (let index = 0; index < branchIds.length; index += 10) {
-        const chunk = branchIds.slice(index, index + 10)
-        const staffQuery = query(
-          collection(db, 'users'),
-          where('branchId', 'in', chunk),
-          where('userType', '==', 'Staff')
-        )
-        const staffSnapshot = await getDocs(staffQuery)
-        results.push(
-          ...staffSnapshot.docs.map((staffDoc) => {
-            const data = staffDoc.data() || {}
-            return {
-              id: staffDoc.id,
-              fullName: formatFullName(data),
-              role: String(data.customRoleName || data.role || 'Staff').trim(),
-              branchId: String(data.branchId || '').trim(),
-              isOwner: false
-            }
-          })
-        )
-      }
-
-      branchAdmins.value = results
-        .filter((admin, index, array) => array.findIndex((entry) => entry.id === admin.id) === index)
-        .sort((left, right) => left.fullName.localeCompare(right.fullName))
-    }
-
     const resetForm = () => {
       showLocationModal.value = false
       locationError.value = ''
@@ -172,9 +102,7 @@ export default {
         clinicBarangay: '',
         clinicProvince: '',
         clinicPostalCode: '',
-        isMainBranch: false,
-        branchAdminId: '',
-        branchAdminName: ''
+        isMainBranch: false
       }
     }
 
@@ -193,7 +121,6 @@ export default {
       return ''
     })
 
-    const selectedBranchLocationLabel = computed(() => currentBranch.value.location || 'Select city/municipality')
     const branchFullAddressLabel = computed(() => currentBranch.value.clinicLocationAddress || '')
     const modalPinnedAddressLabel = computed(() => currentBranch.value.clinicLocationAddress || 'Pin a location inside Cavite to preview the resolved address.')
     const isOutsideCaviteLocationError = computed(() => /outside cavite|within cavite/i.test(locationError.value))
@@ -208,17 +135,6 @@ export default {
       const value = event?.target?.value ?? ''
       const sanitized = value.replace(/[^A-Za-z\s'.-]/g, '')
       currentBranch.value.name = sanitized
-    }
-
-    const syncBranchAdminName = () => {
-      if (currentBranch.value.isMainBranch && !String(currentBranch.value.branchAdminId || '').trim()) {
-        currentBranch.value.branchAdminId = ownerProfile.value.branchAdminId
-        currentBranch.value.branchAdminName = ownerProfile.value.branchAdminName
-        return
-      }
-
-      const selected = branchAdmins.value.find((admin) => admin.id === currentBranch.value.branchAdminId)
-      currentBranch.value.branchAdminName = selected?.fullName || ''
     }
 
     const loadMapsScript = (apiKey) =>
@@ -504,18 +420,6 @@ export default {
         toast.error('Revenue cannot be negative.')
         return
       }
-      if (!String(currentBranch.value.branchAdminId || '').trim()) {
-        if (currentBranch.value.isMainBranch) {
-          currentBranch.value.branchAdminId = ownerProfile.value.branchAdminId
-          currentBranch.value.branchAdminName = ownerProfile.value.branchAdminName
-        } else {
-          toast.error('Please select a branch admin before activating this branch.')
-          return
-        }
-      }
-      if (!String(currentBranch.value.branchAdminName || '').trim()) {
-        syncBranchAdminName()
-      }
 
       try {
         const result = await Swal.fire({
@@ -562,8 +466,6 @@ export default {
           isMainBranch: Boolean(currentBranch.value.isMainBranch),
           isPublished: true,
           ownerId,
-          branchAdminId: currentBranch.value.branchAdminId,
-          branchAdminName: currentBranch.value.branchAdminName,
           createdAt: serverTimestamp()
         })
 
@@ -581,8 +483,6 @@ export default {
           isMainBranch: Boolean(currentBranch.value.isMainBranch),
           isPublished: true,
           ownerId,
-          branchAdminId: currentBranch.value.branchAdminId,
-          branchAdminName: currentBranch.value.branchAdminName,
           status: 'Active'
         })
 
@@ -594,25 +494,13 @@ export default {
       }
     }
 
-    onMounted(async () => {
-      await refreshOwnerProfile()
-      await loadBranches()
-      await loadBranchAdmins()
-      if (ownerProfile.value.branchAdminId) {
-        currentBranch.value.branchAdminId = ownerProfile.value.branchAdminId
-        currentBranch.value.branchAdminName = ownerProfile.value.branchAdminName
-      }
-    })
-
     return {
       branches,
-      branchAdmins,
       currentBranch,
       caviteLocations,
       showLocationModal,
       locationMapCanvas,
       locationError,
-      selectedBranchLocationLabel,
       branchFullAddressLabel,
       modalPinnedAddressLabel,
       isOutsideCaviteLocationError,
@@ -620,7 +508,6 @@ export default {
       locationErrorHint,
       branchNameError,
       handleBranchNameInput,
-      syncBranchAdminName,
       openLocationModal,
       closeLocationModal,
       usePinnedLocation,
@@ -746,27 +633,11 @@ export default {
             />
           </div>
 
-          <div>
-            <label class="mb-1 block text-slate-400">Branch Admin</label>
-            <select
-              v-model="currentBranch.branchAdminId"
-              @change="syncBranchAdminName"
-              class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select branch admin</option>
-              <option v-for="admin in branchAdmins" :key="admin.id" :value="admin.id">
-                {{ admin.fullName }}{{ admin.role ? ` - ${admin.role}` : '' }}{{ admin.isOwner ? ' (Clinic Admin)' : '' }}
-              </option>
-            </select>
-            <p class="mt-1 text-xs text-slate-400">Choose who will manage this branch before it is activated.</p>
-          </div>
-
           <div class="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3">
             <label class="flex items-center gap-3 text-white">
               <input
                 v-model="currentBranch.isMainBranch"
                 type="checkbox"
-                @change="syncBranchAdminName"
                 class="h-4 w-4 rounded border-slate-500 bg-slate-800 text-amber-500"
               />
               <span>Set this as the main branch</span>

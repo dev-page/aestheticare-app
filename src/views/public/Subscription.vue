@@ -33,6 +33,7 @@
           ]"
           @click="selectedPlan = plan.id"
         >
+          <span v-if="selectedPlan === plan.id" class="plan-selected-badge">Selected</span>
           <span class="plan-orb"></span>
           <span class="card-shine"></span>
 
@@ -336,6 +337,25 @@ onBeforeUnmount(() => {
   transition: transform 0.24s ease, border-color 0.24s ease, box-shadow 0.24s ease;
 }
 
+.plan-selected-badge {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.38rem 0.72rem;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.88);
+  color: #6f3f2a;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: 0 8px 18px rgba(87, 49, 27, 0.12);
+}
+
 .plan-card:hover {
   transform: translateY(-4px);
   border-color: rgba(173, 108, 68, 0.56);
@@ -597,6 +617,10 @@ onBeforeUnmount(() => {
 }
 
 @media (min-width: 1024px) {
+  .plan-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .popup-top {
     flex-direction: row;
     align-items: flex-end;
