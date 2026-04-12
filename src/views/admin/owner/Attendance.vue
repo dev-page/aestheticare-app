@@ -1,6 +1,7 @@
 <script>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { collection, doc, getDoc, getDocs, getFirestore, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
+import { Icon } from '@iconify/vue'
 import { getApp } from 'firebase/app'
 import QRCode from 'qrcode'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -10,7 +11,7 @@ import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'AttendanceReports',
-  components: { OwnerSidebar },
+  components: { OwnerSidebar, Icon },
   setup() {
     const db = getFirestore(getApp())
 
@@ -394,9 +395,7 @@ export default {
                 @click="regenerateDailyAttendanceQr"
                 title="Generate a new QR"
               >
-                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5M5.64 18.36A9 9 0 104.58 9M18.36 5.64A9 9 0 0019.42 15" />
-                </svg>
+                <Icon icon="mdi:reload" class="h-5 w-5" />
               </button>
             </div>
 

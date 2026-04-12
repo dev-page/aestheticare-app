@@ -98,7 +98,6 @@ export default {
           { label: 'Schedule Assignment', icon: 'calendar', to: '/hr/schedule-assignment', feature: 'hr', permission: 'hr:update' },
           { label: 'Leave Request', icon: 'file', to: '/hr/leave-request', feature: 'hr', permission: 'leave:create' },
           { label: 'Leave Management', icon: 'clipboard', to: '/hr/leave-management', feature: 'hr', permission: 'leave:review' },
-          { label: 'Attendance', icon: 'calendar', to: '/hr/attendance', feature: 'attendance', permission: 'attendance:view' },
           { label: 'Archives', icon: 'archive', to: '/hr/archives', feature: 'hr', permission: 'staff:view' },
           { label: 'Base Pay', icon: 'card', to: '/hr/base-pay', feature: 'payroll', permission: 'payroll:update' },
           { label: 'Payroll', icon: 'card', to: '/hr/payroll', feature: 'payroll', permission: 'payroll:update' },

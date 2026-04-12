@@ -134,15 +134,6 @@ export default {
 
     const moduleCatalog = [
       {
-        key: 'attendance',
-        label: 'Attendance',
-        description: 'Attendance capture and attendance records.',
-        entries: [
-          { label: 'Scan Attendance QR', to: '/attendance/scan', feature: 'attendance', description: 'Record attendance through QR scanning.' },
-          { label: 'Attendance Record', to: '/hr/attendance', permission: 'attendance:view', feature: 'attendance', description: 'Review attendance logs and records.' },
-        ],
-      },
-      {
         key: 'employees',
         label: 'Employees',
         description: 'Employee directory, creation, and employee records.',

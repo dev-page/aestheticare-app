@@ -509,7 +509,9 @@
                 class="center-review-card p-4"
               >
                 <p class="font-medium text-[#3d281d]">{{ review.reviewerName || 'Anonymous' }}</p>
+                <p v-if="review.rating" class="mt-1 text-sm text-[#9a6c35]">{{ renderStars(review.rating) }}</p>
                 <p class="mt-2 text-[#6f4a2d]">"{{ review.comment || 'No comment' }}"</p>
+                <p v-if="review.createdAt" class="mt-2 text-xs text-[#8b6a4d]">{{ formatReviewDate(review.createdAt) }}</p>
               </article>
             </div>
           </div>
@@ -650,6 +652,7 @@ let threadUnsubscribe = null
 let unreadUnsubscribe = null
 let appointmentsUnsubscribe = null
 let bookingReservationsUnsubscribe = null
+let reviewUnsubscribers = []
 const selectedServices = ref([])
 const fallbackImage = 'https://via.placeholder.com/300x200?text=AesthetiCare'
 const bookingPaymentMethod = ref('E-Wallet')
@@ -826,6 +829,116 @@ const buildCenterModel = (branchId, data = {}) => ({
   isPublished: data.isPublished === true,
 })
 
+const toTimestampMillis = (value) => {
+  if (!value) return 0
+  if (typeof value?.toMillis === 'function') return value.toMillis()
+  if (typeof value?.toDate === 'function') return value.toDate().getTime()
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === 'number') return value
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+const normalizeReview = (snap) => {
+  const data = snap.data() || {}
+  const reviewerName =
+    String(data.reviewerName || data.customerName || data.clientName || data.name || '').trim()
+  const comment =
+    String(data.comment || data.review || data.reviewText || data.feedback || '').trim()
+  const rating = Number(data.rating ?? data.stars ?? data.score ?? 0) || 0
+
+  return {
+    id: snap.id,
+    ...data,
+    reviewerName,
+    comment,
+    rating,
+  }
+}
+
+const renderStars = (rating) => {
+  const numeric = Math.max(0, Math.min(5, Math.round(Number(rating || 0))))
+  return '★★★★★'.slice(0, numeric) + '☆☆☆☆☆'.slice(0, 5 - numeric)
+}
+
+const formatReviewDate = (value) => {
+  const millis = toTimestampMillis(value)
+  if (!millis) return ''
+  return new Date(millis).toLocaleDateString([], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+const syncReviews = (sourceMap) => {
+  const merged = new Map()
+  sourceMap.forEach((docs) => {
+    docs.forEach((review) => {
+      if (review?.id) {
+        merged.set(review.id, review)
+      }
+    })
+  })
+
+  reviews.value = [...merged.values()].sort(
+    (a, b) => toTimestampMillis(b.createdAt) - toTimestampMillis(a.createdAt)
+  )
+}
+
+const stopReviewsListener = () => {
+  reviewUnsubscribers.forEach((unsubscribe) => {
+    try {
+      unsubscribe()
+    } catch (_error) {
+      // Ignore cleanup failures.
+    }
+  })
+  reviewUnsubscribers = []
+}
+
+const startReviewsListener = (branchId) => {
+  stopReviewsListener()
+
+  if (!branchId) {
+    reviews.value = []
+    return
+  }
+
+  const sourceMap = new Map()
+  const reviewQueries = []
+  const queryKeys = new Set()
+  const addReviewQuery = (field, value) => {
+    const normalizedValue = String(value || '').trim()
+    if (!normalizedValue) return
+    const key = `${field}:${normalizedValue}`
+    if (queryKeys.has(key)) return
+    queryKeys.add(key)
+    reviewQueries.push({
+      key,
+      ref: query(collection(db, 'reviews'), where(field, '==', normalizedValue)),
+    })
+  }
+
+  addReviewQuery('branchId', branchId)
+  addReviewQuery('centerId', centerId)
+  addReviewQuery('clinicId', centerId)
+
+  reviewQueries.forEach(({ key, ref }) => {
+    const unsubscribe = onSnapshot(
+      ref,
+      (snapshot) => {
+        sourceMap.set(key, snapshot.docs.map(normalizeReview))
+        syncReviews(sourceMap)
+      },
+      (error) => {
+        console.error('Failed to load center reviews:', error)
+      }
+    )
+    reviewUnsubscribers.push(unsubscribe)
+  })
+}
+
 const syncSelectedBranchInUrl = async (branchId) => {
   const nextQuery = { ...route.query }
   if (branchId && branchId !== centerId) {
@@ -866,6 +979,7 @@ const stopBranchSensitiveListeners = () => {
   if (bookingReservations.value.length) {
     bookingReservations.value = []
   }
+  stopReviewsListener()
   chatThreadId.value = ''
   chatMessages.value = []
   unreadChatCount.value = 0
@@ -1118,9 +1232,8 @@ const loadBranchData = async (branchId) => {
 
   center.value = buildCenterModel(branchId, data)
 
-  const [postSnap, reviewSnap] = await Promise.all([
+  const [postSnap] = await Promise.all([
     getDocs(query(collection(db, 'productServicePosts'), where('branchId', '==', branchId))),
-    getDocs(query(collection(db, 'reviews'), where('branchId', '==', branchId))),
   ])
 
   items.value = postSnap.docs.map((snap) => {
@@ -1143,7 +1256,7 @@ const loadBranchData = async (branchId) => {
     }
   })
 
-  reviews.value = reviewSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+  startReviewsListener(branchId)
   await startAppointmentsListener(branchId)
   await startBookingReservationsListener(branchId)
   await loadPractitioners(branchId)

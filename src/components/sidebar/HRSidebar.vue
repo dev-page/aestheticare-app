@@ -19,16 +19,6 @@ export default {
     const items = [
       { label: 'Dashboard', icon: 'home', to: '/hr/dashboard', feature: 'hr' },
       {
-        key: 'attendance',
-        label: 'Attendance',
-        icon: 'calendar',
-        feature: 'attendance',
-        children: [
-          { label: 'Scan Attendance QR', icon: 'qr', to: '/attendance/scan', permission: 'attendance:create' },
-          { label: 'Attendance Record', icon: 'calendar', to: '/hr/attendance', permission: 'attendance:view' }
-        ]
-      },
-      {
         key: 'employees',
         label: 'Employees',
         icon: 'users',
