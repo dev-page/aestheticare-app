@@ -3,7 +3,7 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
-import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence, browserLocalPersistence, signInWithPopup, GoogleAuthProvider, FacebookAuthProvider } from 'firebase/auth'
+import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence, browserLocalPersistence, signInWithPopup, GoogleAuthProvider, FacebookAuthProvider, signOut } from 'firebase/auth'
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import { useAuth } from '@/composables/useAuth'
@@ -125,6 +125,15 @@ const handleLogin = async () => {
       if (userSnap.exists()) {
         const userData = userSnap.data()
 
+        const accountStatus = String(userData.status || '').trim().toLowerCase()
+        const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
+        if (accountClosed) {
+          await signOut(auth)
+          toast.error('This account has been closed. Please contact the system administrator.')
+          setProcessLoading(false)
+          return
+        }
+
         if (userData.status === 'Pending') {
           toast.error('Your account is still pending verification. Please check your email for the OTP.')
           setProcessLoading(false)
@@ -176,6 +185,15 @@ const handleGoogleLogin = async () => {
       }
 
       const redirectPath = await resolveRedirectPath(userSnap.data())
+      const accountData = userSnap.data() || {}
+      const accountStatus = String(accountData.status || '').trim().toLowerCase()
+      const accountClosed = accountData.archived === true || accountData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
+      if (accountClosed) {
+        await signOut(auth)
+        toast.error('This account has been closed. Please contact the system administrator.')
+        setProcessLoading(false)
+        return
+      }
       if (!(await ensureCenterAccessAllowed(userCredentials.user, userSnap.data()))) {
         return
       }
@@ -209,6 +227,15 @@ const handleFacebookLogin = async () => {
       }
 
       const redirectPath = await resolveRedirectPath(userSnap.data())
+      const accountData = userSnap.data() || {}
+      const accountStatus = String(accountData.status || '').trim().toLowerCase()
+      const accountClosed = accountData.archived === true || accountData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
+      if (accountClosed) {
+        await signOut(auth)
+        toast.error('This account has been closed. Please contact the system administrator.')
+        setProcessLoading(false)
+        return
+      }
       if (!(await ensureCenterAccessAllowed(userCredentials.user, userSnap.data()))) {
         return
       }

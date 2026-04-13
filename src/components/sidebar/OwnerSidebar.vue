@@ -63,14 +63,17 @@ export default {
         icon: 'clinic',
         moduleKey: 'clinic',
         children: [
-          { label: 'Clients', icon: 'profile', to: '/receptionist/clients', permission: 'clients:view' },
+          { type: 'section', label: 'CLIENTS' },
+          { label: 'Client List', icon: 'profile', to: '/receptionist/clients', permission: 'clients:view' },
           { label: 'Add Client', icon: 'userplus', to: '/receptionist/clients/add', permission: 'clients:create' },
+          { type: 'section', label: 'APPOINTMENTS' },
           { label: 'Appointments', icon: 'calendar', to: '/receptionist/appointments', permission: 'appointments:view' },
           { label: 'Appointment Requests', icon: 'calendar-check', to: '/receptionist/appointment-requests', permission: 'appointments:review' },
+          { label: 'Online Consultation', icon: 'clinic', to: '/practitioner/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
+          { type: 'section', label: 'PAYMENTS & MESSAGES' },
           { label: 'POS', icon: 'card', to: '/receptionist/pos', permission: 'payments:create' },
           { label: 'Transactions', icon: 'report', to: '/receptionist/transactions/history', permission: 'payments:view' },
           { label: 'Inbox', icon: 'bell', to: '/receptionist/inbox', permission: 'inbox:view' },
-          { label: 'Online Consultation', icon: 'clinic', to: '/practitioner/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
         ]
       },
       {
@@ -79,11 +82,13 @@ export default {
         icon: 'tag',
         moduleKey: 'operations',
         children: [
+          { type: 'section', label: 'POSTS' },
+          { label: 'Product & Service Listing', icon: 'layout', to: '/manager/product-service-listing', permission: 'services:view' },
           { label: 'Archived Posts', icon: 'archive', to: '/manager/archived-posts', permission: 'services:view' },
+          { type: 'section', label: 'SUPPLY & INVENTORY' },
           { label: 'Item Catalog', icon: 'building', to: '/manager/item-catalog', permission: 'inventory:view' },
           { label: 'Suppliers', icon: 'building', to: '/manager/suppliers', permission: 'inventory:view' },
           { label: 'Purchase Requests', icon: 'plus', to: '/manager/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'] },
-          { label: 'Product Service Listing', icon: 'layout', to: '/manager/product-service-listing', permission: 'services:view' },
           { label: 'Orders', icon: 'report', to: '/manager/orders', permissionsAny: ['orders:view', 'inventory:view'] }
         ]
       },
@@ -94,13 +99,15 @@ export default {
         moduleKey: 'hr',
         feature: 'hr',
         children: [
+          { type: 'section', label: 'SHIFTS' },
           { label: 'Add Shift', icon: 'plus', to: '/hr/add-shift', feature: 'hr', permission: 'hr:create' },
-          { label: 'Schedule Assignment', icon: 'calendar', to: '/hr/schedule-assignment', feature: 'hr', permission: 'hr:update' },
-          { label: 'Leave Request', icon: 'file', to: '/hr/leave-request', feature: 'hr', permission: 'leave:create' },
+          { label: 'Shift Assignment', icon: 'calendar', to: '/hr/schedule-assignment', feature: 'hr', permission: 'hr:update' },
+          { type: 'section', label: 'LEAVES' },
           { label: 'Leave Management', icon: 'clipboard', to: '/hr/leave-management', feature: 'hr', permission: 'leave:review' },
-          { label: 'Archives', icon: 'archive', to: '/hr/archives', feature: 'hr', permission: 'staff:view' },
+          { label: 'Leave Request', icon: 'file', to: '/hr/leave-request', feature: 'hr', permission: 'leave:create' },
+          { type: 'section', label: 'PAYROLL' },
           { label: 'Base Pay', icon: 'card', to: '/hr/base-pay', feature: 'payroll', permission: 'payroll:update' },
-          { label: 'Payroll', icon: 'card', to: '/hr/payroll', feature: 'payroll', permission: 'payroll:update' },
+          { label: 'Payroll Management', icon: 'card', to: '/hr/payroll', feature: 'payroll', permission: 'payroll:update' },
           { label: 'Payslip Generation', icon: 'file', to: '/hr/payslip-generation', feature: 'payroll', permission: 'payroll:update' }
         ]
       },
@@ -111,14 +118,15 @@ export default {
         moduleKey: 'finance',
         feature: 'reports',
         children: [
-          { label: 'Finance Sales', icon: 'report', to: '/finance/sales', feature: 'reports', permission: 'reports:view' },
-          { label: 'Refunds', icon: 'card', to: '/finance/refunds', feature: 'reports', permission: 'payments:view' },
-          { label: 'Reports', icon: 'report', to: '/finance/reports', feature: 'reports', permission: 'reports:view' },
-          { label: 'Inventory Purchases', icon: 'building', to: '/finance/inventory-purchases', feature: 'reports', permission: 'inventory:view' },
-          { label: 'Accounts Payable', icon: 'card', to: '/finance/accounts-payable', feature: 'reports', permission: 'inventory:view' },
+          { type: 'section', label: 'PAYROLL' },
           { label: 'Payroll Summary', icon: 'card', to: '/finance/payroll-summary', feature: 'payroll', permission: 'payroll:view' },
           { label: 'Payroll Approval', icon: 'shield', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:view' },
-          { label: 'Clinic Reports', icon: 'report', to: '/owner/reports', feature: 'reports', permission: 'reports:view' }
+          { type: 'section', label: 'FINANCE OPERATIONS' },
+          { label: 'Inventory Purchases', icon: 'building', to: '/finance/inventory-purchases', feature: 'reports', permission: 'inventory:view' },
+          { label: 'Accounts Payable', icon: 'card', to: '/finance/accounts-payable', feature: 'reports', permission: 'inventory:view' },
+          { label: 'Refunds', icon: 'card', to: '/finance/refunds', feature: 'reports', permission: 'payments:view' },
+          { label: 'Sales', icon: 'report', to: '/finance/sales', feature: 'reports', permission: 'reports:view' },
+          { label: 'Reports', icon: 'report', to: '/finance/reports', feature: 'reports', permission: 'reports:view' },
         ]
       },
       {
@@ -127,6 +135,7 @@ export default {
         icon: 'settings',
         children: [
           { label: 'Subscription Plan', icon: 'card', to: '/owner/account/subscription', permission: 'subscription:view' },
+          { label: 'Account Closure', icon: 'account-off', to: '/owner/account/closure' },
           { label: 'Backup Database', icon: 'file', to: '/owner/account/backup', permission: 'backup:view' },
           { label: 'Activities', icon: 'report', to: '/practitioner/activities', permission: 'activities:view' },
           { label: 'Notifications', icon: 'bell', to: '/notifications', permission: 'notifications:view' },

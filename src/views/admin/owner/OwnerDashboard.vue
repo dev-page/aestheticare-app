@@ -86,6 +86,12 @@ export default {
       return `${today.getFullYear()}-${month}-${day}`
     }
 
+    const normalizeAppointmentStatus = (value) => String(value || '').trim().toLowerCase()
+    const isCancelledAppointment = (appointment) => {
+      const status = normalizeAppointmentStatus(appointment?.status)
+      return status === 'cancelled' || status === 'canceled'
+    }
+
     const getEffectiveMaxStock = (item) => {
       const explicitMax = Number(item.maxStock || 0)
       if (explicitMax > 0) return explicitMax
@@ -337,7 +343,7 @@ const renderEmployeeChart = () => {
 
     const upcomingAppointments = computed(() =>
       [...appointments.value]
-        .filter((item) => (item.date || '') >= todayKey())
+        .filter((item) => (item.date || '') >= todayKey() && !isCancelledAppointment(item))
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
           const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()

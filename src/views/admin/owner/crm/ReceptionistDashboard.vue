@@ -151,13 +151,21 @@ export default {
       return `${today.getFullYear()}-${month}-${day}`
     })
 
+    const normalizeAppointmentStatus = (value) => String(value || '').trim().toLowerCase()
+    const isCancelledAppointment = (appointment) => {
+      const status = normalizeAppointmentStatus(appointment?.status)
+      return status === 'cancelled' || status === 'canceled'
+    }
+
     const todayAppointments = computed(() =>
       appointments.value.filter((item) => item.date === todayKey.value).length
     )
 
     const upcomingAppointments = computed(() =>
       sortRecordsNewestFirst(
-        [...appointments.value].filter((item) => (item.date || '') >= todayKey.value)
+        [...appointments.value].filter(
+          (item) => (item.date || '') >= todayKey.value && !isCancelledAppointment(item)
+        )
       )
     )
 

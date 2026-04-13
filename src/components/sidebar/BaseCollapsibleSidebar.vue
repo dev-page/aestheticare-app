@@ -118,10 +118,21 @@
 
             <ul
               v-if="!isSmallScreen && !collapsed && isGroupOpen(item)"
-              class="mt-1 ml-4 space-y-1"
+              class="mt-1 space-y-1"
             >
-              <li v-for="child in item.children" :key="child.to">
+              <li v-for="child in item.children" :key="child.key || child.to || child.label">
+                <div
+                  v-if="child.type === 'section'"
+                  class="flex items-center gap-2 px-3 pt-4 pb-1"
+                >
+                  <span class="h-px flex-1 bg-[#4b3020]/80"></span>
+                  <span class="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#c9b3a5]">
+                    {{ child.label }}
+                  </span>
+                  <span class="h-px flex-1 bg-[#4b3020]/80"></span>
+                </div>
                 <component
+                  v-else
                   :is="child.locked ? 'button' : 'router-link'"
                   :to="child.locked ? undefined : child.to"
                   :disabled="child.locked"
@@ -393,6 +404,15 @@ export default {
 
     const decorateItems = (items = [], inheritedLocked = false) =>
       items.map((item) => {
+        if (item?.type === 'section') {
+          return {
+            ...item,
+            isSection: true,
+            locked: true,
+            lockTitle: '',
+          }
+        }
+
         const locked = inheritedLocked || !isItemAllowed(item)
         const nextItem = {
           ...item,
@@ -420,7 +440,10 @@ export default {
       })
 
     const hasVisibleChild = (item) =>
-      !isGroup(item) || (Array.isArray(item.children) && item.children.some((child) => !child.locked))
+      !isGroup(item) || (
+        Array.isArray(item.children) &&
+        item.children.some((child) => child?.type !== 'section' && !child.locked)
+      )
 
     const visibleItems = computed(() => {
       activePlan.value
@@ -446,7 +469,7 @@ export default {
 
     const isGroupActive = (group) => {
       if (!isGroup(group)) return false
-      return group.children.some((child) => isActive(child.to))
+      return group.children.some((child) => child?.type !== 'section' && child.to && isActive(child.to))
     }
 
     const groupKey = (group) => String(group.key || group.label || '')
@@ -574,6 +597,7 @@ export default {
         shield: 'mdi:shield-check-outline',
         profile: 'mdi:account-circle-outline',
         bell: 'mdi:bell-outline',
+        'account-off': 'mdi:account-off-outline',
         plus: 'mdi:plus-circle-outline',
         search: 'mdi:magnify',
         money: 'mdi:currency-usd',

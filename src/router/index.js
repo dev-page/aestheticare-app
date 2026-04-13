@@ -1,9 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { signOut } from "firebase/auth";
 import { useAuth } from "@/composables/useAuth";
 import { usePermissions } from "@/composables/usePermissions";
 import { useSubscription } from "@/composables/useSubscription";
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/config/firebaseConfig";
+import { auth, db } from "@/config/firebaseConfig";
 
 const routes = [
   // Public routes
@@ -84,6 +85,7 @@ const routes = [
   { path: "/owner/finance", name: "owner-finance", component: () => import("@/views/admin/owner/OwnerFinance.vue"), meta: { requiresAuth: true } },
   { path: "/owner/clinic-profile", name: "owner-clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:view" } },
   { path: "/owner/reports", name: "owner-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
+  { path: "/owner/account/closure", name: "owner-account-closure", component: () => import("@/views/admin/owner/OwnerAccountClosure.vue"), meta: { requiresAuth: true } },
   { path: "/owner/account/backup", name: "owner-backup", component: () => import("@/views/admin/owner/OwnerBackup.vue"), meta: { requiresAuth: true, requiresPermission: "backup:view" } },
   { path: "/owner/account/subscription", name: "owner-subscription", component: () => import("@/views/admin/owner/OwnerSubscription.vue"), meta: { requiresAuth: true, requiresPermission: "subscription:view" } },
   { path: "/owner/account/plans", name: "owner-plan-selection", component: () => import("@/views/admin/owner/OwnerPlanSelection.vue"), meta: { requiresAuth: true } },
@@ -140,6 +142,7 @@ const routes = [
   { path: "/superadmin/clinics/archived", name: "superadmin-clinics-archived", component: () => import("@/views/superAdmin/ArchivedClinics.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/accounts/users", name: "superadmin-accounts-users", component: () => import("@/views/superAdmin/AccountManagement.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/activity-logs", name: "superadmin-activity-logs", component: () => import("@/views/superAdmin/ActivityLogs.vue"), meta: { requiresAuth: true } },
+  { path: "/superadmin/account-closure-requests", name: "superadmin-account-closure-requests", component: () => import("@/views/superAdmin/AccountClosureRequests.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/tickets", name: "superadmin-tickets", component: () => import("@/views/superAdmin/UserTickets.vue"), meta: { requiresAuth: true } },
 ];
 
@@ -182,6 +185,12 @@ router.beforeEach(async (to, from, next) => {
       const userSnap = await getDoc(doc(db, "users", user.value.uid));
       const userData = userSnap.exists() ? userSnap.data() || {} : {};
       const userType = String(userData.userType || '').trim().toLowerCase();
+      const accountStatus = String(userData.status || '').trim().toLowerCase();
+      const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
+      if (accountClosed) {
+        await signOut(auth).catch(() => {})
+        return next('/login');
+      }
       const mustChangePassword = userData.mustChangePassword === true
         || String(userData.mustChangePassword || '').trim().toLowerCase() === 'true'
 

@@ -52,7 +52,10 @@ export default {
         key: 'support',
         label: 'Support & Reports',
         icon: 'inbox',
-        children: [{ label: 'User Issues', icon: 'reportIssue', to: '/superadmin/tickets' }]
+        children: [
+          { label: 'User Issues', icon: 'reportIssue', to: '/superadmin/tickets' },
+          { label: 'Account Closure Requests', icon: 'account-off', to: '/superadmin/account-closure-requests' }
+        ]
       }
     ]
 

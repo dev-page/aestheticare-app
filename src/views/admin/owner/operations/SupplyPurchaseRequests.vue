@@ -60,7 +60,7 @@
             <label class="block text-slate-400 text-sm mb-2">Status</label>
             <select 
               v-model="selectedStatus"
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
+              class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
             >
               <option value="">All Status</option>
               <option value="Pending">Pending</option>
@@ -73,7 +73,7 @@
             <label class="block text-slate-400 text-sm mb-2">Branch</label>
             <select 
               v-model="selectedBranch"
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
+              class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
             >
               <option value="">All Branches</option>
               <option v-for="branch in branchOptions" :key="branch" :value="branch">{{ branch }}</option>
@@ -83,7 +83,7 @@
             <label class="block text-slate-400 text-sm mb-2">Priority</label>
             <select 
               v-model="selectedPriority"
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
+              class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
             >
               <option value="">All Priorities</option>
               <option value="High">High</option>
@@ -245,8 +245,8 @@
         </div>
       </div>
 
-      <div v-if="showAddModal" class="fixed inset-0 bg-black/50 z-50 overflow-y-auto p-4">
-        <div class="bg-slate-800 rounded-xl p-8 max-w-2xl w-full mx-auto my-6 border border-slate-700 max-h-[90vh] overflow-y-auto">
+      <div v-if="showAddModal" class="fixed inset-0 bg-black/50 z-50 overflow-y-auto p-4 purchase-modal-shell">
+        <div class="purchase-modal-panel bg-slate-800 rounded-xl p-8 max-w-2xl w-full mx-auto my-6 border border-slate-700 max-h-[90vh] overflow-y-auto purchase-modal-scroll">
           <h2 class="text-2xl font-bold text-white mb-6">New Purchase Request</h2>
           <form @submit.prevent="addRequest" class="space-y-4">
             <div class="grid grid-cols-2 gap-4">
@@ -255,7 +255,7 @@
                 <select 
                   v-model="newRequest.supplierId"
                   required
-                  class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
+                  class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
                 >
                   <option value="" disabled>Select Supplier</option>
                   <option v-for="supplier in activeSuppliers" :key="supplier.id" :value="supplier.id">{{ supplier.name }}</option>
@@ -266,7 +266,7 @@
                 <select 
                   v-model="newRequest.itemId"
                   required
-                  class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
+                  class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
                 >
                   <option value="" disabled>{{ newRequest.supplierId ? 'Select Item' : 'Select Supplier First' }}</option>
                   <option v-for="item in supplierItemOptions" :key="item.id" :value="item.id">
@@ -317,35 +317,35 @@
                 />
               </div>
               <div class="col-span-2">
-                <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-4">
-                  <div class="flex items-center justify-between mb-2">
-                    <p class="text-sm text-slate-200 font-semibold">DSS Recommendation</p>
+                <div class="rounded-lg border border-[#5a3927] bg-[#24160f] p-4">
+                  <div class="flex items-center justify-between gap-3 mb-2">
+                    <p class="text-sm font-semibold text-[#f3e7e0]">Stock Suggestion</p>
                     <button
                       type="button"
-                      class="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs disabled:opacity-50"
+                      class="px-3 py-1.5 rounded-md bg-[#8d5a3b] hover:bg-[#6f4329] text-white text-xs disabled:opacity-50"
                       :disabled="!dssSuggestion"
                       @click="applyDssSuggestion"
                     >
-                      Apply Suggestion
+                      Use Suggestion
                     </button>
                   </div>
                   <div v-if="!dssSuggestion" class="text-xs text-slate-400">
-                    Select an item to see recommended quantity and priority.
+                    Pick an item to see a suggested quantity and priority.
                   </div>
-                  <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-300">
-                    <div>
-                      <p class="text-slate-400">Current Stock</p>
-                      <p class="text-white font-semibold">{{ dssSuggestion.currentStock }} {{ dssSuggestion.unit }}</p>
+                  <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-3 text-xs text-[#e2c7b6]">
+                    <div class="rounded-md border border-[#5a3927] bg-[#2a180f] px-3 py-2">
+                      <p class="text-[#d2b7a6]">Current stock</p>
+                      <p class="font-semibold text-[#f3e7e0]">{{ dssSuggestion.currentStock }} {{ dssSuggestion.unit }}</p>
                     </div>
-                    <div>
-                      <p class="text-slate-400">Suggested Qty</p>
-                      <p class="text-white font-semibold">{{ dssSuggestion.recommendedQty }} {{ dssSuggestion.unit }}</p>
+                    <div class="rounded-md border border-[#5a3927] bg-[#2a180f] px-3 py-2">
+                      <p class="text-[#d2b7a6]">Suggested quantity</p>
+                      <p class="font-semibold text-[#f3e7e0]">{{ dssSuggestion.recommendedQty }} {{ dssSuggestion.unit }}</p>
                     </div>
-                    <div>
-                      <p class="text-slate-400">Recommended Priority</p>
-                      <p class="text-white font-semibold">{{ dssSuggestion.priority }}</p>
+                    <div class="rounded-md border border-[#5a3927] bg-[#2a180f] px-3 py-2">
+                      <p class="text-[#d2b7a6]">Suggested priority</p>
+                      <p class="font-semibold text-[#f3e7e0]">{{ dssSuggestion.priority }}</p>
                     </div>
-                    <div class="md:col-span-3 text-slate-400">
+                    <div class="md:col-span-3 text-[#d2b7a6]">
                       {{ dssSuggestion.reason }}
                     </div>
                   </div>
@@ -356,7 +356,7 @@
                 <select 
                   v-model="newRequest.priority"
                   required
-                  class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
+                  class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
                 >
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
@@ -369,7 +369,6 @@
               <textarea 
                 v-model="newRequest.notes"
                 rows="3"
-                required
                 class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
               ></textarea>
             </div>
@@ -748,7 +747,7 @@ export default {
       newRequest.value.quantity = dssSuggestion.value.recommendedQty
       newRequest.value.priority = dssSuggestion.value.priority
       if (!newRequest.value.notes) {
-        newRequest.value.notes = `DSS: ${dssSuggestion.value.reason}`
+        newRequest.value.notes = `Suggested by stock levels: ${dssSuggestion.value.reason}`
       }
     }
 
@@ -885,7 +884,7 @@ export default {
           unitCost,
           totalCost,
           priority: newRequest.value.priority,
-          notes: newRequest.value.notes,
+          notes: String(newRequest.value.notes || '').trim() || null,
           status: 'Pending',
           paymentStatus: 'Unpaid',
           amountPaid: 0,
@@ -1411,3 +1410,52 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.purchase-modal-shell {
+  scrollbar-color: #8d5a3b #24160f;
+}
+
+.purchase-modal-shell::-webkit-scrollbar,
+.purchase-modal-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.purchase-modal-shell::-webkit-scrollbar-track,
+.purchase-modal-scroll::-webkit-scrollbar-track {
+  background: #24160f;
+}
+
+.purchase-modal-shell::-webkit-scrollbar-thumb,
+.purchase-modal-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #8d5a3b, #6f4329);
+  border-radius: 999px;
+  border: 3px solid #24160f;
+}
+
+.purchase-modal-shell::-webkit-scrollbar-thumb:hover,
+.purchase-modal-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #a06a46, #7f4f30);
+}
+
+.brown-native-select {
+  color-scheme: dark;
+  background-color: #24160f;
+  border-color: #5a3927;
+  color: #f3e7e0;
+}
+
+.brown-native-select:focus {
+  border-color: #8d5a3b;
+  box-shadow: 0 0 0 3px rgba(141, 90, 59, 0.18);
+}
+
+.brown-native-select option {
+  background: #24160f;
+  color: #f3e7e0;
+}
+
+.brown-native-select option:disabled {
+  color: #d2b7a6;
+}
+</style>
