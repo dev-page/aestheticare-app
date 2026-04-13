@@ -150,8 +150,8 @@ import { Icon } from '@iconify/vue'
 import Modal from '@/components/common/Modal.vue'
 
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
-import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
+import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 
 export default {
   name: 'NotificationsPage',
@@ -161,8 +161,8 @@ export default {
     Icon,
     Modal,
     CustomerSidebar,
-    OwnerSidebar,
-    EmployeeSidebar
+    EmployeeSidebar,
+    OwnerSidebar
   },
   setup() {
     const router = useRouter()

@@ -169,16 +169,16 @@ import { useSubscription } from '@/composables/useSubscription'
 import EmployeeTopbar from '@/components/common/EmployeeTopbar.vue'
 
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
-import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
+import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 
 export default {
   name: 'SupportReport',
   components: {
     EmployeeTopbar,
     CustomerSidebar,
-    OwnerSidebar,
-    EmployeeSidebar
+    EmployeeSidebar,
+    OwnerSidebar
   },
   setup() {
     const db = getFirestore(getApp())
