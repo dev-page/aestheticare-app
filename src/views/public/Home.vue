@@ -461,7 +461,7 @@
               </router-link>
             </div>
             <div class="footer-cta-highlights">
-              <span class="footer-highlight-chip">FreePlan available</span>
+              <span class="footer-highlight-chip">Free Plan available</span>
               <span class="footer-highlight-chip">Clinic-ready setup</span>
             </div>
           </div>
