@@ -118,10 +118,10 @@
 </template>
 
 <script>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { doc, getDoc, getFirestore, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getFirestore, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -135,6 +135,9 @@ export default {
     const loading = ref(true)
     const saving = ref(false)
     const currentUserId = ref('')
+    let unsubscribeAuth = null
+    let unsubscribeProfile = null
+    let unsubscribeBranch = null
     const profile = ref({
       firstName: '',
       lastName: '',
@@ -152,17 +155,56 @@ export default {
     const fullName = computed(() => `${profile.value.firstName || ''} ${profile.value.lastName || ''}`.trim())
     const userInitial = computed(() => (fullName.value || profile.value.email || 'E').charAt(0).toUpperCase())
 
-    const loadProfile = async (uid, email) => {
-      const userSnap = await getDoc(doc(db, 'users', uid))
-      const userData = userSnap.exists() ? userSnap.data() || {} : {}
-      let branchLabel = ''
+    const clearBranchSubscription = () => {
+      if (unsubscribeBranch) {
+        unsubscribeBranch()
+        unsubscribeBranch = null
+      }
+    }
 
-      const branchId = String(userData.branchId || '').trim()
+    const resolveBranchFromClinic = (clinicSnap, fallbackBranchId = '') => {
+      const clinicData = clinicSnap?.data?.() || {}
+      const branchLabel = [clinicData.clinicBranch, clinicData.clinicLocation].filter(Boolean).join(' - ')
+      profile.value.branchId = String(fallbackBranchId || clinicSnap?.id || '').trim()
+      profile.value.branchLabel = branchLabel || profile.value.branchId || '-'
+    }
+
+    const subscribeToBranchSource = (uid, userData = {}) => {
+      clearBranchSubscription()
+
+      const branchId = String(userData.branchId || userData.clinicBranch || '').trim()
+      if (branchId) {
+        unsubscribeBranch = onSnapshot(doc(db, 'clinics', branchId), (clinicSnap) => {
+          if (!clinicSnap.exists()) {
+            profile.value.branchId = branchId
+            profile.value.branchLabel = branchId || '-'
+            return
+          }
+          resolveBranchFromClinic(clinicSnap, branchId)
+        })
+        return
+      }
+
+      unsubscribeBranch = onSnapshot(
+        query(collection(db, 'clinics'), where('branchAdminId', '==', uid)),
+        (snapshot) => {
+          if (snapshot.empty) {
+            profile.value.branchId = ''
+            profile.value.branchLabel = '-'
+            return
+          }
+
+          resolveBranchFromClinic(snapshot.docs[0])
+        }
+      )
+    }
+
+    const loadProfile = async (uid, email, userData = {}) => {
+      const branchId = String(userData.branchId || userData.clinicBranch || '').trim()
       if (branchId) {
         const branchSnap = await getDoc(doc(db, 'clinics', branchId))
         if (branchSnap.exists()) {
-          const branchData = branchSnap.data() || {}
-          branchLabel = [branchData.clinicBranch, branchData.clinicLocation].filter(Boolean).join(' - ')
+          resolveBranchFromClinic(branchSnap, branchId)
         }
       }
 
@@ -176,7 +218,7 @@ export default {
         customRoleName: String(userData.customRoleName || '').trim(),
         employmentType: String(userData.employmentType || '').trim(),
         branchId,
-        branchLabel: branchLabel || '-',
+        branchLabel: profile.value.branchLabel || '-',
         status: String(userData.status || '').trim(),
       }
     }
@@ -211,21 +253,46 @@ export default {
     }
 
     onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
           loading.value = false
+          if (unsubscribeProfile) {
+            unsubscribeProfile()
+            unsubscribeProfile = null
+          }
+          clearBranchSubscription()
           return
         }
         currentUserId.value = user.uid
-        try {
-          await loadProfile(user.uid, user.email || '')
-        } catch (error) {
-          console.error('Failed to load employee profile:', error)
-          toast.error('Unable to load your profile right now.')
-        } finally {
-          loading.value = false
+        if (unsubscribeProfile) {
+          unsubscribeProfile()
+          unsubscribeProfile = null
         }
+
+        unsubscribeProfile = onSnapshot(doc(db, 'users', user.uid), async () => {
+          try {
+            const userSnap = await getDoc(doc(db, 'users', user.uid))
+            const userData = userSnap.exists() ? userSnap.data() || {} : {}
+            subscribeToBranchSource(user.uid, userData)
+            await loadProfile(user.uid, user.email || '', userData)
+          } catch (error) {
+            console.error('Failed to load employee profile:', error)
+            toast.error('Unable to load your profile right now.')
+          } finally {
+            loading.value = false
+          }
+        })
       })
+    })
+
+    onUnmounted(() => {
+      if (unsubscribeAuth) {
+        unsubscribeAuth()
+      }
+      if (unsubscribeProfile) {
+        unsubscribeProfile()
+      }
+      clearBranchSubscription()
     })
 
     return {

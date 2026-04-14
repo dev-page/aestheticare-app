@@ -264,7 +264,7 @@ const calendarRef = ref(null)
 const monthMenuOpen = ref(false)
 const yearMenuOpen = ref(false)
 const showLocationModal = ref(false)
-const locationSearchHost = ref(null)
+const locationSearchQuery = ref('')
 const locationMapCanvas = ref(null)
 const locationError = ref('')
 let mapsReady = false
@@ -1714,6 +1714,7 @@ const handleEmailDraftInput = () => {
 }
 
 const openLocationModal = () => {
+  locationSearchQuery.value = clinicLocationAddress.value || clinicLocation.value || ''
   showLocationModal.value = true
   nextTick(() => initLocationMap())
 }
@@ -2000,6 +2001,67 @@ const handlePlaceSelection = (location, components, fallbackName) => {
     fallbackName
   })
   locationError.value = ''
+}
+
+const searchLocation = () => {
+  const query = String(locationSearchQuery.value || '').trim()
+  if (!query) {
+    locationError.value = 'Enter a location to search.'
+    return
+  }
+  if (!window.google?.maps?.Geocoder) {
+    locationError.value = 'Search is not available right now.'
+    return
+  }
+
+  const geocoder = new window.google.maps.Geocoder()
+  geocoder.geocode(
+    {
+      address: query,
+      bounds: caviteBounds,
+      componentRestrictions: { country: 'PH' }
+    },
+    (results, status) => {
+      if (status !== 'OK' || !results?.length) {
+        locationError.value = 'No matching location found.'
+        return
+      }
+
+      const place = results[0]
+      const components = flattenAddressComponents(results)
+      if (!isWithinCavite(components)) {
+        locationError.value = 'Please select a location within Cavite.'
+        return
+      }
+
+      const location = place.geometry?.location
+      if (!location) {
+        locationError.value = 'Unable to resolve the searched location.'
+        return
+      }
+
+      const lat = typeof location.lat === 'function' ? location.lat() : location.lat
+      const lng = typeof location.lng === 'function' ? location.lng() : location.lng
+
+      if (locationMarker?.position) {
+        locationMarker.position = { lat, lng }
+      } else if (locationMarker?.setPosition) {
+        locationMarker.setPosition({ lat, lng })
+      }
+      if (locationMap?.setCenter) {
+        locationMap.setCenter({ lat, lng })
+      }
+
+      applyResolvedClinicLocation({
+        lat,
+        lng,
+        components,
+        formattedAddress: place.formatted_address || query,
+        fallbackName: place.formatted_address || query
+      })
+      locationError.value = ''
+    }
+  )
 }
 
 const usePinnedLocation = async () => {
@@ -3173,11 +3235,31 @@ const submitDocuments = async () => {
         panelClass="bg-cream-50 border border-gold-200/80 w-full max-w-4xl shadow-2xl shadow-gold-900/15"
         bodyClass="location-modal-body"
         :isOpen="showLocationModal"
-        :title="'Select Clinic Location'"
-        @close="closeLocationModal"
-        :showConfirm="false"
+      :title="'Select Clinic Location'"
+      @close="closeLocationModal"
+      :showConfirm="false"
       >
         <div class="space-y-4">
+          <div class="rounded-2xl border border-gold-200/80 bg-cream-100 p-4 shadow-[0_10px_24px_rgba(54,34,22,0.06)]">
+            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Search location</label>
+            <div class="flex flex-col gap-3 sm:flex-row">
+              <input
+                v-model="locationSearchQuery"
+                type="text"
+                class="w-full rounded-xl border border-gold-200/80 bg-white px-4 py-3 text-charcoal-700 outline-none placeholder:text-charcoal-400 focus:border-gold-400 focus:ring-4 focus:ring-gold-200/30"
+                placeholder="Search a city, barangay, or address"
+                @keyup.enter.prevent="searchLocation"
+              />
+              <button
+                type="button"
+                class="rounded-xl bg-gold-700 px-5 py-3 font-semibold text-white transition hover:bg-gold-800"
+                @click="searchLocation"
+              >
+                Search
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-charcoal-500">Search first, then fine-tune the exact spot by dragging or clicking the pin.</p>
+          </div>
           <div ref="locationMapCanvas" class="w-full h-[380px] rounded-2xl border border-gold-200/80 bg-cream-100 shadow-[0_12px_28px_rgba(54,34,22,0.08)] overflow-hidden"></div>
           <div
             v-if="locationError"
@@ -3250,7 +3332,7 @@ const submitDocuments = async () => {
       <div class="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-cream-300/40 blur-3xl"></div>
     </div>
 
-    <nav class="fixed top-0 inset-x-0 z-50 bg-gradient-to-r from-cream-50/95 via-cream-100/95 to-gold-50/95 backdrop-blur-md border-b border-gold-200/70 shadow-[0_6px_18px_rgba(54,34,22,0.08)]">
+    <nav class="sticky top-0 inset-x-0 z-50 bg-gradient-to-r from-cream-50/95 via-cream-100/95 to-gold-50/95 backdrop-blur-md border-b border-gold-200/70 shadow-[0_6px_18px_rgba(54,34,22,0.08)]">
       <div class="relative max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         <button
           type="button"

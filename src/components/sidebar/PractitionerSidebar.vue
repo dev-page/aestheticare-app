@@ -31,7 +31,7 @@ export default {
       { label: 'Appointments', icon: 'calendar', to: '/practitioner/appointments', permission: 'appointments:view' },
       { label: 'Appointment Requests', icon: 'calendar-check', to: '/receptionist/appointment-requests', permission: 'appointments:review' },
       { label: 'Online Consultation', icon: 'video', to: '/practitioner/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
-      { label: 'Activities', icon: 'activity', to: '/practitioner/activities' },
+      { label: 'Activities', icon: 'activity', to: '/activities' },
       { label: 'Notifications', icon: 'bell', to: '/notifications' },
       { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' }
     ]

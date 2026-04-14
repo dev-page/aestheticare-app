@@ -257,6 +257,10 @@ const selectedRole = ref('all')
 const selectedEmployeeId = ref('')
 const selectedWeekStart = ref('')
 const saving = ref(false)
+const isOwnerLikeRole = (role) => {
+  const normalized = String(role || '').trim().toLowerCase()
+  return ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized)
+}
 
 const emptyAssignments = () => createAssignmentsMap(daysOfWeek)
 
@@ -461,41 +465,36 @@ const hydrateBranches = async () => {
   }
 
   const profile = userSnap.data() || {}
-  const normalizedRole = String(profile.role || '').trim().toLowerCase()
-  const isOwnerLike = ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalizedRole)
-
   let accessibleClinics = []
   let preferredBranchId = ''
 
-  if (isOwnerLike) {
+  if (isOwnerLikeRole(profile.role)) {
     const clinicsSnap = await getDocs(query(collection(db, 'clinics'), where('ownerId', '==', user.uid)))
     accessibleClinics = clinicsSnap.docs
   } else {
     const assignedBranchId = String(profile.branchId || '').trim()
     preferredBranchId = assignedBranchId
 
-    if (!assignedBranchId) {
-      branches.value = []
-      selectedBranchId.value = ''
-      return
+    if (assignedBranchId) {
+      const assignedClinicSnap = await getDoc(doc(db, 'clinics', assignedBranchId))
+      if (!assignedClinicSnap.exists()) {
+        branches.value = []
+        selectedBranchId.value = ''
+        return
+      }
+      accessibleClinics = [assignedClinicSnap]
+    } else {
+      const branchAdminSnapshot = await getDocs(
+        query(collection(db, 'clinics'), where('branchAdminId', '==', user.uid))
+      )
+      accessibleClinics = branchAdminSnapshot.docs
+      if (!accessibleClinics.length) {
+        branches.value = []
+        selectedBranchId.value = ''
+        return
+      }
+      preferredBranchId = accessibleClinics[0].id
     }
-
-    const assignedClinicSnap = await getDoc(doc(db, 'clinics', assignedBranchId))
-    if (!assignedClinicSnap.exists()) {
-      branches.value = []
-      selectedBranchId.value = ''
-      return
-    }
-
-    const ownerId = String(assignedClinicSnap.data()?.ownerId || '').trim()
-    if (!ownerId) {
-      branches.value = []
-      selectedBranchId.value = ''
-      return
-    }
-
-    const clinicsSnap = await getDocs(query(collection(db, 'clinics'), where('ownerId', '==', ownerId)))
-    accessibleClinics = clinicsSnap.docs
   }
 
   branches.value = accessibleClinics

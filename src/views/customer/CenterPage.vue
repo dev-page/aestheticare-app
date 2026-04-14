@@ -34,31 +34,6 @@
             </div>
           </div>
 
-          <div v-if="branchOptions.length > 1" class="mt-5 rounded-[1.5rem] border border-[#e0c09a] bg-[rgba(255,250,243,0.95)] p-4 shadow-[0_18px_44px_rgba(87,56,35,0.08)]">
-            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Branch Selector</p>
-                <p class="mt-1 text-sm text-[#6f4a2d]">
-                  Choose a branch to view its products, services, and booking availability.
-                </p>
-              </div>
-              <div class="w-full md:w-[340px]">
-                <select
-                  v-model="selectedBranchId"
-                  class="w-full rounded-2xl border border-[#e0c09a] bg-[#fffaf3] px-4 py-3 text-[#3d281d] shadow-sm outline-none transition focus:border-[#c99563] focus:ring-4 focus:ring-[#e8bf8a]/30"
-                  @change="selectBranch"
-                >
-                  <option v-for="branch in branchOptions" :key="branch.id" :value="branch.id">
-                    {{ branch.label }}
-                  </option>
-                </select>
-              </div>
-            </div>
-            <p class="mt-3 text-xs text-[#8b6a4d]">
-              Showing: <span class="font-semibold text-[#3d281d]">{{ selectedBranchLabel }}</span>
-            </p>
-          </div>
-
           <div class="mt-6 border-t border-[#ebd6bc] pt-4">
             <div class="flex flex-wrap gap-2">
               <button
@@ -100,15 +75,45 @@
               <p v-else class="center-panel-copy text-sm">No services listed yet.</p>
             </div>
 
-            <div class="center-panel-grid mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="center-panel-grid mt-4 space-y-4">
               <div class="center-panel p-5">
                 <h4 class="center-panel-title mb-2">Contact</h4>
                 <p class="center-panel-copy text-sm">Email: {{ center.businessEmail || center.email || 'Not set' }}</p>
                 <p class="center-panel-copy text-sm mt-1">Phone: {{ center.contactNumber || 'Not set' }}</p>
               </div>
-              <div class="center-panel p-5">
-                <h4 class="center-panel-title mb-2">Address</h4>
-                <p class="center-panel-copy text-sm">{{ center.location || 'Not set' }}</p>
+              <div class="center-panel p-5 space-y-4">
+                <div>
+                  <h4 class="center-panel-title mb-2">Address</h4>
+                  <p class="center-panel-copy text-sm leading-relaxed">
+                    {{ center.locationAddress || center.location || 'Not set' }}
+                  </p>
+                </div>
+
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div class="center-location-box rounded-2xl p-3">
+                    <p class="center-location-label">City / Municipality</p>
+                    <p class="center-location-value mt-1">{{ center.location || '-' }}</p>
+                  </div>
+                  <div class="center-location-box rounded-2xl p-3">
+                    <p class="center-location-label">Barangay</p>
+                    <p class="center-location-value mt-1">{{ center.barangay || '-' }}</p>
+                  </div>
+                  <div class="center-location-box rounded-2xl p-3">
+                    <p class="center-location-label">Actual Location</p>
+                    <p class="center-location-value mt-1">{{ center.locationAddress || '-' }}</p>
+                  </div>
+                  <div class="center-location-box rounded-2xl p-3">
+                    <p class="center-location-label">Postal Code</p>
+                    <p class="center-location-value mt-1">{{ center.postalCode || '-' }}</p>
+                  </div>
+                </div>
+
+                <div class="overflow-hidden rounded-2xl border border-[#e0c09a] bg-[#fffaf3]">
+                  <div ref="branchMapEl" class="h-56 w-full"></div>
+                  <p v-if="!center.latitude || !center.longitude" class="border-t border-[#ead6b8] px-4 py-3 text-xs text-[#8b6a4d]">
+                    Map preview will appear once coordinates are available.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -116,15 +121,20 @@
           <div v-if="activeTab === 'Products & Services'">
             <div class="center-toolbar flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
               <div class="flex w-full md:w-auto gap-3">
-                <input
-                  v-model="searchQuery"
-                  type="text"
-                  placeholder="Search..."
-                  class="center-search-input px-3 py-2 rounded-2xl"
-                />
+                <div class="center-search-shell flex-1 md:w-[250px]">
+                  <Icon icon="mdi:magnify" class="center-search-icon h-5 w-5" />
+                  <input
+                    v-model="searchQuery"
+                    type="text"
+                    placeholder="Search..."
+                    class="center-search-input w-full px-3 py-2 rounded-2xl"
+                  />
+                </div>
               </div>
               <button @click="goToCart" class="center-cart-button px-4 py-2 rounded-2xl text-white">
-                My Cart ({{ cartCount }})
+                <Icon icon="mdi:cart-outline" class="h-5 w-5" />
+                <span>My Cart</span>
+                <span class="center-cart-pill">{{ cartCount }}</span>
               </button>
             </div>
 
@@ -153,11 +163,32 @@
                       <p class="mt-2 text-[#8b6a4d]">PHP {{ Number(item.price || 0).toFixed(2) }}</p>
                       <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
 
-                      <div class="mt-4 flex items-center space-x-2">
-                        <button @click="addToCart(item)" class="center-action-button px-3 py-2 rounded-xl text-white">
+                      <div class="mt-4 flex flex-wrap items-center gap-3">
+                        <div class="center-qty-stepper inline-flex items-center overflow-hidden rounded-2xl border border-[#e0c09a] bg-[#fff8ef]">
+                          <button
+                            type="button"
+                            class="center-qty-stepper-btn"
+                            aria-label="Decrease quantity"
+                            @click="decrementItemQuantity(item)"
+                          >
+                            <Icon icon="mdi:minus" class="h-4 w-4" />
+                          </button>
+                          <div class="center-qty-display min-w-14 px-4 py-2 text-center text-sm font-semibold text-[#3d281d]">
+                            {{ item.quantity || 1 }}
+                          </div>
+                          <button
+                            type="button"
+                            class="center-qty-stepper-btn"
+                            aria-label="Increase quantity"
+                            @click="incrementItemQuantity(item)"
+                          >
+                            <Icon icon="mdi:plus" class="h-4 w-4" />
+                          </button>
+                        </div>
+                        <button @click="addToCart(item)" class="center-action-button inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white">
+                          <Icon icon="mdi:cart-plus" class="h-4 w-4" />
                           Add to Cart
                         </button>
-                        <input type="number" min="1" v-model.number="item.quantity" class="center-qty-input w-16 px-2 py-1 rounded-xl" />
                       </div>
                     </div>
                   </div>
@@ -534,33 +565,33 @@
       </span>
     </button>
 
-    <div v-if="showChatModal" class="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-[rgba(31,18,11,0.55)] p-4 backdrop-blur-sm">
-      <div class="w-full max-w-lg rounded-[1.75rem] border border-[#e0c09a] bg-[#fffaf3] shadow-[0_30px_80px_rgba(60,34,18,0.26)]">
-        <div class="flex items-center justify-between border-b border-[#efd7ba] px-4 py-3">
+    <div v-if="showChatModal" class="customer-chat-modal fixed inset-0 z-50 flex items-end md:items-center justify-center bg-[rgba(31,18,11,0.55)] p-4 backdrop-blur-sm">
+      <div class="customer-chat-card w-full max-w-lg rounded-[1.75rem] border border-[#e0c09a] bg-[#fffaf3] shadow-[0_30px_80px_rgba(60,34,18,0.26)]">
+        <div class="customer-chat-header flex items-center justify-between border-b border-[#efd7ba] px-4 py-3">
           <div>
-            <h3 class="font-semibold text-[#3d281d]">Chat with {{ center.name || 'Clinic' }}</h3>
-            <p class="text-xs text-[#8b6a4d]">This chat is for inquiries and appointments.</p>
+            <h3 class="customer-chat-title font-semibold text-[#3d281d]">Chat with {{ center.name || 'Clinic' }}</h3>
+            <p class="customer-chat-subtitle text-xs text-[#8b6a4d]">This chat is for inquiries and appointments.</p>
           </div>
-          <button type="button" class="text-[#8b6a4d] hover:text-[#3d281d]" @click="closeChat">
+          <button type="button" class="customer-chat-close text-[#8b6a4d] hover:text-[#3d281d]" @click="closeChat">
             <Icon icon="mdi:close" class="h-5 w-5" />
           </button>
         </div>
-        <div class="px-4 pt-4">
-          <p class="mb-2 text-xs text-[#8b6a4d]">Quick questions</p>
+        <div class="customer-chat-quick px-4 pt-4">
+          <p class="customer-chat-quick-label mb-2 text-xs text-[#8b6a4d]">Quick questions</p>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="question in quickQuestions"
               :key="question.key"
               type="button"
-              class="rounded-full border border-[#e0c09a] bg-[#fff2e1] px-3 py-1.5 text-xs text-[#6f4a2d] transition hover:bg-[#ffe8cc]"
+              class="customer-chat-question rounded-full border border-[#e0c09a] bg-[#fff2e1] px-3 py-1.5 text-xs text-[#6f4a2d] transition hover:bg-[#ffe8cc]"
               @click="sendQuickQuestion(question)"
             >
               {{ question.label }}
             </button>
           </div>
         </div>
-        <div ref="chatScrollRef" class="px-4 py-4 max-h-[45vh] overflow-y-auto space-y-3">
-          <div v-if="chatMessages.length === 0" class="text-center text-sm text-[#8b6a4d]">No messages yet. Say hello!</div>
+        <div ref="chatScrollRef" class="customer-chat-scroll px-4 py-4 max-h-[45vh] overflow-y-auto space-y-3">
+          <div v-if="chatMessages.length === 0" class="customer-chat-empty text-center text-sm text-[#8b6a4d]">No messages yet. Say hello!</div>
           <div
             v-for="message in chatMessages"
             :key="message.id"
@@ -568,31 +599,34 @@
             :class="message.senderId === currentUserId ? 'justify-end' : 'justify-start'"
           >
             <div
-              class="max-w-[75%] rounded-2xl px-3 py-2 text-sm"
+              class="customer-chat-message max-w-[75%] rounded-2xl px-3 py-2 text-sm"
               :class="message.senderRole === 'system'
-                ? 'bg-[#8d5a3b] text-white'
+                ? 'customer-chat-message--system'
                 : message.senderId === currentUserId
-                  ? 'bg-[#6f4329] text-white'
-                  : 'bg-[#f5eadc] text-[#3d281d]'"
+                  ? 'customer-chat-message--outgoing'
+                  : 'customer-chat-message--incoming'"
             >
-              <p class="whitespace-pre-wrap">{{ message.text }}</p>
-              <p class="mt-1 text-[10px] text-[#a78a6e]">
+              <p v-if="message.senderRole === 'system'" class="customer-chat-system-badge mb-1">
+                System message
+              </p>
+              <p class="whitespace-pre-wrap customer-chat-message-text">{{ message.text }}</p>
+              <p class="customer-chat-time mt-1 text-[10px] text-[#a78a6e]">
                 {{ formatChatTime(message.createdAt) }}
               </p>
             </div>
           </div>
         </div>
-        <div class="border-t border-[#efd7ba] px-4 py-3">
+        <div class="customer-chat-composer border-t border-[#efd7ba] px-4 py-3">
           <div class="flex items-center gap-2">
             <input
               v-model="chatInput"
               type="text"
               placeholder="Type your message..."
-              class="flex-1 rounded-2xl border border-[#e0c09a] bg-white px-3 py-2 text-[#3d281d] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20"
+              class="customer-chat-input flex-1 rounded-2xl border border-[#e0c09a] bg-white px-3 py-2 text-[#3d281d] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20"
             />
             <button
               type="button"
-              class="rounded-2xl bg-[#8d5a3b] px-3 py-2 text-white transition hover:bg-[#6f4329]"
+              class="customer-chat-send rounded-2xl bg-[#8d5a3b] px-3 py-2 text-white transition hover:bg-[#6f4329]"
               @click="sendChat"
             >
               Send
@@ -668,19 +702,13 @@ const bookingPaymentSaving = ref(false)
 const bookingPhoneError = ref('')
 const bookingPaymentPendingKey = 'customer_booking_pending_paymongo'
 const serviceCommissionPercent = getServiceCommissionPercent()
-const branches = ref([])
-const selectedBranchId = ref(centerId)
-const activeBranchId = computed(() => String(selectedBranchId.value || centerId).trim() || centerId)
-const branchOptions = computed(() =>
-  branches.value.map((branch) => ({
-    ...branch,
-    label: `${branch.name}${branch.location ? ` - ${branch.location}` : ''}${branch.isMainBranch ? ' (Main)' : ''}`
-  }))
-)
-const selectedBranchLabel = computed(() => {
-  const branch = branchOptions.value.find((entry) => entry.id === activeBranchId.value)
-  return branch ? branch.label : 'Selected branch'
-})
+const activeBranchId = computed(() => String(centerId).trim() || centerId)
+const branchMapEl = ref(null)
+let branchMap = null
+let branchMarker = null
+let mapsReady = false
+const philippinesBounds = { north: 21.5, south: 4.3, east: 127.5, west: 116.0 }
+const defaultCenter = { lat: 12.8797, lng: 121.774 }
 const practitioners = ref([])
 const practitionerSchedules = ref({})
 const appointments = ref([])
@@ -801,6 +829,11 @@ const center = ref({
   id: centerId,
   name: '',
   location: '',
+  locationAddress: '',
+  barangay: '',
+  postalCode: '',
+  latitude: '',
+  longitude: '',
   description: '',
   email: '',
   businessEmail: '',
@@ -817,6 +850,11 @@ const buildCenterModel = (branchId, data = {}) => ({
   id: branchId,
   name: data.clinicName || data.clinicBranch || 'Center',
   location: data.clinicLocation || '',
+  locationAddress: data.clinicLocationAddress || data.clinicLocation || '',
+  barangay: data.clinicBarangay || '',
+  postalCode: data.clinicPostalCode || '',
+  latitude: data.clinicLocationLat ?? '',
+  longitude: data.clinicLocationLng ?? '',
   description: data.description || '',
   email: data.email || '',
   businessEmail: data.businessEmail || '',
@@ -828,6 +866,99 @@ const buildCenterModel = (branchId, data = {}) => ({
   moderationStatus: String(data.moderationStatus || '').trim(),
   isPublished: data.isPublished === true,
 })
+
+const loadMapsScript = () => {
+  if (window.google?.maps?.Map || window.google?.maps?.importLibrary) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById('google-maps-js')
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true })
+      existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), { once: true })
+      return
+    }
+
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+    if (!apiKey) {
+      reject(new Error('Missing VITE_GOOGLE_MAPS_API_KEY in environment.'))
+      return
+    }
+
+    const script = document.createElement('script')
+    script.id = 'google-maps-js'
+    script.async = true
+    script.defer = true
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&loading=async&v=weekly`
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Failed to load Google Maps'))
+    document.head.appendChild(script)
+  })
+}
+
+const initBranchMap = async () => {
+  if (!branchMapEl.value || !center.value) return
+
+  try {
+    if (!mapsReady) {
+      await loadMapsScript()
+      mapsReady = true
+    }
+  } catch (error) {
+    console.error('Failed to load branch map:', error)
+    return
+  }
+
+  const lat = Number(center.value.latitude)
+  const lng = Number(center.value.longitude)
+  const mapCenter = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : defaultCenter
+
+  let MapCtor = window.google?.maps?.Map
+  let AdvancedMarkerElement = window.google?.maps?.marker?.AdvancedMarkerElement
+  if (window.google?.maps?.importLibrary) {
+    try {
+      const mapsLib = await window.google.maps.importLibrary('maps')
+      MapCtor = mapsLib?.Map || MapCtor
+      const markerLib = await window.google.maps.importLibrary('marker')
+      AdvancedMarkerElement = markerLib?.AdvancedMarkerElement || AdvancedMarkerElement
+    } catch (error) {
+      console.error('Failed to import Google Maps libraries:', error)
+    }
+  }
+
+  if (!MapCtor) return
+
+  if (!branchMap) {
+    branchMap = new MapCtor(branchMapEl.value, {
+      center: mapCenter,
+      zoom: Number.isFinite(lat) && Number.isFinite(lng) ? 15 : 6,
+      restriction: { latLngBounds: philippinesBounds, strictBounds: true },
+      streetViewControl: false,
+      fullscreenControl: false,
+      mapTypeControl: false,
+      mapId: import.meta.env.VITE_GOOGLE_MAP_ID,
+    })
+  } else {
+    branchMap.setCenter(mapCenter)
+  }
+
+  if (branchMarker?.setMap) {
+    branchMarker.setMap(null)
+  }
+  branchMarker = null
+
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    if (AdvancedMarkerElement) {
+      branchMarker = new AdvancedMarkerElement({
+        map: branchMap,
+        position: { lat, lng },
+      })
+    } else if (window.google?.maps?.Marker) {
+      branchMarker = new window.google.maps.Marker({
+        map: branchMap,
+        position: { lat, lng },
+      })
+    }
+  }
+}
 
 const toTimestampMillis = (value) => {
   if (!value) return 0
@@ -939,25 +1070,6 @@ const startReviewsListener = (branchId) => {
   })
 }
 
-const syncSelectedBranchInUrl = async (branchId) => {
-  const nextQuery = { ...route.query }
-  if (branchId && branchId !== centerId) {
-    nextQuery.branch = branchId
-  } else {
-    delete nextQuery.branch
-  }
-
-  const currentBranchQuery = String(route.query.branch || '').trim()
-  const nextBranchQuery = String(nextQuery.branch || '').trim()
-  if (currentBranchQuery === nextBranchQuery) return
-
-  await router.replace({
-    name: 'customer-center',
-    params: { id: centerId },
-    query: nextQuery,
-  }).catch(() => {})
-}
-
 const stopBranchSensitiveListeners = () => {
   stopChatListener()
   if (threadUnsubscribe) {
@@ -986,41 +1098,30 @@ const stopBranchSensitiveListeners = () => {
   appointments.value = []
 }
 
-const selectBranch = async () => {
-  const nextBranchId = activeBranchId.value
-  if (!nextBranchId) return
-
-  loading.value = true
-  stopBranchSensitiveListeners()
-  selectedServices.value = []
-  assignedPractitioner.value = null
-  availabilityMessage.value = ''
-  bookingForm.value = {
-    slotKey: '',
-    date: '',
-    time: '',
-    endTime: '',
-    notes: '',
+const buildCenterQuery = (extra = {}) => {
+  const nextQuery = { ...route.query }
+  delete nextQuery.branch
+  return {
+    ...nextQuery,
+    ...extra,
   }
-  items.value = []
-  reviews.value = []
-  practitioners.value = []
-  practitionerSchedules.value = {}
+}
 
-  try {
-    await syncSelectedBranchInUrl(nextBranchId)
-    await loadBranchData(nextBranchId)
-    syncCartCount()
-    if (auth.currentUser) {
-      currentUserId.value = auth.currentUser.uid
-      await startUnreadListener()
+const buildCenterQueryString = (extra = {}) => {
+  const params = new URLSearchParams()
+  Object.entries(buildCenterQuery(extra)).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        if (entry != null && String(entry).trim()) {
+          params.append(key, String(entry))
+        }
+      })
+      return
     }
-  } catch (error) {
-    console.error(error)
-    toast.error('Failed to load the selected branch.')
-  } finally {
-    loading.value = false
-  }
+    if (value == null || value === '') return
+    params.set(key, String(value))
+  })
+  return params.toString()
 }
 
 const bookingForm = ref({
@@ -1231,6 +1332,8 @@ const loadBranchData = async (branchId) => {
   }
 
   center.value = buildCenterModel(branchId, data)
+  await nextTick()
+  await initBranchMap()
 
   const [postSnap] = await Promise.all([
     getDocs(query(collection(db, 'productServicePosts'), where('branchId', '==', branchId))),
@@ -1594,6 +1697,16 @@ const goBack = () => {
 
 const goToCart = () => router.push({ name: 'customer-cart' })
 
+const incrementItemQuantity = (item) => {
+  const current = Math.max(1, Number(item.quantity || 1))
+  item.quantity = current + 1
+}
+
+const decrementItemQuantity = (item) => {
+  const current = Math.max(1, Number(item.quantity || 1))
+  item.quantity = Math.max(1, current - 1)
+}
+
 const addToCart = (item) => {
   addCartItem({
     id: item.id,
@@ -1628,6 +1741,12 @@ watch(() => bookingForm.value.date, () => {
   } else {
     availabilityMessage.value = ''
   }
+})
+
+watch(activeTab, async (tab) => {
+  if (tab !== 'About Us') return
+  await nextTick()
+  await initBranchMap()
 })
 
 watch(() => bookingForm.value.slotKey, () => {
@@ -2176,8 +2295,10 @@ const createBookingPayMongoCheckoutSession = async ({
   }
 
   const referenceNumber = `${referencePrefix || 'APT'}-${Date.now()}`
-  const successUrl = `${window.location.origin}${route.path}?branch=${activeBranchId.value}&paymongo_status=success`
-  const cancelUrl = `${window.location.origin}${route.path}?branch=${activeBranchId.value}&paymongo_status=cancelled`
+  const successQuery = buildCenterQueryString({ paymongo_status: 'success' })
+  const cancelQuery = buildCenterQueryString({ paymongo_status: 'cancelled' })
+  const successUrl = `${window.location.origin}${route.path}${successQuery ? `?${successQuery}` : ''}`
+  const cancelUrl = `${window.location.origin}${route.path}${cancelQuery ? `?${cancelQuery}` : ''}`
   const paymentMethodType = 'card'
   const profile = await resolveCustomerProfile()
   const customerName = profile?.name || user.email || 'Customer'
@@ -2421,7 +2542,7 @@ const handleBookingPayMongoReturn = async () => {
       timer: 1600,
       showConfirmButton: false,
     })
-    await router.replace({ name: 'customer-center', params: { id: centerId }, query: route.query.branch ? { branch: route.query.branch } : {} })
+    await router.replace({ name: 'customer-center', params: { id: centerId }, query: buildCenterQuery() })
     return
   }
 
@@ -2461,7 +2582,7 @@ const handleBookingPayMongoReturn = async () => {
     console.error(error)
     await releaseBookingReservation(pending.reservationId || '')
     toast.error(error?.message || 'Failed to finalize the booking payment.')
-    await router.replace({ name: 'customer-center', params: { id: centerId }, query: route.query.branch ? { branch: route.query.branch } : {} })
+    await router.replace({ name: 'customer-center', params: { id: centerId }, query: buildCenterQuery() })
   } finally {
     bookingPaymentSaving.value = false
   }
@@ -2596,40 +2717,16 @@ onMounted(async () => {
     }
 
     const rootData = rootSnap.data() || {}
-    const ownerId = String(rootData.ownerId || '').trim()
-    const branchSnapshot = ownerId
-      ? await getDocs(query(collection(db, 'clinics'), where('ownerId', '==', ownerId)))
-      : null
+    const clinicStatus = String(rootData.status || '').trim().toLowerCase()
+    const published = rootData.isPublished === true
+    const centerAvailable = published && clinicStatus !== 'inactive'
+    if (!centerAvailable) {
+      toast.error('This branch is currently unavailable.')
+      router.replace({ name: 'centers' })
+      return
+    }
 
-    const branchDocs = branchSnapshot?.docs?.length ? branchSnapshot.docs : [rootSnap]
-    branches.value = branchDocs
-      .map((snap) => {
-        const data = snap.data() || {}
-        const status = String(data.status || '').trim().toLowerCase()
-        const moderationStatus = String(data.moderationStatus || '').trim().toLowerCase()
-        const published = data.isPublished === true
-        const available = published && status !== 'inactive'
-        return {
-          id: snap.id,
-          name: data.clinicBranch || data.clinicName || 'Center',
-          location: data.clinicLocation || '',
-          isMainBranch: Boolean(data.isMainBranch),
-          available
-        }
-      })
-      .filter((branch) => branch.available)
-      .sort((a, b) => {
-        if (a.isMainBranch !== b.isMainBranch) return a.isMainBranch ? -1 : 1
-        return a.name.localeCompare(b.name)
-      })
-
-    const routeBranch = String(route.query.branch || '').trim()
-    const preferredBranch = branches.value.some((branch) => branch.id === routeBranch)
-      ? routeBranch
-      : (branches.value.some((branch) => branch.id === centerId) ? centerId : branches.value[0]?.id || centerId)
-
-    selectedBranchId.value = preferredBranch
-    await loadBranchData(preferredBranch)
+    await loadBranchData(centerId)
     await handleBookingPayMongoReturn()
     if (selectedServices.value.length) {
       syncSelectedSlot()
@@ -2659,6 +2756,9 @@ onMounted(async () => {
 onUnmounted(() => {
   setPageScrollLocked(false)
   stopBranchSensitiveListeners()
+  if (branchMarker?.setMap) branchMarker.setMap(null)
+  branchMap = null
+  branchMarker = null
 })
 
 const formatChatTime = (timestamp) => {
@@ -2742,6 +2842,26 @@ const formatChatTime = (timestamp) => {
   color: #6f4a2d;
 }
 
+.center-location-box {
+  border: 1px solid rgba(224, 192, 154, 0.9);
+  background: linear-gradient(180deg, rgba(255, 249, 240, 0.96), rgba(250, 238, 220, 0.96));
+}
+
+.center-location-label {
+  color: #8b6a4d;
+  font-size: 0.688rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.center-location-value {
+  color: #3d281d;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .center-service-pill,
 .center-badge,
 .center-count-pill {
@@ -2770,6 +2890,23 @@ const formatChatTime = (timestamp) => {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
+.center-search-shell {
+  position: relative;
+}
+
+.center-search-icon {
+  position: absolute;
+  left: 0.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #a77d57;
+  pointer-events: none;
+}
+
+.center-search-shell .center-search-input {
+  padding-left: 2.5rem;
+}
+
 .center-search-input::placeholder {
   color: #a78a6e;
 }
@@ -2778,6 +2915,55 @@ const formatChatTime = (timestamp) => {
 .center-action-button {
   background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%);
   box-shadow: 0 14px 26px rgba(111, 63, 42, 0.14);
+}
+
+.center-cart-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.center-cart-pill {
+  min-width: 1.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 248, 235, 0.18);
+  color: #fff8eb;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.center-qty-stepper {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.center-qty-stepper-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  color: #7b5534;
+  background: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.center-qty-stepper-btn:hover {
+  background: rgba(233, 197, 153, 0.22);
+  color: #3d281d;
+}
+
+.center-qty-stepper-btn:active {
+  transform: scale(0.96);
+}
+
+.center-qty-display {
+  min-width: 3rem;
+  border-inline: 1px solid rgba(224, 192, 154, 0.85);
+  background: #fffaf3;
 }
 
 .center-action-button.is-cool {
@@ -2907,5 +3093,69 @@ const formatChatTime = (timestamp) => {
 
 .customer-center-page main .text-slate-400 {
   color: #8b6a4d !important;
+}
+
+.customer-chat-modal .customer-chat-title,
+.customer-chat-modal .customer-chat-subtitle,
+.customer-chat-modal .customer-chat-quick-label,
+.customer-chat-modal .customer-chat-empty {
+  color: #3d281d !important;
+}
+
+.customer-chat-modal .customer-chat-question {
+  color: #6f4a2d !important;
+}
+
+.customer-chat-modal .customer-chat-message {
+  word-break: break-word;
+}
+
+.customer-chat-modal .customer-chat-message--incoming {
+  background: #f5eadc !important;
+  color: #3d281d !important;
+}
+
+.customer-chat-modal .customer-chat-message--outgoing,
+.customer-chat-modal .customer-chat-message--system {
+  background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%) !important;
+  color: #fff8eb !important;
+}
+
+.customer-chat-modal .customer-chat-message--outgoing .customer-chat-message-text,
+.customer-chat-modal .customer-chat-message--system .customer-chat-message-text,
+.customer-chat-modal .customer-chat-message--outgoing .customer-chat-time,
+.customer-chat-modal .customer-chat-message--system .customer-chat-time {
+  color: #fff8eb !important;
+}
+
+.customer-chat-modal .customer-chat-system-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.22rem 0.6rem;
+  background: rgba(255, 248, 235, 0.16);
+  color: #fff8eb !important;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.customer-chat-modal .customer-chat-message--incoming .customer-chat-message-text,
+.customer-chat-modal .customer-chat-message--incoming .customer-chat-time {
+  color: #5a3925 !important;
+}
+
+.customer-chat-modal .customer-chat-input {
+  color: #3d281d !important;
+}
+
+.customer-chat-modal .customer-chat-input::placeholder {
+  color: #a78a6e !important;
+}
+
+.customer-chat-modal .customer-chat-send {
+  color: #fff8eb !important;
 }
 </style>

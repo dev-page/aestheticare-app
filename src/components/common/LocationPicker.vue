@@ -3,6 +3,21 @@
     <div class="space-y-4 p-1">
       <p class="text-sm text-charcoal-600">Pin your address on the map. The picker is restricted to the Philippines only.</p>
 
+      <div class="rounded-2xl border border-gold-200/80 bg-cream-100 p-4 space-y-3">
+        <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Search location</label>
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="w-full rounded-xl border border-gold-200/80 bg-white px-4 py-3 text-charcoal-700 outline-none placeholder:text-charcoal-400 focus:border-gold-400 focus:ring-4 focus:ring-gold-200/30"
+            placeholder="Search a city, barangay, or address"
+            @keyup.enter.prevent="searchLocation"
+          />
+          <button type="button" class="rounded-xl bg-gold-700 px-5 py-3 font-semibold text-white transition hover:bg-gold-800" @click="searchLocation">Search</button>
+        </div>
+        <p class="text-xs text-charcoal-500">Search first, then fine-tune the exact spot by dragging or clicking the pin.</p>
+      </div>
+
       <div class="relative">
         <div ref="mapCanvas" class="h-[360px] overflow-hidden rounded-2xl border border-gold-200/80 bg-cream-100"></div>
         <div v-if="loading" class="absolute inset-0 flex items-center justify-center rounded-2xl bg-[rgba(255,248,240,0.72)] text-sm font-semibold text-gold-800">Loading map...</div>
@@ -54,6 +69,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'update-location'])
 
 const mapCanvas = ref(null)
+const searchQuery = ref(props.initialAddress || '')
 const loading = ref(false)
 const error = ref('')
 let mapsReady = false
@@ -129,6 +145,47 @@ const reverseGeocode = (latVal, lngVal) => {
     lng.value = String(lngVal)
     error.value = ''
   })
+}
+
+const searchLocation = () => {
+  const query = String(searchQuery.value || '').trim()
+  if (!query) {
+    error.value = 'Enter a location to search.'
+    return
+  }
+  if (!window.google?.maps?.Geocoder) {
+    error.value = 'Search is not available right now.'
+    return
+  }
+
+  const geocoder = new window.google.maps.Geocoder()
+  geocoder.geocode(
+    {
+      address: query,
+      componentRestrictions: { country: 'PH' }
+    },
+    (results, status) => {
+      if (status !== 'OK' || !results?.length) {
+        error.value = 'No matching location found.'
+        return
+      }
+      const place = results[0]
+      const location = place.geometry?.location
+      if (!location) {
+        error.value = 'Unable to resolve the searched location.'
+        return
+      }
+      const resolvedLat = typeof location.lat === 'function' ? location.lat() : location.lat
+      const resolvedLng = typeof location.lng === 'function' ? location.lng() : location.lng
+      if (marker?.setPosition) marker.setPosition({ lat: resolvedLat, lng: resolvedLng })
+      else if (marker) marker.position = { lat: resolvedLat, lng: resolvedLng }
+      if (map?.setCenter) map.setCenter({ lat: resolvedLat, lng: resolvedLng })
+      displayAddress.value = place.formatted_address || query
+      lat.value = String(resolvedLat)
+      lng.value = String(resolvedLng)
+      error.value = ''
+    }
+  )
 }
 
 const confirmPin = () => {

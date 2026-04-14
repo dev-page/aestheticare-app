@@ -184,6 +184,7 @@ import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { logActivity } from '@/utils/activityLogger'
+import { loadOwnerBranchScope, loadScopedCollectionDocs } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'ManagerItemCatalog',
@@ -198,6 +199,8 @@ export default {
     const selectedSupplier = ref('')
 
     const currentBranchId = ref('')
+    const currentOwnerId = ref('')
+    const currentBranchIds = ref([])
     const items = ref([])
     const suppliers = ref([])
     const deliveredTotals = ref({})
@@ -331,13 +334,16 @@ export default {
     }
 
     const loadSuppliers = async () => {
-      if (!currentBranchId.value) {
+      if (!currentOwnerId.value && !currentBranchIds.value.length) {
         suppliers.value = []
         return
       }
-      const supplierQuery = query(collection(db, 'suppliers'), where('branchId', '==', currentBranchId.value))
-      const snapshot = await getDocs(supplierQuery)
-      suppliers.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      suppliers.value = await loadScopedCollectionDocs(
+        db,
+        'suppliers',
+        currentOwnerId.value,
+        currentBranchIds.value
+      )
     }
 
     const loadItems = async () => {
@@ -412,22 +418,21 @@ export default {
       onAuthStateChanged(auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
+          currentOwnerId.value = ''
+          currentBranchIds.value = []
           items.value = []
           suppliers.value = []
           return
         }
 
-        const userSnap = await getDoc(doc(db, 'users', user.uid))
-        currentBranchId.value = userSnap.exists() ? (userSnap.data().branchId || '') : ''
+        const scope = await loadOwnerBranchScope(db, user.uid)
+        currentBranchId.value = scope.branchId || ''
+        currentOwnerId.value = scope.ownerId || ''
+        currentBranchIds.value = scope.branchIds || []
 
         await loadSuppliers()
         await loadDeliveredTotals()
         await loadItems()
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Viewed item catalog',
-          details: 'Opened manager item catalog page.'
-        })
       })
     })
 

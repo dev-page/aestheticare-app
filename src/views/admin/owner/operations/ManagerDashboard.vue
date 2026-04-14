@@ -121,6 +121,7 @@
                 :class="[
                   'px-2 py-1 rounded-full text-xs font-medium',
                   request.status === 'Pending' ? 'bg-orange-500/20 text-orange-400' :
+                  request.status === 'Approved' ? 'bg-emerald-500/20 text-emerald-400' :
                   request.status === 'Delivered' ? 'bg-green-500/20 text-green-400' :
                   request.status === 'Delayed' ? 'bg-yellow-500/20 text-yellow-400' :
                   'bg-slate-600 text-slate-300'
@@ -166,6 +167,7 @@ import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'fi
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import { loadOwnerBranchScope, loadScopedCollectionDocs } from '@/utils/ownerBranchScope'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { toast } from 'vue3-toastify'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
@@ -181,6 +183,8 @@ export default {
     const loading = ref(true)
     const currentUserId = ref('')
     const currentBranchId = ref('')
+    const currentOwnerId = ref('')
+    const currentBranchIds = ref([])
     const todayShiftLabel = ref('Off')
     const weeklyShiftAssignments = ref([])
 
@@ -312,9 +316,12 @@ export default {
       const itemSnapshot = await getDocs(itemQuery)
       items.value = itemSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
 
-      const supplierQuery = query(collection(db, 'suppliers'), where('branchId', '==', currentBranchId.value))
-      const supplierSnapshot = await getDocs(supplierQuery)
-      suppliers.value = supplierSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      suppliers.value = await loadScopedCollectionDocs(
+        db,
+        'suppliers',
+        currentOwnerId.value,
+        currentBranchIds.value
+      )
 
       const requestQuery = query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value))
       const requestSnapshot = await getDocs(requestQuery)
@@ -339,6 +346,8 @@ export default {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
+          currentOwnerId.value = ''
+          currentBranchIds.value = []
           staff.value = []
           items.value = []
           suppliers.value = []
@@ -349,9 +358,11 @@ export default {
         }
 
         currentUserId.value = user.uid
-        const userSnap = await getDoc(doc(db, 'users', user.uid))
-        const profile = userSnap.exists() ? userSnap.data() : {}
-        currentBranchId.value = profile.branchId || ''
+        const scope = await loadOwnerBranchScope(db, user.uid)
+        const profile = scope.userProfile || {}
+        currentBranchId.value = scope.branchId || ''
+        currentOwnerId.value = scope.ownerId || ''
+        currentBranchIds.value = scope.branchIds || []
 
         if (!currentBranchId.value) {
           toast.error('Your account has no branch assignment.', { toastId: 'missing-branch-assignment' })
@@ -362,11 +373,6 @@ export default {
         loading.value = true
         await loadCurrentUserShift(profile)
         await loadManagerData()
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Viewed manager dashboard',
-          details: 'Opened manager dashboard overview.'
-        })
         loading.value = false
       })
     })

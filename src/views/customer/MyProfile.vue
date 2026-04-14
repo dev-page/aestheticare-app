@@ -63,8 +63,52 @@
               </div>
 
               <div>
-                <label class="profile-field-label">Address</label>
-                <textarea v-model="customer.address" rows="3" class="profile-input profile-textarea"></textarea>
+                <label class="profile-field-label">Address Search</label>
+                <div class="flex flex-col gap-3 sm:flex-row">
+                  <div class="profile-search-wrap flex-1">
+                    <Icon icon="mdi:magnify" class="profile-search-icon h-4 w-4" />
+                    <input
+                      v-model="locationSearchQuery"
+                      type="text"
+                      class="profile-input profile-search-input"
+                      placeholder="Search a city, barangay, or address"
+                      @keyup.enter.prevent="searchLocation"
+                    />
+                  </div>
+                  <button type="button" class="profile-search-button" @click="searchLocation">
+                    Search
+                  </button>
+                </div>
+                <p class="mt-2 text-xs text-[#8b6a4d]">
+                  Search first, then fine-tune the exact spot by dragging or clicking the pin.
+                </p>
+                <div class="mt-4 rounded-2xl border border-[#e0c09a] bg-[rgba(255,250,243,0.92)] p-3">
+                  <div ref="locationMapEl" class="profile-location-map"></div>
+                  <p v-if="!hasLocationCoords" class="mt-2 text-xs text-[#8b6a4d]">
+                    Pin a location on the map to save it.
+                  </p>
+                  <p v-if="locationError" class="mt-2 text-xs text-[#9a563f]">
+                    {{ locationError }}
+                  </p>
+                  <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div class="profile-location-box">
+                      <p class="profile-location-label">City / Municipality</p>
+                      <p class="profile-location-value mt-1">{{ customer.addressCity || '-' }}</p>
+                    </div>
+                    <div class="profile-location-box">
+                      <p class="profile-location-label">Barangay</p>
+                      <p class="profile-location-value mt-1">{{ customer.addressBarangay || '-' }}</p>
+                    </div>
+                    <div class="profile-location-box">
+                      <p class="profile-location-label">Actual Location</p>
+                      <p class="profile-location-value mt-1">{{ customer.address || '-' }}</p>
+                    </div>
+                    <div class="profile-location-box">
+                      <p class="profile-location-label">Postal Code</p>
+                      <p class="profile-location-value mt-1">{{ customer.addressPostalCode || '-' }}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -84,7 +128,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { Icon } from '@iconify/vue'
 import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
@@ -97,14 +142,280 @@ const customer = ref({
   email: '',
   contactNumber: '',
   address: '',
+  addressCity: '',
+  addressBarangay: '',
+  addressPostalCode: '',
+  addressLat: '',
+  addressLng: '',
   bio: '',
   profilePicture: '',
 })
 const loading = ref(true)
+const locationMapEl = ref(null)
+const locationSearchQuery = ref('')
+const locationError = ref('')
+let mapsReady = false
+let locationMap = null
+let locationMarker = null
+let geocoder = null
 let unsubscribeProfile = null
 let unsubscribeAuth = null
+const philippinesBounds = { north: 21.5, south: 4.3, east: 127.5, west: 116.0 }
+const defaultPhilippinesCenter = { lat: 12.8797, lng: 121.774 }
 
 const fullName = computed(() => `${customer.value.firstName || ''} ${customer.value.lastName || ''}`.trim())
+
+const hasLocationCoords = computed(() => {
+  const lat = Number(customer.value.addressLat || 0)
+  const lng = Number(customer.value.addressLng || 0)
+  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) > 0.0001 && Math.abs(lng) > 0.0001
+})
+
+const buildLocationSearchQuery = () =>
+  [
+    customer.value.address,
+    customer.value.addressBarangay,
+    customer.value.addressCity,
+    customer.value.addressPostalCode,
+  ]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(', ')
+
+const flattenAddressComponents = (results = []) =>
+  (results || []).flatMap((entry) => entry?.address_components || [])
+
+const getAddressComponentValue = (components, type) => {
+  const preferredTypes = Array.isArray(type) ? type : [type]
+  const match = (components || []).find((component) =>
+    preferredTypes.some((preferredType) => component.types?.includes(preferredType))
+  )
+  return String(match?.long_name || '').trim()
+}
+
+const ensureGeocoder = () => {
+  if (!geocoder && window.google?.maps?.Geocoder) {
+    geocoder = new window.google.maps.Geocoder()
+  }
+  return geocoder
+}
+
+const loadMapsScript = () => {
+  if (window.google?.maps?.Map || window.google?.maps?.importLibrary) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById('google-maps-js')
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true })
+      existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), { once: true })
+      return
+    }
+
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+    if (!apiKey) {
+      reject(new Error('Missing VITE_GOOGLE_MAPS_API_KEY in environment.'))
+      return
+    }
+
+    const script = document.createElement('script')
+    script.id = 'google-maps-js'
+    script.async = true
+    script.defer = true
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&loading=async&v=weekly`
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Failed to load Google Maps'))
+    document.head.appendChild(script)
+  })
+}
+
+const syncLocationFromGeocode = (result, position) => {
+  const components = flattenAddressComponents([result])
+  const country = getAddressComponentValue(components, 'country')
+  if (!/philippines/i.test(country) && String(country || '').toLowerCase() !== 'ph') {
+    locationError.value = 'Please select a location in the Philippines.'
+    return false
+  }
+
+  const cityComponent =
+    components.find((comp) => comp.types?.includes('locality')) ||
+    components.find((comp) => comp.types?.includes('administrative_area_level_2')) ||
+    components.find((comp) => comp.types?.includes('administrative_area_level_1'))
+  const barangayComponent =
+    components.find((comp) => comp.types?.includes('sublocality_level_1')) ||
+    components.find((comp) => comp.types?.includes('sublocality')) ||
+    components.find((comp) => comp.types?.includes('neighborhood')) ||
+    components.find((comp) => comp.types?.includes('political'))
+  const postalComponent = components.find((comp) => comp.types?.includes('postal_code'))
+
+  if (cityComponent?.long_name) {
+    customer.value.addressCity = cityComponent.long_name
+  }
+  customer.value.addressBarangay = barangayComponent?.long_name || customer.value.addressBarangay || ''
+  customer.value.address = String(result?.formatted_address || '').trim()
+  customer.value.addressPostalCode = postalComponent?.long_name || customer.value.addressPostalCode || ''
+  customer.value.addressLat = Number(position?.lat?.() ?? position?.lat ?? '') || ''
+  customer.value.addressLng = Number(position?.lng?.() ?? position?.lng ?? '') || ''
+  locationError.value = ''
+  locationSearchQuery.value = customer.value.address || buildLocationSearchQuery()
+  return true
+}
+
+const searchLocation = async () => {
+  const queryText = String(locationSearchQuery.value || '').trim()
+  if (!queryText) {
+    toast.error('Please enter an address to search.')
+    return
+  }
+
+  try {
+    await loadMapsScript()
+  } catch (err) {
+    console.error(err)
+    toast.error('Google Maps could not be loaded.')
+    return
+  }
+
+  const geocoderInstance = ensureGeocoder()
+  if (!geocoderInstance) {
+    toast.error('Address search is not available right now.')
+    return
+  }
+
+  geocoderInstance.geocode(
+    {
+      address: queryText,
+      bounds: philippinesBounds,
+      componentRestrictions: { country: 'PH' },
+    },
+    (results, status) => {
+      if (status !== 'OK' || !results?.length) {
+        locationError.value = 'No matching address was found.'
+        toast.error(locationError.value)
+        return
+      }
+
+      const result = results[0]
+      const position = result?.geometry?.location
+      if (!position) {
+        locationError.value = 'The selected address did not return a map location.'
+        toast.error(locationError.value)
+        return
+      }
+
+      if (!syncLocationFromGeocode(result, position)) {
+        toast.error(locationError.value)
+        return
+      }
+
+      if (locationMap?.setCenter) {
+        locationMap.setCenter(position)
+      }
+      if (locationMarker?.setPosition) {
+        locationMarker.setPosition(position)
+      } else if (locationMarker) {
+        locationMarker.position = position
+      }
+    }
+  )
+}
+
+const initLocationMap = async () => {
+  if (!locationMapEl.value) return
+
+  try {
+    if (!mapsReady) {
+      await loadMapsScript()
+      mapsReady = true
+    }
+  } catch (err) {
+    console.error(err)
+    locationError.value = 'Failed to load Google Maps.'
+    return
+  }
+
+  let MapCtor = window.google?.maps?.Map
+  let AdvancedMarkerElement = window.google?.maps?.marker?.AdvancedMarkerElement
+  if (window.google?.maps?.importLibrary) {
+    try {
+      const mapsLib = await window.google.maps.importLibrary('maps')
+      MapCtor = mapsLib?.Map || MapCtor
+      const markerLib = await window.google.maps.importLibrary('marker')
+      AdvancedMarkerElement = markerLib?.AdvancedMarkerElement || AdvancedMarkerElement
+    } catch (err) {
+      console.error('Failed to import Google Maps libraries:', err)
+    }
+  }
+
+  if (!MapCtor) return
+
+  const lat = Number(customer.value.addressLat)
+  const lng = Number(customer.value.addressLng)
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng)
+  const center = hasCoords ? { lat, lng } : defaultPhilippinesCenter
+
+  if (!locationMap) {
+    locationMap = new MapCtor(locationMapEl.value, {
+      center,
+      zoom: hasCoords ? 15 : 6,
+      restriction: { latLngBounds: philippinesBounds, strictBounds: true },
+      streetViewControl: false,
+      fullscreenControl: false,
+      mapTypeControl: false,
+      mapId: import.meta.env.VITE_GOOGLE_MAP_ID,
+    })
+  } else {
+    locationMap.setCenter(center)
+  }
+
+  if (locationMarker?.setMap) {
+    locationMarker.setMap(null)
+  }
+  locationMarker = null
+
+  if (AdvancedMarkerElement) {
+    locationMarker = new AdvancedMarkerElement({
+      map: locationMap,
+      position: center,
+      gmpDraggable: true,
+    })
+  } else if (window.google?.maps?.Marker) {
+    locationMarker = new window.google.maps.Marker({
+      map: locationMap,
+      position: center,
+      draggable: true,
+    })
+  }
+
+  const updateFromPosition = (pos) => {
+    if (!pos) return
+    const nextLat = typeof pos.lat === 'function' ? pos.lat() : pos.lat
+    const nextLng = typeof pos.lng === 'function' ? pos.lng() : pos.lng
+    if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return
+
+    const geocoderInstance = ensureGeocoder()
+    if (!geocoderInstance) return
+
+    geocoderInstance.geocode({ location: { lat: nextLat, lng: nextLng } }, (results, status) => {
+      if (status !== 'OK' || !results?.length) return
+      syncLocationFromGeocode(results[0], { lat: nextLat, lng: nextLng })
+    })
+  }
+
+  if (locationMarker?.addListener) {
+    locationMarker.addListener('dragend', (event) => updateFromPosition(event?.latLng))
+  } else if (locationMarker?.addEventListener) {
+    locationMarker.addEventListener('dragend', (event) => updateFromPosition(event?.latLng))
+  }
+
+  locationMap.addListener?.('click', (event) => {
+    if (!event?.latLng) return
+    if (locationMarker?.setPosition) {
+      locationMarker.setPosition(event.latLng)
+    } else if (locationMarker?.position) {
+      locationMarker.position = event.latLng
+    }
+    updateFromPosition(event.latLng)
+  })
+}
 
 const handleFileUpload = (event) => {
   const file = event.target.files?.[0]
@@ -145,6 +456,9 @@ const loadCustomerProfile = () => {
         })
         customer.value.email = user.email || ''
       }
+      locationSearchQuery.value = buildLocationSearchQuery()
+      await nextTick()
+      await initLocationMap()
       loading.value = false
     },
     (error) => {
@@ -169,6 +483,11 @@ const saveCustomerProfile = async () => {
       email: customer.value.email || '',
       contactNumber: customer.value.contactNumber || '',
       address: customer.value.address || '',
+      addressCity: customer.value.addressCity || '',
+      addressBarangay: customer.value.addressBarangay || '',
+      addressPostalCode: customer.value.addressPostalCode || '',
+      addressLat: customer.value.addressLat || '',
+      addressLng: customer.value.addressLng || '',
       bio: customer.value.bio || '',
       profilePicture: customer.value.profilePicture || '',
       updatedAt: serverTimestamp(),
@@ -193,6 +512,9 @@ onMounted(() => {
 onUnmounted(() => {
   if (unsubscribeProfile) unsubscribeProfile()
   if (unsubscribeAuth) unsubscribeAuth()
+  if (locationMarker?.setMap) locationMarker.setMap(null)
+  locationMap = null
+  locationMarker = null
 })
 </script>
 
@@ -386,6 +708,70 @@ input[type="file"]::file-selector-button {
 .profile-save-button:hover {
   transform: translateY(-1px);
   filter: brightness(1.03);
+}
+
+.profile-search-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.profile-search-icon {
+  position: absolute;
+  left: 0.95rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #a77d57;
+  pointer-events: none;
+}
+
+.profile-search-input {
+  padding-left: 2.5rem;
+}
+
+.profile-search-button {
+  border-radius: 1rem;
+  border: 1px solid rgba(141, 90, 59, 0.9);
+  background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%);
+  padding: 0.9rem 1.15rem;
+  font-weight: 700;
+  color: #fff8eb;
+  transition: transform 0.16s ease, filter 0.16s ease;
+}
+
+.profile-search-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+}
+
+.profile-location-map {
+  height: 18rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 1.15rem;
+  border: 1px solid rgba(224, 192, 154, 0.9);
+  background: #fffaf3;
+}
+
+.profile-location-box {
+  border: 1px solid rgba(224, 192, 154, 0.9);
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(255, 249, 240, 0.98), rgba(250, 238, 220, 0.96));
+  padding: 0.85rem 0.9rem;
+}
+
+.profile-location-label {
+  color: #8b6a4d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profile-location-value {
+  color: #3d281d;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 @media (min-width: 1280px) {

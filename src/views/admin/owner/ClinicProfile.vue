@@ -5,11 +5,15 @@
     <main class="flex-1 flex items-center justify-center p-8">
       <!-- Centered Card -->
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 w-full max-w-3xl">
+        <div v-if="branchScopeLabel" class="mb-4 inline-flex rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold text-gold-200">
+          Viewing: {{ branchScopeLabel }}
+        </div>
         <div class="flex flex-col items-center mb-6">
           <div class="relative w-32 h-32 rounded-full overflow-hidden bg-slate-700 flex items-center justify-center">
             <img v-if="clinic.profilePicture" :src="clinic.profilePicture" alt="Clinic Profile" class="w-full h-full object-cover" />
-            <span v-else class="text-white font-bold text-3xl">{{ clinic.clinicName ? clinic.clinicName.charAt(0) : 'C' }}</span>
+            <span v-else class="text-white font-bold text-3xl">{{ clinicDisplayName ? clinicDisplayName.charAt(0) : 'C' }}</span>
           </div>
+          <p class="mt-4 text-lg font-semibold text-white">{{ clinicDisplayName }}</p>
         </div>
 
         <!-- Clinic Details Form -->
@@ -21,16 +25,6 @@
               type="text"
               placeholder="Enter clinic name"
               class="w-full rounded-lg p-3 bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-
-          <div>
-            <label class="block text-slate-400 text-sm mb-1">Business Type</label>
-            <input
-              :value="businessTypeLabel"
-              type="text"
-              readonly
-              class="w-full rounded-lg p-3 bg-slate-700/60 border border-slate-600 text-slate-200 focus:outline-none"
             />
           </div>
 
@@ -65,21 +59,58 @@
           </div>
 
           <div>
-            <label class="block text-slate-400 text-sm mb-1">Address</label>
-            <textarea
-              v-model="clinic.clinicLocation"
-              rows="3"
-              placeholder="Enter clinic address"
-              class="w-full rounded-lg p-3 bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-            ></textarea>
-            <div class="mt-3 rounded-xl border border-slate-600 bg-slate-700/60 p-3">
-              <div ref="locationMapEl" class="h-64 w-full rounded-lg"></div>
-              <p v-if="!hasLocationCoords" class="mt-2 text-xs text-slate-400">
-                Clinic location coordinates not set yet.
-              </p>
+            <label class="block text-slate-400 text-sm mb-1">Address Search</label>
+            <div class="flex flex-col gap-3 sm:flex-row">
+              <input
+                v-model="locationSearchQuery"
+                type="text"
+                placeholder="Search a city, barangay, or address in Cavite"
+                class="w-full rounded-lg p-3 bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                @keyup.enter.prevent="searchLocation"
+              />
+              <button
+                type="button"
+                @click="searchLocation"
+                class="rounded-lg bg-gold-700 px-4 py-3 text-white font-semibold transition-colors hover:bg-gold-600"
+              >
+                Search
+              </button>
             </div>
+            <p class="mt-2 text-xs text-slate-400">
+              Search first, then drag or click the pin to fine-tune the exact location.
+            </p>
           </div>
 
+          <div class="mt-3 rounded-xl border border-slate-600 bg-slate-700/60 p-3">
+            <div ref="locationMapEl" class="h-64 w-full rounded-lg"></div>
+            <p v-if="!hasLocationCoords" class="mt-2 text-xs text-slate-400">
+              Clinic location coordinates not set yet.
+            </p>
+            <p class="mt-2 text-xs text-slate-400">
+              The map is restricted to Cavite only.
+            </p>
+            <p v-if="locationError" class="mt-2 text-xs text-rose-300">
+              {{ locationError }}
+            </p>
+            <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
+                <p class="text-xs uppercase tracking-wide text-slate-400">City / Municipality</p>
+                <p class="mt-1 text-sm text-white">{{ clinic.clinicLocation || '-' }}</p>
+              </div>
+              <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
+                <p class="text-xs uppercase tracking-wide text-slate-400">Barangay</p>
+                <p class="mt-1 text-sm text-white">{{ clinic.clinicBarangay || '-' }}</p>
+              </div>
+              <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
+                <p class="text-xs uppercase tracking-wide text-slate-400">Actual Location</p>
+                <p class="mt-1 text-sm text-white">{{ clinic.clinicLocationAddress || '-' }}</p>
+              </div>
+              <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
+                <p class="text-xs uppercase tracking-wide text-slate-400">Postal Code</p>
+                <p class="mt-1 text-sm text-white">{{ clinic.clinicPostalCode || '-' }}</p>
+              </div>
+            </div>
+          </div>
           <button
             type="submit"
             class="w-full bg-gold-700 hover:bg-yellow-600 text-white font-semibold py-3 rounded-lg transition-colors"
@@ -96,7 +127,7 @@
 <script>
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue';
 import { ref, onMounted, computed } from 'vue';
-import { getFirestore, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, query, where } from 'firebase/firestore';
 import { getApp } from 'firebase/app';
 import { auth } from '@/config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -113,6 +144,9 @@ export default {
       businessEmail: '',
       contactNumber: '',
       clinicLocation: '',
+      clinicLocationAddress: '',
+      clinicBarangay: '',
+      clinicPostalCode: '',
       clinicLocationLat: '',
       clinicLocationLng: '',
       description: '',
@@ -122,6 +156,40 @@ export default {
     let locationMap = null;
     let locationMarker = null;
     let geocoder = null;
+    const locationSearchQuery = ref('');
+    const branchScopeLabel = ref('');
+    const activeClinicId = ref('');
+    const caviteBounds = {
+      north: 14.459,
+      south: 13.709,
+      east: 121.199,
+      west: 120.626,
+    };
+    const defaultCaviteCenter = { lat: 14.3294, lng: 120.9367 };
+    const locationError = ref('');
+
+    const flattenAddressComponents = (results = []) =>
+      (results || []).flatMap((entry) => entry?.address_components || []);
+
+    const getAddressComponentValue = (components, type) => {
+      const preferredTypes = Array.isArray(type) ? type : [type];
+      const match = (components || []).find((component) =>
+        preferredTypes.some((preferredType) => component.types?.includes(preferredType))
+      );
+      return String(match?.long_name || '').trim();
+    };
+
+    const isWithinCavite = (components = []) => {
+      const province =
+        getAddressComponentValue(components, 'administrative_area_level_2') ||
+        getAddressComponentValue(components, 'administrative_area_level_1');
+      return /cavite/i.test(province);
+    };
+
+    const isOwnerLikeRole = (role) => {
+      const normalized = String(role || '').trim().toLowerCase();
+      return ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized);
+    };
 
     const hasLocationCoords = computed(() => {
       const lat = Number(clinic.value.clinicLocationLat || 0);
@@ -129,13 +197,20 @@ export default {
       return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) > 0.0001 && Math.abs(lng) > 0.0001;
     });
 
-    const businessTypeLabel = computed(() => {
-      const raw = String(clinic.value.businessType || '').trim().toLowerCase();
-      if (!raw) return 'Not set';
-      if (raw === 'sole_proprietor') return 'Sole Proprietor';
-      if (raw === 'company') return 'Company';
-      return clinic.value.businessType;
-    });
+    const clinicDisplayName = computed(() =>
+      String(clinic.value.clinicName || clinic.value.clinicBranch || 'Clinic').trim()
+    );
+
+    const buildLocationSearchQuery = () =>
+      [
+        clinic.value.clinicLocationAddress,
+        clinic.value.clinicBarangay,
+        clinic.value.clinicLocation,
+        clinic.value.clinicPostalCode,
+      ]
+        .map((part) => String(part || '').trim())
+        .filter(Boolean)
+        .join(', ') || clinicDisplayName.value || '';
 
     const loadOwnerInfo = async (user) => {
       if (!user) return;
@@ -148,15 +223,161 @@ export default {
       }
     };
 
+    const ensureGeocoder = () => {
+      if (!geocoder && window.google?.maps?.Geocoder) {
+        geocoder = new window.google.maps.Geocoder();
+      }
+      return geocoder;
+    };
+
+    const syncLocationFromGeocode = (result, position) => {
+      const components = flattenAddressComponents([result]);
+      if (!isWithinCavite(components)) {
+        locationError.value = 'Please select a location within Cavite.';
+        if (locationMap?.setCenter) {
+          locationMap.setCenter(defaultCaviteCenter);
+        }
+        if (locationMarker?.setPosition) {
+          locationMarker.setPosition(defaultCaviteCenter);
+        } else if (locationMarker) {
+          locationMarker.position = defaultCaviteCenter;
+        }
+        return false;
+      }
+
+      const cityComponent =
+        components.find((comp) => comp.types?.includes('locality')) ||
+        components.find((comp) => comp.types?.includes('administrative_area_level_2')) ||
+        components.find((comp) => comp.types?.includes('administrative_area_level_1'));
+      const barangayComponent =
+        components.find((comp) => comp.types?.includes('sublocality_level_1')) ||
+        components.find((comp) => comp.types?.includes('sublocality')) ||
+        components.find((comp) => comp.types?.includes('neighborhood')) ||
+        components.find((comp) => comp.types?.includes('political'));
+      const postalComponent = components.find((comp) => comp.types?.includes('postal_code'));
+
+      if (cityComponent?.long_name) {
+        clinic.value.clinicLocation = cityComponent.long_name;
+      }
+      clinic.value.clinicBarangay = barangayComponent?.long_name || clinic.value.clinicBarangay || '';
+      clinic.value.clinicLocationAddress = String(result?.formatted_address || '').trim();
+      clinic.value.clinicPostalCode = postalComponent?.long_name || clinic.value.clinicPostalCode || '';
+      clinic.value.clinicLocationLat = Number(position?.lat?.() ?? position?.lat ?? '') || '';
+      clinic.value.clinicLocationLng = Number(position?.lng?.() ?? position?.lng ?? '') || '';
+      locationError.value = '';
+      locationSearchQuery.value = clinic.value.clinicLocationAddress || buildLocationSearchQuery();
+      return true;
+    };
+
+    const searchLocation = async () => {
+      const queryText = String(locationSearchQuery.value || '').trim();
+      if (!queryText) {
+        toast.error('Please enter an address to search.');
+        return;
+      }
+
+      try {
+        await loadMapsScript();
+      } catch (err) {
+        console.error(err);
+        toast.error('Google Maps could not be loaded.');
+        return;
+      }
+
+      const geocoderInstance = ensureGeocoder();
+      if (!geocoderInstance) {
+        toast.error('Address search is not available right now.');
+        return;
+      }
+
+      geocoderInstance.geocode(
+        {
+          address: queryText,
+          bounds: caviteBounds,
+          componentRestrictions: { country: 'PH' },
+        },
+        (results, status) => {
+          if (status !== 'OK' || !results?.length) {
+            locationError.value = 'No matching address was found in Cavite.';
+            toast.error(locationError.value);
+            return;
+          }
+
+          const result = results[0];
+          const position = result?.geometry?.location;
+          if (!position) {
+            locationError.value = 'The selected address did not return a map location.';
+            toast.error(locationError.value);
+            return;
+          }
+
+          if (!syncLocationFromGeocode(result, position)) {
+            toast.error(locationError.value);
+            return;
+          }
+
+          if (locationMap?.setCenter) {
+            locationMap.setCenter(position);
+          }
+          if (locationMap?.setZoom) {
+            locationMap.setZoom(16);
+          }
+          if (locationMarker?.setPosition) {
+            locationMarker.setPosition(position);
+          } else if (locationMarker) {
+            locationMarker.position = position;
+          }
+        }
+      );
+    };
+
     const loadClinicProfile = async () => {
       onAuthStateChanged(auth, async (user) => {
         if (user) {
-          const clinicRef = doc(db, 'clinics', user.uid);
-          const clinicSnap = await getDoc(clinicRef);
-          if (clinicSnap.exists()) {
-            clinic.value = { ...clinic.value, ...clinicSnap.data() };
+          const userSnap = await getDoc(doc(db, 'users', user.uid));
+          const userData = userSnap.exists() ? userSnap.data() || {} : {};
+
+          if (isOwnerLikeRole(userData.role || userData.customRoleName)) {
+            const clinicRef = doc(db, 'clinics', user.uid);
+            const clinicSnap = await getDoc(clinicRef);
+            if (clinicSnap.exists()) {
+              clinic.value = { ...clinic.value, ...clinicSnap.data() };
+              clinic.value.clinicName = String(clinic.value.clinicName || clinic.value.clinicBranch || '').trim();
+              activeClinicId.value = clinicSnap.id;
+              branchScopeLabel.value = clinic.value.clinicBranch || clinic.value.clinicName || 'Main clinic';
+              locationSearchQuery.value = buildLocationSearchQuery();
+            }
+          } else {
+            const assignedBranchId = String(userData.branchId || userData.clinicBranch || '').trim();
+            if (assignedBranchId) {
+              const clinicSnap = await getDoc(doc(db, 'clinics', assignedBranchId));
+              if (clinicSnap.exists()) {
+                clinic.value = { ...clinic.value, ...clinicSnap.data() };
+                clinic.value.clinicName = String(clinic.value.clinicName || clinic.value.clinicBranch || '').trim();
+                activeClinicId.value = clinicSnap.id;
+                branchScopeLabel.value = clinic.value.clinicBranch || clinic.value.clinicName || 'Assigned branch';
+                locationSearchQuery.value = buildLocationSearchQuery();
+              }
+            }
+
+            if (!branchScopeLabel.value) {
+              const branchAdminSnapshot = await getDocs(
+                query(collection(db, 'clinics'), where('branchAdminId', '==', user.uid))
+              );
+              if (branchAdminSnapshot.docs.length) {
+                const clinicSnap = branchAdminSnapshot.docs[0];
+                clinic.value = { ...clinic.value, ...clinicSnap.data() };
+                clinic.value.clinicName = String(clinic.value.clinicName || clinic.value.clinicBranch || '').trim();
+                activeClinicId.value = clinicSnap.id;
+                branchScopeLabel.value = clinic.value.clinicBranch || clinic.value.clinicName || 'Assigned branch';
+                locationSearchQuery.value = buildLocationSearchQuery();
+              }
+            }
           }
           await loadOwnerInfo(user);
+          if (!locationSearchQuery.value) {
+            locationSearchQuery.value = buildLocationSearchQuery();
+          }
           await initLocationMap();
         }
       });
@@ -214,8 +435,7 @@ export default {
       const lat = Number(clinic.value.clinicLocationLat);
       const lng = Number(clinic.value.clinicLocationLng);
       const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
-      const defaultCenter = { lat: 14.3294, lng: 120.9367 };
-      const center = hasCoords ? { lat, lng } : defaultCenter;
+      const center = hasCoords ? { lat, lng } : defaultCaviteCenter;
       let MapCtor = window.google?.maps?.Map;
       let AdvancedMarkerElement = window.google?.maps?.marker?.AdvancedMarkerElement;
       if (window.google?.maps?.importLibrary) {
@@ -238,6 +458,7 @@ export default {
         locationMap = new MapCtor(locationMapEl.value, {
           center,
           zoom: 15,
+          restriction: { latLngBounds: caviteBounds, strictBounds: true },
           mapId: import.meta.env.VITE_GOOGLE_MAP_ID,
         });
       } else {
@@ -267,26 +488,20 @@ export default {
 
       attachMarker();
 
-      geocoder = geocoder || (window.google?.maps?.Geocoder ? new window.google.maps.Geocoder() : null);
+      geocoder = ensureGeocoder();
 
       const updateFromPosition = (pos) => {
         if (!pos) return;
         const nextLat = typeof pos.lat === 'function' ? pos.lat() : pos.lat;
         const nextLng = typeof pos.lng === 'function' ? pos.lng() : pos.lng;
         if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return;
-        clinic.value.clinicLocationLat = nextLat;
-        clinic.value.clinicLocationLng = nextLng;
-
         if (!geocoder) return;
+
         geocoder.geocode({ location: { lat: nextLat, lng: nextLng } }, (results, status) => {
           if (status !== 'OK' || !results?.length) return;
-          const components = results[0].address_components || [];
-          const cityComponent =
-            components.find((comp) => comp.types?.includes('locality')) ||
-            components.find((comp) => comp.types?.includes('administrative_area_level_2')) ||
-            components.find((comp) => comp.types?.includes('administrative_area_level_1'));
-          if (cityComponent?.long_name) {
-            clinic.value.clinicLocation = cityComponent.long_name;
+          const result = results[0];
+          if (!syncLocationFromGeocode(result, { lat: nextLat, lng: nextLng })) {
+            return;
           }
         });
       };
@@ -315,14 +530,38 @@ export default {
         return;
       }
 
-      const clinicRef = doc(db, 'clinics', user.uid);
-      await updateDoc(clinicRef, { ...clinic.value });
+      const lat = Number(clinic.value.clinicLocationLat);
+      const lng = Number(clinic.value.clinicLocationLng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        toast.error('Please pin the clinic location on the Cavite map first.');
+        return;
+      }
+      if (locationError.value) {
+        toast.error(locationError.value);
+        return;
+      }
+
+      const clinicRef = doc(db, 'clinics', activeClinicId.value || user.uid);
+      await updateDoc(clinicRef, {
+        ...clinic.value,
+        clinicName: String(clinic.value.clinicName || clinic.value.clinicBranch || '').trim()
+      });
       toast.success('Clinic profile updated successfully!');
     };
 
     onMounted(loadClinicProfile);
 
-    return { clinic, saveClinicProfile, locationMapEl, hasLocationCoords, businessTypeLabel };
+    return {
+      clinic,
+      saveClinicProfile,
+      locationMapEl,
+      hasLocationCoords,
+      locationError,
+      branchScopeLabel,
+      clinicDisplayName,
+      locationSearchQuery,
+      searchLocation,
+    };
   },
 };
 </script>

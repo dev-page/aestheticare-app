@@ -981,11 +981,6 @@ export default {
 
         await loadInventoryProducts()
         await loadPosts()
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Viewed product/service listing',
-          details: 'Opened product and service listing page.'
-        })
       })
     })
 

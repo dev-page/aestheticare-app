@@ -1,5 +1,5 @@
 <template>
-  <div class="support-shell">
+  <div :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen support-shell support-shell-module' : 'support-shell'">
     <EmployeeTopbar
       title=""
       :plan-label="planLabel"
@@ -16,38 +16,41 @@
 
     <div class="flex flex-1 min-w-0">
       <component :is="sidebarComponent" v-if="sidebarComponent" />
-      <main class="support-main">
-      <div class="support-content">
-      <div class="support-header">
-        <h1 class="support-title">Report an Issue</h1>
-        <p class="support-subtitle">
-          Help us improve by sharing any bugs, errors, or concerns you encounter.
-        </p>
-      </div>
+      <main :class="isModuleView ? 'support-main support-main-module' : 'support-main'">
+        <div class="support-content">
+          <div :class="isModuleView ? 'support-header support-header-module' : 'support-header'">
+            <p :class="isModuleView ? 'support-eyebrow support-eyebrow-module' : 'support-eyebrow'">
+              {{ isModuleView ? 'Module Support' : 'Support Center' }}
+            </p>
+            <h1 :class="isModuleView ? 'support-title support-title-module' : 'support-title'">Report an Issue</h1>
+            <p :class="isModuleView ? 'support-subtitle support-subtitle-module' : 'support-subtitle'">
+              Help us improve by sharing any bugs, errors, or concerns you encounter.
+            </p>
+          </div>
 
-      <section class="support-panel">
-        <form class="space-y-5" @submit.prevent="submitReport">
+          <section :class="isModuleView ? 'support-panel support-panel-module' : 'support-panel'">
+            <form class="space-y-5" @submit.prevent="submitReport">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label class="support-field-label">Reported By</label>
-              <div class="support-display-field">
+              <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Reported By</label>
+              <div :class="isModuleView ? 'support-display-field support-display-field-module' : 'support-display-field'">
                 {{ reporterName || 'User' }}
               </div>
             </div>
             <div>
-              <label class="support-field-label">Contact Email</label>
-              <div class="support-display-field">
+              <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Contact Email</label>
+              <div :class="isModuleView ? 'support-display-field support-display-field-module' : 'support-display-field'">
                 {{ reporterEmail || 'No email available' }}
               </div>
             </div>
           </div>
 
           <div>
-            <label class="support-field-label">Subject</label>
+            <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Subject</label>
             <input
               v-model.trim="subject"
               type="text"
-              class="support-input"
+              :class="isModuleView ? 'support-input support-input-module' : 'support-input'"
               placeholder="Short summary of the issue"
               required
             />
@@ -55,10 +58,10 @@
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label class="support-field-label">Category</label>
+              <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Category</label>
               <select
                 v-model="category"
-                class="support-input"
+                :class="isModuleView ? 'support-input support-input-module' : 'support-input'"
                 required
               >
                 <option disabled value="">Select category</option>
@@ -71,10 +74,10 @@
               </select>
             </div>
             <div>
-              <label class="support-field-label">Severity</label>
+              <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Severity</label>
               <select
                 v-model="severity"
-                class="support-input"
+                :class="isModuleView ? 'support-input support-input-module' : 'support-input'"
               >
                 <option value="Low">Low</option>
                 <option value="Medium">Medium</option>
@@ -85,46 +88,46 @@
           </div>
 
           <div>
-            <label class="support-field-label">Where did it happen?</label>
+            <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Where did it happen?</label>
             <input
               v-model.trim="location"
               type="text"
-              class="support-input"
+              :class="isModuleView ? 'support-input support-input-module' : 'support-input'"
               placeholder="Example: Owner Dashboard > Attendance"
             />
           </div>
 
           <div>
-            <label class="support-field-label">Description</label>
+            <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Description</label>
             <textarea
               v-model.trim="description"
               rows="5"
-              class="support-input support-textarea"
+              :class="isModuleView ? 'support-input support-textarea support-input-module' : 'support-input support-textarea'"
               placeholder="Describe what happened, and what you expected."
               required
             ></textarea>
           </div>
 
           <div>
-            <label class="support-field-label">Steps to Reproduce (optional)</label>
+            <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Steps to Reproduce (optional)</label>
             <textarea
               v-model.trim="steps"
               rows="3"
-              class="support-input support-textarea"
+              :class="isModuleView ? 'support-input support-textarea support-input-module' : 'support-input support-textarea'"
               placeholder="Step 1... Step 2... Step 3..."
             ></textarea>
           </div>
 
           <div>
-            <label class="support-field-label">Upload Proof (optional)</label>
-            <div class="support-upload-box">
+            <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Upload Proof (optional)</label>
+            <div :class="isModuleView ? 'support-upload-box support-upload-box-module' : 'support-upload-box'">
               <input
                 type="file"
                 accept="image/*"
                 @change="handleFileChange"
                 class="support-file-input"
               />
-              <p class="support-upload-note">PNG, JPG up to 5MB.</p>
+              <p :class="isModuleView ? 'support-upload-note support-upload-note-module' : 'support-upload-note'">PNG, JPG up to 5MB.</p>
               <div v-if="proofPreview" class="flex items-center gap-4">
                 <img :src="proofPreview" alt="Proof preview" class="support-preview-image" />
                 <div class="support-preview-copy">
@@ -142,15 +145,15 @@
             <button
               type="submit"
               :disabled="submitting"
-              class="support-submit-button"
+              :class="isModuleView ? 'support-submit-button support-submit-button-module' : 'support-submit-button'"
             >
               {{ submitting ? 'Submitting...' : 'Submit Report' }}
             </button>
-            <span class="support-note">Reports are visible to the system administrator only.</span>
+            <span :class="isModuleView ? 'support-note support-note-module' : 'support-note'">Reports are visible to the system administrator only.</span>
           </div>
         </form>
-      </section>
-      </div>
+          </section>
+        </div>
       </main>
     </div>
   </div>
@@ -211,6 +214,7 @@ export default {
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return 'owner'
       return ''
     })
+    const isModuleView = computed(() => panelKey.value === 'owner' || panelKey.value === 'employee')
 
     const planLabel = computed(() => {
       const raw = String(activePlan.value || '').trim().toLowerCase()
@@ -450,6 +454,7 @@ export default {
       badgeVariant,
       badgeStatusLabel,
       showBadgeStatus,
+      isModuleView,
       handleFileChange,
       clearProof,
       submitReport
@@ -466,6 +471,10 @@ export default {
   background: linear-gradient(180deg, #fbf5e8 0%, #f8ecd9 52%, #f4e1c6 100%);
 }
 
+.support-shell-module {
+  background: #0f172a;
+}
+
 .support-main {
   flex: 1;
   padding: 1.5rem 1.4rem 2rem;
@@ -473,6 +482,10 @@ export default {
     radial-gradient(circle at top left, rgba(241, 212, 170, 0.34), transparent 26%),
     radial-gradient(circle at 82% 8%, rgba(198, 148, 108, 0.2), transparent 20%),
     linear-gradient(180deg, #fbf5e8 0%, #f8ecd9 52%, #f4e1c6 100%);
+}
+
+.support-main-module {
+  background: transparent;
 }
 
 .support-content {
@@ -488,14 +501,47 @@ export default {
   box-shadow: 0 18px 44px rgba(87, 56, 35, 0.08);
 }
 
+.support-header-module,
+.support-panel-module {
+  border-radius: 1.5rem;
+  border: 1px solid rgba(123, 79, 55, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(230, 193, 150, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(47, 31, 21, 0.94), rgba(27, 17, 12, 0.96));
+  box-shadow: 0 24px 56px rgba(11, 6, 4, 0.24);
+}
+
 .support-header {
   padding: 1.25rem;
+}
+
+.support-header-module {
+  padding: 1.35rem;
 }
 
 .support-panel {
   max-width: 64rem;
   margin: 0 auto;
   padding: 1.35rem;
+}
+
+.support-panel-module {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.45rem;
+}
+
+.support-eyebrow {
+  margin: 0 0 0.45rem;
+  color: #a57c5e;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.support-eyebrow-module {
+  color: #7dd3fc;
 }
 
 .support-title {
@@ -506,6 +552,11 @@ export default {
   line-height: 1;
 }
 
+.support-title-module {
+  color: #fff0e1;
+  font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+}
+
 .support-subtitle,
 .support-note,
 .support-upload-note,
@@ -514,7 +565,18 @@ export default {
   color: rgba(76, 54, 40, 0.76);
 }
 
+.support-subtitle-module,
+.support-note-module,
+.support-upload-note-module {
+  color: #d4bead;
+}
+
 .support-subtitle {
+  margin: 0.75rem 0 0;
+  line-height: 1.7;
+}
+
+.support-subtitle-module {
   margin: 0.75rem 0 0;
   line-height: 1.7;
 }
@@ -529,6 +591,10 @@ export default {
   text-transform: uppercase;
 }
 
+.support-field-label-module {
+  color: #d4bead;
+}
+
 .support-display-field,
 .support-input {
   width: 100%;
@@ -538,6 +604,25 @@ export default {
   background: rgba(255, 255, 255, 0.92);
   color: #342419;
   outline: none;
+}
+
+.support-display-field-module,
+.support-input-module {
+  border-color: rgba(123, 79, 55, 0.34);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff0e1;
+}
+
+.support-input-module option {
+  color: #342419;
+  background: #fff8ef;
+}
+
+.support-input-module option:checked,
+.support-input-module option:hover,
+.support-input-module option:focus {
+  color: #fff8ef;
+  background: #8d5a3b;
 }
 
 .support-input {
@@ -552,9 +637,18 @@ export default {
   color: #b08b6e;
 }
 
+.support-input-module::placeholder {
+  color: #cbb19c;
+}
+
 .support-input:focus {
   border-color: rgba(198, 148, 108, 0.9);
   box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
+}
+
+.support-input-module:focus {
+  border-color: rgba(216, 179, 143, 0.9);
+  box-shadow: 0 0 0 4px rgba(216, 179, 143, 0.12);
 }
 
 .support-upload-box {
@@ -567,8 +661,13 @@ export default {
   background: rgba(255, 249, 240, 0.86);
 }
 
+.support-upload-box-module {
+  border-color: rgba(123, 79, 55, 0.24);
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .support-file-input {
-  color: #5a3d2d;
+  color: #d4bead;
   font-size: 0.92rem;
 }
 
@@ -576,8 +675,8 @@ export default {
   margin-right: 0.75rem;
   border: 0;
   border-radius: 0.85rem;
-  background: linear-gradient(120deg, #b57f5c 0%, #8d5a3b 48%, #6e4330 100%);
-  color: #fff8eb;
+  background: rgba(43, 28, 19, 0.82);
+  color: #f2e2d2;
   padding: 0.7rem 0.95rem;
   font-weight: 700;
 }
@@ -587,11 +686,11 @@ export default {
   height: 6rem;
   border-radius: 0.9rem;
   object-fit: cover;
-  border: 1px solid rgba(230, 193, 150, 0.8);
+  border: 1px solid rgba(123, 79, 55, 0.34);
 }
 
 .support-remove-file {
-  color: #8d5a3b;
+  color: #d8b38f;
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -608,9 +707,9 @@ export default {
   gap: 0.5rem;
   padding: 0.82rem 1.15rem;
   border-radius: 1rem;
-  border: 1px solid rgba(126, 78, 53, 0.24);
-  background: linear-gradient(120deg, #b57f5c 0%, #8d5a3b 48%, #6e4330 100%);
-  color: #fff8eb;
+  border: 1px solid rgba(123, 79, 55, 0.44);
+  background: rgba(43, 28, 19, 0.82);
+  color: #f2e2d2;
   font-size: 0.86rem;
   font-weight: 700;
   transition: transform 0.18s ease, filter 0.18s ease;
@@ -619,6 +718,10 @@ export default {
 .support-submit-button:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.03);
+}
+
+.support-submit-button-module {
+  background: rgba(43, 28, 19, 0.82);
 }
 
 .support-submit-button:disabled {

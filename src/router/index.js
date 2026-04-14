@@ -24,6 +24,7 @@ const routes = [
 
   //Hidden routes
   { path: "/change-password", name: "change-password", component: () => import("@/views/auth/ChangePassword.vue"), meta: { requiresAuth: true } },
+  { path: "/owner/change-password", name: "owner-change-password", component: () => import("@/views/admin/owner/employee/EmployeeChangePassword.vue"), meta: { requiresAuth: true, requiresPermission: "password:update" } },
   { path: "/employee/dashboard", name: "employee-dashboard", component: () => import("@/views/admin/owner/employee/EmployeeDashboard.vue"), meta: { requiresAuth: true } },
   { path: "/employee/profile", name: "employee-profile-self", component: () => import("@/views/admin/owner/employee/EmployeeProfileSelf.vue"), meta: { requiresAuth: true, requiresPermission: "profile:view" } },
   { path: "/employee/change-password", name: "employee-change-password", component: () => import("@/views/admin/owner/employee/EmployeeChangePassword.vue"), meta: { requiresAuth: true, requiresPermission: "password:update" } },
@@ -47,13 +48,14 @@ const routes = [
   { path: "/practitioner/clients", name: "practitioner-clients", component: () => import("@/views/admin/owner/clinic/PractitionerClients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/practitioner/appointments", name: "practitioner-appointments", component: () => import("@/views/admin/owner/crm/ReceptionistAppointmentList.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:view" } },
   { path: "/practitioner/consultations/online", name: "practitioner-online-consultation", component: () => import("@/views/admin/owner/clinic/PractitionerOnlineConsultation.vue"), meta: { requiresAuth: true, requiresPermission: "consultations:view", requiresFeature: "online_consultations" } },
-  { path: "/practitioner/activities", name: "practitioner-activities", component: () => import("@/views/admin/owner/clinic/PractitionerActivities.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
+  { path: "/activities", name: "activities", component: () => import("@/views/common/Activities.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
+  { path: "/practitioner/activities", redirect: "/activities" },
 
   // HR routes
-  { path: "/hr/dashboard", name: "hr-dashboard", component: () => import("@/views/admin/owner/hr/HRDashboard.vue"), meta: { requiresAuth: true, requiresFeature: "hr" } },
-  { path: "/hr/employee-profile", name: "hr-employee-profile", component: () => import("@/views/admin/owner/hr/EmployeeProfile.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view", requiresFeature: "staff_management" } },
+  { path: "/hr/dashboard", redirect: "/owner/dashboard" },
+  { path: "/hr/employee-profile", redirect: "/owner/staff/profiles" },
   { path: "/hr/add-employee", name: "hr-add-employee", component: () => import("@/views/admin/owner/hr/AddEmployee.vue"), meta: { requiresAuth: true, requiresPermission: "staff:create", requiresFeature: "staff_management" } },
-  { path: "/hr/sales", name: "hr-sales", component: () => import("@/views/admin/owner/hr/HRSales.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
+  { path: "/hr/sales", redirect: "/finance/reports" },
   //{ path: "/hr/schedule", name: "hr-schedule", component: () => import("@/views/clinic/hr/HRSchedule.vue"), meta: { requiresAuth: true } },
   { path: "/hr/add-shift", name: "hr-add-shift", component: () => import("@/views/admin/owner/hr/AddShift.vue"), meta: { requiresAuth: true, requiresPermission: "hr:create", requiresFeature: "hr" } },
   { path: "/hr/schedule-assignment", name: "hr-schedule-assignment", component: () => import("@/views/admin/owner/hr/ScheduleAssignment.vue"), meta: { requiresAuth: true, requiresPermission: "hr:update", requiresFeature: "hr" } },
@@ -114,7 +116,7 @@ const routes = [
   { path: "/receptionist/inbox", name: "receptionist-inbox", component: () => import("@/views/admin/owner/crm/ReceptionistInbox.vue"), meta: { requiresAuth: true, requiresPermission: "inbox:view" } },
   { path: "/receptionist/activity-logs", name: "receptionist-activity-logs", component: () => import("@/views/admin/owner/crm/ReceptionistActivityLogs.vue"), meta: { requiresAuth: true } },
   // Finance routes
-  { path: "/finance/dashboard", name: "finance-dashboard", component: () => import("@/views/admin/owner/finance/FinanceDashboard.vue"), meta: { requiresAuth: true, requiresFeature: "reports" } },
+  { path: "/finance/dashboard", redirect: "/finance/reports" },
   { path: "/finance/sales", name: "finance-sales", component: () => import("@/views/admin/owner/finance/FinanceSales.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
   { path: "/finance/refunds", name: "finance-refunds", component: () => import("@/views/admin/owner/finance/FinanceRefunds.vue"), meta: { requiresAuth: true, requiresPermission: "payments:view", requiresFeature: "reports" } },
   { path: "/finance/reports", name: "finance-reports", component: () => import("@/views/admin/owner/finance/FinanceReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },

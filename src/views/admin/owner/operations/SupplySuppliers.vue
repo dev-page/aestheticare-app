@@ -430,6 +430,7 @@ import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
+import { loadOwnerBranchScope, loadScopedCollectionDocs } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'ManagerSuppliers',
@@ -457,6 +458,8 @@ export default {
     })
 
     const currentBranchId = ref('')
+    const currentOwnerId = ref('')
+    const currentBranchIds = ref([])
     const currentUserId = ref('')
     const suppliers = ref([])
     const categoryOptions = ['Injectables', 'Equipment', 'Skincare', 'Medical Supplies']
@@ -477,6 +480,9 @@ export default {
     })
     const editSupplier = ref({
       id: '',
+      branchId: '',
+      ownerId: '',
+      sharedAcrossBranches: true,
       ...getEmptySupplier()
     })
 
@@ -492,14 +498,16 @@ export default {
     }
 
     const loadSuppliers = async () => {
-      if (!currentBranchId.value) {
+      if (!currentOwnerId.value && !currentBranchIds.value.length) {
         suppliers.value = []
         return
       }
-
-      const supplierQuery = query(collection(db, 'suppliers'), where('branchId', '==', currentBranchId.value))
-      const snapshot = await getDocs(supplierQuery)
-      suppliers.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      suppliers.value = await loadScopedCollectionDocs(
+        db,
+        'suppliers',
+        currentOwnerId.value,
+        currentBranchIds.value
+      )
     }
 
     const filteredSuppliers = computed(() => {
@@ -692,6 +700,8 @@ export default {
         await addDoc(collection(db, 'suppliers'), {
           ...getSupplierPayload(newSupplier.value),
           branchId: currentBranchId.value,
+          ownerId: currentOwnerId.value || null,
+          sharedAcrossBranches: true,
           createdAt: serverTimestamp()
         })
         await logActivity(db, {
@@ -715,6 +725,9 @@ export default {
     const openEditModal = (supplier) => {
       editSupplier.value = {
         id: supplier.id,
+        branchId: supplier.branchId || '',
+        ownerId: supplier.ownerId || '',
+        sharedAcrossBranches: supplier.sharedAcrossBranches !== false,
         name: supplier.name || '',
         categories: [...normalizedCategories(supplier)],
         contact: supplier.contact || '',
@@ -749,6 +762,9 @@ export default {
         const supplierName = editSupplier.value.name
         await updateDoc(doc(db, 'suppliers', editSupplier.value.id), {
           ...getSupplierPayload(editSupplier.value),
+          ownerId: editSupplier.value.ownerId || currentOwnerId.value || null,
+          branchId: editSupplier.value.branchId || currentBranchId.value,
+          sharedAcrossBranches: true,
           updatedAt: serverTimestamp()
         })
         await logActivity(db, {
@@ -777,7 +793,8 @@ export default {
           originalSupplierId: supplier.id,
           archivedAt: serverTimestamp(),
           archivedBy: currentUserId.value || null,
-          branchId: currentBranchId.value,
+          branchId: supplier.branchId || currentBranchId.value,
+          ownerId: supplier.ownerId || currentOwnerId.value || null,
           status: supplier.status || 'Inactive'
         })
         await deleteDoc(doc(db, 'suppliers', supplier.id))
@@ -800,19 +817,18 @@ export default {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
+          currentOwnerId.value = ''
+          currentBranchIds.value = []
           suppliers.value = []
           return
         }
 
-        const userSnap = await getDoc(doc(db, 'users', user.uid))
         currentUserId.value = user.uid
-        currentBranchId.value = userSnap.exists() ? (userSnap.data().branchId || '') : ''
+        const scope = await loadOwnerBranchScope(db, user.uid)
+        currentBranchId.value = scope.branchId || ''
+        currentOwnerId.value = scope.ownerId || ''
+        currentBranchIds.value = scope.branchIds || []
         await loadSuppliers()
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Viewed supplier list',
-          details: 'Opened manager supplier list page.'
-        })
       })
     })
 

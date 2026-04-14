@@ -597,15 +597,21 @@ onUnmounted(() => {
 }
 
 @media (max-width: 767px) {
-  .employee-topbar-toggle {
-    display: none;
-  }
-
   .employee-topbar-inner {
     padding: 0.45rem 0.7rem;
     padding-left: 1rem;
     align-items: flex-start;
     gap: 0.4rem;
+  }
+
+  .employee-topbar-toggle {
+    width: 30px;
+    height: 30px;
+  }
+
+  .employee-topbar-toggle .employee-topbar-icon {
+    width: 14px;
+    height: 14px;
   }
 
   .employee-topbar-title {
@@ -624,11 +630,6 @@ onUnmounted(() => {
   .notifications-menu {
     right: -0.25rem;
     width: min(280px, calc(100vw - 1.5rem));
-  }
-
-  .employee-topbar-btn {
-    width: 28px;
-    height: 28px;
   }
 
   .employee-topbar-icon {

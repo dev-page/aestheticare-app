@@ -171,11 +171,6 @@ export default {
         currentBranchId.value = userSnap.exists() ? (userSnap.data().branchId || '') : ''
 
         await loadAttendance()
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Viewed attendance records',
-          details: 'Opened manager attendance page.'
-        })
       })
     })
 

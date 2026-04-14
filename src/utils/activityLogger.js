@@ -9,8 +9,20 @@ const buildActorName = (userData, fallbackEmail) => {
   return joined || fallbackEmail || 'Unknown User'
 }
 
+const lowSignalActivityPattern = /\b(viewed|opened|open|visited|accessed|loaded|entered|displayed)\b/i
+
+export const isSignificantActivity = (payload = {}) => {
+  const action = String(payload.action || '').trim()
+  const details = String(payload.details || '').trim()
+  const combined = `${action} ${details}`.trim()
+  if (!combined) return false
+  return !lowSignalActivityPattern.test(combined)
+}
+
 export const logActivity = async (db, payload = {}) => {
   try {
+    if (!isSignificantActivity(payload)) return
+
     const currentUser = auth.currentUser
     if (!currentUser) return
 

@@ -20,22 +20,40 @@ export const useOwnerModulesStore = defineStore('ownerModules', () => {
   const enabledModules = ref({ ...defaultModules })
   const loading = ref(false)
   let unsubscribe = null
+  const ownerId = ref('')
 
-  const startOwnerModulesListener = async () => {
-    const currentUser = auth.currentUser
-    if (!currentUser) {
+  const resolveOwnerId = (explicitOwnerId) => {
+    if (typeof explicitOwnerId === 'string') {
+      return String(explicitOwnerId || '').trim()
+    }
+    return String(auth.currentUser?.uid || '').trim()
+  }
+
+  const startOwnerModulesListener = async (explicitOwnerId = '') => {
+    const nextOwnerId = resolveOwnerId(explicitOwnerId)
+    if (!nextOwnerId) {
+      if (unsubscribe) {
+        unsubscribe()
+        unsubscribe = null
+      }
       enabledModules.value = { ...defaultModules }
+      ownerId.value = ''
       return
     }
 
-    if (unsubscribe) return
+    if (unsubscribe && ownerId.value === nextOwnerId) return
+    if (unsubscribe) {
+      unsubscribe()
+      unsubscribe = null
+    }
 
     loading.value = true
-    const settingsRef = doc(db, 'ownerModuleSettings', currentUser.uid)
+    ownerId.value = nextOwnerId
+    const settingsRef = doc(db, 'ownerModuleSettings', nextOwnerId)
     const snap = await getDoc(settingsRef)
     if (!snap.exists()) {
       await setDoc(settingsRef, {
-        ownerId: currentUser.uid,
+        ownerId: nextOwnerId,
         enabledModules: { ...defaultModules },
       }, { merge: true })
     }
@@ -55,17 +73,17 @@ export const useOwnerModulesStore = defineStore('ownerModules', () => {
     )
   }
 
-  const saveOwnerModules = async (nextModules) => {
-    const currentUser = auth.currentUser
-    if (!currentUser) {
+  const saveOwnerModules = async (nextModules, explicitOwnerId = '') => {
+    const nextOwnerId = resolveOwnerId(explicitOwnerId)
+    if (!nextOwnerId) {
       throw new Error('You must be logged in to update modules.')
     }
 
     const normalized = normalizeModules(nextModules)
     await setDoc(
-      doc(db, 'ownerModuleSettings', currentUser.uid),
+      doc(db, 'ownerModuleSettings', nextOwnerId),
       {
-        ownerId: currentUser.uid,
+        ownerId: nextOwnerId,
         enabledModules: normalized,
       },
       { merge: true }
@@ -83,6 +101,7 @@ export const useOwnerModulesStore = defineStore('ownerModules', () => {
     enabledModules,
     activeModuleKeys,
     loading,
+    ownerId,
     startOwnerModulesListener,
     saveOwnerModules,
   }

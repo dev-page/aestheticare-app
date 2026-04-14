@@ -1,5 +1,5 @@
 <template>
-  <div class="notifications-shell">
+  <div :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen notifications-shell-module' : 'notifications-shell'">
     <EmployeeTopbar
       title=""
       :plan-label="planLabel"
@@ -16,17 +16,17 @@
 
     <div class="flex flex-1 min-w-0">
       <component :is="sidebarComponent" v-if="sidebarComponent" />
-      <main class="notifications-main">
+      <main :class="isModuleView ? 'notifications-main notifications-main-module' : 'notifications-main'">
         <div class="notifications-content">
-          <div class="notifications-header">
-            <h1 class="notifications-title">Notifications</h1>
-            <p class="notifications-subtitle">Latest updates and system activity.</p>
+          <div :class="isModuleView ? 'notifications-header notifications-header-module' : 'notifications-header'">
+            <h1 :class="isModuleView ? 'notifications-title notifications-title-module' : 'notifications-title'">Notifications</h1>
+            <p :class="isModuleView ? 'notifications-subtitle notifications-subtitle-module' : 'notifications-subtitle'">Latest updates and system activity.</p>
           </div>
 
-          <p v-if="error" class="notifications-error">{{ error }}</p>
+          <p v-if="error" :class="isModuleView ? 'notifications-error notifications-error-module' : 'notifications-error'">{{ error }}</p>
 
-          <section class="notifications-panel">
-            <div class="notifications-toolbar">
+          <section :class="isModuleView ? 'notifications-panel notifications-panel-module' : 'notifications-panel'">
+            <div :class="isModuleView ? 'notifications-toolbar notifications-toolbar-module' : 'notifications-toolbar'">
               <span>Recent Notifications</span>
               <button
                 type="button"
@@ -41,11 +41,11 @@
             <div v-if="loading" class="px-4 py-4">
               <PageSectionSkeleton variant="list" :rows="6" />
             </div>
-            <div v-else-if="!notifications.length" class="notifications-empty">
+            <div v-else-if="!notifications.length" :class="isModuleView ? 'notifications-empty notifications-empty-module' : 'notifications-empty'">
               No notifications yet.
             </div>
             <ul v-else class="notifications-list">
-              <li class="notifications-select-all">
+              <li :class="isModuleView ? 'notifications-select-all notifications-select-all-module' : 'notifications-select-all'">
                 <input
                   type="checkbox"
                   class="notifications-checkbox"
@@ -57,7 +57,7 @@
               <li
                 v-for="item in notifications"
                 :key="item.id"
-                class="notifications-item"
+                :class="isModuleView ? 'notifications-item notifications-item-module' : 'notifications-item'"
               >
                 <div class="flex items-start gap-3">
                   <input
@@ -67,11 +67,11 @@
                     @change="toggleSelected(item.id)"
                   />
                   <div>
-                    <p class="notifications-item-title">
+                    <p :class="isModuleView ? 'notifications-item-title notifications-item-title-module' : 'notifications-item-title'">
                       {{ item.title || 'Notification' }}
                     </p>
-                    <p class="notifications-item-message">{{ item.message || '-' }}</p>
-                    <p class="notifications-item-date">{{ item.createdLabel }}</p>
+                    <p :class="isModuleView ? 'notifications-item-message notifications-item-message-module' : 'notifications-item-message'">{{ item.message || '-' }}</p>
+                    <p :class="isModuleView ? 'notifications-item-date notifications-item-date-module' : 'notifications-item-date'">{{ item.createdLabel }}</p>
                   </div>
                 </div>
                 <div class="notifications-item-actions">
@@ -110,26 +110,26 @@
 
   <Modal
     :isOpen="showNotificationModal"
-    panelClass="notifications-modal-panel"
+    :panelClass="isModuleView ? 'notifications-modal-panel notifications-modal-panel-module' : 'notifications-modal-panel'"
     bodyClass="notifications-modal-body-shell"
     @close="closeNotificationModal"
   >
     <template #header>
-      <h2 class="notifications-modal-heading">Notification</h2>
+      <h2 :class="isModuleView ? 'notifications-modal-heading notifications-modal-heading-module' : 'notifications-modal-heading'">Notification</h2>
     </template>
     <template #body>
       <div v-if="selectedNotification" class="notifications-modal-body">
         <div>
-          <p class="notifications-modal-label">Title</p>
-          <p class="notifications-modal-text mt-1 break-words">{{ selectedNotification.title || 'Notification' }}</p>
+          <p :class="isModuleView ? 'notifications-modal-label notifications-modal-label-module' : 'notifications-modal-label'">Title</p>
+          <p :class="isModuleView ? 'notifications-modal-text notifications-modal-text-module mt-1 break-words' : 'notifications-modal-text mt-1 break-words'">{{ selectedNotification.title || 'Notification' }}</p>
         </div>
         <div>
-          <p class="notifications-modal-label">Description</p>
-          <p class="notifications-modal-text mt-1 whitespace-pre-wrap break-words leading-6">{{ selectedNotification.message || '-' }}</p>
+          <p :class="isModuleView ? 'notifications-modal-label notifications-modal-label-module' : 'notifications-modal-label'">Description</p>
+          <p :class="isModuleView ? 'notifications-modal-text notifications-modal-text-module mt-1 whitespace-pre-wrap break-words leading-6' : 'notifications-modal-text mt-1 whitespace-pre-wrap break-words leading-6'">{{ selectedNotification.message || '-' }}</p>
         </div>
         <div>
-          <p class="notifications-modal-label">Date & Time</p>
-          <p class="notifications-modal-text mt-1">{{ selectedNotification.createdLabel }}</p>
+          <p :class="isModuleView ? 'notifications-modal-label notifications-modal-label-module' : 'notifications-modal-label'">Date & Time</p>
+          <p :class="isModuleView ? 'notifications-modal-text notifications-modal-text-module mt-1' : 'notifications-modal-text mt-1'">{{ selectedNotification.createdLabel }}</p>
         </div>
       </div>
     </template>
@@ -192,6 +192,8 @@ export default {
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return 'owner'
       return ''
     })
+
+    const isModuleView = computed(() => panelKey.value === 'owner' || panelKey.value === 'employee')
 
     const sidebarComponent = computed(() => {
       const roleValue = String(role.value || '').toLowerCase()
@@ -477,6 +479,7 @@ export default {
       badgeVariant,
       badgeStatusLabel,
       showBadgeStatus,
+      isModuleView,
       markNotificationRead,
       openNotification,
       showNotificationModal,
@@ -500,6 +503,10 @@ export default {
   background: linear-gradient(180deg, #fbf5e8 0%, #f8ecd9 52%, #f4e1c6 100%);
 }
 
+.notifications-shell-module {
+  background: #0f172a;
+}
+
 .notifications-main {
   flex: 1;
   padding: 1.5rem 1.4rem 2rem;
@@ -507,6 +514,10 @@ export default {
     radial-gradient(circle at top left, rgba(241, 212, 170, 0.34), transparent 26%),
     radial-gradient(circle at 82% 8%, rgba(198, 148, 108, 0.2), transparent 20%),
     linear-gradient(180deg, #fbf5e8 0%, #f8ecd9 52%, #f4e1c6 100%);
+}
+
+.notifications-main-module {
+  background: transparent;
 }
 
 .notifications-content {
@@ -526,7 +537,25 @@ export default {
   padding: 1.25rem;
 }
 
+.notifications-header-module,
+.notifications-panel-module {
+  border-radius: 1.5rem;
+  border: 1px solid rgba(123, 79, 55, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(230, 193, 150, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(47, 31, 21, 0.94), rgba(27, 17, 12, 0.96));
+  box-shadow: 0 24px 56px rgba(11, 6, 4, 0.24);
+}
+
+.notifications-header-module {
+  padding: 1.35rem;
+}
+
 .notifications-panel {
+  overflow: hidden;
+}
+
+.notifications-panel-module {
   overflow: hidden;
 }
 
@@ -540,6 +569,12 @@ export default {
 .notifications-title {
   font-size: clamp(2rem, 3vw, 2.8rem);
   line-height: 1;
+}
+
+.notifications-title-module,
+.notifications-modal-heading-module {
+  color: #fff0e1;
+  font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
 }
 
 .notifications-subtitle,
@@ -556,9 +591,22 @@ export default {
   line-height: 1.7;
 }
 
+.notifications-subtitle-module,
+.notifications-toolbar-module,
+.notifications-item-message-module,
+.notifications-item-date-module,
+.notifications-empty-module,
+.notifications-modal-label-module {
+  color: #d4bead;
+}
+
 .notifications-error {
   color: #b85e5e;
   font-size: 0.9rem;
+}
+
+.notifications-error-module {
+  color: #f7c7c7;
 }
 
 .notifications-toolbar,
@@ -573,6 +621,11 @@ export default {
 .notifications-toolbar {
   padding: 0.95rem 1rem;
   border-bottom: 1px solid rgba(230, 193, 150, 0.6);
+}
+
+.notifications-toolbar-module {
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid rgba(123, 79, 55, 0.24);
 }
 
 .notifications-delete-button,
@@ -595,6 +648,13 @@ export default {
   font-weight: 700;
 }
 
+.notifications-toolbar-module .notifications-delete-button,
+.notifications-toolbar-module .notifications-view-button {
+  border-color: rgba(123, 79, 55, 0.44);
+  background: rgba(43, 28, 19, 0.82);
+  color: #f2e2d2;
+}
+
 .notifications-delete-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -606,6 +666,12 @@ export default {
   border: 1px solid rgba(230, 193, 150, 0.7);
   background: #fff8ef;
   color: #8d5a3b;
+}
+
+.notifications-toolbar-module .notifications-icon-button {
+  border-color: rgba(123, 79, 55, 0.34);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f2dcc4;
 }
 
 .notifications-icon-button-read {
@@ -627,6 +693,10 @@ export default {
   padding: 1.2rem 1rem 1.35rem;
 }
 
+.notifications-empty-module {
+  padding: 1.2rem 1rem 1.35rem;
+}
+
 .notifications-list {
   list-style: none;
   margin: 0;
@@ -639,15 +709,29 @@ export default {
   border-top: 1px solid rgba(230, 193, 150, 0.5);
 }
 
+.notifications-select-all-module,
+.notifications-item-module {
+  padding: 1rem;
+  border-top: 1px solid rgba(123, 79, 55, 0.24);
+}
+
 .notifications-checkbox {
   width: 1rem;
   height: 1rem;
   accent-color: #8d5a3b;
 }
 
+.notifications-toolbar-module .notifications-checkbox {
+  accent-color: #d8b38f;
+}
+
 .notifications-item-title {
   color: #2f1d14;
   font-weight: 700;
+}
+
+.notifications-item-title-module {
+  color: #fff0e1;
 }
 
 .notifications-item-message {
@@ -658,6 +742,10 @@ export default {
 .notifications-item-date {
   margin-top: 0.35rem;
   font-size: 0.76rem;
+}
+
+.notifications-item-date-module {
+  color: #cbb19c;
 }
 
 .notifications-item-actions {
@@ -678,6 +766,12 @@ export default {
   font-weight: 700;
 }
 
+.notifications-panel-module .notifications-new-badge {
+  background: rgba(213, 160, 94, 0.12);
+  color: #ffd17f;
+  border-color: rgba(213, 160, 94, 0.2);
+}
+
 :deep(.notifications-modal-panel) {
   width: 100%;
   max-width: 40rem;
@@ -688,12 +782,26 @@ export default {
   box-shadow: 0 24px 60px rgba(87, 56, 35, 0.18);
 }
 
+:deep(.notifications-modal-panel-module) {
+  width: 100%;
+  max-width: 40rem;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(123, 79, 55, 0.34);
+  background: linear-gradient(180deg, rgba(44, 29, 20, 0.98), rgba(31, 20, 14, 0.98));
+  color: #ead9ca;
+  box-shadow: 0 24px 60px rgba(11, 6, 4, 0.34);
+}
+
 .notifications-modal-body-shell {
   padding: 0;
 }
 
 .notifications-modal-heading {
   font-size: 1.4rem;
+}
+
+.notifications-modal-text-module {
+  color: #fff1e3;
 }
 
 .notifications-modal-body {
@@ -708,6 +816,10 @@ export default {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.notifications-modal-label-module {
+  color: #d4bead;
 }
 
 .notifications-modal-text {

@@ -4,7 +4,7 @@
     :class="['relative flex-shrink-0', enableTransitions ? 'transition-all duration-300' : '']"
   >
     <button
-      v-if="isSmallScreen && collapsed"
+      v-if="isSmallScreen && collapsed && !useInlineMobileToggle"
       type="button"
       class="readonly-exempt fixed left-2 top-3 z-50 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#5a3927] bg-[#1f120b] text-[#f3e7e0] shadow-2xl"
       :aria-label="'Expand sidebar'"
@@ -117,7 +117,7 @@
             </button>
 
             <ul
-              v-if="!isSmallScreen && !collapsed && isGroupOpen(item)"
+              v-if="!collapsed && isGroupOpen(item)"
               class="mt-1 space-y-1"
             >
               <li v-for="child in item.children" :key="child.key || child.to || child.label">
@@ -350,6 +350,27 @@ export default {
 
     const isGroup = (item) => Array.isArray(item?.children) && item.children.length > 0
 
+    const pruneEmptySections = (items = []) => {
+      const pruned = []
+      let pendingSection = null
+
+      items.forEach((item) => {
+        if (item?.type === 'section') {
+          pendingSection = item
+          return
+        }
+
+        if (pendingSection) {
+          pruned.push(pendingSection)
+          pendingSection = null
+        }
+
+        pruned.push(item)
+      })
+
+      return pruned
+    }
+
     const getItemFeatures = (item) => {
       if (!item) return []
       if (Array.isArray(item.features)) return item.features
@@ -403,29 +424,36 @@ export default {
     }
 
     const decorateItems = (items = [], inheritedLocked = false) =>
-      items.map((item) => {
-        if (item?.type === 'section') {
-          return {
-            ...item,
-            isSection: true,
-            locked: true,
-            lockTitle: '',
+      items
+        .map((item) => {
+          if (item?.type === 'section') {
+            return {
+              ...item,
+              isSection: true,
+            }
           }
-        }
 
-        const locked = inheritedLocked || !isItemAllowed(item)
-        const nextItem = {
-          ...item,
-          locked,
-          lockTitle: locked ? lockTitleForItem(item) : '',
-        }
+          const locked = inheritedLocked || !isItemAllowed(item)
+          if (locked) {
+            return null
+          }
 
-        if (isGroup(item)) {
-          nextItem.children = decorateItems(item.children || [], locked)
-        }
+          const nextItem = {
+            ...item,
+          }
 
-        return nextItem
-      })
+          if (isGroup(item)) {
+            nextItem.children = pruneEmptySections(decorateItems(item.children || [], locked))
+            const hasRenderableChild = Array.isArray(nextItem.children)
+              && nextItem.children.some((child) => child?.type !== 'section')
+            if (!hasRenderableChild) {
+              return null
+            }
+          }
+
+          return nextItem
+        })
+        .filter(Boolean)
 
     const withBadges = (items = []) =>
       items.map((item) => {
@@ -442,7 +470,7 @@ export default {
     const hasVisibleChild = (item) =>
       !isGroup(item) || (
         Array.isArray(item.children) &&
-        item.children.some((child) => child?.type !== 'section' && !child.locked)
+        item.children.some((child) => child?.type !== 'section')
       )
 
     const visibleItems = computed(() => {
@@ -490,6 +518,11 @@ export default {
       const key = groupKey(group)
       return openGroups.value[key] === true || isGroupActive(group)
     }
+
+    const useInlineMobileToggle = computed(() => {
+      const path = String(route.path || '').toLowerCase()
+      return !path.startsWith('/superadmin')
+    })
 
     const persistGroups = () => {
       localStorage.setItem(groupStorageKey, JSON.stringify(openGroups.value))
@@ -856,6 +889,7 @@ export default {
       hasFeature,
       hasPermission,
       isSmallScreen,
+      useInlineMobileToggle,
       skeletonCount
     }
   }

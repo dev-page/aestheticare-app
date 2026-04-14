@@ -4,29 +4,29 @@
 
     <main class="flex-1 p-6 md:p-8">
       <div class="mx-auto max-w-3xl">
-        <div class="mb-8">
-          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Account Security</p>
-          <h1 class="mt-3 text-3xl font-bold text-white">Reset Password</h1>
-          <p class="mt-2 text-sm text-slate-400">
-            Verify the OTP sent to your email, then set a new secure password for your employee account.
+        <div class="rounded-[1.75rem] border border-[rgba(123,79,55,0.34)] bg-[radial-gradient(circle_at_top_right,_rgba(230,193,150,0.12),_transparent_24%),linear-gradient(180deg,_rgba(47,31,21,0.96),_rgba(27,17,12,0.98))] p-6 shadow-[0_24px_56px_rgba(11,6,4,0.24)]">
+          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-[#d8b38f]">Account Security</p>
+          <h1 class="mt-3 font-serif text-3xl font-bold text-[#fff0e1]">Reset Password</h1>
+          <p class="mt-2 text-sm leading-7 text-[#d4bead]">
+            Verify the OTP sent to your email, then set a new secure password for your account.
           </p>
         </div>
 
-        <section class="rounded-3xl border border-slate-800 bg-slate-800/80 p-6 shadow-lg">
+        <section class="mt-6 rounded-[1.75rem] border border-[rgba(123,79,55,0.34)] bg-[radial-gradient(circle_at_top_right,_rgba(230,193,150,0.12),_transparent_24%),linear-gradient(180deg,_rgba(47,31,21,0.96),_rgba(27,17,12,0.98))] p-6 shadow-[0_24px_56px_rgba(11,6,4,0.24)]">
           <form class="space-y-5" @submit.prevent="handleChangePassword">
             <div class="grid gap-5 md:grid-cols-2">
               <label class="block md:col-span-2">
-                <span class="mb-2 block text-sm font-medium text-slate-300">Current Password</span>
+                <span class="mb-2 block text-sm font-medium text-[#d4bead]">Current Password</span>
                 <div class="relative">
                   <input
                     :type="currentPasswordVisible ? 'text' : 'password'"
                     v-model="currentPassword"
                     required
-                    class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 pr-12 text-white outline-none transition focus:border-cyan-400"
+                    class="w-full rounded-xl border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] px-4 py-3 pr-12 text-[#fff0e1] outline-none transition placeholder:text-[#cbb19c] focus:border-[#d8b38f] focus:shadow-[0_0_0_4px_rgba(216,179,143,0.12)]"
                   />
                   <button
                     type="button"
-                    class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-cyan-300"
+                    class="absolute right-4 top-1/2 -translate-y-1/2 text-[#d8b38f] transition hover:text-[#fff0e1]"
                     tabindex="-1"
                     @click="toggleCurrentPassword"
                   >
@@ -37,17 +37,17 @@
               </label>
 
               <label class="block">
-                <span class="mb-2 block text-sm font-medium text-slate-300">New Password</span>
+                <span class="mb-2 block text-sm font-medium text-[#d4bead]">New Password</span>
                 <div class="relative">
                   <input
                     :type="passwordVisible ? 'text' : 'password'"
                     v-model="newPassword"
                     required
-                    class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 pr-12 text-white outline-none transition focus:border-cyan-400"
+                    class="w-full rounded-xl border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] px-4 py-3 pr-12 text-[#fff0e1] outline-none transition placeholder:text-[#cbb19c] focus:border-[#d8b38f] focus:shadow-[0_0_0_4px_rgba(216,179,143,0.12)]"
                   />
                   <button
                     type="button"
-                    class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-cyan-300"
+                    class="absolute right-4 top-1/2 -translate-y-1/2 text-[#d8b38f] transition hover:text-[#fff0e1]"
                     tabindex="-1"
                     @click="togglePassword"
                   >
@@ -58,17 +58,17 @@
               </label>
 
               <label class="block">
-                <span class="mb-2 block text-sm font-medium text-slate-300">Confirm New Password</span>
+                <span class="mb-2 block text-sm font-medium text-[#d4bead]">Confirm New Password</span>
                 <div class="relative">
                   <input
                     :type="confirmPasswordVisible ? 'text' : 'password'"
                     v-model="confirmPassword"
                     required
-                    class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 pr-12 text-white outline-none transition focus:border-cyan-400"
+                    class="w-full rounded-xl border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] px-4 py-3 pr-12 text-[#fff0e1] outline-none transition placeholder:text-[#cbb19c] focus:border-[#d8b38f] focus:shadow-[0_0_0_4px_rgba(216,179,143,0.12)]"
                   />
                   <button
                     type="button"
-                    class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-cyan-300"
+                    class="absolute right-4 top-1/2 -translate-y-1/2 text-[#d8b38f] transition hover:text-[#fff0e1]"
                     tabindex="-1"
                     @click="toggleConfirmPassword"
                   >
@@ -79,19 +79,19 @@
               </label>
             </div>
 
-            <div v-if="showOtp" class="rounded-2xl border border-cyan-500/30 bg-slate-900/70 p-5">
+            <div v-if="showOtp" class="rounded-2xl border border-[rgba(123,79,55,0.24)] bg-[rgba(255,255,255,0.04)] p-5">
               <label class="block">
-                <span class="mb-2 block text-sm font-medium text-slate-300">Enter OTP</span>
+                <span class="mb-2 block text-sm font-medium text-[#d4bead]">Enter OTP</span>
                 <input
                   v-model="enteredOtp"
-                  class="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
+                  class="w-full rounded-xl border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] px-4 py-3 text-[#fff0e1] outline-none transition placeholder:text-[#cbb19c] focus:border-[#d8b38f] focus:shadow-[0_0_0_4px_rgba(216,179,143,0.12)]"
                 />
-                <span class="mt-2 block text-xs text-slate-500">Check the email address connected to this employee account.</span>
+                <span class="mt-2 block text-xs text-[#cbb19c]">Check the email address connected to this employee account.</span>
               </label>
             </div>
 
-            <div class="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-              <p class="text-sm text-slate-400">
+            <div class="rounded-2xl border border-[rgba(123,79,55,0.24)] bg-[rgba(255,255,255,0.04)] p-4">
+              <p class="text-sm text-[#d4bead]">
                 Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.
               </p>
             </div>
@@ -99,7 +99,7 @@
             <div class="flex justify-end">
               <button
                 type="submit"
-                class="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+                class="rounded-xl border border-[rgba(123,79,55,0.44)] bg-[rgba(43,28,19,0.82)] px-5 py-3 text-sm font-semibold text-[#f2e2d2] transition hover:bg-[rgba(60,39,27,0.92)]"
               >
                 {{ showOtp ? 'Verify OTP and Update Password' : 'Send OTP' }}
               </button>
@@ -208,9 +208,16 @@ export default {
         const updatedUserSnap = await getDoc(userRef)
         const userData = updatedUserSnap.exists() ? updatedUserSnap.data() || {} : {}
         const userType = String(userData.userType || '').trim().toLowerCase()
+        const rawRole = String(userData.role || userData.customRoleName || userData.userType || '').trim().toLowerCase()
+        const isClinicAdmin = rawRole === 'clinic admin' || rawRole === 'clinicadmin' || rawRole === 'clinic administrator' || rawRole === 'owner'
+        const redirectPath = userType === 'staff'
+          ? '/employee/dashboard'
+          : isClinicAdmin
+            ? '/owner/dashboard'
+            : '/change-password'
 
         toast.success('Password changed successfully.')
-        router.push(userType === 'staff' ? '/employee/dashboard' : '/change-password')
+        router.push(redirectPath)
       } catch (err) {
         console.error(err)
         toast.error(`Failed to change password: ${err.message}`)

@@ -30,6 +30,10 @@ export default {
     })
 
     const shiftTypes = ['Morning', 'Afternoon', 'Evening']
+    const isOwnerLikeRole = (role) => {
+      const normalized = String(role || '').trim().toLowerCase()
+      return ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized)
+    }
 
     const chunkArray = (items, size = 10) => {
       const chunks = []
@@ -53,10 +57,7 @@ export default {
         }
 
         const profile = userSnap.data() || {}
-        const normalizedRole = String(profile.role || '').trim().toLowerCase()
-        const isOwnerLike = ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalizedRole)
-
-        if (isOwnerLike) {
+        if (isOwnerLikeRole(profile.role)) {
           const ownerClinicsSnapshot = await getDocs(
             query(collection(db, 'clinics'), where('ownerId', '==', user.uid))
           )
@@ -77,37 +78,37 @@ export default {
 
         const hrBranchId = profile.branchId || ''
         if (!hrBranchId) {
-          branches.value = []
-          toast.error('Your account has no branch assignment.')
-          return
-        }
+          const adminClinicSnapshot = await getDocs(
+            query(collection(db, 'clinics'), where('branchAdminId', '==', user.uid))
+          )
+          const adminClinicSnap = adminClinicSnapshot.docs[0]
+          if (!adminClinicSnap) {
+            branches.value = []
+            toast.error('Your account has no branch assignment.')
+            return
+          }
 
-        const hrClinicSnap = await getDoc(doc(db, 'clinics', hrBranchId))
-        if (!hrClinicSnap.exists()) {
-          branches.value = []
-          toast.error('Assigned branch was not found.')
-          return
-        }
-
-        const ownerId = hrClinicSnap.data().ownerId || ''
-        if (!ownerId) {
-          branches.value = []
-          toast.error('Assigned branch has no owner mapping.')
-          return
-        }
-
-        const ownerClinicsSnapshot = await getDocs(
-          query(collection(db, 'clinics'), where('ownerId', '==', ownerId))
-        )
-
-        branches.value = ownerClinicsSnapshot.docs.map((clinicDoc) => {
-          const data = clinicDoc.data()
-          return {
-            id: clinicDoc.id,
+          const data = adminClinicSnap.data() || {}
+          branches.value = [{
+            id: adminClinicSnap.id,
             branch: data.clinicBranch || data.clinicName || 'Unnamed Branch',
             location: data.clinicLocation || '-'
+          }]
+        } else {
+          const hrClinicSnap = await getDoc(doc(db, 'clinics', hrBranchId))
+          if (!hrClinicSnap.exists()) {
+            branches.value = []
+            toast.error('Assigned branch was not found.')
+            return
           }
-        })
+
+          const data = hrClinicSnap.data() || {}
+          branches.value = [{
+            id: hrClinicSnap.id,
+            branch: data.clinicBranch || data.clinicName || 'Unnamed Branch',
+            location: data.clinicLocation || '-'
+          }]
+        }
 
         const selectedExists = branches.value.some((branch) => branch.branch === currentShift.value.branch)
         if (!selectedExists) currentShift.value.branch = ''

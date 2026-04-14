@@ -186,6 +186,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import { loadOwnerBranchScope, loadScopedCollectionDocs } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'FinanceInventoryPurchases',
@@ -195,6 +196,8 @@ export default {
     const auth = getAuth(getApp())
 
     const currentBranchId = ref('')
+    const currentOwnerId = ref('')
+    const currentBranchIds = ref([])
     const currentUserId = ref('')
     const purchases = ref([])
     const inventoryItems = ref([])
@@ -380,15 +383,19 @@ export default {
     const loadInventoryPurchaseData = async () => {
       if (!currentBranchId.value) return
 
-      const [purchaseSnap, inventorySnap, supplierSnap] = await Promise.all([
+      const [purchaseSnap, inventorySnap] = await Promise.all([
         getDocs(query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value))),
         getDocs(query(collection(db, 'inventoryItems'), where('branchId', '==', currentBranchId.value))),
-        getDocs(query(collection(db, 'suppliers'), where('branchId', '==', currentBranchId.value))),
       ])
 
       purchases.value = purchaseSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
       inventoryItems.value = inventorySnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-      suppliers.value = supplierSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      suppliers.value = await loadScopedCollectionDocs(
+        db,
+        'suppliers',
+        currentOwnerId.value,
+        currentBranchIds.value
+      )
     }
 
     const togglePaymentQuick = async (purchase) => {
@@ -439,6 +446,8 @@ export default {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
+          currentOwnerId.value = ''
+          currentBranchIds.value = []
           currentUserId.value = ''
           purchases.value = []
           inventoryItems.value = []
@@ -447,8 +456,10 @@ export default {
         }
 
         currentUserId.value = user.uid
-        const userSnap = await getDoc(doc(db, 'users', user.uid))
-        currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
+        const scope = await loadOwnerBranchScope(db, user.uid)
+        currentBranchId.value = scope.branchId || ''
+        currentOwnerId.value = scope.ownerId || ''
+        currentBranchIds.value = scope.branchIds || []
 
         if (!currentBranchId.value) {
           toast.error('Your account has no branch assignment.', { toastId: 'missing-branch-assignment' })

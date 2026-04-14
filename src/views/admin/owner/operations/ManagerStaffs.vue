@@ -95,11 +95,6 @@ export default {
         currentBranchId.value = userSnap.exists() ? (userSnap.data().branchId || '') : ''
 
         await loadStaffList()
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Viewed staff list',
-          details: 'Opened manager staff list page.'
-        })
       })
     })
 

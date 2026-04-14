@@ -65,6 +65,7 @@ const addressLat = ref('')
 const addressLng = ref('')
 const showLocationModal = ref(false)
 const locationMapCanvas = ref(null)
+const searchQuery = ref('')
 const locationError = ref('')
 const locationLoading = ref(false)
 
@@ -360,6 +361,61 @@ const reverseGeocodeLocation = (lat, lng) => {
   })
 }
 
+const searchLocation = () => {
+  const query = String(searchQuery.value || '').trim()
+  if (!query) {
+    locationError.value = 'Enter a location to search.'
+    return
+  }
+
+  if (!window.google?.maps?.Geocoder) {
+    locationError.value = 'Search is not available right now.'
+    return
+  }
+
+  const geocoder = new window.google.maps.Geocoder()
+  geocoder.geocode(
+    {
+      address: query,
+      componentRestrictions: { country: 'PH' },
+    },
+    (results, status) => {
+      if (status !== 'OK' || !results?.length) {
+        locationError.value = 'No matching location found.'
+        return
+      }
+
+      const place = results[0]
+      const location = place.geometry?.location
+      if (!location) {
+        locationError.value = 'Unable to resolve the searched location.'
+        return
+      }
+
+      const resolvedLat = typeof location.lat === 'function' ? location.lat() : location.lat
+      const resolvedLng = typeof location.lng === 'function' ? location.lng() : location.lng
+      if (locationMarker?.position) {
+        locationMarker.position = { lat: resolvedLat, lng: resolvedLng }
+      } else if (locationMarker?.setPosition) {
+        locationMarker.setPosition({ lat: resolvedLat, lng: resolvedLng })
+      }
+      if (locationMap?.setCenter) locationMap.setCenter({ lat: resolvedLat, lng: resolvedLng })
+
+      if (!applyResolvedAddress({
+        lat: resolvedLat,
+        lng: resolvedLng,
+        components: flattenAddressComponents(results),
+        formattedAddress: place.formatted_address || query,
+        fallbackName: place.formatted_address || query,
+      })) {
+        return
+      }
+
+      locationError.value = ''
+    }
+  )
+}
+
 const initLocationMap = async () => {
   if (!locationMapCanvas.value) return
   locationError.value = ''
@@ -463,6 +519,7 @@ const initLocationMap = async () => {
 
 const openLocationModal = () => {
   locationError.value = ''
+  searchQuery.value = addressStreet.value || address.value || addressCity.value || ''
   showLocationModal.value = true
   nextTick(() => initLocationMap())
 }
@@ -473,6 +530,7 @@ const closeLocationModal = () => {
   locationLoading.value = false
   locationMap = null
   locationMarker = null
+  searchQuery.value = ''
 }
 
 const usePinnedLocation = async () => {
@@ -1470,6 +1528,27 @@ onBeforeUnmount(() => {
           <p class="text-sm text-charcoal-600">
             Pin your address on the map. The picker is restricted to the Philippines only.
           </p>
+
+          <div class="rounded-2xl border border-gold-200/80 bg-cream-100 p-4 space-y-3">
+            <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Search location</label>
+            <div class="flex flex-col gap-3 sm:flex-row">
+              <input
+                v-model="searchQuery"
+                type="text"
+                class="w-full rounded-xl border border-gold-200/80 bg-white px-4 py-3 text-charcoal-700 outline-none placeholder:text-charcoal-400 focus:border-gold-400 focus:ring-4 focus:ring-gold-200/30"
+                placeholder="Search a city, barangay, or address"
+                @keyup.enter.prevent="searchLocation"
+              />
+              <button
+                type="button"
+                class="rounded-xl bg-gold-700 px-5 py-3 font-semibold text-white transition hover:bg-gold-800"
+                @click="searchLocation"
+              >
+                Search
+              </button>
+            </div>
+            <p class="text-xs text-charcoal-500">Search first, then fine-tune the exact spot by dragging or clicking the pin.</p>
+          </div>
 
           <div class="relative">
             <div

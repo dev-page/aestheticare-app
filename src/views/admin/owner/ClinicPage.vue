@@ -7,6 +7,9 @@
         <div>
           <h1 class="text-3xl font-bold text-white mb-1">Clinic Page</h1>
           <p class="text-slate-400">Manage public-facing page content per clinic branch.</p>
+          <p v-if="branchScopeLabel" class="mt-2 inline-flex rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold text-gold-200">
+            Viewing: {{ branchScopeLabel }}
+          </p>
         </div>
 
         <div class="flex flex-wrap gap-2">
@@ -247,15 +250,43 @@
                 <p v-else class="text-slate-400 text-sm">No services added yet.</p>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="space-y-4">
                 <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600">
                   <h4 class="text-slate-200 font-medium mb-2">Contact</h4>
                   <p class="text-slate-300 text-sm">Email: {{ selectedBranch.businessEmail || 'Not set' }}</p>
                   <p class="text-slate-300 text-sm mt-1">Phone: {{ selectedBranch.contactNumber || 'Not set' }}</p>
                 </div>
-                <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600">
-                  <h4 class="text-slate-200 font-medium mb-2">Address</h4>
-                  <p class="text-slate-300 text-sm">{{ selectedBranch.clinicLocation || 'Not set' }}</p>
+                <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600 space-y-4">
+                  <h4 class="text-slate-200 font-medium">Address</h4>
+                  <p class="text-slate-300 text-sm leading-relaxed">
+                    {{ selectedBranch.clinicLocationAddress || selectedBranch.clinicLocation || 'Not set' }}
+                  </p>
+
+                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
+                      <p class="text-[11px] uppercase tracking-wide text-slate-400">City / Municipality</p>
+                      <p class="mt-1 text-sm text-white">{{ selectedBranch.clinicLocation || '-' }}</p>
+                    </div>
+                    <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
+                      <p class="text-[11px] uppercase tracking-wide text-slate-400">Barangay</p>
+                      <p class="mt-1 text-sm text-white">{{ selectedBranch.clinicBarangay || '-' }}</p>
+                    </div>
+                    <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
+                      <p class="text-[11px] uppercase tracking-wide text-slate-400">Actual Location</p>
+                      <p class="mt-1 text-sm text-white">{{ selectedBranch.clinicLocationAddress || '-' }}</p>
+                    </div>
+                    <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
+                      <p class="text-[11px] uppercase tracking-wide text-slate-400">Postal Code</p>
+                      <p class="mt-1 text-sm text-white">{{ selectedBranch.clinicPostalCode || '-' }}</p>
+                    </div>
+                  </div>
+
+                  <div class="overflow-hidden rounded-xl border border-slate-600 bg-slate-900/80">
+                    <div ref="branchMapEl" class="h-56 w-full"></div>
+                    <p v-if="!selectedBranch.clinicLocationLat || !selectedBranch.clinicLocationLng" class="border-t border-slate-700 px-4 py-3 text-xs text-slate-400">
+                      Map preview will appear once coordinates are available.
+                    </p>
+                  </div>
                 </div>
               </div>
             </section>
@@ -311,7 +342,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -332,6 +363,8 @@ export default {
     const loading = ref(true)
     const branches = ref([])
     const selectedBranchId = ref('')
+    const branchScopeLabel = ref('')
+    const branchMapEl = ref(null)
     const products = ref([])
     const reviews = ref([])
     const ownerEmail = ref('')
@@ -353,12 +386,27 @@ export default {
     const bannerImageFile = ref(null)
     const profilePreviewUrl = ref('')
     const bannerPreviewUrl = ref('')
+    let branchMap = null
+    let branchMarker = null
+    let mapsReady = false
+    const caviteBounds = {
+      north: 14.459,
+      south: 13.709,
+      east: 121.199,
+      west: 120.626
+    }
+    const defaultCaviteCenter = { lat: 14.3294, lng: 120.9367 }
 
     const tabs = [
       { id: 'about', label: 'About Us' },
       { id: 'products', label: 'Products & Services' },
       { id: 'reviews', label: 'Reviews' }
     ]
+
+    const isOwnerLikeRole = (role) => {
+      const normalized = String(role || '').trim().toLowerCase()
+      return ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized)
+    }
 
     const selectedBranch = computed(() =>
       branches.value.find((branch) => branch.id === selectedBranchId.value) || null
@@ -388,6 +436,99 @@ export default {
     const renderStars = (rating) => {
       const numeric = Math.max(0, Math.min(5, Number(rating || 0)))
       return `Rating: ${Math.round(numeric)}/5`
+    }
+
+    const loadMapsScript = () => {
+      if (window.google?.maps?.Map || window.google?.maps?.importLibrary) return Promise.resolve()
+      return new Promise((resolve, reject) => {
+        const existing = document.getElementById('google-maps-js')
+        if (existing) {
+          existing.addEventListener('load', () => resolve(), { once: true })
+          existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), { once: true })
+          return
+        }
+
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+        if (!apiKey) {
+          reject(new Error('Missing VITE_GOOGLE_MAPS_API_KEY in environment.'))
+          return
+        }
+
+        const script = document.createElement('script')
+        script.id = 'google-maps-js'
+        script.async = true
+        script.defer = true
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&loading=async&v=weekly`
+        script.onload = () => resolve()
+        script.onerror = () => reject(new Error('Failed to load Google Maps'))
+        document.head.appendChild(script)
+      })
+    }
+
+    const initBranchMap = async () => {
+      if (!branchMapEl.value || !selectedBranch.value) return
+
+      try {
+        if (!mapsReady) {
+          await loadMapsScript()
+          mapsReady = true
+        }
+      } catch (error) {
+        console.error('Failed to load branch map:', error)
+        return
+      }
+
+      const lat = Number(selectedBranch.value.clinicLocationLat)
+      const lng = Number(selectedBranch.value.clinicLocationLng)
+      const center = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : defaultCaviteCenter
+
+      let MapCtor = window.google?.maps?.Map
+      let AdvancedMarkerElement = window.google?.maps?.marker?.AdvancedMarkerElement
+      if (window.google?.maps?.importLibrary) {
+        try {
+          const mapsLib = await window.google.maps.importLibrary('maps')
+          MapCtor = mapsLib?.Map || MapCtor
+          const markerLib = await window.google.maps.importLibrary('marker')
+          AdvancedMarkerElement = markerLib?.AdvancedMarkerElement || AdvancedMarkerElement
+        } catch (error) {
+          console.error('Failed to import Google Maps libraries:', error)
+        }
+      }
+
+      if (!MapCtor) return
+
+      if (!branchMap) {
+        branchMap = new MapCtor(branchMapEl.value, {
+          center,
+          zoom: Number.isFinite(lat) && Number.isFinite(lng) ? 15 : 12,
+          restriction: { latLngBounds: caviteBounds, strictBounds: true },
+          streetViewControl: false,
+          fullscreenControl: false,
+          mapTypeControl: false,
+          mapId: import.meta.env.VITE_GOOGLE_MAP_ID
+        })
+      } else {
+        branchMap.setCenter(center)
+      }
+
+      if (branchMarker?.setMap) {
+        branchMarker.setMap(null)
+      }
+      branchMarker = null
+
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        if (AdvancedMarkerElement) {
+          branchMarker = new AdvancedMarkerElement({
+            map: branchMap,
+            position: { lat, lng }
+          })
+        } else if (window.google?.maps?.Marker) {
+          branchMarker = new window.google.maps.Marker({
+            map: branchMap,
+            position: { lat, lng }
+          })
+        }
+      }
     }
 
     const hydrateEditForm = () => {
@@ -495,20 +636,47 @@ export default {
       try {
         ownerEmail.value = user.email || ''
         const userSnap = await getDoc(doc(db, 'users', user.uid))
+        const userData = userSnap.exists() ? userSnap.data() || {} : {}
         if (userSnap.exists()) {
-          ownerEmail.value = userSnap.data().email || ownerEmail.value
+          ownerEmail.value = userData.email || ownerEmail.value
         }
 
-        const clinicsSnapshot = await getDocs(
-          query(collection(db, 'clinics'), where('ownerId', '==', user.uid))
-        )
+        if (isOwnerLikeRole(userData.role || userData.customRoleName)) {
+          const clinicsSnapshot = await getDocs(
+            query(collection(db, 'clinics'), where('ownerId', '==', user.uid))
+          )
 
-        branches.value = await Promise.all(
-          clinicsSnapshot.docs.map(async (snap) => {
-            const data = snap.data()
-            return { id: snap.id, ...data, isPublished: data.isPublished === true }
-          })
-        )
+          branches.value = await Promise.all(
+            clinicsSnapshot.docs.map(async (snap) => {
+              const data = snap.data()
+              return { id: snap.id, ...data, isPublished: data.isPublished === true }
+            })
+          )
+          branchScopeLabel.value = branches.value.length > 1 ? 'Owner-wide clinic pages' : 'Main clinic page'
+        } else {
+          const assignedBranchId = String(userData.branchId || userData.clinicBranch || '').trim()
+          if (assignedBranchId) {
+            const clinicSnap = await getDoc(doc(db, 'clinics', assignedBranchId))
+            if (clinicSnap.exists()) {
+              const data = clinicSnap.data() || {}
+              branches.value = [{ id: clinicSnap.id, ...data, isPublished: data.isPublished === true }]
+              branchScopeLabel.value = data.clinicBranch || data.clinicName || 'Assigned branch'
+            }
+          }
+
+          if (!branches.value.length) {
+            const assignedByAdminSnapshot = await getDocs(
+              query(collection(db, 'clinics'), where('branchAdminId', '==', user.uid))
+            )
+            branches.value = assignedByAdminSnapshot.docs.map((snap) => {
+              const data = snap.data() || {}
+              return { id: snap.id, ...data, isPublished: data.isPublished === true }
+            })
+            branchScopeLabel.value = branches.value.length
+              ? (branches.value[0].clinicBranch || branches.value[0].clinicName || 'Assigned branch')
+              : ''
+          }
+        }
         if (isExpired.value && branches.value.length) {
           await autoUnpublishExpiredBranches()
         }
@@ -516,6 +684,8 @@ export default {
           selectedBranchId.value = branches.value[0].id
           hydrateEditForm()
           await loadBranchPostsAndReviews(selectedBranchId.value)
+          await nextTick()
+          await initBranchMap()
         } else {
           selectedBranchId.value = ''
           products.value = []
@@ -687,16 +857,25 @@ export default {
       })
     })
 
+    watch(selectedBranchId, async () => {
+      await nextTick()
+      await initBranchMap()
+    })
+
     onUnmounted(() => {
       if (profilePreviewUrl.value) URL.revokeObjectURL(profilePreviewUrl.value)
       if (bannerPreviewUrl.value) URL.revokeObjectURL(bannerPreviewUrl.value)
       if (unsubscribeAuth) unsubscribeAuth()
+      if (branchMarker?.setMap) branchMarker.setMap(null)
+      branchMap = null
+      branchMarker = null
     })
 
     return {
       loading,
       branches,
       selectedBranchId,
+      branchScopeLabel,
       selectedBranch,
       products,
       reviews,
@@ -716,6 +895,7 @@ export default {
       saveEdit,
       togglePublish,
       selectBranch,
+      branchMapEl,
       serviceInput,
       handleServiceKeydown,
       commitServiceInput,

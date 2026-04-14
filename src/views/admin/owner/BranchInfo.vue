@@ -289,6 +289,14 @@ export default {
             updatedAt: serverTimestamp()
           })
 
+          if (branchAdminId) {
+            await updateDoc(doc(db, 'users', branchAdminId), {
+              branchId: currentBranch.value.id,
+              clinicBranch: currentBranch.value.clinicBranch.trim(),
+              updatedAt: serverTimestamp()
+            })
+          }
+
           const index = branches.value.findIndex((branch) => branch.id === currentBranch.value.id)
           if (index !== -1) {
             branches.value[index] = {

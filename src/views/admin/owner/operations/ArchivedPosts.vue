@@ -327,11 +327,6 @@ export default {
         currentBranchId.value = userSnap.exists() ? (userSnap.data().branchId || '') : ''
         await loadArchivedPosts()
         await loadArchivedSuppliers()
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Viewed archives',
-          details: 'Opened manager archives page.'
-        })
       })
     })
 

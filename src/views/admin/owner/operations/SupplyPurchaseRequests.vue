@@ -64,6 +64,7 @@
             >
               <option value="">All Status</option>
               <option value="Pending">Pending</option>
+              <option value="Approved">Approved</option>
               <option value="Delivered">Delivered</option>
               <option value="Delayed">Delayed</option>
               <option value="Cancelled">Cancelled</option>
@@ -148,6 +149,7 @@
                     :class="[
                       'px-3 py-1 rounded-full text-xs font-medium',
                       request.status === 'Pending' ? 'bg-orange-500/20 text-orange-400' :
+                      request.status === 'Approved' ? 'bg-emerald-500/20 text-emerald-400' :
                       request.status === 'Delivered' ? 'bg-green-500/20 text-green-400' :
                       request.status === 'Delayed' ? 'bg-yellow-500/20 text-yellow-400' :
                       'bg-red-500/20 text-red-400'
@@ -544,9 +546,11 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
+import { isSignificantActivity } from '@/utils/activityLogger'
 import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { usePermissions } from '@/composables/usePermissions'
+import { loadOwnerBranchScope, loadScopedCollectionDocs } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'ManagerPurchaseRequests',
@@ -573,6 +577,7 @@ export default {
     const currentUserType = ref('Staff')
     const currentOwnerId = ref('')
     const currentBranchId = ref('')
+    const currentBranchIds = ref([])
     const currentBranchName = ref('')
     const requests = ref([])
     const suppliers = ref([])
@@ -590,8 +595,15 @@ export default {
     const cancelTarget = ref(null)
     const cancelReason = ref('')
     const cancelSaving = ref(false)
+
+    const isOwnerLikeRole = (value) => {
+      const compact = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+      return compact === 'owner' || compact === 'clinicadmin' || compact === 'clinicadministrator'
+    }
+
     const canCreateRequests = computed(() => hasPermission('inventory:create'))
     const canReviewRequests = computed(() => hasPermission('inventory:review'))
+    const autoApproveRequests = computed(() => isOwnerLikeRole(currentUserRole.value))
 
     const newRequest = ref({
       supplierId: '',
@@ -624,6 +636,7 @@ export default {
 
     const logManagerActivity = async (action, meta = {}) => {
       if (!currentUserId.value) return
+      if (!isSignificantActivity({ action, details: meta.details })) return
       try {
         await addDoc(collection(db, 'activities'), {
           actorId: currentUserId.value,
@@ -728,7 +741,7 @@ export default {
       const reason =
         currentStock <= 0
           ? 'Item is out of stock. Immediate replenishment is recommended.'
-          : currentStock < minStock
+          : currentStock < maxStock * 0.5
             ? 'Stock is below minimum level. Reorder soon to avoid stockouts.'
             : 'Stock is within safe levels.'
 
@@ -769,14 +782,16 @@ export default {
     }
 
     const loadSuppliers = async () => {
-      if (!currentBranchId.value) {
+      if (!currentOwnerId.value && !currentBranchIds.value.length) {
         suppliers.value = []
         return
       }
-
-      const supplierQuery = query(collection(db, 'suppliers'), where('branchId', '==', currentBranchId.value))
-      const snapshot = await getDocs(supplierQuery)
-      suppliers.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      suppliers.value = await loadScopedCollectionDocs(
+        db,
+        'suppliers',
+        currentOwnerId.value,
+        currentBranchIds.value
+      )
     }
 
     const loadInventoryItems = async () => {
@@ -885,21 +900,27 @@ export default {
           totalCost,
           priority: newRequest.value.priority,
           notes: String(newRequest.value.notes || '').trim() || null,
-          status: 'Pending',
+          status: autoApproveRequests.value ? 'Approved' : 'Pending',
+          approvalRequired: !autoApproveRequests.value,
           paymentStatus: 'Unpaid',
           amountPaid: 0,
           balance: totalCost,
           createdAt: serverTimestamp()
         })
 
-        await logManagerActivity(`Created purchase request for ${selectedSupplierItem.value.name || 'item'}.`, {
-          type: 'purchase_request_created',
-          requestId: createdRequestRef.id,
-          item: selectedSupplierItem.value.name || '',
-          supplier: selectedSupplier.value.name || '',
-          quantity,
-          details: `Supplier: ${selectedSupplier.value.name || '-'}, Qty: ${quantity}`
-        })
+        await logManagerActivity(
+          autoApproveRequests.value
+            ? `Created and approved purchase request for ${selectedSupplierItem.value.name || 'item'}.`
+            : `Created purchase request for ${selectedSupplierItem.value.name || 'item'}.`,
+          {
+            type: autoApproveRequests.value ? 'purchase_request_auto_approved' : 'purchase_request_created',
+            requestId: createdRequestRef.id,
+            item: selectedSupplierItem.value.name || '',
+            supplier: selectedSupplier.value.name || '',
+            quantity,
+            details: `Supplier: ${selectedSupplier.value.name || '-'}, Qty: ${quantity}`
+          }
+        )
 
         toast.success('Purchase request submitted.')
         showAddModal.value = false
@@ -1297,6 +1318,7 @@ export default {
           currentUserType.value = 'Staff'
           currentOwnerId.value = ''
           currentBranchId.value = ''
+          currentBranchIds.value = []
           currentBranchName.value = ''
           requests.value = []
           suppliers.value = []
@@ -1304,43 +1326,31 @@ export default {
         }
 
         currentUserId.value = user.uid
-        const userSnap = await getDoc(doc(db, 'users', user.uid))
-        if (userSnap.exists()) {
-          const profile = userSnap.data()
-          currentBranchId.value = profile.branchId || ''
-          const fullName = `${profile.firstName || ''} ${profile.lastName || ''}`.trim()
-          currentUserName.value = profile.name || fullName || profile.email || user.email || 'Manager'
-          currentUserRole.value = profile.role || 'Manager'
-          currentUserType.value = profile.userType || 'Staff'
-        } else {
-          currentBranchId.value = ''
-          currentUserName.value = user.email || 'Manager'
-          currentUserRole.value = 'Manager'
-          currentUserType.value = 'Staff'
-        }
+        const scope = await loadOwnerBranchScope(db, user.uid)
+        const profile = scope.userProfile || {}
+        currentBranchId.value = scope.branchId || ''
+        currentOwnerId.value = scope.ownerId || ''
+        currentBranchIds.value = scope.branchIds || []
+        const fullName = `${profile.firstName || ''} ${profile.lastName || ''}`.trim()
+        currentUserName.value = profile.name || fullName || profile.email || user.email || 'Manager'
+        currentUserRole.value = profile.role || 'Manager'
+        currentUserType.value = profile.userType || 'Staff'
 
         if (currentBranchId.value) {
           const clinicSnap = await getDoc(doc(db, 'clinics', currentBranchId.value))
           if (clinicSnap.exists()) {
             const clinicData = clinicSnap.data()
             currentBranchName.value = clinicData.name || clinicData.clinicName || ''
-            currentOwnerId.value = clinicData.ownerId || ''
           } else {
             currentBranchName.value = ''
-            currentOwnerId.value = ''
           }
         } else {
           currentBranchName.value = ''
-          currentOwnerId.value = ''
         }
 
         await loadSuppliers()
         await loadInventoryItems()
         await loadRequests()
-        await logManagerActivity('Viewed purchase requests', {
-          type: 'purchase_requests_viewed',
-          details: 'Opened manager purchase requests page.'
-        })
       })
     })
 

@@ -32,6 +32,7 @@ export default {
       isMainBranch: false
     })
     const showLocationModal = ref(false)
+    const locationSearchQuery = ref('')
     const locationMapCanvas = ref(null)
     const locationError = ref('')
     let mapsReady = false
@@ -370,6 +371,7 @@ export default {
     }
 
     const openLocationModal = async () => {
+      locationSearchQuery.value = currentBranch.value.clinicLocationAddress || currentBranch.value.location || ''
       showLocationModal.value = true
       await nextTick()
       await initLocationMap()
@@ -397,6 +399,67 @@ export default {
 
       closeLocationModal()
       toast.success('Branch location selected successfully.')
+    }
+
+    const searchLocation = () => {
+      const query = String(locationSearchQuery.value || '').trim()
+      if (!query) {
+        locationError.value = 'Enter a location to search.'
+        return
+      }
+      if (!window.google?.maps?.Geocoder) {
+        locationError.value = 'Search is not available right now.'
+        return
+      }
+
+      const geocoder = new window.google.maps.Geocoder()
+      geocoder.geocode(
+        {
+          address: query,
+          bounds: caviteBounds,
+          componentRestrictions: { country: 'PH' }
+        },
+        (results, status) => {
+          if (status !== 'OK' || !results?.length) {
+            locationError.value = 'No matching location found.'
+            return
+          }
+
+          const place = results[0]
+          const components = flattenAddressComponents(results)
+          if (!isWithinCavite(components)) {
+            locationError.value = 'Please select a location within Cavite.'
+            return
+          }
+
+          const location = place.geometry?.location
+          if (!location) {
+            locationError.value = 'Unable to resolve the searched location.'
+            return
+          }
+
+          const lat = typeof location.lat === 'function' ? location.lat() : location.lat
+          const lng = typeof location.lng === 'function' ? location.lng() : location.lng
+
+          if (locationMarker?.position) {
+            locationMarker.position = { lat, lng }
+          } else if (locationMarker?.setPosition) {
+            locationMarker.setPosition({ lat, lng })
+          }
+          if (locationMap?.setCenter) {
+            locationMap.setCenter({ lat, lng })
+          }
+
+          applyResolvedBranchLocation({
+            lat,
+            lng,
+            components,
+            formattedAddress: place.formatted_address || query,
+            fallbackName: place.formatted_address || query
+          })
+          locationError.value = ''
+        }
+      )
     }
 
     const saveBranch = async () => {
@@ -454,6 +517,7 @@ export default {
 
         const docRef = await addDoc(collection(db, 'clinics'), {
           clinicBranch: currentBranch.value.name.trim(),
+          clinicName: currentBranch.value.name.trim(),
           clinicLocation: currentBranch.value.location.trim(),
           clinicLocationLat: currentBranch.value.clinicLocationLat,
           clinicLocationLng: currentBranch.value.clinicLocationLng,
@@ -473,6 +537,7 @@ export default {
           id: docRef.id,
           ...currentBranch.value,
           clinicBranch: currentBranch.value.name.trim(),
+          clinicName: currentBranch.value.name.trim(),
           clinicLocation: currentBranch.value.location.trim(),
           clinicLocationLat: currentBranch.value.clinicLocationLat,
           clinicLocationLng: currentBranch.value.clinicLocationLng,
@@ -499,6 +564,7 @@ export default {
       currentBranch,
       caviteLocations,
       showLocationModal,
+      locationSearchQuery,
       locationMapCanvas,
       locationError,
       branchFullAddressLabel,
@@ -510,6 +576,7 @@ export default {
       handleBranchNameInput,
       openLocationModal,
       closeLocationModal,
+      searchLocation,
       usePinnedLocation,
       saveBranch,
       resetForm,
@@ -679,6 +746,26 @@ export default {
         :showConfirm="false"
       >
         <div class="space-y-4">
+          <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Search location</label>
+            <div class="flex flex-col gap-3 sm:flex-row">
+              <input
+                v-model="locationSearchQuery"
+                type="text"
+                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-500 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15"
+                placeholder="Search a city, barangay, or address"
+                @keyup.enter.prevent="searchLocation"
+              />
+              <button
+                type="button"
+                class="rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
+                @click="searchLocation"
+              >
+                Search
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-slate-400">Search first, then fine-tune the exact spot by dragging or clicking the pin.</p>
+          </div>
           <div ref="locationMapCanvas" class="w-full h-[380px] rounded-xl border border-slate-700"></div>
           <div
             v-if="locationError"

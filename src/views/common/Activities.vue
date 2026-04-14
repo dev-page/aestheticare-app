@@ -37,6 +37,7 @@ import { ref, computed, onMounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
+import { isSignificantActivity } from '@/utils/activityLogger'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -66,6 +67,7 @@ export default {
 
     const filteredActivities = computed(() =>
       activities.value
+        .filter((item) => isSignificantActivity(item))
         .filter((item) => {
           if (item.actorId && String(item.actorId) === currentUserId.value) return true
           if (item.practitionerId && String(item.practitionerId) === currentUserId.value) return true
