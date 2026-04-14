@@ -457,9 +457,9 @@ const loadCustomerProfile = () => {
         customer.value.email = user.email || ''
       }
       locationSearchQuery.value = buildLocationSearchQuery()
+      loading.value = false
       await nextTick()
       await initLocationMap()
-      loading.value = false
     },
     (error) => {
       console.error(error)
