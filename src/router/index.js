@@ -9,7 +9,7 @@ import { auth, db } from "@/config/firebaseConfig";
 const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 
 const routes = [
-  // Public routes
+
   ...(isMobileApp
     ? [{ path: "/", redirect: "/login" }]
     : [{ path: "/", name: "home", component: () => import("@/views/public/Home.vue") }]),
