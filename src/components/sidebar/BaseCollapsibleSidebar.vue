@@ -1,28 +1,28 @@
 <template>
   <div
     :style="containerStyle"
-    :class="['relative flex-shrink-0', enableTransitions ? 'transition-all duration-300' : '']"
+    :class="['relative flex-shrink-0 self-stretch', isSmallScreen ? 'w-0' : '', enableTransitions ? 'transition-all duration-300' : '']"
   >
     <button
-      v-if="isSmallScreen && collapsed && !useInlineMobileToggle"
+      v-if="isSmallScreen && collapsed"
       type="button"
-      class="readonly-exempt fixed left-2 top-3 z-50 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#5a3927] bg-[#1f120b] text-[#f3e7e0] shadow-2xl"
-      :aria-label="'Expand sidebar'"
-      title="Expand sidebar"
+      class="fixed left-0 top-24 z-50 flex h-12 w-12 items-center justify-center rounded-r-xl border border-[#5a3927] bg-[#2a180f] text-[#f3e7e0] shadow-2xl transition-colors duration-200 hover:bg-[#3a2417] hover:text-white"
+      aria-label="Open sidebar"
+      title="Open sidebar"
       @click="toggleCollapsed"
     >
-      <Icon icon="mdi:menu" class="h-4 w-4" />
+      <Icon icon="mdi:chevron-right" class="h-5 w-5" />
     </button>
+
     <aside
       :style="asideStyle"
       :class="[
-        'readonly-exempt fixed left-0 top-0 bottom-0 z-40 bg-[#1f120b] border border-[#3a2417] rounded-tr-2xl rounded-br-2xl shadow-2xl flex flex-col overflow-hidden',
-        isSmallScreen && collapsed ? '-translate-x-full' : 'translate-x-0',
+        'readonly-exempt z-40 h-full bg-[#1f120b] border border-[#3a2417] rounded-tr-2xl rounded-br-2xl shadow-2xl flex flex-col overflow-hidden',
         enableTransitions ? 'transition-all duration-300' : ''
       ]"
     >
       <div class="p-4 border-b border-[#3a2417]">
-        <div class="flex items-center gap-3">
+        <div class="flex items-start gap-3">
           <template v-if="showSkeleton">
             <div class="h-10 w-10 rounded-lg border border-[#5a3927] bg-[#3a2417] animate-pulse"></div>
             <div v-if="!collapsed" class="min-w-0 flex-1 space-y-2">
@@ -31,23 +31,28 @@
             </div>
           </template>
           <template v-else>
-            <div v-if="!collapsed" class="min-w-0">
+            <div v-if="!collapsed" class="min-w-0 flex-1">
               <h2 class="text-white font-semibold text-lg truncate">{{ title }}</h2>
               <p class="text-[#c9b3a5] text-xs truncate">{{ subtitle }}</p>
             </div>
+            <div v-else class="flex-1"></div>
           </template>
-          <button
-            v-if="isSmallScreen"
-            type="button"
-            class="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#5a3927] bg-[#2a180f] text-[#f3e7e0]"
-            :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-            :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-            @click="toggleCollapsed"
-          >
-            <Icon :icon="collapsed ? 'mdi:menu-open' : 'mdi:menu-close'" class="h-4 w-4" />
-          </button>
-          <div v-else class="ml-auto"></div>
         </div>
+
+        <button
+          type="button"
+          class="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#5a3927] bg-[#2a180f] px-3 py-2 text-sm font-semibold text-[#f3e7e0] transition-colors duration-200 hover:bg-[#3a2417] hover:text-white"
+          :class="collapsed ? 'px-2' : ''"
+          :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+          :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+          @click="toggleCollapsed"
+        >
+          <Icon
+            :icon="collapsed ? 'mdi:chevron-right' : 'mdi:chevron-left'"
+            class="h-4 w-4"
+          />
+          <span v-if="!collapsed">Collapse sidebar</span>
+        </button>
       </div>
 
       <nav class="sidebar-scroll flex-1 p-3 overflow-y-auto">
@@ -289,6 +294,7 @@ import Swal from 'sweetalert2'
 import { useAuth } from '@/composables/useAuth'
 import { useSubscription } from '@/composables/useSubscription'
 import { usePermissions } from '@/composables/usePermissions'
+import { useSidebarState } from '@/composables/useSidebarState'
 
 export default {
   name: 'BaseCollapsibleSidebar',
@@ -315,10 +321,8 @@ export default {
 
     const enableTransitions = ref(false)
     const lastVisibleItems = ref([])
-    const storageKey = `sidebar:${props.panelKey}:collapsed`
     const groupStorageKey = `sidebar:${props.panelKey}:groups`
-    const collapsed = ref(localStorage.getItem(storageKey) === '1')
-    const isSmallScreen = ref(false)
+    const isSmallScreen = ref(typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false)
     const wasSmallScreen = ref(false)
     const userStorageKey = `sidebar:${props.panelKey}:user`
     const displayName = ref(props.defaultName)
@@ -330,6 +334,7 @@ export default {
     let unsubscribeNotificationsRole = null
     const notificationsUserCache = ref([])
     const notificationsRoleCache = ref([])
+    const { collapsed, toggleCollapsed: toggleSidebarCollapsed, syncFromStorage } = useSidebarState(() => props.panelKey)
 
     const userInitial = computed(() => {
       const source = String(displayName.value || '').trim()
@@ -337,15 +342,43 @@ export default {
     })
 
     const containerStyle = computed(() => {
-      if (isSmallScreen.value) return { width: '0rem' }
+      if (isSmallScreen.value) {
+        return { width: '0px' }
+      }
       return { width: collapsed.value ? '5rem' : '17rem' }
     })
 
     const asideStyle = computed(() => {
       if (isSmallScreen.value) {
-        return { width: collapsed.value ? '5rem' : '17rem' }
+        if (collapsed.value) {
+          return {
+            position: 'fixed',
+            left: '0',
+            top: '0',
+            width: '0px',
+            height: '0px',
+            minHeight: '0px',
+            opacity: '0',
+            pointerEvents: 'none',
+            transform: 'translateX(-100%)',
+            zIndex: 20
+          }
+        }
+
+        return {
+          position: 'fixed',
+          left: '0',
+          top: '0',
+          width: collapsed.value ? '5rem' : '17rem',
+          height: '100vh',
+          minHeight: '100vh',
+          zIndex: 20
+        }
       }
-      return { width: collapsed.value ? '5rem' : '17rem' }
+      return {
+        width: collapsed.value ? '5rem' : '17rem',
+        minHeight: '100%'
+      }
     })
 
     const isGroup = (item) => Array.isArray(item?.children) && item.children.length > 0
@@ -519,11 +552,6 @@ export default {
       return openGroups.value[key] === true || isGroupActive(group)
     }
 
-    const useInlineMobileToggle = computed(() => {
-      const path = String(route.path || '').toLowerCase()
-      return !path.startsWith('/superadmin')
-    })
-
     const persistGroups = () => {
       localStorage.setItem(groupStorageKey, JSON.stringify(openGroups.value))
     }
@@ -555,7 +583,6 @@ export default {
 
       if (collapsed.value) {
         collapsed.value = false
-        localStorage.setItem(storageKey, '0')
         window.dispatchEvent(
           new CustomEvent('sidebar-collapsed-change', {
             detail: { panelKey: props.panelKey, collapsed: false }
@@ -574,8 +601,7 @@ export default {
     }
 
     const toggleCollapsed = () => {
-      collapsed.value = !collapsed.value
-      localStorage.setItem(storageKey, collapsed.value ? '1' : '0')
+      toggleSidebarCollapsed()
       window.dispatchEvent(
         new CustomEvent('sidebar-collapsed-change', {
           detail: { panelKey: props.panelKey, collapsed: collapsed.value }
@@ -586,7 +612,6 @@ export default {
     const closeSidebar = () => {
       if (!isSmallScreen.value || collapsed.value) return
       collapsed.value = true
-      localStorage.setItem(storageKey, '1')
       window.dispatchEvent(
         new CustomEvent('sidebar-collapsed-change', {
           detail: { panelKey: props.panelKey, collapsed: true }
@@ -764,14 +789,13 @@ export default {
     }
 
     let unsubscribe = null
-    let sidebarToggleHandler = null
     let viewportHandler = null
 
     const syncCollapsedWithViewport = () => {
       const small = window.matchMedia('(max-width: 767px)').matches
       isSmallScreen.value = small
       if (small && !wasSmallScreen.value) {
-        collapsed.value = localStorage.getItem(storageKey) === '1'
+        syncFromStorage()
         window.dispatchEvent(
           new CustomEvent('sidebar-collapsed-change', {
             detail: { panelKey: props.panelKey, collapsed: collapsed.value }
@@ -779,8 +803,7 @@ export default {
         )
       }
       if (!small && wasSmallScreen.value) {
-        const stored = localStorage.getItem(storageKey) === '1'
-        collapsed.value = stored
+        syncFromStorage()
         window.dispatchEvent(
           new CustomEvent('sidebar-collapsed-change', {
             detail: { panelKey: props.panelKey, collapsed: collapsed.value }
@@ -795,14 +818,6 @@ export default {
         enableTransitions.value = true
       })
       loadCachedUserDetails()
-      sidebarToggleHandler = (event) => {
-        const detail = event?.detail || {}
-        if (!detail.panelKey) return
-        if (detail.panelKey === props.panelKey) {
-          toggleCollapsed()
-        }
-      }
-      window.addEventListener('sidebar-toggle-request', sidebarToggleHandler)
       try {
         const parsed = JSON.parse(localStorage.getItem(groupStorageKey) || '{}')
         openGroups.value = normalizeOpenGroups(parsed)
@@ -850,9 +865,6 @@ export default {
 
     onUnmounted(() => {
       if (unsubscribe) unsubscribe()
-      if (sidebarToggleHandler) {
-        window.removeEventListener('sidebar-toggle-request', sidebarToggleHandler)
-      }
       if (viewportHandler) {
         window.removeEventListener('resize', viewportHandler)
       }
@@ -889,7 +901,6 @@ export default {
       hasFeature,
       hasPermission,
       isSmallScreen,
-      useInlineMobileToggle,
       skeletonCount
     }
   }

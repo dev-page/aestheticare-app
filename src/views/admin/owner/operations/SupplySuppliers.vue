@@ -446,6 +446,7 @@ export default {
     const selectedCategory = ref('')
     const selectedStatus = ref('')
     const submitAttempted = ref(false)
+    const currentScopeMode = ref('owner')
     const addTouched = ref({
       name: false,
       categories: false,
@@ -506,7 +507,8 @@ export default {
         db,
         'suppliers',
         currentOwnerId.value,
-        currentBranchIds.value
+        currentBranchIds.value,
+        { scopeMode: currentScopeMode.value }
       )
     }
 
@@ -828,6 +830,7 @@ export default {
         currentBranchId.value = scope.branchId || ''
         currentOwnerId.value = scope.ownerId || ''
         currentBranchIds.value = scope.branchIds || []
+        currentScopeMode.value = scope.scopeMode || 'owner'
         await loadSuppliers()
       })
     })

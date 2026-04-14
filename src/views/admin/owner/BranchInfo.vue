@@ -8,6 +8,7 @@ import Modal from '@/components/common/Modal.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'Branch Info',
@@ -22,6 +23,7 @@ export default {
       branchAdminId: '',
       branchAdminName: ''
     })
+    const currentOwnerId = ref('')
 
     const currentBranch = ref({
       id: null,
@@ -67,23 +69,22 @@ export default {
       if (!user) {
         branches.value = []
         staffOptions.value = []
+        currentOwnerId.value = ''
         return
       }
 
-      const clinicsQuery = query(
-        collection(db, 'clinics'),
-        where('ownerId', '==', user.uid)
-      )
-      const snapshot = await getDocs(clinicsQuery)
-      ownerProfile.value = await loadOwnerProfile(user.uid)
-      branches.value = sortRecordsNewestFirst(snapshot.docs.map((docSnap) => {
-        const data = docSnap.data() || {}
+      const scope = await loadOwnerBranchScope(db, user.uid)
+      currentOwnerId.value = scope.ownerId || user.uid
+      const branchDocs = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
+      ownerProfile.value = await loadOwnerProfile(currentOwnerId.value)
+      branches.value = sortRecordsNewestFirst(branchDocs.map((branchDoc) => {
+        const data = branchDoc || {}
         const rawStatus = String(data.status || '').trim()
         const isMainBranch = Boolean(data.isMainBranch)
         const branchAdminId = String(data.branchAdminId || '').trim()
         const branchAdminName = String(data.branchAdminName || '').trim()
         return {
-          id: docSnap.id,
+          id: branchDoc.id,
           ...data,
           revenue: normalizeRevenue(data.revenue),
           status: rawStatus || 'Active',
@@ -366,7 +367,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-col md:flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
     <main class="flex-1 p-4 md:p-8">

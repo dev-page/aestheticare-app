@@ -46,6 +46,7 @@
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Basic Salary</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Commission</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Total Salary</th>
+                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Action</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-700">
@@ -55,12 +56,22 @@
                 <td class="px-6 py-4 text-slate-300">{{ formatCurrency(row.basicSalary) }}</td>
                 <td class="px-6 py-4 text-slate-300">{{ formatCurrency(row.commission) }}</td>
                 <td class="px-6 py-4 text-rose-400 font-semibold">{{ formatCurrency(row.totalSalary) }}</td>
+                <td class="px-6 py-4">
+                  <button
+                    type="button"
+                    class="rounded-lg border border-amber-500/60 px-3 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/10"
+                    :disabled="!row.employeeId"
+                    @click="printApprovedPayslip(row)"
+                  >
+                    Print Payslip
+                  </button>
+                </td>
               </tr>
               <tr v-if="payrolls.length === 0">
-                <td colspan="5" class="px-6 py-8 text-center text-slate-400">No payroll records available.</td>
+                <td colspan="6" class="px-6 py-8 text-center text-slate-400">No payroll records available.</td>
               </tr>
               <tr v-else-if="monthlyPayrollRows.length === 0">
-                <td colspan="5" class="px-6 py-8 text-center text-slate-400">No payroll records for selected month.</td>
+                <td colspan="6" class="px-6 py-8 text-center text-slate-400">No payroll records for selected month.</td>
               </tr>
             </tbody>
           </table>
@@ -99,7 +110,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, orderBy, limit } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
@@ -146,12 +157,14 @@ export default {
             employeeId: entry.employeeId || key,
             employeeName: entry.employeeName || `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || 'Unknown',
             position: profile.role || profile.jobTitle || '-',
-            basicSalary: Number(profile.basicSalary || profile.monthlySalary || 0),
+            basicSalary: 0,
             commission: 0,
             totalSalary: 0
           }
         }
 
+        const workedBasePay = Number(entry.hourlyRate || 0) * Number(entry.hoursWorked || 0)
+        grouped[key].basicSalary += workedBasePay
         grouped[key].commission += Number(entry.commission || 0)
         grouped[key].totalSalary += Number(entry.totalPay || 0)
       })
@@ -162,6 +175,150 @@ export default {
     const monthlyPayrollTotal = computed(() =>
       monthlyPayrollRows.value.reduce((sum, row) => sum + Number(row.totalSalary || 0), 0)
     )
+
+    const formatPrintDate = (value) => {
+      if (!value) return '-'
+      if (value?.toDate) return value.toDate().toLocaleDateString('en-PH')
+      if (value?.seconds) return new Date(value.seconds * 1000).toLocaleDateString('en-PH')
+      const parsed = new Date(value)
+      return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleDateString('en-PH')
+    }
+
+    const renderPayslipHtml = (payload) => {
+      const deductions = payload.deductions || {}
+      const deductionRows = Object.entries(deductions).map(([key, value]) => {
+        const amount = typeof value === 'object' ? Number(value.amount || 0) : Number(value || 0)
+        return `<tr><td style="padding:8px 0;color:#4b5563;">${key}</td><td style="padding:8px 0;text-align:right;">${formatCurrency(amount)}</td></tr>`
+      }).join('')
+
+      const earningsRows = Object.entries(payload.earnings || {}).map(([key, value]) => {
+        return `<tr><td style="padding:8px 0;color:#4b5563;">${key}</td><td style="padding:8px 0;text-align:right;">${formatCurrency(value)}</td></tr>`
+      }).join('')
+
+      return `
+        <html>
+          <head>
+            <title>Payslip - ${payload.employeeName || 'Employee'}</title>
+            <style>
+              @page { size: A4; margin: 16mm; }
+              body { font-family: Arial, sans-serif; color: #111827; margin: 0; }
+              .sheet { padding: 0; }
+              .header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:24px; }
+              .brand { font-size: 18px; font-weight: 700; }
+              .muted { color: #6b7280; font-size: 12px; }
+              .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+              .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px; color: #374151; }
+              table { width: 100%; border-collapse: collapse; }
+              td { font-size: 13px; border-bottom: 1px solid #f3f4f6; }
+              .summary { display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+              .summary .box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; }
+              .summary .box p { margin: 0; font-size: 12px; color: #6b7280; }
+              .summary .box h3 { margin: 6px 0 0; font-size: 15px; }
+              .accent { color: #b45309; }
+              .green { color: #047857; }
+            </style>
+          </head>
+          <body>
+            <div class="sheet">
+              <div class="header">
+                <div>
+                  <div class="brand">Approved Payslip</div>
+                  <div class="muted">${payload.branchName || 'Clinic Branch'}</div>
+                </div>
+                <div class="muted" style="text-align:right">
+                  <div><strong>Employee:</strong> ${payload.employeeName || '-'}</div>
+                  <div><strong>Position:</strong> ${payload.position || '-'}</div>
+                  <div><strong>Period:</strong> ${payload.payPeriod || selectedMonth.value}</div>
+                  <div><strong>Generated:</strong> ${payload.generatedLabel || '-'}</div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="section-title">Earnings</div>
+                <table>
+                  ${earningsRows || '<tr><td style="padding:8px 0;color:#6b7280;">No earnings entries.</td><td></td></tr>'}
+                </table>
+              </div>
+
+              <div class="card">
+                <div class="section-title">Deductions</div>
+                <table>
+                  ${deductionRows || '<tr><td style="padding:8px 0;color:#6b7280;">No deductions entries.</td><td></td></tr>'}
+                </table>
+              </div>
+
+              <div class="summary">
+                <div class="box">
+                  <p>Total Earnings</p>
+                  <h3 class="accent">${formatCurrency(payload.totalEarnings || 0)}</h3>
+                </div>
+                <div class="box">
+                  <p>Total Deductions</p>
+                  <h3>${formatCurrency(payload.totalDeductions || 0)}</h3>
+                </div>
+                <div class="box">
+                  <p>Net Pay</p>
+                  <h3 class="green">${formatCurrency(payload.netPay || 0)}</h3>
+                </div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `
+    }
+
+    const printApprovedPayslip = async (row) => {
+      if (!row?.employeeId) return
+
+      try {
+        const [payslipSnap, userSnap] = await Promise.all([
+          getDocs(query(
+            collection(db, 'users', row.employeeId, 'payslips'),
+            orderBy('dateGenerated', 'desc'),
+            limit(1)
+          )),
+          getDoc(doc(db, 'users', row.employeeId))
+        ])
+
+        const latestPayslip = payslipSnap.empty ? null : payslipSnap.docs[0].data() || {}
+        const userData = userSnap.exists() ? (userSnap.data() || {}) : {}
+        const payload = {
+          employeeName: latestPayslip?.employeeName || row.employeeName || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || 'Employee',
+          position: latestPayslip?.jobTitle || row.position || userData.role || userData.jobTitle || '-',
+          branchName: userData.clinicBranch || userData.branchName || 'Clinic Branch',
+          payPeriod: latestPayslip?.payPeriod || selectedMonth.value,
+          generatedLabel: formatPrintDate(latestPayslip?.dateGenerated || latestPayslip?.createdAt),
+          earnings: latestPayslip?.earnings || {
+            basicSalary: row.basicSalary || 0,
+            commission: row.commission || 0,
+            total: row.totalSalary || 0
+          },
+          deductions: latestPayslip?.deductions || {},
+          totalEarnings: latestPayslip?.totalEarnings ?? row.totalSalary ?? 0,
+          totalDeductions: latestPayslip?.totalDeductions ?? 0,
+          netPay: latestPayslip?.netPay ?? row.totalSalary ?? 0
+        }
+
+        if (!latestPayslip) {
+          toast.info('No saved payslip found for this employee yet. Printing the payroll summary values instead.')
+        }
+
+        const printWindow = window.open('', '_blank', 'width=900,height=700')
+        if (!printWindow) {
+          toast.error('Popup blocked. Please allow popups to print the payslip.')
+          return
+        }
+
+        printWindow.document.open()
+        printWindow.document.write(renderPayslipHtml(payload))
+        printWindow.document.close()
+        printWindow.focus()
+        printWindow.print()
+      } catch (error) {
+        console.error('Failed to print approved payslip:', error)
+        toast.error('Unable to print the approved payslip.')
+      }
+    }
 
     const monthlyRevenue = computed(() =>
       transactions.value.reduce((sum, tx) => {
@@ -252,7 +409,8 @@ export default {
       monthlyPayrollTotal,
       payrollVsRevenuePercent,
       payrollHistory,
-      formatCurrency
+      formatCurrency,
+      printApprovedPayslip
     }
   }
 }

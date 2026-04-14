@@ -1,25 +1,7 @@
 <template>
   <div class="employee-topbar readonly-exempt">
     <div class="employee-topbar-inner" :style="topbarStyle">
-      <div class="employee-topbar-left">
-        <button
-          type="button"
-          class="employee-topbar-btn employee-topbar-toggle"
-          :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-          aria-label="Toggle sidebar"
-          @click="toggleSidebar"
-        >
-          <svg class="employee-topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              :d="sidebarCollapsed ? 'M13 5l7 7-7 7M5 5v14' : 'M11 19l-7-7 7-7M19 5v14'"
-            />
-          </svg>
-        </button>
-        <span v-if="title" class="employee-topbar-title">{{ title }}</span>
-      </div>
+      <div class="employee-topbar-left"></div>
       <div class="employee-topbar-right">
         <div class="employee-topbar-notifications">
         <button type="button" class="employee-topbar-btn" aria-label="Notifications" @click="toggleNotifications">
@@ -179,15 +161,6 @@ const badgeClass = computed(() => {
 const badgeLabelClass = computed(() => {
   return props.badgeVariant === 'date' ? 'badge-date' : ''
 })
-
-const toggleSidebar = () => {
-  if (!props.panelKey) return
-  window.dispatchEvent(
-    new CustomEvent('sidebar-toggle-request', {
-      detail: { panelKey: props.panelKey }
-    })
-  )
-}
 
 const router = useRouter()
 const showNotifications = ref(false)
@@ -375,7 +348,7 @@ onUnmounted(() => {
 .employee-topbar {
   position: sticky;
   top: 0;
-  z-index: 40;
+  z-index: 10;
   background:
     linear-gradient(180deg, rgba(26, 16, 11, 0.94) 0%, rgba(20, 12, 8, 0.9) 100%);
   border-bottom: 1px solid rgba(123, 79, 55, 0.44);
@@ -403,16 +376,6 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-}
-
-.employee-topbar-toggle {
-  height: 32px;
-  width: 32px;
-}
-
-.employee-topbar-toggle .employee-topbar-icon {
-  width: 16px;
-  height: 16px;
 }
 
 .employee-topbar-right {
@@ -602,16 +565,6 @@ onUnmounted(() => {
     padding-left: 1rem;
     align-items: flex-start;
     gap: 0.4rem;
-  }
-
-  .employee-topbar-toggle {
-    width: 30px;
-    height: 30px;
-  }
-
-  .employee-topbar-toggle .employee-topbar-icon {
-    width: 14px;
-    height: 14px;
   }
 
   .employee-topbar-title {

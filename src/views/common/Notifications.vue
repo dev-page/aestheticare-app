@@ -111,6 +111,7 @@
   <Modal
     :isOpen="showNotificationModal"
     :panelClass="isModuleView ? 'notifications-modal-panel notifications-modal-panel-module' : 'notifications-modal-panel'"
+    :panelStyle="isModuleView ? '' : { backgroundColor: '#fffdf6', color: '#4f3527' }"
     bodyClass="notifications-modal-body-shell"
     @close="closeNotificationModal"
   >
@@ -777,9 +778,11 @@ export default {
   max-width: 40rem;
   border-radius: 1.5rem;
   border: 1px solid rgba(230, 193, 150, 0.8);
-  background: rgba(255, 251, 244, 0.98);
+  background: #fffdf6 !important; /* solid off-white */
   color: #4f3527;
   box-shadow: 0 24px 60px rgba(87, 56, 35, 0.18);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 :deep(.notifications-modal-panel-module) {
@@ -790,10 +793,6 @@ export default {
   background: linear-gradient(180deg, rgba(44, 29, 20, 0.98), rgba(31, 20, 14, 0.98));
   color: #ead9ca;
   box-shadow: 0 24px 60px rgba(11, 6, 4, 0.34);
-}
-
-.notifications-modal-body-shell {
-  padding: 0;
 }
 
 .notifications-modal-heading {
@@ -809,6 +808,12 @@ export default {
   gap: 1rem;
   font-size: 0.95rem;
   line-height: 1.65;
+}
+
+:deep(.notifications-modal-body-shell) {
+  background: #fffdf6;
+  color: #4f3527;
+  padding: 0;
 }
 
 .notifications-modal-label {

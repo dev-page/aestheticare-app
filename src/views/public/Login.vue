@@ -1,6 +1,6 @@
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
 import {
@@ -8,19 +8,12 @@ import {
   setPersistence,
   browserSessionPersistence,
   browserLocalPersistence,
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
-  GoogleAuthProvider,
-  FacebookAuthProvider,
   signOut,
 } from 'firebase/auth'
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
-import { useAuth } from '@/composables/useAuth'
 
 const router = useRouter()
-const { user, isLoading } = useAuth()
 
 const email = ref('')
 const password = ref('')
@@ -102,81 +95,6 @@ const startRedirectFlow = (redirectPath) => {
   }, REDIRECT_DELAY)
 }
 
-const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
-
-const finalizeSocialLogin = async (user) => {
-  if (!user) return
-  await user.reload()
-
-  const userRef = doc(db, 'users', user.uid)
-  let userSnap = await getDoc(userRef)
-
-  if (!userSnap.exists()) {
-    await setDoc(userRef, {
-      email: user.email,
-      role: 'Customer',
-      status: 'Active',
-      createdAt: serverTimestamp()
-    })
-    userSnap = await getDoc(userRef)
-  }
-
-  const accountData = userSnap.data() || {}
-  const accountStatus = String(accountData.status || '').trim().toLowerCase()
-  const accountClosed = accountData.archived === true || accountData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
-  if (accountClosed) {
-    await signOut(auth)
-    toast.error('This account has been closed. Please contact the system administrator.')
-    setProcessLoading(false)
-    return
-  }
-
-  if (!(await ensureCenterAccessAllowed(user, accountData))) {
-    setProcessLoading(false)
-    return
-  }
-
-  const redirectPath = await resolveRedirectPath(accountData)
-  clearFormFields()
-  startRedirectFlow(redirectPath)
-}
-
-const startSocialSignIn = async (provider, providerLabel) => {
-  try {
-    setProcessLoading(true, 'Redirecting to your panel...')
-    provider.setCustomParameters?.({ prompt: 'select_account' })
-
-    if (isMobileApp) {
-      await signInWithRedirect(auth, provider)
-      return
-    }
-
-    const result = await signInWithPopup(auth, provider)
-    await finalizeSocialLogin(result.user)
-  } catch (err) {
-    console.error(err)
-    const fallbackNeeded = [
-      'auth/popup-blocked',
-      'auth/popup-closed-by-user',
-      'auth/cancelled-popup-request',
-      'auth/unauthorized-domain',
-      'auth/operation-not-supported-in-this-environment'
-    ].includes(err.code)
-
-    if (!isMobileApp && fallbackNeeded) {
-      try {
-        await signInWithRedirect(auth, provider)
-        return
-      } catch (redirectErr) {
-        console.error(redirectErr)
-      }
-    }
-
-    toast.error(`Failed to login with ${providerLabel}.`)
-    setProcessLoading(false)
-  }
-}
-
 const handleLogin = async () => {
     if (!email.value || !password.value) {
       toast.error('Email and password are required.')
@@ -249,27 +167,6 @@ const handleLogin = async () => {
 const handleForgotPassword = async () => {
   router.push('/forgot-password')
 }
-
-const handleGoogleLogin = async () => {
-  await startSocialSignIn(new GoogleAuthProvider(), 'Google')
-}
-
-const handleFacebookLogin = async () => {
-  await startSocialSignIn(new FacebookAuthProvider(), 'Facebook')
-}
-
-onMounted(async () => {
-  try {
-    const result = await getRedirectResult(auth)
-    if (result?.user) {
-      await finalizeSocialLogin(result.user)
-    }
-  } catch (err) {
-    console.error(err)
-    toast.error('Failed to complete social login.')
-    setProcessLoading(false)
-  }
-})
 
 onBeforeUnmount(() => {
   if (redirectTimeout) clearTimeout(redirectTimeout)
@@ -419,58 +316,11 @@ onBeforeRouteLeave((to, from, next) => {
               <a href="#" @click.prevent="handleForgotPassword" class="text-gold-700 hover:underline text-xs">Forgot password?</a>
             </div>
 
-            <div class="space-y-2">
-              <button
-                @click="handleGoogleLogin"
-                type="button"
-                class="w-full py-3 px-4 rounded-xl bg-white/92
-                      text-charcoal-700 font-semibold text-sm
-                      hover:bg-white transition
-                      flex items-center justify-center gap-3
-                      border border-gold-200/80"
-              >
-                <svg class="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true">
-                  <path fill="#4285F4" d="M24 9.5c3.54 0 6.73 1.23 9.23 3.26l6.9-6.9C35.9 2.38 30.28 0 24 0 14.64 0 6.63 5.38 2.69 13.22l8.03 6.24C12.74 13.01 17.93 9.5 24 9.5z"/>
-                  <path fill="#34A853" d="M46.5 24.5c0-1.64-.15-3.22-.43-4.75H24v9h12.7c-.55 2.95-2.18 5.45-4.62 7.14l7.07 5.5C43.86 37.19 46.5 31.3 46.5 24.5z"/>
-                  <path fill="#FBBC05" d="M10.72 28.46A14.8 14.8 0 0 1 9.95 24c0-1.55.27-3.05.77-4.46l-8.03-6.24A23.98 23.98 0 0 0 0 24c0 3.87.92 7.53 2.56 10.78l8.16-6.32z"/>
-                  <path fill="#EA4335" d="M24 48c6.28 0 11.56-2.08 15.42-5.61l-7.07-5.5c-1.96 1.32-4.47 2.1-8.35 2.1-6.06 0-11.25-3.51-13.28-8.58l-8.16 6.32C6.6 42.63 14.62 48 24 48z"/>
-                </svg>
-
-                <span>Continue with Google</span>
-              </button>
-
-              <button
-                @click="handleFacebookLogin"
-                type="button"
-                class="w-full py-3 px-4 rounded-xl bg-[#1877F2]
-                      text-white font-semibold text-sm
-                      hover:bg-[#1669d3] transition
-                      flex items-center justify-center gap-3"
-              >
-                <svg
-                  class="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12
-                      c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047
-                      V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235
-                      2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25
-                      h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"
-                  />
-                </svg>
-                <span>Continue with Facebook</span>
-              </button>
-            </div>
-
             <div class="relative my-4">
               <div class="absolute inset-0 flex items-center">
                 <div class="w-full border-t border-charcoal-200"></div>
               </div>
               <div class="relative flex justify-center text-xs">
-                <span class="px-2 bg-transparent text-charcoal-500">or</span>
               </div>
             </div>
 

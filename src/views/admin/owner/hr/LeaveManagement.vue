@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col md:flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
     <main class="flex-1 p-6 md:p-8 text-white">

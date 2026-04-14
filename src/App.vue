@@ -137,6 +137,7 @@ import { useSubscription } from '@/composables/useSubscription'
 import EmployeeTopbar from '@/components/common/EmployeeTopbar.vue'
 import disconnectIllustration from '@/assets/disconnect.png'
 import { lockPageScroll, unlockPageScroll } from '@/utils/scrollLock'
+import { useSidebarState } from '@/composables/useSidebarState'
 
 // Initialize auth state globally
 const { isLoading, user, initAuth } = useAuth()
@@ -145,7 +146,6 @@ const route = useRoute()
 const { initSubscription, isReadOnly, isExpired, graceEndsAt, activePlan } = useSubscription()
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 const isPoorConnection = ref(false)
-const sidebarCollapsed = ref(false)
 
 const showConnectionModal = ref(false)
 const connectionIssueSince = ref(null)
@@ -225,6 +225,8 @@ const sidebarPanelKey = computed(() => {
   return ''
 })
 
+const { collapsed: sidebarCollapsed, syncFromStorage: syncSidebarFromStorage } = useSidebarState(sidebarPanelKey)
+
 const showEmployeeTopbar = computed(() => {
   const path = String(route.path || '').toLowerCase()
   return (
@@ -281,7 +283,6 @@ const isPublicSkeleton = computed(() => {
   return false
 })
 let connectionHandler = null
-let sidebarHandler = null
 let processHandler = null
 const processLoading = ref(false)
 const processLabel = ref('Processing...')
@@ -292,19 +293,7 @@ onMounted(() => {
   updateConnectionStatus()
   window.addEventListener('online', updateConnectionStatus)
   window.addEventListener('offline', updateConnectionStatus)
-  const key = sidebarPanelKey.value ? `sidebar:${sidebarPanelKey.value}:collapsed` : ''
-  if (key) {
-    sidebarCollapsed.value = localStorage.getItem(key) === '1'
-  }
-
-  sidebarHandler = (event) => {
-    const detail = event?.detail || {}
-    if (!detail.panelKey) return
-    if (detail.panelKey === sidebarPanelKey.value) {
-      sidebarCollapsed.value = Boolean(detail.collapsed)
-    }
-  }
-  window.addEventListener('sidebar-collapsed-change', sidebarHandler)
+  syncSidebarFromStorage()
 
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection
   if (connection) {
@@ -336,9 +325,9 @@ watch(
 
 watch(
   () => sidebarPanelKey.value,
-  (nextKey) => {
-    if (!nextKey) return
-    sidebarCollapsed.value = localStorage.getItem(`sidebar:${nextKey}:collapsed`) === '1'
+  (nextKey, prevKey) => {
+    if (!nextKey || nextKey === prevKey) return
+    syncSidebarFromStorage()
   },
   { immediate: true }
 )
@@ -347,7 +336,13 @@ watch(
   () => showConnectionModal.value,
   (isOpen) => {
     if (isOpen) {
-      lockPageScroll()
+      try {
+        if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+          lockPageScroll()
+        }
+      } catch (_e) {
+        lockPageScroll()
+      }
     } else {
       unlockPageScroll()
     }
@@ -368,9 +363,6 @@ onUnmounted(() => {
   if (connectionHideTimer) {
     clearTimeout(connectionHideTimer)
     connectionHideTimer = null
-  }
-  if (sidebarHandler) {
-    window.removeEventListener('sidebar-collapsed-change', sidebarHandler)
   }
   if (processHandler) {
     window.removeEventListener('app-process-loading', processHandler)

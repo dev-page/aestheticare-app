@@ -8,6 +8,7 @@ import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { auth } from '@/config/firebaseConfig'
+import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'OwnerStaff',
@@ -34,11 +35,12 @@ export default {
         loading.value = false
         return
       }
-      const snapshot = await getDocs(query(collection(db, "clinics"), where("ownerId", "==", user.uid)))
-      branches.value = snapshot.docs.map(doc => ({
-        id: doc.id,
-        clinicBranch: doc.data().clinicBranch,
-        clinicLocation: doc.data().clinicLocation
+      const scope = await loadOwnerBranchScope(db, user.uid)
+      const branchDocs = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
+      branches.value = branchDocs.map(branch => ({
+        id: branch.id,
+        clinicBranch: branch.clinicBranch,
+        clinicLocation: branch.clinicLocation
       }))
       loading.value = false
     }
@@ -171,7 +173,7 @@ const loadStaff = async () => {
 }
 </script>
 <template>
-  <div class="flex flex-col md:flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
     <main class="flex-1 p-4 md:p-8">

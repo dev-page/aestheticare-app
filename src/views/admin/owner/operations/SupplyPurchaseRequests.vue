@@ -578,6 +578,7 @@ export default {
     const currentOwnerId = ref('')
     const currentBranchId = ref('')
     const currentBranchIds = ref([])
+    const currentScopeMode = ref('owner')
     const currentBranchName = ref('')
     const requests = ref([])
     const suppliers = ref([])
@@ -790,7 +791,8 @@ export default {
         db,
         'suppliers',
         currentOwnerId.value,
-        currentBranchIds.value
+        currentBranchIds.value,
+        { scopeMode: currentScopeMode.value }
       )
     }
 
@@ -1331,6 +1333,7 @@ export default {
         currentBranchId.value = scope.branchId || ''
         currentOwnerId.value = scope.ownerId || ''
         currentBranchIds.value = scope.branchIds || []
+        currentScopeMode.value = scope.scopeMode || 'owner'
         const fullName = `${profile.firstName || ''} ${profile.lastName || ''}`.trim()
         currentUserName.value = profile.name || fullName || profile.email || user.email || 'Manager'
         currentUserRole.value = profile.role || 'Manager'

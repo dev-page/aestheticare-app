@@ -8,6 +8,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth } from '@/config/firebaseConfig'
 import { classifyAttendanceRecord } from '@/utils/attendanceStatus'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'AttendanceReports',
@@ -157,8 +158,8 @@ export default {
         return
       }
 
-      const clinicsSnap = await getDocs(query(collection(db, 'clinics'), where('ownerId', '==', user.uid)))
-      const clinics = clinicsSnap.docs.map((clinicDoc) => ({ id: clinicDoc.id, ...clinicDoc.data() }))
+      const scope = await loadOwnerBranchScope(db, user.uid)
+      const clinics = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
       branches.value = clinics.map((clinic) => ({
         id: clinic.id,
         branch: clinic.clinicBranch || 'Branch',
@@ -340,7 +341,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-col md:flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
     <main class="flex-1 p-6 md:p-10 text-white">

@@ -198,6 +198,7 @@ export default {
     const currentBranchId = ref('')
     const currentOwnerId = ref('')
     const currentBranchIds = ref([])
+    const currentScopeMode = ref('owner')
     const currentUserId = ref('')
     const purchases = ref([])
     const inventoryItems = ref([])
@@ -394,7 +395,8 @@ export default {
         db,
         'suppliers',
         currentOwnerId.value,
-        currentBranchIds.value
+        currentBranchIds.value,
+        { scopeMode: currentScopeMode.value }
       )
     }
 
@@ -460,6 +462,7 @@ export default {
         currentBranchId.value = scope.branchId || ''
         currentOwnerId.value = scope.ownerId || ''
         currentBranchIds.value = scope.branchIds || []
+        currentScopeMode.value = scope.scopeMode || 'owner'
 
         if (!currentBranchId.value) {
           toast.error('Your account has no branch assignment.', { toastId: 'missing-branch-assignment' })

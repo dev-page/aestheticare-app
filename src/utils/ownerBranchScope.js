@@ -23,12 +23,16 @@ export const loadOwnerBranchScope = async (db, userId) => {
       ownerId: '',
       branchId: '',
       branchIds: [],
+      isStaffUser: false,
+      scopeMode: 'owner',
       userProfile: {},
     }
   }
 
   const userSnap = await getDoc(doc(db, 'users', userId))
   const userProfile = userSnap.exists() ? (userSnap.data() || {}) : {}
+  const userType = normalizeText(userProfile.userType || '').toLowerCase()
+  const isStaffUser = userType === 'staff'
   const directBranchId = normalizeText(userProfile.branchId || userProfile.clinicBranch || '')
   const fallbackOwnerId = normalizeText(userProfile.ownerId || userProfile.owner || '')
   let ownerId = fallbackOwnerId
@@ -49,7 +53,7 @@ export const loadOwnerBranchScope = async (db, userId) => {
   const branchIds = new Set()
   if (branchId) branchIds.add(branchId)
 
-  if (ownerId) {
+  if (!isStaffUser && ownerId) {
     const ownerClinicsSnapshot = await getDocs(
       query(collection(db, 'clinics'), where('ownerId', '==', ownerId))
     )
@@ -63,16 +67,19 @@ export const loadOwnerBranchScope = async (db, userId) => {
     ownerId,
     branchId,
     branchIds: [...branchIds],
+    isStaffUser,
+    scopeMode: isStaffUser ? 'branch' : 'owner',
     userProfile,
   }
 }
 
-export const loadScopedCollectionDocs = async (db, collectionName, ownerId, branchIds) => {
+export const loadScopedCollectionDocs = async (db, collectionName, ownerId, branchIds, options = {}) => {
   const docsById = new Map()
   const uniqueBranchIds = [...new Set((branchIds || []).map((id) => normalizeText(id)).filter(Boolean))]
+  const scopeMode = String(options.scopeMode || 'owner').trim().toLowerCase()
 
   const snapshots = []
-  if (ownerId) {
+  if (scopeMode !== 'branch' && ownerId) {
     snapshots.push(
       await getDocs(query(collection(db, collectionName), where('ownerId', '==', ownerId)))
     )
@@ -91,4 +98,17 @@ export const loadScopedCollectionDocs = async (db, collectionName, ownerId, bran
   })
 
   return [...docsById.values()]
+}
+
+export const loadClinicDocsByIds = async (db, branchIds = []) => {
+  const uniqueBranchIds = [...new Set((branchIds || []).map((id) => normalizeText(id)).filter(Boolean))]
+  if (!uniqueBranchIds.length) return []
+
+  const snapshots = await Promise.all(
+    uniqueBranchIds.map((branchId) => getDoc(doc(db, 'clinics', branchId)))
+  )
+
+  return snapshots
+    .filter((snap) => snap.exists())
+    .map((snap) => ({ id: snap.id, ...snap.data() }))
 }

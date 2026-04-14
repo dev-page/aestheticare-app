@@ -8,6 +8,7 @@ import Modal from '@/components/common/Modal.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'OwnerStaff',
@@ -18,6 +19,7 @@ export default {
     const staffList = ref([])
     const branches = ref([])
     const customRoles = ref([])
+    const currentOwnerId = ref('')
 
     const showEditModal = ref(false)
     const searchQuery = ref('')
@@ -80,18 +82,18 @@ export default {
       const user = auth.currentUser
       if (!user) {
         branches.value = []
+        currentOwnerId.value = ''
         return
       }
 
-      const ownerBranchesQuery = query(
-        collection(db, "clinics"),
-        where("ownerId", "==", user.uid)
-      )
-      const snapshot = await getDocs(ownerBranchesQuery)
-      branches.value = snapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        clinicBranch: doc.data().clinicBranch,
-        clinicLocation: doc.data().clinicLocation}))
+      const scope = await loadOwnerBranchScope(db, user.uid)
+      currentOwnerId.value = scope.ownerId || user.uid
+      const branchDocs = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
+      branches.value = branchDocs.map((branch) => ({
+        id: branch.id,
+        clinicBranch: branch.clinicBranch,
+        clinicLocation: branch.clinicLocation
+      }))
     }
 
     const loadCustomRoles = async () => {
@@ -101,8 +103,11 @@ export default {
         return
       }
 
+      const scope = await loadOwnerBranchScope(db, user.uid)
+      currentOwnerId.value = scope.ownerId || user.uid
+
       const rolesSnapshot = await getDocs(
-        query(collection(db, 'clinicRoles'), where('ownerId', '==', user.uid))
+        query(collection(db, 'clinicRoles'), where('ownerId', '==', currentOwnerId.value))
       )
       customRoles.value = rolesSnapshot.docs
         .map((roleDoc) => {
@@ -276,7 +281,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-col md:flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
     <main class="flex-1 p-4 md:p-8">

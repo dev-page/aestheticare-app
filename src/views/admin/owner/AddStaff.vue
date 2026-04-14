@@ -9,6 +9,7 @@ import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
 import { useSubscription } from '@/composables/useSubscription'
+import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { storage } from '@/config/firebaseConfig'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
@@ -23,6 +24,8 @@ export default {
     const loading = ref(true)
     const branches = ref([])
     const customRoles = ref([])
+    const currentOwnerId = ref('')
+    const currentBranchIds = ref([])
     const { initSubscription, activePlan } = useSubscription()
 
     const currentStaff = ref({
@@ -49,19 +52,21 @@ export default {
       const user = auth.currentUser
       if (!user) {
         branches.value = []
+        currentOwnerId.value = ''
+        currentBranchIds.value = []
         loading.value = false
         return
       }
 
-      const ownerBranchesQuery = query(
-        collection(db, "clinics"),
-        where("ownerId", "==", user.uid)
-      )
-      const snapshot = await getDocs(ownerBranchesQuery)
-      branches.value = snapshot.docs.map(doc => ({
-        id: doc.id, // branchId reference
-        branch: doc.data().clinicBranch,
-        location: doc.data().clinicLocation
+      const scope = await loadOwnerBranchScope(db, user.uid)
+      currentOwnerId.value = scope.ownerId || user.uid
+      currentBranchIds.value = scope.branchIds || []
+
+      const clinicDocs = await loadClinicDocsByIds(db, currentBranchIds.value.length ? currentBranchIds.value : [scope.branchId || ''])
+      branches.value = clinicDocs.map((entry) => ({
+        id: entry.id,
+        branch: entry.clinicBranch,
+        location: entry.clinicLocation
       }))
 
       if (isBasicPlan.value && branches.value.length > 0) {
@@ -78,9 +83,12 @@ export default {
         return
       }
 
+      const scope = await loadOwnerBranchScope(db, user.uid)
+      currentOwnerId.value = scope.ownerId || user.uid
+
       const rolesQuery = query(
         collection(db, 'clinicRoles'),
-        where('ownerId', '==', user.uid)
+        where('ownerId', '==', currentOwnerId.value)
       )
       const snapshot = await getDocs(rolesQuery)
       customRoles.value = snapshot.docs
@@ -428,7 +436,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-col md:flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
     <main class="flex-1 p-6 md:p-10 text-white">

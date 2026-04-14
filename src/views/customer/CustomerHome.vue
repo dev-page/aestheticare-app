@@ -1,5 +1,5 @@
 <template>
-  <div class="customer-home-shell flex min-h-screen overflow-hidden bg-gradient-to-br from-[#fbf2e4] via-[#f7ead8] to-[#f1dcc0]">
+  <div class="customer-home-shell flex min-h-screen bg-gradient-to-br from-[#fbf2e4] via-[#f7ead8] to-[#f1dcc0]">
     <CustomerSidebar class="flex-shrink-0" />
 
     <main class="customer-home-main flex-1">

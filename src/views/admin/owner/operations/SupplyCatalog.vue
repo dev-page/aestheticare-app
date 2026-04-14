@@ -201,6 +201,7 @@ export default {
     const currentBranchId = ref('')
     const currentOwnerId = ref('')
     const currentBranchIds = ref([])
+    const currentScopeMode = ref('owner')
     const items = ref([])
     const suppliers = ref([])
     const deliveredTotals = ref({})
@@ -342,7 +343,8 @@ export default {
         db,
         'suppliers',
         currentOwnerId.value,
-        currentBranchIds.value
+        currentBranchIds.value,
+        { scopeMode: currentScopeMode.value }
       )
     }
 
@@ -429,6 +431,7 @@ export default {
         currentBranchId.value = scope.branchId || ''
         currentOwnerId.value = scope.ownerId || ''
         currentBranchIds.value = scope.branchIds || []
+        currentScopeMode.value = scope.scopeMode || 'owner'
 
         await loadSuppliers()
         await loadDeliveredTotals()

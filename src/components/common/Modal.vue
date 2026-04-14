@@ -1,8 +1,11 @@
 <template>
   <teleport to="body">
-    <div v-if="isOpen" class="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto p-4 sm:items-center sm:p-6">
+    <div v-if="isOpen" class="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto px-4 pb-4 pt-20 sm:items-center sm:p-6">
       <div class="absolute inset-0 bg-black bg-opacity-50" @click="handleBackdropClick"></div>
-      <div :class="['relative z-[81] flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-lg shadow-lg sm:max-h-[calc(100vh-3rem)]', panelClass]">
+      <div
+        :class="['relative z-[81] flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-lg shadow-lg sm:max-h-[calc(100vh-3rem)]', panelClass]"
+        :style="panelStyle"
+      >
         <div class="flex items-center justify-between gap-4 border-b p-4">
           <slot name="header">
             <h3 v-if="title" class="text-lg font-semibold">{{ title }}</h3>
@@ -58,6 +61,10 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  panelStyle: {
+    type: [String, Object],
+    default: ''
+  },
   bodyClass: {
     type: String,
     default: ''
@@ -79,7 +86,14 @@ watch(
   () => props.isOpen,
   (isOpen) => {
     if (isOpen) {
-      lockPageScroll()
+      try {
+        if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+          lockPageScroll()
+        }
+      } catch (_e) {
+        // fallback: if window isn't available or check fails, lock as before
+        lockPageScroll()
+      }
     } else {
       unlockPageScroll()
     }

@@ -10,6 +10,19 @@ import archiver from 'archiver'
 import { PassThrough } from 'node:stream'
 import { google } from 'googleapis'
 
+// firebase-admin v13 can hit a Google auth compatibility edge in some Node/runtime combinations.
+// Keep the same fallback used by the backend maintenance scripts so OTP requests do not fail.
+if (typeof Object.prototype.getUniverseDomain !== 'function') {
+  Object.defineProperty(Object.prototype, 'getUniverseDomain', {
+    value: async function getUniverseDomain() {
+      return 'googleapis.com'
+    },
+    configurable: true,
+    writable: true,
+    enumerable: false,
+  })
+}
+
 const app = express()
 const PORT = Number(process.env.PORT || 3000)
 const isDevelopment = String(process.env.NODE_ENV || 'development').toLowerCase() !== 'production'

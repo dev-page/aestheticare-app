@@ -22,7 +22,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Approve Employees', icon: 'shield', to: '/owner/staff/approve', feature: 'staff_management', permission: 'staff:update' },
       { label: 'Archived Employees', icon: 'archive', to: '/owner/staff/archived', feature: 'staff_management', permission: 'staff:view' },
       { label: 'Attendance', icon: 'calendar', to: '/owner/staff/attendance', feature: 'attendance', permission: 'attendance:view' },
-      { label: 'Role Management', icon: 'shield', to: '/owner/staff/roles', feature: 'staff_management', permission: 'staff:update' }
+      { label: 'Role Management', icon: 'shield', to: '/owner/staff/roles', feature: 'staff_management', permission: 'roles:view' }
     ]
   },
   {

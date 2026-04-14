@@ -561,6 +561,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -618,6 +619,7 @@ const permissionGroups = [
           { key: 'staff:view', label: 'View Staff', description: 'Open employee profiles and staff listings.', icon: 'mdi:account-group-outline' },
           { key: 'staff:create', label: 'Create Staff', description: 'Add employee accounts under the clinic.', icon: 'mdi:account-plus-outline' },
           { key: 'staff:update', label: 'Update Staff', description: 'Edit staff details and role assignments.', icon: 'mdi:account-edit-outline' },
+          { key: 'roles:view', label: 'Access Role Management', description: 'Open the role management page and manage clinic role permissions.', icon: 'mdi:shield-account-outline' },
         ],
       },
       {
@@ -873,6 +875,8 @@ export default {
     })
     const newRole = ref(createBlankRole())
     const branchIds = ref([])
+    const accessScopeOwnerId = ref('')
+    const accessScopeLabel = ref('')
 
     const selectedRole = computed(() =>
       roles.value.find((role) => role.id === selectedRoleId.value) || null
@@ -907,6 +911,7 @@ export default {
       'staff:view': 'staff_management',
       'staff:create': 'staff_management',
       'staff:update': 'staff_management',
+      'roles:view': 'staff_management',
       'attendance:view': 'attendance',
       'attendance:create': 'attendance',
       'branches:view': 'multi_branch',
@@ -1001,6 +1006,36 @@ export default {
       branchIds.value = snapshot.docs.map((branchDoc) => branchDoc.id).filter(Boolean)
     }
 
+    const resolveAccessScope = async (user) => {
+      if (!user) {
+        accessScopeOwnerId.value = ''
+        accessScopeLabel.value = ''
+        return ''
+      }
+
+      const userSnap = await getDoc(doc(db, 'users', user.uid))
+      const userData = userSnap.exists() ? userSnap.data() || {} : {}
+      const userType = String(userData.userType || '').trim().toLowerCase()
+
+      if (userType === 'staff') {
+        const branchId = String(userData.branchId || '').trim()
+        if (branchId) {
+          const clinicSnap = await getDoc(doc(db, 'clinics', branchId))
+          if (clinicSnap.exists()) {
+            const clinic = clinicSnap.data() || {}
+            const ownerId = String(clinic.ownerId || '').trim() || user.uid
+            accessScopeOwnerId.value = ownerId
+            accessScopeLabel.value = [clinic.clinicBranch, clinic.clinicLocation].filter(Boolean).join(' - ') || 'Assigned clinic'
+            return ownerId
+          }
+        }
+      }
+
+      accessScopeOwnerId.value = user.uid
+      accessScopeLabel.value = userType === 'staff' ? 'Assigned clinic' : 'My clinic'
+      return user.uid
+    }
+
     const buildRoleCounts = async () => {
       const counts = new Map()
 
@@ -1020,9 +1055,9 @@ export default {
       return counts
     }
 
-    const loadRoles = async (ownerId = auth.currentUser?.uid) => {
+    const loadRoles = async (ownerId = accessScopeOwnerId.value || auth.currentUser?.uid) => {
       if (ownerId && typeof ownerId !== 'string') {
-        ownerId = auth.currentUser?.uid
+        ownerId = accessScopeOwnerId.value || auth.currentUser?.uid
       }
       if (!ownerId) {
         loading.value = false
@@ -1105,9 +1140,10 @@ export default {
 
       saving.value = true
       try {
+        const ownerId = accessScopeOwnerId.value || currentUser.uid
         const roleRef = doc(collection(db, 'clinicRoles'))
         await setDoc(roleRef, {
-          ownerId: currentUser.uid,
+          ownerId,
           name: newRole.value.name.trim(),
           description: newRole.value.description.trim(),
           color: newRole.value.color,
@@ -1118,7 +1154,7 @@ export default {
 
         toast.success('Role created successfully.')
         resetNewRole()
-        await loadRoles()
+        await loadRoles(ownerId)
         selectedRoleId.value = roleRef.id
         cloneSelectedRole()
         activeTab.value = 'details'
@@ -1295,10 +1331,14 @@ export default {
           roles.value = []
           branchIds.value = []
           selectedRoleId.value = ''
+          accessScopeOwnerId.value = ''
+          accessScopeLabel.value = ''
           cloneSelectedRole()
           return
         }
-        await loadRoles(user.uid)
+
+        const ownerId = await resolveAccessScope(user)
+        await loadRoles(ownerId)
       })
     })
 
@@ -1329,6 +1369,7 @@ export default {
       removeRole,
       resetNewRole,
       resetSelectedDraft,
+      accessScopeLabel,
       roles,
       saveRoleDetails,
       saveRolePermissions,

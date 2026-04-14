@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col md:flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar class="w-full md:w-64 flex-shrink-0" />
 
     <main class="flex-1 p-4 md:p-8">
@@ -72,6 +72,7 @@ import { getFirestore, collection, getDocs, query, where } from 'firebase/firest
 import { getApp } from 'firebase/app'
 import { auth } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
+import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'OwnerReports',
@@ -100,9 +101,8 @@ export default {
     }
 
     const loadOwnerData = async (user) => {
-      const branchQuery = query(collection(db, 'clinics'), where('ownerId', '==', user.uid))
-      const branchSnapshot = await getDocs(branchQuery)
-      const branchData = branchSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      const scope = await loadOwnerBranchScope(db, user.uid)
+      const branchData = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
 
       branches.value = branchData
       totalBranches.value = branchData.length

@@ -237,7 +237,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-col md:flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
     <main class="flex-1 p-4 md:p-8 overflow-x-hidden">

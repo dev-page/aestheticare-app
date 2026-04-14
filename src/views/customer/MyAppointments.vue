@@ -35,16 +35,16 @@
               </thead>
               <tbody>
                 <tr v-for="appt in upcomingOnlineConsultations" :key="appt.id">
-                  <td class="appointment-service-cell">
+                  <td class="appointment-service-cell" data-label="Service">
                     <div class="table-primary">{{ formatAppointmentServices(appt) }}</div>
                     <div class="table-secondary">Online consultation</div>
                   </td>
-                  <td>
+                  <td data-label="Clinic">
                     <div class="table-primary">{{ appt.clinic }}</div>
                   </td>
-                  <td>{{ appt.date }}</td>
-                  <td>{{ appt.time }}</td>
-                  <td>
+                  <td data-label="Date">{{ appt.date }}</td>
+                  <td data-label="Time">{{ appt.time }}</td>
+                  <td data-label="Meeting Link">
                     <div class="table-actions">
                       <button
                         v-if="appt.meetLink"
@@ -67,12 +67,12 @@
                       <span v-else class="table-secondary">No meeting link yet</span>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
                   </td>
                 </tr>
                 <tr v-if="!upcomingOnlineConsultations.length">
-                  <td colspan="6" class="table-empty-cell">No online consultations yet.</td>
+                  <td colspan="6" class="table-empty-cell" data-label="">No online consultations yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -106,18 +106,18 @@
               </thead>
               <tbody>
                 <tr v-for="appt in upcomingAppointments" :key="appt.id">
-                  <td class="appointment-service-cell">
+                  <td class="appointment-service-cell" data-label="Service">
                     <div class="table-primary">{{ formatAppointmentServices(appt) }}</div>
                   </td>
-                  <td>
+                  <td data-label="Clinic">
                     <div class="table-primary">{{ appt.clinic }}</div>
                   </td>
-                  <td>{{ appt.date }}</td>
-                  <td>{{ appt.time }}</td>
-                  <td>
+                  <td data-label="Date">{{ appt.date }}</td>
+                  <td data-label="Time">{{ appt.time }}</td>
+                  <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <div class="table-actions">
                       <button
                         @click="openRequestModal('reschedule', appt)"
@@ -137,7 +137,7 @@
                   </td>
                 </tr>
                 <tr v-if="!upcomingAppointments.length">
-                  <td colspan="6" class="table-empty-cell">No upcoming appointments.</td>
+                  <td colspan="6" class="table-empty-cell" data-label="">No upcoming appointments.</td>
                 </tr>
               </tbody>
             </table>
@@ -171,7 +171,7 @@
               </thead>
               <tbody>
                 <tr v-for="appt in pastRecords" :key="appt.id">
-                  <td class="appointment-service-cell">
+                  <td class="appointment-service-cell" data-label="Service">
                     <div class="table-primary">{{ formatAppointmentServices(appt) }}</div>
                     <div v-if="appt.followUpRecommended" class="mt-2">
                       <span class="inline-flex items-center rounded-full border border-emerald-300/60 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
@@ -179,15 +179,15 @@
                       </span>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Clinic">
                     <div class="table-primary">{{ appt.clinic }}</div>
                   </td>
-                  <td>{{ appt.date }}</td>
-                  <td>{{ appt.time }}</td>
-                  <td>
+                  <td data-label="Date">{{ appt.date }}</td>
+                  <td data-label="Time">{{ appt.time }}</td>
+                  <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <div class="table-actions">
                       <button
                         v-if="canBookFollowUp(appt)"
@@ -208,7 +208,7 @@
                   </td>
                 </tr>
                 <tr v-if="!pastRecords.length">
-                  <td colspan="6" class="table-empty-cell">No past records.</td>
+                  <td colspan="6" class="table-empty-cell" data-label="">No past records.</td>
                 </tr>
               </tbody>
             </table>
@@ -1595,6 +1595,9 @@ onUnmounted(() => {
   padding: 1rem;
   background: rgba(35, 20, 12, 0.56);
   backdrop-filter: blur(6px);
+  /* allow overlay to scroll on small viewports */
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .request-modal-shell {
@@ -1602,8 +1605,9 @@ onUnmounted(() => {
   flex-direction: column;
   width: 100%;
   max-width: 70rem;
-  max-height: 90vh;
-  overflow: hidden;
+  /* ensure shell fits inside viewport and allow inner scrolling */
+  max-height: calc(100vh - 2rem);
+  overflow: visible; /* let .request-modal-body handle scrolling */
 }
 
 .request-modal-head {
@@ -1637,10 +1641,13 @@ onUnmounted(() => {
 
 .request-modal-body {
   flex: 1;
+  /* Constrain body height so it can scroll inside the shell on small screens */
+  max-height: calc(100vh - 12rem);
   overflow-y: auto;
   padding: 1.4rem 1.5rem;
   display: grid;
   gap: 1rem;
+  -webkit-overflow-scrolling: touch;
 }
 
 .request-policy-card,
@@ -1930,6 +1937,126 @@ onUnmounted(() => {
 
   .request-modal-overlay {
     align-items: flex-start;
+    /* make overlay scrollable and avoid locking viewport on small screens */
+    overflow: auto;
+    padding-top: 1rem;
+  }
+
+  .request-modal-shell {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100vh - 1.5rem);
+  }
+
+  .request-modal-body {
+    max-height: calc(100vh - 10rem);
+  }
+
+  .appointments-content {
+    padding: 1rem 0.75rem 1.25rem;
+    gap: 1rem;
+  }
+
+  .appointments-table-wrap {
+    overflow: hidden;
+  }
+
+  .appointments-table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .appointments-table thead {
+    display: none;
+  }
+
+  .appointments-table,
+  .appointments-table tbody,
+  .appointments-table tr,
+  .appointments-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .appointments-table tbody tr {
+    padding: 0.35rem 0;
+  }
+
+  .appointments-table td {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.85rem;
+    padding: 0.8rem 0.9rem;
+    border-top: 1px solid rgba(230, 193, 150, 0.46);
+    white-space: normal;
+    word-break: break-word;
+    font-size: 0.92rem;
+  }
+
+  .appointments-table tbody tr {
+    margin-bottom: 0.9rem;
+    border: 1px solid rgba(230, 193, 150, 0.72);
+    border-radius: 1.25rem;
+    overflow: hidden;
+    background: rgba(255, 251, 244, 0.96);
+    box-shadow: 0 12px 28px rgba(87, 56, 35, 0.06);
+  }
+
+  .appointments-table tbody tr:hover {
+    background: rgba(255, 251, 244, 0.96);
+  }
+
+  .appointments-table td:first-child {
+    border-top: 0;
+  }
+
+  .appointments-table td::before {
+    content: attr(data-label);
+    flex: 0 0 32%;
+    color: #8c6d55;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    line-height: 1.4;
+  }
+
+  .appointments-table td[data-label=""]::before {
+    content: none;
+  }
+
+  .appointment-service-cell {
+    min-width: 0;
+  }
+
+  .appointment-service-cell .table-primary {
+    line-height: 1.45;
+  }
+
+  .table-actions {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  .table-actions .appointment-button {
+    width: 100%;
+  }
+
+  .status-badge {
+    white-space: normal;
+    text-align: center;
+  }
+
+  .table-empty-cell {
+    display: block;
+    padding: 1.1rem 0.9rem;
+    text-align: center;
+  }
+
+  .table-empty-cell::before {
+    content: none;
   }
 }
 </style>

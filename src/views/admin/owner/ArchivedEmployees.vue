@@ -7,6 +7,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
+import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'OwnerArchivedEmployees',
@@ -15,6 +16,7 @@ export default {
     const db = getFirestore(getApp())
     const archivedStaff = ref([])
     const ownerBranchIds = ref([])
+    const currentOwnerId = ref('')
     const getRoleLabel = (staff) => String(staff?.customRoleName || staff?.role || 'Staff').trim()
 
     const chunkArray = (items, size = 10) => {
@@ -25,9 +27,11 @@ export default {
       return chunks
     }
 
-    const loadBranches = async (ownerId) => {
-      const snapshot = await getDocs(query(collection(db, 'clinics'), where('ownerId', '==', ownerId)))
-      ownerBranchIds.value = snapshot.docs.map((docSnap) => docSnap.id).filter(Boolean)
+    const loadBranches = async (userId) => {
+      const scope = await loadOwnerBranchScope(db, userId)
+      currentOwnerId.value = scope.ownerId || userId
+      const branchDocs = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
+      ownerBranchIds.value = branchDocs.map((docSnap) => docSnap.id).filter(Boolean)
     }
 
     const loadArchivedStaff = async () => {
@@ -81,6 +85,7 @@ export default {
         if (!user) {
           ownerBranchIds.value = []
           archivedStaff.value = []
+          currentOwnerId.value = ''
           return
         }
         await loadBranches(user.uid)
@@ -98,7 +103,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-col md:flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
     <main class="flex-1 p-4 md:p-8">
