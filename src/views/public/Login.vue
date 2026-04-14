@@ -1,9 +1,20 @@
 
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
-import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence, browserLocalPersistence, signInWithPopup, GoogleAuthProvider, FacebookAuthProvider, signOut } from 'firebase/auth'
+import {
+  signInWithEmailAndPassword,
+  setPersistence,
+  browserSessionPersistence,
+  browserLocalPersistence,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  GoogleAuthProvider,
+  FacebookAuthProvider,
+  signOut,
+} from 'firebase/auth'
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import { useAuth } from '@/composables/useAuth'
@@ -91,6 +102,81 @@ const startRedirectFlow = (redirectPath) => {
   }, REDIRECT_DELAY)
 }
 
+const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
+
+const finalizeSocialLogin = async (user) => {
+  if (!user) return
+  await user.reload()
+
+  const userRef = doc(db, 'users', user.uid)
+  let userSnap = await getDoc(userRef)
+
+  if (!userSnap.exists()) {
+    await setDoc(userRef, {
+      email: user.email,
+      role: 'Customer',
+      status: 'Active',
+      createdAt: serverTimestamp()
+    })
+    userSnap = await getDoc(userRef)
+  }
+
+  const accountData = userSnap.data() || {}
+  const accountStatus = String(accountData.status || '').trim().toLowerCase()
+  const accountClosed = accountData.archived === true || accountData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
+  if (accountClosed) {
+    await signOut(auth)
+    toast.error('This account has been closed. Please contact the system administrator.')
+    setProcessLoading(false)
+    return
+  }
+
+  if (!(await ensureCenterAccessAllowed(user, accountData))) {
+    setProcessLoading(false)
+    return
+  }
+
+  const redirectPath = await resolveRedirectPath(accountData)
+  clearFormFields()
+  startRedirectFlow(redirectPath)
+}
+
+const startSocialSignIn = async (provider, providerLabel) => {
+  try {
+    setProcessLoading(true, 'Redirecting to your panel...')
+    provider.setCustomParameters?.({ prompt: 'select_account' })
+
+    if (isMobileApp) {
+      await signInWithRedirect(auth, provider)
+      return
+    }
+
+    const result = await signInWithPopup(auth, provider)
+    await finalizeSocialLogin(result.user)
+  } catch (err) {
+    console.error(err)
+    const fallbackNeeded = [
+      'auth/popup-blocked',
+      'auth/popup-closed-by-user',
+      'auth/cancelled-popup-request',
+      'auth/unauthorized-domain',
+      'auth/operation-not-supported-in-this-environment'
+    ].includes(err.code)
+
+    if (!isMobileApp && fallbackNeeded) {
+      try {
+        await signInWithRedirect(auth, provider)
+        return
+      } catch (redirectErr) {
+        console.error(redirectErr)
+      }
+    }
+
+    toast.error(`Failed to login with ${providerLabel}.`)
+    setProcessLoading(false)
+  }
+}
+
 const handleLogin = async () => {
     if (!email.value || !password.value) {
       toast.error('Email and password are required.')
@@ -165,88 +251,25 @@ const handleForgotPassword = async () => {
 }
 
 const handleGoogleLogin = async () => {
-    try {
-      const provider = new GoogleAuthProvider()
-      setProcessLoading(true, 'Redirecting to your panel...')
-      const userCredentials = await signInWithPopup(auth, provider)
-      await userCredentials.user.reload()
-
-      const userRef = doc(db, 'users', userCredentials.user.uid)
-      let userSnap = await getDoc(userRef)
-
-      if (!userSnap.exists()) {
-        await setDoc(userRef, {
-          email: userCredentials.user.email,
-          role: 'Customer',
-          status : 'Active',
-          createdAt: serverTimestamp()
-        })
-        userSnap = await getDoc(userRef)
-      }
-
-      const redirectPath = await resolveRedirectPath(userSnap.data())
-      const accountData = userSnap.data() || {}
-      const accountStatus = String(accountData.status || '').trim().toLowerCase()
-      const accountClosed = accountData.archived === true || accountData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
-      if (accountClosed) {
-        await signOut(auth)
-        toast.error('This account has been closed. Please contact the system administrator.')
-        setProcessLoading(false)
-        return
-      }
-      if (!(await ensureCenterAccessAllowed(userCredentials.user, userSnap.data()))) {
-        return
-      }
-
-      startRedirectFlow(redirectPath)
-    } catch (err) {
-      console.error(err)
-      toast.error('Failed to login with Google.')
-      setProcessLoading(false)
-    }
+  await startSocialSignIn(new GoogleAuthProvider(), 'Google')
 }
 
 const handleFacebookLogin = async () => {
-    try {
-      const provider = new FacebookAuthProvider()
-      setProcessLoading(true, 'Redirecting to your panel...')
-      const userCredentials = await signInWithPopup(auth, provider)
-      await userCredentials.user.reload()
-
-      const userRef = doc(db, 'users', userCredentials.user.uid)
-      let userSnap = await getDoc(userRef)
-
-      if (!userSnap.exists()) {
-        await setDoc(userRef, {
-          email: userCredentials.user.email,
-          role: 'Customer',
-          status : 'Active',
-          createdAt: serverTimestamp()
-        })
-        userSnap = await getDoc(userRef)
-      }
-
-      const redirectPath = await resolveRedirectPath(userSnap.data())
-      const accountData = userSnap.data() || {}
-      const accountStatus = String(accountData.status || '').trim().toLowerCase()
-      const accountClosed = accountData.archived === true || accountData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
-      if (accountClosed) {
-        await signOut(auth)
-        toast.error('This account has been closed. Please contact the system administrator.')
-        setProcessLoading(false)
-        return
-      }
-      if (!(await ensureCenterAccessAllowed(userCredentials.user, userSnap.data()))) {
-        return
-      }
-
-      startRedirectFlow(redirectPath)
-    } catch (err) {
-      console.error(err)
-      toast.error('Failed to login with Facebook.')
-      setProcessLoading(false)
-    }
+  await startSocialSignIn(new FacebookAuthProvider(), 'Facebook')
 }
+
+onMounted(async () => {
+  try {
+    const result = await getRedirectResult(auth)
+    if (result?.user) {
+      await finalizeSocialLogin(result.user)
+    }
+  } catch (err) {
+    console.error(err)
+    toast.error('Failed to complete social login.')
+    setProcessLoading(false)
+  }
+})
 
 onBeforeUnmount(() => {
   if (redirectTimeout) clearTimeout(redirectTimeout)

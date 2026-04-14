@@ -31,6 +31,7 @@ const selectedAccount = computed(() => {
 })
 
 const isClinicRegistrationActive = computed(() => selectedAccount.value === 'clinic')
+const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 
 const chooseCustomer = async () => {
   await router.replace({
@@ -50,7 +51,7 @@ const chooseClinic = async () => {
 }
 
 const goToHome = async () => {
-  await router.push({ name: 'home' })
+  await router.push(isMobileApp ? '/login' : { name: 'home' })
 }
 
 const goToRegisterChooser = async () => {

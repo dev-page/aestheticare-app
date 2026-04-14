@@ -6,9 +6,13 @@ import { useSubscription } from "@/composables/useSubscription";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/config/firebaseConfig";
 
+const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
+
 const routes = [
   // Public routes
-  { path: "/", name: "home", component: () => import("@/views/public/Home.vue") },
+  ...(isMobileApp
+    ? [{ path: "/", redirect: "/login" }]
+    : [{ path: "/", name: "home", component: () => import("@/views/public/Home.vue") }]),
   { path: "/login", name: "login", component: () => import("@/views/public/Login.vue"), meta: { guestOnly: true } },
   { path: "/register", name: "register", component: () => import("@/views/public/Register.vue") },
   { path: "/forgot-password", name: "forgot-password", component: () => import("@/views/public/ForgotPassword.vue") },
