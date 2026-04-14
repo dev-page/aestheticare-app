@@ -1947,6 +1947,7 @@ const sendChat = async () => {
     await setDoc(
       threadRef,
       {
+        branchName: center.value.name || '',
         lastMessage: messageText,
         lastMessageAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -1956,6 +1957,7 @@ const sendChat = async () => {
 
     await addDoc(collection(db, 'messages'), {
       branchId: activeBranchId.value,
+      branchName: center.value.name || '',
       subject: `New chat message from ${profile?.name || 'Customer'}`,
       senderName: profile?.name || 'Customer',
       senderEmail: profile?.email || '',

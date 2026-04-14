@@ -19,6 +19,9 @@
             <div>
               <p class="text-white font-semibold">{{ message.subject || 'No Subject' }}</p>
               <p class="text-slate-400 text-sm mt-1">From: {{ message.senderName || message.senderEmail || 'Unknown' }}</p>
+              <p class="mt-2 inline-flex items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-medium text-cyan-200">
+                Branch: {{ resolveBranchLabel(message) }}
+              </p>
               <p class="text-slate-300 text-sm mt-3 whitespace-pre-wrap">{{ message.body || 'No message body.' }}</p>
             </div>
             <div class="text-right">
@@ -52,7 +55,7 @@
         <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700">
           <div>
             <h3 class="text-white font-semibold">Chat with {{ activeChat?.customerName || activeChat?.senderName || 'Customer' }}</h3>
-            <p class="text-xs text-slate-400">Branch: {{ activeChat?.branchId || currentBranchId || '-' }}</p>
+            <p class="text-xs text-slate-400">Branch: {{ resolveBranchLabel(activeChat) }}</p>
           </div>
           <button type="button" class="text-slate-300 hover:text-white" @click="closeChat">
             ✕
@@ -120,6 +123,7 @@ export default {
     const auth = getAuth(getApp())
 
     const currentBranchId = ref('')
+    const currentBranchLabel = ref('')
     const messages = ref([])
     const currentUserId = ref('')
     const showChatModal = ref(false)
@@ -133,6 +137,14 @@ export default {
     const formatDate = (timestamp) => {
       if (!timestamp?.toDate) return '-'
       return timestamp.toDate().toLocaleString()
+    }
+
+    const resolveBranchLabel = (message = null) => {
+      const branchName = String(message?.branchName || '').trim()
+      if (branchName) return branchName
+
+      const branchId = String(message?.branchId || activeChat.value?.branchId || currentBranchId.value || '').trim()
+      return currentBranchLabel.value || branchId || 'Unknown branch'
     }
 
     const startMessageListener = () => {
@@ -300,6 +312,15 @@ export default {
 
         const userSnap = await getDoc(doc(db, 'users', user.uid))
         currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
+        if (currentBranchId.value) {
+          const branchSnap = await getDoc(doc(db, 'clinics', currentBranchId.value))
+          if (branchSnap.exists()) {
+            const branchData = branchSnap.data() || {}
+            currentBranchLabel.value = String(branchData.clinicBranch || branchData.clinicName || currentBranchId.value).trim()
+          } else {
+            currentBranchLabel.value = currentBranchId.value
+          }
+        }
         currentUserId.value = user.uid
         startMessageListener()
       })
@@ -313,8 +334,8 @@ export default {
     return {
       messages,
       formatDate,
-      markAsRead
-      ,
+      resolveBranchLabel,
+      markAsRead,
       showChatModal,
       activeChat,
       chatMessages,
@@ -324,6 +345,7 @@ export default {
       closeChat,
       sendChatReply,
       currentBranchId,
+      currentBranchLabel,
       currentUserId
     }
   }
