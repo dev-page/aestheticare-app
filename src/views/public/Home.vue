@@ -470,12 +470,12 @@
             <div class="footer-cta-qr" aria-label="Mobile application QR placeholder">
               <div class="footer-cta-qr-frame">
                 <div class="footer-cta-qr-code">
-                  <span>QR</span>
+                  <img src="@/assets/qr.png" alt="Mobile App QR Code" />
                 </div>
               </div>
               <div class="footer-cta-qr-copy">
                 <p class="footer-cta-qr-title">Mobile App</p>
-                <p class="footer-cta-qr-note">QR placeholder</p>
+                <p class="footer-cta-qr-subtitle">Scan to download</p>
               </div>
             </div>
           </div>
