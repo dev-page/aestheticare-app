@@ -11,7 +11,7 @@
 
         <ul class="hidden lg:flex items-center gap-6 lg:gap-10 text-[11px] tracking-[0.2em] uppercase text-charcoal-600">
           <li>
-            <button @click="scrollToSection('features')" class="relative text-charcoal-700 hover:text-gold-700 hover:font-bold transition-all duration-300
+            <button @click="scrollToSection('features')" class="relative text-charcoal-700 uppercase hover:text-gold-700 hover:font-bold transition-all duration-300
                       before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
                       before:transition-all before:duration-300 hover:before:w-full">
               Features
@@ -19,7 +19,7 @@
           </li>
 
           <li>
-            <button @click="scrollToSection('solutions')" class="relative text-charcoal-700 hover:text-gold-700 hover:font-bold transition-all duration-300
+            <button @click="scrollToSection('solutions')" class="relative text-charcoal-700 uppercase hover:text-gold-700 hover:font-bold transition-all duration-300
                       before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
                       before:transition-all before:duration-300 hover:before:w-full">
               Solutions
