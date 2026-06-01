@@ -4,11 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "backend": "node otp-backend/server.js",
-    "start": "concurrently \"npm run backend\" \"npm run dev\"",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "vite --config frontend/vite.config.js",
+    "frontend": "vite --config frontend/vite.config.js",
+    "backend": "node backend/otp-backend/server.js",
+    "start": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "build": "vite build --config frontend/vite.config.js",
+    "preview": "vite preview --config frontend/vite.config.js"
   },
   "dependencies": {
     "@iconify/vue": "^5.0.0",

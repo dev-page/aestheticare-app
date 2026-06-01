@@ -46,7 +46,7 @@ FIREBASE_SERVICE_ACCOUNT_JSON={...}
 Notes:
 
 - Google Maps/location search will fail on Vercel if `VITE_GOOGLE_MAPS_API_KEY` or `VITE_GOOGLE_MAP_ID` is missing in the Vercel dashboard, even if they exist in your local `.env`.
-- The backend falls back to `otp-backend/serviceAccountKey.json` for local use, but that file is ignored by git. In Vercel, set `FIREBASE_SERVICE_ACCOUNT_JSON` or `FIREBASE_SERVICE_ACCOUNT_BASE64` so `firebase-admin` can initialize without a local key file.
+- The backend falls back to `backend/otp-backend/serviceAccountKey.json` for local use, but that file is ignored by git. In Vercel, set `FIREBASE_SERVICE_ACCOUNT_JSON` or `FIREBASE_SERVICE_ACCOUNT_BASE64` so `firebase-admin` can initialize without a local key file.
 
 ## Alternative setup
 
@@ -87,7 +87,7 @@ Use the real Cloud Run URL after the backend is deployed.
 
 ## 2. Backend production env
 
-Create `otp-backend/.env` from [otp-backend/.env.example](/C:/Users/Lovely/Downloads/aestheticare-main%20(1)/aestheticare-main/otp-backend/.env.example).
+Create `backend/otp-backend/.env` from [backend/otp-backend/.env.example](/C:/Users/Lovely/Downloads/aestheticare-main%20(1)/aestheticare-main/backend/otp-backend/.env.example).
 
 Set these values:
 
@@ -113,7 +113,7 @@ Notes:
 
 ## 3. Deploy the backend to Cloud Run
 
-From `otp-backend/`:
+From `backend/otp-backend/`:
 
 ```powershell
 gcloud run deploy otp-backend `

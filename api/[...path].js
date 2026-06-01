@@ -1,4 +1,4 @@
-import app from '../otp-backend/server.js'
+import app from '../backend/otp-backend/server.js'
 
 export default function handler(req, res) {
   const originalUrl = String(req.url || '')
