@@ -1,6 +1,6 @@
 <template>
   <div class="home-page bg-gradient-to-br from-cream-100 via-gold-100 to-cream-200 text-charcoal-800 overflow-x-hidden">
-    <nav class="public-glass-nav sticky top-0 inset-x-0 z-50">
+    <nav class="public-glass-nav fixed top-0 inset-x-0 z-50">
       <div class="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-6 md:px-8 h-16">
         <router-link to="/" class="public-brand-cluster shrink-0">
           <span class="public-nav-mark" aria-hidden="true"></span>
