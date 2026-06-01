@@ -104,8 +104,8 @@
 
           <div class="flex-1 overflow-y-auto p-5 flex flex-col text-xs tracking-[0.2em] uppercase text-charcoal-700">
             <div class="flex flex-col gap-2">
-              <button @click="scrollToSection('features'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left transition-all duration-200 hover:text-gold-700 hover:pl-1">Features</button>
-              <button @click="scrollToSection('solutions'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left transition-all duration-200 hover:text-gold-700 hover:pl-1">Solutions</button>
+              <button @click="scrollToSection('features'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">Features</button>
+              <button @click="scrollToSection('solutions'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">Solutions</button>
               <router-link to="/subscription-features" @click="closeMobileMenu" class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Pricing</router-link>
               <router-link to="/centers" @click="closeMobileMenu" class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Centers</router-link>
             </div>
