@@ -583,6 +583,7 @@ const initMap = async () => {
   }
 
   if (!MapCtor) {
+    console.error('Google Maps failed to initialize: Map constructor is unavailable after loading the Maps libraries.')
     error.value = 'Google Maps failed to initialize.'
     emit('error', error.value)
     loading.value = false
