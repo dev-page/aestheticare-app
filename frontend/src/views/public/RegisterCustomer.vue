@@ -7,6 +7,7 @@ import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
+import LocationPicker from '@/components/common/LocationPicker.vue'
 import Terms from '@/components/common/Terms.vue'
 import PrivacyPolicy from '@/components/common/PrivacyPolicy.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
@@ -521,35 +522,27 @@ const openLocationModal = () => {
   locationError.value = ''
   searchQuery.value = addressStreet.value || address.value || addressCity.value || ''
   showLocationModal.value = true
-  nextTick(() => initLocationMap())
 }
 
 const closeLocationModal = () => {
   showLocationModal.value = false
   locationError.value = ''
   locationLoading.value = false
-  locationMap = null
-  locationMarker = null
   searchQuery.value = ''
 }
 
-const usePinnedLocation = async () => {
-  if (!locationMarker) {
-    locationError.value = 'Pin a location on the map first.'
-    return
-  }
+const handleLocationSelection = ({ lat, lng, address: selectedAddress, city, barangay, province, postalCode }) => {
+  addressLat.value = String(lat || '')
+  addressLng.value = String(lng || '')
+  address.value = String(selectedAddress || '').trim()
+  addressStreet.value = String(selectedAddress || '').trim()
+  addressCity.value = String(city || addressCity.value || '').trim()
+  addressBarangay.value = String(barangay || addressBarangay.value || '').trim()
+  addressProvince.value = String(province || addressProvince.value || '').trim()
+  addressPostalCode.value = String(postalCode || addressPostalCode.value || '').trim()
+}
 
-  const pos = locationMarker?.position || (locationMarker?.getPosition ? locationMarker.getPosition() : null)
-  if (!pos) {
-    locationError.value = 'Pin a location on the map first.'
-    return
-  }
-
-  const lat = typeof pos.lat === 'function' ? pos.lat() : pos.lat
-  const lng = typeof pos.lng === 'function' ? pos.lng() : pos.lng
-  const resolved = await reverseGeocodeLocation(lat, lng)
-  if (!resolved) return
-
+const handleLocationConfirm = () => {
   closeLocationModal()
   toast.success('Address selected successfully.')
 }
@@ -1524,97 +1517,27 @@ onBeforeUnmount(() => {
         @close="closeLocationModal"
         :showConfirm="false"
       >
-        <div class="space-y-4 p-1">
-          <p class="text-sm text-charcoal-600">
-            Pin your address on the map. The picker is restricted to the Philippines only.
-          </p>
-
-          <div class="rounded-2xl border border-gold-200/80 bg-cream-100 p-4 space-y-3">
-            <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Search location</label>
-            <div class="flex flex-col gap-3 sm:flex-row">
-              <input
-                v-model="searchQuery"
-                type="text"
-                class="w-full rounded-xl border border-gold-200/80 bg-white px-4 py-3 text-charcoal-700 outline-none placeholder:text-charcoal-400 focus:border-gold-400 focus:ring-4 focus:ring-gold-200/30"
-                placeholder="Search a city, barangay, or address"
-                @keyup.enter.prevent="searchLocation"
-              />
-              <button
-                type="button"
-                class="rounded-xl bg-gold-700 px-5 py-3 font-semibold text-white transition hover:bg-gold-800"
-                @click="searchLocation"
-              >
-                Search
-              </button>
-            </div>
-            <p class="text-xs text-charcoal-500">Search first, then fine-tune the exact spot by dragging or clicking the pin.</p>
-          </div>
-
-          <div class="relative">
-            <div
-              ref="locationMapCanvas"
-              class="h-[380px] overflow-hidden rounded-2xl border border-gold-200/80 bg-cream-100 shadow-[0_12px_28px_rgba(54,34,22,0.08)]"
-            ></div>
-            <div
-              v-if="locationLoading"
-              class="absolute inset-0 flex items-center justify-center rounded-2xl bg-[rgba(255,248,240,0.72)] text-sm font-semibold text-gold-800 backdrop-blur-[2px]"
-            >
-              Loading map...
-            </div>
-          </div>
-
-          <div
-            v-if="locationError"
-            class="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm"
-          >
-            {{ locationError }}
-          </div>
-
-          <div class="rounded-2xl border border-gold-200/80 bg-gradient-to-br from-cream-100 to-gold-100 p-4 space-y-3 shadow-[0_10px_24px_rgba(54,34,22,0.06)]">
-            <div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
-                {{ selectedAddressLabel }}
-              </div>
-              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
-                {{ addressBarangay || '-' }}
-              </div>
-              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
-                {{ addressCity || '-' }}
-              </div>
-              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
-                {{ addressProvince || '-' }}
-              </div>
-            </div>
-            <div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
-                {{ addressPostalCode || '-' }}
-              </div>
-              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
-                {{ addressLat || '-' }}
-              </div>
-              <div class="rounded-xl border border-gold-200/70 bg-white/50 px-3 py-2 text-charcoal-700">
-                {{ addressLng || '-' }}
-              </div>
-            </div>
-          </div>
-
-          <div class="flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded-lg border border-gold-300 bg-cream-100 px-4 py-2 text-charcoal-700 transition hover:bg-cream-200"
-              @click="closeLocationModal"
-            >
-              Close
-            </button>
-            <button
-              type="button"
-              class="rounded-lg bg-gold-700 px-4 py-2 text-white transition hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-60"
-              :disabled="locationLoading"
-              @click="usePinnedLocation"
-            >
-              Use Pin
-            </button>
-          </div>
+        <div class="p-1">
+          <LocationPicker
+            region="philippines"
+            title="Select Address in the Philippines"
+            instruction-title="Philippines only"
+            instruction-text="Pinning is limited to land locations inside the Philippines. Pins in the ocean or outside the country are blocked."
+            search-placeholder="Search a city, barangay, or address"
+            search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
+            allowed-area-label="Philippines"
+            pinned-address-label="Pinned Address"
+            confirm-label="Use Pin"
+            :show-close="true"
+            :show-confirm="true"
+            :initial-address="address"
+            :initial-lat="addressLat"
+            :initial-lng="addressLng"
+            @close="closeLocationModal"
+            @selection-change="handleLocationSelection"
+            @confirm="handleLocationConfirm"
+            @error="locationError = $event"
+          />
         </div>
       </Modal>
 

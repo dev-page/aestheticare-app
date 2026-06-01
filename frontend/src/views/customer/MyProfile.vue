@@ -64,51 +64,22 @@
 
               <div>
                 <label class="profile-field-label">Address Search</label>
-                <div class="flex flex-col gap-3 sm:flex-row">
-                  <div class="profile-search-wrap flex-1">
-                    <Icon icon="mdi:magnify" class="profile-search-icon h-4 w-4" />
-                    <input
-                      v-model="locationSearchQuery"
-                      type="text"
-                      class="profile-input profile-search-input"
-                      placeholder="Search a city, barangay, or address"
-                      @keyup.enter.prevent="searchLocation"
-                    />
-                  </div>
-                  <button type="button" class="profile-search-button" @click="searchLocation">
-                    Search
-                  </button>
-                </div>
-                <p class="mt-2 text-xs text-[#8b6a4d]">
-                  Search first, then fine-tune the exact spot by dragging or clicking the pin.
-                </p>
-                <div class="mt-4 rounded-2xl border border-[#e0c09a] bg-[rgba(255,250,243,0.92)] p-3">
-                  <div ref="locationMapEl" class="profile-location-map"></div>
-                  <p v-if="!hasLocationCoords" class="mt-2 text-xs text-[#8b6a4d]">
-                    Pin a location on the map to save it.
-                  </p>
-                  <p v-if="locationError" class="mt-2 text-xs text-[#9a563f]">
-                    {{ locationError }}
-                  </p>
-                  <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div class="profile-location-box">
-                      <p class="profile-location-label">City / Municipality</p>
-                      <p class="profile-location-value mt-1">{{ customer.addressCity || '-' }}</p>
-                    </div>
-                    <div class="profile-location-box">
-                      <p class="profile-location-label">Barangay</p>
-                      <p class="profile-location-value mt-1">{{ customer.addressBarangay || '-' }}</p>
-                    </div>
-                    <div class="profile-location-box">
-                      <p class="profile-location-label">Actual Location</p>
-                      <p class="profile-location-value mt-1">{{ customer.address || '-' }}</p>
-                    </div>
-                    <div class="profile-location-box">
-                      <p class="profile-location-label">Postal Code</p>
-                      <p class="profile-location-value mt-1">{{ customer.addressPostalCode || '-' }}</p>
-                    </div>
-                  </div>
-                </div>
+                <LocationPicker
+                  region="philippines"
+                  title="Select Address in the Philippines"
+                  instruction-title="Philippines only"
+                  instruction-text="Pinning is limited to land locations inside the Philippines. Pins in the ocean or outside the country are blocked."
+                  search-placeholder="Search a city, barangay, or address"
+                  search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
+                  allowed-area-label="Philippines"
+                  pinned-address-label="Pinned Address"
+                  :show-actions="false"
+                  :initial-address="customer.address || buildLocationSearchQuery()"
+                  :initial-lat="customer.addressLat"
+                  :initial-lng="customer.addressLng"
+                  @selection-change="handleLocationSelection"
+                  @error="locationError = $event"
+                />
               </div>
 
               <div>
@@ -134,6 +105,7 @@ import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/fi
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
+import LocationPicker from '@/components/common/LocationPicker.vue'
 import { toast } from 'vue3-toastify'
 
 const customer = ref({
@@ -257,6 +229,16 @@ const syncLocationFromGeocode = (result, position) => {
   locationError.value = ''
   locationSearchQuery.value = customer.value.address || buildLocationSearchQuery()
   return true
+}
+
+const handleLocationSelection = ({ lat, lng, address, city, barangay, province, postalCode }) => {
+  customer.value.addressLat = String(lat || '')
+  customer.value.addressLng = String(lng || '')
+  customer.value.address = String(address || '').trim()
+  customer.value.addressCity = String(city || customer.value.addressCity || '').trim()
+  customer.value.addressBarangay = String(barangay || customer.value.addressBarangay || '').trim()
+  customer.value.addressPostalCode = String(postalCode || customer.value.addressPostalCode || '').trim()
+  locationSearchQuery.value = customer.value.address || buildLocationSearchQuery()
 }
 
 const searchLocation = async () => {

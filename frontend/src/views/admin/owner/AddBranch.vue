@@ -7,7 +7,11 @@ import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { Icon } from '@iconify/vue'
 import Modal from '@/components/common/Modal.vue'
+import LocationPicker from '@/components/common/LocationPicker.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import {
+  validateCavitePinSelection,
+} from '@/utils/locationValidation'
 
 export default {
   name: 'AddBranch',
@@ -38,6 +42,7 @@ export default {
     let mapsReady = false
     let locationMap = null
     let locationMarker = null
+    let lastValidLocation = null
 
     const caviteLocations = [
       'Bacoor',
@@ -238,6 +243,30 @@ export default {
       if (!currentBranch.value.clinicLocationAddress && streetAddress) {
         currentBranch.value.clinicLocationAddress = streetAddress
       }
+
+      lastValidLocation = {
+        lat: Number(lat),
+        lng: Number(lng),
+        address: currentBranch.value.clinicLocationAddress || formattedAddress || fallbackName || '',
+      }
+    }
+
+    const setLocationMarkerPosition = (position) => {
+      if (!locationMarker) return
+      if (typeof locationMarker.setPosition === 'function') {
+        locationMarker.setPosition(position)
+        return
+      }
+      locationMarker.position = position
+    }
+
+    const revertLocationMarker = () => {
+      if (!lastValidLocation) return
+      const savedLocation = { lat: lastValidLocation.lat, lng: lastValidLocation.lng }
+      setLocationMarkerPosition(savedLocation)
+      if (locationMap?.setCenter) {
+        locationMap.setCenter(savedLocation)
+      }
     }
 
     const reverseGeocodeLocation = (lat, lng) => {
@@ -247,15 +276,19 @@ export default {
         geocoder.geocode({ location: { lat, lng } }, (results, status) => {
           if (status !== 'OK' || !results?.length) {
             locationError.value = 'Unable to resolve a place name for the pinned location.'
+            revertLocationMarker()
             resolve(false)
             return
           }
           const components = flattenAddressComponents(results)
-          if (!isWithinCavite(components)) {
-            locationError.value = 'Pinned location is outside Cavite.'
-            if (locationMap) {
-              locationMap.setCenter(defaultCaviteCenter)
-            }
+          const validation = validateCavitePinSelection({
+            components,
+            formattedAddress: results[0].formatted_address || '',
+            fallbackText: results[0].formatted_address || '',
+          })
+          if (!validation.ok) {
+            locationError.value = validation.reason
+            revertLocationMarker()
             resolve(false)
             return
           }
@@ -266,6 +299,7 @@ export default {
             formattedAddress: results[0].formatted_address || '',
             fallbackName: results[0].formatted_address || ''
           })
+          setLocationMarkerPosition({ lat, lng })
           locationError.value = ''
           resolve(true)
         })
@@ -336,12 +370,13 @@ export default {
         const lng = Number(currentBranch.value.clinicLocationLng)
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
         const savedLocation = { lat, lng }
-        if (locationMarker?.position) {
-          locationMarker.position = savedLocation
-        } else if (locationMarker?.setPosition) {
-          locationMarker.setPosition(savedLocation)
-        }
+        setLocationMarkerPosition(savedLocation)
         locationMap?.setCenter(savedLocation)
+        lastValidLocation = {
+          lat,
+          lng,
+          address: currentBranch.value.clinicLocationAddress || currentBranch.value.location || '',
+        }
       }
 
       restoreMarkerToSavedLocation()
@@ -351,11 +386,6 @@ export default {
         if (!latLng) return
         const lat = latLng.lat()
         const lng = latLng.lng()
-        if (locationMarker?.position) {
-          locationMarker.position = { lat, lng }
-        } else if (locationMarker?.setPosition) {
-          locationMarker.setPosition({ lat, lng })
-        }
         reverseGeocodeLocation(lat, lng)
       })
 
@@ -373,13 +403,26 @@ export default {
     const openLocationModal = async () => {
       locationSearchQuery.value = currentBranch.value.clinicLocationAddress || currentBranch.value.location || ''
       showLocationModal.value = true
-      await nextTick()
-      await initLocationMap()
     }
 
     const closeLocationModal = () => {
       showLocationModal.value = false
       locationError.value = ''
+    }
+
+    const handleLocationSelection = ({ lat, lng, address, city, barangay, province, postalCode }) => {
+      currentBranch.value.clinicLocationLat = String(lat || '')
+      currentBranch.value.clinicLocationLng = String(lng || '')
+      currentBranch.value.clinicLocationAddress = String(address || '').trim()
+      currentBranch.value.location = String(city || currentBranch.value.location || '').trim()
+      currentBranch.value.clinicBarangay = String(barangay || currentBranch.value.clinicBarangay || '').trim()
+      currentBranch.value.clinicProvince = String(province || currentBranch.value.clinicProvince || 'Cavite').trim() || 'Cavite'
+      currentBranch.value.clinicPostalCode = String(postalCode || currentBranch.value.clinicPostalCode || '').trim()
+    }
+
+    const handleLocationConfirm = () => {
+      closeLocationModal()
+      toast.success('Branch location selected successfully.')
     }
 
     const usePinnedLocation = async () => {
@@ -427,8 +470,13 @@ export default {
 
           const place = results[0]
           const components = flattenAddressComponents(results)
-          if (!isWithinCavite(components)) {
-            locationError.value = 'Please select a location within Cavite.'
+          const validation = validateCavitePinSelection({
+            components,
+            formattedAddress: place.formatted_address || query,
+            fallbackText: query,
+          })
+          if (!validation.ok) {
+            locationError.value = validation.reason
             return
           }
 
@@ -441,11 +489,7 @@ export default {
           const lat = typeof location.lat === 'function' ? location.lat() : location.lat
           const lng = typeof location.lng === 'function' ? location.lng() : location.lng
 
-          if (locationMarker?.position) {
-            locationMarker.position = { lat, lng }
-          } else if (locationMarker?.setPosition) {
-            locationMarker.setPosition({ lat, lng })
-          }
+          setLocationMarkerPosition({ lat, lng })
           if (locationMap?.setCenter) {
             locationMap.setCenter({ lat, lng })
           }
@@ -745,88 +789,27 @@ export default {
         @close="closeLocationModal"
         :showConfirm="false"
       >
-        <div class="space-y-4">
-          <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
-            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Search location</label>
-            <div class="flex flex-col gap-3 sm:flex-row">
-              <input
-                v-model="locationSearchQuery"
-                type="text"
-                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-500 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15"
-                placeholder="Search a city, barangay, or address"
-                @keyup.enter.prevent="searchLocation"
-              />
-              <button
-                type="button"
-                class="rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
-                @click="searchLocation"
-              >
-                Search
-              </button>
-            </div>
-            <p class="mt-2 text-xs text-slate-400">Search first, then fine-tune the exact spot by dragging or clicking the pin.</p>
-          </div>
-          <div ref="locationMapCanvas" class="w-full h-[380px] rounded-xl border border-slate-700"></div>
-          <div
-            v-if="locationError"
-            class="rounded-2xl border px-4 py-3 shadow-lg"
-            :class="isOutsideCaviteLocationError ? 'border-rose-400/50 bg-rose-500/12' : 'border-amber-400/50 bg-amber-500/12'"
-          >
-            <div class="flex items-start gap-3">
-              <div
-                class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                :class="isOutsideCaviteLocationError ? 'bg-rose-500/20 text-rose-200' : 'bg-amber-500/20 text-amber-200'"
-              >
-                <Icon :icon="isOutsideCaviteLocationError ? 'mdi:map-marker-off-outline' : 'mdi:alert-circle-outline'" class="h-5 w-5" />
-              </div>
-              <div class="min-w-0">
-                <p
-                  class="text-sm font-semibold uppercase tracking-[0.14em]"
-                  :class="isOutsideCaviteLocationError ? 'text-rose-200' : 'text-amber-200'"
-                >
-                  {{ locationErrorTitle }}
-                </p>
-                <p class="mt-1 text-sm text-white">{{ locationError }}</p>
-                <p class="mt-2 text-xs text-slate-300">{{ locationErrorHint }}</p>
-              </div>
-            </div>
-          </div>
-          <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4 space-y-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Pinned Full Address</p>
-              <p class="mt-1 text-sm text-white">{{ modalPinnedAddressLabel }}</p>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-              <div>
-                <p class="text-slate-400 text-xs uppercase tracking-wide">Barangay</p>
-                <p class="mt-1 text-slate-200">{{ currentBranch.clinicBarangay || '-' }}</p>
-              </div>
-              <div>
-                <p class="text-slate-400 text-xs uppercase tracking-wide">City/Municipality</p>
-                <p class="mt-1 text-slate-200">{{ currentBranch.location || '-' }}</p>
-              </div>
-              <div>
-                <p class="text-slate-400 text-xs uppercase tracking-wide">Postal Code</p>
-                <p class="mt-1 text-slate-200">{{ currentBranch.clinicPostalCode || '-' }}</p>
-              </div>
-            </div>
-          </div>
-          <div class="flex justify-end gap-2">
-            <button
-              type="button"
-              class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white"
-              @click="closeLocationModal"
-            >
-              Close
-            </button>
-            <button
-              type="button"
-              class="px-4 py-2 rounded-lg bg-gold-700 hover:bg-gold-800 text-white"
-              @click="usePinnedLocation"
-            >
-              Use Pin
-            </button>
-          </div>
+        <div class="p-1">
+          <LocationPicker
+            region="cavite"
+            title="Select Branch Location"
+            instruction-title="Cavite only"
+            instruction-text="Pinning is limited to land locations inside Cavite. Pins in the ocean, water, or outside Cavite are blocked."
+            search-placeholder="Search a city, barangay, or address in Cavite"
+            search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
+            allowed-area-label="Cavite, Philippines"
+            pinned-address-label="Pinned Full Address"
+            confirm-label="Use Pin"
+            :show-close="true"
+            :show-confirm="true"
+            :initial-address="currentBranch.clinicLocationAddress || currentBranch.location"
+            :initial-lat="currentBranch.clinicLocationLat"
+            :initial-lng="currentBranch.clinicLocationLng"
+            @close="closeLocationModal"
+            @selection-change="handleLocationSelection"
+            @confirm="handleLocationConfirm"
+            @error="locationError = $event"
+          />
         </div>
       </Modal>
     </main>

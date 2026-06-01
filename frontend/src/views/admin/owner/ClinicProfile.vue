@@ -60,56 +60,22 @@
 
           <div>
             <label class="block text-slate-400 text-sm mb-1">Address Search</label>
-            <div class="flex flex-col gap-3 sm:flex-row">
-              <input
-                v-model="locationSearchQuery"
-                type="text"
-                placeholder="Search a city, barangay, or address in Cavite"
-                class="w-full rounded-lg p-3 bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                @keyup.enter.prevent="searchLocation"
-              />
-              <button
-                type="button"
-                @click="searchLocation"
-                class="rounded-lg bg-gold-700 px-4 py-3 text-white font-semibold transition-colors hover:bg-gold-600"
-              >
-                Search
-              </button>
-            </div>
-            <p class="mt-2 text-xs text-slate-400">
-              Search first, then drag or click the pin to fine-tune the exact location.
-            </p>
-          </div>
-
-          <div class="mt-3 rounded-xl border border-slate-600 bg-slate-700/60 p-3">
-            <div ref="locationMapEl" class="h-64 w-full rounded-lg"></div>
-            <p v-if="!hasLocationCoords" class="mt-2 text-xs text-slate-400">
-              Clinic location coordinates not set yet.
-            </p>
-            <p class="mt-2 text-xs text-slate-400">
-              The map is restricted to Cavite only.
-            </p>
-            <p v-if="locationError" class="mt-2 text-xs text-rose-300">
-              {{ locationError }}
-            </p>
-            <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
-                <p class="text-xs uppercase tracking-wide text-slate-400">City / Municipality</p>
-                <p class="mt-1 text-sm text-white">{{ clinic.clinicLocation || '-' }}</p>
-              </div>
-              <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
-                <p class="text-xs uppercase tracking-wide text-slate-400">Barangay</p>
-                <p class="mt-1 text-sm text-white">{{ clinic.clinicBarangay || '-' }}</p>
-              </div>
-              <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
-                <p class="text-xs uppercase tracking-wide text-slate-400">Actual Location</p>
-                <p class="mt-1 text-sm text-white">{{ clinic.clinicLocationAddress || '-' }}</p>
-              </div>
-              <div class="rounded-lg border border-slate-600 bg-slate-800/70 p-3">
-                <p class="text-xs uppercase tracking-wide text-slate-400">Postal Code</p>
-                <p class="mt-1 text-sm text-white">{{ clinic.clinicPostalCode || '-' }}</p>
-              </div>
-            </div>
+            <LocationPicker
+              region="cavite"
+              title="Select Address in Cavite"
+              instruction-title="Cavite only"
+              instruction-text="Pinning is limited to land locations inside Cavite. Pins in the ocean, water, or outside Cavite are blocked."
+              search-placeholder="Search a city, barangay, or address in Cavite"
+              search-hint="Search first, then drag or click the pin to fine-tune the exact location."
+              allowed-area-label="Cavite, Philippines"
+              pinned-address-label="Pinned Address"
+              :show-actions="false"
+              :initial-address="clinic.clinicLocationAddress || buildLocationSearchQuery()"
+              :initial-lat="clinic.clinicLocationLat"
+              :initial-lng="clinic.clinicLocationLng"
+              @selection-change="handleLocationSelection"
+              @error="locationError = $event"
+            />
           </div>
           <button
             type="submit"
@@ -132,6 +98,8 @@ import { getApp } from 'firebase/app';
 import { auth } from '@/config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { toast } from 'vue3-toastify';
+import { flattenAddressComponents, validateCavitePinSelection } from '@/utils/locationValidation';
+import LocationPicker from '@/components/common/LocationPicker.vue';
 
 export default {
   name: 'ClinicProfile',
@@ -156,6 +124,7 @@ export default {
     let locationMap = null;
     let locationMarker = null;
     let geocoder = null;
+    let lastValidLocation = null;
     const locationSearchQuery = ref('');
     const branchScopeLabel = ref('');
     const activeClinicId = ref('');
@@ -167,24 +136,6 @@ export default {
     };
     const defaultCaviteCenter = { lat: 14.3294, lng: 120.9367 };
     const locationError = ref('');
-
-    const flattenAddressComponents = (results = []) =>
-      (results || []).flatMap((entry) => entry?.address_components || []);
-
-    const getAddressComponentValue = (components, type) => {
-      const preferredTypes = Array.isArray(type) ? type : [type];
-      const match = (components || []).find((component) =>
-        preferredTypes.some((preferredType) => component.types?.includes(preferredType))
-      );
-      return String(match?.long_name || '').trim();
-    };
-
-    const isWithinCavite = (components = []) => {
-      const province =
-        getAddressComponentValue(components, 'administrative_area_level_2') ||
-        getAddressComponentValue(components, 'administrative_area_level_1');
-      return /cavite/i.test(province);
-    };
 
     const isOwnerLikeRole = (role) => {
       const normalized = String(role || '').trim().toLowerCase();
@@ -230,18 +181,52 @@ export default {
       return geocoder;
     };
 
+    const getMarkerPosition = () => {
+      if (!locationMarker) return null;
+      if (typeof locationMarker.getPosition === 'function') {
+        return locationMarker.getPosition();
+      }
+      return locationMarker.position || null;
+    };
+
+    const setLocationMarkerPosition = (position) => {
+      if (!position || !locationMarker) return;
+      if (typeof locationMarker.setPosition === 'function') {
+        locationMarker.setPosition(position);
+      } else {
+        locationMarker.position = position;
+      }
+    };
+
+    const revertLocationMarker = () => {
+      const fallback = lastValidLocation || defaultCaviteCenter;
+      if (locationMap?.setCenter) {
+        locationMap.setCenter(fallback);
+      }
+      setLocationMarkerPosition(fallback);
+    };
+
+    const handleLocationSelection = ({ lat, lng, address, city, barangay, province, postalCode }) => {
+      clinic.value.clinicLocationLat = String(lat || '');
+      clinic.value.clinicLocationLng = String(lng || '');
+      clinic.value.clinicLocationAddress = String(address || '').trim();
+      clinic.value.clinicLocation = String(city || clinic.value.clinicLocation || '').trim();
+      clinic.value.clinicBarangay = String(barangay || clinic.value.clinicBarangay || '').trim();
+      clinic.value.clinicProvince = String(province || clinic.value.clinicProvince || 'Cavite').trim() || 'Cavite';
+      clinic.value.clinicPostalCode = String(postalCode || clinic.value.clinicPostalCode || '').trim();
+      locationSearchQuery.value = clinic.value.clinicLocationAddress || buildLocationSearchQuery();
+    };
+
     const syncLocationFromGeocode = (result, position) => {
       const components = flattenAddressComponents([result]);
-      if (!isWithinCavite(components)) {
-        locationError.value = 'Please select a location within Cavite.';
-        if (locationMap?.setCenter) {
-          locationMap.setCenter(defaultCaviteCenter);
-        }
-        if (locationMarker?.setPosition) {
-          locationMarker.setPosition(defaultCaviteCenter);
-        } else if (locationMarker) {
-          locationMarker.position = defaultCaviteCenter;
-        }
+      const validation = validateCavitePinSelection({
+        components,
+        formattedAddress: result?.formatted_address || '',
+        fallbackText: position ? `${position.lat}, ${position.lng}` : '',
+      });
+      if (!validation.ok) {
+        locationError.value = validation.reason;
+        revertLocationMarker();
         return false;
       }
 
@@ -264,6 +249,10 @@ export default {
       clinic.value.clinicPostalCode = postalComponent?.long_name || clinic.value.clinicPostalCode || '';
       clinic.value.clinicLocationLat = Number(position?.lat?.() ?? position?.lat ?? '') || '';
       clinic.value.clinicLocationLng = Number(position?.lng?.() ?? position?.lng ?? '') || '';
+      lastValidLocation = {
+        lat: Number(clinic.value.clinicLocationLat) || defaultCaviteCenter.lat,
+        lng: Number(clinic.value.clinicLocationLng) || defaultCaviteCenter.lng,
+      };
       locationError.value = '';
       locationSearchQuery.value = clinic.value.clinicLocationAddress || buildLocationSearchQuery();
       return true;
@@ -322,11 +311,7 @@ export default {
           if (locationMap?.setZoom) {
             locationMap.setZoom(16);
           }
-          if (locationMarker?.setPosition) {
-            locationMarker.setPosition(position);
-          } else if (locationMarker) {
-            locationMarker.position = position;
-          }
+          setLocationMarkerPosition(position);
         }
       );
     };
@@ -465,6 +450,10 @@ export default {
         locationMap.setCenter(center);
       }
 
+      if (hasCoords) {
+        lastValidLocation = center;
+      }
+
       const attachMarker = () => {
         if (locationMarker?.setPosition) {
           locationMarker.setPosition(center);
@@ -503,6 +492,7 @@ export default {
           if (!syncLocationFromGeocode(result, { lat: nextLat, lng: nextLng })) {
             return;
           }
+          lastValidLocation = { lat: nextLat, lng: nextLng };
         });
       };
 
@@ -514,11 +504,7 @@ export default {
 
       locationMap.addListener?.('click', (event) => {
         if (!event?.latLng) return;
-        if (locationMarker?.setPosition) {
-          locationMarker.setPosition(event.latLng);
-        } else if (locationMarker?.position) {
-          locationMarker.position = event.latLng;
-        }
+        setLocationMarkerPosition(event.latLng);
         updateFromPosition(event.latLng);
       });
     };

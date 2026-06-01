@@ -8,10 +8,14 @@ import { collection, deleteField, doc, getDoc, getDocs, onSnapshot, query, serve
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
+import LocationPicker from '@/components/common/LocationPicker.vue'
 import Terms from '@/components/common/Terms.vue'
 import PrivacyPolicy from '@/components/common/PrivacyPolicy.vue'
 import RegisterCustomer from '@/views/public/RegisterCustomer.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import {
+  validateCavitePinSelection,
+} from '@/utils/locationValidation'
 import axios from 'axios'
 
 const router = useRouter()
@@ -272,6 +276,7 @@ let mapsReady = false
 let locationAutocomplete = null
 let locationMap = null
 let locationMarker = null
+let lastValidLocation = null
 let registrationDraftSaveTimer = null
 let lastSavedRegistrationDraft = ''
 
@@ -1717,11 +1722,21 @@ const handleEmailDraftInput = () => {
 const openLocationModal = () => {
   locationSearchQuery.value = clinicLocationAddress.value || clinicLocation.value || ''
   showLocationModal.value = true
-  nextTick(() => initLocationMap())
 }
 
 const closeLocationModal = () => {
   showLocationModal.value = false
+}
+
+const handleLocationSelection = ({ lat, lng, address, city, barangay, province, postalCode }) => {
+  clinicLocationLat.value = String(lat || '')
+  clinicLocationLng.value = String(lng || '')
+  clinicLocationAddress.value = String(address || '').trim()
+  clinicLocation.value = String(city || clinicLocation.value || '').trim()
+  clinicBarangay.value = String(barangay || clinicBarangay.value || '').trim()
+  clinicProvince.value = String(province || clinicProvince.value || 'Cavite').trim() || 'Cavite'
+  clinicPostalCode.value = String(postalCode || clinicPostalCode.value || '').trim()
+  locationSearchQuery.value = clinicLocationAddress.value || clinicLocation.value || ''
 }
 
 const resetClinicRegistrationFlow = () => {
@@ -1874,12 +1889,13 @@ const initLocationMap = async () => {
     const lng = Number(clinicLocationLng.value)
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
     const savedLocation = { lat, lng }
-    if (locationMarker?.position) {
-      locationMarker.position = savedLocation
-    } else if (locationMarker?.setPosition) {
-      locationMarker.setPosition(savedLocation)
-    }
+    setLocationMarkerPosition(savedLocation)
     locationMap?.setCenter(savedLocation)
+    lastValidLocation = {
+      lat,
+      lng,
+      address: clinicLocationAddress.value || clinicLocation.value || '',
+    }
   }
 
   restoreMarkerToSavedLocation()
@@ -1889,11 +1905,6 @@ const initLocationMap = async () => {
     if (!latLng) return
     const lat = latLng.lat()
     const lng = latLng.lng()
-    if (locationMarker?.position) {
-      locationMarker.position = { lat, lng }
-    } else if (locationMarker?.setPosition) {
-      locationMarker.setPosition({ lat, lng })
-    }
     reverseGeocodeLocation(lat, lng)
   })
 
@@ -1978,22 +1989,57 @@ const applyResolvedClinicLocation = ({ lat, lng, components = [], formattedAddre
   if (!clinicLocationAddress.value && streetAddress) {
     clinicLocationAddress.value = streetAddress
   }
+
+  lastValidLocation = {
+    lat: Number(lat),
+    lng: Number(lng),
+    address: clinicLocationAddress.value || formattedAddress || fallbackName || '',
+  }
+}
+
+const setLocationMarkerPosition = (position) => {
+  if (!locationMarker) return
+  if (typeof locationMarker.setPosition === 'function') {
+    locationMarker.setPosition(position)
+    return
+  }
+  locationMarker.position = position
+}
+
+const getLocationMarkerPosition = () => {
+  if (!locationMarker) return null
+  const pos = typeof locationMarker.getPosition === 'function' ? locationMarker.getPosition() : locationMarker.position
+  if (!pos) return null
+  const lat = typeof pos.lat === 'function' ? pos.lat() : pos.lat
+  const lng = typeof pos.lng === 'function' ? pos.lng() : pos.lng
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return null
+  return { lat: Number(lat), lng: Number(lng) }
+}
+
+const revertLocationMarker = () => {
+  if (!lastValidLocation) return
+  setLocationMarkerPosition({ lat: lastValidLocation.lat, lng: lastValidLocation.lng })
+  if (locationMap?.setCenter) {
+    locationMap.setCenter({ lat: lastValidLocation.lat, lng: lastValidLocation.lng })
+  }
 }
 
 const handlePlaceSelection = (location, components, fallbackName) => {
   if (!location) return
   const comp = components || []
-  if (!isWithinCavite(comp)) {
-    locationError.value = 'Please select a location within Cavite.'
+  const validation = validateCavitePinSelection({
+    components: comp,
+    formattedAddress: fallbackName || '',
+    fallbackText: fallbackName || '',
+  })
+  if (!validation.ok) {
+    locationError.value = validation.reason
+    revertLocationMarker()
     return
   }
   const lat = typeof location.lat === 'function' ? location.lat() : location.lat
   const lng = typeof location.lng === 'function' ? location.lng() : location.lng
-  if (locationMarker?.position) {
-    locationMarker.position = { lat, lng }
-  } else if (locationMarker?.setPosition) {
-    locationMarker.setPosition({ lat, lng })
-  }
+  setLocationMarkerPosition({ lat, lng })
   applyResolvedClinicLocation({
     lat,
     lng,
@@ -2030,8 +2076,13 @@ const searchLocation = () => {
 
       const place = results[0]
       const components = flattenAddressComponents(results)
-      if (!isWithinCavite(components)) {
-        locationError.value = 'Please select a location within Cavite.'
+      const validation = validateCavitePinSelection({
+        components,
+        formattedAddress: place.formatted_address || query,
+        fallbackText: query,
+      })
+      if (!validation.ok) {
+        locationError.value = validation.reason
         return
       }
 
@@ -2044,11 +2095,7 @@ const searchLocation = () => {
       const lat = typeof location.lat === 'function' ? location.lat() : location.lat
       const lng = typeof location.lng === 'function' ? location.lng() : location.lng
 
-      if (locationMarker?.position) {
-        locationMarker.position = { lat, lng }
-      } else if (locationMarker?.setPosition) {
-        locationMarker.setPosition({ lat, lng })
-      }
+      setLocationMarkerPosition({ lat, lng })
       if (locationMap?.setCenter) {
         locationMap.setCenter({ lat, lng })
       }
@@ -2066,20 +2113,10 @@ const searchLocation = () => {
 }
 
 const usePinnedLocation = async () => {
-  if (!locationMarker) {
+  if (!clinicLocationLat.value || !clinicLocationLng.value) {
     locationError.value = 'Pin a location on the map first.'
     return
   }
-  const pos = locationMarker?.position || (locationMarker?.getPosition ? locationMarker.getPosition() : null)
-  if (!pos) {
-    locationError.value = 'Pin a location on the map first.'
-    return
-  }
-  const lat = typeof pos.lat === 'function' ? pos.lat() : pos.lat
-  const lng = typeof pos.lng === 'function' ? pos.lng() : pos.lng
-  const resolved = await reverseGeocodeLocation(lat, lng)
-  if (!resolved) return
-
   closeLocationModal()
   toast.success('Clinic location selected successfully.')
 }
@@ -2091,15 +2128,19 @@ const reverseGeocodeLocation = (lat, lng) => {
     geocoder.geocode({ location: { lat, lng } }, (results, status) => {
       if (status !== 'OK' || !results?.length) {
         locationError.value = 'Unable to resolve a place name for the pinned location.'
+        revertLocationMarker()
         resolve(false)
         return
       }
       const components = flattenAddressComponents(results)
-      if (!isWithinCavite(components)) {
-        locationError.value = 'Pinned location is outside Cavite.'
-        if (locationMap) {
-          locationMap.setCenter(defaultCaviteCenter)
-        }
+      const validation = validateCavitePinSelection({
+        components,
+        formattedAddress: results[0].formatted_address || '',
+        fallbackText: results[0].formatted_address || '',
+      })
+      if (!validation.ok) {
+        locationError.value = validation.reason
+        revertLocationMarker()
         resolve(false)
         return
       }
@@ -2110,6 +2151,7 @@ const reverseGeocodeLocation = (lat, lng) => {
         formattedAddress: results[0].formatted_address || '',
         fallbackName: results[0].formatted_address || ''
       })
+      setLocationMarkerPosition({ lat, lng })
       locationError.value = ''
       resolve(true)
     })
@@ -3236,92 +3278,31 @@ const submitDocuments = async () => {
         panelClass="bg-cream-50 border border-gold-200/80 w-full max-w-4xl shadow-2xl shadow-gold-900/15"
         bodyClass="location-modal-body"
         :isOpen="showLocationModal"
-      :title="'Select Clinic Location'"
-      @close="closeLocationModal"
-      :showConfirm="false"
+        :title="'Select Clinic Location'"
+        @close="closeLocationModal"
+        :showConfirm="false"
       >
-        <div class="space-y-4">
-          <div class="rounded-2xl border border-gold-200/80 bg-cream-100 p-4 shadow-[0_10px_24px_rgba(54,34,22,0.06)]">
-            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Search location</label>
-            <div class="flex flex-col gap-3 sm:flex-row">
-              <input
-                v-model="locationSearchQuery"
-                type="text"
-                class="w-full rounded-xl border border-gold-200/80 bg-white px-4 py-3 text-charcoal-700 outline-none placeholder:text-charcoal-400 focus:border-gold-400 focus:ring-4 focus:ring-gold-200/30"
-                placeholder="Search a city, barangay, or address"
-                @keyup.enter.prevent="searchLocation"
-              />
-              <button
-                type="button"
-                class="rounded-xl bg-gold-700 px-5 py-3 font-semibold text-white transition hover:bg-gold-800"
-                @click="searchLocation"
-              >
-                Search
-              </button>
-            </div>
-            <p class="mt-2 text-xs text-charcoal-500">Search first, then fine-tune the exact spot by dragging or clicking the pin.</p>
-          </div>
-          <div ref="locationMapCanvas" class="w-full h-[380px] rounded-2xl border border-gold-200/80 bg-cream-100 shadow-[0_12px_28px_rgba(54,34,22,0.08)] overflow-hidden"></div>
-          <div
-            v-if="locationError"
-            class="rounded-2xl border px-4 py-3 shadow-lg"
-            :class="isOutsideCaviteLocationError ? 'border-rose-300 bg-rose-50' : 'border-amber-300 bg-amber-50'"
-          >
-            <div class="flex items-start gap-3">
-              <div
-                class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                :class="isOutsideCaviteLocationError ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'"
-              >
-                <Icon :icon="isOutsideCaviteLocationError ? 'mdi:map-marker-off-outline' : 'mdi:alert-circle-outline'" class="h-5 w-5" />
-              </div>
-              <div class="min-w-0">
-                <p
-                  class="text-sm font-semibold uppercase tracking-[0.14em]"
-                  :class="isOutsideCaviteLocationError ? 'text-rose-700' : 'text-amber-700'"
-                >
-                  {{ locationErrorTitle }}
-                </p>
-                <p class="mt-1 text-sm text-charcoal-700">{{ locationError }}</p>
-                <p class="mt-2 text-xs text-charcoal-500">{{ locationErrorHint }}</p>
-              </div>
-            </div>
-          </div>
-          <div class="rounded-2xl border border-gold-200/80 bg-gradient-to-br from-cream-100 to-gold-100 p-4 space-y-3 shadow-[0_10px_24px_rgba(54,34,22,0.06)]">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Pinned Full Address</p>
-              <p class="mt-1 text-sm text-charcoal-700">{{ modalPinnedAddressLabel }}</p>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-              <div>
-                <p class="text-gold-700/80 text-xs uppercase tracking-wide">Barangay</p>
-                <p class="mt-1 text-charcoal-700">{{ clinicBarangay || '-' }}</p>
-              </div>
-              <div>
-                <p class="text-gold-700/80 text-xs uppercase tracking-wide">City/Municipality</p>
-                <p class="mt-1 text-charcoal-700">{{ clinicLocation || '-' }}</p>
-              </div>
-              <div>
-                <p class="text-gold-700/80 text-xs uppercase tracking-wide">Postal Code</p>
-                <p class="mt-1 text-charcoal-700">{{ clinicPostalCode || '-' }}</p>
-              </div>
-            </div>
-          </div>
-          <div class="flex justify-end gap-2">
-            <button
-              type="button"
-              class="px-4 py-2 rounded-lg border border-gold-300 bg-cream-100 text-charcoal-700 hover:bg-cream-200 transition"
-              @click="closeLocationModal"
-            >
-              Close
-            </button>
-            <button
-              type="button"
-              class="px-4 py-2 rounded-lg bg-gold-700 hover:bg-gold-800 text-white"
-              @click="usePinnedLocation"
-            >
-              Use Pin
-            </button>
-          </div>
+        <div class="p-1">
+          <LocationPicker
+            region="cavite"
+            title="Select Clinic Location"
+            instruction-title="Cavite only"
+            instruction-text="Pinning is limited to land locations inside Cavite. Pins in the ocean, water, or outside Cavite are blocked."
+            search-placeholder="Search a city, barangay, or address in Cavite"
+            search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
+            allowed-area-label="Cavite, Philippines"
+            pinned-address-label="Pinned Full Address"
+            confirm-label="Use Pin"
+            :show-close="true"
+            :show-confirm="true"
+            :initial-address="clinicLocationAddress || clinicLocation"
+            :initial-lat="clinicLocationLat"
+            :initial-lng="clinicLocationLng"
+            @close="closeLocationModal"
+            @selection-change="handleLocationSelection"
+            @confirm="usePinnedLocation"
+            @error="locationError = $event"
+          />
         </div>
       </Modal>
     </div>

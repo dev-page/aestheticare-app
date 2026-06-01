@@ -1,36 +1,50 @@
 <template>
   <div class="min-h-screen bg-slate-900 text-white p-6">
-    <div class="max-w-xl mx-auto bg-slate-800 border border-slate-700 rounded-xl p-6">
-      <h1 class="text-2xl font-bold mb-2">Google Maps API Test</h1>
-      <p class="text-slate-400 text-sm mb-4">Type a location to test Places Autocomplete.</p>
+    <div class="mx-auto w-full max-w-3xl rounded-2xl border border-slate-700 bg-slate-800 p-6 shadow-2xl">
+      <div class="mb-5 space-y-2">
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">Map Validation Test</p>
+        <h1 class="text-2xl font-bold">Google Maps location pinning</h1>
+        <p class="max-w-2xl text-sm leading-relaxed text-slate-300">
+          This picker only allows land locations inside Cavite. Pins on water, in the ocean, or outside Cavite are rejected.
+        </p>
+      </div>
 
-      <label class="block text-slate-400 mb-1">Location</label>
+      <div class="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+        <span class="font-semibold">Instruction:</span>
+        Choose a location in Cavite, then click <span class="font-semibold">Use Pin</span> only after the pin is verified.
+      </div>
+
+      <label class="mt-5 block text-sm font-medium text-slate-300">Location</label>
       <div
         ref="autocompleteHost"
-        class="w-full rounded-lg bg-slate-700 text-white border border-slate-600 focus-within:ring-2 focus-within:ring-blue-500 px-2 py-1"
+        class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-700 px-2 py-1 text-white focus-within:ring-2 focus-within:ring-blue-500"
       ></div>
-      <input type="hidden" :value="pinnedLat" />
-      <input type="hidden" :value="pinnedLng" />
 
       <div class="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm"
+          class="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
           @click="openMap"
         >
           Open Map
         </button>
-        <span class="text-xs text-slate-400" v-if="pinLabel">{{ pinLabel }}</span>
+        <span v-if="pinLabel" class="text-xs text-slate-400">{{ pinLabel }}</span>
       </div>
 
       <p v-if="loadError" class="mt-3 text-sm text-rose-400">{{ loadError }}</p>
-      <p v-else class="mt-3 text-xs text-slate-500">Using Places Autocomplete.</p>
+      <p v-else class="mt-3 text-xs text-slate-500">Using Places Autocomplete and Cavite-only validation.</p>
     </div>
   </div>
 </template>
 
 <script>
 import { onMounted, onUnmounted, ref } from 'vue'
+import {
+  CAVITE_BOUNDS,
+  DEFAULT_CAVITE_CENTER,
+  flattenAddressComponents,
+  validateCavitePinSelection,
+} from '@/utils/locationValidation'
 
 export default {
   name: 'MapTest',
@@ -41,10 +55,12 @@ export default {
     const pinLabel = ref('')
     const pinnedLat = ref('')
     const pinnedLng = ref('')
+
     let autocompleteElement = null
     let mapInstance = null
     let markerInstance = null
     let mapModal = null
+    let lastValidPin = null
 
     const loadMapsScript = (apiKey) =>
       new Promise((resolve, reject) => {
@@ -70,8 +86,106 @@ export default {
         document.head.appendChild(script)
       })
 
+    const setMarkerPosition = (position) => {
+      if (!markerInstance) return
+      if (typeof markerInstance.setPosition === 'function') {
+        markerInstance.setPosition(position)
+        return
+      }
+      markerInstance.position = position
+    }
+
+    const getMarkerPosition = () => {
+      if (!markerInstance) return null
+      const position = typeof markerInstance.getPosition === 'function' ? markerInstance.getPosition() : markerInstance.position
+      if (!position) return null
+      const resolvedLat = typeof position.lat === 'function' ? position.lat() : position.lat
+      const resolvedLng = typeof position.lng === 'function' ? position.lng() : position.lng
+      if (!Number.isFinite(Number(resolvedLat)) || !Number.isFinite(Number(resolvedLng))) return null
+      return { lat: Number(resolvedLat), lng: Number(resolvedLng) }
+    }
+
+    const setMapCenter = (position) => {
+      if (!mapInstance?.setCenter) return
+      mapInstance.setCenter(position)
+    }
+
+    const commitSelection = ({ lat, lng, address }) => {
+      const position = { lat: Number(lat), lng: Number(lng) }
+      setMarkerPosition(position)
+      setMapCenter(position)
+      lastValidPin = { ...position, address }
+      pinnedLat.value = String(position.lat)
+      pinnedLng.value = String(position.lng)
+      locationValue.value = address
+      pinLabel.value = `Pinned: ${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`
+      loadError.value = ''
+    }
+
+    const revertToLastValidPin = () => {
+      if (!lastValidPin) return
+      setMarkerPosition({ lat: lastValidPin.lat, lng: lastValidPin.lng })
+      setMapCenter({ lat: lastValidPin.lat, lng: lastValidPin.lng })
+      pinnedLat.value = String(lastValidPin.lat)
+      pinnedLng.value = String(lastValidPin.lng)
+      locationValue.value = lastValidPin.address || locationValue.value
+      pinLabel.value = `Pinned: ${lastValidPin.lat.toFixed(6)}, ${lastValidPin.lng.toFixed(6)}`
+    }
+
+    const validateAndCommit = async ({ lat, lng, results = [], fallbackText = '' }) => {
+      const place = results[0] || {}
+      const components = flattenAddressComponents(results)
+      const formattedAddress = String(place.formatted_address || place.formattedAddress || place.name || '').trim()
+      const validation = validateCavitePinSelection({
+        components,
+        formattedAddress,
+        fallbackText,
+      })
+
+      if (!validation.ok) {
+        loadError.value = validation.reason
+        revertToLastValidPin()
+        return false
+      }
+
+      commitSelection({
+        lat,
+        lng,
+        address: formattedAddress || fallbackText || 'Pinned location in Cavite',
+      })
+      return true
+    }
+
+    const loadLandPinFromGeocoder = async (lat, lng, fallbackText = '') =>
+      new Promise((resolve) => {
+        if (!window.google?.maps?.Geocoder) {
+          loadError.value = 'Geocoding is not available right now.'
+          resolve(false)
+          return
+        }
+
+        const geocoder = new window.google.maps.Geocoder()
+        geocoder.geocode({ location: { lat, lng } }, async (results, status) => {
+          if (status !== 'OK' || !results?.length) {
+            loadError.value = 'Unable to verify this pin. Choose a land location in Cavite.'
+            revertToLastValidPin()
+            resolve(false)
+            return
+          }
+
+          const ok = await validateAndCommit({
+            lat,
+            lng,
+            results,
+            fallbackText,
+          })
+          resolve(ok)
+        })
+      })
+
     const initAutocomplete = async () => {
       if (!autocompleteHost.value) return
+
       await new Promise((resolve) => {
         const start = Date.now()
         const timer = setInterval(() => {
@@ -84,6 +198,7 @@ export default {
           }
         }, 50)
       })
+
       if (!window.google?.maps) {
         loadError.value = 'Google Maps failed to initialize.'
         return
@@ -93,16 +208,11 @@ export default {
         await window.google.maps.importLibrary('places')
       }
 
-      const caviteBounds = {
-        north: 14.459,
-        south: 13.709,
-        east: 121.199,
-        west: 120.626
-      }
+      const caviteBounds = CAVITE_BOUNDS
 
       if (window.google.maps.places?.PlaceAutocompleteElement) {
         autocompleteElement = new window.google.maps.places.PlaceAutocompleteElement({
-          locationRestriction: caviteBounds
+          locationRestriction: caviteBounds,
         })
         autocompleteElement.style.width = '100%'
         autocompleteHost.value.innerHTML = ''
@@ -110,14 +220,18 @@ export default {
 
         autocompleteElement.addEventListener('gmp-select', async ({ placePrediction }) => {
           const place = placePrediction.toPlace()
-          await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location', 'addressComponents'] })
+          await place.fetchFields({
+            fields: ['displayName', 'formattedAddress', 'location', 'addressComponents'],
+          })
 
           const components = place.addressComponents || []
-          const isCavite =
-            components.some((comp) => comp.types?.includes('administrative_area_level_2') && /cavite/i.test(comp.longName)) ||
-            components.some((comp) => comp.types?.includes('administrative_area_level_1') && /calabarzon/i.test(comp.longName))
-          if (!isCavite) {
-            loadError.value = 'Please select a location within Cavite.'
+          const validation = validateCavitePinSelection({
+            components,
+            formattedAddress: place.formattedAddress || place.displayName || '',
+            fallbackText: place.displayName || '',
+          })
+          if (!validation.ok) {
+            loadError.value = validation.reason
             return
           }
 
@@ -125,8 +239,11 @@ export default {
           if (!location) return
           const lat = location.lat()
           const lng = location.lng()
-          pinnedLat.value = String(lat)
-          pinnedLng.value = String(lng)
+          commitSelection({
+            lat,
+            lng,
+            address: place.formattedAddress || place.displayName || 'Pinned location in Cavite',
+          })
 
           const cityComponent =
             components.find((comp) => comp.types?.includes('locality')) ||
@@ -138,7 +255,6 @@ export default {
           if (locationValue.value && 'value' in autocompleteElement) {
             autocompleteElement.value = locationValue.value
           }
-          pinLabel.value = `Pinned: ${lat.toFixed(6)}, ${lng.toFixed(6)}`
           loadError.value = ''
         })
         return
@@ -146,9 +262,9 @@ export default {
 
       const input = document.createElement('input')
       input.type = 'text'
-      input.placeholder = 'Search a location'
+      input.placeholder = 'Search a location in Cavite'
       input.className =
-        'w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500'
+        'w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500'
       autocompleteHost.value.innerHTML = ''
       autocompleteHost.value.appendChild(input)
 
@@ -161,27 +277,33 @@ export default {
         fields: ['place_id', 'formatted_address', 'geometry', 'name', 'address_components'],
         componentRestrictions: { country: 'ph' },
         bounds: caviteBounds,
-        strictBounds: true
+        strictBounds: true,
       })
 
       autocompleteElement.addListener('place_changed', () => {
         const place = autocompleteElement.getPlace()
         const location = place?.geometry?.location
         if (!location) return
+
         const components = place.address_components || []
-        const isCavite =
-          components.some((comp) => comp.types?.includes('administrative_area_level_2') && /cavite/i.test(comp.long_name)) ||
-          components.some((comp) => comp.types?.includes('administrative_area_level_1') && /calabarzon/i.test(comp.long_name))
-        if (!isCavite) {
-          loadError.value = 'Please select a location within Cavite.'
+        const validation = validateCavitePinSelection({
+          components,
+          formattedAddress: place.formatted_address || place.name || '',
+          fallbackText: place.name || '',
+        })
+        if (!validation.ok) {
+          loadError.value = validation.reason
           return
         }
+
         const lat = location.lat()
         const lng = location.lng()
-        pinnedLat.value = String(lat)
-        pinnedLng.value = String(lng)
+        commitSelection({
+          lat,
+          lng,
+          address: place.formatted_address || place.name || 'Pinned location in Cavite',
+        })
         locationValue.value = place.formatted_address || place.name || ''
-        pinLabel.value = `Pinned: ${lat.toFixed(6)}, ${lng.toFixed(6)}`
         loadError.value = ''
       })
     }
@@ -194,16 +316,22 @@ export default {
       }
 
       mapModal = document.createElement('div')
-      mapModal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/60'
+      mapModal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4'
       mapModal.innerHTML = `
-        <div class="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-3xl mx-4 p-4">
-          <div class="flex items-center justify-between mb-3">
-            <h2 class="text-white font-semibold">Pin Location</h2>
-            <button id="close-map" class="text-slate-300 hover:text-white text-sm">Close</button>
+        <div class="w-full max-w-4xl rounded-xl border border-slate-700 bg-slate-800 p-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 class="font-semibold text-white">Pin Location</h2>
+              <p class="text-xs text-slate-400">Only land locations inside Cavite are allowed.</p>
+            </div>
+            <button id="close-map" class="text-sm text-slate-300 hover:text-white">Close</button>
           </div>
-          <div id="map-canvas" style="height: 360px; border-radius: 12px;"></div>
-          <div class="flex items-center justify-end gap-2 mt-3">
-            <button id="use-pin" class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm">Use Pin</button>
+          <div class="rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-sm text-amber-100">
+            Please drag the pin within Cavite only. Pins on water or outside Cavite will be rejected.
+          </div>
+          <div id="map-canvas" style="height: 360px; border-radius: 12px; margin-top: 12px;"></div>
+          <div class="mt-3 flex items-center justify-end gap-2">
+            <button id="use-pin" class="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">Use Pin</button>
           </div>
         </div>
       `
@@ -213,85 +341,57 @@ export default {
       const useBtn = mapModal.querySelector('#use-pin')
       const canvas = mapModal.querySelector('#map-canvas')
 
-      const caviteBounds = {
-        north: 14.459,
-        south: 13.709,
-        east: 121.199,
-        west: 120.626
-      }
-      const defaultCenter = { lat: 14.3294, lng: 120.9367 }
       mapInstance = new window.google.maps.Map(canvas, {
-        center: defaultCenter,
+        center: DEFAULT_CAVITE_CENTER,
         zoom: 12,
-        restriction: { latLngBounds: caviteBounds, strictBounds: true },
-        mapId: import.meta.env.VITE_GOOGLE_MAP_ID
+        restriction: { latLngBounds: CAVITE_BOUNDS, strictBounds: true },
+        mapId: import.meta.env.VITE_GOOGLE_MAP_ID,
+        streetViewControl: false,
+        fullscreenControl: false,
+        mapTypeControl: false,
       })
+
       if (window.google.maps.importLibrary) {
         const { AdvancedMarkerElement } = await window.google.maps.importLibrary('marker')
         markerInstance = new AdvancedMarkerElement({
-          position: defaultCenter,
+          position: DEFAULT_CAVITE_CENTER,
           map: mapInstance,
-          gmpDraggable: true
+          gmpDraggable: true,
         })
       } else if (window.google.maps.Marker) {
         markerInstance = new window.google.maps.Marker({
-          position: defaultCenter,
+          position: DEFAULT_CAVITE_CENTER,
           map: mapInstance,
-          draggable: true
+          draggable: true,
         })
       }
+
+      lastValidPin = {
+        lat: DEFAULT_CAVITE_CENTER.lat,
+        lng: DEFAULT_CAVITE_CENTER.lng,
+        address: 'Pinned location in Cavite',
+      }
+      setMarkerPosition(DEFAULT_CAVITE_CENTER)
+      setMapCenter(DEFAULT_CAVITE_CENTER)
 
       closeBtn.addEventListener('click', () => {
         document.body.removeChild(mapModal)
         mapModal = null
       })
 
-      useBtn.addEventListener('click', () => {
+      useBtn.addEventListener('click', async () => {
         if (!markerInstance) return
-        const position = markerInstance?.getPosition ? markerInstance.getPosition() : markerInstance?.position
-        if (position) {
-          const lat = typeof position.lat === 'function' ? position.lat() : position.lat
-          const lng = typeof position.lng === 'function' ? position.lng() : position.lng
-          pinnedLat.value = String(lat)
-          pinnedLng.value = String(lng)
-          reverseGeocode(lat, lng)
-          pinLabel.value = `Pinned: ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+        const position = getMarkerPosition()
+        if (!position) {
+          loadError.value = 'Pin a valid land location in Cavite first.'
+          return
         }
+
+        const ok = await loadLandPinFromGeocoder(position.lat, position.lng, locationValue.value || '')
+        if (!ok) return
+
         document.body.removeChild(mapModal)
         mapModal = null
-      })
-    }
-
-    const reverseGeocode = (lat, lng) => {
-      if (!window.google?.maps?.Geocoder) return
-      const geocoder = new window.google.maps.Geocoder()
-      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-        if (status !== 'OK' || !results?.length) {
-          loadError.value = 'Unable to resolve a place name for the pinned location.'
-          return
-        }
-        const components = results[0].address_components || []
-        const isCavite =
-          components.some((comp) => comp.types.includes('administrative_area_level_2') && /cavite/i.test(comp.long_name)) ||
-          components.some((comp) => comp.types.includes('administrative_area_level_1') && /calabarzon/i.test(comp.long_name))
-        if (!isCavite) {
-          loadError.value = 'Pinned location is outside Cavite.'
-          return
-        }
-        const cityComponent =
-          components.find((comp) => comp.types.includes('locality')) ||
-          components.find((comp) => comp.types.includes('administrative_area_level_2')) ||
-          components.find((comp) => comp.types.includes('administrative_area_level_1'))
-        const cityName = cityComponent?.long_name
-        if (cityName) {
-          locationValue.value = cityName
-        } else {
-          locationValue.value = results[0].formatted_address || results[0].name || ''
-        }
-        if (locationValue.value && autocompleteElement && 'value' in autocompleteElement) {
-          autocompleteElement.value = locationValue.value
-        }
-        loadError.value = ''
       })
     }
 
@@ -325,8 +425,8 @@ export default {
       pinLabel,
       pinnedLat,
       pinnedLng,
-      openMap
+      openMap,
     }
-  }
+  },
 }
 </script>
