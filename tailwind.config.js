@@ -2,8 +2,8 @@
 export default {
   darkMode: "class",
   content: [
-    "./index.html",
-    "./src/**/*.{vue,js,ts,jsx,tsx}",
+    "./frontend/index.html",
+    "./frontend/src/**/*.{vue,js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
@@ -73,4 +73,3 @@ export default {
   },
   plugins: [],
 }
-
