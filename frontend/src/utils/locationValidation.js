@@ -5,6 +5,8 @@ export const CAVITE_BOUNDS = {
   west: 120.559,
 }
 
+export const CAVITE_PSGC_CODE = '0402100000'
+
 export const DEFAULT_CAVITE_CENTER = {
   lat: 14.2814,
   lng: 120.8612,
@@ -141,4 +143,93 @@ export const validatePhilippinesPinSelection = ({
   }
 
   return { ok: true }
+}
+
+const normalizeGeoJsonPoint = (position = []) => {
+  const longitude = Number(position?.[0])
+  const latitude = Number(position?.[1])
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+  return { lat: latitude, lng: longitude }
+}
+
+export const geoJsonGeometryToOuterRings = (geometry) => {
+  if (!geometry || !Array.isArray(geometry.coordinates)) return []
+
+  if (geometry.type === 'Polygon') {
+    return geometry.coordinates
+      .map((ring) => (Array.isArray(ring) ? ring.map(normalizeGeoJsonPoint).filter(Boolean) : []))
+      .filter((ring) => ring.length)
+  }
+
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates
+      .map((polygon) => (Array.isArray(polygon) ? polygon[0] : []))
+      .map((ring) => (Array.isArray(ring) ? ring.map(normalizeGeoJsonPoint).filter(Boolean) : []))
+      .filter((ring) => ring.length)
+  }
+
+  return []
+}
+
+export const geoJsonGeometryBounds = (geometry) => {
+  const rings = geoJsonGeometryToOuterRings(geometry)
+  const allPoints = rings.flat()
+  if (!allPoints.length) return null
+
+  return allPoints.reduce(
+    (bounds, point) => ({
+      north: Math.max(bounds.north, point.lat),
+      south: Math.min(bounds.south, point.lat),
+      east: Math.max(bounds.east, point.lng),
+      west: Math.min(bounds.west, point.lng),
+    }),
+    {
+      north: -90,
+      south: 90,
+      east: -180,
+      west: 180,
+    }
+  )
+}
+
+export const pointInGeoJsonGeometry = ({ lat, lng }, geometry) => {
+  const rings = geoJsonGeometryToOuterRings(geometry)
+  if (!rings.length) return false
+
+  const latitude = Number(lat)
+  const longitude = Number(lng)
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false
+
+  const point = { lat: latitude, lng: longitude }
+
+  const isPointInRing = (ring) => {
+    if (!Array.isArray(ring) || ring.length < 3) return false
+
+    let inside = false
+    for (let index = 0, previousIndex = ring.length - 1; index < ring.length; previousIndex = index++) {
+      const current = ring[index]
+      const previous = ring[previousIndex]
+      if (!current || !previous) continue
+
+      const currentLng = Number(current.lng)
+      const currentLat = Number(current.lat)
+      const previousLng = Number(previous.lng)
+      const previousLat = Number(previous.lat)
+
+      const intersects =
+        currentLat > point.lat !== previousLat > point.lat &&
+        point.lng <
+          ((previousLng - currentLng) * (point.lat - currentLat)) /
+            (previousLat - currentLat || Number.EPSILON) +
+            currentLng
+
+      if (intersects) {
+        inside = !inside
+      }
+    }
+
+    return inside
+  }
+
+  return rings.some((ring) => isPointInRing(ring))
 }
