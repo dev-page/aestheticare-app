@@ -43,10 +43,10 @@
         class="pointer-events-none absolute inset-x-4 top-4 z-10 flex items-start justify-between gap-3"
       >
         <div class="rounded-full border border-amber-200/80 bg-[rgba(255,248,240,0.92)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-800 shadow-sm backdrop-blur-sm">
-          {{ hasOfficialCaviteBoundary ? 'Official Cavite boundary' : 'Cavite only' }}
+          {{ hasOfficialCaviteBoundary ? 'Cavite boundary' : 'Cavite only' }}
         </div>
         <div class="hidden rounded-full border border-gold-200/70 bg-[rgba(255,248,240,0.82)] px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-charcoal-500 shadow-sm backdrop-blur-sm sm:block">
-          {{ hasOfficialCaviteBoundary ? 'GIS.ph geometry' : 'Outside Cavite is blocked' }}
+          {{ hasOfficialCaviteBoundary ? 'OpenStreetMap geometry' : 'Outside Cavite is blocked' }}
         </div>
       </div>
       <div
@@ -308,14 +308,27 @@ const validateCaviteSelection = ({
 
 const loadMapsScript = () =>
   new Promise((resolve, reject) => {
-    if (window.google?.maps?.Map || window.google?.maps?.importLibrary) {
+    const waitForMaps = () => {
+      if (window.google?.maps?.Map) {
+        resolve()
+        return
+      }
+      if (Date.now() - start > 5000) {
+        reject(new Error('Google Maps JS API loaded but maps object was not initialized.'))
+        return
+      }
+      setTimeout(waitForMaps, 50)
+    }
+
+    if (window.google?.maps?.Map) {
       resolve()
       return
     }
 
+    const start = Date.now()
     const existing = document.getElementById('google-maps-js')
     if (existing) {
-      existing.addEventListener('load', () => resolve(), { once: true })
+      existing.addEventListener('load', () => waitForMaps(), { once: true })
       existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), { once: true })
       return
     }
@@ -331,7 +344,7 @@ const loadMapsScript = () =>
     script.async = true
     script.defer = true
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&loading=async&v=weekly`
-    script.onload = () => resolve()
+    script.onload = () => waitForMaps()
     script.onerror = () => reject(new Error('Failed to load Google Maps'))
     document.head.appendChild(script)
   })

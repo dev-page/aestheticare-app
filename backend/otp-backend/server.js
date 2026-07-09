@@ -60,7 +60,6 @@ console.log("Loaded ENV:", {
   GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET ? "present" : "missing",
   GOOGLE_OAUTH_REFRESH_TOKEN: process.env.GOOGLE_OAUTH_REFRESH_TOKEN ? "present" : "missing",
   GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID || "primary",
-  GIS_PH_API_TOKEN: process.env.GIS_PH_API_TOKEN ? "present" : "missing",
 });
 
 const corsOptions = {
@@ -100,8 +99,6 @@ const googleCalendarId = process.env.GOOGLE_CALENDAR_ID || 'primary'
 const googleMeetDefaultTimezone = process.env.GOOGLE_MEET_DEFAULT_TIMEZONE || 'Asia/Manila'
 const firebaseServiceAccountJson = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim()
 const firebaseServiceAccountBase64 = String(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || '').trim()
-const gisPhApiToken = String(process.env.GIS_PH_API_TOKEN || '').trim()
-const cavitePsgcCode = '0402100000'
 
 let caviteBoundaryCache = null
 let caviteBoundaryCacheAt = 0
@@ -111,37 +108,41 @@ if (sendGridApiKey) {
   sgMail.setApiKey(sendGridApiKey)
 }
 
-const fetchOfficialCaviteBoundary = async () => {
+const fetchCaviteBoundary = async () => {
   if (caviteBoundaryCache && Date.now() - caviteBoundaryCacheAt < CAVITE_BOUNDARY_CACHE_TTL_MS) {
     return caviteBoundaryCache
   }
 
-  if (!gisPhApiToken) {
-    throw new Error('GIS_PH_API_TOKEN is not configured.')
-  }
-
-  const response = await fetch('https://api.gis.ph/v1/provinces/search', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${gisPhApiToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      codes: [cavitePsgcCode],
-      geometry: 'detailed',
-      output: 'geojson',
-    }),
-  })
+  const response = await fetch(
+    'https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=ph&limit=10&polygon_geojson=1&addressdetails=1&q=Province%20of%20Cavite%2C%20Philippines',
+    {
+      headers: {
+        'User-Agent': 'AestheticCare/1.0',
+        'Accept-Language': 'en',
+      },
+    }
+  )
 
   if (!response.ok) {
     const responseText = await response.text().catch(() => '')
-    throw new Error(`GIS.ph returned ${response.status}${responseText ? `: ${responseText}` : ''}`)
+    throw new Error(`Nominatim returned ${response.status}${responseText ? `: ${responseText}` : ''}`)
   }
 
   const payload = await response.json()
-  const boundary = payload?.data || payload
-  if (!boundary?.type || !Array.isArray(boundary?.features)) {
-    throw new Error('GIS.ph returned an unexpected Cavite boundary payload.')
+  const features = Array.isArray(payload) ? payload : Array.isArray(payload?.features) ? payload.features : []
+  const boundaryFeature =
+    features.find((feature) => {
+      const properties = feature?.properties || {}
+      const displayName = String(properties.display_name || properties.displayName || '').toLowerCase()
+      const category = String(properties.category || '').toLowerCase()
+      const type = String(properties.type || '').toLowerCase()
+      return category === 'boundary' && type === 'administrative' && /cavite/.test(displayName)
+    }) ||
+    features.find((feature) => /cavite/i.test(String(feature?.properties?.display_name || feature?.properties?.displayName || '')))
+
+  const boundary = boundaryFeature?.geometry
+  if (!boundary?.type || !Array.isArray(boundary?.coordinates)) {
+    throw new Error('Nominatim returned an unexpected Cavite boundary payload.')
   }
 
   caviteBoundaryCache = boundary
@@ -1571,11 +1572,10 @@ app.get('/health', (_req, res) => {
 
 app.get('/maps/cavite-boundary', async (_req, res) => {
   try {
-    const boundary = await fetchOfficialCaviteBoundary()
+    const boundary = await fetchCaviteBoundary()
     res.json({
       ok: true,
-      source: 'GIS.ph',
-      psgcCode: cavitePsgcCode,
+      source: 'OpenStreetMap Nominatim',
       geometry: boundary,
     })
   } catch (error) {
