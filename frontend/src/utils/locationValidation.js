@@ -8,8 +8,8 @@ export const CAVITE_BOUNDS = {
 export const CAVITE_PSGC_CODE = '0402100000'
 
 export const DEFAULT_CAVITE_CENTER = {
-  lat: 14.2814,
-  lng: 120.8612,
+  lat: 14.28,
+  lng: 120.83,
 }
 
 export const PHILIPPINES_BOUNDS = {
@@ -26,6 +26,7 @@ export const DEFAULT_PHILIPPINES_CENTER = {
 
 const WATER_KEYWORDS = /\b(ocean|sea|bay|gulf|strait|channel|reef|water|waters|shore|coast|coastal|harbor|harbour|marina|dock|pier|lagoon|river|lake|pond|estuary|floodplain)\b/i
 const CAVITE_KEYWORDS = /\bcavite\b/i
+const WATER_RESULT_TYPES = new Set(['natural_feature'])
 const LAND_COMPONENT_TYPES = new Set([
   'street_address',
   'premise',
@@ -42,6 +43,42 @@ const LAND_COMPONENT_TYPES = new Set([
   'administrative_area_level_4',
   'administrative_area_level_2',
 ])
+
+const SPECIFIC_LAND_COMPONENT_TYPES = new Set([
+  'street_address',
+  'premise',
+  'subpremise',
+  'route',
+  'intersection',
+  'sublocality_level_1',
+  'sublocality_level_2',
+  'neighborhood',
+  'administrative_area_level_3',
+  'administrative_area_level_4',
+])
+
+export const distanceMeters = (a = {}, b = {}) => {
+  const lat1 = Number(a.lat)
+  const lng1 = Number(a.lng)
+  const lat2 = Number(b.lat)
+  const lng2 = Number(b.lng)
+
+  if (!Number.isFinite(lat1) || !Number.isFinite(lng1) || !Number.isFinite(lat2) || !Number.isFinite(lng2)) {
+    return Number.NaN
+  }
+
+  const toRad = (value) => (value * Math.PI) / 180
+  const earthRadiusMeters = 6371000
+  const deltaLat = toRad(lat2 - lat1)
+  const deltaLng = toRad(lng2 - lng1)
+  const sinLat = Math.sin(deltaLat / 2)
+  const sinLng = Math.sin(deltaLng / 2)
+  const aTerm =
+    sinLat * sinLat +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * sinLng * sinLng
+  const c = 2 * Math.atan2(Math.sqrt(aTerm), Math.sqrt(1 - aTerm))
+  return earthRadiusMeters * c
+}
 
 export const flattenAddressComponents = (entries = []) =>
   (entries || []).flatMap((entry) => entry?.address_components || entry?.addressComponents || [])
@@ -78,10 +115,38 @@ export const looksLikeLandLocation = ({ components = [], formattedAddress = '', 
   )
 }
 
+export const looksLikeSpecificLandLocation = ({
+  components = [],
+  formattedAddress = '',
+  fallbackText = '',
+  resultTypes = [],
+  locationType = '',
+  locationDistanceMeters = Number.NaN,
+} = {}) => {
+  const text = toSearchText(formattedAddress, fallbackText)
+  if (WATER_KEYWORDS.test(text)) return false
+  if ((resultTypes || []).some((type) => WATER_RESULT_TYPES.has(type))) return false
+
+  const normalizedLocationType = String(locationType || '').toUpperCase()
+  if (normalizedLocationType === 'APPROXIMATE' && Number.isFinite(locationDistanceMeters) && locationDistanceMeters > 75) {
+    return false
+  }
+  if (Number.isFinite(locationDistanceMeters) && locationDistanceMeters > 200) {
+    return false
+  }
+
+  return (components || []).some((component) =>
+    (component.types || []).some((type) => SPECIFIC_LAND_COMPONENT_TYPES.has(type))
+  )
+}
+
 export const validateCavitePinSelection = ({
   components = [],
   formattedAddress = '',
   fallbackText = '',
+  resultTypes = [],
+  locationType = '',
+  locationDistanceMeters = Number.NaN,
 } = {}) => {
   if (!isWithinCavite({ components, formattedAddress, fallbackText })) {
     return {
@@ -90,7 +155,14 @@ export const validateCavitePinSelection = ({
     }
   }
 
-  if (!looksLikeLandLocation({ components, formattedAddress, fallbackText })) {
+  if (!looksLikeSpecificLandLocation({
+    components,
+    formattedAddress,
+    fallbackText,
+    resultTypes,
+    locationType,
+    locationDistanceMeters,
+  })) {
     return {
       ok: false,
       reason: 'Pins in the ocean or on water are not allowed.',
@@ -159,6 +231,26 @@ export const geoJsonGeometryToOuterRings = (geometry) => {
     return geometry.coordinates
       .map((ring) => (Array.isArray(ring) ? ring.map(normalizeGeoJsonPoint).filter(Boolean) : []))
       .filter((ring) => ring.length)
+  }
+
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates
+      .map((polygon) => (Array.isArray(polygon) ? polygon[0] : []))
+      .map((ring) => (Array.isArray(ring) ? ring.map(normalizeGeoJsonPoint).filter(Boolean) : []))
+      .filter((ring) => ring.length)
+  }
+
+  return []
+}
+
+export const geoJsonGeometryToShellRings = (geometry) => {
+  if (!geometry || !Array.isArray(geometry.coordinates)) return []
+
+  if (geometry.type === 'Polygon') {
+    const outerRing = geometry.coordinates[0]
+    return Array.isArray(outerRing)
+      ? [outerRing.map(normalizeGeoJsonPoint).filter(Boolean)].filter((ring) => ring.length)
+      : []
   }
 
   if (geometry.type === 'MultiPolygon') {

@@ -130,18 +130,38 @@ const fetchCaviteBoundary = async () => {
 
   const payload = await response.json()
   const features = Array.isArray(payload) ? payload : Array.isArray(payload?.features) ? payload.features : []
+  const getFeatureGeometry = (feature) => feature?.geometry || feature?.geojson || feature?.polygons_geojson || null
+  const isValidGeometry = (geometry) =>
+    Boolean(
+      geometry &&
+      typeof geometry.type === 'string' &&
+      Array.isArray(geometry.coordinates) &&
+      geometry.coordinates.length
+    )
+  const getFeatureDisplayName = (feature) => {
+    const properties = feature?.properties || {}
+    return String(
+      properties.display_name ||
+      properties.displayName ||
+      feature?.display_name ||
+      feature?.displayName ||
+      feature?.name ||
+      ''
+    ).toLowerCase()
+  }
   const boundaryFeature =
     features.find((feature) => {
       const properties = feature?.properties || {}
-      const displayName = String(properties.display_name || properties.displayName || '').toLowerCase()
+      const displayName = getFeatureDisplayName(feature)
       const category = String(properties.category || '').toLowerCase()
       const type = String(properties.type || '').toLowerCase()
-      return category === 'boundary' && type === 'administrative' && /cavite/.test(displayName)
+      return /cavite/.test(displayName) && (!category || category === 'boundary') && (!type || type === 'administrative')
     }) ||
-    features.find((feature) => /cavite/i.test(String(feature?.properties?.display_name || feature?.properties?.displayName || '')))
+    features.find((feature) => /cavite/i.test(getFeatureDisplayName(feature))) ||
+    features.find((feature) => isValidGeometry(getFeatureGeometry(feature)))
 
-  const boundary = boundaryFeature?.geometry
-  if (!boundary?.type || !Array.isArray(boundary?.coordinates)) {
+  const boundary = getFeatureGeometry(boundaryFeature)
+  if (!isValidGeometry(boundary)) {
     throw new Error('Nominatim returned an unexpected Cavite boundary payload.')
   }
 

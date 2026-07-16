@@ -32,7 +32,7 @@
       <div
         ref="mapCanvas"
         :class="[
-          'overflow-hidden rounded-2xl border border-gold-200/80 bg-cream-100',
+          'relative overflow-hidden rounded-2xl border border-gold-200/80 bg-cream-100',
           mapClass,
           { 'location-picker__cavite-map--fallback': isCaviteRegion && !hasOfficialCaviteBoundary },
         ]"
@@ -40,7 +40,7 @@
       ></div>
       <div
         v-if="isCaviteRegion"
-        class="pointer-events-none absolute inset-x-4 top-4 z-10 flex items-start justify-between gap-3"
+        class="pointer-events-none absolute inset-x-4 top-4 z-[4] flex items-start justify-between gap-3"
       >
         <div class="rounded-full border border-amber-200/80 bg-[rgba(255,248,240,0.92)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-800 shadow-sm backdrop-blur-sm">
           {{ hasOfficialCaviteBoundary ? 'Cavite boundary' : 'Cavite only' }}
@@ -51,13 +51,13 @@
       </div>
       <div
         v-if="isCaviteRegion && caviteBoundaryNotice"
-        class="absolute inset-x-4 bottom-4 z-10 rounded-full border border-amber-200 bg-[rgba(255,248,240,0.92)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800 shadow-sm backdrop-blur-sm"
+        class="absolute inset-x-4 bottom-4 z-[4] rounded-full border border-amber-200 bg-[rgba(255,248,240,0.92)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800 shadow-sm backdrop-blur-sm"
       >
         {{ caviteBoundaryNotice }}
       </div>
       <div
         v-if="loading"
-        class="absolute inset-0 flex items-center justify-center rounded-2xl bg-[rgba(255,248,240,0.72)] text-sm font-semibold text-gold-800 backdrop-blur-[2px]"
+        class="absolute inset-0 z-[5] flex items-center justify-center rounded-2xl bg-[rgba(255,248,240,0.72)] text-sm font-semibold text-gold-800 backdrop-blur-[2px]"
       >
         Loading map...
       </div>
@@ -120,9 +120,11 @@ import {
   DEFAULT_CAVITE_CENTER,
   DEFAULT_PHILIPPINES_CENTER,
   PHILIPPINES_BOUNDS,
+  distanceMeters,
   geoJsonGeometryBounds,
-  geoJsonGeometryToOuterRings,
+  geoJsonGeometryToShellRings,
   flattenAddressComponents,
+  isWithinBounds,
   pointInGeoJsonGeometry,
   validateCavitePinSelection,
   validatePhilippinesPinSelection,
@@ -166,7 +168,7 @@ let map = null
 let marker = null
 let geocoder = null
 let lastValidSelection = null
-let caviteBoundaryMask = null
+let caviteBoundaryBackdrop = null
 let caviteBoundaryOutlines = []
 
 const caviteBoundaryGeometry = ref(null)
@@ -200,6 +202,17 @@ const regionConfig = computed(() => {
 
 const hasPin = computed(() => Boolean(lat.value && lng.value))
 const isCaviteRegion = computed(() => String(props.region || '').toLowerCase() === 'cavite')
+const isWithinActiveSelectionArea = (selectedLat, selectedLng) => {
+  if (isCaviteRegion.value) {
+    if (hasOfficialCaviteBoundary.value) {
+      return pointInGeoJsonGeometry({ lat: selectedLat, lng: selectedLng }, caviteBoundaryGeometry.value)
+    }
+
+    return isWithinBounds(selectedLat, selectedLng, regionConfig.value.bounds)
+  }
+
+  return isWithinBounds(selectedLat, selectedLng, regionConfig.value.bounds)
+}
 
 const allowedAreaLabel = computed(() => props.allowedAreaLabel || (String(props.region || '').toLowerCase() === 'philippines' ? 'Philippines' : 'Cavite, Philippines'))
 
@@ -213,12 +226,25 @@ const ensureGeocoder = () => {
 const hasOfficialCaviteBoundary = computed(() => Boolean(caviteBoundaryGeometry.value?.type))
 
 const clearBoundaryOverlays = () => {
-  if (caviteBoundaryMask?.setMap) {
-    caviteBoundaryMask.setMap(null)
+  if (caviteBoundaryBackdrop?.setMap) {
+    caviteBoundaryBackdrop.setMap(null)
   }
   caviteBoundaryOutlines.forEach((outline) => outline?.setMap?.(null))
-  caviteBoundaryMask = null
+  caviteBoundaryBackdrop = null
   caviteBoundaryOutlines = []
+}
+
+const fitMapToBounds = (bounds) => {
+  if (!map || !bounds || typeof map.fitBounds !== 'function') return
+
+  const latLngBounds = {
+    north: bounds.north,
+    south: bounds.south,
+    east: bounds.east,
+    west: bounds.west,
+  }
+
+  map.fitBounds(latLngBounds, 48)
 }
 
 const getOfficialCaviteBoundary = async () => {
@@ -245,37 +271,59 @@ const applyBoundaryOverlays = () => {
 
   clearBoundaryOverlays()
 
-  const outerRings = geoJsonGeometryToOuterRings(caviteBoundaryGeometry.value)
-  const boundaryRing = outerRings[0]
-  if (!boundaryRing?.length) return
+  const shellRings = geoJsonGeometryToShellRings(caviteBoundaryGeometry.value)
+  if (!shellRings[0]?.length) return
 
-  const worldRing = [
-    { lat: 85, lng: -180 },
-    { lat: 85, lng: 180 },
-    { lat: -85, lng: 180 },
-    { lat: -85, lng: -180 },
-  ]
+  const backdropCanvas = document.createElement('canvas')
+  const backdropHost = document.createElement('div')
 
-  caviteBoundaryMask = new window.google.maps.Polygon({
-    paths: [worldRing, ...outerRings],
-    strokeOpacity: 0,
-    fillColor: '#fdf6ea',
-    fillOpacity: 0.82,
-    clickable: false,
-    map,
-    zIndex: 2,
-  })
+  backdropHost.style.position = 'absolute'
+  backdropHost.style.inset = '0'
+  backdropHost.style.pointerEvents = 'none'
+  backdropHost.style.zIndex = '1'
+  backdropCanvas.style.width = '100%'
+  backdropCanvas.style.height = '100%'
+  backdropHost.appendChild(backdropCanvas)
 
-  caviteBoundaryOutlines = outerRings.map((ring) =>
+  caviteBoundaryBackdrop = new window.google.maps.OverlayView()
+  caviteBoundaryBackdrop.onAdd = function onAdd() {
+    const panes = this.getPanes()
+    panes?.overlayLayer?.appendChild(backdropHost)
+  }
+  caviteBoundaryBackdrop.draw = function draw() {
+    const projection = this.getProjection()
+    const mapDiv = map?.getDiv?.()
+    const width = Number(mapDiv?.clientWidth || mapDiv?.offsetWidth)
+    const height = Number(mapDiv?.clientHeight || mapDiv?.offsetHeight)
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return
+
+    const canvasWidth = Math.max(Math.round(width), 1)
+    const canvasHeight = Math.max(Math.round(height), 1)
+    if (backdropCanvas.width !== canvasWidth) backdropCanvas.width = canvasWidth
+    if (backdropCanvas.height !== canvasHeight) backdropCanvas.height = canvasHeight
+
+    const ctx = backdropCanvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight)
+    ctx.fillStyle = 'rgba(18, 11, 8, 0.76)'
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+  }
+  caviteBoundaryBackdrop.onRemove = function onRemove() {
+    backdropHost.remove()
+  }
+  caviteBoundaryBackdrop.setMap(map)
+
+  caviteBoundaryOutlines = shellRings.map((ring) =>
     new window.google.maps.Polygon({
       paths: ring,
-      strokeColor: '#9f6b43',
+      strokeColor: '#f1c98e',
       strokeOpacity: 1,
-      strokeWeight: 3,
+      strokeWeight: 4,
       fillOpacity: 0,
       clickable: false,
       map,
-      zIndex: 3,
+      zIndex: 4,
     })
   )
 }
@@ -286,6 +334,9 @@ const validateCaviteSelection = ({
   components = [],
   formattedAddress = '',
   fallbackText = '',
+  resultTypes = [],
+  locationType = '',
+  locationDistanceMeters = Number.NaN,
 } = {}) => {
   if (caviteBoundaryGeometry.value) {
     if (!pointInGeoJsonGeometry({ lat: selectedLat, lng: selectedLng }, caviteBoundaryGeometry.value)) {
@@ -293,6 +344,17 @@ const validateCaviteSelection = ({
         ok: false,
         reason: 'Please pin a location within the official Cavite province boundary.',
       }
+    }
+    const landValidation = validateCavitePinSelection({
+      components,
+      formattedAddress,
+      fallbackText,
+      resultTypes,
+      locationType,
+      locationDistanceMeters,
+    })
+    if (!landValidation.ok) {
+      return landValidation
     }
     return { ok: true }
   }
@@ -303,6 +365,9 @@ const validateCaviteSelection = ({
     components,
     formattedAddress,
     fallbackText,
+    resultTypes,
+    locationType,
+    locationDistanceMeters,
   })
 }
 
@@ -409,12 +474,22 @@ const resolveSelection = ({ lat: selectedLat, lng: selectedLng, results = [], fa
   const place = results[0] || {}
   const components = flattenAddressComponents(results)
   const formattedAddress = String(place.formatted_address || place.formattedAddress || place.name || fallbackText || '').trim()
+  const resolvedLocation = place?.geometry?.location
+  const resolvedLat = typeof resolvedLocation?.lat === 'function' ? resolvedLocation.lat() : resolvedLocation?.lat
+  const resolvedLng = typeof resolvedLocation?.lng === 'function' ? resolvedLocation.lng() : resolvedLocation?.lng
+  const locationDistanceMeters =
+    Number.isFinite(Number(resolvedLat)) && Number.isFinite(Number(resolvedLng))
+      ? distanceMeters({ lat: selectedLat, lng: selectedLng }, { lat: resolvedLat, lng: resolvedLng })
+      : Number.NaN
   const validation = regionConfig.value.validate({
     lat: selectedLat,
     lng: selectedLng,
     components,
     formattedAddress,
     fallbackText,
+    resultTypes: place.types || [],
+    locationType: place?.geometry?.location_type || '',
+    locationDistanceMeters,
   })
 
   if (!validation.ok) {
@@ -618,11 +693,12 @@ const initMap = async () => {
   const initialLng = Number(props.initialLng)
   const hasInitialCoords = Number.isFinite(initialLat) && Number.isFinite(initialLng)
   const center = hasInitialCoords ? { lat: initialLat, lng: initialLng } : regionConfig.value.defaultCenter
+  const defaultZoom = isCaviteRegion.value ? 11 : 12
 
   if (!map) {
     map = new MapCtor(mapCanvas.value, {
       center,
-      zoom: hasInitialCoords ? 15 : 12,
+      zoom: hasInitialCoords ? 15 : defaultZoom,
       restriction: { latLngBounds: regionConfig.value.bounds, strictBounds: true },
       streetViewControl: false,
       fullscreenControl: false,
@@ -631,10 +707,18 @@ const initMap = async () => {
     })
   } else {
     map.setCenter(center)
+    if (!hasInitialCoords && map.setZoom) {
+      map.setZoom(defaultZoom)
+    }
   }
 
   if (isCaviteRegion.value && hasOfficialCaviteBoundary.value) {
     applyBoundaryOverlays()
+  } else if (isCaviteRegion.value) {
+    clearBoundaryOverlays()
+    if (!hasInitialCoords && map?.setZoom) {
+      map.setZoom(11)
+    }
   } else {
     clearBoundaryOverlays()
   }
@@ -661,25 +745,45 @@ const initMap = async () => {
   geocoder = ensureGeocoder()
 
   const handlePosition = async (positionLike) => {
-    if (!positionLike) return
+    if (!positionLike) return false
     const nextLat = typeof positionLike.lat === 'function' ? positionLike.lat() : positionLike.lat
     const nextLng = typeof positionLike.lng === 'function' ? positionLike.lng() : positionLike.lng
-    if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return
-    await reverseGeocodeLocation(nextLat, nextLng, searchQuery.value || displayAddress.value)
+    if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return false
+
+    if (!isWithinActiveSelectionArea(nextLat, nextLng)) {
+      error.value = props.region === 'philippines'
+        ? 'Please select a location within the Philippines.'
+        : 'Please pin a location within Cavite only.'
+      emit('error', error.value)
+      return false
+    }
+
+    return reverseGeocodeLocation(nextLat, nextLng, searchQuery.value || displayAddress.value)
   }
 
   if (marker?.addListener) {
-    marker.addListener('dragend', (event) => handlePosition(event?.latLng))
+    marker.addListener('dragend', (event) =>
+      handlePosition(event?.latLng).then((ok) => {
+        if (!ok) revertMarker()
+      })
+    )
   } else if (marker?.addEventListener) {
-    marker.addEventListener('dragend', (event) => handlePosition(event?.latLng))
+    marker.addEventListener('dragend', (event) =>
+      handlePosition(event?.latLng).then((ok) => {
+        if (!ok) revertMarker()
+      })
+    )
   }
 
   map.addListener?.('click', (event) => {
     if (!event?.latLng) return
     const nextLat = event.latLng.lat()
     const nextLng = event.latLng.lng()
-    setMarkerPosition({ lat: nextLat, lng: nextLng })
-    handlePosition(event.latLng)
+    handlePosition(event.latLng).then((ok) => {
+      if (ok) {
+        setMarkerPosition({ lat: nextLat, lng: nextLng })
+      }
+    })
   })
 
   if (hasInitialCoords) {
