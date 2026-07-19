@@ -173,6 +173,10 @@ let caviteBoundaryOutlines = []
 
 const caviteBoundaryGeometry = ref(null)
 const caviteBoundaryNotice = ref('')
+const hasPin = computed(() => Boolean(String(lat.value || '').trim() && String(lng.value || '').trim() && String(displayAddress.value || '').trim()))
+
+const isCaviteRegion = computed(() => String(props.region || '').toLowerCase() !== 'philippines')
+const hasOfficialCaviteBoundary = computed(() => Boolean(caviteBoundaryGeometry.value))
 
 const regionConfig = computed(() => {
   if (String(props.region || '').toLowerCase() === 'philippines') {
@@ -200,70 +204,19 @@ const regionConfig = computed(() => {
   }
 })
 
-const hasPin = computed(() => Boolean(lat.value && lng.value))
-const isCaviteRegion = computed(() => String(props.region || '').toLowerCase() === 'cavite')
-const isWithinActiveSelectionArea = (selectedLat, selectedLng) => {
-  if (isCaviteRegion.value) {
-    if (hasOfficialCaviteBoundary.value) {
-      return pointInGeoJsonGeometry({ lat: selectedLat, lng: selectedLng }, caviteBoundaryGeometry.value)
-    }
-
-    return isWithinBounds(selectedLat, selectedLng, regionConfig.value.bounds)
-  }
-
-  return isWithinBounds(selectedLat, selectedLng, regionConfig.value.bounds)
-}
-
-const allowedAreaLabel = computed(() => props.allowedAreaLabel || (String(props.region || '').toLowerCase() === 'philippines' ? 'Philippines' : 'Cavite, Philippines'))
-
-const ensureGeocoder = () => {
-  if (!geocoder && window.google?.maps?.Geocoder) {
-    geocoder = new window.google.maps.Geocoder()
-  }
-  return geocoder
-}
-
-const hasOfficialCaviteBoundary = computed(() => Boolean(caviteBoundaryGeometry.value?.type))
-
 const clearBoundaryOverlays = () => {
-  if (caviteBoundaryBackdrop?.setMap) {
-    caviteBoundaryBackdrop.setMap(null)
-  }
-  caviteBoundaryOutlines.forEach((outline) => outline?.setMap?.(null))
-  caviteBoundaryBackdrop = null
-  caviteBoundaryOutlines = []
-}
-
-const fitMapToBounds = (bounds) => {
-  if (!map || !bounds || typeof map.fitBounds !== 'function') return
-
-  const latLngBounds = {
-    north: bounds.north,
-    south: bounds.south,
-    east: bounds.east,
-    west: bounds.west,
+  if (caviteBoundaryBackdrop) {
+    if (typeof caviteBoundaryBackdrop.setMap === 'function') caviteBoundaryBackdrop.setMap(null)
+    if (typeof caviteBoundaryBackdrop.onRemove === 'function') caviteBoundaryBackdrop.onRemove()
+    caviteBoundaryBackdrop = null
   }
 
-  map.fitBounds(latLngBounds, 48)
-}
-
-const getOfficialCaviteBoundary = async () => {
-  for (const baseUrl of OTP_API_BASE_CANDIDATES) {
-    try {
-      const response = await fetch(`${baseUrl}/maps/cavite-boundary`)
-      if (!response.ok) continue
-
-      const payload = await response.json()
-      const geometry = payload?.geometry || payload?.data?.geometry || payload?.data?.features?.[0]?.geometry
-      if (geometry?.type && Array.isArray(geometry.coordinates)) {
-        return geometry
-      }
-    } catch (_error) {
-      // Try the next backend candidate.
-    }
+  if (Array.isArray(caviteBoundaryOutlines) && caviteBoundaryOutlines.length) {
+    caviteBoundaryOutlines.forEach((outline) => {
+      if (outline && typeof outline.setMap === 'function') outline.setMap(null)
+    })
+    caviteBoundaryOutlines = []
   }
-
-  return null
 }
 
 const applyBoundaryOverlays = () => {
@@ -274,45 +227,23 @@ const applyBoundaryOverlays = () => {
   const shellRings = geoJsonGeometryToShellRings(caviteBoundaryGeometry.value)
   if (!shellRings[0]?.length) return
 
-  const backdropCanvas = document.createElement('canvas')
-  const backdropHost = document.createElement('div')
+  const bounds = geoJsonGeometryBounds(caviteBoundaryGeometry.value) || regionConfig.value.bounds
+  const outerRing = [
+    { lat: Math.min(85, bounds.north + 4), lng: Math.max(-180, bounds.west - 4) },
+    { lat: Math.min(85, bounds.north + 4), lng: Math.min(180, bounds.east + 4) },
+    { lat: Math.max(-85, bounds.south - 4), lng: Math.min(180, bounds.east + 4) },
+    { lat: Math.max(-85, bounds.south - 4), lng: Math.max(-180, bounds.west - 4) },
+  ]
 
-  backdropHost.style.position = 'absolute'
-  backdropHost.style.inset = '0'
-  backdropHost.style.pointerEvents = 'none'
-  backdropHost.style.zIndex = '1'
-  backdropCanvas.style.width = '100%'
-  backdropCanvas.style.height = '100%'
-  backdropHost.appendChild(backdropCanvas)
-
-  caviteBoundaryBackdrop = new window.google.maps.OverlayView()
-  caviteBoundaryBackdrop.onAdd = function onAdd() {
-    const panes = this.getPanes()
-    panes?.overlayLayer?.appendChild(backdropHost)
-  }
-  caviteBoundaryBackdrop.draw = function draw() {
-    const projection = this.getProjection()
-    const mapDiv = map?.getDiv?.()
-    const width = Number(mapDiv?.clientWidth || mapDiv?.offsetWidth)
-    const height = Number(mapDiv?.clientHeight || mapDiv?.offsetHeight)
-    if (!Number.isFinite(width) || !Number.isFinite(height)) return
-
-    const canvasWidth = Math.max(Math.round(width), 1)
-    const canvasHeight = Math.max(Math.round(height), 1)
-    if (backdropCanvas.width !== canvasWidth) backdropCanvas.width = canvasWidth
-    if (backdropCanvas.height !== canvasHeight) backdropCanvas.height = canvasHeight
-
-    const ctx = backdropCanvas.getContext('2d')
-    if (!ctx) return
-
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight)
-    ctx.fillStyle = 'rgba(18, 11, 8, 0.76)'
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight)
-  }
-  caviteBoundaryBackdrop.onRemove = function onRemove() {
-    backdropHost.remove()
-  }
-  caviteBoundaryBackdrop.setMap(map)
+  caviteBoundaryBackdrop = new window.google.maps.Polygon({
+    paths: [outerRing, ...shellRings],
+    fillColor: 'rgba(18, 11, 8, 0.72)',
+    fillOpacity: 1,
+    strokeOpacity: 0,
+    clickable: false,
+    map,
+    zIndex: 3,
+  })
 
   caviteBoundaryOutlines = shellRings.map((ring) =>
     new window.google.maps.Polygon({
@@ -326,6 +257,7 @@ const applyBoundaryOverlays = () => {
       zIndex: 4,
     })
   )
+
 }
 
 const validateCaviteSelection = ({
@@ -413,6 +345,53 @@ const loadMapsScript = () =>
     script.onerror = () => reject(new Error('Failed to load Google Maps'))
     document.head.appendChild(script)
   })
+
+const getOfficialCaviteBoundary = async () => {
+  const path = '/maps/cavite-boundary'
+  for (const baseUrl of OTP_API_BASE_CANDIDATES) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: 'GET',
+      })
+      if (!response.ok) continue
+      const data = await response.json()
+      if (data?.geometry) return data.geometry
+      if (data?.boundary) return data.boundary
+      if (data?.data) return data.data
+    } catch (_error) {
+      // Try next candidate or fallback.
+    }
+  }
+  return null
+}
+
+const ensureGeocoder = () => {
+  if (!window.google?.maps?.Geocoder) return null
+  if (geocoder && typeof geocoder.geocode === 'function') return geocoder
+  geocoder = new window.google.maps.Geocoder()
+  return geocoder
+}
+
+const isWithinActiveSelectionArea = (latitude, longitude) => {
+  if (!Number.isFinite(Number(latitude)) || !Number.isFinite(Number(longitude))) return false
+  const point = { lat: Number(latitude), lng: Number(longitude) }
+  if (isCaviteRegion.value) {
+    if (hasOfficialCaviteBoundary.value && caviteBoundaryGeometry.value) {
+      return pointInGeoJsonGeometry(point, caviteBoundaryGeometry.value)
+    }
+    return isWithinBounds(latitude, longitude, regionConfig.value.bounds)
+  }
+  return isWithinBounds(latitude, longitude, regionConfig.value.bounds)
+}
+
+const fitMapToBounds = (bounds) => {
+  if (!map || !window.google?.maps || !bounds) return
+  const mapBounds = new window.google.maps.LatLngBounds(
+    { lat: bounds.south, lng: bounds.west },
+    { lat: bounds.north, lng: bounds.east }
+  )
+  map.fitBounds(mapBounds, { top: 32, bottom: 32, left: 32, right: 32 })
+}
 
 const setMarkerPosition = (position) => {
   if (!marker || !position) return
@@ -714,6 +693,10 @@ const initMap = async () => {
 
   if (isCaviteRegion.value && hasOfficialCaviteBoundary.value) {
     applyBoundaryOverlays()
+    const bounds = geoJsonGeometryBounds(caviteBoundaryGeometry.value)
+    if (bounds) {
+      fitMapToBounds(bounds)
+    }
   } else if (isCaviteRegion.value) {
     clearBoundaryOverlays()
     if (!hasInitialCoords && map?.setZoom) {
@@ -779,6 +762,13 @@ const initMap = async () => {
     if (!event?.latLng) return
     const nextLat = event.latLng.lat()
     const nextLng = event.latLng.lng()
+    if (!isWithinActiveSelectionArea(nextLat, nextLng)) {
+      error.value = props.region === 'philippines'
+        ? 'Please select a location within the Philippines.'
+        : 'Please pin a location within the Cavite boundary only.'
+      emit('error', error.value)
+      return
+    }
     handlePosition(event.latLng).then((ok) => {
       if (ok) {
         setMarkerPosition({ lat: nextLat, lng: nextLng })

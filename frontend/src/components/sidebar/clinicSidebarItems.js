@@ -7,7 +7,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
     children: [
       { label: 'Branch Info', icon: 'map', to: '/owner/branch/branch-info', permission: 'branches:view' },
       { label: 'Add Branch', icon: 'plus', to: '/owner/branch/add-branch', feature: 'multi_branch', permission: 'branches:create' },
-      { label: 'Clinic Profile', icon: 'idcard', to: '/owner/clinic-profile', permission: 'clinic_profile:view' },
       { label: 'Clinic Page', icon: 'layout', to: '/owner/clinic-page', permission: 'clinic_profile:update' }
     ]
   },

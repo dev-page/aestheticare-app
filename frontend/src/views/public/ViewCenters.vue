@@ -131,6 +131,52 @@
         </transition>
       </section>
 
+      <section v-if="recommendedCenters.length" class="mt-8 rounded-[1.75rem] border border-gold-200/70 bg-white/70 p-5 shadow-[0_16px_40px_rgba(87,56,35,0.08)] backdrop-blur">
+        <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.24em] text-gold-700">Recommended for you</p>
+            <h3 class="mt-1 text-xl font-semibold text-charcoal-800">Top matching centers</h3>
+          </div>
+          <p class="max-w-2xl text-sm leading-6 text-charcoal-500">
+            These are the strongest matches from your current filters, location, and service preferences.
+          </p>
+        </div>
+
+        <div class="mt-5 grid gap-4 lg:grid-cols-3">
+          <article
+            v-for="center in recommendedCenters"
+            :key="`recommended-${center.id}`"
+            class="rounded-[1.4rem] border border-gold-200/70 bg-[linear-gradient(135deg,_rgba(255,248,236,0.96),_rgba(255,255,255,0.92))] p-4 shadow-[0_10px_24px_rgba(94,61,33,0.06)]"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-gold-700">Best match</p>
+                <h4 class="mt-1 text-lg font-semibold text-charcoal-800">{{ center.name }}</h4>
+              </div>
+              <span class="rounded-full border border-gold-200/80 bg-gold-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-800">
+                {{ center.distanceKm !== null ? formatDistance(center.distanceKm) : 'Nearby' }}
+              </span>
+            </div>
+
+            <p class="mt-3 text-sm text-charcoal-600">{{ center.location || 'Location not set' }}</p>
+            <p class="mt-2 text-sm text-charcoal-500">
+              {{ center.services.slice(0, 2).join(' • ') || 'General services' }}
+            </p>
+
+            <button
+              type="button"
+              class="mt-4 inline-flex items-center gap-2 rounded-2xl bg-charcoal-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-charcoal-700"
+              @click="openCenter(center.id)"
+            >
+              View center
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </article>
+        </div>
+      </section>
+
       <section class="mt-8">
         <div v-if="loading" class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           <div v-for="index in 6" :key="index" class="loading-card animate-pulse"></div>
@@ -338,6 +384,8 @@ const filteredCenters = computed(() => {
       return a.distanceKm - b.distanceKm || a.name.localeCompare(b.name)
     })
 })
+
+const recommendedCenters = computed(() => filteredCenters.value.slice(0, 3))
 
 const clearFilters = () => {
   search.value = ''

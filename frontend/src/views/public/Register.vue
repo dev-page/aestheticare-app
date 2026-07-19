@@ -2718,7 +2718,7 @@ const submitDocuments = async () => {
             </div>
 
             <p class="text-xs font-semibold uppercase tracking-[0.14em] text-charcoal-600">
-              Business Details
+              Personal Information
             </p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

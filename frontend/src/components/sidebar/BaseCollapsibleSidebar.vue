@@ -317,7 +317,7 @@ export default {
     const auth = getAuth()
     const { isLoading } = useAuth()
     const { hasFeature, initSubscription, activePlan, isLoading: subscriptionLoading } = useSubscription()
-    const { hasPermission, effectivePermissions, loading: permissionsLoading } = usePermissions()
+    const { hasPermission, effectivePermissions, loading: permissionsLoading, userRole } = usePermissions()
 
     const enableTransitions = ref(false)
     const lastVisibleItems = ref([])
@@ -438,20 +438,30 @@ export default {
       return { all: allPermissions, any: anyPermissions }
     }
 
+    const isClinicSideRole = (roleValue) => {
+      const compactRole = String(roleValue || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+      return compactRole === 'owner' || compactRole === 'clinicadmin' || compactRole === 'clinicadministrator' || compactRole === 'staff' || compactRole === 'manager' || compactRole === 'receptionist' || compactRole === 'practitioner' || compactRole === 'finance' || compactRole === 'hr'
+    }
+
     const isItemAllowed = (item) => {
       const required = getItemFeatures(item)
       const requiredPermissions = getItemPermissions(item)
+      const currentRole = String(userRole.value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+      const shouldApplySubscriptionRules = isClinicSideRole(currentRole)
       const featureAllowed = !required.length || required.every((feature) => hasFeature(feature))
       const permissionAllowed =
         (!requiredPermissions.all.length || requiredPermissions.all.every((perm) => hasPermission(perm))) &&
         (!requiredPermissions.any.length || requiredPermissions.any.some((perm) => hasPermission(perm)))
+      if (!shouldApplySubscriptionRules) {
+        return permissionAllowed
+      }
       return featureAllowed && permissionAllowed
     }
 
     const lockTitleForItem = (item) => {
       const features = getItemFeatures(item)
       if (features.length) {
-        return 'Locked on the Free plan. Upgrade your subscription to access this feature.'
+        return 'Locked on the current plan. Upgrade your subscription to access this feature.'
       }
       return 'You do not have access to this item.'
     }
