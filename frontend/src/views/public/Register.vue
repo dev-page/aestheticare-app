@@ -63,19 +63,54 @@ const goToRegisterChooser = async () => {
 }
 
 const firstName = ref('')
+const midName = ref('')
 const lastName = ref('')
+const suffix = ref('')
 const birthDate = ref('')
 const manualBirthDate = ref('')
 const birthDateError = ref('')
+const MINIMUM_AGE = 18
+
+const calculateAge = (isoDate) => {
+  if (!isoDate) return null
+  const birth = new Date(isoDate)
+  if (Number.isNaN(birth.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - birth.getFullYear()
+  const m = today.getMonth() - birth.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
+  return age
+}
+
+const computedAge = computed(() => calculateAge(birthDate.value))
+const isUnderAge = computed(() => {
+  if (computedAge.value === null) return false
+  return computedAge.value < MINIMUM_AGE
+})
+
+const validateBirthAge = () => {
+  if (!birthDate.value) {
+    birthDateError.value = ''
+    return true
+  }
+  const age = calculateAge(birthDate.value)
+  if (age === null) {
+    birthDateError.value = 'Please use a valid date (MM/DD/YYYY) and avoid future dates.'
+    return false
+  }
+  if (age < MINIMUM_AGE) {
+    birthDateError.value = `You must be at least ${MINIMUM_AGE} years old to register.`
+    return false
+  }
+  birthDateError.value = ''
+  return true
+}
 const email = ref('')
+const emailError = ref('')
+const emailCheckingTimer = ref(null)
 const password = ref('')
 const confirmPassword = ref('')
-const resumeInProgress = ref(false)
-const resumeCancelled = ref(false)
-const REGISTRATION_DRAFT_KEY = 'register_clinic_draft'
-const OTP_SENT_AT_KEY = 'register_clinic_otp_sent_at'
-const REGISTRATION_UID_KEY = 'register_clinic_uid'
-const REGISTRATION_OTP_EMAIL_KEY = 'register_clinic_otp_email'
+
 
 const contactNumber = ref('')
 const clinicName = ref('')
@@ -168,6 +203,10 @@ const otpRecipientEmail = ref('')
 const otpInputRefs = ref([])
 const otpResendCountdown = ref(0)
 const OTP_LENGTH = 6
+
+const REGISTRATION_OTP_EMAIL_KEY = 'registration_otp_email'
+const REGISTRATION_UID_KEY = 'registration_uid'
+const OTP_SENT_AT_KEY = 'registration_otp_sent_at'
 const OTP_COOLDOWN_SECONDS = 60 // 1 minute resend cooldown
 let otpResendInterval = null
 
@@ -277,8 +316,7 @@ let locationAutocomplete = null
 let locationMap = null
 let locationMarker = null
 let lastValidLocation = null
-let registrationDraftSaveTimer = null
-let lastSavedRegistrationDraft = ''
+
 
 const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -473,6 +511,7 @@ const handleManualBirthInput = (event) => {
     if (parsed) {
       birthDate.value = parsed
       syncCalendarToBirthDate()
+      validateBirthAge()
       return
     }
   }
@@ -500,7 +539,7 @@ const handleManualBirthBlur = () => {
 
   birthDate.value = parsed
   manualBirthDate.value = formatIsoToBirthInput(parsed)
-  birthDateError.value = ''
+  validateBirthAge()
   syncCalendarToBirthDate()
 }
 
@@ -693,8 +732,6 @@ onMounted(async () => {
     }
 
     if (qResume && resumeEmail) {
-      resumeInProgress.value = true
-      resumeCancelled.value = false
     const nextQuery = { ...route.query }
     delete nextQuery.email
     if (route.query.email) {
@@ -702,7 +739,6 @@ onMounted(async () => {
     }
       const statusResult = await checkRegistrationStatus(resumeEmail)
       if (!statusResult || statusResult.exists !== true) {
-        resumeInProgress.value = false
         toast.error('Unable to resume. Please verify your email again.')
         return
       }
@@ -725,7 +761,6 @@ onMounted(async () => {
       if (resolvedStep === 'active') {
         toast.info('This account is already active. Please log in.')
         setTimeout(() => router.push('/login'), 800)
-        resumeInProgress.value = false
         return
       }
 
@@ -748,7 +783,6 @@ onMounted(async () => {
               currentStep.value = 1
           }
 
-    resumeInProgress.value = false
     } else if (qResume && !resumeEmail) {
       toast.error('Unable to resume. Please enter your email again.')
     }
@@ -759,11 +793,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', onWindowClick)
   stopOtpCountdown()
   stopApprovalCheck()
-  if (registrationDraftSaveTimer) {
-    clearTimeout(registrationDraftSaveTimer)
-    registrationDraftSaveTimer = null
-  }
-  saveRegistrationDraft()
   Object.values(documentPreviewUrls.value).forEach((previewUrl) => {
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl)
   })
@@ -1098,7 +1127,9 @@ const applyProfileData = (profile) => {
   if (!profile) return
   const safe = (value) => (value === null || value === undefined ? '' : value)
   firstName.value = safe(profile.firstName) || firstName.value
+  midName.value = safe(profile.midName) || midName.value
   lastName.value = safe(profile.lastName) || lastName.value
+  suffix.value = safe(profile.suffix) || suffix.value
   if (profile.email) {
     email.value = String(profile.email).trim().toLowerCase()
     otpRecipientEmail.value = email.value
@@ -1167,37 +1198,7 @@ const inferResumeStep = (statusResult, profile) => {
   return 1
 }
 
-const saveRegistrationDraft = () => {
-  const payload = {
-    email: String(email.value || '').trim().toLowerCase(),
-    firstName: firstName.value || '',
-    lastName: lastName.value || '',
-    birthDate: birthDate.value || '',
-    contactNumber: contactNumber.value || '',
-    clinicName: clinicName.value || '',
-    clinicLocation: clinicLocation.value || '',
-    clinicLocationLat: clinicLocationLat.value || '',
-    clinicLocationLng: clinicLocationLng.value || '',
-    clinicLocationAddress: clinicLocationAddress.value || '',
-    clinicBarangay: clinicBarangay.value || '',
-    clinicProvince: clinicProvince.value || '',
-    clinicPostalCode: clinicPostalCode.value || '',
-    authorizedRepPositionOption: authorizedRepPositionOption.value || '',
-    authorizedRepPositionOther: authorizedRepPositionOther.value || '',
-    companyType: companyType.value || '',
-  }
-  const serialized = JSON.stringify(payload)
-  if (serialized === lastSavedRegistrationDraft) return
-  try {
-    sessionStorage.setItem(REGISTRATION_DRAFT_KEY, serialized)
-    if (payload.email) {
-      sessionStorage.setItem('resume_email', payload.email)
-    }
-    lastSavedRegistrationDraft = serialized
-  } catch (_error) {
-    // Ignore session storage failures
-  }
-}
+// Draft save removed — no longer needed
 
 const hasAnyDocumentUploadInProgress = computed(() =>
   Object.values(documentUploadState.value).some((item) => Boolean(item?.uploading))
@@ -1255,43 +1256,7 @@ const updateApprovalReviewState = () => {
   approvalRedirecting.value = false
 }
 
-const scheduleRegistrationDraftSave = () => {
-  if (registrationDraftSaveTimer) {
-    clearTimeout(registrationDraftSaveTimer)
-  }
-  registrationDraftSaveTimer = setTimeout(() => {
-    registrationDraftSaveTimer = null
-    saveRegistrationDraft()
-  }, 250)
-}
-
-const applyDraftIfEmpty = (draft) => {
-  if (!draft) return
-  if (!email.value && draft.email) email.value = draft.email
-  if (!firstName.value && draft.firstName) firstName.value = draft.firstName
-  if (!lastName.value && draft.lastName) lastName.value = draft.lastName
-  if (!birthDate.value && draft.birthDate) {
-    birthDate.value = draft.birthDate
-    syncManualBirthDate()
-    syncCalendarToBirthDate()
-  }
-  if (!contactNumber.value && draft.contactNumber) contactNumber.value = draft.contactNumber
-  if (!clinicName.value && draft.clinicName) clinicName.value = draft.clinicName
-  if (!clinicLocation.value && draft.clinicLocation) clinicLocation.value = draft.clinicLocation
-  if (!clinicLocationLat.value && draft.clinicLocationLat) clinicLocationLat.value = draft.clinicLocationLat
-  if (!clinicLocationLng.value && draft.clinicLocationLng) clinicLocationLng.value = draft.clinicLocationLng
-  if (!clinicLocationAddress.value && draft.clinicLocationAddress) clinicLocationAddress.value = draft.clinicLocationAddress
-  if (!clinicBarangay.value && draft.clinicBarangay) clinicBarangay.value = draft.clinicBarangay
-  if (!clinicProvince.value && draft.clinicProvince) clinicProvince.value = draft.clinicProvince
-  if (!clinicPostalCode.value && draft.clinicPostalCode) clinicPostalCode.value = draft.clinicPostalCode
-  if (!authorizedRepPositionOption.value && draft.authorizedRepPositionOption) {
-    authorizedRepPositionOption.value = draft.authorizedRepPositionOption
-  }
-  if (!authorizedRepPositionOther.value && draft.authorizedRepPositionOther) {
-    authorizedRepPositionOther.value = draft.authorizedRepPositionOther
-  }
-  if (!companyType.value && draft.companyType) companyType.value = draft.companyType
-}
+// Draft save functions removed — no longer needed
 
 const getLastOtpSentAt = () => {
   const raw = sessionStorage.getItem(OTP_SENT_AT_KEY)
@@ -1378,27 +1343,7 @@ watch(authorizedRepPositionOption, (value) => {
   }
 })
 
-watch(
-  [
-    email,
-    firstName,
-    lastName,
-    birthDate,
-    contactNumber,
-    clinicName,
-    clinicLocation,
-    clinicLocationLat,
-    clinicLocationLng,
-    clinicLocationAddress,
-    clinicBarangay,
-    clinicProvince,
-    clinicPostalCode,
-    authorizedRepPositionOption,
-    authorizedRepPositionOther,
-    companyType,
-  ],
-  scheduleRegistrationDraftSave
-)
+// Draft save watch removed — no longer needed
 
 const verifyRegistrationEmail = async (options = {}) => {
   const isAutoResume = Boolean(options?.isAutoResume)
@@ -1462,10 +1407,6 @@ const verifyRegistrationEmail = async (options = {}) => {
       if (resolvedStep === 'active') {
         toast.info('This account is already active. Please log in.')
         setTimeout(() => router.push('/login'), 800)
-        return
-      }
-
-      if (isAutoResume && resumeCancelled.value) {
         return
       }
 
@@ -1548,11 +1489,7 @@ const verifyRegistrationEmail = async (options = {}) => {
             return
           }
 
-          if (isAutoResume && resumeCancelled.value) {
-            return
-          }
-
-          if (statusResult.resumeStep === 4) {
+if (statusResult.resumeStep === 4) {
             otpVerifiedForRegistration.value = true
             pendingApprovalMode.value = true
             currentStep.value = 4
@@ -1675,7 +1612,25 @@ const verifyRegistrationEmail = async (options = {}) => {
   }
 }
 
+const validateEmailFormat = (value) => {
+  const trimmed = String(value || '').trim()
+  if (!trimmed) {
+    emailError.value = ''
+    return true
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(trimmed)) {
+    emailError.value = 'Please enter a valid email address (e.g., user@example.com)'
+    return false
+  }
+  emailError.value = ''
+  return true
+}
+
 const handleEmailDraftInput = () => {
+  // Real-time email format validation
+  validateEmailFormat(email.value)
+
   const normalizedEmail = String(email.value || '').trim().toLowerCase()
   if (emailChecked.value && normalizedEmail !== String(otpRecipientEmail.value || '').toLowerCase()) {
     emailChecked.value = false
@@ -2303,7 +2258,7 @@ const registerClinic = async () => {
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
 
   if (age < 18) {
-    toast.error('You must be at least 18 years old to register')
+    toast.error('You must be at least 18 years old to register.')
     return
   }
 
@@ -2690,45 +2645,36 @@ const submitDocuments = async () => {
 
             <transition name="step-slide" mode="out-in" appear>
             <section v-if="currentStep === 1" key="step-1" class="registration-step-panel space-y-4">
-            <div class="space-y-2 rounded-2xl border border-gold-200/80 bg-cream-50/80 p-4">
-              <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div class="relative flex-1">
-                  <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @input="handleEmailDraftInput" />
-                  <label class="floating-label">Email Address</label>
-                </div>
-                <button
-                  v-if="!pendingApprovalMode"
-                  type="button"
-                  :disabled="isCheckingEmail"
-                  class="h-12 sm:h-14 px-5 rounded-xl bg-gold-700 text-white font-semibold hover:bg-gold-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                  @click="verifyRegistrationEmail"
-                >
-                  {{ isCheckingEmail ? 'Checking...' : (emailChecked ? 'Re-verify Email' : 'Verify Email') }}
-                </button>
+<div class="space-y-2 rounded-2xl border border-gold-200/80 bg-cream-50/80 p-4">
+              <div class="relative flex-1">
+                <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @input="handleEmailDraftInput" />
+                <label class="floating-label">Email Address</label>
+                <p v-if="emailError" class="mt-1 text-xs text-red-600">{{ emailError }}</p>
               </div>
-              <p v-if="pendingApprovalMode" class="text-xs text-charcoal-500">
-                This registration is already in the waiting-for-approval stage. OTP re-verification is not required.
-              </p>
-              <p v-else-if="!emailChecked" class="text-xs text-charcoal-500">
-                Verify your email first. If this email has unfinished registration, we will continue from the saved step.
-              </p>
-              <p v-else class="text-xs font-medium text-emerald-700">
-                Email verified.
-              </p>
             </div>
 
             <p class="text-xs font-semibold uppercase tracking-[0.14em] text-charcoal-600">
               Personal Information
             </p>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="relative">
-                <input v-model="firstName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
-                <label class="floating-label">Business First Name</label>
+            <div class="grid grid-cols-1 sm:grid-cols-7 gap-4">
+              <div class="relative sm:col-span-2">
+                <input v-model="firstName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
+                <label class="floating-label">First Name</label>
+              </div>              
+              <div class="relative sm:col-span-2">
+                <span class="text-[10px] text-[#9b7a5f] absolute -top-[16px] right-0 font-normal">(Optional)</span>
+                <input v-model="midName" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
+                <label class="floating-label">Middle Name</label>
               </div>
-              <div class="relative">
-                <input v-model="lastName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
-                <label class="floating-label">Business Last Name</label>
+              <div class="relative sm:col-span-2">
+                <input v-model="lastName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
+                <label class="floating-label">Last Name</label>
+              </div>
+              <div class="relative sm:col-span-1">
+                <span class="text-[10px] text-[#9b7a5f] absolute -top-[16px] right-0 font-normal">(Optional)</span>
+                <input v-model="suffix" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
+                <label class="floating-label">Suffix</label>
               </div>
             </div>
 
@@ -2825,7 +2771,7 @@ const submitDocuments = async () => {
               <p v-if="birthDateError" class="mt-1 text-xs text-red-600">{{ birthDateError }}</p>
             </div>
 
-            <div v-if="requiresPasswordForStep1" class="relative">
+            <div class="relative">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="relative">
                   <input :type="passwordVisible ? 'text' : 'password'" v-model="password" required maxlength="32" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @focus="passwordFocused = true" @blur="passwordFocused = false" />
@@ -2908,9 +2854,6 @@ const submitDocuments = async () => {
                 </div>
               </transition>
             </div>
-            <p v-else class="text-xs rounded-lg border border-gold-200/70 bg-white/55 px-3 py-2 text-charcoal-600">
-              Password is already set for this account. You can edit profile details without OTP/password re-entry.
-            </p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="relative">
@@ -2935,7 +2878,7 @@ const submitDocuments = async () => {
               </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="space-y-4">
               <div class="relative">
                 <input :value="clinicFullAddressLabel" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
                 <label class="floating-label floating-label-raised">Full Address</label>
@@ -2943,24 +2886,26 @@ const submitDocuments = async () => {
                   Address will be filled after pinning the clinic location.
                 </p>
               </div>
-              <div class="relative">
-                <input :value="clinicBarangay" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
-                <label class="floating-label floating-label-raised">Barangay</label>
-              </div>
-              <div class="relative">
-                <input :value="clinicProvince" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
-                <label class="floating-label floating-label-raised">Province</label>
-              </div>
-              <div class="relative">
-                <input
-                  v-model="clinicPostalCode"
-                  inputmode="numeric"
-                  maxlength="4"
-                  placeholder=" "
-                  @input="sanitizePostalCodeInput"
-                  class="peer input h-16 pt-4 pb-2 px-3"
-                />
-                <label class="floating-label">Postal Code</label>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="relative">
+                  <input :value="clinicBarangay" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
+                  <label class="floating-label floating-label-raised">Barangay</label>
+                </div>
+                <div class="relative">
+                  <input :value="clinicProvince" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
+                  <label class="floating-label floating-label-raised">Province</label>
+                </div>
+                <div class="relative">
+                  <input
+                    v-model="clinicPostalCode"
+                    inputmode="numeric"
+                    maxlength="4"
+                    placeholder=" "
+                    @input="sanitizePostalCodeInput"
+                    class="peer input h-16 pt-4 pb-2 px-3"
+                  />
+                  <label class="floating-label">Postal Code</label>
+                </div>
               </div>
             </div>
 
@@ -4335,7 +4280,7 @@ const submitDocuments = async () => {
 .peer:placeholder-shown + .floating-label {
   top: 50%;
   transform: translateY(-50%);
-  font-size: 1.05rem;
+  font-size: 0.875rem;
   color: #9b7a5f;
 }
 .peer:focus + .floating-label,
@@ -4390,6 +4335,58 @@ const submitDocuments = async () => {
   top: calc(100% + 0.45rem);
   z-index: 22;
   backdrop-filter: blur(3px);
+}
+
+/* Suppress browser-native password reveal button (eye icon) & autofill indicators */
+/* Use text-security disc to prevent Chrome's Shadow DOM eye icon from appearing */
+input.password-masked {
+  -webkit-text-security: disc !important;
+}
+
+/* Hide MS/Edge reveal button */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Hide any webkit password auto-fill icon before Shadow DOM took over */
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-contacts-auto-fill-button,
+input[type="password"]::-webkit-credit-card-auto-fill-button {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  right: 0 !important;
+  opacity: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+}
+
+/* Suppress browser autofill yellow background */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+  box-shadow: 0 0 0 1000px transparent inset !important;
+  -webkit-text-fill-color: #1c1c1c !important;
+  background-clip: content-box !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+}
+
+/* Hide autofill indicator icon */
+input:-webkit-autofill::first-line {
+  font-size: inherit !important;
+  font-family: inherit !important;
+}
+
+/* Aggressive approach: force parent container to clip overflow for password wrappers */
+.password-input-wrapper {
+  position: relative;
+  overflow: hidden;
 }
 
 @media (min-width: 1024px) {

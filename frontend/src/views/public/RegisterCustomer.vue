@@ -19,8 +19,12 @@ const goToRegisterChooser = async () => {
 }
 
 const firstName = ref('')
+const midName = ref('')
 const lastName = ref('')
+const suffix = ref('')
 const email = ref('')
+const emailError = ref('')
+const emailCheckingTimer = ref(null)
 const password = ref('')
 const confirmPassword = ref('')
 const birthDate = ref('')
@@ -727,9 +731,30 @@ onMounted(() => {
   window.addEventListener('click', onWindowClick)
 })
 
+const validateEmailFormat = (value) => {
+  const trimmed = String(value || '').trim()
+  if (!trimmed) {
+    emailError.value = ''
+    return true
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(trimmed)) {
+    emailError.value = 'Please enter a valid email address (e.g., user@example.com)'
+    return false
+  }
+  emailError.value = ''
+  return true
+}
+
+const handleEmailDraftInput = () => {
+  validateEmailFormat(email.value)
+}
+
 const clearFormFields = () => {
   firstName.value = ''
+  midName.value = ''
   lastName.value = ''
+  suffix.value = ''
   email.value = ''
   password.value = ''
   confirmPassword.value = ''
@@ -1001,7 +1026,9 @@ const register = async () => {
 
     await setDoc(doc(db, 'users', uid), {
       firstName: firstName.value.trim(),
+      midName: midName.value.trim(),
       lastName: lastName.value.trim(),
+      suffix: suffix.value.trim(),
       email: normalizedEmail,
       birthDate: birthDate.value ? new Date(birthDate.value) : null,
       contactNumber: `+63${String(contactNumber.value || '').trim()}`,
@@ -1164,8 +1191,19 @@ onBeforeUnmount(() => {
                 <label class="floating-label">First Name</label>
               </div>
               <div class="relative">
+                <input v-model="midName" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" />
+                <label class="floating-label">Middle Name <span class="text-gold-500 font-normal">(Optional)</span></label>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="relative">
                 <input v-model="lastName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
                 <label class="floating-label">Last Name</label>
+              </div>
+              <div class="relative">
+                <input v-model="suffix" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" />
+                <label class="floating-label">Suffix <span class="text-gold-500 font-normal">(Optional)</span></label>
               </div>
             </div>
 
@@ -1331,8 +1369,9 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="relative">
-              <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" />
+              <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" :class="{ 'input-error': emailError }" @input="handleEmailDraftInput" />
               <label class="floating-label">Email Address</label>
+              <p v-if="emailError" class="mt-1 text-xs text-red-600">{{ emailError }}</p>
             </div>
 
             <div class="relative">
@@ -1510,23 +1549,23 @@ onBeforeUnmount(() => {
         </div>
       </Modal>
 
-      <Modal
+<Modal
         panelClass="bg-cream-50 border border-gold-200/80 w-[92vw] max-w-5xl shadow-2xl shadow-gold-900/15"
         :isOpen="showLocationModal"
-        :title="'Select Address in the Philippines'"
+        :title="'Select Address in Cavite'"
         @close="closeLocationModal"
         :showConfirm="false"
       >
         <div class="p-1">
           <LocationPicker
-            region="philippines"
-            title="Select Address in the Philippines"
-            instruction-title="Philippines only"
-            instruction-text="Pinning is limited to land locations inside the Philippines. Pins in the ocean or outside the country are blocked."
-            search-placeholder="Search a city, barangay, or address"
+            region="cavite"
+            title="Select Address in Cavite"
+            instruction-title="Cavite only"
+            instruction-text="Pinning is limited to land locations inside Cavite. Pins in the ocean, water, or outside Cavite are blocked."
+            search-placeholder="Search a city, barangay, or address in Cavite"
             search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
-            allowed-area-label="Philippines"
-            pinned-address-label="Pinned Address"
+            allowed-area-label="Cavite, Philippines"
+            pinned-address-label="Pinned Full Address"
             confirm-label="Use Pin"
             :show-close="true"
             :show-confirm="true"

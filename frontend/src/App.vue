@@ -140,7 +140,7 @@ import { lockPageScroll, unlockPageScroll } from '@/utils/scrollLock'
 import { useSidebarState } from '@/composables/useSidebarState'
 
 // Initialize auth state globally
-const { isLoading, user, initAuth } = useAuth()
+const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking } = useAuth()
 
 const route = useRoute()
 const { initSubscription, isReadOnly, isExpired, graceEndsAt, activePlan } = useSubscription()
@@ -347,6 +347,21 @@ watch(
       unlockPageScroll()
     }
   }
+)
+
+// ── Track user auth state to start/stop inactivity timer ──────────────
+watch(
+  () => user.value?.uid || null,
+  (nextUid, prevUid) => {
+    if (nextUid && !prevUid) {
+      // User just logged in — start tracking
+      startInactivityTracking()
+    } else if (!nextUid && prevUid) {
+      // User just logged out — stop tracking
+      stopInactivityTracking()
+    }
+  },
+  { immediate: true }
 )
 
 onUnmounted(() => {
