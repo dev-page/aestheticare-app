@@ -1,7 +1,7 @@
 
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
-import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
 import {
   signInWithEmailAndPassword,
@@ -14,6 +14,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 
 const router = useRouter()
+const route = useRoute()
 
 const email = ref('')
 const password = ref('')
@@ -23,6 +24,8 @@ const passwordVisible = ref(false)
 const contentVisible = ref(true)
 let redirectTimeout = null
 const REDIRECT_DELAY = 1700
+
+const inactivityExpired = ref(route.query.expired === 'inactivity')
 
 const EMAIL_REGEX = /^[A-Za-z0-9._]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
 
@@ -265,6 +268,22 @@ onBeforeRouteLeave((to, from, next) => {
               <h1 class="login-title text-3xl sm:text-4xl leading-tight">Welcome Back</h1>
               <p class="text-charcoal-600 text-sm mt-1">Sign in to continue your AesthetiCare experience.</p>
             </div>
+
+            <!-- Inactivity session-expired banner -->
+            <div
+              v-if="inactivityExpired"
+              class="flex items-start gap-3 rounded-xl border border-amber-300/70 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 shadow-sm"
+            >
+              <svg class="mt-0.5 h-5 w-5 shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span>
+                Your session has expired due to inactivity. Please log in again to continue.
+              </span>
+            </div>
+
             <div class="relative">
               <input
                 :value="email"

@@ -11,8 +11,8 @@ export function useAuth() {
   const { initAuth, setLoggingOut } = authStore
 
   // ── Inactivity auto-logout ───────────────────────────────────────────────
-  const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
-  const WARNING_BEFORE_MS = 60 * 1000           // warn 1 minute before expiry
+  const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000 // 15 minutes
+  const WARNING_BEFORE_MS = 30 * 1000           // warn 30 seconds before expiry
 
   let inactivityTimer = null
   let warningTimer = null
@@ -56,7 +56,7 @@ export function useAuth() {
     try {
       await signOut(auth)
       clearCache()
-      await router.push('/login')
+      await router.push('/login?expired=inactivity')
       window.dispatchEvent(new CustomEvent('toast', {
         detail: { message: 'Session has expired due to inactivity. Please log in again.', type: 'info' }
       }))
