@@ -31,7 +31,7 @@
       </div>
 
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mt-8">
-        <h2 class="text-xl font-semibold text-white mb-6">Employee Activity Log</h2>
+        <h2 class="text-xl font-semibold text-white mb-6">Activity Log</h2>
         <div class="max-h-[420px] overflow-y-auto overflow-x-auto">
           <table class="min-w-full text-sm text-left text-slate-300">
             <thead class="bg-slate-700 text-slate-200 uppercase text-xs">
@@ -129,7 +129,6 @@ export default {
       const activitySnapshot = await getDocs(activityQuery)
       activityLogs.value = activitySnapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
-        .filter((log) => String(log.actorUserType || '').toLowerCase() === 'staff')
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
     }
 

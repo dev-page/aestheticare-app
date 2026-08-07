@@ -69,8 +69,26 @@ export default {
       activities.value
         .filter((item) => isSignificantActivity(item))
         .filter((item) => {
-          if (item.actorId && String(item.actorId) === currentUserId.value) return true
-          if (item.practitionerId && String(item.practitionerId) === currentUserId.value) return true
+          const currentUserIdValue = String(currentUserId.value || '')
+          const roleValue = String(role.value || '').trim().toLowerCase()
+          const userTypeValue = String(userType.value || '').trim().toLowerCase()
+          const actorRole = String(item.actorRole || '').trim().toLowerCase()
+          const activityModule = String(item.module || '').trim().toLowerCase()
+
+          if (item.actorId && String(item.actorId) === currentUserIdValue) return true
+          if (item.practitionerId && String(item.practitionerId) === currentUserIdValue) return true
+
+          if (userTypeValue === 'staff') {
+            if (actorRole && actorRole === roleValue) return true
+            if (activityModule && activityModule === roleValue) return true
+            if (activityModule && roleValue && activityModule.includes(roleValue)) return true
+            if (activityModule && roleValue && roleValue.includes(activityModule)) return true
+          }
+
+          if (roleValue === 'owner' || roleValue === 'clinic admin' || roleValue === 'clinicadmin') {
+            return true
+          }
+
           return false
         })
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))

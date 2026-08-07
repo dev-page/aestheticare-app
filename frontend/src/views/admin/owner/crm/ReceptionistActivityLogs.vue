@@ -46,6 +46,7 @@ export default {
     const auth = getAuth(getApp())
 
     const currentUserId = ref('')
+    const currentBranchId = ref('')
     const activities = ref([])
 
     const formatDate = (timestamp) => {
@@ -54,8 +55,14 @@ export default {
     }
 
     const loadActivities = async () => {
-      if (!currentUserId.value) return
-      const snapshot = await getDocs(query(collection(db, 'activities'), where('actorId', '==', currentUserId.value)))
+      if (!currentBranchId.value) return
+      const snapshot = await getDocs(
+        query(
+          collection(db, 'activities'),
+          where('branchId', '==', currentBranchId.value),
+          where('module', '==', 'Receptionist')
+        )
+      )
       activities.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))

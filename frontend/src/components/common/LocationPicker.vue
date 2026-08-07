@@ -34,12 +34,11 @@
         :class="[
           'relative overflow-hidden rounded-2xl border border-gold-200/80 bg-cream-100',
           mapClass,
-          { 'location-picker__cavite-map--fallback': isCaviteRegion && !hasOfficialCaviteBoundary },
+          { 'location-picker__cavite-map--fallback': !hasOfficialCaviteBoundary },
         ]"
         :style="{ height: mapHeight }"
       ></div>
       <div
-        v-if="isCaviteRegion"
         class="pointer-events-none absolute inset-x-4 top-4 z-[4] flex items-start justify-between gap-3"
       >
         <div class="rounded-full border border-amber-200/80 bg-[rgba(255,248,240,0.92)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-800 shadow-sm backdrop-blur-sm">
@@ -50,7 +49,7 @@
         </div>
       </div>
       <div
-        v-if="isCaviteRegion && caviteBoundaryNotice"
+        v-if="caviteBoundaryNotice"
         class="absolute inset-x-4 bottom-4 z-[4] rounded-full border border-amber-200 bg-[rgba(255,248,240,0.92)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800 shadow-sm backdrop-blur-sm"
       >
         {{ caviteBoundaryNotice }}
@@ -118,8 +117,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   CAVITE_BOUNDS,
   DEFAULT_CAVITE_CENTER,
-  DEFAULT_PHILIPPINES_CENTER,
-  PHILIPPINES_BOUNDS,
   distanceMeters,
   geoJsonGeometryBounds,
   geoJsonGeometryToShellRings,
@@ -127,7 +124,6 @@ import {
   isWithinBounds,
   pointInGeoJsonGeometry,
   validateCavitePinSelection,
-  validatePhilippinesPinSelection,
 } from '@/utils/locationValidation'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 
@@ -139,7 +135,7 @@ const props = defineProps({
   searchPlaceholder: { type: String, default: 'Search a city, barangay, or address' },
   searchHint: { type: String, default: 'Search first, then fine-tune the exact spot by dragging or clicking the pin.' },
   pinnedAddressLabel: { type: String, default: 'Pinned Address' },
-  allowedAreaLabel: { type: String, default: 'Philippines' },
+  allowedAreaLabel: { type: String, default: 'Cavite' },
   initialAddress: { type: String, default: '' },
   initialLat: { type: [String, Number], default: '' },
   initialLng: { type: [String, Number], default: '' },
@@ -175,34 +171,18 @@ const caviteBoundaryGeometry = ref(null)
 const caviteBoundaryNotice = ref('')
 const hasPin = computed(() => Boolean(String(lat.value || '').trim() && String(lng.value || '').trim() && String(displayAddress.value || '').trim()))
 
-const isCaviteRegion = computed(() => String(props.region || '').toLowerCase() !== 'philippines')
 const hasOfficialCaviteBoundary = computed(() => Boolean(caviteBoundaryGeometry.value))
 
-const regionConfig = computed(() => {
-  if (String(props.region || '').toLowerCase() === 'philippines') {
-    return {
-      bounds: PHILIPPINES_BOUNDS,
-      defaultCenter: DEFAULT_PHILIPPINES_CENTER,
-      validate: validatePhilippinesPinSelection,
-      title: props.title || 'Select Address in the Philippines',
-      instructionTitle: props.instructionTitle || 'Philippines only',
-      instructionText:
-        props.instructionText ||
-        'Pinning is limited to land locations inside the Philippines. Pins in the ocean or outside the country are blocked.',
-    }
-  }
-
-  return {
-    bounds: geoJsonGeometryBounds(caviteBoundaryGeometry.value) || CAVITE_BOUNDS,
-    defaultCenter: DEFAULT_CAVITE_CENTER,
-    validate: validateCaviteSelection,
-    title: props.title || 'Select Address in Cavite',
-    instructionTitle: props.instructionTitle || 'Cavite only',
-    instructionText:
-      props.instructionText ||
-      'Pinning is limited to the official Cavite province boundary. Pins outside Cavite are blocked.',
-  }
-})
+const regionConfig = computed(() => ({
+  bounds: geoJsonGeometryBounds(caviteBoundaryGeometry.value) || CAVITE_BOUNDS,
+  defaultCenter: DEFAULT_CAVITE_CENTER,
+  validate: validateCaviteSelection,
+  title: props.title || 'Select Address in Cavite',
+  instructionTitle: props.instructionTitle || 'Cavite only',
+  instructionText:
+    props.instructionText ||
+    'Pinning is limited to the official Cavite province boundary. Pins outside Cavite are blocked.',
+}))
 
 const clearBoundaryOverlays = () => {
   if (caviteBoundaryBackdrop) {
@@ -219,24 +199,58 @@ const clearBoundaryOverlays = () => {
   }
 }
 
+const getRingSignedArea = (ring = []) =>
+  ring.reduce((area, point, index) => {
+    const nextPoint = ring[(index + 1) % ring.length]
+    return area + (point.lng * nextPoint.lat - nextPoint.lng * point.lat)
+  }, 0) / 2
+
+const normalizeRingOrientation = (ring = [], outerRing = false) => {
+  if (!ring.length) return ring
+  const area = getRingSignedArea(ring)
+  const isClockwise = area < 0
+
+  // Google Maps expects the outer boundary and hole boundaries to use opposite winding.
+  if (outerRing && isClockwise) {
+    return [...ring].reverse()
+  }
+  if (!outerRing && !isClockwise) {
+    return [...ring].reverse()
+  }
+  return ring
+}
+
+const expandBounds = (bounds, marginDegrees = 0.4) => ({
+  north: Math.min(85, bounds.north + marginDegrees),
+  south: Math.max(-85, bounds.south - marginDegrees),
+  east: Math.min(180, bounds.east + marginDegrees),
+  west: Math.max(-180, bounds.west - marginDegrees),
+})
+
 const applyBoundaryOverlays = () => {
-  if (!map || !window.google?.maps || !caviteBoundaryGeometry.value) return
+  const boundaryGeometry = caviteBoundaryGeometry.value
+  if (!map || !window.google?.maps || !boundaryGeometry) return
 
   clearBoundaryOverlays()
 
-  const shellRings = geoJsonGeometryToShellRings(caviteBoundaryGeometry.value)
+  const shellRings = geoJsonGeometryToShellRings(boundaryGeometry)
   if (!shellRings[0]?.length) return
 
-  const bounds = geoJsonGeometryBounds(caviteBoundaryGeometry.value) || regionConfig.value.bounds
-  const outerRing = [
-    { lat: Math.min(85, bounds.north + 4), lng: Math.max(-180, bounds.west - 4) },
-    { lat: Math.min(85, bounds.north + 4), lng: Math.min(180, bounds.east + 4) },
-    { lat: Math.max(-85, bounds.south - 4), lng: Math.min(180, bounds.east + 4) },
-    { lat: Math.max(-85, bounds.south - 4), lng: Math.max(-180, bounds.west - 4) },
-  ]
+  const bounds = geoJsonGeometryBounds(boundaryGeometry) || regionConfig.value.bounds
+  const expandedBounds = expandBounds(bounds, 0.4)
+  const outerRing = normalizeRingOrientation([
+    { lat: expandedBounds.north, lng: expandedBounds.west },
+    { lat: expandedBounds.north, lng: expandedBounds.east },
+    { lat: expandedBounds.south, lng: expandedBounds.east },
+    { lat: expandedBounds.south, lng: expandedBounds.west },
+  ], true)
+
+  const holeRings = shellRings
+    .filter((ring) => Array.isArray(ring) && ring.length)
+    .map((ring) => normalizeRingOrientation(ring, false))
 
   caviteBoundaryBackdrop = new window.google.maps.Polygon({
-    paths: [outerRing, ...shellRings],
+    paths: [outerRing, ...holeRings],
     fillColor: 'rgba(18, 11, 8, 0.72)',
     fillOpacity: 1,
     strokeOpacity: 0,
@@ -245,18 +259,7 @@ const applyBoundaryOverlays = () => {
     zIndex: 3,
   })
 
-  caviteBoundaryOutlines = shellRings.map((ring) =>
-    new window.google.maps.Polygon({
-      paths: ring,
-      strokeColor: '#f1c98e',
-      strokeOpacity: 1,
-      strokeWeight: 4,
-      fillOpacity: 0,
-      clickable: false,
-      map,
-      zIndex: 4,
-    })
-  )
+  caviteBoundaryOutlines = []
 
 }
 
@@ -301,6 +304,67 @@ const validateCaviteSelection = ({
     locationType,
     locationDistanceMeters,
   })
+}
+
+const normalizeFeatureToPolygons = (feature) => {
+  if (!feature?.geometry) return []
+  const geo = feature.geometry
+  if (geo.type === 'Polygon') {
+    return [geo.coordinates]
+  }
+  if (geo.type === 'MultiPolygon') {
+    return geo.coordinates
+  }
+  return []
+}
+
+const getGeoJsonGeometry = (geojson) => {
+  if (!geojson || typeof geojson !== 'object') return null
+
+  if (geojson.type === 'FeatureCollection') {
+    const polygons = (geojson.features || []).flatMap((feature) => normalizeFeatureToPolygons(feature))
+    if (!polygons.length) return null
+    return { type: 'MultiPolygon', coordinates: polygons }
+  }
+
+  if (geojson.type === 'Feature') {
+    return getGeoJsonGeometry(geojson.geometry)
+  }
+
+  if (geojson.type === 'Polygon' || geojson.type === 'MultiPolygon') {
+    return geojson
+  }
+
+  return null
+}
+
+const LOCAL_CAVITE_GEOJSON_PATH = '/maps/gadm41_PHL_2.json'
+
+const isCaviteFeature = (feature) => {
+  const name = feature?.properties?.NAME_1 || feature?.properties?.name || ''
+  return typeof name === 'string' && name.toLowerCase().trim() === 'cavite'
+}
+
+const extractCaviteBoundaryFromGeoJson = (geojson) => {
+  if (!geojson || geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) return null
+
+  const polygons = geojson.features
+    .filter(isCaviteFeature)
+    .flatMap(normalizeFeatureToPolygons)
+
+  if (!polygons.length) return null
+  return { type: 'MultiPolygon', coordinates: polygons }
+}
+
+const loadLocalCaviteBoundary = async () => {
+  try {
+    const response = await fetch(LOCAL_CAVITE_GEOJSON_PATH, { cache: 'no-store' })
+    if (!response.ok) return null
+    const data = await response.json()
+    return extractCaviteBoundaryFromGeoJson(data)
+  } catch (_error) {
+    return null
+  }
 }
 
 const loadMapsScript = () =>
@@ -365,6 +429,11 @@ const getOfficialCaviteBoundary = async () => {
   return null
 }
 
+const loadBoundaryFromFeature = (feature) => {
+  if (!feature?.properties || feature?.properties?.NAME_1 !== 'Cavite') return null
+  return getGeoJsonGeometry(feature.geometry)
+}
+
 const ensureGeocoder = () => {
   if (!window.google?.maps?.Geocoder) return null
   if (geocoder && typeof geocoder.geocode === 'function') return geocoder
@@ -375,11 +444,8 @@ const ensureGeocoder = () => {
 const isWithinActiveSelectionArea = (latitude, longitude) => {
   if (!Number.isFinite(Number(latitude)) || !Number.isFinite(Number(longitude))) return false
   const point = { lat: Number(latitude), lng: Number(longitude) }
-  if (isCaviteRegion.value) {
-    if (hasOfficialCaviteBoundary.value && caviteBoundaryGeometry.value) {
-      return pointInGeoJsonGeometry(point, caviteBoundaryGeometry.value)
-    }
-    return isWithinBounds(latitude, longitude, regionConfig.value.bounds)
+  if (hasOfficialCaviteBoundary.value && caviteBoundaryGeometry.value) {
+    return pointInGeoJsonGeometry(point, caviteBoundaryGeometry.value)
   }
   return isWithinBounds(latitude, longitude, regionConfig.value.bounds)
 }
@@ -657,14 +723,21 @@ const initMap = async () => {
     return
   }
 
-  if (isCaviteRegion.value && !hasOfficialCaviteBoundary.value) {
-    caviteBoundaryNotice.value = 'Loading the official Cavite boundary...'
-    const officialBoundary = await getOfficialCaviteBoundary()
-    if (officialBoundary) {
-      caviteBoundaryGeometry.value = officialBoundary
+  if (!hasOfficialCaviteBoundary.value) {
+    caviteBoundaryNotice.value = 'Loading the Cavite province boundary...'
+    const localBoundary = await loadLocalCaviteBoundary()
+    if (localBoundary) {
+      caviteBoundaryGeometry.value = localBoundary
       caviteBoundaryNotice.value = ''
     } else {
-      caviteBoundaryNotice.value = 'Official Cavite boundary is unavailable right now. Using the fallback boundary until the official source is configured.'
+      caviteBoundaryNotice.value = 'Unable to load the local Cavite boundary. Falling back to the official source.'
+      const officialBoundary = await getOfficialCaviteBoundary()
+      if (officialBoundary) {
+        caviteBoundaryGeometry.value = officialBoundary
+        caviteBoundaryNotice.value = ''
+      } else {
+        caviteBoundaryNotice.value = 'Official Cavite boundary is unavailable right now. Using the fallback boundary until the official source is configured.'
+      }
     }
   }
 
@@ -672,7 +745,7 @@ const initMap = async () => {
   const initialLng = Number(props.initialLng)
   const hasInitialCoords = Number.isFinite(initialLat) && Number.isFinite(initialLng)
   const center = hasInitialCoords ? { lat: initialLat, lng: initialLng } : regionConfig.value.defaultCenter
-  const defaultZoom = isCaviteRegion.value ? 11 : 12
+  const defaultZoom = 11
 
   if (!map) {
     map = new MapCtor(mapCanvas.value, {
@@ -691,19 +764,17 @@ const initMap = async () => {
     }
   }
 
-  if (isCaviteRegion.value && hasOfficialCaviteBoundary.value) {
+  if (hasOfficialCaviteBoundary.value) {
     applyBoundaryOverlays()
     const bounds = geoJsonGeometryBounds(caviteBoundaryGeometry.value)
     if (bounds) {
-      fitMapToBounds(bounds)
-    }
-  } else if (isCaviteRegion.value) {
-    clearBoundaryOverlays()
-    if (!hasInitialCoords && map?.setZoom) {
-      map.setZoom(11)
+      fitMapToBounds(expandBounds(bounds, 0.4))
     }
   } else {
     clearBoundaryOverlays()
+    if (!hasInitialCoords && map?.setZoom) {
+      map.setZoom(10)
+    }
   }
 
   if (marker?.setMap) {
@@ -734,9 +805,7 @@ const initMap = async () => {
     if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return false
 
     if (!isWithinActiveSelectionArea(nextLat, nextLng)) {
-      error.value = props.region === 'philippines'
-        ? 'Please select a location within the Philippines.'
-        : 'Please pin a location within Cavite only.'
+      error.value = 'Please pin a location within Cavite only.'
       emit('error', error.value)
       return false
     }
@@ -763,9 +832,7 @@ const initMap = async () => {
     const nextLat = event.latLng.lat()
     const nextLng = event.latLng.lng()
     if (!isWithinActiveSelectionArea(nextLat, nextLng)) {
-      error.value = props.region === 'philippines'
-        ? 'Please select a location within the Philippines.'
-        : 'Please pin a location within the Cavite boundary only.'
+      error.value = 'Please pin a location within the Cavite boundary only.'
       emit('error', error.value)
       return
     }

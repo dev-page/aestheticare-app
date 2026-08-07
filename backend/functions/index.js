@@ -1,6 +1,6 @@
 const functions = require('firebase-functions')
 const admin = require('firebase-admin')
-const sgMail = require('@sendgrid/mail')
+const { ServerClient } = require('postmark')
 
 admin.initializeApp()
 
@@ -50,19 +50,19 @@ const toDate = (value) => {
   return null
 }
 
-const getSendGridConfig = () => {
+const getPostmarkConfig = () => {
   try {
     const config = functions.config?.() || {}
-    const key = String(config?.sendgrid?.key || '').trim()
-    const sender = String(config?.sendgrid?.sender || '').trim()
-    if (key && sender) {
-      sgMail.setApiKey(key)
-      return { key, sender }
+    const token = String(config?.postmark?.token || '').trim()
+    const sender = String(config?.postmark?.sender || '').trim()
+    if (token && sender) {
+      const client = new ServerClient(token)
+      return { client, sender }
     }
   } catch (_error) {
     // ignore
   }
-  return { key: '', sender: '' }
+  return { client: null, sender: '' }
 }
 
 const formatDate = (value) => {
@@ -84,8 +84,8 @@ exports.subscriptionMaintenance = functions.pubsub
   .onRun(async () => {
     const firestore = admin.firestore()
     const now = new Date()
-    const { key, sender } = getSendGridConfig()
-    const canEmail = Boolean(key && sender)
+      const { client, sender } = getPostmarkConfig()
+      const canEmail = Boolean(client && sender)
 
     const clinicsSnapshot = await firestore.collection('clinics').get()
     if (clinicsSnapshot.empty) {
@@ -161,21 +161,19 @@ exports.subscriptionMaintenance = functions.pubsub
 
       if (isExpired && !data.subscriptionExpiredNotifiedAt) {
         mailJobs.push(
-          sgMail.send({
-            to: ownerEmail,
-            from: sender,
-            subject: 'Your subscription has expired',
-            text:
-              `Your subscription expired on ${formatDate(expiresAt)}.\n` +
-              `Your clinic page has been unpublished and your account is now read-only.`,
-            html: `
-              <div style="font-family:Arial,sans-serif;line-height:1.5;color:#2a1408;">
-                <h2 style="margin:0 0 12px;">Subscription expired</h2>
-                <p>Your subscription expired on <strong>${formatDate(expiresAt)}</strong>.</p>
-                <p>Your clinic page has been unpublished and your account is now read-only.</p>
-              </div>
-            `
-          })
+            client.sendEmail({
+              From: sender,
+              To: ownerEmail,
+              Subject: 'Your subscription has expired',
+              TextBody: `Your subscription expired on ${formatDate(expiresAt)}.\nYour clinic page has been unpublished and your account is now read-only.`,
+              HtmlBody: `
+                <div style="font-family:Arial,sans-serif;line-height:1.5;color:#2a1408;">
+                  <h2 style="margin:0 0 12px;">Subscription expired</h2>
+                  <p>Your subscription expired on <strong>${formatDate(expiresAt)}</strong>.</p>
+                  <p>Your clinic page has been unpublished and your account is now read-only.</p>
+                </div>
+              `,
+            })
         )
         updates.push(
           docSnap.ref.update({
@@ -187,21 +185,19 @@ exports.subscriptionMaintenance = functions.pubsub
 
       if (daysLeft >= 0 && daysLeft <= GRACE_DAYS && !data.subscriptionGraceNotifiedAt) {
         mailJobs.push(
-          sgMail.send({
-            to: ownerEmail,
-            from: sender,
-            subject: 'Your subscription is about to expire',
-            text:
-              `Your subscription will expire on ${formatDate(expiresAt)}.\n` +
-              `You have ${daysLeft} day(s) left before your account becomes read-only.`,
-            html: `
-              <div style="font-family:Arial,sans-serif;line-height:1.5;color:#2a1408;">
-                <h2 style="margin:0 0 12px;">Subscription expiring soon</h2>
-                <p>Your subscription will expire on <strong>${formatDate(expiresAt)}</strong>.</p>
-                <p>You have <strong>${daysLeft}</strong> day(s) left before your account becomes read-only.</p>
-              </div>
-            `
-          })
+            client.sendEmail({
+              From: sender,
+              To: ownerEmail,
+              Subject: 'Your subscription is about to expire',
+              TextBody: `Your subscription will expire on ${formatDate(expiresAt)}.\nYou have ${daysLeft} day(s) left before your account becomes read-only.`,
+              HtmlBody: `
+                <div style="font-family:Arial,sans-serif;line-height:1.5;color:#2a1408;">
+                  <h2 style="margin:0 0 12px;">Subscription expiring soon</h2>
+                  <p>Your subscription will expire on <strong>${formatDate(expiresAt)}</strong>.</p>
+                  <p>You have <strong>${daysLeft}</strong> day(s) left before your account becomes read-only.</p>
+                </div>
+              `,
+            })
         )
         updates.push(
           docSnap.ref.update({

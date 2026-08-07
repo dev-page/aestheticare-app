@@ -122,6 +122,15 @@ const handleChangePassword = async () => {
     router.push(redirectPath)
   } catch (err) {
     console.error(err)
+    const authCode = err?.code || ''
+    if (authCode === 'auth/wrong-password' || authCode === 'auth/invalid-credential') {
+      toast.error('Your current password is incorrect. If you forgot your password, use the "Forgot your current password?" link below.')
+      return
+    }
+    if (authCode === 'auth/too-many-requests') {
+      toast.error('Too many failed attempts. Please try again later.')
+      return
+    }
     toast.error(`Failed to change password: ${err.message}`)
   }
 }
@@ -237,6 +246,16 @@ const handleChangePassword = async () => {
             >
               {{ showOtp ? 'Verify OTP & Update Password' : 'Send OTP' }}
             </button>
+
+            <div class="text-center text-sm">
+              <router-link
+                to="/forgot-password"
+                class="text-gold-700 hover:text-gold-800 font-montserrat"
+              >
+                Forgot your current password?
+                <span class="underline underline-offset-4">Recover your account</span>
+              </router-link>
+            </div>
           </form>
         </div>
       </div>

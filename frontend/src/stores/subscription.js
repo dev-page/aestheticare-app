@@ -481,14 +481,13 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         const graceEnd = new Date(expiresAt.getTime() + GRACE_DAYS * 24 * 60 * 60 * 1000)
         graceEndsAt.value = graceEnd
         const expired = now.getTime() > expiresAt.getTime()
-        const isPaidOverride = paymentStatus.includes('paid') && planKey !== 'free'
-        isExpired.value = expired && !isPaidOverride
-        isReadOnly.value = expired && !isPaidOverride
+        isExpired.value = expired
+        isReadOnly.value = expired
         const roleKey = String(userRole.value || '')
           .trim()
           .toLowerCase()
           .replace(/[\s_-]+/g, '')
-        if (expired && !isPaidOverride && (roleKey === 'owner' || roleKey === 'clinicadmin' || roleKey === 'clinicadministrator')) {
+        if (expired && (roleKey === 'owner' || roleKey === 'clinicadmin' || roleKey === 'clinicadministrator')) {
           const shouldAttempt = !unpublishAttempted || lastUnpublishUserId !== user.uid
           if (shouldAttempt) {
             unpublishAttempted = true
@@ -503,14 +502,9 @@ export const useSubscriptionStore = defineStore('subscription', () => {
           }
         }
       } else {
-        const isPaidOverride = paymentStatus.includes('paid') && planKey !== 'free'
         isExpired.value = false
         isReadOnly.value = false
         graceEndsAt.value = null
-        if (!isPaidOverride) {
-          isExpired.value = false
-          isReadOnly.value = false
-        }
       }
     } catch (error) {
       console.error('Failed to load subscription features:', error)
@@ -533,6 +527,10 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     }
     if (!initialized) {
       initSubscription()
+    }
+    // If the subscription has expired, deny all feature access
+    if (isExpired.value) {
+      return false
     }
     if (feature === 'hr_shifts') {
       const planKey = String(activePlan.value || '').toLowerCase()

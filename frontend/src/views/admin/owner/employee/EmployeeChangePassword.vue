@@ -104,6 +104,15 @@
                 {{ showOtp ? 'Verify OTP and Update Password' : 'Send OTP' }}
               </button>
             </div>
+
+            <div class="rounded-2xl border border-[rgba(123,79,55,0.24)] bg-[rgba(255,255,255,0.04)] p-4 text-center">
+              <router-link
+                to="/forgot-password"
+                class="text-sm font-semibold text-[#d8b38f] transition hover:text-[#fff0e1]"
+              >
+                Forgot your current password? Recover your account
+              </router-link>
+            </div>
           </form>
         </section>
       </div>
@@ -220,6 +229,15 @@ export default {
         router.push(redirectPath)
       } catch (err) {
         console.error(err)
+        const authCode = err?.code || ''
+        if (authCode === 'auth/wrong-password' || authCode === 'auth/invalid-credential') {
+          toast.error('Your current password is incorrect. If you forgot your password, use the "Forgot your current password?" link below.')
+          return
+        }
+        if (authCode === 'auth/too-many-requests') {
+          toast.error('Too many failed attempts. Please try again later.')
+          return
+        }
         toast.error(`Failed to change password: ${err.message}`)
       }
     }

@@ -26,6 +26,7 @@ let redirectTimeout = null
 const REDIRECT_DELAY = 1700
 
 const inactivityExpired = ref(route.query.expired === 'inactivity')
+const passwordResetSuccess = ref(route.query.reset === 'success')
 
 const EMAIL_REGEX = /^[A-Za-z0-9._]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
 
@@ -281,6 +282,21 @@ onBeforeRouteLeave((to, from, next) => {
               </svg>
               <span>
                 Your session has expired due to inactivity. Please log in again to continue.
+              </span>
+            </div>
+
+            <!-- Password reset success banner -->
+            <div
+              v-if="passwordResetSuccess"
+              class="flex items-start gap-3 rounded-xl border border-emerald-300/70 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-sm"
+            >
+              <svg class="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span>
+                Your password was reset successfully. Please sign in with your new password.
               </span>
             </div>
 

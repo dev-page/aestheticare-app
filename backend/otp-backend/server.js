@@ -1,6 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import sgMail from '@sendgrid/mail'
+import { ServerClient } from 'postmark'
 import dotenv from 'dotenv'
 import admin from 'firebase-admin'
 import fs from 'node:fs'
@@ -51,8 +51,8 @@ dotenv.config({ path: path.resolve(__dirname, '.env') })
 
 console.log("Loaded ENV:", {
   PORT: process.env.PORT,
-  SENDGRID_API_KEY: process.env.SENDGRID_API_KEY ? "present" : "missing",
-  SENDGRID_SENDER: process.env.SENDGRID_SENDER,
+  POSTMARK_API_TOKEN: process.env.POSTMARK_API_TOKEN ? "present" : (process.env.SENDGRID_API_KEY ? "present (from SENDGRID_API_KEY)" : "missing"),
+  POSTMARK_SENDER: process.env.POSTMARK_SENDER || process.env.SENDGRID_SENDER,
   PAYMONGO_SECRET_KEY: process.env.PAYMONGO_SECRET_KEY ? "present" : "missing",
   PAYMONGO_PUBLIC_KEY: process.env.PAYMONGO_PUBLIC_KEY ? "present" : "missing",
   FRONTEND_BASE_URL: process.env.FRONTEND_BASE_URL,
@@ -82,8 +82,8 @@ app.use((error, _req, res, next) => {
   return next(error)
 })
 
-const sendGridApiKey = process.env.SENDGRID_API_KEY
-const senderEmail = process.env.SENDGRID_SENDER
+const postmarkApiToken = process.env.POSTMARK_API_TOKEN || process.env.SENDGRID_API_KEY || ''
+const senderEmail = process.env.POSTMARK_SENDER || process.env.SENDGRID_SENDER || ''
 const payMongoSecretKey = process.env.PAYMONGO_SECRET_KEY || ''
 const frontendBaseUrl = process.env.FRONTEND_BASE_URL || 'http://localhost:5173'
 const configuredServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim()
@@ -104,9 +104,7 @@ let caviteBoundaryCache = null
 let caviteBoundaryCacheAt = 0
 const CAVITE_BOUNDARY_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
-if (sendGridApiKey) {
-  sgMail.setApiKey(sendGridApiKey)
-}
+const postmarkClient = postmarkApiToken ? new ServerClient(postmarkApiToken) : null
 
 const fetchCaviteBoundary = async () => {
   if (caviteBoundaryCache && Date.now() - caviteBoundaryCacheAt < CAVITE_BOUNDARY_CACHE_TTL_MS) {
@@ -293,12 +291,18 @@ const getGoogleCalendarClient = () => {
   return google.calendar({ version: 'v3', auth: oauth2Client })
 }
 
-const sendSendGridMessage = async (message) => {
-  const [response] = await sgMail.send(message)
-  const messageId = response?.headers?.['x-message-id'] || response?.headers?.['X-Message-Id'] || null
+const sendPostmarkMessage = async (message) => {
+  if (!postmarkClient) return { statusCode: null, messageId: null }
+  const response = await postmarkClient.sendEmail({
+    From: senderEmail,
+    To: message.to,
+    Subject: message.subject,
+    TextBody: message.text,
+    HtmlBody: message.html,
+  })
   return {
-    statusCode: response?.statusCode || null,
-    messageId,
+    statusCode: response?.ErrorCode === 0 ? 200 : response?.ErrorCode || null,
+    messageId: response?.MessageID || null,
   }
 }
 
@@ -666,8 +670,8 @@ const sendAppointmentDecisionEmail = async ({
     return { skipped: true, reason: 'Missing recipient email' }
   }
 
-  if (!sendGridApiKey || !senderEmail) {
-    return { skipped: true, reason: 'SendGrid not configured' }
+  if (!postmarkClient || !senderEmail) {
+    return { skipped: true, reason: 'Postmark not configured' }
   }
 
   const safeCustomerName = String(customerName || 'Customer').trim() || 'Customer'
@@ -717,7 +721,7 @@ const sendAppointmentDecisionEmail = async ({
     `,
   }
 
-  const delivery = await sendSendGridMessage(message)
+  const delivery = await sendPostmarkMessage(message)
   return { skipped: false, delivery }
 }
 
@@ -747,10 +751,11 @@ const createAppointmentNotification = async ({
 }
 
 const extractProviderError = (error) =>
+  error?.Message ||
   error?.response?.body?.errors?.[0]?.message ||
   error?.response?.body?.errors?.[0]?.field ||
   error?.message ||
-  'Unknown SendGrid error'
+  'Unknown email provider error'
 
 const generateSixDigitOtp = () =>
   Math.floor(100000 + Math.random() * 900000).toString()
@@ -864,7 +869,7 @@ const sendRegistrationOtpMessage = async ({
     `,
   }
 
-  const delivery = await sendSendGridMessage(message)
+  const delivery = await sendPostmarkMessage(message)
   await otpRef.set({
     email: normalizedEmail,
     uid: normalizedUid || String(existingData.uid || '').trim(),
@@ -1582,7 +1587,7 @@ app.get('/health', (_req, res) => {
     ok: true,
     service: 'otp-backend',
     port: PORT,
-    sendgridConfigured: Boolean(sendGridApiKey && senderEmail),
+    postmarkConfigured: Boolean(postmarkClient && senderEmail),
     paymongoConfigured: Boolean(payMongoSecretKey),
     googleMeetConfigured: isGoogleMeetConfigured(),
     firebaseAdminConfigured: adminReady,
@@ -1793,10 +1798,10 @@ app.post(OTP_PATH, async (req, res) => {
       })
     }
 
-    if (!sendGridApiKey || !senderEmail) {
+    if (!postmarkClient || !senderEmail) {
       return res.status(500).json({
         success: false,
-        error: 'SENDGRID_API_KEY or SENDGRID_SENDER is missing',
+        error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
       })
     }
 
@@ -1809,8 +1814,8 @@ app.post(OTP_PATH, async (req, res) => {
     }
 
     try {
-      const delivery = await sendSendGridMessage(message)
-      console.log('SendGrid registration OTP sent', {
+      const delivery = await sendPostmarkMessage(message)
+      console.log('Postmark registration OTP sent', {
         status: delivery.statusCode || 'unknown',
         messageId: delivery.messageId || 'unknown',
         to: normalizedRecipient,
@@ -1819,7 +1824,7 @@ app.post(OTP_PATH, async (req, res) => {
     } catch (error) {
       const providerMessage = extractProviderError(error)
 
-      console.error('SendGrid registration OTP error:', {
+      console.error('Postmark registration OTP error:', {
         to: normalizedRecipient,
         error: providerMessage,
       })
@@ -1858,10 +1863,10 @@ app.post(REQUEST_REGISTRATION_OTP_PATH, async (req, res) => {
     })
   }
 
-  if (!sendGridApiKey || !senderEmail) {
+  if (!postmarkClient || !senderEmail) {
     return res.status(500).json({
       success: false,
-      error: 'SENDGRID_API_KEY or SENDGRID_SENDER is missing',
+      error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
     })
   }
 
@@ -1935,10 +1940,10 @@ app.post(REQUEST_CUSTOMER_OTP_PATH, async (req, res) => {
     })
   }
 
-  if (!sendGridApiKey || !senderEmail) {
+  if (!postmarkClient || !senderEmail) {
     return res.status(500).json({
       success: false,
-      error: 'SENDGRID_API_KEY or SENDGRID_SENDER is missing',
+      error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
     })
   }
 
@@ -2045,6 +2050,16 @@ app.post(RESET_PASSWORD_PATH, async (req, res) => {
   try {
     const userRecord = await admin.auth().getUserByEmail(normalizedEmail)
     await admin.auth().updateUser(userRecord.uid, { password: passwordValue })
+    // Clear the forced password-change flag so staff are not forced to
+    // change their password again after a self-service reset.
+    try {
+      await admin.firestore().collection('users').doc(userRecord.uid).set(
+        { mustChangePassword: false },
+        { merge: true }
+      )
+    } catch (flagError) {
+      console.warn('Failed to clear mustChangePassword after reset:', flagError?.message || flagError)
+    }
     return res.json({ success: true })
   } catch (error) {
     const code = error?.code || ''
@@ -2994,10 +3009,10 @@ app.post(ATTENDANCE_PIN_PATH, requireAuth, requirePermission('staff:create'), as
     })
   }
 
-  if (!sendGridApiKey || !senderEmail) {
+  if (!postmarkClient || !senderEmail) {
     return res.status(500).json({
       success: false,
-      error: 'SENDGRID_API_KEY or SENDGRID_SENDER is missing',
+      error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
     })
   }
 
@@ -3025,21 +3040,23 @@ app.post(ATTENDANCE_PIN_PATH, requireAuth, requirePermission('staff:create'), as
   }
 
   try {
-    const [response] = await sgMail.send(message)
-    const messageId = response?.headers?.['x-message-id'] || response?.headers?.['X-Message-Id']
-    console.log('SendGrid OTP sent', {
-      status: response?.statusCode,
+    const response = await postmarkClient.sendEmail({
+      From: senderEmail,
+      To: recipient,
+      Subject: message.subject,
+      TextBody: message.text,
+      HtmlBody: message.html,
+    })
+    const messageId = response?.MessageID || null
+    console.log('Postmark OTP sent', {
+      status: response?.ErrorCode === 0 ? 200 : response?.ErrorCode,
       messageId: messageId || 'unknown',
       to: recipient,
     })
     return res.json({ success: true, messageId: messageId || null })
   } catch (error) {
-    const providerMessage =
-      error?.response?.body?.errors?.[0]?.message ||
-      error?.message ||
-      'Unknown SendGrid error'
-
-    console.error('SendGrid error:', providerMessage)
+    const providerMessage = error?.Message || error?.message || 'Unknown Postmark error'
+    console.error('Postmark error:', providerMessage)
     return res.status(500).json({ success: false, error: providerMessage })
   }
 })
@@ -3058,14 +3075,14 @@ app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), asy
     })
   }
 
-  if (!sendGridApiKey || !senderEmail) {
+  if (!postmarkClient || !senderEmail) {
     if (isDevelopment) {
       console.warn(`[DEV STAFF EMAIL BYPASS] Welcome email not sent to ${normalizedRecipient}. Default password: ${safePassword}`)
       return res.json({ success: true, devMode: true })
     }
     return res.status(500).json({
       success: false,
-      error: 'SENDGRID_API_KEY or SENDGRID_SENDER is missing',
+      error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
     })
   }
 
@@ -3095,17 +3112,13 @@ app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), asy
   }
 
   try {
-    const delivery = await sendSendGridMessage(message)
+    const delivery = await sendPostmarkMessage(message)
     return res.json({ success: true, ...delivery })
   } catch (error) {
-    const providerMessage =
-      error?.response?.body?.errors?.[0]?.message ||
-      error?.message ||
-      'Unknown SendGrid error'
-
-    console.error('SendGrid error:', providerMessage)
+    const providerMessage = error?.Message || error?.message || 'Unknown Postmark error'
+    console.error('Postmark error:', providerMessage)
     if (isDevelopment) {
-      console.warn(`[DEV STAFF EMAIL BYPASS] SendGrid failed for ${normalizedRecipient}. Default password: ${safePassword}`)
+      console.warn(`[DEV STAFF EMAIL BYPASS] Postmark failed for ${normalizedRecipient}. Default password: ${safePassword}`)
       return res.json({ success: true, devMode: true, warning: providerMessage })
     }
     return res.status(500).json({ success: false, error: providerMessage })
@@ -3122,10 +3135,10 @@ app.post('/send-payment-receipt', async (req, res) => {
     })
   }
 
-  if (!sendGridApiKey || !senderEmail) {
+  if (!postmarkClient || !senderEmail) {
     return res.status(500).json({
       success: false,
-      error: 'SENDGRID_API_KEY or SENDGRID_SENDER is missing',
+      error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
     })
   }
 
@@ -3169,14 +3182,17 @@ app.post('/send-payment-receipt', async (req, res) => {
   }
 
   try {
-    await sgMail.send(message)
+    await postmarkClient.sendEmail({
+      From: senderEmail,
+      To: safeRecipient,
+      Subject: message.subject,
+      TextBody: message.text,
+      HtmlBody: message.html,
+    })
     return res.json({ success: true })
   } catch (error) {
-    const providerMessage =
-      error?.response?.body?.errors?.[0]?.message ||
-      error?.message ||
-      'Unknown SendGrid error'
-    console.error('SendGrid error:', providerMessage)
+    const providerMessage = error?.Message || error?.message || 'Unknown Postmark error'
+    console.error('Postmark error:', providerMessage)
     return res.status(500).json({ success: false, error: providerMessage })
   }
 })

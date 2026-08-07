@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@iconify/vue": "^5.0.0",
-    "@sendgrid/mail": "^8.1.6",
+    "postmark": "^3.0.0",
     "@tailwindcss/vite": "^4.2.0",
     "archiver": "^7.0.1",
     "axios": "^1.13.4",
@@ -27,6 +27,7 @@
     "googleapis": "^148.0.0",
     "html5-qrcode": "^2.3.8",
     "pinia": "^3.0.4",
+    "postmark": "^5.1.0",
     "qrcode": "^1.5.4",
     "sweetalert2": "^11.26.23",
     "toastify-js": "^1.12.0",

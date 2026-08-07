@@ -200,7 +200,12 @@ router.beforeEach(async (to, from, next) => {
       const mustChangePassword = userData.mustChangePassword === true
         || String(userData.mustChangePassword || '').trim().toLowerCase() === 'true'
 
-      if (userType === 'staff' && mustChangePassword && to.path !== '/employee/change-password') {
+      if (
+        userType === 'staff' &&
+        mustChangePassword &&
+        to.path !== '/employee/change-password' &&
+        to.path !== '/forgot-password'
+      ) {
         return next('/employee/change-password');
       }
       forcedEmployeePasswordChange = userType === 'staff' && mustChangePassword && to.path === '/employee/change-password';

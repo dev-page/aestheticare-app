@@ -30,7 +30,9 @@ export default {
 
     const currentStaff = ref({
       firstName: '',
+      middleName: '',
       lastName: '',
+      suffix: '',
       email: '',
       phoneNumber: '',
       role: '',
@@ -121,7 +123,9 @@ export default {
     const resetForm = () => {
       currentStaff.value = {
         firstName: '',
+        middleName: '',
         lastName: '',
+        suffix: '',
         email: '',
         phoneNumber: '',
         role: '',
@@ -159,9 +163,20 @@ export default {
       currentStaff.value.firstName = sanitizeName(value)
     }
 
+    const handleMiddleNameInput = (event) => {
+      const value = event?.target?.value ?? ''
+      currentStaff.value.middleName = sanitizeName(value)
+    }
+
     const handleLastNameInput = (event) => {
       const value = event?.target?.value ?? ''
       currentStaff.value.lastName = sanitizeName(value)
+    }
+
+    const handleSuffixInput = (event) => {
+      const value = event?.target?.value ?? ''
+      // Allow letters, spaces, periods (e.g. Jr., III, Sr., II)
+      currentStaff.value.suffix = value.replace(/[^A-Za-z\s.]/g, '')
     }
 
     const handleEmailInput = (event) => {
@@ -177,7 +192,9 @@ export default {
     const fieldErrors = computed(() => {
       const errors = {
         firstName: '',
+        middleName: '',
         lastName: '',
+        suffix: '',
         email: '',
         phoneNumber: '',
         clinicBranch: '',
@@ -195,10 +212,20 @@ export default {
         errors.firstName = 'Only letters and spaces are allowed.'
       }
 
+      // Middle name is optional — validate format only if provided
+      if (currentStaff.value.middleName.trim() && !nameRegex.test(currentStaff.value.middleName.trim())) {
+        errors.middleName = 'Only letters and spaces are allowed.'
+      }
+
       if (!currentStaff.value.lastName.trim()) {
         errors.lastName = 'Last name is required.'
       } else if (!nameRegex.test(currentStaff.value.lastName.trim())) {
         errors.lastName = 'Only letters and spaces are allowed.'
+      }
+
+      // Suffix is optional — validate format only if provided
+      if (currentStaff.value.suffix.trim() && !/^[A-Za-z\s.]+$/.test(currentStaff.value.suffix.trim())) {
+        errors.suffix = 'Only letters, spaces, and periods are allowed.'
       }
 
       if (!currentStaff.value.email.trim()) {
@@ -229,6 +256,18 @@ export default {
 
       return errors
     })
+
+    const buildFullName = () => {
+      const parts = [currentStaff.value.firstName]
+      if (currentStaff.value.middleName.trim()) {
+        parts.push(currentStaff.value.middleName)
+      }
+      parts.push(currentStaff.value.lastName)
+      if (currentStaff.value.suffix.trim()) {
+        parts.push(currentStaff.value.suffix)
+      }
+      return parts.join(' ')
+    }
 
     const hasErrors = computed(() => Object.values(fieldErrors.value).some(Boolean))
     const isPractitionerRole = computed(() => String(currentStaff.value.role || '').toLowerCase() === 'practitioner')
@@ -295,10 +334,12 @@ export default {
         return
       }
 
+      const fullName = buildFullName()
+
       try {
         const result = await Swal.fire({
           title: 'Confirm Employee Creation',
-          text: `Do you want to create an account for ${currentStaff.value.firstName} ${currentStaff.value.lastName} (${currentStaff.value.email})?`,
+          text: `Do you want to create an account for ${fullName} (${currentStaff.value.email})?`,
           icon: 'question',
           showCancelButton: true,
           confirmButtonText: 'Yes, create',
@@ -350,8 +391,10 @@ export default {
           // Step 2: Save to Firestore
           await setDoc(doc(db, "users", uid), {
             firstName: currentStaff.value.firstName,
+            middleName: currentStaff.value.middleName.trim() || null,
             lastName: currentStaff.value.lastName,
-            fullName: `${currentStaff.value.firstName} ${currentStaff.value.lastName}`,
+            suffix: currentStaff.value.suffix.trim() || null,
+            fullName: fullName,
             email: currentStaff.value.email,
             phoneNumber: `+63${currentStaff.value.phoneNumber}`,
             role: currentStaff.value.role,
@@ -372,7 +415,7 @@ export default {
           try {
             await sendStaffWelcomeEmail({
               email: currentStaff.value.email,
-              fullName: `${currentStaff.value.firstName} ${currentStaff.value.lastName}`,
+              fullName: fullName,
             })
           } catch (emailError) {
             console.error('Failed to send staff welcome email:', emailError)
@@ -416,20 +459,22 @@ export default {
       saveStaff,
       resetForm,
       branches,
-      loadBranches,
-      updateLocation,
+      customRoles,
+      selectedCustomRoleName,
+      isPractitionerRole,
+      practitionerIdFile,
+      isFormEmpty,
+      isBasicPlan,
       fieldErrors,
       hasErrors,
       handleFirstNameInput,
+      handleMiddleNameInput,
       handleLastNameInput,
+      handleSuffixInput,
       handleEmailInput,
       handlePhoneInput,
+      updateLocation,
       handlePractitionerFile,
-      practitionerIdFile,
-      isPractitionerRole,
-      isFormEmpty,
-      isBasicPlan,
-      customRoles
     }
   }
 }
@@ -439,176 +484,301 @@ export default {
   <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-6 md:p-10 text-white">
+    <main class="flex-1 p-4 md:p-8">
+      <!-- Page Header -->
+      <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Add Employee</h1>
+          <p class="text-slate-400 text-sm md:text-base">Create a new employee account and assign them to a branch.</p>
+        </div>
+      </div>
+
+      <!-- Loading Skeleton -->
       <OwnerPageSkeleton v-if="loading" />
-      <div v-else>
-      <h1 class="text-2xl font-bold mb-6">Add Employee</h1>
 
-      <div class="bg-slate-800 rounded-xl shadow-lg p-6 md:p-8 border border-slate-700 max-w-2xl mx-auto">
-        <form class="space-y-4">
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-slate-400 mb-1">First Name</label>
-              <input
-                type="text"
-                v-model="currentStaff.firstName"
-                placeholder="Enter first name"
-                @input="handleFirstNameInput"
-                :class="[
-                  'w-full px-3 py-2 rounded-lg bg-slate-700 text-white border focus:outline-none focus:ring-2',
-                  fieldErrors.firstName ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
-                ]"
-              />
-              <p v-if="fieldErrors.firstName" class="mt-1 text-xs text-red-400">{{ fieldErrors.firstName }}</p>
+      <!-- Add Employee Form -->
+      <div v-else class="mx-auto max-w-3xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8">
+        <form class="space-y-6" @submit.prevent="saveStaff">
+          <!-- Personal Information -->
+          <div>
+            <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Personal Information</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <!-- First Name -->
+              <div>
+                <label class="mb-1 block text-slate-400">First Name <span class="text-red-400">*</span></label>
+                <input
+                  :value="currentStaff.firstName"
+                  type="text"
+                  placeholder="Enter first name"
+                  @input="handleFirstNameInput"
+                  :class="[
+                    'w-full rounded-lg border bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2',
+                    fieldErrors.firstName ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
+                  ]"
+                />
+                <p v-if="fieldErrors.firstName" class="mt-1 text-xs text-red-400">{{ fieldErrors.firstName }}</p>
+              </div>
+
+              <!-- Middle Name -->
+              <div>
+                <label class="mb-1 block text-slate-400">Middle Name</label>
+                <input
+                  :value="currentStaff.middleName"
+                  type="text"
+                  placeholder="Enter middle name (optional)"
+                  @input="handleMiddleNameInput"
+                  :class="[
+                    'w-full rounded-lg border bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2',
+                    fieldErrors.middleName ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
+                  ]"
+                />
+                <p v-if="fieldErrors.middleName" class="mt-1 text-xs text-red-400">{{ fieldErrors.middleName }}</p>
+              </div>
+
+              <!-- Last Name -->
+              <div>
+                <label class="mb-1 block text-slate-400">Last Name <span class="text-red-400">*</span></label>
+                <input
+                  :value="currentStaff.lastName"
+                  type="text"
+                  placeholder="Enter last name"
+                  @input="handleLastNameInput"
+                  :class="[
+                    'w-full rounded-lg border bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2',
+                    fieldErrors.lastName ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
+                  ]"
+                />
+                <p v-if="fieldErrors.lastName" class="mt-1 text-xs text-red-400">{{ fieldErrors.lastName }}</p>
+              </div>
+
+              <!-- Suffix -->
+              <div>
+                <label class="mb-1 block text-slate-400">Suffix</label>
+                <input
+                  :value="currentStaff.suffix"
+                  type="text"
+                  placeholder="e.g. Jr., III, Sr. (optional)"
+                  @input="handleSuffixInput"
+                  :class="[
+                    'w-full rounded-lg border bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2',
+                    fieldErrors.suffix ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
+                  ]"
+                />
+                <p v-if="fieldErrors.suffix" class="mt-1 text-xs text-red-400">{{ fieldErrors.suffix }}</p>
+              </div>
             </div>
-            <div>
-              <label class="block text-slate-400 mb-1">Last Name</label>
-              <input
-                type="text"
-                v-model="currentStaff.lastName"
-                placeholder="Enter last name"
-                @input="handleLastNameInput"
-                :class="[
-                  'w-full px-3 py-2 rounded-lg bg-slate-700 text-white border focus:outline-none focus:ring-2',
-                  fieldErrors.lastName ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
-                ]"
-              />
-              <p v-if="fieldErrors.lastName" class="mt-1 text-xs text-red-400">{{ fieldErrors.lastName }}</p>
+          </div>
+
+          <!-- Contact Information -->
+          <div>
+            <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Contact Information</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <!-- Email -->
+              <div>
+                <label class="mb-1 block text-slate-400">Email <span class="text-red-400">*</span></label>
+                <input
+                  :value="currentStaff.email"
+                  type="email"
+                  placeholder="Enter email address"
+                  @input="handleEmailInput"
+                  :class="[
+                    'w-full rounded-lg border bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2',
+                    fieldErrors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
+                  ]"
+                />
+                <p v-if="fieldErrors.email" class="mt-1 text-xs text-red-400">{{ fieldErrors.email }}</p>
+              </div>
+
+              <!-- Phone Number -->
+              <div>
+                <label class="mb-1 block text-slate-400">Phone Number <span class="text-red-400">*</span></label>
+                <div class="flex">
+                  <span class="inline-flex items-center rounded-l-lg border border-r-0 border-slate-700 bg-slate-700 px-3 text-slate-400">+63</span>
+                  <input
+                    :value="currentStaff.phoneNumber"
+                    type="tel"
+                    placeholder="Enter 10-digit number"
+                    @input="handlePhoneInput"
+                    :class="[
+                      'w-full rounded-r-lg border bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2',
+                      fieldErrors.phoneNumber ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
+                    ]"
+                  />
+                </div>
+                <p v-if="fieldErrors.phoneNumber" class="mt-1 text-xs text-red-400">{{ fieldErrors.phoneNumber }}</p>
+              </div>
             </div>
           </div>
 
+          <!-- Role & Employment -->
           <div>
-            <label class="block text-slate-400 mb-1">Email</label>
-            <input
-              type="email"
-              v-model="currentStaff.email"
-              placeholder="Enter employee email"
-              @input="handleEmailInput"
-              :class="[
-                'w-full px-3 py-2 rounded-lg bg-slate-700 text-white border focus:outline-none focus:ring-2',
-                fieldErrors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
-              ]"
-            />
-            <p v-if="fieldErrors.email" class="mt-1 text-xs text-red-400">{{ fieldErrors.email }}</p>
-          </div>
+            <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Role & Employment</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <!-- Custom Role -->
+              <div>
+                <label class="mb-1 block text-slate-400">Role <span class="text-red-400">*</span></label>
+                <select
+                  v-model="currentStaff.customRoleId"
+                  class="add-staff-select w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option class="text-slate-300" value="" disabled>Select a role</option>
+                  <option
+                    v-for="role in customRoles"
+                    :key="role.id"
+                    :value="role.id"
+                    class="text-white"
+                  >
+                    {{ role.name }}
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-slate-400">
+                  {{ selectedCustomRoleName ? `Selected: ${selectedCustomRoleName}` : 'Choose a role to define permissions.' }}
+                </p>
+              </div>
 
-          <div>
-            <label class="block text-slate-400 mb-1">Phone Number</label>
-            <div class="relative">
-              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-sm">+63</span>
-              <input
-                type="text"
-                v-model="currentStaff.phoneNumber"
-                placeholder="Enter 10-digit mobile number"
-                @input="handlePhoneInput"
-                inputmode="numeric"
-                :class="[
-                  'w-full px-3 py-2 rounded-lg bg-slate-700 text-white border focus:outline-none focus:ring-2 pl-12',
-                  fieldErrors.phoneNumber ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
-                ]"
-              />
+              <!-- Employment Type -->
+              <div>
+                <label class="mb-1 block text-slate-400">Employment Type <span class="text-red-400">*</span></label>
+                <select
+                  v-model="currentStaff.employmentType"
+                  class="add-staff-select w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option class="text-slate-300" value="" disabled>Select employment type</option>
+                  <option class="text-white" value="Full-time">Full-time</option>
+                  <option class="text-white" value="Part-time">Part-time</option>
+                  <option class="text-white" value="Contractual">Contractual</option>
+                  <option class="text-white" value="Intern">Intern</option>
+                  <option class="text-white" value="Freelance">Freelance</option>
+                </select>
+                <p v-if="fieldErrors.employmentType" class="mt-1 text-xs text-red-400">{{ fieldErrors.employmentType }}</p>
+              </div>
             </div>
-            <p v-if="fieldErrors.phoneNumber" class="mt-1 text-xs text-red-400">{{ fieldErrors.phoneNumber }}</p>
           </div>
 
+          <!-- Branch Assignment -->
           <div>
-            <label class="block text-slate-400 mb-1">Roles</label>
-            <select
-              v-model="currentStaff.customRoleId"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select role</option>
-              <option v-for="role in customRoles" :key="role.id" :value="role.id">{{ role.name }}</option>
-            </select>
-            <p class="mt-1 text-xs text-slate-400">Assign one of the clinic admin's saved roles.</p>
+            <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Branch Assignment</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <!-- Branch -->
+              <div>
+                <label class="mb-1 block text-slate-400">Branch <span class="text-red-400">*</span></label>
+                <select
+                  v-model="currentStaff.clinicBranch"
+                  @change="updateLocation"
+                  :class="[
+                    'add-staff-select w-full rounded-lg border bg-slate-800 px-3 py-2 text-white appearance-none focus:outline-none focus:ring-2',
+                    fieldErrors.clinicBranch ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
+                  ]"
+                >
+                  <option class="text-slate-300" value="" disabled>Select a branch</option>
+                  <option
+                    v-for="branch in branches"
+                    :key="branch.id"
+                    :value="branch.id"
+                    class="text-white"
+                  >
+                    {{ branch.branch }} — {{ branch.location }}
+                  </option>
+                </select>
+                <p v-if="fieldErrors.clinicBranch" class="mt-1 text-xs text-red-400">{{ fieldErrors.clinicBranch }}</p>
+              </div>
+
+              <!-- Clinic Location (auto-populated) -->
+              <div>
+                <label class="mb-1 block text-slate-400">Clinic Location <span class="text-red-400">*</span></label>
+                <input
+                  :value="currentStaff.clinicLocation"
+                  type="text"
+                  readonly
+                  :class="[
+                    'w-full rounded-lg border bg-slate-900/70 px-3 py-2 text-white cursor-not-allowed',
+                    fieldErrors.clinicLocation ? 'border-red-500' : 'border-slate-700'
+                  ]"
+                  placeholder="Auto-populated from branch"
+                />
+                <p v-if="fieldErrors.clinicLocation" class="mt-1 text-xs text-red-400">{{ fieldErrors.clinicLocation }}</p>
+                <p v-else class="mt-1 text-xs text-slate-400">Automatically filled when a branch is selected.</p>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label class="block text-slate-400 mb-1">Employment Type</label>
-            <select
-              v-model="currentStaff.employmentType"
-              :class="[
-                'w-full px-3 py-2 rounded-lg bg-slate-700 text-white border focus:ring-2',
-                fieldErrors.employmentType ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
-              ]"
-            >
-              <option disabled value="">Select type</option>
-              <option value="Full-time">Full-time</option>
-              <option value="Part-time">Part-time</option>
-            </select>
-            <p v-if="fieldErrors.employmentType" class="mt-1 text-xs text-red-400">{{ fieldErrors.employmentType }}</p>
-          </div>
-
+          <!-- Practitioner ID Upload (conditional) -->
           <div v-if="isPractitionerRole">
-            <label class="block text-slate-400 mb-1">Practitioner ID Attachment</label>
-            <input
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp,.pdf"
-              @change="handlePractitionerFile"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
-            />
-            <p v-if="fieldErrors.practitionerId" class="mt-1 text-xs text-red-400">{{ fieldErrors.practitionerId }}</p>
+            <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Practitioner License</h2>
+            <div>
+              <label class="mb-1 block text-slate-400">Upload Practitioner ID <span class="text-red-400">*</span></label>
+              <div class="flex items-center gap-3">
+                <label class="cursor-pointer rounded-lg border border-dashed border-slate-600 bg-slate-800 px-4 py-3 text-sm text-slate-300 hover:border-blue-500 hover:text-blue-300 transition">
+                  <span v-if="!practitionerIdFile">Choose File</span>
+                  <span v-else class="text-green-400">{{ practitionerIdFile.name }}</span>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.pdf"
+                    class="hidden"
+                    @change="handlePractitionerFile"
+                  />
+                </label>
+                <button
+                  v-if="practitionerIdFile"
+                  type="button"
+                  @click="practitionerIdFile = null"
+                  class="text-sm text-red-400 hover:text-red-300 transition"
+                >
+                  Remove
+                </button>
+              </div>
+              <p v-if="fieldErrors.practitionerId" class="mt-1 text-xs text-red-400">{{ fieldErrors.practitionerId }}</p>
+              <p class="mt-1 text-xs text-slate-400">Accepted formats: JPG, PNG, WEBP, PDF (max 5MB).</p>
+            </div>
           </div>
 
-          <div>
-            <label class="block text-slate-400 mb-1">Branch</label>
-            <select
-              v-if="!isBasicPlan"
-              v-model="currentStaff.clinicBranch"
-              @change="updateLocation"
-              :class="[
-                'w-full px-3 py-2 rounded-lg bg-slate-700 text-white border focus:ring-2',
-                fieldErrors.clinicBranch ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
-              ]">
-              <option disabled value="">Select Branch</option>
-              <option v-for="branch in branches" :key="branch.id" :value="branch.id">
-                {{ branch.branch }} - {{ branch.location }}
-              </option>
-            </select>
-            <input
-              v-else
-              type="text"
-              readonly
-              :value="branches.find(b => b.id === currentStaff.clinicBranch)?.branch || ''"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 cursor-not-allowed"
-            />
-            <p v-if="fieldErrors.clinicBranch" class="mt-1 text-xs text-red-400">{{ fieldErrors.clinicBranch }}</p>
-          </div>
+          <!-- Status (hidden, always Active on creation) -->
+          <input type="hidden" v-model="currentStaff.status" />
 
-           <div>
-            <label class="block text-slate-400 mb-1">Clinic Location</label>
-            <input
-              type="text"
-              v-model="currentStaff.clinicLocation"
-              readonly
-              :class="[
-                'w-full px-3 py-2 rounded-lg bg-slate-700 text-white border focus:ring-2 cursor-not-allowed',
-                fieldErrors.clinicLocation ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
-              ]"
-            />
-            <p v-if="fieldErrors.clinicLocation" class="mt-1 text-xs text-red-400">{{ fieldErrors.clinicLocation }}</p>
-          </div>
-
-          <div>
-            <label class="block text-slate-400 mb-1">Status</label>
-            <input type="text" v-model="currentStaff.status" readonly
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 cursor-not-allowed"
-            />
-          </div>
-
-          <!-- Buttons -->
-          <div class="flex justify-end space-x-2 pt-4">
-            <button type="reset" @click="resetForm" :disabled="isFormEmpty" class="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded transition
-              disabled:opacity-50 disabled:cursor-not-allowed">
-              Cancel
+          <!-- Form Actions -->
+          <div class="flex justify-end space-x-3 pt-4 border-t border-slate-700">
+            <button
+              type="button"
+              :disabled="isFormEmpty"
+              @click="resetForm"
+              class="rounded-lg bg-slate-600 px-5 py-2 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Reset
             </button>
-            <button type="button" @click="saveStaff" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition">
+            <button
+              type="submit"
+              :disabled="hasErrors"
+              class="rounded-lg bg-blue-600 px-5 py-2 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Add Employee
             </button>
           </div>
         </form>
       </div>
-      </div>
     </main>
   </div>
 </template>
+
+<style scoped>
+.owner-theme {
+  --sidebar-width: 16rem;
+}
+
+.add-staff-select {
+  color: #f8fafc;
+  background-color: #0f172a;
+}
+
+.add-staff-select option {
+  color: #f8fafc;
+  background-color: #0f172a;
+}
+
+.add-staff-select option:disabled {
+  color: #94a3b8;
+}
+
+.add-staff-select::-ms-expand {
+  color: #f8fafc;
+}
+</style>

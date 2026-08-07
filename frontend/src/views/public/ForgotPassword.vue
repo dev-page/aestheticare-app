@@ -1,7 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { db } from '@/config/firebaseConfig'
+import { auth, db } from '@/config/firebaseConfig'
+import { signOut } from 'firebase/auth'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import axios from 'axios'
 import { toast } from 'vue3-toastify'
@@ -108,7 +109,12 @@ const requestOtp = async ({ advanceStep = true, successMessage = 'OTP sent to yo
     startResendCountdown()
     return true
   } catch (err) {
-    console.error(err)
+    console.error('ForgotPassword requestOtp error:', {
+      status: err?.response?.status,
+      responseData: err?.response?.data,
+      url: err?.config?.url,
+      requestData: err?.config?.data,
+    })
     const providerError =
       err?.response?.data?.error ||
       err?.response?.data?.message ||
@@ -168,6 +174,11 @@ const resetPassword = async () => {
       toast.error(response?.data?.error || 'Failed to reset password.')
       return
     }
+    try {
+      await signOut(auth)
+    } catch (signOutError) {
+      console.warn('Error signing out after password reset:', signOutError)
+    }
     step.value = 1
     email.value = ''
     newPassword.value = ''
@@ -175,7 +186,7 @@ const resetPassword = async () => {
     clearOtpInputs()
     generatedOtp.value = ''
     setTimeout(() => {
-      router.push('/login')
+      router.push('/login?reset=success')
     }, 2000)
   } catch (err) {
     console.error(err)

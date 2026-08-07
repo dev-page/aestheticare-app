@@ -37,7 +37,7 @@
           :class="isPlanDisabled(plan.id)
             ? 'cursor-not-allowed border-slate-700/80 bg-slate-800/70 opacity-75'
             : selectedPlan === plan.id
-              ? 'border-amber-400 bg-slate-800 shadow-[0_0_0_1px_rgba(251,191,36,0.25)]'
+              ? 'border-amber-400 bg-slate-900 shadow-[0_0_0_16px_rgba(251,191,36,0.08)] ring-2 ring-amber-400/30'
               : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-800/90'"
           :disabled="isPlanDisabled(plan.id)"
           @click="selectPlan(plan.id)"
@@ -47,6 +47,12 @@
               <p class="text-xs uppercase tracking-[0.22em] text-amber-300 mb-2">{{ plan.id }}</p>
               <h2 class="text-2xl font-semibold text-white">{{ plan.name }}</h2>
             </div>
+            <span
+              v-if="selectedPlan === plan.id"
+              class="rounded-full border border-amber-300 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-amber-200"
+            >
+              Selected
+            </span>
           </div>
 
           <div class="mb-4">
@@ -55,6 +61,10 @@
           </div>
 
           <p class="mb-5 text-sm text-slate-300">{{ plan.description }}</p>
+          <div class="mb-4 flex items-center gap-2 text-sm text-slate-400">
+            <span class="inline-flex h-2 w-2 rounded-full bg-slate-400"></span>
+            <span>{{ selectedPlan === plan.id ? 'Plan is selected' : 'Click to select this plan' }}</span>
+          </div>
 
           <ul class="space-y-2 text-sm text-slate-200">
             <li v-for="feature in plan.features" :key="feature">- {{ feature }}</li>
@@ -163,7 +173,8 @@ const hasActiveCurrentCycle = computed(() => {
   return Boolean(expiresAt && expiresAt.getTime() > Date.now())
 })
 
-const isCurrentPlanCard = (planId) => normalizePlanId(planId) === normalizePlanId(currentPlan.value)
+const isCurrentPlanCard = (planId) =>
+  normalizePlanId(planId) === normalizePlanId(currentPlan.value) && hasActiveCurrentCycle.value
 
 const isPendingPlanCard = (planId) => {
   const normalizedPendingPlan = normalizePlanId(pendingPlan.value)

@@ -1,5 +1,5 @@
 <template>
-  <div :class="{ 'read-only-mode': isReadOnly }">
+  <div :class="{ 'read-only-mode': isReadOnly && !isSubscriptionRoute }">
     <div>
       <EmployeeTopbar
         v-if="showEmployeeTopbar"
@@ -15,112 +15,111 @@
       />
       <router-view :key="$route.fullPath" />
     </div>
+
     <div
       v-if="isExpired"
       class="readonly-exempt fixed left-1/2 top-4 z-[9997] -translate-x-1/2 rounded-full border border-amber-500/50 bg-[#2a170d] px-4 py-2 text-xs text-amber-200 shadow-xl"
     >
       Subscription expired. Access is read-only
-      <span v-if="graceEndsAt"> until {{ graceEndsAtDisplay }}.</span>
+      <span v-if="isInGracePeriod"> until {{ graceEndsAtDisplay }}.</span>
+      <span v-else>. Please renew your subscription to regain access.</span>
     </div>
-  </div>
 
-  <div v-if="isLoading" class="fixed inset-0 z-[9998] bg-[#0f0a07]">
-    <div v-if="isPublicSkeleton" class="flex h-full w-full items-center justify-center px-6">
-      <div class="w-full max-w-3xl animate-pulse space-y-6">
-        <div class="mx-auto h-7 w-40 rounded-full bg-[#3a2417]"></div>
-        <div class="h-10 w-3/4 rounded-2xl bg-[#20130c] border border-[#3a2417]"></div>
-        <div class="h-10 w-full rounded-2xl bg-[#20130c] border border-[#3a2417]"></div>
-        <div class="h-10 w-full rounded-2xl bg-[#20130c] border border-[#3a2417]"></div>
-        <div class="h-12 w-40 rounded-2xl bg-[#3a2417]"></div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-          <div class="h-32 rounded-2xl bg-[#20130c] border border-[#3a2417]"></div>
-          <div class="h-32 rounded-2xl bg-[#20130c] border border-[#3a2417]"></div>
-        </div>
-      </div>
-    </div>
-    <div v-else class="flex h-full w-full">
-      <div class="hidden md:flex w-[18rem] p-4">
-        <div class="w-full rounded-2xl border border-[#3a2417] bg-[#1f120b] p-4 shadow-2xl">
-          <div class="animate-pulse space-y-4">
-            <div class="h-5 w-24 rounded bg-[#3a2417]"></div>
-            <div class="h-3 w-32 rounded bg-[#3a2417]"></div>
-            <div class="space-y-2 pt-2">
-              <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-              <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-              <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-              <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-              <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-            </div>
-            <div class="mt-6 h-12 rounded-lg bg-[#150d08] border border-[#3a2417]"></div>
+    <div v-if="isLoading" class="fixed inset-0 z-[9998] bg-[#0f0a07]">
+      <div v-if="isPublicSkeleton" class="flex h-full w-full items-center justify-center px-6">
+        <div class="w-full max-w-3xl animate-pulse space-y-6">
+          <div class="mx-auto h-7 w-40 rounded-full bg-[#3a2417]"></div>
+          <div class="h-10 w-3/4 rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
+          <div class="h-10 w-full rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
+          <div class="h-10 w-full rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
+          <div class="h-12 w-40 rounded-2xl bg-[#3a2417]"></div>
+          <div class="grid grid-cols-1 gap-4 pt-4 sm:grid-cols-2">
+            <div class="h-32 rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
+            <div class="h-32 rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
           </div>
         </div>
       </div>
-      <div class="flex-1 p-6 md:p-10">
-        <div class="animate-pulse space-y-6">
-          <div class="h-8 w-56 rounded bg-[#3a2417]"></div>
-          <div class="h-4 w-72 rounded bg-[#3a2417]"></div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="h-28 rounded-xl bg-[#20130c] border border-[#3a2417]"></div>
-            <div class="h-28 rounded-xl bg-[#20130c] border border-[#3a2417]"></div>
-            <div class="h-28 rounded-xl bg-[#20130c] border border-[#3a2417]"></div>
+      <div v-else class="flex h-full w-full">
+        <div class="hidden w-[18rem] p-4 md:flex">
+          <div class="w-full rounded-2xl border border-[#3a2417] bg-[#1f120b] p-4 shadow-2xl">
+            <div class="animate-pulse space-y-4">
+              <div class="h-5 w-24 rounded bg-[#3a2417]"></div>
+              <div class="h-3 w-32 rounded bg-[#3a2417]"></div>
+              <div class="space-y-2 pt-2">
+                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
+                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
+                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
+                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
+                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
+              </div>
+              <div class="mt-6 h-12 rounded-lg border border-[#3a2417] bg-[#150d08]"></div>
+            </div>
           </div>
-          <div class="h-64 rounded-2xl bg-[#20130c] border border-[#3a2417]"></div>
+        </div>
+        <div class="flex-1 p-6 md:p-10">
+          <div class="animate-pulse space-y-6">
+            <div class="h-8 w-56 rounded bg-[#3a2417]"></div>
+            <div class="h-4 w-72 rounded bg-[#3a2417]"></div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div class="h-28 rounded-xl border border-[#3a2417] bg-[#20130c]"></div>
+              <div class="h-28 rounded-xl border border-[#3a2417] bg-[#20130c]"></div>
+              <div class="h-28 rounded-xl border border-[#3a2417] bg-[#20130c]"></div>
+            </div>
+            <div class="h-64 rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <div
-    class="global-loader"
-    :class="{ 'is-active': processLoading }"
-    aria-live="polite"
-    aria-busy="true"
-  >
-    <div class="loader"></div>
-    <p class="loader-label">{{ processLabel }}</p>
-  </div>
+    <div
+      class="global-loader"
+      :class="{ 'is-active': processLoading }"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div class="loader"></div>
+      <p class="loader-label">{{ processLabel }}</p>
+    </div>
 
-  <div
-    v-if="showConnectionModal"
-    class="fixed inset-0 z-[9999] flex items-center justify-center bg-[#140b06]/70 p-4 backdrop-blur-[6px]"
-  >
-    <div class="connection-modal-shell w-full max-w-2xl overflow-hidden rounded-[2rem] border border-amber-200/70 bg-gradient-to-br from-[#fff8ee] via-white to-[#fdf0db] shadow-[0_30px_80px_rgba(27,15,8,0.36)]">
-      <div class="h-1.5 bg-gradient-to-r from-amber-500 via-gold-500 to-rose-300"></div>
-      <div class="relative p-6 sm:p-8">
-        <div class="absolute right-6 top-6 h-24 w-24 rounded-full bg-amber-200/30 blur-2xl"></div>
-        <div class="absolute -left-10 bottom-0 h-36 w-36 rounded-full bg-[#f1c27a]/20 blur-3xl"></div>
-
-        <div class="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
-          <div class="relative flex items-center justify-center">
-            <div class="absolute inset-6 rounded-full bg-amber-100/65 blur-2xl"></div>
-            <div class="relative flex h-48 w-48 items-center justify-center rounded-full border border-amber-200/80 bg-white/70 shadow-[0_16px_40px_rgba(111,63,42,0.12)]">
-              <img
-                :src="disconnectIllustration"
-                alt="Connection issue"
-                class="h-40 w-40 object-contain drop-shadow-[0_10px_18px_rgba(69,40,18,0.16)]"
-              />
+    <div
+      v-if="showConnectionModal"
+      class="fixed inset-0 z-[9999] flex items-center justify-center bg-[#140b06]/70 p-4 backdrop-blur-[6px]"
+    >
+      <div class="connection-modal-shell w-full max-w-2xl overflow-hidden rounded-[2rem] border border-amber-200/70 bg-gradient-to-br from-[#fff8ee] via-white to-[#fdf0db] shadow-[0_30px_80px_rgba(27,15,8,0.36)]">
+        <div class="h-1.5 bg-gradient-to-r from-amber-500 via-gold-500 to-rose-300"></div>
+        <div class="relative p-6 sm:p-8">
+          <div class="absolute right-6 top-6 h-24 w-24 rounded-full bg-amber-200/30 blur-2xl"></div>
+          <div class="absolute -left-10 bottom-0 h-36 w-36 rounded-full bg-[#f1c27a]/20 blur-3xl"></div>
+          <div class="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+            <div class="relative flex items-center justify-center">
+              <div class="absolute inset-6 rounded-full bg-amber-100/65 blur-2xl"></div>
+              <div class="relative flex h-48 w-48 items-center justify-center rounded-full border border-amber-200/80 bg-white/70 shadow-[0_16px_40px_rgba(111,63,42,0.12)]">
+                <img
+                  :src="disconnectIllustration"
+                  alt="Connection issue"
+                  class="h-40 w-40 object-contain drop-shadow-[0_10px_18px_rgba(69,40,18,0.16)]"
+                />
+              </div>
             </div>
-          </div>
-
-          <div class="relative text-center md:text-left">
-            <div class="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-800 shadow-sm">
-              <span class="h-2 w-2 rounded-full bg-amber-500"></span>
-              {{ isOnline ? 'Connection Slow' : 'Offline' }}
-            </div>
-            <h2 class="mt-4 text-3xl font-semibold tracking-tight text-charcoal-900 sm:text-4xl">
-              {{ isOnline ? 'Holding on to your progress' : 'You are offline' }}
-            </h2>
-            <p class="mt-3 max-w-lg text-base leading-relaxed text-charcoal-700">
-              {{ connectionMessage || 'We are checking your connection.' }}
-            </p>
-            <p class="mt-3 text-sm text-charcoal-500">
-              This screen will close automatically once the connection is stable again.
-            </p>
-
-            <div class="mt-6 flex flex-wrap items-center justify-center gap-2 md:justify-start">
-              <span class="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-xs font-medium text-charcoal-700">Secure session</span>
-              <span class="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-xs font-medium text-charcoal-700">Auto-retry enabled</span>
-              <span class="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-xs font-medium text-charcoal-700">No action needed</span>
+            <div class="relative text-center md:text-left">
+              <div class="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-800 shadow-sm">
+                <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+                {{ isOnline ? 'Connection Slow' : 'Offline' }}
+              </div>
+              <h2 class="mt-4 text-3xl font-semibold tracking-tight text-charcoal-900 sm:text-4xl">
+                {{ isOnline ? 'Holding on to your progress' : 'You are offline' }}
+              </h2>
+              <p class="mt-3 max-w-lg text-base leading-relaxed text-charcoal-700">
+                {{ connectionMessage || 'We are checking your connection.' }}
+              </p>
+              <p class="mt-3 text-sm text-charcoal-500">
+                This screen will close automatically once the connection is stable again.
+              </p>
+              <div class="mt-6 flex flex-wrap items-center justify-center gap-2 md:justify-start">
+                <span class="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-xs font-medium text-charcoal-700">Secure session</span>
+                <span class="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-xs font-medium text-charcoal-700">Auto-retry enabled</span>
+                <span class="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-xs font-medium text-charcoal-700">No action needed</span>
+              </div>
             </div>
           </div>
         </div>
@@ -287,6 +286,21 @@ let processHandler = null
 const processLoading = ref(false)
 const processLabel = ref('Processing...')
 
+// Determine if current route is subscription-related (so read-only is exempted)
+const isSubscriptionRoute = computed(() => {
+  const path = String(route.path || '').toLowerCase()
+  return path.startsWith('/owner/account/subscription') ||
+         path.startsWith('/owner/account/plans') ||
+         path.startsWith('/subscription')
+})
+
+// Check if we're still within the grace period (7 days after expiry)
+const isInGracePeriod = computed(() => {
+  if (!graceEndsAt.value) return false
+  const now = new Date()
+  return now.getTime() <= graceEndsAt.value.getTime()
+})
+
 onMounted(() => {
   initAuth()
   initSubscription()
@@ -418,7 +432,13 @@ const planLabel = computed(() => {
 .read-only-mode [contenteditable="true"] {
   pointer-events: none;
   opacity: 0.75;
-  cursor: not-allowed;
+  cursor: default;
+}
+
+/* Keep data read-only but never show the "not-allowed" stop-sign cursor */
+.read-only-mode,
+.read-only-mode * {
+  cursor: default !important;
 }
 
 .read-only-mode .readonly-exempt,
@@ -477,3 +497,4 @@ const planLabel = computed(() => {
   }
 }
 </style>
+
