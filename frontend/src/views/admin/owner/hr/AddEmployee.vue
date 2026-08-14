@@ -11,7 +11,44 @@ import { logActivity } from '@/utils/activityLogger'
 import { storage } from '@/config/firebaseConfig'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
-const DEFAULT_STAFF_PASSWORD = 'password123'
+const PASSWORD_LENGTH = 12
+const PASSWORD_PARTS = {
+  uppercase: 'ABCDEFGHJKLMNPQRSTUVWXYZ',
+  lowercase: 'abcdefghijkmnopqrstuvwxyz',
+  digits: '23456789',
+  symbols: '!@#$%&*?',
+}
+const PASSWORD_POOL = Object.values(PASSWORD_PARTS).join('')
+
+const generateSecurePassword = (length = PASSWORD_LENGTH) => {
+  const cryptoSource = globalThis.crypto
+  const randomIndex = (max) => {
+    if (cryptoSource?.getRandomValues) {
+      const values = new Uint32Array(1)
+      cryptoSource.getRandomValues(values)
+      return values[0] % max
+    }
+    return Math.floor(Math.random() * max)
+  }
+
+  const passwordChars = [
+    PASSWORD_PARTS.uppercase[randomIndex(PASSWORD_PARTS.uppercase.length)],
+    PASSWORD_PARTS.lowercase[randomIndex(PASSWORD_PARTS.lowercase.length)],
+    PASSWORD_PARTS.digits[randomIndex(PASSWORD_PARTS.digits.length)],
+    PASSWORD_PARTS.symbols[randomIndex(PASSWORD_PARTS.symbols.length)],
+  ]
+
+  while (passwordChars.length < length) {
+    passwordChars.push(PASSWORD_POOL[randomIndex(PASSWORD_POOL.length)])
+  }
+
+  for (let index = passwordChars.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomIndex(index + 1)
+    ;[passwordChars[index], passwordChars[swapIndex]] = [passwordChars[swapIndex], passwordChars[index]]
+  }
+
+  return passwordChars.join('')
+}
 
 export default {
   name: 'AddEmployee',
@@ -269,7 +306,7 @@ export default {
       practitionerIdFile.value = file
     }
 
-    const sendStaffWelcomeEmail = async ({ email, fullName }) => {
+    const sendStaffWelcomeEmail = async ({ email, fullName, defaultPassword }) => {
       const user = auth.currentUser
       if (!user) {
         throw new Error('User not authenticated.')
@@ -285,7 +322,7 @@ export default {
         body: JSON.stringify({
           recipient: email,
           fullName,
-          defaultPassword: DEFAULT_STAFF_PASSWORD,
+          defaultPassword,
         }),
       })
 
@@ -360,6 +397,7 @@ export default {
           return
         }
 
+        const temporaryPassword = generateSecurePassword()
         let userCredential
         let creatorApp = null
         let creatorAuth = null
@@ -369,7 +407,7 @@ export default {
           const appName = `staff-creator-${Date.now()}-${Math.random().toString(36).slice(2)}`
           creatorApp = initializeApp(getApp().options, appName)
           creatorAuth = getAuth(creatorApp)
-          userCredential = await createUserWithEmailAndPassword(creatorAuth, currentStaff.value.email, DEFAULT_STAFF_PASSWORD)
+          userCredential = await createUserWithEmailAndPassword(creatorAuth, currentStaff.value.email, temporaryPassword)
         } catch (error) {
           if (error.code === 'auth/email-already-in-use') {
             toast.error("This email is already registered.")
@@ -433,6 +471,7 @@ export default {
             await sendStaffWelcomeEmail({
               email: currentStaff.value.email,
               fullName: `${currentStaff.value.firstName} ${currentStaff.value.lastName}`,
+              defaultPassword: temporaryPassword,
             })
           } catch (emailError) {
             console.error('Failed to send staff welcome email:', emailError)

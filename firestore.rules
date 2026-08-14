@@ -185,6 +185,13 @@ service cloud.firestore {
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
     }
 
+    match /supplierApplications/{supplierId} {
+      allow read: if isSignedIn() && (request.auth.uid == supplierId || isSuperadmin());
+      allow create: if isSignedIn() && request.auth.uid == supplierId;
+      allow update: if isSignedIn() && (request.auth.uid == supplierId || isSuperadmin());
+      allow delete: if isSignedIn() && (request.auth.uid == supplierId || isSuperadmin());
+    }
+
     match /purchaseRequests/{requestId} {
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view')) || isSuperadmin());

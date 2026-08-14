@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@iconify/vue": "^5.0.0",
-    "postmark": "^3.0.0",
     "@tailwindcss/vite": "^4.2.0",
     "archiver": "^7.0.1",
     "axios": "^1.13.4",

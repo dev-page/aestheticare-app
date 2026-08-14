@@ -32,11 +32,15 @@ const REGISTRATION_OTP_EXPIRY_MINUTES = 10
 const REGISTRATION_OTP_COOLDOWN_SECONDS = 60
 const CLINIC_REGISTRATION_OTP_PURPOSE = 'clinic-registration'
 const CUSTOMER_REGISTRATION_OTP_PURPOSE = 'customer-registration'
+const SUPPLIER_REGISTRATION_OTP_PURPOSE = 'supplier-registration'
 const OTP_PATH = '/send-otp'
 const REQUEST_REGISTRATION_OTP_PATH = '/auth/request-registration-otp'
 const VERIFY_REGISTRATION_OTP_PATH = '/auth/verify-registration-otp'
 const REQUEST_CUSTOMER_OTP_PATH = '/auth/request-customer-otp'
 const VERIFY_CUSTOMER_OTP_PATH = '/auth/verify-customer-otp'
+const REQUEST_SUPPLIER_OTP_PATH = '/auth/request-supplier-otp'
+const VERIFY_SUPPLIER_OTP_PATH = '/auth/verify-supplier-otp'
+const CHECK_SUPPLIER_REGISTRATION_STATUS_PATH = '/auth/check-supplier-registration-status'
 const CHECK_CUSTOMER_REGISTRATION_STATUS_PATH = '/auth/check-customer-registration-status'
 const ATTENDANCE_PIN_PATH = '/send-attendance-pin'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
@@ -823,12 +827,51 @@ const getCustomerRegistrationState = async (email) => {
   }
 }
 
+const getSupplierRegistrationState = async (email) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const firestore = admin.firestore()
+  const authUser = await getAuthUserByEmail(normalizedEmail)
+
+  let uid = String(authUser?.uid || '').trim()
+  let userSnap = null
+
+  if (uid) {
+    const directUserSnap = await firestore.collection('users').doc(uid).get()
+    if (directUserSnap.exists) {
+      userSnap = directUserSnap
+    }
+  }
+
+  if (!userSnap) {
+    userSnap = await getUserDocByEmail(firestore, normalizedEmail)
+    if (userSnap?.id && !uid) {
+      uid = userSnap.id
+    }
+  }
+
+  const userData = userSnap?.data?.() || {}
+  const role = String(userData.role || userData.userType || '').trim()
+  const status = String(userData.status || '').trim()
+  const approvalStatus = String(userData.approvalStatus || '').trim()
+  const emailVerified = Boolean(userData.emailVerified || authUser?.emailVerified)
+
+  return {
+    exists: Boolean(authUser || userSnap),
+    uid,
+    authUser,
+    userSnap,
+    userData,
+    role,
+    status,
+    approvalStatus,
+    emailVerified,
+  }
+}
+
 const sendRegistrationOtpMessage = async ({
   email,
   uid,
   purpose,
-  subject,
-  introLine,
 }) => {
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedUid = String(uid || '').trim()
@@ -854,22 +897,25 @@ const sendRegistrationOtpMessage = async ({
   const message = {
     to: normalizedEmail,
     from: senderEmail,
-    subject,
+    subject: 'Your OTP Code',
     text:
-      `${introLine} ${otp}.\n\n` +
-      `This code expires in ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes. ` +
+      `Your one-time password is: ${otp}\n\n` +
+      `This code is only valid for ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes. ` +
+      `It expires after that time. ` +
       `Only the most recent OTP will work.`,
     html: `
       <div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;">
-        <p>${introLine}</p>
+        <p>Your one-time password is:</p>
         <p style="font-size:28px;font-weight:700;letter-spacing:4px;">${otp}</p>
-        <p>This code expires in ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes.</p>
+        <p>This code is only valid for ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes.</p>
+        <p>It expires after that time.</p>
         <p><strong>Only the most recent OTP will work.</strong></p>
       </div>
     `,
   }
 
   const delivery = await sendPostmarkMessage(message)
+
   await otpRef.set({
     email: normalizedEmail,
     uid: normalizedUid || String(existingData.uid || '').trim(),
@@ -1809,31 +1855,35 @@ app.post(OTP_PATH, async (req, res) => {
       to: normalizedRecipient,
       from: senderEmail,
       subject: 'Your OTP Code',
-      text: `Your one-time password is: ${normalizedOtp}`,
-      html: `<strong>Your OTP code is: ${normalizedOtp}</strong>`,
+      text:
+        `Your one-time password is: ${normalizedOtp}\n\n` +
+        `This code is only valid for ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes. ` +
+        `It expires after that time.`,
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;">
+          <p>Your one-time password is:</p>
+          <p style="font-size:28px;font-weight:700;letter-spacing:4px;">${normalizedOtp}</p>
+          <p>This code is only valid for ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes.</p>
+          <p>It expires after that time.</p>
+        </div>
+      `,
     }
 
-    try {
-      const delivery = await sendPostmarkMessage(message)
-      console.log('Postmark registration OTP sent', {
-        status: delivery.statusCode || 'unknown',
-        messageId: delivery.messageId || 'unknown',
-        to: normalizedRecipient,
-      })
-      return res.json({ success: true, ...delivery })
-    } catch (error) {
-      const providerMessage = extractProviderError(error)
+    const delivery = await sendPostmarkMessage(message)
 
-      console.error('Postmark registration OTP error:', {
-        to: normalizedRecipient,
-        error: providerMessage,
-      })
-      return res.status(500).json({ success: false, error: providerMessage })
-    }
+    console.log('Postmark registration OTP sent', {
+      status: delivery.statusCode || 'unknown',
+      messageId: delivery.messageId || 'unknown',
+      to: normalizedRecipient,
+    })
+    return res.json({ success: true, ...delivery })
   } catch (error) {
-    const unexpectedMessage = error?.message || 'Unexpected OTP route error'
-    console.error('OTP route error:', unexpectedMessage)
-    return res.status(500).json({ success: false, error: unexpectedMessage })
+    const providerMessage = extractProviderError(error)
+
+    console.error('Postmark registration OTP error:', {
+      error: providerMessage,
+    })
+    return res.status(500).json({ success: false, error: providerMessage })
   }
 })
 
@@ -1875,8 +1925,6 @@ app.post(REQUEST_REGISTRATION_OTP_PATH, async (req, res) => {
       email: normalizedEmail,
       uid: normalizedUid,
       purpose: CLINIC_REGISTRATION_OTP_PURPOSE,
-      subject: 'Your AestheticCare registration OTP',
-      introLine: 'Your AestheticCare registration OTP is:',
     })
 
     console.log('Registration OTP sent', {
@@ -1978,8 +2026,6 @@ app.post(REQUEST_CUSTOMER_OTP_PATH, async (req, res) => {
       email: normalizedEmail,
       uid: resolvedUid,
       purpose: CUSTOMER_REGISTRATION_OTP_PURPOSE,
-      subject: 'Your AestheticCare customer verification OTP',
-      introLine: 'Your AestheticCare customer verification OTP is:',
     })
 
     console.log('Customer registration OTP sent', {
@@ -3086,42 +3132,329 @@ app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), asy
     })
   }
 
-  const loginUrl = `${resolveFrontendBaseUrl(req)}/login`
-  const message = {
-    to: normalizedRecipient,
-    from: senderEmail,
-    subject: 'Your Staff Account Has Been Created',
-    text:
-      `Hi ${safeName},\n\n` +
-      `A staff account has been created for you.\n\n` +
-      `Email: ${normalizedRecipient}\n` +
-      `Default password: ${safePassword}\n\n` +
-      `Please sign in and change your password as soon as possible.\n` +
-      `Login page: ${loginUrl}\n\n` +
-      `If you did not expect this email, please contact your clinic administrator.`,
-    html: `
-      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;">
-        <p>Hi ${safeName},</p>
-        <p>A staff account has been created for you.</p>
-        <p><strong>Email:</strong> ${normalizedRecipient}<br /><strong>Default password:</strong> ${safePassword}</p>
-        <p>Please sign in and change your password as soon as possible.</p>
-        <p><a href="${loginUrl}">Go to Login</a></p>
-        <p>If you did not expect this email, please contact your clinic administrator.</p>
-      </div>
-    `,
-  }
-
   try {
+    const loginUrl = `${resolveFrontendBaseUrl(req)}/login`
+    const message = {
+      to: normalizedRecipient,
+      from: senderEmail,
+      subject: 'Your Staff Account Has Been Created',
+      text:
+        `Hi ${safeName},\n\n` +
+        `A staff account has been created for you.\n\n` +
+        `Email: ${normalizedRecipient}\n` +
+        `Temporary password: ${safePassword}\n\n` +
+        `Please sign in as soon as possible and change your password immediately after logging in.\n` +
+        `Login page: ${loginUrl}\n\n` +
+        `If you did not expect this email, please contact your clinic administrator.`,
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;">
+          <p>Hi ${safeName},</p>
+          <p>A staff account has been created for you.</p>
+          <p><strong>Email:</strong> ${normalizedRecipient}<br /><strong>Temporary password:</strong> ${safePassword}</p>
+          <p>Please sign in as soon as possible and change your password immediately after logging in.</p>
+          <p><a href="${loginUrl}">Go to Login</a></p>
+          <p>If you did not expect this email, please contact your clinic administrator.</p>
+        </div>
+      `,
+    }
     const delivery = await sendPostmarkMessage(message)
     return res.json({ success: true, ...delivery })
   } catch (error) {
-    const providerMessage = error?.Message || error?.message || 'Unknown Postmark error'
-    console.error('Postmark error:', providerMessage)
+    const providerMessage = extractProviderError(error)
+    console.error('Postmark staff welcome error:', providerMessage)
     if (isDevelopment) {
-      console.warn(`[DEV STAFF EMAIL BYPASS] Postmark failed for ${normalizedRecipient}. Default password: ${safePassword}`)
+      console.warn(`[DEV STAFF EMAIL BYPASS] Postmark failed for ${normalizedRecipient}. Temporary password: ${safePassword}`)
       return res.json({ success: true, devMode: true, warning: providerMessage })
     }
     return res.status(500).json({ success: false, error: providerMessage })
+  }
+})
+
+app.post(CHECK_SUPPLIER_REGISTRATION_STATUS_PATH, async (req, res) => {
+  const { email } = req.body ?? {}
+
+  if (!adminReady) {
+    return res.status(500).json({
+      success: false,
+      error: adminInitError || 'firebase-admin is not ready',
+    })
+  }
+
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  if (!normalizedEmail) {
+    return res.status(400).json({
+      success: false,
+      error: 'email is required',
+    })
+  }
+
+  try {
+    const supplierState = await getSupplierRegistrationState(normalizedEmail)
+    if (!supplierState.exists) {
+      return res.json({ success: true, exists: false })
+    }
+
+    const role = String(supplierState.role || '').trim()
+    const status = String(supplierState.status || '').trim()
+    const approvalStatus = String(supplierState.approvalStatus || '').trim()
+    return res.json({
+      success: true,
+      exists: true,
+      uid: supplierState.uid,
+      role,
+      status,
+      approvalStatus,
+      emailVerified: supplierState.emailVerified,
+      canResumeOtp: !supplierState.emailVerified && !String(status || approvalStatus || '').toLowerCase().includes('active'),
+    })
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error?.message || 'Failed to check supplier registration status.',
+      code: error?.code || '',
+    })
+  }
+})
+
+app.post(REQUEST_SUPPLIER_OTP_PATH, async (req, res) => {
+  const { email, uid } = req.body ?? {}
+
+  if (!adminReady) {
+    return res.status(500).json({
+      success: false,
+      error: adminInitError || 'firebase-admin is not ready',
+    })
+  }
+
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const normalizedUid = String(uid || '').trim()
+  if (!normalizedEmail) {
+    return res.status(400).json({
+      success: false,
+      error: 'email is required',
+    })
+  }
+
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail)) {
+    return res.status(400).json({
+      success: false,
+      error: 'email must be a valid email address',
+    })
+  }
+
+  if (!postmarkClient || !senderEmail) {
+    return res.status(500).json({
+      success: false,
+      error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
+    })
+  }
+
+  try {
+    const supplierState = await getSupplierRegistrationState(normalizedEmail)
+    const resolvedUid = normalizedUid || supplierState.uid
+
+    if (supplierState.exists && String(supplierState.role || supplierState.userData?.userType || '').toLowerCase() && String(supplierState.role || supplierState.userData?.userType || '').toLowerCase() !== 'supplier') {
+      return res.status(409).json({
+        success: false,
+        error: 'This email is already used by another account type.',
+      })
+    }
+
+    if (supplierState.emailVerified && String(supplierState.status || '').toLowerCase() === 'active') {
+      return res.status(409).json({
+        success: false,
+        error: 'This supplier account is already verified. Please sign in.',
+      })
+    }
+
+    if (!resolvedUid) {
+      return res.status(400).json({
+        success: false,
+        error: 'No supplier registration was found for this email.',
+      })
+    }
+
+    const otpResult = await sendRegistrationOtpMessage({
+      email: normalizedEmail,
+      uid: resolvedUid,
+      purpose: SUPPLIER_REGISTRATION_OTP_PURPOSE,
+    })
+
+    return res.json({
+      success: true,
+      recipient: normalizedEmail,
+      uid: resolvedUid,
+      expiresInSeconds: otpResult.expiresInSeconds,
+      retryAfterSeconds: otpResult.retryAfterSeconds,
+      messageId: otpResult.delivery.messageId || null,
+    })
+  } catch (error) {
+    if (error?.statusCode === 429) {
+      return res.status(429).json({
+        success: false,
+        error: error.message,
+        retryAfterSeconds: error.retryAfterSeconds,
+      })
+    }
+    const providerMessage = extractProviderError(error)
+    return res.status(500).json({
+      success: false,
+      error: providerMessage,
+    })
+  }
+})
+
+app.post(VERIFY_SUPPLIER_OTP_PATH, async (req, res) => {
+  const { uid, email, otp } = req.body ?? {}
+
+  if (!adminReady) {
+    return res.status(500).json({
+      success: false,
+      error: adminInitError || 'firebase-admin is not ready',
+    })
+  }
+
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const normalizedUid = String(uid || '').trim()
+  const normalizedOtp = String(otp || '').trim()
+  if (!normalizedEmail || !normalizedOtp) {
+    return res.status(400).json({
+      success: false,
+      error: 'email and otp are required',
+    })
+  }
+
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail)) {
+    return res.status(400).json({
+      success: false,
+      error: 'email must be a valid email address',
+    })
+  }
+
+  try {
+    let resolvedUid = normalizedUid
+    let userRecord = null
+    const firestore = admin.firestore()
+    const otpRef = getRegistrationOtpDocRef(SUPPLIER_REGISTRATION_OTP_PURPOSE, normalizedEmail)
+    const otpSnap = await otpRef.get()
+
+    if (!otpSnap.exists) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active OTP found. Please request a new OTP.',
+      })
+    }
+
+    const otpData = otpSnap.data() || {}
+    if (!resolvedUid) {
+      resolvedUid = String(otpData.uid || '').trim()
+    }
+    const expiresAt = getTimestampDate(otpData.expiresAt)
+    if (otpData.used) {
+      return res.status(400).json({
+        success: false,
+        error: 'This OTP was already used. Please request a new OTP.',
+      })
+    }
+
+    if (expiresAt && expiresAt.getTime() < Date.now()) {
+      await otpRef.set({
+        used: true,
+        expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
+      return res.status(400).json({
+        success: false,
+        error: 'OTP expired. Please request a new OTP.',
+      })
+    }
+
+    if (String(otpData.otp || '').trim() !== normalizedOtp) {
+      await otpRef.set({
+        attempts: admin.firestore.FieldValue.increment(1),
+        lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid OTP. Please try again.',
+      })
+    }
+
+    if (resolvedUid) {
+      try {
+        userRecord = await admin.auth().getUser(resolvedUid)
+      } catch (error) {
+        const code = String(error?.code || '')
+        if (code !== 'auth/user-not-found') {
+          throw error
+        }
+      }
+    }
+
+    const emailUserRecord = await admin.auth().getUserByEmail(normalizedEmail).catch(() => null)
+    if (emailUserRecord?.uid) {
+      resolvedUid = emailUserRecord.uid
+      userRecord = emailUserRecord
+    }
+
+    let recordEmail = String(userRecord?.email || '').trim().toLowerCase()
+    if (!emailUserRecord?.uid && (!resolvedUid || !recordEmail || recordEmail !== normalizedEmail)) {
+      const matchingUsersSnap = await firestore
+        .collection('users')
+        .where('email', '==', normalizedEmail)
+        .limit(1)
+        .get()
+
+      if (!matchingUsersSnap.empty) {
+        resolvedUid = matchingUsersSnap.docs[0].id
+        if (!recordEmail) {
+          recordEmail = normalizedEmail
+        }
+      }
+    }
+
+    if (recordEmail && recordEmail !== normalizedEmail) {
+      return res.status(403).json({
+        success: false,
+        error: 'Email does not match user record',
+      })
+    }
+
+    if (!resolvedUid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Unable to resolve the registration account for this OTP.',
+      })
+    }
+
+    await Promise.all([
+      firestore.collection('users').doc(resolvedUid).set({
+        status: 'Pending Approval',
+        emailVerified: true,
+        emailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }),
+      firestore.collection('supplierApplications').doc(resolvedUid).set({
+        ownerId: resolvedUid,
+        approvalStatus: 'Pending Approval',
+        emailVerified: true,
+        emailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }),
+      otpRef.set({
+        uid: resolvedUid,
+        used: true,
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }),
+    ])
+
+    return res.json({ success: true, data: { uid: resolvedUid } })
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error?.message || 'Failed to verify OTP.',
+      code: error?.code || '',
+    })
   }
 })
 

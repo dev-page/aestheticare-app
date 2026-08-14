@@ -12,6 +12,7 @@ import LocationPicker from '@/components/common/LocationPicker.vue'
 import Terms from '@/components/common/Terms.vue'
 import PrivacyPolicy from '@/components/common/PrivacyPolicy.vue'
 import RegisterCustomer from '@/views/public/RegisterCustomer.vue'
+import RegisterSupplier from '@/views/public/RegisterSupplier.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import {
   validateCavitePinSelection,
@@ -29,6 +30,7 @@ const legacyClinicRoute = computed(() => {
 const selectedAccount = computed(() => {
   const queryAccount = String(route.query.account || '').trim().toLowerCase()
   if (legacyClinicRoute.value) return 'clinic'
+  if (queryAccount === 'supplier') return 'supplier'
   if (queryAccount === 'clinic' || queryAccount === 'clinic-admin' || queryAccount === 'admin') return 'clinic'
   if (queryAccount === 'customer') return 'customer'
   return ''
@@ -41,6 +43,16 @@ const chooseCustomer = async () => {
   await router.replace({
     name: 'register',
     query: { account: 'customer' },
+  })
+}
+
+const chooseSupplier = async () => {
+  await router.replace({
+    name: 'register',
+    query: {
+      ...route.query,
+      account: 'supplier',
+    },
   })
 }
 
@@ -2594,6 +2606,7 @@ const submitDocuments = async () => {
 
 <template>
   <RegisterCustomer v-if="selectedAccount === 'customer'" />
+  <RegisterSupplier v-else-if="selectedAccount === 'supplier'" />
 
   <div v-else-if="selectedAccount === 'clinic'" class="min-h-[100dvh] lg:h-screen bg-gradient-to-br from-cream-50 via-cream-100 to-gold-100 overflow-x-hidden no-scrollbar relative">
     <div class="pointer-events-none absolute inset-0">
@@ -3285,10 +3298,41 @@ const submitDocuments = async () => {
             <p class="text-xs uppercase tracking-[0.28em] text-[#a56b44] font-semibold">Create Your Account</p>
             <h1 class="register-title mt-3 text-4xl sm:text-5xl leading-tight text-[#4a2c1e]">Choose how you want to register.</h1>
             <p class="mt-4 max-w-2xl text-sm sm:text-base text-charcoal-600">
-              Start with the account type that fits you. Customers can create a personal account, while clinic admins can continue with clinic onboarding and verification.
+              Start with the account type that fits you. Customers can create a personal account, suppliers can register their business, and clinic admins can continue with clinic onboarding and verification.
             </p>
 
-            <div class="mt-8 grid gap-4 lg:grid-cols-2">
+            <div class="mt-8 grid gap-4 lg:grid-cols-3">
+              <button type="button" class="choice-card choice-card-highlight" @click="chooseSupplier">
+                <div class="choice-art choice-art-clinic" aria-hidden="true">
+                  <svg viewBox="0 0 240 160" class="choice-illustration" role="img" aria-label="">
+                    <defs>
+                      <linearGradient id="supplierBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#fff7ee" />
+                        <stop offset="100%" stop-color="#eed8b9" />
+                      </linearGradient>
+                      <filter id="supplierShadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#8c5a3a" flood-opacity="0.12" />
+                      </filter>
+                    </defs>
+                    <rect x="24" y="22" width="192" height="116" rx="28" fill="url(#supplierBg)" filter="url(#supplierShadow)" />
+                    <path d="M66 104h108" stroke="#9f6946" stroke-width="4" stroke-linecap="round" />
+                    <path d="M84 50h72v42H84z" fill="#fffaf3" stroke="#c99673" stroke-width="4" rx="16" />
+                    <path d="M96 63h48M96 74h28" stroke="#c99673" stroke-width="3.4" stroke-linecap="round" />
+                    <rect x="150" y="54" width="34" height="30" rx="8" fill="#fffaf3" stroke="#c99673" stroke-width="3.2" />
+                    <path d="M157 64h20" stroke="#9f6946" stroke-width="3" stroke-linecap="round" />
+                    <path d="M165 58v12" stroke="#9f6946" stroke-width="3" stroke-linecap="round" />
+                    <circle cx="52" cy="46" r="10" fill="#f3cfa8" opacity="0.35" />
+                    <circle cx="188" cy="112" r="12" fill="#d9a87b" opacity="0.18" />
+                  </svg>
+                </div>
+                <div class="choice-body">
+                  <p class="choice-kicker">Business Access</p>
+                  <h2 class="choice-title">Register as Supplier</h2>
+                  <p class="choice-copy">Create your business account, upload documents, verify with OTP, and wait for approval.</p>
+                </div>
+                <span class="choice-cta">Continue</span>
+              </button>
+
               <button type="button" class="choice-card" @click="chooseCustomer">
                 <div class="choice-art choice-art-customer" aria-hidden="true">
                   <svg viewBox="0 0 240 160" class="choice-illustration" role="img" aria-label="">

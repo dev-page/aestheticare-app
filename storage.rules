@@ -56,6 +56,12 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    match /supplier-registration/{ownerId}/{documentType}/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == ownerId;
+      allow create: if request.auth != null && request.auth.uid == ownerId && isDocumentUpload();
+      allow update, delete: if false;
+    }
+
     match /support-tickets/{userId}/{ticketId}/{fileName} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == userId && isImageUpload();

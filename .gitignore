@@ -29,7 +29,8 @@ dist-ssr
 .vercel/
 
 # Ignore OTP backend secrets and generated files
-otp-backend/node_modules/
-otp-backend/*.log
-otp-backend/.env
-otp-backend/serviceAccountKey.json
+backend/otp-backend/node_modules/
+backend/otp-backend/*.log
+backend/otp-backend/.env
+backend/otp-backend/.env.*
+backend/otp-backend/serviceAccountKey.json
