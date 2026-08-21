@@ -20,7 +20,8 @@ export default {
       { label: 'Dashboard', icon: 'home', to: '/supply/dashboard', feature: 'inventory', permission: 'inventory:view' },
       { label: 'Suppliers', icon: 'users', to: '/supply/suppliers', feature: 'inventory', permission: 'inventory:view' },
       { label: 'Catalog', icon: 'clipboard', to: '/supply/catalog', feature: 'inventory', permission: 'inventory:view' },
-      { label: 'Purchase Requests', icon: 'cart', to: '/supply/purchase-requests', feature: 'inventory', permissionsAny: ['inventory:create', 'inventory:review'] }
+      { label: 'Purchase Requests', icon: 'cart', to: '/supply/purchase-requests', feature: 'inventory', permissionsAny: ['inventory:create', 'inventory:review'] },
+      { label: 'Logistics', icon: 'truck', to: '/supply/logistics', feature: 'inventory', permissionsAny: ['orders:view', 'inventory:view'] }
     ]
 
     return { items }

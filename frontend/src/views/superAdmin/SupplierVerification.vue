@@ -1,57 +1,57 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
+  <div class="flex min-h-screen bg-slate-950">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
-      <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+    <main class="flex-1 p-6 md:p-8">
+      <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 class="text-3xl font-bold text-white mb-2">Clinic Verification</h1>
-          <p class="text-slate-400">Pending clinic owner registrations waiting for admin approval.</p>
+          <h1 class="text-3xl font-bold text-white">Supplier Verification</h1>
+          <p class="mt-2 text-slate-400">Review supplier business registrations before they are allowed into the procurement flow.</p>
         </div>
 
         <button
           type="button"
-          class="px-4 py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-800"
+          class="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
           :disabled="loading"
-          @click="loadPendingClinics"
+          @click="loadPendingSuppliers"
         >
           {{ loading ? 'Refreshing...' : 'Refresh' }}
         </button>
       </div>
 
-      <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
+      <p v-if="error" class="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+        {{ error }}
+      </p>
 
-      <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+      <section class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
         <table class="w-full text-sm">
-          <thead class="border-b border-slate-700">
+          <thead class="border-b border-slate-800 bg-slate-900">
             <tr>
-              <th class="text-left text-slate-300 px-4 py-3">Full Name</th>
-              <th class="text-left text-slate-300 px-4 py-3">Email</th>
-              <th class="text-left text-slate-300 px-4 py-3">Status</th>
-              <th class="text-left text-slate-300 px-4 py-3">Action</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-300">Business Name</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-300">Email</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-300">Status</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-300">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td class="px-4 py-3 text-slate-200" colspan="4">Loading pending clinics...</td>
+              <td colspan="4" class="px-4 py-4 text-slate-300">Loading pending supplier registrations...</td>
             </tr>
-
-            <tr v-else-if="!pendingClinics.length">
-              <td class="px-4 py-3 text-slate-200" colspan="4">No pending clinics.</td>
+            <tr v-else-if="!pendingSuppliers.length">
+              <td colspan="4" class="px-4 py-4 text-slate-300">No pending supplier registrations.</td>
             </tr>
-
-            <tr v-for="row in pendingClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0">
-              <td class="px-4 py-3 text-slate-100">{{ row.fullName }}</td>
+            <tr v-for="row in pendingSuppliers" :key="row.id" class="border-b border-slate-800/70 last:border-b-0">
+              <td class="px-4 py-3 text-slate-100">{{ row.businessName }}</td>
               <td class="px-4 py-3 text-slate-300">{{ row.email || '-' }}</td>
-              <td class="px-4 py-3 text-slate-300">
-                <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-300">
+              <td class="px-4 py-3">
+                <span class="rounded-full border border-amber-400/30 bg-amber-400/15 px-2.5 py-1 text-xs font-semibold text-amber-200">
                   {{ row.statusLabel }}
                 </span>
               </td>
               <td class="px-4 py-3">
                 <button
                   type="button"
-                  class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs"
+                  class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500"
                   @click="openDetails(row)"
                 >
                   View
@@ -62,85 +62,90 @@
         </table>
       </section>
 
-      <div v-if="showModal && selectedRecord" class="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
-        <div class="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl p-6">
-          <div class="flex items-start justify-between gap-4 mb-6">
+      <div v-if="showModal && selectedRecord" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div class="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-800 bg-slate-950 p-6">
+          <div class="mb-6 flex items-start justify-between gap-4">
             <div>
-              <h2 class="text-2xl text-white font-semibold">Clinic Registration Details</h2>
-              <p class="text-slate-400 text-sm">Review and approve/reject this clinic owner registration.</p>
+              <h2 class="text-2xl font-bold text-white">Supplier Registration Details</h2>
+              <p class="mt-1 text-sm text-slate-400">Review the business profile and submitted documents.</p>
             </div>
-            <button class="text-slate-300 hover:text-white" @click="closeModal">Close</button>
+            <button class="text-sm text-slate-300 hover:text-white" @click="closeModal">Close</button>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <p class="text-xs text-slate-400 mb-1">Full Name</p>
-              <p class="text-white">{{ selectedRecord.fullName }}</p>
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Business Name</p>
+              <p class="mt-2 text-white">{{ selectedRecord.businessName }}</p>
             </div>
-            <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <p class="text-xs text-slate-400 mb-1">Email</p>
-              <p class="text-white">{{ selectedRecord.email || '-' }}</p>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Owner Name</p>
+              <p class="mt-2 text-white">{{ selectedRecord.fullName }}</p>
             </div>
-            <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <p class="text-xs text-slate-400 mb-1">Clinic Name</p>
-              <p class="text-white">{{ selectedRecord.clinicName || '-' }}</p>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Email</p>
+              <p class="mt-2 text-white">{{ selectedRecord.email || '-' }}</p>
             </div>
-            <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <p class="text-xs text-slate-400 mb-1">Clinic Location</p>
-              <p class="text-white">{{ selectedRecord.clinicLocation || '-' }}</p>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Contact Number</p>
+              <p class="mt-2 text-white">{{ selectedRecord.contactNumber || '-' }}</p>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4 md:col-span-2">
+              <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Business Address</p>
+              <p class="mt-2 text-white">{{ selectedRecord.businessAddress || '-' }}</p>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4 md:col-span-2">
+              <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Tax Registration Number</p>
+              <p class="mt-2 text-white">{{ selectedRecord.taxRegistrationNumber || '-' }}</p>
             </div>
           </div>
 
-          <section class="mb-6">
-            <h3 class="text-white font-semibold mb-3">Submitted Documents</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <article v-for="docItem in selectedRecord.documents" :key="docItem.key" class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <p class="text-sm text-slate-200 mb-3">{{ docItem.label }}</p>
+          <section class="mt-6">
+            <h3 class="mb-3 text-lg font-semibold text-white">Submitted Documents</h3>
+            <div class="grid gap-4 md:grid-cols-2">
+              <article
+                v-for="docItem in selectedRecord.documents"
+                :key="docItem.key"
+                class="rounded-2xl border border-slate-800 bg-slate-900 p-4"
+              >
+                <p class="mb-3 text-sm text-slate-200">{{ docItem.label }}</p>
                 <div v-if="docItem.url">
                   <img
                     v-if="docItem.isImage"
                     :src="docItem.url"
                     :alt="docItem.label"
-                    class="w-full h-44 object-cover rounded-lg border border-slate-600 mb-2"
+                    class="mb-2 h-44 w-full rounded-lg border border-slate-700 object-cover"
                   />
-                  <a
-                    :href="docItem.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="text-sky-300 hover:text-sky-200 text-xs underline"
-                  >
-                    Open Document
+                  <a :href="docItem.url" target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-sky-300 underline">
+                    Open document
                   </a>
                 </div>
-
-                <p v-else class="text-slate-500 text-xs">No file uploaded.</p>
+                <p v-else class="text-xs text-slate-500">No file uploaded.</p>
               </article>
             </div>
           </section>
 
-          <section class="mb-4">
-            <label class="block text-xs text-slate-400 mb-1">Rejection Remark (required when rejecting)</label>
+          <section class="mt-6">
+            <label class="mb-1 block text-xs uppercase tracking-[0.16em] text-slate-400">Rejection Remark</label>
             <textarea
               v-model="rejectionRemark"
               rows="3"
-              placeholder="Enter reason for rejection..."
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-slate-500"
+              class="w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-slate-100 outline-none focus:border-slate-500"
+              placeholder="Explain why the registration is being rejected..."
             ></textarea>
           </section>
 
-          <div class="flex flex-col sm:flex-row gap-3 sm:justify-end">
+          <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
             <button
               type="button"
-              class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+              class="rounded-xl bg-emerald-600 px-4 py-2.5 font-semibold text-white transition hover:bg-emerald-500"
               :disabled="processing"
               @click="approveSelected"
             >
               {{ processing ? 'Processing...' : 'Approve' }}
             </button>
-
             <button
               type="button"
-              class="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white"
+              class="rounded-xl bg-rose-600 px-4 py-2.5 font-semibold text-white transition hover:bg-rose-500"
               :disabled="processing"
               @click="rejectSelected"
             >
@@ -153,38 +158,29 @@
   </div>
 </template>
 
-<script>
+<script setup>
 import { onMounted, ref } from 'vue'
-import { doc, getDoc, getDocs, collection, updateDoc, serverTimestamp, query, where } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
-import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
-const normalizePlanLabel = (value) => {
-  const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return 'Not specified'
-  if (raw.includes('free')) return 'FreePlan'
-  if (raw.includes('basic')) return 'Basic'
-  if (raw.includes('premium')) return 'Premium'
-  return value
-}
-
-const normalizeStatusLabel = (clinicStatus, userStatus) => {
-  return String(clinicStatus || userStatus || 'Pending Approval')
-}
+const auth = getAuth()
+const loading = ref(false)
+const processing = ref(false)
+const error = ref('')
+const pendingSuppliers = ref([])
+const showModal = ref(false)
+const selectedRecord = ref(null)
+const rejectionRemark = ref('')
 
 const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
   const docs = { ...(draftDocuments || {}), ...(submittedDocuments || {}) }
   const definitions = [
-    { key: 'businessPermit', label: 'Business Permit/Registration' },
-    { key: 'governmentIdRepresentativeFront', label: 'Government-Issued ID of Representative (Front)' },
-    { key: 'governmentIdRepresentativeBack', label: 'Government-Issued ID of Representative (Back)' },
-    { key: 'dohAccreditation', label: 'DOH Accreditation' },
-    { key: 'fdaApproval', label: 'FDA Approval' },
-    { key: 'prcIdMedicalDirector', label: 'PRC ID of Medical Director' },
+    { key: 'taxRegistration', label: 'Tax Registration Document' },
+    { key: 'businessRegistration', label: 'Business Registration Document' },
   ]
 
   return definitions.map((item) => {
@@ -200,291 +196,231 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
   })
 }
 
-const getPlanDurationDays = (planKey) => (planKey === 'free-trial' ? 14 : 30)
-const toDateFromPayment = (paidSeconds, createdSeconds) => {
-  const baseMillis = paidSeconds
-    ? paidSeconds * 1000
-    : createdSeconds
-      ? createdSeconds * 1000
-      : Date.now()
-  return new Date(baseMillis)
+const toBusinessName = (record = {}) => {
+  return (
+    String(record.businessName || '').trim() ||
+    String(record.name || '').trim() ||
+    'Unnamed Supplier'
+  )
 }
 
-export default {
-  name: 'SuperAdminClinicVerification',
-  components: { SuperAdminSidebar },
-  setup() {
-    const auth = getAuth()
-    const loading = ref(false)
-    const processing = ref(false)
-    const error = ref('')
-    const pendingClinics = ref([])
+const loadPendingSuppliers = async () => {
+  loading.value = true
+  error.value = ''
 
-    const showModal = ref(false)
-    const selectedRecord = ref(null)
-    const rejectionRemark = ref('')
-    const forcedPlanByEmail = {
-      'kenken.leon31@gmail.com': { plan: 'basic', paymentStatus: 'paid' },
-    }
-    const fetchFromBackend = async (path, options = {}) => {
-      const candidates = OTP_BACKEND_CANDIDATES
-      let lastError = null
-
-      for (const baseUrl of candidates) {
-        try {
-          const response = await fetch(`${baseUrl}${path}`, options)
-          if (response.status === 404) {
-            lastError = new Error(`Endpoint not found on ${baseUrl}`)
-            continue
-          }
-          const contentType = response.headers.get('content-type') || ''
-          if (!contentType.toLowerCase().includes('application/json')) {
-            lastError = new Error(`Non-JSON response from ${baseUrl}`)
-            continue
-          }
-          return response
-        } catch (err) {
-          lastError = err
-        }
-      }
-
-      throw lastError || new Error(`Failed to reach backend service at ${BACKEND_URL}. Ensure otp-backend is running.`)
-    }
-
-    const loadPendingClinics = async () => {
-      loading.value = true
-      error.value = ''
-
-      try {
-        const clinicsSnap = await getDocs(collection(db, 'clinics'))
-        const pending = clinicsSnap.docs
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-          .filter((clinic) => String(clinic.approvalStatus || '').toLowerCase().includes('pending approval'))
-
-        const rows = await Promise.all(
-          pending.map(async (clinic) => {
-            const userSnap = await getDoc(doc(db, 'users', clinic.id))
-            const user = userSnap.exists() ? userSnap.data() : {}
-            const fullName =
-              String(user.fullName || '').trim() ||
-              `${String(user.firstName || '').trim()} ${String(user.lastName || '').trim()}`.trim() ||
-              'Unnamed User'
-
-            const normalizedEmail = String(user.email || '').trim().toLowerCase()
-            const forcedPlan = forcedPlanByEmail[normalizedEmail] || null
-
-            if (forcedPlan) {
-              const paymentsSnap = await getDocs(query(
-                collection(db, 'planPayments'),
-                where('payerEmail', '==', normalizedEmail),
-                where('status', '==', 'Paid'),
-              ))
-
-              let latestPayment = null
-              paymentsSnap.forEach((docSnap) => {
-                const data = docSnap.data() || {}
-                const createdAt = data.createdAt?.seconds || 0
-                if (!latestPayment || createdAt > latestPayment.createdAt) {
-                  latestPayment = {
-                    id: docSnap.id,
-                    paidAtSeconds: Number(data.paymongoPaidAt || 0),
-                    createdAt,
-                  }
-                }
-              })
-
-              const startedAt = toDateFromPayment(latestPayment?.paidAtSeconds || 0, latestPayment?.createdAt || 0)
-              const expiresAt = new Date(
-                startedAt.getTime() + getPlanDurationDays(forcedPlan.plan) * 24 * 60 * 60 * 1000
-              )
-
-              await Promise.all([
-                updateDoc(doc(db, 'clinics', clinic.id), {
-                  subscriptionPlan: forcedPlan.plan,
-                  paymentStatus: forcedPlan.paymentStatus,
-                  paymentId: latestPayment?.id || clinic.paymentId || user.paymentId || null,
-                  subscriptionStartedAt: startedAt,
-                  subscriptionExpiresAt: expiresAt,
-                }),
-                updateDoc(doc(db, 'users', clinic.id), {
-                  subscriptionPlan: forcedPlan.plan,
-                  paymentStatus: forcedPlan.paymentStatus,
-                  paymentId: latestPayment?.id || clinic.paymentId || user.paymentId || null,
-                  subscriptionStartedAt: startedAt,
-                  subscriptionExpiresAt: expiresAt,
-                }),
-              ])
-            }
-
-            const resolvedPlan = forcedPlan?.plan || clinic.subscriptionPlan || user.subscriptionPlan || clinic.plan || user.plan
-            const resolvedPayment = forcedPlan?.paymentStatus || clinic.paymentStatus || user.paymentStatus || '-'
-
-            return {
-              id: clinic.id,
-              fullName,
-              email: user.email || '',
-              statusLabel: normalizeStatusLabel(clinic.approvalStatus, user.status),
-              clinicName: clinic.clinicName || '',
-              clinicLocation: clinic.clinicLocation || '',
-              planKey: String(resolvedPlan || '').trim().toLowerCase(),
-              planLabel: normalizePlanLabel(resolvedPlan),
-              paymentStatus: resolvedPayment,
-              documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
-              createdAt: clinic.createdAt || user.createdAt || null,
-            }
-          })
-        )
-
-        pendingClinics.value = sortRecordsNewestFirst(rows)
-      } catch (err) {
-        console.error('Failed to load pending clinic registrations:', err)
-        error.value = 'Failed to load clinic verification list. Please try again.'
-      } finally {
-        loading.value = false
-      }
-    }
-
-    const openDetails = (record) => {
-      selectedRecord.value = record
-      rejectionRemark.value = ''
-      showModal.value = true
-    }
-
-    const closeModal = () => {
-      showModal.value = false
-      selectedRecord.value = null
-      rejectionRemark.value = ''
-    }
-
-    const approveSelected = async () => {
-      if (!selectedRecord.value) return
-
-      const result = await Swal.fire({
-        title: 'Approve Registration?',
-        text: `Approve ${selectedRecord.value.fullName} as a verified clinic owner?`,
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, approve',
-        cancelButtonText: 'Cancel',
+  try {
+    const snapshot = await getDocs(collection(db, 'supplierApplications'))
+    const pending = snapshot.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .filter((supplier) => {
+        const status = String(supplier.approvalStatus || supplier.status || '').trim().toLowerCase()
+        return status.includes('pending')
       })
-      if (!result.isConfirmed) return
 
-      processing.value = true
-      try {
-        const reviewerId = auth.currentUser?.uid || null
-        await Promise.all([
-          updateDoc(doc(db, 'clinics', selectedRecord.value.id), {
-            approvalStatus: 'Approved',
-            approvedAt: serverTimestamp(),
-            rejectionReason: '',
-            rejectedAt: null,
-            reviewedBy: reviewerId,
-          }),
-          updateDoc(doc(db, 'users', selectedRecord.value.id), {
-            status: 'Active',
-            approvedAt: serverTimestamp(),
-          }),
-        ])
+    const rows = await Promise.all(
+      pending.map(async (application) => {
+        const userSnap = await getDoc(doc(db, 'users', application.id))
+        const userData = userSnap.exists() ? userSnap.data() : {}
+        const fullName =
+          String(userData.fullName || '').trim() ||
+          `${String(userData.firstName || '').trim()} ${String(userData.lastName || '').trim()}`.trim() ||
+          'Unnamed User'
 
-        await Swal.fire({
-          title: 'Approved',
-          text: 'Clinic registration has been approved.',
-          icon: 'success',
-          timer: 1500,
-          showConfirmButton: false,
-        })
-
-        closeModal()
-        await loadPendingClinics()
-      } catch (err) {
-        console.error('Failed to approve clinic registration:', err)
-        error.value = 'Failed to approve registration. Please try again.'
-      } finally {
-        processing.value = false
-      }
-    }
-
-    const rejectSelected = async () => {
-      if (!selectedRecord.value) return
-      const remark = String(rejectionRemark.value || '').trim()
-      if (!remark) {
-        await Swal.fire({
-          title: 'Remark Required',
-          text: 'Please enter a rejection reason before rejecting this registration.',
-          icon: 'warning',
-        })
-        return
-      }
-
-      const result = await Swal.fire({
-        title: 'Reject Registration?',
-        text: `Reject ${selectedRecord.value.fullName}?`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, reject',
-        cancelButtonText: 'Cancel',
+        return {
+          id: application.id,
+          businessName: toBusinessName(application),
+          fullName,
+          email: application.email || userData.email || '',
+          contactNumber: application.contactNumber || userData.contactNumber || '',
+          businessAddress:
+            application.businessAddress ||
+            userData.address ||
+            [
+              application.businessAddressStreet,
+              application.businessAddressBarangay,
+              application.businessAddressCity,
+              application.businessAddressProvince,
+              application.businessAddressPostalCode,
+            ]
+              .map((part) => String(part || '').trim())
+              .filter(Boolean)
+              .join(', '),
+          taxRegistrationNumber: application.taxRegistrationNumber || '',
+          statusLabel: String(application.approvalStatus || application.status || 'Pending Approval'),
+          documents: mapDocs(application.documents || {}, application.draftDocuments || {}),
+          application,
+          userData,
+          createdAt: application.createdAt || userData.createdAt || null,
+        }
       })
-      if (!result.isConfirmed) return
+    )
 
-      processing.value = true
-      try {
-        const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
-        if (!token) {
-          throw new Error('Missing authorization token')
-        }
-        const reviewerId = auth.currentUser?.uid || null
-        const response = await fetchFromBackend('/admin/reject-clinic-registration', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            uid: selectedRecord.value.id,
-            rejectionReason: remark,
-            reviewedBy: reviewerId,
-          }),
-        })
-
-        const payload = await response.json()
-        if (!response.ok || !payload?.success) {
-          throw new Error(payload?.error || 'Failed to reject and delete account.')
-        }
-
-        await Swal.fire({
-          title: 'Rejected',
-          text: 'Clinic registration has been rejected and account removed.',
-          icon: 'success',
-          timer: 1500,
-          showConfirmButton: false,
-        })
-
-        closeModal()
-        await loadPendingClinics()
-      } catch (err) {
-        console.error('Failed to reject clinic registration:', err)
-        error.value = 'Failed to reject registration. Please try again.'
-      } finally {
-        processing.value = false
-      }
-    }
-
-    onMounted(loadPendingClinics)
-
-    return {
-      loading,
-      processing,
-      error,
-      pendingClinics,
-      showModal,
-      selectedRecord,
-      rejectionRemark,
-      loadPendingClinics,
-      openDetails,
-      closeModal,
-      approveSelected,
-      rejectSelected,
-    }
-  },
+    pendingSuppliers.value = sortRecordsNewestFirst(rows)
+  } catch (err) {
+    console.error('Failed to load supplier registrations:', err)
+    error.value = 'Failed to load supplier verification list. Please try again.'
+  } finally {
+    loading.value = false
+  }
 }
+
+const openDetails = (record) => {
+  selectedRecord.value = record
+  rejectionRemark.value = ''
+  showModal.value = true
+}
+
+const closeModal = () => {
+  showModal.value = false
+  selectedRecord.value = null
+  rejectionRemark.value = ''
+}
+
+const approveSelected = async () => {
+  if (!selectedRecord.value) return
+
+  const result = await Swal.fire({
+    title: 'Approve Supplier?',
+    text: `Approve ${selectedRecord.value.businessName} as a verified supplier?`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, approve',
+    cancelButtonText: 'Cancel',
+  })
+
+  if (!result.isConfirmed) return
+
+  processing.value = true
+  try {
+    const reviewerId = auth.currentUser?.uid || null
+    const application = selectedRecord.value.application || {}
+    const userData = selectedRecord.value.userData || {}
+
+    const supplierPayload = {
+      ownerId: selectedRecord.value.id,
+      name: selectedRecord.value.businessName,
+      businessName: selectedRecord.value.businessName,
+      email: selectedRecord.value.email || '',
+      contactNumber: selectedRecord.value.contactNumber || '',
+      contact: selectedRecord.value.contactNumber || '',
+      phone: selectedRecord.value.contactNumber || '',
+      address: selectedRecord.value.businessAddress || '',
+      businessAddress: selectedRecord.value.businessAddress || '',
+      businessAddressStreet: application.businessAddressStreet || userData.addressStreet || '',
+      businessAddressBarangay: application.businessAddressBarangay || userData.addressBarangay || '',
+      businessAddressCity: application.businessAddressCity || userData.addressCity || '',
+      businessAddressProvince: application.businessAddressProvince || userData.addressProvince || '',
+      businessAddressPostalCode: application.businessAddressPostalCode || userData.addressPostalCode || '',
+      businessAddressLat: application.businessAddressLat || userData.addressLat || '',
+      businessAddressLng: application.businessAddressLng || userData.addressLng || '',
+      profilePicture: userData.profilePicture || application.profilePicture || '',
+      approvalStatus: 'Approved',
+      status: 'Active',
+      reviewedBy: reviewerId,
+      reviewedAt: serverTimestamp(),
+      createdAt: application.createdAt || serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      offeredItems: Array.isArray(application.offeredItems) ? application.offeredItems : [],
+      documents: application.documents || {},
+    }
+
+    await Promise.all([
+      updateDoc(doc(db, 'supplierApplications', selectedRecord.value.id), {
+        approvalStatus: 'Approved',
+        status: 'Active',
+        approvedAt: serverTimestamp(),
+        rejectedAt: null,
+        rejectionReason: '',
+        reviewedBy: reviewerId,
+      }),
+      updateDoc(doc(db, 'users', selectedRecord.value.id), {
+        role: 'Supplier',
+        userType: 'supplier',
+        approvalStatus: 'Approved',
+        status: 'Active',
+        approvedAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, 'suppliers', selectedRecord.value.id), supplierPayload, { merge: true }),
+    ])
+
+    await Swal.fire({
+      title: 'Approved',
+      text: 'Supplier registration has been approved.',
+      icon: 'success',
+      timer: 1500,
+      showConfirmButton: false,
+    })
+
+    closeModal()
+    await loadPendingSuppliers()
+  } catch (err) {
+    console.error('Failed to approve supplier registration:', err)
+    error.value = 'Failed to approve supplier registration. Please try again.'
+  } finally {
+    processing.value = false
+  }
+}
+
+const rejectSelected = async () => {
+  if (!selectedRecord.value) return
+
+  const remark = String(rejectionRemark.value || '').trim()
+  if (!remark) {
+    await Swal.fire({
+      title: 'Remark Required',
+      text: 'Please enter a rejection reason before rejecting this supplier registration.',
+      icon: 'warning',
+    })
+    return
+  }
+
+  const result = await Swal.fire({
+    title: 'Reject Supplier?',
+    text: `Reject ${selectedRecord.value.businessName}?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, reject',
+    cancelButtonText: 'Cancel',
+  })
+
+  if (!result.isConfirmed) return
+
+  processing.value = true
+  try {
+    const reviewerId = auth.currentUser?.uid || null
+    await Promise.all([
+      updateDoc(doc(db, 'supplierApplications', selectedRecord.value.id), {
+        approvalStatus: 'Rejected',
+        status: 'Inactive',
+        rejectionReason: remark,
+        rejectedAt: serverTimestamp(),
+        reviewedBy: reviewerId,
+      }),
+      updateDoc(doc(db, 'users', selectedRecord.value.id), {
+        status: 'Inactive',
+        approvalStatus: 'Rejected',
+        rejectionReason: remark,
+        rejectedAt: serverTimestamp(),
+      }),
+    ])
+
+    await Swal.fire({
+      title: 'Rejected',
+      text: 'Supplier registration has been rejected.',
+      icon: 'success',
+      timer: 1500,
+      showConfirmButton: false,
+    })
+
+    closeModal()
+    await loadPendingSuppliers()
+  } catch (err) {
+    console.error('Failed to reject supplier registration:', err)
+    error.value = 'Failed to reject supplier registration. Please try again.'
+  } finally {
+    processing.value = false
+  }
+}
+
+onMounted(loadPendingSuppliers)
 </script>

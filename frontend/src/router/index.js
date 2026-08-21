@@ -77,6 +77,7 @@ const routes = [
   { path: "/supply/suppliers", name: "supply-suppliers", component: () => import("@/views/admin/owner/operations/SupplySuppliers.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
   { path: "/supply/catalog", name: "supply-catalog", component: () => import("@/views/admin/owner/operations/SupplyCatalog.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
   { path: "/supply/purchase-requests", name: "supply-purchase-requests", component: () => import("@/views/admin/owner/operations/SupplyPurchaseRequests.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:create" } },
+  { path: "/supply/logistics", name: "supply-logistics", component: () => import("@/views/admin/owner/operations/LogisticsOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
 
   // Owner routes
   { path: "/owner/dashboard", name: "owner-dashboard", component: () => import("@/views/admin/owner/OwnerDashboard.vue"), meta: { requiresAuth: true } },
@@ -105,6 +106,7 @@ const routes = [
   { path: "/manager/item-catalog", name: "manager-item-catalog", component: () => import("@/views/admin/owner/operations/SupplyCatalog.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
   { path: "/manager/suppliers", name: "manager-suppliers", component: () => import("@/views/admin/owner/operations/SupplySuppliers.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
   { path: "/manager/purchase-requests", name: "manager-purchase-requests", component: () => import("@/views/admin/owner/operations/SupplyPurchaseRequests.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:create" } },
+  { path: "/manager/logistics", name: "manager-logistics", component: () => import("@/views/admin/owner/operations/LogisticsOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
   { path: "/manager/product-service-listing", name: "manager-product-service-listing", component: () => import("@/views/admin/owner/operations/ProductServiceListing.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },
   { path: "/manager/orders", name: "manager-orders", component: () => import("@/views/admin/owner/operations/ManagerOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
 
@@ -137,6 +139,12 @@ const routes = [
   { path: "/customer/cart", name: "customer-cart", component: () => import("@/views/customer/MyCart.vue"), meta: { requiresAuth: true } },
   { path: "/customer/profile", name: "customer-profile", component: () => import("@/views/customer/MyProfile.vue"), meta: { requiresAuth: true } },
 
+  // Supplier routes
+  { path: "/supplier", redirect: "/supplier/dashboard" },
+  { path: "/supplier/dashboard", name: "supplier-dashboard", component: () => import("@/views/supplier/SupplierDashboard.vue"), meta: { requiresAuth: true } },
+  { path: "/supplier/profile", name: "supplier-profile", component: () => import("@/views/supplier/SupplierProfile.vue"), meta: { requiresAuth: true } },
+  { path: "/supplier/supplies", name: "supplier-supplies", component: () => import("@/views/supplier/SupplierSupplies.vue"), meta: { requiresAuth: true } },
+
   // Superadmin routes
   { path: "/superadmin/dashboard", name: "superadmin-dashboard", component: () => import("@/views/superAdmin/Dashboard.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/admin-list", name: "superadmin-admin-list", component: () => import("@/views/superAdmin/AdminList.vue"), meta: { requiresAuth: true } },
@@ -144,6 +152,7 @@ const routes = [
   { path: "/superadmin/subscription/permissions", name: "superadmin-subscription-permissions", component: () => import("@/views/superAdmin/SubscriptionPermission.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/subscription/payments", name: "superadmin-subscription-payments", component: () => import("@/views/superAdmin/SubscriptionPayments.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/clinics/verification", name: "superadmin-clinic-verification", component: () => import("@/views/superAdmin/ClinicVerification.vue"), meta: { requiresAuth: true } },
+  { path: "/superadmin/suppliers/verification", name: "superadmin-supplier-verification", component: () => import("@/views/superAdmin/SupplierVerification.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/clinics/verified", name: "superadmin-clinics-verified", component: () => import("@/views/superAdmin/VerifiedClinics.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/clinics/archived", name: "superadmin-clinics-archived", component: () => import("@/views/superAdmin/ArchivedClinics.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/accounts/users", name: "superadmin-accounts-users", component: () => import("@/views/superAdmin/AccountManagement.vue"), meta: { requiresAuth: true } },

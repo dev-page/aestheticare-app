@@ -34,6 +34,7 @@ const roleRoutes = {
   Superadmin: "/superadmin/dashboard",
   Owner: "/owner/dashboard",
   "Clinic Admin": "/owner/dashboard",
+  Supplier: "/supplier/dashboard",
   Customer: "/customer/home"
 }
 
@@ -46,6 +47,7 @@ const normalizeRoleKey = (value) => {
   if (!compact) return 'Customer'
   if (compact === 'crm') return 'CRM'
   if (compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Clinic Admin'
+  if (compact === 'supplier') return 'Supplier'
   if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') {
     return 'Superadmin'
   }

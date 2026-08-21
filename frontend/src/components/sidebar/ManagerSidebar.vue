@@ -44,6 +44,7 @@ export default {
         children: [
           { label: 'Suppliers', icon: 'users', to: '/manager/suppliers', permission: 'inventory:view' },
           { label: 'Purchase Requests', icon: 'cart', to: '/manager/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'] },
+          { label: 'Logistics', icon: 'truck', to: '/manager/logistics', permissionsAny: ['orders:view', 'inventory:view'] },
           { label: 'Item Catalog', icon: 'clipboard', to: '/manager/item-catalog', permission: 'inventory:view' }
         ]
       },

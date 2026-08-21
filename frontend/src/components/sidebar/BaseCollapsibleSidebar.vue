@@ -648,6 +648,7 @@ export default {
         calendar: 'mdi:calendar-month-outline',
         clipboard: 'mdi:clipboard-text-outline',
         box: 'mdi:package-variant-closed',
+        truck: 'mdi:truck-outline',
         cart: 'mdi:cart-outline',
         tag: 'mdi:tag-outline',
         cash: 'mdi:cash-multiple',

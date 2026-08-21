@@ -5,7 +5,7 @@
     <main class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Accounts Payable</h1>
-        <p class="text-slate-400">Outstanding supplier obligations for purchase requests.</p>
+        <p class="text-slate-400">Outstanding supplier obligations, budget approvals, and variance settlement.</p>
       </div>
 
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
@@ -62,6 +62,21 @@
         </div>
       </div>
 
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+          <p class="text-slate-400 text-sm">Budget Requests</p>
+          <p class="text-2xl font-bold text-cyan-400">{{ budgetRequestedCount }}</p>
+        </div>
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+          <p class="text-slate-400 text-sm">Reimbursements Needed</p>
+          <p class="text-2xl font-bold text-orange-400">{{ reimbursementCount }}</p>
+        </div>
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+          <p class="text-slate-400 text-sm">Funds Returned</p>
+          <p class="text-2xl font-bold text-emerald-400">{{ returnedFundsCount }}</p>
+        </div>
+      </div>
+
       <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <div class="overflow-x-auto">
           <table class="w-full">
@@ -75,6 +90,8 @@
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Paid Amount</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Balance</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Delivery</th>
+                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Budget</th>
+                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Variance</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Status</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Action</th>
               </tr>
@@ -93,25 +110,65 @@
                     {{ row.status || 'Pending' }}
                   </span>
                 </td>
+                <td class="px-6 py-4 text-slate-300">
+                  <div class="space-y-1">
+                    <p class="text-xs">
+                      <span class="text-slate-500">Req:</span>
+                      {{ formatCurrency(getRequestedBudget(row)) }}
+                    </p>
+                    <p class="text-xs">
+                      <span class="text-slate-500">App:</span>
+                      {{ formatCurrency(getApprovedBudget(row)) }}
+                    </p>
+                    <p class="text-xs" :class="budgetStatusClass(row)">
+                      {{ getBudgetStatusLabel(row) }}
+                    </p>
+                  </div>
+                </td>
+                <td class="px-6 py-4">
+                  <span :class="budgetVarianceClass(row)">
+                    {{ formatVariance(getBudgetVariance(row)) }}
+                  </span>
+                </td>
                 <td class="px-6 py-4">
                   <span :class="badgeClass(getPaymentStatus(row))">{{ getPaymentStatus(row) }}</span>
                 </td>
                 <td class="px-6 py-4">
-                  <button
-                    type="button"
-                    class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs disabled:opacity-50"
-                    :disabled="!row.receiptUrl"
-                    @click="openReceiptModal(row)"
-                  >
-                    View Receipt
-                  </button>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <button
+                      v-if="canProcessFinanceWorkflow"
+                      type="button"
+                      class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs disabled:opacity-50"
+                      :disabled="String(row.budgetStatus || '').toLowerCase() === 'approved'"
+                      @click="approveBudget(row)"
+                    >
+                      {{ String(row.budgetStatus || '').toLowerCase() === 'approved' ? 'Budget Approved' : 'Approve Budget' }}
+                    </button>
+                    <button
+                      v-if="canProcessFinanceWorkflow"
+                      type="button"
+                      class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs disabled:opacity-50"
+                      :disabled="!canSettleBudget(row)"
+                      @click="settleBudgetVariance(row)"
+                    >
+                      Settle Variance
+                    </button>
+                    <button
+                      type="button"
+                      class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs disabled:opacity-50"
+                      :disabled="!row.receiptUrl"
+                      @click="openReceiptModal(row)"
+                    >
+                      View Receipt
+                    </button>
+                  </div>
                 </td>
               </tr>
               <tr v-if="rows.length === 0">
-                <td colspan="10" class="px-6 py-8 text-center text-slate-400">No purchase records available.</td>
+                <td colspan="12" class="px-6 py-8 text-center text-slate-400">No purchase records available.</td>
               </tr>
               <tr v-else-if="filteredRows.length === 0">
-                <td colspan="10" class="px-6 py-8 text-center text-slate-400">No payable records matched your filters.</td>
+                <td colspan="12" class="px-6 py-8 text-center text-slate-400">No payable records matched your filters.</td>
               </tr>
             </tbody>
           </table>
@@ -175,6 +232,7 @@ export default {
     const auth = getAuth(getApp())
 
     const currentBranchId = ref('')
+    const currentUserRole = ref('')
     const rows = ref([])
     const showReceiptModal = ref(false)
     const selectedReceiptRow = ref(null)
@@ -183,6 +241,11 @@ export default {
     const selectedDeliveryStatus = ref('')
     const selectedPaymentStatus = ref('')
     const searchQuery = ref('')
+
+    const canProcessFinanceWorkflow = computed(() => {
+      const compactRole = String(currentUserRole.value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+      return compactRole === 'finance' || compactRole === 'owner' || compactRole === 'clinicadmin' || compactRole === 'clinicadministrator'
+    })
 
     const formatCurrency = (value) =>
       new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
@@ -197,6 +260,50 @@ export default {
     }
 
     const getPaymentStatus = (entry) => String(entry.paymentStatus || 'Unpaid').trim() || 'Unpaid'
+
+    const getRequestedBudget = (entry) =>
+      Number(entry.budgetRequestedAmount || entry.totalCost || getTotalCost(entry) || 0)
+
+    const getApprovedBudget = (entry) =>
+      Number(entry.approvedBudgetAmount || 0)
+
+    const getBudgetVariance = (entry) => {
+      const approved = getApprovedBudget(entry)
+      if (approved <= 0) return 0
+      return getTotalCost(entry) - approved
+    }
+
+    const getBudgetStatusLabel = (entry) => {
+      const budgetStatus = String(entry.budgetStatus || '').trim()
+      if (budgetStatus) return budgetStatus
+      const variance = getBudgetVariance(entry)
+      if (variance > 0) return 'Over Budget'
+      if (variance < 0) return 'Under Budget'
+      return 'Unreviewed'
+    }
+
+    const formatVariance = (value) => {
+      const amount = Number(value || 0)
+      if (amount > 0) return `+${formatCurrency(amount)}`
+      if (amount < 0) return `-${formatCurrency(Math.abs(amount))}`
+      return formatCurrency(0)
+    }
+
+    const budgetStatusClass = (entry) => {
+      const status = String(getBudgetStatusLabel(entry)).toLowerCase()
+      if (status.includes('approved')) return 'text-emerald-300'
+      if (status.includes('requested')) return 'text-cyan-300'
+      if (status.includes('over')) return 'text-rose-300'
+      if (status.includes('under')) return 'text-amber-300'
+      return 'text-slate-400'
+    }
+
+    const budgetVarianceClass = (entry) => {
+      const variance = getBudgetVariance(entry)
+      if (variance > 0) return 'font-semibold text-rose-300'
+      if (variance < 0) return 'font-semibold text-emerald-300'
+      return 'font-semibold text-slate-300'
+    }
 
     const getAmountPaid = (entry) => {
       const status = getPaymentStatus(entry)
@@ -250,12 +357,98 @@ export default {
     const totalPayable = computed(() => filteredRows.value.reduce((sum, row) => sum + getBalance(row), 0))
     const unpaidCount = computed(() => filteredRows.value.filter((row) => getPaymentStatus(row) === 'Unpaid').length)
     const partialCount = computed(() => filteredRows.value.filter((row) => getPaymentStatus(row) === 'Partial').length)
+    const budgetRequestedCount = computed(() => filteredRows.value.filter((row) => String(row.budgetStatus || '').toLowerCase() === 'requested').length)
+    const reimbursementCount = computed(() => filteredRows.value.filter((row) => getBudgetVariance(row) > 0).length)
+    const returnedFundsCount = computed(() => filteredRows.value.filter((row) => getBudgetVariance(row) < 0).length)
     const isReceiptImage = (row) => String(row?.receiptMimeType || '').toLowerCase().startsWith('image/')
 
     const loadRows = async () => {
       if (!currentBranchId.value) return
       const snapshot = await getDocs(query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value)))
       rows.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+    }
+
+    const approveBudget = async (row) => {
+      if (!canProcessFinanceWorkflow.value) {
+        toast.error('You do not have permission to approve budgets.')
+        return
+      }
+      if (!row?.id) return
+
+      const approvedBudgetAmount = getRequestedBudget(row)
+      try {
+        await updateDoc(doc(db, 'purchaseRequests', row.id), {
+          budgetStatus: 'Approved',
+          approvedBudgetAmount,
+          budgetApprovedAt: new Date(),
+          budgetSettlementStatus: row.status === 'Delivered' ? 'Pending Settlement' : (row.budgetSettlementStatus || ''),
+          workflowStage: 'Budget Approved',
+          updatedAt: new Date()
+        })
+        row.budgetStatus = 'Approved'
+        row.approvedBudgetAmount = approvedBudgetAmount
+        row.workflowStage = 'Budget Approved'
+        toast.success('Budget approved.')
+        await loadRows()
+      } catch (error) {
+        console.error(error)
+        toast.error('Failed to approve budget.')
+      }
+    }
+
+    const canSettleBudget = (row) => {
+      if (!canProcessFinanceWorkflow.value) return false
+      if (!row?.id) return false
+      if (String(row.budgetStatus || '').toLowerCase() !== 'approved') return false
+      if (String(row.status || '').toLowerCase() !== 'delivered') return false
+      return true
+    }
+
+    const settleBudgetVariance = async (row) => {
+      if (!canSettleBudget(row)) {
+        toast.info('Approve the budget and mark the request as delivered before settling variance.')
+        return
+      }
+
+      const approvedBudgetAmount = getApprovedBudget(row) || getRequestedBudget(row)
+      const actualCost = getTotalCost(row)
+      const variance = actualCost - approvedBudgetAmount
+      const payload = {
+        budgetVariance: variance,
+        budgetSettledAt: new Date(),
+        updatedAt: new Date()
+      }
+
+      if (variance > 0) {
+        payload.budgetSettlementStatus = 'Reimbursement Requested'
+        payload.reimbursementAmount = variance
+        payload.returnedFundsAmount = 0
+        payload.workflowStage = 'Reimbursement Requested from Finance'
+      } else if (variance < 0) {
+        payload.budgetSettlementStatus = 'Funds Returned'
+        payload.returnedFundsAmount = Math.abs(variance)
+        payload.reimbursementAmount = 0
+        payload.workflowStage = 'Excess Funds Returned to Finance'
+      } else {
+        payload.budgetSettlementStatus = 'Settled'
+        payload.reimbursementAmount = 0
+        payload.returnedFundsAmount = 0
+        payload.workflowStage = 'Budget Settled'
+      }
+
+      try {
+        await updateDoc(doc(db, 'purchaseRequests', row.id), payload)
+        row.budgetVariance = variance
+        row.budgetSettlementStatus = payload.budgetSettlementStatus
+        row.reimbursementAmount = payload.reimbursementAmount
+        row.returnedFundsAmount = payload.returnedFundsAmount
+        row.workflowStage = payload.workflowStage
+        toast.success('Budget variance settled.')
+        await loadRows()
+      } catch (error) {
+        console.error(error)
+        toast.error('Failed to settle budget variance.')
+      }
     }
 
     const openReceiptModal = (entry) => {
@@ -274,11 +467,14 @@ export default {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
+          currentUserRole.value = ''
           rows.value = []
           return
         }
         const userSnap = await getDoc(doc(db, 'users', user.uid))
-        currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
+        const userData = userSnap.exists() ? userSnap.data() || {} : {}
+        currentBranchId.value = userData.branchId || ''
+        currentUserRole.value = userData.role || userData.userType || ''
 
         if (!currentBranchId.value) {
           toast.error('Your account has no branch assignment.', { toastId: 'missing-branch-assignment' })
@@ -306,10 +502,20 @@ export default {
       totalPayable,
       unpaidCount,
       partialCount,
+      budgetRequestedCount,
+      reimbursementCount,
+      returnedFundsCount,
       formatCurrency,
       getUnitCost,
       getTotalCost,
       getPaymentStatus,
+      getRequestedBudget,
+      getApprovedBudget,
+      getBudgetVariance,
+      getBudgetStatusLabel,
+      formatVariance,
+      budgetStatusClass,
+      budgetVarianceClass,
       getAmountPaid,
       getBalance,
       badgeClass,
@@ -317,6 +523,10 @@ export default {
       isReceiptImage,
       openReceiptModal,
       closeReceiptModal,
+      canProcessFinanceWorkflow,
+      approveBudget,
+      canSettleBudget,
+      settleBudgetVariance,
     }
   },
 }

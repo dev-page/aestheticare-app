@@ -3,10 +3,10 @@
     <OwnerSidebar />
     
     <main class="flex-1 p-8">
-      <div class="mb-8 flex items-center justify-between">
+        <div class="mb-8 flex items-center justify-between">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Purchase Requests</h1>
-          <p class="text-slate-400">Manage and approve purchase requests from branches</p>
+          <p class="text-slate-400">Manage procurement requests, budget routing, and delivery tracking</p>
           <p v-if="canCreateRequests && !canReviewRequests" class="text-xs text-amber-300 mt-2">
             You can submit requests here. Approval actions are reserved for reviewers.
           </p>
@@ -42,6 +42,21 @@
         <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <h3 class="text-slate-400 text-sm mb-2">Total</h3>
           <p class="text-3xl font-bold text-white">{{ totalCount }}</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+          <h3 class="text-slate-400 text-sm mb-2">Budget Requested</h3>
+          <p class="text-3xl font-bold text-cyan-400">{{ budgetRequestedCount }}</p>
+        </div>
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+          <h3 class="text-slate-400 text-sm mb-2">Logistics Claimed</h3>
+          <p class="text-3xl font-bold text-sky-400">{{ logisticsClaimedCount }}</p>
+        </div>
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+          <h3 class="text-slate-400 text-sm mb-2">Budget Settlements</h3>
+          <p class="text-3xl font-bold text-emerald-400">{{ settledBudgetCount }}</p>
         </div>
       </div>
 
@@ -107,6 +122,7 @@
                 <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Priority</th>
                 <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Date</th>
                 <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Status</th>
+                <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Workflow</th>
                 <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Payment</th>
                 <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Receipts</th>
                 <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Actions</th>
@@ -159,6 +175,11 @@
                   </span>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
+                  <span :class="workflowBadgeClass(request)">
+                    {{ getWorkflowStageLabel(request) }}
+                  </span>
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap">
                   <span
                     @click="canReviewRequests ? togglePaymentStatus(request) : null"
                     :class="[
@@ -197,6 +218,28 @@
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
                   <div v-if="canReviewRequests" class="flex items-center gap-2">
+                    <button
+                      @click="requestBudgetFromFinance(request)"
+                      :disabled="request.status !== 'Approved' || request.status === 'Cancelled' || request.budgetStatus === 'Requested' || request.budgetStatus === 'Approved'"
+                      class="text-cyan-400 hover:text-cyan-300 transition-colors"
+                      :class="{ 'opacity-40 cursor-not-allowed hover:text-cyan-400': request.status !== 'Approved' || request.status === 'Cancelled' || request.budgetStatus === 'Requested' || request.budgetStatus === 'Approved' }"
+                      title="Request budget from Finance"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v8m4-4H8m12 0a8 8 0 11-16 0 8 8 0 0116 0z"></path>
+                      </svg>
+                    </button>
+                    <button
+                      @click="markForLogisticsClaim(request)"
+                      :disabled="request.status === 'Cancelled' || request.logisticsStatus === 'Claimed' || request.budgetStatus !== 'Approved'"
+                      class="text-sky-400 hover:text-sky-300 transition-colors"
+                      :class="{ 'opacity-40 cursor-not-allowed hover:text-sky-400': request.status === 'Cancelled' || request.logisticsStatus === 'Claimed' || request.budgetStatus !== 'Approved' }"
+                      title="Mark order for logistics claim"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h18M12 3v18"></path>
+                      </svg>
+                    </button>
                     <button 
                       @click="markDelivered(request)"
                       :disabled="request.status === 'Delivered' || request.status === 'Cancelled'"
@@ -236,11 +279,11 @@
               </tr>
 
               <tr v-if="requests.length === 0">
-                <td colspan="10" class="px-4 py-8 text-center text-slate-400">No purchase requests yet.</td>
+                <td colspan="11" class="px-4 py-8 text-center text-slate-400">No purchase requests yet.</td>
               </tr>
 
               <tr v-else-if="filteredRequests.length === 0">
-                <td colspan="10" class="px-4 py-8 text-center text-slate-400">No purchase requests matched your filters.</td>
+                <td colspan="11" class="px-4 py-8 text-center text-slate-400">No purchase requests matched your filters.</td>
               </tr>
             </tbody>
           </table>
@@ -317,6 +360,14 @@
                   disabled
                   class="w-full bg-slate-700 text-slate-300 px-4 py-2 rounded-lg border border-slate-600 focus:outline-none"
                 />
+              </div>
+              <div class="col-span-2">
+                <div class="rounded-lg border border-cyan-800 bg-cyan-950/40 p-4">
+                  <p class="text-sm font-semibold text-cyan-100 mb-1">Procurement workflow</p>
+                  <p class="text-xs text-cyan-200/80">
+                    Request item, route the budget to Finance, let Procurement claim the order, then mark delivery so inventory updates automatically.
+                  </p>
+                </div>
               </div>
               <div class="col-span-2">
                 <div class="rounded-lg border border-[#5a3927] bg-[#24160f] p-4">
@@ -683,6 +734,47 @@ export default {
       return activeSuppliers.value.find((s) => s.id === newRequest.value.supplierId) || null
     })
 
+    const getBudgetRequestedAmount = (request) =>
+      Number(request?.budgetRequestedAmount || request?.totalCost || (Number(request?.unitCost || 0) * Number(request?.quantity || 0)) || 0)
+
+    const getApprovedBudgetAmount = (request) =>
+      Number(request?.approvedBudgetAmount || 0)
+
+    const getBudgetVariance = (request) => {
+      const approvedBudget = getApprovedBudgetAmount(request)
+      const actualCost = Number(request?.totalCost || 0)
+      if (approvedBudget <= 0) return 0
+      return actualCost - approvedBudget
+    }
+
+    const getWorkflowStageLabel = (request) => {
+      const budgetStatus = String(request?.budgetStatus || '').trim()
+      const logisticsStatus = String(request?.logisticsStatus || '').trim()
+      const settlementStatus = String(request?.budgetSettlementStatus || '').trim()
+      const explicitStage = String(request?.workflowStage || '').trim()
+      if (explicitStage) return explicitStage
+      if (settlementStatus) return settlementStatus
+      if (logisticsStatus === 'Claimed') return 'Logistics Claimed'
+      if (budgetStatus === 'Requested') return 'Budget Requested'
+      if (budgetStatus === 'Approved' && logisticsStatus !== 'Claimed') return 'Budget Approved'
+      if (request?.status === 'Delivered') return 'Delivered'
+      if (request?.status === 'Cancelled') return 'Cancelled'
+      if (request?.status === 'Delayed') return 'Delayed'
+      if (request?.status === 'Approved') return 'Ready for Procurement'
+      return 'Awaiting Review'
+    }
+
+    const workflowBadgeClass = (request) => {
+      const stage = getWorkflowStageLabel(request)
+      if (stage.includes('Budget Requested')) return 'px-3 py-1 rounded-full text-xs font-medium bg-cyan-500/20 text-cyan-300'
+      if (stage.includes('Budget Approved')) return 'px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300'
+      if (stage.includes('Logistics Claimed')) return 'px-3 py-1 rounded-full text-xs font-medium bg-sky-500/20 text-sky-300'
+      if (stage.includes('Delivered')) return 'px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-300'
+      if (stage.includes('Cancelled')) return 'px-3 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-300'
+      if (stage.includes('Delayed')) return 'px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-300'
+      return 'px-3 py-1 rounded-full text-xs font-medium bg-slate-500/20 text-slate-200'
+    }
+
     const supplierItemOptions = computed(() => {
       const explicitItems = normalizeSupplierItems(selectedSupplier.value)
       if (explicitItems.length > 0) return explicitItems
@@ -832,6 +924,13 @@ export default {
           paymentStatus: data.paymentStatus || 'Unpaid',
           amountPaid: Number(data.amountPaid || 0),
           balance: Number(data.balance || 0),
+          budgetStatus: data.budgetStatus || 'Not Requested',
+          budgetRequestedAmount: Number(data.budgetRequestedAmount || 0),
+          approvedBudgetAmount: Number(data.approvedBudgetAmount || 0),
+          budgetVariance: Number(data.budgetVariance || 0),
+          budgetSettlementStatus: data.budgetSettlementStatus || '',
+          logisticsStatus: data.logisticsStatus || '',
+          workflowStage: data.workflowStage || '',
           receiptUrl: data.receiptUrl || '',
           receiptFileName: data.receiptFileName || '',
           receiptMimeType: data.receiptMimeType || '',
@@ -846,6 +945,9 @@ export default {
     const deliveredCount = computed(() => requests.value.filter((r) => r.status === 'Delivered').length)
     const delayedCount = computed(() => requests.value.filter((r) => r.status === 'Delayed').length)
     const totalCount = computed(() => requests.value.length)
+    const budgetRequestedCount = computed(() => requests.value.filter((r) => String(r.budgetStatus || '').toLowerCase() === 'requested').length)
+    const logisticsClaimedCount = computed(() => requests.value.filter((r) => String(r.logisticsStatus || '').toLowerCase() === 'claimed').length)
+    const settledBudgetCount = computed(() => requests.value.filter((r) => ['Funds Returned', 'Reimbursement Requested', 'Settled'].includes(String(r.budgetSettlementStatus || ''))).length)
 
     const filteredRequests = computed(() => {
       return requests.value.filter(request => {
@@ -904,6 +1006,16 @@ export default {
           notes: String(newRequest.value.notes || '').trim() || null,
           status: autoApproveRequests.value ? 'Approved' : 'Pending',
           approvalRequired: !autoApproveRequests.value,
+          workflowStage: autoApproveRequests.value ? 'Ready for Procurement' : 'Awaiting Procurement Review',
+          budgetStatus: 'Not Requested',
+          budgetRequestedAmount: totalCost,
+          approvedBudgetAmount: 0,
+          budgetVariance: 0,
+          budgetSettlementStatus: '',
+          reimbursementAmount: 0,
+          returnedFundsAmount: 0,
+          procurementStatus: autoApproveRequests.value ? 'Approved' : 'Pending',
+          logisticsStatus: 'Not Claimed',
           paymentStatus: 'Unpaid',
           amountPaid: 0,
           balance: totalCost,
@@ -1018,6 +1130,8 @@ export default {
         await upsertDeliveredItem(request)
         await updateDoc(doc(db, 'purchaseRequests', request.id), {
           status: 'Delivered',
+          workflowStage: 'Delivered - Awaiting Finance Settlement',
+          logisticsStatus: 'Delivered',
           deliveredAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         })
@@ -1035,6 +1149,94 @@ export default {
       } catch (error) {
         console.error(error)
         toast.error('Failed to mark request as delivered.')
+      }
+    }
+
+    const requestBudgetFromFinance = async (request) => {
+      try {
+        if (!request?.id) return
+        if (request.status === 'Cancelled') {
+          toast.info('Cancelled requests cannot request a budget.')
+          return
+        }
+        if (request.status !== 'Approved') {
+          toast.info('Approve the request first before routing the budget to Finance.')
+          return
+        }
+        if (String(request.budgetStatus || '').toLowerCase() === 'requested') {
+          toast.info('Budget has already been requested.')
+          return
+        }
+        if (String(request.budgetStatus || '').toLowerCase() === 'approved') {
+          toast.info('Budget is already approved.')
+          return
+        }
+
+        const budgetAmount = getBudgetRequestedAmount(request)
+        await updateDoc(doc(db, 'purchaseRequests', request.id), {
+          budgetStatus: 'Requested',
+          budgetRequestedAmount: budgetAmount,
+          workflowStage: 'Budget Requested from Finance',
+          budgetRequestedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        })
+
+        request.budgetStatus = 'Requested'
+        request.budgetRequestedAmount = budgetAmount
+        request.workflowStage = 'Budget Requested from Finance'
+        await logManagerActivity(`Requested budget from Finance for ${request.item || 'purchase request'}.`, {
+          type: 'purchase_request_budget_requested',
+          requestId: request.id,
+          item: request.item || '',
+          supplier: request.supplier || '',
+          amount: budgetAmount,
+          details: `Requested budget of P${budgetAmount.toLocaleString('en-PH')} for ${request.item || 'purchase request'}.`
+        })
+        toast.success('Budget request sent to Finance.')
+        await loadRequests()
+      } catch (error) {
+        console.error(error)
+        toast.error('Failed to request budget.')
+      }
+    }
+
+    const markForLogisticsClaim = async (request) => {
+      try {
+        if (!request?.id) return
+        if (request.status === 'Cancelled') {
+          toast.info('Cancelled requests cannot be claimed.')
+          return
+        }
+        if (String(request.budgetStatus || '').toLowerCase() !== 'approved') {
+          toast.info('Approve the budget first before claiming the order.')
+          return
+        }
+        if (String(request.logisticsStatus || '').toLowerCase() === 'claimed') {
+          toast.info('This order has already been claimed for logistics.')
+          return
+        }
+
+        await updateDoc(doc(db, 'purchaseRequests', request.id), {
+          logisticsStatus: 'Claimed',
+          workflowStage: 'Claimed by Logistics',
+          logisticsClaimedAt: serverTimestamp(),
+          logisticsClaimedBy: currentUserId.value || null,
+          updatedAt: serverTimestamp()
+        })
+        request.logisticsStatus = 'Claimed'
+        request.workflowStage = 'Claimed by Logistics'
+        await logManagerActivity(`Marked purchase order for logistics claim: ${request.item || 'item'}.`, {
+          type: 'purchase_request_logistics_claimed',
+          requestId: request.id,
+          item: request.item || '',
+          supplier: request.supplier || '',
+          details: `Order claimed for logistics dispatch: ${request.item || 'item'}.`
+        })
+        toast.success('Order marked for logistics claim.')
+        await loadRequests()
+      } catch (error) {
+        console.error(error)
+        toast.error('Failed to mark order for logistics claim.')
       }
     }
 
@@ -1403,8 +1605,15 @@ export default {
       deliveredCount,
       delayedCount,
       totalCount,
+      budgetRequestedCount,
+      logisticsClaimedCount,
+      settledBudgetCount,
       filteredRequests,
       addRequest,
+      getWorkflowStageLabel,
+      workflowBadgeClass,
+      requestBudgetFromFinance,
+      markForLogisticsClaim,
       togglePaymentStatus,
       openReceiptModal,
       closeReceiptModal,

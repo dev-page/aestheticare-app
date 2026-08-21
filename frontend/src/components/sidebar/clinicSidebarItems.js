@@ -56,6 +56,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Item Catalog', icon: 'building', to: '/manager/item-catalog', permission: 'inventory:view' },
       { label: 'Suppliers', icon: 'building', to: '/manager/suppliers', permission: 'inventory:view' },
       { label: 'Purchase Requests', icon: 'plus', to: '/manager/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'] },
+      { label: 'Logistics', icon: 'truck', to: '/manager/logistics', permissionsAny: ['orders:view', 'inventory:view'] },
       { label: 'Orders', icon: 'report', to: '/manager/orders', permissionsAny: ['orders:view', 'inventory:view'] }
     ]
   },

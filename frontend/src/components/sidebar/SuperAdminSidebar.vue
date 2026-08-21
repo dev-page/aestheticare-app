@@ -29,11 +29,12 @@ export default {
       },
       {
         key: 'clinic-management',
-        label: 'Clinic Management',
+        label: 'Clinic & Supplier Management',
         icon: 'box',
         children: [
           { label: 'Verified Clinics', icon: 'shield', to: '/superadmin/clinics/verified' },
           { label: 'Clinic Verification', icon: 'clipboard', to: '/superadmin/clinics/verification' },
+          { label: 'Supplier Verification', icon: 'truck', to: '/superadmin/suppliers/verification' },
           { label: 'Archived Clinics', icon: 'archive', to: '/superadmin/clinics/archived' }
         ]
       },
