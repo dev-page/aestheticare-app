@@ -67,6 +67,30 @@
                   <input v-model="profile.contactNumber" type="tel" class="profile-input" placeholder="+63..." />
                 </div>
 
+                <div>
+                  <label class="profile-label">Business Type</label>
+                  <select v-model="profile.businessType" class="profile-input">
+                    <option value="" disabled>Select business type</option>
+                    <option v-for="type in SUPPLIER_BUSINESS_TYPES" :key="type" :value="type">
+                      {{ type }}
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="profile-label">TIN</label>
+                  <input
+                    :value="formatTinDisplay(profile.taxRegistrationNumber)"
+                    type="text"
+                    inputmode="numeric"
+                    maxlength="15"
+                    class="profile-input"
+                    placeholder="XXX-XXX-XXX-XXX"
+                    @input="handleTinInput"
+                  />
+                  <p class="mt-2 text-xs text-[#7b5f4a]">Enter the registered TIN of the taxpayer or business entity.</p>
+                </div>
+
                 <div class="md:col-span-2">
                   <label class="profile-label">Full Address</label>
                   <textarea v-model="profile.businessAddress" rows="3" class="profile-input profile-textarea" placeholder="Street, barangay, city, province, postal code"></textarea>
@@ -149,6 +173,11 @@ import { toast } from 'vue3-toastify'
 import { db } from '@/config/firebaseConfig'
 import LocationPicker from '@/components/common/LocationPicker.vue'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
+import {
+  SUPPLIER_BUSINESS_TYPES,
+  formatTinDisplay,
+  normalizeTinDigits,
+} from '@/utils/supplierTin'
 
 const auth = getAuth()
 const loading = ref(true)
@@ -169,6 +198,8 @@ const profile = ref({
   businessAddressPostalCode: '',
   businessAddressLat: '',
   businessAddressLng: '',
+  businessType: '',
+  taxRegistrationNumber: '',
   profilePicture: '',
   status: '',
   approvalStatus: '',
@@ -192,6 +223,10 @@ const businessInitial = computed(() => {
   const source = String(profile.value.businessName || userEmail.value || 'S').trim()
   return source ? source.charAt(0).toUpperCase() : 'S'
 })
+
+const handleTinInput = (event) => {
+  profile.value.taxRegistrationNumber = normalizeTinDigits(event?.target?.value || '')
+}
 
 const resolveSupplierDocument = async (uid) => {
   const existing = await getDocs(query(collection(db, 'suppliers'), where('ownerId', '==', uid), limit(1)))
@@ -265,6 +300,8 @@ const loadProfile = async (user) => {
       businessAddressPostalCode: merged.businessAddressPostalCode || merged.addressPostalCode || '',
       businessAddressLat: merged.businessAddressLat || merged.addressLat || '',
       businessAddressLng: merged.businessAddressLng || merged.addressLng || '',
+      businessType: merged.businessType || '',
+      taxRegistrationNumber: normalizeTinDigits(merged.taxRegistrationNumber || merged.tinNumber || ''),
       profilePicture: merged.profilePicture || '',
       status: merged.status || '',
       approvalStatus: merged.approvalStatus || '',
@@ -296,6 +333,8 @@ const saveProfile = async () => {
       addressPostalCode: profile.value.businessAddressPostalCode || '',
       addressLat: profile.value.businessAddressLat || '',
       addressLng: profile.value.businessAddressLng || '',
+      businessType: profile.value.businessType || '',
+      taxRegistrationNumber: normalizeTinDigits(profile.value.taxRegistrationNumber || ''),
       profilePicture: profile.value.profilePicture || '',
       updatedAt: serverTimestamp(),
     }
@@ -317,6 +356,8 @@ const saveProfile = async () => {
       businessAddressPostalCode: profile.value.businessAddressPostalCode || '',
       businessAddressLat: profile.value.businessAddressLat || '',
       businessAddressLng: profile.value.businessAddressLng || '',
+      businessType: profile.value.businessType || '',
+      taxRegistrationNumber: normalizeTinDigits(profile.value.taxRegistrationNumber || ''),
       profilePicture: profile.value.profilePicture || '',
       status: profile.value.status || 'Active',
       approvalStatus: profile.value.approvalStatus || 'Approved',

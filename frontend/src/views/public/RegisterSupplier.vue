@@ -13,6 +13,12 @@ import Terms from '@/components/common/Terms.vue'
 import PrivacyPolicy from '@/components/common/PrivacyPolicy.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import axios from 'axios'
+import {
+  SUPPLIER_BUSINESS_TYPES,
+  formatTinDisplay,
+  isValidTinDigits,
+  normalizeTinDigits,
+} from '@/utils/supplierTin'
 
 const router = useRouter()
 const goToRegisterChooser = async () => {
@@ -70,6 +76,7 @@ const addressProvince = ref('')
 const addressPostalCode = ref('')
 const addressLat = ref('')
 const addressLng = ref('')
+const businessType = ref('')
 const taxRegistrationNumber = ref('')
 const taxRegistrationFile = ref(null)
 const businessRegistrationFile = ref(null)
@@ -762,6 +769,10 @@ const handleEmailDraftInput = () => {
   validateEmailFormat(email.value)
 }
 
+const handleTinInput = (event) => {
+  taxRegistrationNumber.value = normalizeTinDigits(event?.target?.value || '')
+}
+
 const clearFormFields = () => {
   firstName.value = ''
   midName.value = ''
@@ -783,6 +794,7 @@ const clearFormFields = () => {
   addressPostalCode.value = ''
   addressLat.value = ''
   addressLng.value = ''
+  businessType.value = ''
   taxRegistrationNumber.value = ''
   taxRegistrationFile.value = null
   businessRegistrationFile.value = null
@@ -1110,8 +1122,13 @@ const register = async () => {
     return
   }
 
-  if (!taxRegistrationNumber.value.trim()) {
-    toast.error('Please enter your tax registration number.')
+  if (!businessType.value) {
+    toast.error('Please select a business type.')
+    return
+  }
+
+  if (!isValidTinDigits(taxRegistrationNumber.value)) {
+    toast.error('Please enter a valid TIN.')
     return
   }
 
@@ -1164,7 +1181,8 @@ const register = async () => {
       businessAddressPostalCode: String(addressPostalCode.value || '').trim(),
       businessAddressLat: addressLat.value,
       businessAddressLng: addressLng.value,
-      taxRegistrationNumber: taxRegistrationNumber.value.trim(),
+      businessType: businessType.value,
+      taxRegistrationNumber: normalizeTinDigits(taxRegistrationNumber.value),
       approvalStatus: 'Draft',
       status: 'Pending OTP',
       role: 'Supplier',
@@ -1189,6 +1207,7 @@ const register = async () => {
       addressPostalCode: String(addressPostalCode.value || '').trim(),
       addressLat: addressLat.value,
       addressLng: addressLng.value,
+      businessType: businessType.value,
       role: 'Supplier',
       userType: 'supplier',
       status: 'Pending OTP',
@@ -1624,9 +1643,28 @@ onBeforeUnmount(() => {
 
                 <div class="space-y-3">
                   <div class="relative">
-                    <input v-model="taxRegistrationNumber" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
-                    <label class="floating-label">Tax Registration Number</label>
+                    <select v-model="businessType" required class="peer input h-16 pt-4 pb-2 px-3 appearance-none">
+                      <option value="" disabled>Select business type</option>
+                      <option v-for="type in SUPPLIER_BUSINESS_TYPES" :key="type" :value="type">
+                        {{ type }}
+                      </option>
+                    </select>
+                    <label class="floating-label">Business Type</label>
                   </div>
+
+                  <div class="relative">
+                    <input
+                      :value="formatTinDisplay(taxRegistrationNumber)"
+                      placeholder=" "
+                      required
+                      inputmode="numeric"
+                      maxlength="15"
+                      class="peer input h-16 pt-4 pb-2 px-3"
+                      @input="handleTinInput"
+                    />
+                    <label class="floating-label">TIN</label>
+                  </div>
+                  <p class="text-xs text-charcoal-500">Enter the registered TIN of the taxpayer or business entity.</p>
 
                   <div class="rounded-xl border border-gold-200/80 bg-white/80 p-3 space-y-3">
                     <p class="text-sm font-semibold text-charcoal-700">Tax Registration Document</p>

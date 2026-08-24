@@ -93,9 +93,13 @@
               <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Business Address</p>
               <p class="mt-2 text-white">{{ selectedRecord.businessAddress || '-' }}</p>
             </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Business Type</p>
+              <p class="mt-2 text-white">{{ selectedRecord.businessType || '-' }}</p>
+            </div>
             <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4 md:col-span-2">
-              <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Tax Registration Number</p>
-              <p class="mt-2 text-white">{{ selectedRecord.taxRegistrationNumber || '-' }}</p>
+              <p class="text-xs uppercase tracking-[0.16em] text-slate-400">TIN</p>
+              <p class="mt-2 text-white">{{ formatTinDisplay(selectedRecord.taxRegistrationNumber) || '-' }}</p>
             </div>
           </div>
 
@@ -166,6 +170,7 @@ import Swal from 'sweetalert2'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { formatTinDisplay, normalizeTinDigits } from '@/utils/supplierTin'
 
 const auth = getAuth()
 const loading = ref(false)
@@ -245,7 +250,8 @@ const loadPendingSuppliers = async () => {
               .map((part) => String(part || '').trim())
               .filter(Boolean)
               .join(', '),
-          taxRegistrationNumber: application.taxRegistrationNumber || '',
+          businessType: application.businessType || userData.businessType || '',
+          taxRegistrationNumber: normalizeTinDigits(application.taxRegistrationNumber || application.tinNumber || ''),
           statusLabel: String(application.approvalStatus || application.status || 'Pending Approval'),
           documents: mapDocs(application.documents || {}, application.draftDocuments || {}),
           application,
@@ -302,6 +308,7 @@ const approveSelected = async () => {
       businessName: selectedRecord.value.businessName,
       email: selectedRecord.value.email || '',
       contactNumber: selectedRecord.value.contactNumber || '',
+      businessType: selectedRecord.value.businessType || application.businessType || userData.businessType || '',
       contact: selectedRecord.value.contactNumber || '',
       phone: selectedRecord.value.contactNumber || '',
       address: selectedRecord.value.businessAddress || '',
@@ -313,6 +320,8 @@ const approveSelected = async () => {
       businessAddressPostalCode: application.businessAddressPostalCode || userData.addressPostalCode || '',
       businessAddressLat: application.businessAddressLat || userData.addressLat || '',
       businessAddressLng: application.businessAddressLng || userData.addressLng || '',
+      businessType: selectedRecord.value.businessType || application.businessType || userData.businessType || '',
+      taxRegistrationNumber: normalizeTinDigits(selectedRecord.value.taxRegistrationNumber || application.taxRegistrationNumber || userData.taxRegistrationNumber || ''),
       profilePicture: userData.profilePicture || application.profilePicture || '',
       approvalStatus: 'Approved',
       status: 'Active',

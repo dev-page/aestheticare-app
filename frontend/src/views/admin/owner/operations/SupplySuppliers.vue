@@ -100,6 +100,8 @@
               <p class="text-slate-300">Contact: {{ supplier.contact || '-' }}</p>
               <p class="text-slate-300">Email: {{ supplier.email || '-' }}</p>
               <p class="text-slate-300">Phone: {{ supplier.phone || '-' }}</p>
+              <p class="text-slate-300">Business Type: {{ supplier.businessType || '-' }}</p>
+              <p class="text-slate-300">TIN: {{ formatSupplierTin(supplier) || '-' }}</p>
             </div>
 
             <div class="pt-4 border-t border-slate-700">
@@ -156,6 +158,35 @@
                   @blur="markTouched('name')"
                 />
                 <p v-if="showAddError('name')" class="mt-1 text-xs text-red-400">{{ addErrors.name }}</p>
+              </div>
+              <div class="col-span-2">
+                <label class="block text-slate-400 text-sm mb-2">Business Type</label>
+                <select
+                  v-model="newSupplier.businessType"
+                  required
+                  :class="inputClass(showAddError('businessType'))"
+                  @change="markTouched('businessType')"
+                  @blur="markTouched('businessType')"
+                >
+                  <option value="">Select business type</option>
+                  <option v-for="type in SUPPLIER_BUSINESS_TYPES" :key="type" :value="type">{{ type }}</option>
+                </select>
+                <p v-if="showAddError('businessType')" class="mt-1 text-xs text-red-400">{{ addErrors.businessType }}</p>
+              </div>
+              <div class="col-span-2">
+                <label class="block text-slate-400 text-sm mb-2">TIN</label>
+                <input
+                  :value="formatTinDisplay(newSupplier.taxRegistrationNumber)"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="15"
+                  placeholder="XXX-XXX-XXX-XXX"
+                  :class="inputClass(showAddError('taxRegistrationNumber'))"
+                  @input="handleTinInput(newSupplier, $event)"
+                  @blur="markTouched('taxRegistrationNumber')"
+                />
+                <p class="mt-1 text-xs text-slate-400">Enter the registered TIN of the taxpayer or business entity.</p>
+                <p v-if="showAddError('taxRegistrationNumber')" class="mt-1 text-xs text-red-400">{{ addErrors.taxRegistrationNumber }}</p>
               </div>
               <div class="col-span-2">
                 <label class="block text-slate-400 text-sm mb-2">Categories (Multiple)</label>
@@ -320,6 +351,26 @@
                 <input v-model="editSupplier.name" type="text" required class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none" />
               </div>
               <div class="col-span-2">
+                <label class="block text-slate-400 text-sm mb-2">Business Type</label>
+                <select v-model="editSupplier.businessType" class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none">
+                  <option value="">Select business type</option>
+                  <option v-for="type in SUPPLIER_BUSINESS_TYPES" :key="`edit-${type}`" :value="type">{{ type }}</option>
+                </select>
+              </div>
+              <div class="col-span-2">
+                <label class="block text-slate-400 text-sm mb-2">TIN</label>
+                <input
+                  :value="formatTinDisplay(editSupplier.taxRegistrationNumber)"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="15"
+                  placeholder="XXX-XXX-XXX-XXX"
+                  class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
+                  @input="handleTinInput(editSupplier, $event)"
+                />
+                <p class="mt-1 text-xs text-slate-400">Enter the registered TIN of the taxpayer or business entity.</p>
+              </div>
+              <div class="col-span-2">
                 <label class="block text-slate-400 text-sm mb-2">Categories (Multiple)</label>
                 <div class="grid grid-cols-2 gap-2 bg-slate-700 rounded-lg border border-slate-600 p-3">
                   <label v-for="cat in categoryOptions" :key="`edit-${cat}`" class="flex items-center gap-2 text-slate-200 text-sm">
@@ -431,6 +482,12 @@ import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
 import { loadOwnerBranchScope, loadScopedCollectionDocs } from '@/utils/ownerBranchScope'
+import {
+  SUPPLIER_BUSINESS_TYPES,
+  formatTinDisplay,
+  isValidTinDigits,
+  normalizeTinDigits,
+} from '@/utils/supplierTin'
 
 export default {
   name: 'ManagerSuppliers',
@@ -449,6 +506,8 @@ export default {
     const currentScopeMode = ref('owner')
     const addTouched = ref({
       name: false,
+      businessType: false,
+      taxRegistrationNumber: false,
       categories: false,
       contact: false,
       email: false,
@@ -467,6 +526,8 @@ export default {
 
     const getEmptySupplier = () => ({
       name: '',
+      businessType: '',
+      taxRegistrationNumber: '',
       categories: [],
       contact: '',
       email: '',
@@ -496,6 +557,11 @@ export default {
     const normalizedOfferedItems = (supplier) => {
       if (!Array.isArray(supplier.offeredItems)) return []
       return supplier.offeredItems.filter((item) => item?.name)
+    }
+
+    const formatSupplierTin = (supplier) => formatTinDisplay(supplier.taxRegistrationNumber || supplier.tinNumber || '')
+    const handleTinInput = (supplier, event) => {
+      supplier.taxRegistrationNumber = normalizeTinDigits(event?.target?.value || '')
     }
 
     const loadSuppliers = async () => {
@@ -535,6 +601,8 @@ export default {
 
       return {
         name: supplier.name,
+        businessType: supplier.businessType,
+        taxRegistrationNumber: normalizeTinDigits(supplier.taxRegistrationNumber || ''),
         categories: supplier.categories,
         contact: supplier.contact,
         email: supplier.email,
@@ -591,6 +659,8 @@ export default {
     const addErrors = computed(() => {
       const errors = {
         name: '',
+        businessType: '',
+        taxRegistrationNumber: '',
         categories: '',
         contact: '',
         email: '',
@@ -614,6 +684,14 @@ export default {
 
       if ((newSupplier.value.categories || []).length === 0) {
         errors.categories = 'Select at least one category.'
+      }
+
+      if (!newSupplier.value.businessType) {
+        errors.businessType = 'Business type is required.'
+      }
+
+      if (!isValidTinDigits(newSupplier.value.taxRegistrationNumber)) {
+        errors.taxRegistrationNumber = 'Enter a valid 12-digit TIN.'
       }
 
       if (!newSupplier.value.contact.trim()) {
@@ -666,6 +744,8 @@ export default {
       const itemErrors = addErrors.value.offeredItems.some((item) => item.name || item.unitCost)
       return (
         addErrors.value.name ||
+        addErrors.value.businessType ||
+        addErrors.value.taxRegistrationNumber ||
         addErrors.value.categories ||
         addErrors.value.contact ||
         addErrors.value.email ||
@@ -731,6 +811,8 @@ export default {
         ownerId: supplier.ownerId || '',
         sharedAcrossBranches: supplier.sharedAcrossBranches !== false,
         name: supplier.name || '',
+        businessType: supplier.businessType || '',
+        taxRegistrationNumber: normalizeTinDigits(supplier.taxRegistrationNumber || supplier.tinNumber || ''),
         categories: [...normalizedCategories(supplier)],
         contact: supplier.contact || '',
         email: supplier.email || '',
@@ -752,6 +834,14 @@ export default {
       if (!editSupplier.value.id) return
       if (!currentBranchId.value) {
         toast.error('Your account has no branch assignment.')
+        return
+      }
+      if (!editSupplier.value.businessType) {
+        toast.error('Please select a business type.')
+        return
+      }
+      if (!isValidTinDigits(editSupplier.value.taxRegistrationNumber)) {
+        toast.error('Please enter a valid 12-digit TIN.')
         return
       }
       if ((editSupplier.value.categories || []).length === 0) {
@@ -844,6 +934,8 @@ export default {
       submitAttempted.value = false
       addTouched.value = {
         name: false,
+        businessType: false,
+        taxRegistrationNumber: false,
         categories: false,
         contact: false,
         email: false,
@@ -874,8 +966,12 @@ export default {
       suppliers,
       filteredSuppliers,
       categoryOptions,
+      SUPPLIER_BUSINESS_TYPES,
       normalizedCategories,
       normalizedOfferedItems,
+      formatTinDisplay,
+      formatSupplierTin,
+      handleTinInput,
       newSupplier,
       editSupplier,
       addOfferedItemRow,
