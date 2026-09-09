@@ -1,15 +1,25 @@
 import { useAuth } from '@/composables/useAuth'
 import { usePermissions } from '@/composables/usePermissions'
 import { useSubscription } from '@/composables/useSubscription'
+import { onAuthStateChanged } from 'firebase/auth'
+import { auth } from '@/config/firebaseConfig'
 
-export const requireAuth = (to, from, next) => {
+const waitForAuth = (isLoading) => {
+  if (!isLoading.value) return Promise.resolve()
+  return new Promise((resolve) => {
+    let unsubscribe = null
+    unsubscribe = onAuthStateChanged(auth, () => {
+      if (unsubscribe) unsubscribe()
+      resolve()
+    })
+  })
+}
+
+export const requireAuth = async (to, from, next) => {
   const { user, isLoading, initAuth } = useAuth()
   initAuth()
 
-  if (isLoading.value) {
-    // Still loading, wait
-    return next()
-  }
+  await waitForAuth(isLoading)
 
   if (!user.value) {
     next('/login')
@@ -25,7 +35,7 @@ export const requirePermission = (permission) => {
     if (hasPermission(permission)) {
       next()
     } else {
-      next('/unauthorized')
+      next('/')
     }
   }
 }

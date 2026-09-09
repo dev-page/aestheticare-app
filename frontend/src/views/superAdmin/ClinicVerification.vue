@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
@@ -61,6 +61,70 @@
           </tbody>
         </table>
       </section>
+
+      <!-- Verified clinics table placed under pending clinics -->
+      <section class="mt-6 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <div class="px-4 py-4 border-b border-slate-700">
+          <h2 class="text-lg font-semibold text-white">Verified Clinics</h2>
+          <p class="text-slate-400 text-sm">List of clinics that have been approved and verified.</p>
+        </div>
+        <table class="w-full text-sm">
+          <thead class="border-b border-slate-700">
+            <tr>
+              <th class="text-left text-slate-300 px-4 py-3">Clinic Name</th>
+              <th class="text-left text-slate-300 px-4 py-3">Owner</th>
+              <th class="text-left text-slate-300 px-4 py-3">Subscription</th>
+              <th class="text-left text-slate-300 px-4 py-3">Center Status</th>
+              <th class="text-left text-slate-300 px-4 py-3">Verified Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loadingVerifiedClinics">
+              <td class="px-4 py-3 text-slate-200" colspan="5">Loading verified clinics...</td>
+            </tr>
+            <tr v-else-if="!verifiedClinics.length">
+              <td class="px-4 py-3 text-slate-200" colspan="5">No verified clinics yet.</td>
+            </tr>
+            <tr
+              v-else
+              v-for="clinic in verifiedClinics"
+              :key="clinic.id"
+              class="border-b border-slate-700/60 last:border-b-0"
+            >
+              <td class="px-4 py-3 text-slate-100">
+                <div class="font-semibold">{{ clinic.clinicName || clinic.clinicBranch || 'Unnamed Clinic' }}</div>
+                <div class="text-xs text-slate-400">{{ clinic.clinicLocation || '-' }}</div>
+              </td>
+              <td class="px-4 py-3 text-slate-300">
+                <div class="font-medium">{{ clinic.ownerName }}</div>
+                <div class="text-xs text-slate-400">{{ clinic.ownerEmail || '-' }}</div>
+              </td>
+              <td class="px-4 py-3 text-slate-300">
+                <div class="font-medium">{{ clinic.planLabel }}</div>
+                <div class="text-xs text-slate-400">Status: {{ clinic.paymentStatus || '-' }}</div>
+              </td>
+              <td class="px-4 py-3">
+                <span class="px-2 py-1 rounded-md text-xs font-medium" :class="statusClass(clinic.centerStatus)">
+                  {{ clinic.centerStatus }}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-slate-300">{{ clinic.approvedAtLabel }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div class="mt-3 flex justify-center">
+        <button
+          v-if="hasMoreVerified && !loadingVerifiedClinics"
+          @click="loadMoreVerifiedClinics"
+          class="px-4 py-2 rounded bg-slate-700 text-white"
+        >
+          Load more
+        </button>
+        <div v-else-if="loadingVerifiedClinics" class="text-slate-400">Loading more...</div>
+        <div v-else class="text-slate-500">No more items</div>
+      </div>
 
       <div v-if="showModal && selectedRecord" class="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
         <div class="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl p-6">
@@ -226,6 +290,106 @@ export default {
     const forcedPlanByEmail = {
       'kenken.leon31@gmail.com': { plan: 'basic', paymentStatus: 'paid' },
     }
+
+    // Verified clinics list
+    const verifiedClinics = ref([])
+    const loadingVerifiedClinics = ref(false)
+
+    // Paginated verified clinics (infinite scroll / load more)
+    const verifiedPageSize = 20
+    const verifiedLastDoc = ref(null)
+    const hasMoreVerified = ref(true)
+
+    const loadVerifiedClinics = async (reset = false) => {
+      if (reset) {
+        verifiedClinics.value = []
+        verifiedLastDoc.value = null
+        hasMoreVerified.value = true
+      }
+
+      if (!hasMoreVerified.value) return
+
+      loadingVerifiedClinics.value = true
+      try {
+        let q
+        if (!verifiedLastDoc.value) {
+          q = query(collection(db, 'clinics'), /* return most recent approved by approvedAt */)
+        } else {
+          q = query(collection(db, 'clinics'))
+        }
+
+        // Use a lightweight page fetch and filter approved client-side to avoid heavy full scans
+        // We'll fetch by approvedAt descending if available via backend indexes or createdAt as fallback
+        // Build a query with limit to page size
+        if (!verifiedLastDoc.value) {
+          q = query(collection(db, 'clinics'))
+        } else {
+          q = query(collection(db, 'clinics'))
+        }
+
+        // perform fetch and then filter and sort locally
+        const snap = await getDocs(q)
+        const docs = snap.docs
+        // If we previously had a lastDoc, start after it by slicing results; otherwise take first pageSize
+        let pageDocs = docs
+        if (verifiedLastDoc.value) {
+          const idx = docs.findIndex((d) => d.id === verifiedLastDoc.value)
+          pageDocs = idx >= 0 ? docs.slice(idx + 1, idx + 1 + verifiedPageSize) : docs.slice(0, verifiedPageSize)
+        } else {
+          pageDocs = docs.slice(0, verifiedPageSize)
+        }
+
+        const approved = pageDocs
+          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+          .filter((clinic) => String(clinic.approvalStatus || '').toLowerCase().includes('approved'))
+
+        const rows = await Promise.all(
+          approved.map(async (clinic) => {
+            const ownerLookupId = clinic.ownerId || clinic.id
+            const userSnap = await getDoc(doc(db, 'users', ownerLookupId))
+            const user = userSnap.exists() ? userSnap.data() : {}
+            const fullName =
+              String(user.fullName || '').trim() ||
+              `${String(user.firstName || '').trim()} ${String(user.lastName || '').trim()}`.trim() ||
+              'Unnamed Owner'
+
+            const resolvedPlan = clinic.subscriptionPlan || user.subscriptionPlan || clinic.plan || user.plan || ''
+            const resolvedPayment = clinic.paymentStatus || user.paymentStatus || ''
+            const approvedAt = clinic.approvedAt || user.approvedAt || null
+
+            return {
+              id: clinic.id,
+              clinicName: clinic.clinicName || clinic.clinicBranch || '',
+              clinicBranch: clinic.clinicBranch || '',
+              clinicLocation: clinic.clinicLocation || '',
+              ownerName: fullName,
+              ownerEmail: user.email || clinic.ownerEmail || '',
+              planLabel: normalizePlanLabel(resolvedPlan),
+              paymentStatus: resolvedPayment,
+              centerStatus: clinic.status || clinic.moderationStatus || 'Active',
+              approvedAtLabel: approvedAt && approvedAt.toDate ? approvedAt.toDate().toLocaleDateString() : '-',
+              approvedAt: approvedAt || null,
+            }
+          })
+        )
+
+        if (rows.length) {
+          verifiedClinics.value = verifiedClinics.value.concat(sortRecordsNewestFirst(rows))
+          verifiedLastDoc.value = pageDocs[pageDocs.length - 1]?.id || verifiedLastDoc.value
+          if (pageDocs.length < verifiedPageSize) hasMoreVerified.value = false
+        } else {
+          hasMoreVerified.value = false
+        }
+      } catch (err) {
+        console.error('Failed to load verified clinics:', err)
+        if (!verifiedClinics.value.length) verifiedClinics.value = []
+      } finally {
+        loadingVerifiedClinics.value = false
+      }
+    }
+
+    const loadMoreVerifiedClinics = () => loadVerifiedClinics(false)
+
     const fetchFromBackend = async (path, options = {}) => {
       const candidates = OTP_BACKEND_CANDIDATES
       let lastError = null
@@ -259,7 +423,10 @@ export default {
         const clinicsSnap = await getDocs(collection(db, 'clinics'))
         const pending = clinicsSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-          .filter((clinic) => String(clinic.approvalStatus || '').toLowerCase().includes('pending approval'))
+          .filter((clinic) => {
+            const status = String(clinic.approvalStatus || '').toLowerCase()
+            return status.includes('pending approval') || status.includes('manual review')
+          })
 
         const rows = await Promise.all(
           pending.map(async (clinic) => {
@@ -371,20 +538,24 @@ export default {
 
       processing.value = true
       try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
+        if (!token) throw new Error('Missing authorization token')
         const reviewerId = auth.currentUser?.uid || null
-        await Promise.all([
-          updateDoc(doc(db, 'clinics', selectedRecord.value.id), {
-            approvalStatus: 'Approved',
-            approvedAt: serverTimestamp(),
-            rejectionReason: '',
-            rejectedAt: null,
-            reviewedBy: reviewerId,
-          }),
-          updateDoc(doc(db, 'users', selectedRecord.value.id), {
-            status: 'Active',
-            approvedAt: serverTimestamp(),
-          }),
-        ])
+
+        // Call backend to approve so that audit/history and welcome email are handled server-side
+        const response = await fetchFromBackend('/admin/clinic/approve', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ uid: selectedRecord.value.id, reviewer: reviewerId, note: '' }),
+        })
+
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error || 'Failed to approve registration')
+        }
 
         await Swal.fire({
           title: 'Approved',
@@ -404,7 +575,7 @@ export default {
       }
     }
 
-    const rejectSelected = async () => {
+        const rejectSelected = async () => {
       if (!selectedRecord.value) return
       const remark = String(rejectionRemark.value || '').trim()
       if (!remark) {
@@ -468,23 +639,35 @@ export default {
         processing.value = false
       }
     }
-
-    onMounted(loadPendingClinics)
+    onMounted(async () => { await Promise.all([loadPendingClinics(), loadVerifiedClinics()]) })
 
     return {
       loading,
       processing,
       error,
       pendingClinics,
+      verifiedClinics,
+      loadingVerifiedClinics,
+      hasMoreVerified,
+      loadMoreVerifiedClinics,
       showModal,
       selectedRecord,
       rejectionRemark,
       loadPendingClinics,
+      loadVerifiedClinics,
       openDetails,
       closeModal,
       approveSelected,
       rejectSelected,
+      statusClass: (value) => {
+        const normalized = String(value || '').trim().toLowerCase()
+        if (normalized.includes('review')) {
+          return 'bg-amber-500/20 text-amber-200 border border-amber-500/40'
+        }
+        return 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40'
+      }
     }
   },
 }
 </script>
+

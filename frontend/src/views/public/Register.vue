@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { collection, deleteField, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { createUserWithEmailAndPassword, deleteUser, signOut } from 'firebase/auth'
+import { collection, deleteField, doc, deleteDoc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
@@ -299,6 +299,30 @@ const documentInputKeys = ref({
   fdaApproval: 0,
   prcIdMedicalDirector: 0,
 })
+
+// File upload rules
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
+const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
+
+// Documents that require an explicit expiry date (ISO string)
+const documentExpiryRequired = {
+  businessPermit: true,
+  prcIdMedicalDirector: true,
+  dohAccreditation: true,
+  fdaApproval: true,
+}
+
+// store selected expiry dates per document (ISO yyyy-mm-dd)
+const documentExpiryMap = {
+  secCertificate: ref(''),
+  articlesOfIncorporation: ref(''),
+  businessPermit: ref(''),
+  governmentIdRepresentativeFront: ref(''),
+  governmentIdRepresentativeBack: ref(''),
+  dohAccreditation: ref(''),
+  fdaApproval: ref(''),
+  prcIdMedicalDirector: ref(''),
+}
 const approvalRedirecting = ref(false)
 const approvalReviewState = ref('pending')
 const approvalReviewMessage = ref('Your registration is under review. Please allow at least 24 hours for admin review.')
@@ -999,22 +1023,49 @@ const startOtpCountdown = (seconds = OTP_COOLDOWN_SECONDS) => {
 
 const handleDocumentFileChange = async (key, event) => {
   const selectedFile = event?.target?.files?.[0] || null
+
+  // enforce single-file selection - we only pick the first file
   if (documentFileMap[key]) {
     documentFileMap[key].value = selectedFile
   }
 
+  // If user replaces an already-submitted document we clear the existing record
   if (selectedFile) {
     if (existingSubmittedDocuments.value[key]) {
       existingSubmittedDocuments.value[key] = null
     }
   }
 
+  // revoke previous preview URL
   const previewKey = key
   const currentPreview = documentPreviewUrls.value[previewKey]
   if (currentPreview?.startsWith('blob:')) URL.revokeObjectURL(currentPreview)
-  documentPreviewUrls.value[previewKey] = selectedFile && selectedFile.type?.startsWith('image/')
-    ? URL.createObjectURL(selectedFile)
-    : ''
+
+  // client-side validations: type and size
+  if (selectedFile) {
+    if (!ALLOWED_FILE_TYPES.includes(selectedFile.type)) {
+      toast.error('Unsupported file type. Please upload PDF, PNG or JPEG files only.')
+      // reset the input so user can reselect
+      documentInputKeys.value[key] = (documentInputKeys.value[key] || 0) + 1
+      documentFileMap[key].value = null
+      documentPreviewUrls.value[previewKey] = ''
+      return
+    }
+
+    if (selectedFile.size > MAX_UPLOAD_SIZE_BYTES) {
+      toast.error('File too large. Maximum allowed size is 10 MB.')
+      documentInputKeys.value[key] = (documentInputKeys.value[key] || 0) + 1
+      documentFileMap[key].value = null
+      documentPreviewUrls.value[previewKey] = ''
+      return
+    }
+
+    documentPreviewUrls.value[previewKey] = selectedFile.type?.startsWith('image/')
+      ? URL.createObjectURL(selectedFile)
+      : ''
+  } else {
+    documentPreviewUrls.value[previewKey] = ''
+  }
 
   if (!selectedFile) return
   if (!userUid.value) {
@@ -1035,6 +1086,7 @@ const handleDocumentFileChange = async (key, event) => {
     })
     if (!uploadedDoc) throw new Error('Upload failed')
 
+    // Persist as a draft document (the expiry date, if supplied, will be submitted later)
     existingSubmittedDocuments.value[docKey] = uploadedDoc
     await updateDoc(doc(db, 'clinics', userUid.value), {
       [`draftDocuments.${docKey}`]: uploadedDoc,
@@ -2212,6 +2264,50 @@ const resendOtp = async () => {
   )
 }
 
+const cleanupFailedRegistration = async (uid) => {
+  if (!uid) return
+  try {
+    // Best-effort delete Firestore documents created during registration
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'users', uid)),
+      deleteDoc(doc(db, 'clinics', uid)),
+    ])
+  } catch (e) {
+    console.error('Failed to delete firestore docs during cleanup', e)
+  }
+
+  try {
+    // If the newly-created user is still the signed-in user, delete it from Auth
+    if (auth?.currentUser && auth.currentUser.uid === uid) {
+      await deleteUser(auth.currentUser)
+    } else {
+      // ensure local state is signed out
+      try { await signOut(auth) } catch (e) { /* ignore */ }
+    }
+  } catch (e) {
+    console.error('Failed to delete auth user during cleanup', e)
+  }
+
+  try { await signOut(auth) } catch (e) { /* ignore */ }
+  setStoredRegistrationUid('')
+  userUid.value = ''
+}
+
+const checkRegistrationAttempt = async (emailValue) => {
+  try {
+    const res = await axios.post(`${OTP_API_BASE}/auth/check-registration-attempt`, {
+      email: String(emailValue || '').trim().toLowerCase(),
+      purpose: 'clinic',
+    })
+    return res?.data || { success: false, error: 'Unable to validate registration attempt.' }
+  } catch (error) {
+    return error?.response?.data || {
+      success: false,
+      error: 'Registration protection is temporarily unavailable. Please try again shortly.',
+    }
+  }
+}
+
 const registerClinic = async () => {
   if (currentStep.value !== 1) return
   if (!emailChecked.value) {
@@ -2283,8 +2379,17 @@ const registerClinic = async () => {
   sessionStorage.setItem('resume_email', String(email.value || '').trim().toLowerCase())
 
   isSubmitting.value = true
+  let createdRegistrationUid = ''
 
   try {
+    if (!userUid.value) {
+      const attemptResult = await checkRegistrationAttempt(email.value)
+      if (!attemptResult.success) {
+        toast.error(attemptResult.error || 'Too many registration attempts. Please try again later.')
+        return
+      }
+    }
+
     // 🔹 Create Firebase Auth user
     if (userUid.value) {
       if (!otpVerifiedForRegistration.value) {
@@ -2344,6 +2449,7 @@ const registerClinic = async () => {
 
     const uid = userCredentials.user.uid
     userUid.value = uid
+    createdRegistrationUid = uid
     setStoredRegistrationUid(uid)
     const ownerFullName = `${firstName.value.trim()} ${lastName.value.trim()}`.trim()
 
@@ -2397,6 +2503,12 @@ const registerClinic = async () => {
       sendOtpPromise,
     ])
 
+    if (!otpResult.success && otpResult.retryAfterSeconds <= 0) {
+      await cleanupFailedRegistration(uid)
+      toast.error('Failed to send OTP. Registration was rolled back. Please try again.')
+      return
+    }
+
     // 🔹 Open OTP modal
     currentStep.value = 2
     syncStepRoute(2)
@@ -2406,6 +2518,12 @@ const registerClinic = async () => {
 
   } catch (err) {
     console.error(err)
+
+    if (createdRegistrationUid) {
+      await cleanupFailedRegistration(createdRegistrationUid)
+      toast.error('Registration failed. Your submitted information was removed. Please try again.')
+      return
+    }
 
     const errorCode = String(err?.code || '')
     const friendlyMessages = {
@@ -2419,7 +2537,9 @@ const registerClinic = async () => {
 
     if (errorCode === 'auth/email-already-in-use') {
       const statusResult = await checkRegistrationStatus(email.value.trim())
-      if (statusResult?.exists) {
+      const existingRole = String(statusResult?.role || statusResult?.userRole || '').trim().toLowerCase()
+      const isClinicRegistration = ['clinic admin', 'clinicadmin', 'owner', 'clinic owner'].includes(existingRole)
+      if (statusResult?.exists && isClinicRegistration) {
         userUid.value = String(statusResult.uid || '').trim()
         setStoredRegistrationUid(userUid.value)
         emailChecked.value = true
@@ -2432,6 +2552,11 @@ const registerClinic = async () => {
         clearOtpInputs()
         focusOtpInput(0)
         handleClinicOtpResult(otpResult, 'Account exists. Please verify the latest OTP to continue.')
+        return
+      }
+
+      if (statusResult?.exists && !isClinicRegistration) {
+        toast.error('This email is already used by another account type.')
         return
       }
     }
@@ -2538,6 +2663,20 @@ const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () =
   }
 }
 
+const requestAutomaticClinicVerification = async (uid) => {
+  const currentUser = auth.currentUser
+  if (!currentUser || !uid) return null
+  const token = await currentUser.getIdToken()
+  const response = await fetch(`${OTP_API_BASE}/registration/auto-verify-documents`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ uid, applicantType: 'clinic' }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Automatic verification could not be started.')
+  return payload.data
+}
+
 const submitDocuments = async () => {
   if (currentStep.value !== 3) return
 
@@ -2559,6 +2698,33 @@ const submitDocuments = async () => {
   isSubmittingDocuments.value = true
 
   try {
+    // Validate required expiry dates before uploading/submitting
+    for (const docKey of requiredDocumentKeys.value) {
+      if (documentExpiryRequired[docKey]) {
+        const expiryVal = documentExpiryMap[docKey]?.value || ''
+        if (!expiryVal) {
+          toast.error(`Please provide expiry date for ${documentLabelMap[docKey] || docKey}.`) 
+          isSubmittingDocuments.value = false
+          return
+        }
+        // basic ISO date validation and not expired
+        const expiryDate = new Date(expiryVal)
+        if (!expiryDate || Number.isNaN(expiryDate.getTime())) {
+          toast.error(`Expiry date for ${documentLabelMap[docKey] || docKey} is invalid.`)
+          isSubmittingDocuments.value = false
+          return
+        }
+        const today = new Date()
+        today.setHours(0,0,0,0)
+        expiryDate.setHours(0,0,0,0)
+        if (expiryDate.getTime() < today.getTime()) {
+          toast.error(`${documentLabelMap[docKey] || docKey} appears to be expired. Please verify the expiry date.`)
+          isSubmittingDocuments.value = false
+          return
+        }
+      }
+    }
+
     const uploads = await Promise.all(
       requiredDocumentKeys.value.map((docKey) =>
         uploadDocumentForClinic(userUid.value, documentFileMap[docKey]?.value, docKey)
@@ -2570,7 +2736,12 @@ const submitDocuments = async () => {
       const fallbackDoc =
         existingSubmittedDocuments.value[docKey] || { name: '', size: 0, type: '', url: '' }
       const docPayload = uploads[index] || fallbackDoc
-      submittedDocumentsPayload[docKey] = docPayload
+      // attach expiry date if provided
+      const expiryVal = documentExpiryMap[docKey]?.value || null
+      submittedDocumentsPayload[docKey] = {
+        ...docPayload,
+        expiryDate: expiryVal || null,
+      }
     })
 
     await updateDoc(doc(db, 'clinics', userUid.value), {
@@ -2581,15 +2752,20 @@ const submitDocuments = async () => {
       draftDocumentsUpdatedAt: deleteField(),
     })
 
-    await updateDoc(doc(db, 'users', userUid.value), {
-      status: 'Pending Approval',
-    })
+    let automaticVerification = null
+    try {
+      automaticVerification = await requestAutomaticClinicVerification(userUid.value)
+    } catch (verificationError) {
+      console.warn('Automatic clinic verification was not completed:', verificationError)
+    }
 
     existingSubmittedDocuments.value = submittedDocumentsPayload
     syncExistingDocumentPreviews()
     pendingApprovalMode.value = true
-    approvalReviewState.value = 'reviewing'
-    approvalReviewMessage.value = 'Your registration is under review. Please allow at least 24 hours for admin review.'
+    approvalReviewState.value = automaticVerification?.status === 'Approved' ? 'approved' : 'reviewing'
+    approvalReviewMessage.value = automaticVerification?.status === 'Approved'
+      ? 'Your documents passed automatic verification. You may now sign in.'
+      : 'Your registration is under review. Low-confidence documents are being checked by a system administrator.'
 
     currentStep.value = 4
     setStoredOtpRecipientEmail('')
@@ -3050,7 +3226,7 @@ const submitDocuments = async () => {
                   </details>
                   <div class="upload-card">
                     <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeFront }}</p>
-                    <input :key="documentInputKeys.governmentIdRepresentativeFront" type="file" accept=".pdf,image/*" @change="handleDocumentFileChange('governmentIdRepresentativeFront', $event)" class="upload-input" />
+                    <input :key="documentInputKeys.governmentIdRepresentativeFront" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeFront', $event)" class="upload-input" />
                     <img
                       v-if="documentPreviewUrls.governmentIdRepresentativeFront"
                       :src="documentPreviewUrls.governmentIdRepresentativeFront"
@@ -3075,7 +3251,7 @@ const submitDocuments = async () => {
                   </div>
                   <div class="upload-card">
                     <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeBack }}</p>
-                    <input :key="documentInputKeys.governmentIdRepresentativeBack" type="file" accept=".pdf,image/*" @change="handleDocumentFileChange('governmentIdRepresentativeBack', $event)" class="upload-input" />
+                    <input :key="documentInputKeys.governmentIdRepresentativeBack" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeBack', $event)" class="upload-input" />
                     <img
                       v-if="documentPreviewUrls.governmentIdRepresentativeBack"
                       :src="documentPreviewUrls.governmentIdRepresentativeBack"
@@ -3105,7 +3281,19 @@ const submitDocuments = async () => {
                   class="upload-card"
                 >
                   <p class="upload-label">{{ documentLabelMap[docKey] || docKey }}</p>
-                  <input :key="documentInputKeys[docKey]" type="file" accept=".pdf,image/*" @change="handleDocumentFileChange(docKey, $event)" class="upload-input" />
+                  <input :key="documentInputKeys[docKey]" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange(docKey, $event)" class="upload-input" />
+
+                  <!-- Expiry date input for documents that require it -->
+                  <div v-if="documentExpiryRequired[docKey]" class="mt-2">
+                    <label class="text-xs text-charcoal-600">Expiry Date</label>
+                    <input
+                      type="date"
+                      :aria-label="`Expiry date for ${documentLabelMap[docKey] || docKey}`"
+                      v-model="documentExpiryMap[docKey].value"
+                      class="peer input h-12 pt-2 pb-1 px-2 mt-1"
+                    />
+                  </div>
+
                   <img
                     v-if="documentPreviewUrls[docKey]"
                     :src="documentPreviewUrls[docKey]"

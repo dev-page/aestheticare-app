@@ -1009,6 +1009,20 @@ const uploadSupplierDocument = async (uid, file, documentKey, onProgress = () =>
   })
 }
 
+const requestAutomaticSupplierVerification = async (uid) => {
+  const currentUser = auth.currentUser
+  if (!currentUser || !uid) return null
+  const token = await currentUser.getIdToken()
+  const response = await fetch(`${OTP_API_BASE}/registration/auto-verify-documents`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ uid, applicantType: 'supplier' }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Automatic verification could not be started.')
+  return payload.data
+}
+
 const handleOtpInput = (index, event) => {
   const digits = String(event.target.value || '').replace(/\D/g, '')
 
@@ -1091,6 +1105,21 @@ const resendOtp = async () => {
   )
 }
 
+const checkRegistrationAttempt = async (emailValue) => {
+  try {
+    const res = await axios.post(`${OTP_API_BASE}/auth/check-registration-attempt`, {
+      email: String(emailValue || '').trim().toLowerCase(),
+      purpose: 'supplier',
+    })
+    return res?.data || { success: false, error: 'Unable to validate registration attempt.' }
+  } catch (error) {
+    return error?.response?.data || {
+      success: false,
+      error: 'Registration protection is temporarily unavailable. Please try again shortly.',
+    }
+  }
+}
+
 const register = async () => {
   if (password.value !== confirmPassword.value) {
     toast.error('Passwords do not match')
@@ -1159,6 +1188,11 @@ const register = async () => {
 
   try {
     const normalizedEmail = email.value.trim().toLowerCase()
+    const attemptResult = await checkRegistrationAttempt(normalizedEmail)
+    if (!attemptResult.success) {
+      toast.error(attemptResult.error || 'Too many registration attempts. Please try again later.')
+      return
+    }
     const userCredentials = await createUserWithEmailAndPassword(auth, normalizedEmail, password.value)
     const uid = userCredentials.user.uid
     userUid.value = uid
@@ -1304,7 +1338,18 @@ const verifyOtp = async () => {
       userUid.value = String(verifyRes.data.data.uid).trim()
     }
 
-    toast.success('Email verified! Your supplier registration is now pending approval.')
+    let automaticVerification = null
+    try {
+      automaticVerification = await requestAutomaticSupplierVerification(userUid.value)
+    } catch (verificationError) {
+      console.warn('Automatic supplier verification was not completed:', verificationError)
+    }
+
+    toast.success(
+      automaticVerification?.status === 'Approved'
+        ? 'Email and documents verified. Your supplier account is active.'
+        : 'Email verified! Your supplier registration is now pending administrator review.'
+    )
     registrationPhase.value = 'waiting'
     resetOtpState()
   } catch (err) {
@@ -1814,13 +1859,13 @@ onBeforeUnmount(() => {
       >
         <div class="p-1">
           <LocationPicker
-            region="philippines"
+            region="cavite"
             title="Select Business Address"
-            instruction-title="Business address"
-            instruction-text="Search and pin your business location anywhere in the Philippines."
-            search-placeholder="Search a city, barangay, or address"
+            instruction-title="Cavite business address"
+            instruction-text="Search and pin your business location inside Cavite."
+            search-placeholder="Search a city, barangay, or address in Cavite"
             search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
-            allowed-area-label="Philippines"
+            allowed-area-label="Cavite, Philippines"
             pinned-address-label="Pinned Full Address"
             confirm-label="Use Pin"
             :show-close="true"

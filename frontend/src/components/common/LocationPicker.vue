@@ -166,6 +166,9 @@ let geocoder = null
 let lastValidSelection = null
 let caviteBoundaryBackdrop = null
 let caviteBoundaryOutlines = []
+let mapClickListener = null
+let markerDragListener = null
+let markerDragHandler = null
 
 const caviteBoundaryGeometry = ref(null)
 const caviteBoundaryNotice = ref('')
@@ -183,6 +186,23 @@ const regionConfig = computed(() => ({
     props.instructionText ||
     'Pinning is limited to the official Cavite province boundary. Pins outside Cavite are blocked.',
 }))
+
+const cleanupMapListeners = () => {
+  if (mapClickListener?.remove) {
+    mapClickListener.remove()
+  }
+  mapClickListener = null
+
+  if (markerDragListener?.remove) {
+    markerDragListener.remove()
+  }
+  markerDragListener = null
+
+  if (markerDragHandler && marker?.removeEventListener) {
+    marker.removeEventListener('dragend', markerDragHandler)
+  }
+  markerDragHandler = null
+}
 
 const clearBoundaryOverlays = () => {
   if (caviteBoundaryBackdrop) {
@@ -598,9 +618,7 @@ const reverseGeocodeLocation = (selectedLat, selectedLng, fallbackText = '') =>
     const geocoderInstance = ensureGeocoder() || new window.google.maps.Geocoder()
     geocoderInstance.geocode({ location: { lat: selectedLat, lng: selectedLng } }, (results, status) => {
       if (status !== 'OK' || !results?.length) {
-        error.value = props.region === 'philippines'
-          ? 'Unable to resolve an address for the selected pin.'
-          : 'Unable to verify this pin. Please choose a land location in Cavite.'
+        error.value = 'Unable to verify this pin. Please choose a land location in Cavite.'
         emit('error', error.value)
         revertMarker()
         resolve(false)
@@ -651,9 +669,7 @@ const searchLocation = async () => {
     },
     (results, status) => {
       if (status !== 'OK' || !results?.length) {
-        error.value = props.region === 'philippines'
-          ? 'No matching address was found.'
-          : 'No matching address was found in Cavite.'
+        error.value = 'No matching address was found in Cavite.'
         emit('error', error.value)
         loading.value = false
         return
@@ -744,13 +760,22 @@ const initMap = async () => {
   const initialLat = Number(props.initialLat)
   const initialLng = Number(props.initialLng)
   const hasInitialCoords = Number.isFinite(initialLat) && Number.isFinite(initialLng)
-  const center = hasInitialCoords ? { lat: initialLat, lng: initialLng } : regionConfig.value.defaultCenter
+  const hasValidInitialCoords = hasInitialCoords && isWithinActiveSelectionArea(initialLat, initialLng)
+  const center = hasValidInitialCoords ? { lat: initialLat, lng: initialLng } : regionConfig.value.defaultCenter
   const defaultZoom = 11
+
+  if (hasInitialCoords && !hasValidInitialCoords) {
+    lat.value = ''
+    lng.value = ''
+    lastValidSelection = null
+    error.value = 'The saved location is outside Cavite. Please search and select a new location.'
+    emit('error', error.value)
+  }
 
   if (!map) {
     map = new MapCtor(mapCanvas.value, {
       center,
-      zoom: hasInitialCoords ? 15 : defaultZoom,
+      zoom: hasValidInitialCoords ? 15 : defaultZoom,
       restriction: { latLngBounds: regionConfig.value.bounds, strictBounds: true },
       streetViewControl: false,
       fullscreenControl: false,
@@ -759,7 +784,7 @@ const initMap = async () => {
     })
   } else {
     map.setCenter(center)
-    if (!hasInitialCoords && map.setZoom) {
+    if (!hasValidInitialCoords && map.setZoom) {
       map.setZoom(defaultZoom)
     }
   }
@@ -772,10 +797,12 @@ const initMap = async () => {
     }
   } else {
     clearBoundaryOverlays()
-    if (!hasInitialCoords && map?.setZoom) {
+    if (!hasValidInitialCoords && map?.setZoom) {
       map.setZoom(10)
     }
   }
+
+  cleanupMapListeners()
 
   if (marker?.setMap) {
     marker.setMap(null)
@@ -813,21 +840,17 @@ const initMap = async () => {
     return reverseGeocodeLocation(nextLat, nextLng, searchQuery.value || displayAddress.value)
   }
 
+  markerDragHandler = (event) =>
+      handlePosition(event?.latLng).then((ok) => {
+        if (!ok) revertMarker()
+      })
   if (marker?.addListener) {
-    marker.addListener('dragend', (event) =>
-      handlePosition(event?.latLng).then((ok) => {
-        if (!ok) revertMarker()
-      })
-    )
+    markerDragListener = marker.addListener('dragend', markerDragHandler)
   } else if (marker?.addEventListener) {
-    marker.addEventListener('dragend', (event) =>
-      handlePosition(event?.latLng).then((ok) => {
-        if (!ok) revertMarker()
-      })
-    )
+    marker.addEventListener('dragend', markerDragHandler)
   }
 
-  map.addListener?.('click', (event) => {
+  mapClickListener = map.addListener?.('click', (event) => {
     if (!event?.latLng) return
     const nextLat = event.latLng.lat()
     const nextLng = event.latLng.lng()
@@ -870,9 +893,7 @@ const initMap = async () => {
 
 const confirmPin = () => {
   if (!hasPin.value) {
-    error.value = props.region === 'philippines'
-      ? 'Pin a valid location in the Philippines first.'
-      : 'Pin a valid land location in Cavite first.'
+    error.value = 'Pin a valid land location in Cavite first.'
     emit('error', error.value)
     return
   }
@@ -899,6 +920,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  cleanupMapListeners()
   clearBoundaryOverlays()
   if (marker?.setMap) {
     marker.setMap(null)

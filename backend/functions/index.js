@@ -6,6 +6,11 @@ admin.initializeApp()
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const GRACE_DAYS = 7
+const SUBSCRIPTION_STATUS = Object.freeze({
+  ACTIVE: 'active',
+  READ_ONLY: 'read_only',
+  SUSPENDED: 'suspended'
+})
 
 const normalizePlanKey = (value) => {
   const raw = String(value || '').trim().toLowerCase()
@@ -119,6 +124,8 @@ exports.subscriptionMaintenance = functions.pubsub
           subscriptionStartedAt: pendingApplyAt,
           subscriptionExpiresAt: nextExpiresAt,
           subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          subscriptionAccessStatus: SUBSCRIPTION_STATUS.ACTIVE,
+          subscriptionGraceEndsAt: null,
           ...clearPendingSubscriptionFields(),
         }
 
@@ -137,8 +144,27 @@ exports.subscriptionMaintenance = functions.pubsub
 
       if (!expiresAt) continue
       const daysLeft = Math.ceil((expiresAt.getTime() - now.getTime()) / DAY_MS)
-      const isExpired = now.getTime() > expiresAt.getTime()
+      const isExpired = now.getTime() >= expiresAt.getTime()
       const isPublished = data.isPublished === true
+      const graceEndsAt = new Date(expiresAt.getTime() + GRACE_DAYS * DAY_MS)
+      const accessStatus = !isExpired
+        ? SUBSCRIPTION_STATUS.ACTIVE
+        : now.getTime() < graceEndsAt.getTime()
+          ? SUBSCRIPTION_STATUS.READ_ONLY
+          : SUBSCRIPTION_STATUS.SUSPENDED
+
+      const accessUpdate = {
+        subscriptionAccessStatus: accessStatus,
+        subscriptionGraceEndsAt: graceEndsAt,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }
+
+      if (data.subscriptionAccessStatus !== accessStatus) {
+        updates.push(docSnap.ref.set(accessUpdate, { merge: true }))
+        if (ownerId) {
+          updates.push(firestore.collection('users').doc(ownerId).set(accessUpdate, { merge: true }))
+        }
+      }
 
       if (isExpired && isPublished) {
         updates.push(
@@ -159,18 +185,18 @@ exports.subscriptionMaintenance = functions.pubsub
       }
       if (!ownerEmail) continue
 
-      if (isExpired && !data.subscriptionExpiredNotifiedAt) {
+      if (isExpired && accessStatus === SUBSCRIPTION_STATUS.READ_ONLY && !data.subscriptionExpiredNotifiedAt) {
         mailJobs.push(
             client.sendEmail({
               From: sender,
               To: ownerEmail,
               Subject: 'Your subscription has expired',
-              TextBody: `Your subscription expired on ${formatDate(expiresAt)}.\nYour clinic page has been unpublished and your account is now read-only.`,
+              TextBody: `Your subscription expired on ${formatDate(expiresAt)}.\nYour clinic page has been unpublished and your account is read-only for ${GRACE_DAYS} days. Renew before ${formatDate(graceEndsAt)} to restore access.`,
               HtmlBody: `
                 <div style="font-family:Arial,sans-serif;line-height:1.5;color:#2a1408;">
                   <h2 style="margin:0 0 12px;">Subscription expired</h2>
                   <p>Your subscription expired on <strong>${formatDate(expiresAt)}</strong>.</p>
-                  <p>Your clinic page has been unpublished and your account is now read-only.</p>
+                  <p>Your clinic page has been unpublished. Your account is read-only for ${GRACE_DAYS} days, until <strong>${formatDate(graceEndsAt)}</strong>.</p>
                 </div>
               `,
             })
@@ -178,6 +204,30 @@ exports.subscriptionMaintenance = functions.pubsub
         updates.push(
           docSnap.ref.update({
             subscriptionExpiredNotifiedAt: admin.firestore.FieldValue.serverTimestamp()
+          })
+        )
+        continue
+      }
+
+      if (accessStatus === SUBSCRIPTION_STATUS.SUSPENDED && !data.subscriptionSuspendedNotifiedAt) {
+        mailJobs.push(
+          client.sendEmail({
+            From: sender,
+            To: ownerEmail,
+            Subject: 'Your account has been suspended',
+            TextBody: `Your subscription grace period ended on ${formatDate(graceEndsAt)}. Your business features remain suspended until you renew. Your data has not been deleted.`,
+            HtmlBody: `
+              <div style="font-family:Arial,sans-serif;line-height:1.5;color:#2a1408;">
+                <h2 style="margin:0 0 12px;">Account suspended</h2>
+                <p>Your subscription grace period ended on <strong>${formatDate(graceEndsAt)}</strong>.</p>
+                <p>Your business features are suspended until you renew. Your data has not been deleted.</p>
+              </div>
+            `,
+          })
+        )
+        updates.push(
+          docSnap.ref.update({
+            subscriptionSuspendedNotifiedAt: admin.firestore.FieldValue.serverTimestamp()
           })
         )
         continue

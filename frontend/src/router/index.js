@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useAuth } from "@/composables/useAuth";
 import { usePermissions } from "@/composables/usePermissions";
 import { useSubscription } from "@/composables/useSubscription";
@@ -88,7 +88,7 @@ const routes = [
   { path: "/owner/staff/archived", name: "owner-staff-archived", component: () => import("@/views/admin/owner/ArchivedEmployees.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view" } },
   { path: "/owner/staff/attendance", name: "owner-staff-attendance", component: () => import("@/views/admin/owner/Attendance.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
   { path: "/owner/staff/approve", name: "owner-staff-approve", component: () => import("@/views/admin/owner/hr/ApproveStaff.vue"), meta: { requiresAuth: true, requiresPermission: "staff:update" } },
-  { path: "/owner/staff/roles", name: "owner-staff-roles", component: () => import("@/views/admin/owner/OwnerRoleManagement.vue"), meta: { requiresAuth: true, requiresPermission: "roles:view" } },
+  { path: "/owner/staff/roles", name: "owner-staff-roles", component: () => import("@/views/admin/owner/OwnerRoleManagement.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "roles:manage" } },
   { path: "/owner/finance", name: "owner-finance", component: () => import("@/views/admin/owner/OwnerFinance.vue"), meta: { requiresAuth: true } },
   { path: "/owner/clinic-profile", name: "owner-clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:view" } },
   { path: "/owner/reports", name: "owner-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
@@ -151,6 +151,8 @@ const routes = [
   { path: "/superadmin/subscription/plans", name: "superadmin-subscription-plans", component: () => import("@/views/superAdmin/SubscriptionPlans.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/subscription/permissions", name: "superadmin-subscription-permissions", component: () => import("@/views/superAdmin/SubscriptionPermission.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/subscription/payments", name: "superadmin-subscription-payments", component: () => import("@/views/superAdmin/SubscriptionPayments.vue"), meta: { requiresAuth: true } },
+  { path: "/superadmin/payments/analytics", name: "superadmin-payments-analytics", component: () => import("@/views/superAdmin/PaymentsAnalytics.vue"), meta: { requiresAuth: true } },
+  { path: "/superadmin/system-settings", name: "superadmin-system-settings", component: () => import("@/views/superAdmin/SystemSettings.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/clinics/verification", name: "superadmin-clinic-verification", component: () => import("@/views/superAdmin/ClinicVerification.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/suppliers/verification", name: "superadmin-supplier-verification", component: () => import("@/views/superAdmin/SupplierVerification.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/clinics/verified", name: "superadmin-clinics-verified", component: () => import("@/views/superAdmin/VerifiedClinics.vue"), meta: { requiresAuth: true } },
@@ -159,6 +161,8 @@ const routes = [
   { path: "/superadmin/activity-logs", name: "superadmin-activity-logs", component: () => import("@/views/superAdmin/ActivityLogs.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/account-closure-requests", name: "superadmin-account-closure-requests", component: () => import("@/views/superAdmin/AccountClosureRequests.vue"), meta: { requiresAuth: true } },
   { path: "/superadmin/tickets", name: "superadmin-tickets", component: () => import("@/views/superAdmin/UserTickets.vue"), meta: { requiresAuth: true } },
+  // Unknown URLs must never expose an unhandled route or blank protected view.
+  { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 
 const router = createRouter({
@@ -170,6 +174,45 @@ const isOwnerLikeRole = (value) => {
   const compact = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
   return compact === "owner" || compact === "clinicadmin" || compact === "clinicadministrator";
 };
+
+const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+
+const isSuperadminRole = (userData = {}) => {
+  const role = normalizeRole(userData.role || userData.userType)
+  return ['superadmin', 'systemadmin', 'sysadmin'].includes(role)
+}
+
+const isCustomerRole = (userData = {}) => {
+  return normalizeRole(userData.role) === 'customer' || normalizeRole(userData.userType) === 'customer'
+}
+
+const isSupplierRole = (userData = {}) => {
+  const role = normalizeRole(userData.role || userData.userType)
+  return ['supplier', 'supplieradmin'].includes(role)
+}
+
+const isClinicAccount = (userData = {}) => {
+  const role = normalizeRole(userData.role)
+  const userType = normalizeRole(userData.userType)
+  return isSuperadminRole(userData)
+    || isOwnerLikeRole(role)
+    || userType === 'staff'
+    || userType === 'employee'
+}
+
+const isAuthReady = (isLoading) => {
+  if (!isLoading.value) return Promise.resolve()
+
+  return new Promise((resolve) => {
+    let unsubscribe = null
+    unsubscribe = onAuthStateChanged(auth, () => {
+      if (unsubscribe) unsubscribe()
+      resolve()
+    })
+  })
+}
+
+const safeUnauthorizedRedirect = (user) => user?.uid ? '/' : '/login'
 
 const permissionAlternates = {
   'inventory:create': ['inventory:review'],
@@ -185,20 +228,24 @@ router.beforeEach(async (to, from, next) => {
 
   initAuth();
 
-  if (isLoading.value) {
-    return next();
-  }
+  // Never render a protected route while Firebase is still resolving the
+  // session. The previous early next() allowed direct URL access to load
+  // protected components before the auth state was known.
+  await isAuthReady(isLoading)
+  const currentUser = user.value || auth.currentUser
 
   // Auth-required routes
-  if (to.meta.requiresAuth && !user.value) {
+  if (to.meta.requiresAuth && !currentUser) {
     return next("/login");
   }
 
   let forcedEmployeePasswordChange = false
-  if (user.value?.uid) {
+  let currentUserData = {}
+  if (currentUser?.uid) {
     try {
-      const userSnap = await getDoc(doc(db, "users", user.value.uid));
+      const userSnap = await getDoc(doc(db, "users", currentUser.uid));
       const userData = userSnap.exists() ? userSnap.data() || {} : {};
+      currentUserData = userData
       const userType = String(userData.userType || '').trim().toLowerCase();
       const accountStatus = String(userData.status || '').trim().toLowerCase();
       const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
@@ -224,16 +271,39 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // Guest-only routes (like /login)
-  if (to.meta.guestOnly && user.value) {
+  if (to.meta.guestOnly && currentUser) {
     // Instead of forcing dashboard, just allow navigation
     return next();
   }
 
+  const routePath = String(to.path || '').toLowerCase()
+  if (currentUser && routePath.startsWith('/superadmin') && !isSuperadminRole(currentUserData)) {
+    return next(safeUnauthorizedRedirect(currentUser))
+  }
+  if (currentUser && routePath.startsWith('/supplier') && !isSupplierRole(currentUserData)) {
+    return next(safeUnauthorizedRedirect(currentUser))
+  }
+  if (currentUser && routePath.startsWith('/customer') && !isCustomerRole(currentUserData)) {
+    return next(safeUnauthorizedRedirect(currentUser))
+  }
+  if (
+    currentUser &&
+    ['/owner', '/manager', '/receptionist', '/practitioner', '/employee', '/hr', '/finance', '/supply', '/face-reg', '/attendance', '/activities']
+      .some((prefix) => routePath === prefix || routePath.startsWith(`${prefix}/`)) &&
+    !isClinicAccount(currentUserData)
+  ) {
+    return next(safeUnauthorizedRedirect(currentUser))
+  }
+
+  if (to.meta.requiresOwner && !isOwnerLikeRole(currentUserData.role || currentUserData.userType || "")) {
+    return next(safeUnauthorizedRedirect(currentUser));
+  }
+
   // Permission-required routes
   if (to.meta.requiresPermission && !(to.path === '/employee/change-password' && forcedEmployeePasswordChange) && !hasPermission(to.meta.requiresPermission)) {
-    if (user.value?.uid) {
+    if (currentUser?.uid) {
       try {
-        const userSnap = await getDoc(doc(db, "users", user.value.uid));
+        const userSnap = await getDoc(doc(db, "users", currentUser.uid));
         const userData = userSnap.exists() ? userSnap.data() || {} : {};
         const alternates = permissionAlternates[to.meta.requiresPermission] || [];
         if (alternates.some((permission) => hasPermission(permission))) {
@@ -246,7 +316,7 @@ router.beforeEach(async (to, from, next) => {
         console.error("Error verifying owner access in route guard:", error);
       }
     }
-    return next("/unauthorized");
+    return next(safeUnauthorizedRedirect(currentUser));
   }
 
   // Feature-required routes

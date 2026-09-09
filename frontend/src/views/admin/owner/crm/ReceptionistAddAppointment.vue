@@ -213,6 +213,7 @@ import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { logActivity } from '@/utils/activityLogger'
+import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import {
   buildAppointmentRecommendations,
   extractShiftWindowMinutes,
@@ -229,6 +230,36 @@ export default {
     const router = useRouter()
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+
+    const fetchFromBackend = async (path, options = {}) => {
+      const candidates = OTP_BACKEND_CANDIDATES
+      let lastError = null
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
+      const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
+
+      for (const baseUrl of candidates) {
+        try {
+          const response = await fetch(`${baseUrl}${path}`, {
+            ...options,
+            headers: { ...(options.headers || {}), ...authHeader },
+          })
+          if (response.status === 404) {
+            lastError = new Error(`Endpoint not found on ${baseUrl}`)
+            continue
+          }
+          const contentType = response.headers.get('content-type') || ''
+          if (!contentType.toLowerCase().includes('application/json')) {
+            lastError = new Error(`Non-JSON response from ${baseUrl}`)
+            continue
+          }
+          return response
+        } catch (error) {
+          lastError = error
+        }
+      }
+
+      throw lastError || new Error('Failed to reach backend service')
+    }
 
     const currentUserId = ref('')
     const currentBranchId = ref('')
@@ -504,32 +535,47 @@ export default {
 
       isSubmitting.value = true
       try {
-        await addDoc(collection(db, 'appointments'), {
-          clientId: selectedClient.id,
-          clientName: selectedClient.fullName || `${selectedClient.firstName || ''} ${selectedClient.lastName || ''}`.trim(),
-          clientEmail: selectedClient.email || '',
-          clientPhone: selectedClient.phone || '',
+        // Build a reservation payload and send to the backend bookings.create endpoint.
+        const reservation = {
+          customerId: selectedClient.id,
+          customerName: selectedClient.fullName || `${selectedClient.firstName || ''} ${selectedClient.lastName || ''}`.trim(),
+          customerEmail: selectedClient.email || '',
+          customerPhone: selectedClient.phone || '',
           practitionerId: selectedPractitioner.id,
-          assignedPractitionerId: selectedPractitioner.id,
           practitionerName: selectedPractitioner.fullName,
-          assignedPractitionerName: selectedPractitioner.fullName,
+          selectedServices: [],
+          selectedServiceIds: [],
           service: form.value.service.trim(),
           date: form.value.date,
           time: form.value.time,
           notes: form.value.notes.trim(),
-          status: 'Scheduled',
           branchId: currentBranchId.value,
           createdBy: currentUserId.value,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+        }
+
+        const resp = await fetchFromBackend('/bookings/create', {
+          method: 'POST',
+          body: JSON.stringify({ reservation }),
+          headers: { 'Content-Type': 'application/json' },
         })
 
-        await logActivity(db, {
-          actorId: currentUserId.value,
-          action: 'Added an appointment',
-          details: `Scheduled ${selectedClient.fullName || 'client'} with ${selectedPractitioner.fullName || 'practitioner'} on ${form.value.date} ${form.value.time}`,
-          module: 'Receptionist'
-        })
+        const payload = await resp.json()
+        if (!payload || !payload.success) {
+          console.error('Booking creation failed', payload)
+          throw new Error(payload?.error || 'Booking creation failed')
+        }
+
+        // Log activity locally in Firestore for audit
+        try {
+          await logActivity(db, {
+            actorId: currentUserId.value,
+            action: 'Created booking',
+            details: `Booking ${payload.data?.bookingId || ''} created for ${reservation.customerName} on ${reservation.date} ${reservation.time}`,
+            module: 'Receptionist',
+          })
+        } catch (logErr) {
+          console.warn('Failed to log activity after booking creation:', logErr)
+        }
 
         toast.success('Appointment created successfully.')
         router.push('/receptionist/appointments')

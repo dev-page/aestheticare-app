@@ -16,10 +16,55 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const customRolePermissions = ref([])
   const loading = ref(false)
   const roleKey = ref('')
-  const customRoleId = ref('')
+  const customRoleIds = ref([])
   let unsubscribeUser = null
   let unsubscribeRole = null
-  let unsubscribeCustomRole = null
+  const customRoleUnsubscribers = new Map()
+  const customRolePermissionMap = new Map()
+
+  const normalizeCustomRoleIds = (data = {}) => {
+    const ids = Array.isArray(data.customRoleIds) ? data.customRoleIds : []
+    const legacyId = String(data.customRoleId || '').trim()
+    return [...new Set([...ids, legacyId].map((value) => String(value || '').trim()).filter(Boolean))]
+  }
+
+  const clearCustomRoleListeners = () => {
+    customRoleUnsubscribers.forEach((unsubscribe) => unsubscribe())
+    customRoleUnsubscribers.clear()
+    customRolePermissionMap.clear()
+    customRolePermissions.value = []
+  }
+
+  const syncCustomRoleListeners = (roleIds = []) => {
+    const nextIds = new Set(roleIds)
+    customRoleUnsubscribers.forEach((unsubscribe, roleId) => {
+      if (!nextIds.has(roleId)) {
+        unsubscribe()
+        customRoleUnsubscribers.delete(roleId)
+        customRolePermissionMap.delete(roleId)
+      }
+    })
+    customRolePermissions.value = [...customRolePermissionMap.values()].flat()
+
+    roleIds.forEach((roleId) => {
+      if (customRoleUnsubscribers.has(roleId)) return
+      const unsubscribe = onSnapshot(
+        doc(db, 'clinicRoles', roleId),
+        (customRoleSnap) => {
+          const roleData = customRoleSnap.exists() ? customRoleSnap.data() || {} : {}
+          customRolePermissionMap.set(
+            roleId,
+            Array.isArray(roleData.permissions) ? roleData.permissions : []
+          )
+          customRolePermissions.value = [...customRolePermissionMap.values()].flat()
+        },
+        (error) => {
+          console.error('Error listening to clinic custom role permissions:', error)
+        }
+      )
+      customRoleUnsubscribers.set(roleId, unsubscribe)
+    })
+  }
 
   const permissionAliases = {
     view_patients: ['clients:view'],
@@ -92,9 +137,9 @@ export const usePermissionsStore = defineStore('permissions', () => {
       if (!newUser) {
         userPermissions.value = []
         rolePermissions.value = []
-        customRolePermissions.value = []
+        clearCustomRoleListeners()
         roleKey.value = ''
-        customRoleId.value = ''
+        customRoleIds.value = []
         try {
           Object.keys(localStorage).forEach((key) => {
             if (key.startsWith('permissions:user:') || key.startsWith('permissions:role:')) {
@@ -112,10 +157,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
           unsubscribeRole()
           unsubscribeRole = null
         }
-        if (unsubscribeCustomRole) {
-          unsubscribeCustomRole()
-          unsubscribeCustomRole = null
-        }
+        clearCustomRoleListeners()
         return
       }
 
@@ -124,17 +166,17 @@ export const usePermissionsStore = defineStore('permissions', () => {
         unsubscribeUser()
         unsubscribeUser = null
       }
-      if (unsubscribeCustomRole) {
-        unsubscribeCustomRole()
-        unsubscribeCustomRole = null
-      }
+      clearCustomRoleListeners()
 
       unsubscribeUser = onSnapshot(
         doc(db, 'users', newUser.uid),
         (snapshot) => {
           const data = snapshot.exists() ? snapshot.data() || {} : {}
-          userPermissions.value = Array.isArray(data.permissions) ? data.permissions : []
-          const nextCustomRoleId = String(data.customRoleId || '').trim()
+          userPermissions.value = [
+            ...(Array.isArray(data.permissions) ? data.permissions : []),
+            ...(Array.isArray(data.effectivePermissions) ? data.effectivePermissions : []),
+          ]
+          const nextCustomRoleIds = normalizeCustomRoleIds(data)
           const nextUserType = String(data.userType || '').trim().toLowerCase()
           const isStaffUser = nextUserType === 'staff'
           const nextRole = normalizeRoleKey(data.role || data.userType || '')
@@ -164,33 +206,8 @@ export const usePermissionsStore = defineStore('permissions', () => {
               rolePermissions.value = []
             }
           }
-          if (nextCustomRoleId !== customRoleId.value) {
-            customRoleId.value = nextCustomRoleId
-            if (unsubscribeCustomRole) {
-              unsubscribeCustomRole()
-              unsubscribeCustomRole = null
-            }
-            if (customRoleId.value) {
-              unsubscribeCustomRole = onSnapshot(
-                doc(db, 'clinicRoles', customRoleId.value),
-                (customRoleSnap) => {
-                  const customRoleData = customRoleSnap.exists() ? customRoleSnap.data() || {} : {}
-                  customRolePermissions.value = Array.isArray(customRoleData.permissions)
-                    ? customRoleData.permissions
-                    : []
-                },
-                (error) => {
-                  console.error('Error listening to clinic custom role permissions:', error)
-                  customRolePermissions.value = []
-                }
-              )
-            } else {
-              customRolePermissions.value = []
-            }
-          }
-          if (isStaffUser) {
-            rolePermissions.value = []
-          }
+          customRoleIds.value = nextCustomRoleIds
+          syncCustomRoleListeners(nextCustomRoleIds)
           persistPermissions(newUser.uid, roleKey.value, !isStaffUser)
           loading.value = false
         },
@@ -200,7 +217,8 @@ export const usePermissionsStore = defineStore('permissions', () => {
           rolePermissions.value = []
           customRolePermissions.value = []
           roleKey.value = ''
-          customRoleId.value = ''
+          customRoleIds.value = []
+          clearCustomRoleListeners()
           loading.value = false
         }
       )
@@ -220,10 +238,9 @@ export const usePermissionsStore = defineStore('permissions', () => {
   })
 
   const effectivePermissions = computed(() => {
-    const usesCustomRolePermissions = Boolean(customRoleId.value)
     const set = new Set([
       ...(Array.isArray(userPermissions.value) ? userPermissions.value : []),
-      ...(usesCustomRolePermissions ? [] : (Array.isArray(rolePermissions.value) ? rolePermissions.value : [])),
+      ...(Array.isArray(rolePermissions.value) ? rolePermissions.value : []),
       ...(Array.isArray(customRolePermissions.value) ? customRolePermissions.value : [])
     ])
     defaultPermissionKeys.forEach((permissionKey) => set.add(permissionKey))

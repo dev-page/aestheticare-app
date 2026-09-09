@@ -11,7 +11,9 @@ import {
   signOut,
 } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
+import axios from 'axios'
 import { toast } from 'vue3-toastify'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const router = useRouter()
 const route = useRoute()
@@ -22,6 +24,13 @@ const isRememberMe = ref(false)
 const isSubmitting = ref(false)
 const passwordVisible = ref(false)
 const contentVisible = ref(true)
+const loginOtpStep = ref(false)
+const loginOtpCode = ref('')
+const loginOtpEmail = ref('')
+const loginOtpUid = ref('')
+const loginOtpError = ref('')
+const loginOtpResendCountdown = ref(0)
+let loginOtpInterval = null
 let redirectTimeout = null
 const REDIRECT_DELAY = 1700
 
@@ -52,6 +61,52 @@ const normalizeRoleKey = (value) => {
     return 'Superadmin'
   }
   return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
+}
+
+const requiresLoginOtp = (userData) => {
+  const role = normalizeRoleKey(userData?.role || userData?.userType)
+  return role === 'Superadmin' || role === 'Owner' || role === 'Clinic Admin'
+}
+
+const firebaseLoginMessages = {
+  'auth/user-not-found': 'No account found with this email.',
+  'auth/invalid-credential': 'Invalid email or password.',
+  'auth/wrong-password': 'Invalid email or password.',
+  'auth/too-many-requests': 'Too many failed login attempts. Please try again later.',
+  'auth/network-request-failed': 'Connection error. Please check your internet and try again.'
+}
+
+const startLoginOtpCooldown = (seconds = 60) => {
+  if (loginOtpInterval) clearInterval(loginOtpInterval)
+  loginOtpResendCountdown.value = Math.max(Number(seconds) || 60, 1)
+  loginOtpInterval = setInterval(() => {
+    if (loginOtpResendCountdown.value <= 1) {
+      clearInterval(loginOtpInterval)
+      loginOtpInterval = null
+      loginOtpResendCountdown.value = 0
+      return
+    }
+    loginOtpResendCountdown.value -= 1
+  }, 1000)
+}
+
+const requestLoginOtp = async (uid, emailAddress, credentials = null) => {
+  let currentCredentials = credentials
+  if (!currentCredentials) {
+    currentCredentials = await signInWithEmailAndPassword(auth, emailAddress, password.value)
+  }
+  const idToken = await currentCredentials.user.getIdToken(true)
+  try {
+    const response = await axios.post(
+      `${OTP_API_BASE}/auth/request-login-otp`,
+      { uid, email: emailAddress },
+      { headers: { Authorization: `Bearer ${idToken}` } }
+    )
+    startLoginOtpCooldown(response.data?.retryAfterSeconds || 60)
+    return response.data
+  } finally {
+    await signOut(auth).catch(() => {})
+  }
 }
 
 const resolveRedirectPath = async (userData) => {
@@ -118,7 +173,7 @@ const handleLogin = async () => {
     }
 
     isSubmitting.value = true
-    setProcessLoading(true, 'Redirecting to your panel...')
+    setProcessLoading(true, 'Checking your account...')
 
     try {
       await setPersistence(
@@ -150,6 +205,34 @@ const handleLogin = async () => {
           return
         }
 
+        if (requiresLoginOtp(userData)) {
+          try {
+            const normalizedEmail = email.value.trim().toLowerCase()
+            const otpResult = await requestLoginOtp(
+              userCredentials.user.uid,
+              normalizedEmail,
+              userCredentials
+            )
+            loginOtpEmail.value = normalizedEmail
+            loginOtpUid.value = userCredentials.user.uid
+            loginOtpCode.value = ''
+            loginOtpError.value = ''
+            loginOtpStep.value = true
+            toast.success('A login OTP was sent to your email.')
+            setProcessLoading(false)
+          } catch (otpError) {
+            await signOut(auth).catch(() => {})
+            const status = otpError?.response?.status
+            const message = firebaseLoginMessages[otpError?.code]
+              || otpError?.response?.data?.error
+              || (status === 404 ? 'Login OTP service is unavailable. Please restart or deploy the OTP backend.' : '')
+              || (status === 429 ? 'Too many OTP requests. Please try again later.' : 'Unable to send login OTP.')
+            toast.error(message)
+            setProcessLoading(false)
+          }
+          return
+        }
+
         const redirectPath = await resolveRedirectPath(userData)
 
         clearFormFields()
@@ -157,17 +240,59 @@ const handleLogin = async () => {
       }
     } catch (err) {
       console.error(err)
-      const friendlyMessages = {
-        'auth/user-not-found': 'No account found with this email.',
-        'auth/invalid-credential': 'Invalid email or password.',
-        'auth/too-many-requests': 'Too many failed login attempts. Please try again later.',
-        'auth/network-request-failed': 'Connection error. Please check your internet and try again.'
-      }
-      toast.error(friendlyMessages[err.code] || 'Login failed. Please try again.')
+      toast.error(firebaseLoginMessages[err.code] || 'Login failed. Please try again.')
       setProcessLoading(false)
     } finally {
       isSubmitting.value = false
     }
+}
+
+const verifyLoginOtp = async () => {
+  const normalizedOtp = String(loginOtpCode.value || '').replace(/\D/g, '')
+  if (normalizedOtp.length !== 6) {
+    loginOtpError.value = 'Enter the complete 6-digit OTP.'
+    return
+  }
+
+  isSubmitting.value = true
+  loginOtpError.value = ''
+  setProcessLoading(true, 'Verifying your login...')
+  try {
+    await axios.post(`${OTP_API_BASE}/auth/verify-login-otp`, {
+      uid: loginOtpUid.value,
+      email: loginOtpEmail.value,
+      otp: normalizedOtp,
+    })
+    const credentials = await signInWithEmailAndPassword(auth, loginOtpEmail.value, password.value)
+    await credentials.user.reload()
+    const userSnap = await getDoc(doc(db, 'users', credentials.user.uid))
+    const userData = userSnap.exists() ? userSnap.data() || {} : {}
+    const redirectPath = await resolveRedirectPath(userData)
+    loginOtpStep.value = false
+    clearFormFields()
+    startRedirectFlow(redirectPath)
+  } catch (error) {
+    loginOtpError.value = error?.response?.data?.error || 'Invalid or expired OTP.'
+    setProcessLoading(false)
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+const resendLoginOtp = async () => {
+  if (loginOtpResendCountdown.value > 0 || isSubmitting.value) return
+  isSubmitting.value = true
+  loginOtpError.value = ''
+  try {
+    await requestLoginOtp(loginOtpUid.value, loginOtpEmail.value)
+    loginOtpCode.value = ''
+    toast.success('A new login OTP was sent.')
+  } catch (error) {
+    loginOtpError.value = error?.response?.data?.error || 'Unable to resend login OTP.'
+    startLoginOtpCooldown(error?.response?.data?.retryAfterSeconds || 60)
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 const handleForgotPassword = async () => {
@@ -176,6 +301,7 @@ const handleForgotPassword = async () => {
 
 onBeforeUnmount(() => {
   if (redirectTimeout) clearTimeout(redirectTimeout)
+  if (loginOtpInterval) clearInterval(loginOtpInterval)
   setProcessLoading(false)
 })
 
@@ -387,6 +513,52 @@ onBeforeRouteLeave((to, from, next) => {
         </div>
       </div>
       </transition>
+    </div>
+
+    <div
+      v-if="loginOtpStep"
+      class="fixed inset-0 z-[100] flex items-center justify-center bg-charcoal-900/40 px-4 backdrop-blur-sm"
+    >
+      <div class="w-full max-w-md rounded-3xl border border-gold-200/80 bg-white p-6 shadow-2xl sm:p-8">
+        <div class="mb-6">
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-gold-700">Additional verification</p>
+          <h2 class="mt-2 text-2xl font-bold text-charcoal-800">Verify your login</h2>
+          <p class="mt-2 text-sm leading-6 text-charcoal-600">
+            Enter the 6-digit code sent to {{ loginOtpEmail }}. It expires in 10 minutes.
+          </p>
+        </div>
+
+        <input
+          v-model="loginOtpCode"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="6"
+          placeholder="000000"
+          class="h-14 w-full rounded-xl border border-gold-200 bg-cream-50 px-4 text-center text-2xl tracking-[0.45em] text-charcoal-800 outline-none focus:border-gold-700 focus:ring-2 focus:ring-gold-200"
+          @input="loginOtpCode = loginOtpCode.replace(/\D/g, '').slice(0, 6)"
+          @keyup.enter="verifyLoginOtp"
+        />
+        <p v-if="loginOtpError" class="mt-3 text-sm text-rose-600">{{ loginOtpError }}</p>
+
+        <button
+          type="button"
+          class="mt-5 w-full rounded-xl bg-gold-700 py-3 font-semibold text-white transition hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="isSubmitting || loginOtpCode.length !== 6"
+          @click="verifyLoginOtp"
+        >
+          {{ isSubmitting ? 'Verifying...' : 'Verify and Continue' }}
+        </button>
+
+        <button
+          type="button"
+          class="mt-3 w-full rounded-xl border border-gold-200 py-3 text-sm font-semibold text-gold-800 transition hover:bg-gold-50 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="isSubmitting || loginOtpResendCountdown > 0"
+          @click="resendLoginOtp"
+        >
+          {{ loginOtpResendCountdown > 0 ? `Resend available in ${loginOtpResendCountdown}s` : 'Resend OTP' }}
+        </button>
+      </div>
     </div>
 
   </div>

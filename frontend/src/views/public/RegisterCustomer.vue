@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { auth, db } from '@/config/firebaseConfig'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { createUserWithEmailAndPassword, deleteUser, signOut } from 'firebase/auth'
+import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
 import LocationPicker from '@/components/common/LocationPicker.vue'
@@ -967,6 +967,45 @@ const resendOtp = async () => {
   )
 }
 
+const cleanupFailedCustomerRegistration = async (uid) => {
+  if (!uid) return
+  try {
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'users', uid)),
+    ])
+  } catch (e) {
+    console.error('Failed to cleanup customer firestore docs', e)
+  }
+
+  try {
+    if (auth?.currentUser && auth.currentUser.uid === uid) {
+      await deleteUser(auth.currentUser)
+    } else {
+      try { await signOut(auth) } catch (e) { /* ignore */ }
+    }
+  } catch (e) {
+    console.error('Failed to delete auth user during customer cleanup', e)
+  }
+
+  try { await signOut(auth) } catch (e) { /* ignore */ }
+  userUid.value = ''
+}
+
+const checkRegistrationAttempt = async (emailValue) => {
+  try {
+    const res = await axios.post(`${OTP_API_BASE}/auth/check-registration-attempt`, {
+      email: String(emailValue || '').trim().toLowerCase(),
+      purpose: 'customer',
+    })
+    return res?.data || { success: false, error: 'Unable to validate registration attempt.' }
+  } catch (error) {
+    return error?.response?.data || {
+      success: false,
+      error: 'Registration protection is temporarily unavailable. Please try again shortly.',
+    }
+  }
+}
+
 const register = async () => {
   if (password.value !== confirmPassword.value) {
     toast.error('Passwords do not match')
@@ -1017,10 +1056,17 @@ const register = async () => {
   }
 
   isSubmitting.value = true
+  let newUserCreated = false
 
   try {
     const normalizedEmail = email.value.trim().toLowerCase()
+    const attemptResult = await checkRegistrationAttempt(normalizedEmail)
+    if (!attemptResult.success) {
+      toast.error(attemptResult.error || 'Too many registration attempts. Please try again later.')
+      return
+    }
     const userCredentials = await createUserWithEmailAndPassword(auth, normalizedEmail, password.value)
+    newUserCreated = true
     const uid = userCredentials.user.uid
     userUid.value = uid
 
@@ -1047,6 +1093,17 @@ const register = async () => {
 
     otpRecipientEmail.value = normalizedEmail
     const otpResult = await requestCustomerOtp(otpRecipientEmail.value, uid)
+
+    // If OTP sending failed permanently, rollback created resources
+    if (!otpResult || !otpResult.success) {
+      const noRetry = !otpResult || !otpResult.retryAfterSeconds || otpResult.retryAfterSeconds <= 0
+      if (noRetry) {
+        await cleanupFailedCustomerRegistration(uid)
+        toast.error('Failed to send OTP. Registration was rolled back. Please try again.')
+        return
+      }
+    }
+
     applyOtpRequestResult(
       otpResult,
       'OTP sent to your email. Please verify to complete registration.',
@@ -1061,6 +1118,14 @@ const register = async () => {
       'auth/email-already-in-use': 'An account with this email already exists.',
       'auth/invalid-email': 'Invalid email format.',
       'auth/weak-password': 'Password is too weak.',
+    }
+
+    if (newUserCreated && userUid.value) {
+      try {
+        await cleanupFailedCustomerRegistration(userUid.value)
+      } catch (cleanupErr) {
+        console.error('Cleanup after failed customer registration also failed', cleanupErr)
+      }
     }
 
     if (errorCode === 'auth/email-already-in-use') {

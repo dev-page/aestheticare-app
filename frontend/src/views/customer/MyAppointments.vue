@@ -120,6 +120,37 @@
                   <td data-label="Actions">
                     <div class="table-actions">
                       <button
+                        v-if="canPayAppointment(appt)"
+                        @click="payAppointment(appt)"
+                        class="appointment-button appointment-button-primary"
+                      >
+                        Pay Now
+                      </button>
+                      <button
+                        v-if="appt.contract"
+                        type="button"
+                        class="appointment-button appointment-button-secondary"
+                        @click="openContract(appt)"
+                      >
+                        {{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View Contract' : 'Sign Contract' }}
+                      </button>
+                      <button
+                        v-if="canConfirmCompletion(appt)"
+                        type="button"
+                        class="appointment-button appointment-button-primary"
+                        @click="confirmCompletion(appt)"
+                      >
+                        Confirm Done
+                      </button>
+                      <button
+                        v-if="appt.serviceKey && !appt.customerKeyVerified"
+                        type="button"
+                        class="appointment-button appointment-button-secondary"
+                        @click="verifyServiceKey(appt)"
+                      >
+                        Confirm Service Key
+                      </button>
+                      <button
                         @click="openRequestModal('reschedule', appt)"
                         class="appointment-button appointment-button-secondary"
                         :disabled="isRequestPending(appt, 'reschedule')"
@@ -196,6 +227,14 @@
                         @click="bookFollowUp(appt)"
                       >
                         Book Follow-up
+                      </button>
+                      <button
+                        v-if="normalizeAppointmentStatus(appt.status) === 'completed'"
+                        type="button"
+                        class="appointment-button appointment-button-secondary"
+                        @click="submitFeedback(appt)"
+                      >
+                        Leave Feedback
                       </button>
                       <span
                         v-else-if="normalizeAppointmentStatus(appt.status) === 'completed' && (appt.followUpAllowed || (Array.isArray(appt.serviceDetails) && appt.serviceDetails.some((service) => Boolean(service.followUpAllowed))))"
@@ -378,6 +417,12 @@
         </div>
       </div>
     </main>
+    <BookingContractModal
+      :visible="showContractModal"
+      :appointment="selectedContractAppointment"
+      @close="closeContract"
+      @updated="contractUpdated"
+    />
   </div>
 </template>
 
@@ -390,15 +435,20 @@ import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { onAuthStateChanged } from 'firebase/auth'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import BookingContractModal from '@/components/BookingContractModal.vue'
 
 const loading = ref(true)
 const router = useRouter()
+const route = useRoute()
 const upcomingAppointments = ref([])
 const pastAppointments = ref([])
 const onlineConsultations = ref([])
 const clinicsById = ref({})
+const showContractModal = ref(false)
+const selectedContractAppointment = ref(null)
 const requestModal = ref({
   open: false,
   type: 'cancel',
@@ -1283,6 +1333,157 @@ const reschedule = async (appt) => {
   }
 }
 
+const canPayAppointment = (appointment) => {
+  const status = normalizeAppointmentStatus(appointment?.status)
+  return status === 'payment pending' || status === 'approved' || status === 'balance due'
+}
+
+const canConfirmCompletion = (appointment) => {
+  const status = normalizeAppointmentStatus(appointment?.status)
+  return Boolean(appointment?.workerCompleted) && ['ongoing', 'awaiting customer confirmation', 'balance due'].includes(status)
+}
+
+const verifyServiceKey = async (appointment) => {
+  const serviceKey = String(window.prompt('Enter the service key exchanged with the worker:', '') || '').trim()
+  if (!serviceKey) return
+  try {
+    await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/verify-service-key`, { serviceKey })
+    toast.success('Service key verified.')
+  } catch (error) {
+    console.error(error)
+    toast.error(error?.message || 'Unable to verify the service key.')
+  }
+}
+
+const postAppointmentAction = async (appointmentId, path, body) => {
+  const user = auth.currentUser
+  if (!user) throw new Error('Please log in first.')
+  const token = await user.getIdToken()
+  const response = await fetch(`${OTP_API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Appointment update failed.')
+  return payload.data
+}
+
+const confirmCompletion = async (appointment) => {
+  try {
+    await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/transition`, { action: 'customer_complete' })
+    toast.success('Your completion confirmation was submitted.')
+  } catch (error) {
+    console.error(error)
+    toast.error(error?.message || 'Unable to confirm completion.')
+  }
+}
+
+const submitFeedback = async (appointment) => {
+  const rating = Number(window.prompt('Rate this service from 1 to 5:', '5'))
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    toast.error('Please enter a whole-number rating from 1 to 5.')
+    return
+  }
+  const comment = String(window.prompt('Tell us about your experience:', '') || '').trim()
+  try {
+    await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/feedback`, { rating, comment })
+    toast.success('Thank you. Your feedback was submitted.')
+  } catch (error) {
+    console.error(error)
+    toast.error(error?.message || 'Unable to submit feedback.')
+  }
+}
+
+const openContract = (appointment) => {
+  selectedContractAppointment.value = appointment
+  showContractModal.value = true
+}
+
+const closeContract = () => {
+  showContractModal.value = false
+  selectedContractAppointment.value = null
+}
+
+const contractUpdated = () => {
+  closeContract()
+}
+
+const payAppointment = async (appointment) => {
+  const user = auth.currentUser
+  if (!user || !appointment?.id) return
+
+  const totalAmount = Number(appointment.totalAmount || appointment.amount || 0)
+  const amountPaid = Number(appointment.amountPaid || 0)
+  const remainingAmount = Math.max(0, totalAmount - amountPaid)
+  if (remainingAmount <= 0) {
+    toast.info('This appointment has no remaining balance.')
+    return
+  }
+
+  try {
+    const token = await user.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/paymongo/create-checkout-session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        amount: Math.round(remainingAmount * 100),
+        paymentMethodTypes: ['card', 'gcash', 'grab_pay'],
+        description: `Payment for ${appointment.service || 'appointment'}`,
+        referenceNumber: `APT-${appointment.id}-${Date.now()}`,
+        billing: { name: appointment.customerName || user.displayName || 'Customer', email: user.email || appointment.customerEmail || '' },
+        successUrl: `${window.location.origin}/customer/appointments?paymongo_status=success`,
+        cancelUrl: `${window.location.origin}/customer/appointments?paymongo_status=cancelled`,
+        metadata: {
+          module: 'customer_appointment',
+          source: 'appointment_payment',
+          appointmentId: appointment.id,
+          customerId: user.uid,
+          branchId: appointment.branchId || '',
+          practitionerId: appointment.practitionerId || appointment.assignedPractitionerId || '',
+          appointmentDate: appointment.date || '',
+          appointmentTime: appointment.time || '',
+          totalServiceDurationMinutes: appointment.totalServiceDurationMinutes || 60,
+        },
+      }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success || !payload.data?.id || !payload.data?.checkout_url) {
+      throw new Error(payload?.error || 'Failed to create payment checkout.')
+    }
+    localStorage.setItem('pendingAppointmentPayment', JSON.stringify({ appointmentId: appointment.id, checkoutSessionId: payload.data.id }))
+    window.location.href = payload.data.checkout_url
+  } catch (error) {
+    console.error(error)
+    toast.error(error?.message || 'Failed to start appointment payment.')
+  }
+}
+
+const handlePaymentReturn = async (user) => {
+  if (!user || route.query.paymongo_status !== 'success') return
+  const raw = localStorage.getItem('pendingAppointmentPayment')
+  if (!raw) return
+  let pending = null
+  try { pending = JSON.parse(raw) } catch (_error) { pending = null }
+  if (!pending?.appointmentId || !pending?.checkoutSessionId) return
+
+  try {
+    const token = await user.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/appointments/${pending.appointmentId}/record-payment`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ checkoutSessionId: pending.checkoutSessionId }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Payment verification failed.')
+    localStorage.removeItem('pendingAppointmentPayment')
+    toast.success('Appointment payment recorded.')
+  } catch (error) {
+    console.error(error)
+    toast.error(error?.message || 'Payment verification failed. Please refresh and try again.')
+  }
+}
+
 onMounted(() => {
   startClinicsListener()
   unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -1294,6 +1495,7 @@ onMounted(() => {
       return
     }
     startAppointmentsListener(user.uid)
+    await handlePaymentReturn(user)
   })
 })
 
@@ -2059,4 +2261,5 @@ onUnmounted(() => {
     content: none;
   }
 }
+
 </style>

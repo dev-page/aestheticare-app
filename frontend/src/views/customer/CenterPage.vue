@@ -2455,6 +2455,7 @@ const finalizeSuccessfulBooking = async (pending, payload) => {
       throw new Error(result?.error || 'Failed to finalize the booking.')
     }
   } else {
+    throw new Error('This booking must be finalized by the backend booking workflow.')
     const bookingDoc = {
       customerId: user.uid,
       customerName,
@@ -2615,94 +2616,69 @@ const submitBooking = async () => {
     return
   }
 
-  let heldReservationId = ''
   try {
     bookingPaymentSaving.value = true
-    const flowType = 'booking'
-    const consultationFee = 0
+    const flowType = selectedServices.value.some((service) => String(service?.type || '').toLowerCase() === 'consultation')
+      ? 'consultation'
+      : 'booking'
+    const consultationFee = flowType === 'consultation'
+      ? Number(selectedServices.value.find((service) => String(service?.type || '').toLowerCase() === 'consultation')?.price || selectedServiceTotal.value || 0)
+      : 0
     const amountPeso = Number(selectedServiceTotal.value || 0)
-    const payerPhone = normalizePhilippineMobileNumberForPayMongo(bookingForm.value.contactNumber)
-
-    const reservation = await createBookingReservation({
-      flowType,
-      consultationFeePeso: consultationFee,
-      amountPeso,
+    const profile = await resolveCustomerProfile()
+    const token = await user.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/bookings/create`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        reservation: {
+          customerId: user.uid,
+          customerName: profile?.name || user.displayName || user.email || 'Customer',
+          customerEmail: user.email || profile?.email || '',
+          customerPhone: bookingForm.value.contactNumber || profile?.contactNumber || user.phoneNumber || '',
+          flowType,
+          selectedServices: selectedServices.value,
+          selectedServiceIds: selectedServices.value.map((service) => service.id).filter(Boolean),
+          serviceDurations: selectedServices.value.map((service) => Number(service.durationMinutes || 0)),
+          totalServiceDurationMinutes: selectedServiceDurationMinutes.value,
+          amount: amountPeso,
+          consultationFee,
+          practitionerId: assignedPractitioner.value.id,
+          practitionerName: assignedPractitioner.value.fullName,
+          preferredPractitionerId: followUpPreferredPractitionerId.value,
+          branchId: activeBranchId.value,
+          centerId,
+          date: bookingForm.value.date,
+          time: bookingForm.value.time,
+          endTime: bookingForm.value.endTime || '',
+          notes: bookingForm.value.notes || '',
+          bookingType: isFollowUpBookingFlow.value ? 'follow-up' : 'standard',
+          followUpOf: followUpSourceAppointmentId.value,
+          followUpSourceServiceIds: followUpSourceServiceIds.value,
+          followUpSourceServiceNames: followUpSourceServiceNames.value,
+          requiresConsultationFirst: selectedServicesRequireConsultation.value,
+          followUpAllowed: selectedServicesAllowFollowUp.value,
+          followUpWindowDays: selectedServices.value.find((service) => service.followUpWindowDays != null)?.followUpWindowDays || null,
+          commissionPercent: serviceCommissionPercent,
+          commissionAmount: selectedServiceCommission.value,
+          netAmount: selectedServiceNetAmount.value,
+          source: 'customer_booking_request',
+        },
+      }),
     })
-    heldReservationId = reservation?.id || reservation?.reservationId || ''
-
-    const latestAppointments = await fetchBranchAppointmentsSnapshot(activeBranchId.value)
-    const latestReservationBlocks = bookingReservations.value.filter((reservation) => reservation.id !== heldReservationId)
-    const latestBlockedMap = buildBlockedRanges([...latestAppointments, ...latestReservationBlocks])
-    const currentSlotStart = parseClockToMinutes(bookingForm.value.time)
-    const currentSlotEnd = parseClockToMinutes(bookingForm.value.endTime)
-    if (
-      currentSlotStart === null ||
-      Number.isNaN(currentSlotStart)
-    ) {
-      throw new Error('Please choose an available schedule.')
+    const result = await response.json().catch(() => null)
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.error || 'Failed to submit the booking request.')
     }
-    const checkEnd = currentSlotEnd !== null && currentSlotEnd > currentSlotStart
-      ? currentSlotEnd
-      : currentSlotStart + bookingDurationMinutes.value
-    const currentBlockedRanges = latestBlockedMap.get(`${bookingForm.value.date}|${assignedPractitioner.value.id}`) || []
-    if (overlapsBlockedRange(currentSlotStart, checkEnd, currentBlockedRanges)) {
-      await releaseBookingReservation(heldReservationId)
-      throw new Error('That schedule was just taken. Please pick another available time.')
-    }
-
-    const { session, referenceNumber } = await createBookingPayMongoCheckoutSession({
-      amountPeso,
-      description: 'Appointment Full Payment',
-      referencePrefix: 'APT',
-      flowType,
-      consultationFeePeso: consultationFee,
-      reservationId: heldReservationId,
-      customerPhone: payerPhone,
-    })
-    savePendingBookingPayMongoState({
-      checkoutSessionId: session.id,
-      reservationId: heldReservationId,
-      selectedServices: selectedServices.value,
-      flowType,
-      bookingType: isFollowUpBookingFlow.value ? 'follow-up' : 'standard',
-      followUpOf: followUpSourceAppointmentId.value,
-      preferredPractitionerId: followUpPreferredPractitionerId.value,
-      followUpSourceServiceIds: followUpSourceServiceIds.value,
-      followUpSourceServiceNames: followUpSourceServiceNames.value,
-      date: bookingForm.value.date,
-      time: bookingForm.value.time,
-      endTime: bookingForm.value.endTime || '',
-      notes: bookingForm.value.notes || '',
-      practitionerId: assignedPractitioner.value.id,
-      practitionerName: assignedPractitioner.value.fullName,
-      branchId: activeBranchId.value,
-      centerId,
-      total: selectedServiceTotal.value,
-      consultationFee,
-      commissionPercent: serviceCommissionPercent,
-      commissionAmount: selectedServiceCommission.value,
-      netAmount: selectedServiceNetAmount.value,
-      totalServiceDurationMinutes: selectedServiceDurationMinutes.value,
-      paymentMethod: bookingPaymentMethod.value,
-      customerPhone: payerPhone,
-      paymentCoverage: 'full',
-      requiresConsultationFirst: selectedServicesRequireConsultation.value,
-      followUpAllowed: selectedServicesAllowFollowUp.value,
-      followUpWindowDays: selectedServices.value.find((service) => service.followUpWindowDays != null)?.followUpWindowDays || null,
-      referenceNumber,
-      createdAt: Date.now(),
-    })
-    window.location.href = session.checkout_url
+    toast.success('Booking request submitted. The shop must approve it before payment.')
+    clearBookingSelection()
+    await router.replace({ name: 'customer-appointments' })
   } catch (error) {
     console.error(error)
-    const pendingReservationId = heldReservationId || loadPendingBookingPayMongoState()?.reservationId
-    if (pendingReservationId) {
-      await releaseBookingReservation(pendingReservationId)
-      clearPendingBookingPayMongoState()
-    } else {
-      clearPendingBookingPayMongoState()
-    }
-    toast.error(error?.message || 'Failed to book appointment.')
+    toast.error(error?.message || 'Failed to submit booking request.')
   } finally {
     bookingPaymentSaving.value = false
   }

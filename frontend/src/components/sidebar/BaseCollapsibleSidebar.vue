@@ -438,15 +438,21 @@ export default {
       return { all: allPermissions, any: anyPermissions }
     }
 
-    const isClinicSideRole = (roleValue) => {
+      const isClinicSideRole = (roleValue) => {
       const compactRole = String(roleValue || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
-      return compactRole === 'owner' || compactRole === 'clinicadmin' || compactRole === 'clinicadministrator' || compactRole === 'staff' || compactRole === 'manager' || compactRole === 'receptionist' || compactRole === 'practitioner' || compactRole === 'finance' || compactRole === 'hr'
-    }
+      return !['', 'customer', 'supplier', 'superadmin', 'systemadmin', 'guest'].includes(compactRole)
+      }
 
-    const isItemAllowed = (item) => {
+      const isOwnerLike = (roleValue) => {
+        const compactRole = String(roleValue || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+        return ['owner', 'clinicadmin', 'clinicadministrator'].includes(compactRole)
+      }
+
+      const isItemAllowed = (item) => {
       const required = getItemFeatures(item)
-      const requiredPermissions = getItemPermissions(item)
-      const currentRole = String(userRole.value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+        const requiredPermissions = getItemPermissions(item)
+        const currentRole = String(userRole.value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+        if (item?.ownerOnly && !isOwnerLike(currentRole)) return false
       const shouldApplySubscriptionRules = isClinicSideRole(currentRole)
       const featureAllowed = !required.length || required.every((feature) => hasFeature(feature))
       const permissionAllowed =

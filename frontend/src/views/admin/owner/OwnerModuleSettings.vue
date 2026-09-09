@@ -72,11 +72,10 @@ const { enabledModules, startOwnerModulesListener, saveOwnerModules, defaultModu
 const formModules = ref({ ...defaultModules })
 
 const moduleCards = computed(() => [
-  { key: 'crm', label: 'CRM Module', description: 'Clients, appointments, POS, inbox, and transaction history.' },
-  { key: 'clinic', label: 'Clinic Module', description: 'Clinical appointments, consultations, and practitioner activities.' },
-  { key: 'operations', label: 'Operations Module', description: 'Orders, staff operations, catalog, suppliers, and purchase requests.' },
-  { key: 'hr', label: 'HR Module', description: 'Employee records, attendance, payroll, and HR processing.' },
-  { key: 'finance', label: 'Finance Module', description: 'Sales, reports, accounts payable, and payroll approvals.' },
+  { key: 'crm', label: 'CRM & Clinic', description: 'Clients, appointments, consultations, POS, inbox, and transactions.' },
+  { key: 'operations', label: 'Inventory & Operations', description: 'Products, services, suppliers, inventory, orders, and purchasing.' },
+  { key: 'hr', label: 'Human Resources', description: 'Employee records, attendance, leave, and payroll processing.' },
+  { key: 'finance', label: 'Finance', description: 'Sales, reports, refunds, payables, and payroll approvals.' },
 ])
 
 watch(

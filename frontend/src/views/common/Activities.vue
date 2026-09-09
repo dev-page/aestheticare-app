@@ -100,9 +100,61 @@ export default {
     }
 
     const loadActivities = async () => {
-      if (!currentBranchId.value) return
-      const snapshot = await getDocs(query(collection(db, 'activities'), where('branchId', '==', currentBranchId.value)))
-      activities.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      activities.value = []
+      try {
+        // Always include activities done by the current user
+        const userActivitiesSnap = await getDocs(query(collection(db, 'activities'), where('actorId', '==', currentUserId.value)))
+        const userActivities = userActivitiesSnap.docs.map((s) => ({ id: s.id, ...s.data() }))
+
+        // Include activities for the current branch (if set)
+        let branchActivities = []
+        if (currentBranchId.value) {
+          const bSnap = await getDocs(query(collection(db, 'activities'), where('branchId', '==', currentBranchId.value)))
+          branchActivities = bSnap.docs.map((s) => ({ id: s.id, ...s.data() }))
+        }
+
+        // If user is an owner/clinic-admin, include activities across all clinics they own
+        let ownerClinicActivities = []
+        const roleValue = String(role.value || '').toLowerCase()
+        if (roleValue === 'owner' || roleValue === 'clinic admin' || roleValue === 'clinicadmin') {
+          // find clinics owned by this user
+          const clinicsSnap = await getDocs(query(collection(db, 'clinics'), where('ownerId', '==', currentUserId.value)))
+          const clinicIds = clinicsSnap.docs.map((d) => d.id)
+
+          // For each clinic id, fetch activities for that branch/clinic
+          const fetches = clinicIds.map((cid) => getDocs(query(collection(db, 'activities'), where('branchId', '==', cid))))
+          const results = await Promise.all(fetches)
+          ownerClinicActivities = results.flatMap((snap) => snap.docs.map((s) => ({ id: s.id, ...s.data() })))
+
+          // Also include activities where actorClinicId matches any of the clinics (if such field exists)
+          if (clinicIds.length) {
+            try {
+              const actorQueries = []
+              // Firestore 'in' supports up to 10 elements; chunk if needed
+              const chunkSize = 10
+              for (let i = 0; i < clinicIds.length; i += chunkSize) {
+                const chunk = clinicIds.slice(i, i + chunkSize)
+                actorQueries.push(getDocs(query(collection(db, 'activities'), where('actorClinicId', 'in', chunk))))
+              }
+              const actorResults = await Promise.all(actorQueries)
+              ownerClinicActivities = ownerClinicActivities.concat(actorResults.flatMap((snap) => snap.docs.map((s) => ({ id: s.id, ...s.data() }))))
+            } catch (e) {
+              // Not all deployments have actorClinicId field or 'in' may be unsupported; ignore and rely on branchId fetches
+              console.debug('actorClinicId queries skipped or failed', e)
+            }
+          }
+        }
+
+        // merge and dedupe by id
+        const combined = [...userActivities, ...branchActivities, ...ownerClinicActivities]
+        const map = new Map()
+        combined.forEach((act) => {
+          if (!map.has(act.id)) map.set(act.id, act)
+        })
+        activities.value = Array.from(map.values()).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+      } catch (err) {
+        console.error('Failed to load activities:', err)
+      }
     }
 
     onMounted(() => {

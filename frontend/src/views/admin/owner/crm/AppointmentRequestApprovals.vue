@@ -6,7 +6,7 @@
       <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 class="mb-2 text-3xl font-bold text-white">Appointment Request Approvals</h1>
-          <p class="text-slate-400">Approve or reject cancellation and reschedule requests from customers.</p>
+          <p class="text-slate-400">Review new booking requests, cancellations, and reschedules before they affect the shop schedule.</p>
         </div>
         <button
           type="button"
@@ -29,6 +29,10 @@
         <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
           <p class="text-sm text-slate-400">Reschedule Requests</p>
           <p class="mt-2 text-2xl font-bold text-cyan-300">{{ rescheduleRequests.length }}</p>
+        </div>
+        <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
+          <p class="text-sm text-slate-400">New Booking Requests</p>
+          <p class="mt-2 text-2xl font-bold text-amber-300">{{ bookingRequests.length }}</p>
         </div>
       </div>
 
@@ -54,6 +58,7 @@
                   <option value="">All</option>
                   <option value="cancel">Cancellation</option>
                   <option value="reschedule">Reschedule</option>
+                  <option value="booking">New Booking</option>
                 </select>
               </div>
               <div>
@@ -292,12 +297,13 @@ const requestTypeLabel = (status) => {
   const normalized = normalizeStatus(status)
   if (normalized.includes('cancellation requested')) return 'Cancellation Request'
   if (normalized.includes('reschedule requested')) return 'Reschedule Request'
+  if (normalized === 'pending approval' || normalized === 'requested') return 'New Booking Request'
   return 'Appointment Request'
 }
 
 const requestReviewState = (status) => {
   const normalized = normalizeStatus(status)
-  if (normalized.includes('requested')) return 'Pending'
+  if (normalized.includes('requested') || normalized === 'pending approval') return 'Pending'
   if (normalized === 'cancelled') return 'Approved'
   return String(status || 'Pending')
 }
@@ -327,7 +333,8 @@ const filteredRequests = computed(() => {
     const matchesType =
       !typeFilter.value ||
       (typeFilter.value === 'cancel' && request.requestType === 'cancel') ||
-      (typeFilter.value === 'reschedule' && request.requestType === 'reschedule')
+      (typeFilter.value === 'reschedule' && request.requestType === 'reschedule') ||
+      (typeFilter.value === 'booking' && request.requestType === 'booking')
     const matchesStatus = !statusFilter.value || request.requestReviewState.toLowerCase() === statusFilter.value
     return matchesSearch && matchesType && matchesStatus
   })
@@ -336,6 +343,7 @@ const filteredRequests = computed(() => {
 const pendingRequests = computed(() => requests.value.filter((request) => request.requestReviewState === 'Pending'))
 const cancellationRequests = computed(() => requests.value.filter((request) => request.requestType === 'cancel'))
 const rescheduleRequests = computed(() => requests.value.filter((request) => request.requestType === 'reschedule'))
+const bookingRequests = computed(() => requests.value.filter((request) => request.requestType === 'booking'))
 const selectedRequest = computed(() => requests.value.find((request) => request.id === selectedRequestId.value) || filteredRequests.value[0] || null)
 
 const selectRequest = (request) => {
@@ -366,10 +374,16 @@ const loadRequests = async () => {
           ? 'cancel'
           : status.includes('reschedule requested')
             ? 'reschedule'
+            : status === 'pending approval' || status === 'requested'
+              ? 'booking'
             : ''
         if (!requestType) return null
 
-        const requestReason = requestType === 'cancel' ? data.cancellationReason || '' : data.rescheduleReason || ''
+        const requestReason = requestType === 'cancel'
+          ? data.cancellationReason || ''
+          : requestType === 'reschedule'
+            ? data.rescheduleReason || ''
+            : data.notes || ''
         const policySnapshot =
           requestType === 'cancel'
             ? data.cancellationPolicySnapshot || currentBranchPolicy.value.cancellationPolicy || currentBranchPolicy.value.refundPolicy
@@ -388,7 +402,9 @@ const loadRequests = async () => {
           fallbackPolicyText:
             requestType === 'cancel'
               ? 'Cancellation requests are reviewed by the clinic first. Approved cancellations are refunded without the system commission.'
-              : 'Reschedule requests are reviewed by the clinic first. The new date and time only take effect after approval.',
+              : requestType === 'reschedule'
+                ? 'Reschedule requests are reviewed by the clinic first. The new date and time only take effect after approval.'
+                : 'New booking requests must be approved by the shop before the customer can pay.',
           serviceLabel: Array.isArray(data.services) && data.services.length ? data.services.join(', ') : data.service || 'Service not set',
           clientName: data.clientName || data.customerName || data.name || 'Customer',
           requestedPractitionerName: data.requestedPractitionerName || data.assignedPractitionerName || data.practitionerName || 'Assigned Practitioner',
@@ -421,10 +437,14 @@ const approveSelectedRequest = async () => {
 
   processing.value = true
   try {
-    const response = await fetchFromBackend(`/appointments/${request.id}/approve-request`, {
+    const endpoint = request.requestType === 'booking'
+      ? `/appointments/${request.id}/approve-booking`
+      : `/appointments/${request.id}/approve-request`
+    const response = await fetchFromBackend(endpoint, {
       method: 'POST',
       headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
       body: JSON.stringify({
+        ...(request.requestType === 'booking' ? { decision: 'approve' } : {}),
         decisionNote: decisionNote.value.trim(),
       }),
     })
@@ -441,7 +461,9 @@ const approveSelectedRequest = async () => {
       throw new Error(payload?.error || 'Failed to approve the request.')
     }
 
-    if (request.requestType === 'cancel') {
+    if (request.requestType === 'booking') {
+      toast.success('Booking request approved. The customer can now complete payment.')
+    } else if (request.requestType === 'cancel') {
       toast.success('Cancellation request approved.')
     } else {
       toast.success('Reschedule request approved.')
@@ -468,6 +490,21 @@ const rejectSelectedRequest = async () => {
 
   processing.value = true
   try {
+    if (request.requestType === 'booking') {
+      const response = await fetchFromBackend(`/appointments/${request.id}/approve-booking`, {
+        method: 'POST',
+        headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ decision: 'reject', decisionNote: decisionNote.value.trim() }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to reject the booking request.')
+      decisionNote.value = ''
+      toast.success('Booking request rejected.')
+      await loadRequests()
+      selectedRequestId.value = requests.value[0]?.id || ''
+      return
+    }
+
     const payload = {
       requestDecisionStatus: 'Rejected',
       requestDecisionNote: decisionNote.value.trim(),

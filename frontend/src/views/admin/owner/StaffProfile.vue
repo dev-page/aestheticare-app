@@ -32,6 +32,7 @@ export default {
       phoneNumber: '',
       role: '',
       customRoleId: '',
+      customRoleIds: [],
       customRoleName: '',
       branchId: '',
       userType: 'Staff',
@@ -134,18 +135,24 @@ export default {
     })
 
     watch(
-      () => currentStaff.value.customRoleId,
-      (nextCustomRoleId) => {
-        const selectedRole = customRoles.value.find((role) => role.id === nextCustomRoleId)
-        currentStaff.value.customRoleName = selectedRole?.name || ''
-        currentStaff.value.role = selectedRole?.name || currentStaff.value.role || ''
-      }
+      () => currentStaff.value.customRoleIds,
+      (nextCustomRoleIds) => {
+        const ids = Array.isArray(nextCustomRoleIds) ? nextCustomRoleIds : []
+        const selectedRoles = customRoles.value.filter((role) => ids.includes(role.id))
+        currentStaff.value.customRoleId = ids[0] || ''
+        currentStaff.value.customRoleName = selectedRoles.map((role) => role.name).join(', ')
+        currentStaff.value.role = selectedRoles.map((role) => role.name).join(', ') || currentStaff.value.role || ''
+      },
+      { deep: true }
     )
 
     const openEditModal = (staff) => {
       currentStaff.value = {
         ...staff,
         customRoleId: String(staff.customRoleId || '').trim(),
+        customRoleIds: Array.isArray(staff.customRoleIds) && staff.customRoleIds.length
+          ? staff.customRoleIds
+          : [String(staff.customRoleId || '').trim()].filter(Boolean),
         customRoleName: String(staff.customRoleName || '').trim(),
       }
       showEditModal.value = true
@@ -202,7 +209,12 @@ export default {
     const saveStaff = async () => {
       const { firstName, lastName, email, phoneNumber, clinicBranch, clinicLocation } = currentStaff.value
       const fullName = `${firstName} ${lastName}`
-      const selectedRole = customRoles.value.find((entry) => entry.id === currentStaff.value.customRoleId)
+      const selectedRoleIds = Array.isArray(currentStaff.value.customRoleIds)
+        ? currentStaff.value.customRoleIds
+        : [currentStaff.value.customRoleId].filter(Boolean)
+      const selectedRoleNames = customRoles.value
+        .filter((entry) => selectedRoleIds.includes(entry.id))
+        .map((entry) => entry.name)
 
       if (!firstName.trim() || !lastName.trim() || !email.trim() || !phoneNumber.trim() || !clinicBranch.trim() || !clinicLocation.trim()) {
         toast.error('All fields are required.')
@@ -234,9 +246,13 @@ export default {
             fullName: `${currentStaff.value.firstName.trim()} ${currentStaff.value.lastName.trim()}`.trim(),
             email: currentStaff.value.email.trim(),
             phoneNumber: currentStaff.value.phoneNumber,
-            role: selectedRole?.name || currentStaff.value.role || null,
-            customRoleId: currentStaff.value.customRoleId || null,
-            customRoleName: selectedRole?.name || null,
+            role: selectedRoleNames.join(', ') || currentStaff.value.role || null,
+            customRoleId: selectedRoleIds[0] || null,
+            customRoleIds: selectedRoleIds,
+            customRoleName: selectedRoleNames.join(', ') || null,
+            effectivePermissions: [...new Set(customRoles.value
+              .filter((entry) => selectedRoleIds.includes(entry.id))
+              .flatMap((entry) => entry.permissions || []))],
             branchId: currentStaff.value.branchId,
             clinicLocation: currentStaff.value.clinicLocation,
             status: nextStatus,
@@ -395,10 +411,12 @@ export default {
 
             <div>
               <label class="block text-slate-400 mb-1">Custom Role</label>
-              <select v-model="currentStaff.customRoleId"
-                class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <select v-model="currentStaff.customRoleIds"
+                multiple
+                class="w-full min-h-28 px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option v-for="role in customRoles" :key="role.id" :value="role.id">{{ role.name }}</option>
               </select>
+              <p class="mt-1 text-xs text-slate-400">Hold Ctrl or Command to assign more than one role.</p>
             </div>
 
             <div>

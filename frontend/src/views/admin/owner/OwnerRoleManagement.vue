@@ -416,6 +416,26 @@
                     </span>
                   </div>
 
+                  <div class="mt-5 rounded-2xl border border-[#8d5a3b]/60 bg-[#3a2417] p-4">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#d2b7a6]">Access Preview</p>
+                        <p class="mt-1 text-sm text-[#e2c7b6]">This is the module access and page visibility this role will receive.</p>
+                      </div>
+                      <span class="text-xs font-semibold text-[#f3e7e0]">{{ accessPreview.length }} modules visible</span>
+                    </div>
+                    <div v-if="accessPreview.length" class="mt-3 flex flex-wrap gap-2">
+                      <span
+                        v-for="group in accessPreview"
+                        :key="`preview-${group.key}`"
+                        class="rounded-full border border-[#8d5a3b] bg-[#24160f] px-3 py-1 text-xs text-[#f3e7e0]"
+                      >
+                        {{ group.label }} ({{ group.enabledCount }})
+                      </span>
+                    </div>
+                    <p v-else class="mt-3 text-xs text-[#d2b7a6]">No modules will be visible until at least one permission is enabled.</p>
+                  </div>
+
                   <div class="mt-6 space-y-5">
                     <div
                       v-if="selectedRoleDraft.permissions.length === 0"
@@ -575,232 +595,17 @@ import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { useSubscription } from '@/composables/useSubscription'
 import { auth, db } from '@/config/firebaseConfig'
+import {
+  allPermissionKeys,
+  fullAccessPermissionKey,
+  permissionDependencies,
+  permissionFeatureMap,
+  permissionGroups,
+  permissionLabelMap,
+} from '@/config/clinicPermissionRegistry'
 
 const colorPresets = ['#5865F2', '#57F287', '#FEE75C', '#EB459E', '#ED4245', '#3BA55D', '#1ABC9C', '#FAA61A', '#2D7DFA', '#A56EFF']
 const defaultPermissionKeys = new Set([])
-const fullAccessPermissionKey = 'administrator:full_access'
-
-const permissionGroups = [
-  {
-    key: 'clinic-setup',
-    label: 'Clinic Setup',
-    description: 'Branch records and clinic identity controls.',
-    sections: [
-      {
-        key: 'branches',
-        label: 'Branch Info',
-        description: 'View and create clinic branches.',
-        permissions: [
-          { key: 'branches:view', label: 'View Branches', description: 'Open branch information pages.', icon: 'mdi:source-branch' },
-          { key: 'branches:create', label: 'Create Branches', description: 'Add and configure clinic branches.', icon: 'mdi:map-marker-plus-outline' },
-        ],
-      },
-      {
-        key: 'clinic-profile',
-        label: 'Clinic Profile & Page',
-        description: 'Manage the public clinic profile and page content.',
-        permissions: [
-          { key: 'clinic_profile:view', label: 'View Clinic Profile', description: 'Open clinic profile management.', icon: 'mdi:domain' },
-          { key: 'clinic_profile:update', label: 'Update Clinic Profile', description: 'Edit clinic page and public presentation.', icon: 'mdi:file-document-edit-outline' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'team-management',
-    label: 'Team Management',
-    description: 'Employee records, attendance, and role maintenance.',
-    sections: [
-      {
-        key: 'staff',
-        label: 'Employees',
-        description: 'Staff profiles and account management.',
-        permissions: [
-          { key: 'staff:view', label: 'View Staff', description: 'Open employee profiles and staff listings.', icon: 'mdi:account-group-outline' },
-          { key: 'staff:create', label: 'Create Staff', description: 'Add employee accounts under the clinic.', icon: 'mdi:account-plus-outline' },
-          { key: 'staff:update', label: 'Update Staff', description: 'Edit staff details and role assignments.', icon: 'mdi:account-edit-outline' },
-          { key: 'roles:view', label: 'Access Role Management', description: 'Open the role management page and manage clinic role permissions.', icon: 'mdi:shield-account-outline' },
-        ],
-      },
-      {
-        key: 'attendance',
-        label: 'Attendance',
-        description: 'Attendance logs and QR-based tracking.',
-        permissions: [
-          { key: 'attendance:view', label: 'View Attendance', description: 'See attendance records and logs.', icon: 'mdi:clipboard-text-clock-outline' },
-          { key: 'attendance:create', label: 'Create Attendance', description: 'Record attendance entries and attendance actions.', icon: 'mdi:calendar-check-outline' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'clinic-workspace',
-    label: 'Clinic Workspace',
-    description: 'Client management, appointments, consultations, and POS.',
-    sections: [
-      {
-        key: 'clients',
-        label: 'Clients',
-        description: 'Client records and profiles.',
-        permissions: [
-          { key: 'clients:view', label: 'View Clients', description: 'Access client records and profiles.', icon: 'mdi:account-heart-outline' },
-          { key: 'clients:create', label: 'Create Clients', description: 'Add new client records.', icon: 'mdi:account-plus-outline' },
-        ],
-      },
-      {
-        key: 'appointments',
-        label: 'Appointments & Consultations',
-        description: 'Scheduling, requests, and online consultation flow.',
-        permissions: [
-          { key: 'appointments:view', label: 'View Appointments', description: 'See appointment listings and schedules.', icon: 'mdi:calendar-month-outline' },
-          { key: 'appointments:create', label: 'Create Appointments', description: 'Create or reschedule appointments.', icon: 'mdi:calendar-plus-outline' },
-          { key: 'appointments:review', label: 'Review Appointment Requests', description: 'Approve or reject cancellation and reschedule requests.', icon: 'mdi:calendar-check-outline' },
-          { key: 'consultations:view', label: 'View Online Consultations', description: 'Access online consultation screens.', icon: 'mdi:video-outline' },
-        ],
-      },
-      {
-        key: 'payments',
-        label: 'Payments & Inbox',
-        description: 'POS, transactions, and messaging access.',
-        permissions: [
-          { key: 'payments:create', label: 'Process POS Payments', description: 'Process POS or payment entries.', icon: 'mdi:cash-register' },
-          { key: 'payments:view', label: 'View Transactions', description: 'Open transaction history and sales records.', icon: 'mdi:cash-multiple' },
-          { key: 'inbox:view', label: 'View Inbox', description: 'Access branch inbox and messages.', icon: 'mdi:inbox-outline' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'products-services',
-    label: 'Products & Services',
-    description: 'Post listings, inventory, and supply workflows.',
-    sections: [
-      {
-        key: 'posts',
-        label: 'Posts',
-        description: 'Product and service listing pages.',
-        permissions: [
-          { key: 'services:view', label: 'View Listings', description: 'Access product and service listings.', icon: 'mdi:tag-outline' },
-        ],
-      },
-      {
-        key: 'inventory',
-        label: 'Supply & Inventory',
-        description: 'Catalog, suppliers, requests, and orders.',
-        permissions: [
-          { key: 'inventory:view', label: 'View Item Catalog', description: 'Open suppliers, catalog, and inventory pages.', icon: 'mdi:package-variant-closed' },
-          { key: 'inventory:create', label: 'Create Purchase Requests', description: 'Create purchase requests and inventory actions.', icon: 'mdi:cart-plus' },
-          { key: 'inventory:review', label: 'Review Purchase Requests', description: 'Approve, reject, and manage purchase request actions.', icon: 'mdi:cart-check' },
-          { key: 'orders:view', label: 'View Orders', description: 'Open branch order tracking.', icon: 'mdi:cart-outline' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'hr-workspace',
-    label: 'HR Workspace',
-    description: 'Shifts, leave, and payroll tools.',
-    sections: [
-      {
-        key: 'shifts',
-        label: 'Shifts',
-        description: 'Shift setup and schedule assignment.',
-        permissions: [
-          { key: 'hr:view', label: 'View Shift Records', description: 'Open HR records and shift-related pages.', icon: 'mdi:badge-account-outline' },
-          { key: 'hr:create', label: 'Add Shift', description: 'Create HR-related shift records.', icon: 'mdi:clipboard-plus-outline' },
-          { key: 'hr:update', label: 'Shift Assignment', description: 'Modify schedules and assignments.', icon: 'mdi:clipboard-edit-outline' },
-        ],
-      },
-      {
-        key: 'leaves',
-        label: 'Leaves',
-        description: 'Leave requests and management.',
-        permissions: [
-          { key: 'leave:create', label: 'Leave Request', description: 'Submit leave requests.', icon: 'mdi:file-plus-outline' },
-          { key: 'leave:review', label: 'Leave Management', description: 'Approve or reject leave requests.', icon: 'mdi:calendar-check-outline' },
-        ],
-      },
-      {
-        key: 'payroll',
-        label: 'Payroll',
-        description: 'Base pay, payroll management, and payslips.',
-        permissions: [
-          { key: 'payroll:update', label: 'Manage Payroll', description: 'Adjust payroll settings and payslips.', icon: 'mdi:cash-edit' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'finance-workspace',
-    label: 'Finance Workspace',
-    description: 'Payroll summaries, finance operations, and reports.',
-    sections: [
-      {
-        key: 'payroll',
-        label: 'Payroll',
-        description: 'Payroll summaries and approvals.',
-        permissions: [
-          { key: 'payroll:view', label: 'View Payroll Summary', description: 'Open payroll summaries and payroll approval screens.', icon: 'mdi:file-chart-outline' },
-        ],
-      },
-      {
-        key: 'finance-operations',
-        label: 'Finance Operations',
-        description: 'Purchases, payables, refunds, sales, and reports.',
-        permissions: [
-          { key: 'inventory:view', label: 'View Inventory Purchases', description: 'Open inventory purchases and related records.', icon: 'mdi:package-variant-closed' },
-          { key: 'inventory:create', label: 'Create Inventory Purchases', description: 'Create purchase request-linked finance actions.', icon: 'mdi:cart-plus' },
-          { key: 'inventory:review', label: 'Review Inventory Purchases', description: 'Approve or review purchase requests and costs.', icon: 'mdi:cart-check' },
-          { key: 'payments:view', label: 'View Refunds & Sales', description: 'Open refund and sales records.', icon: 'mdi:cash-multiple' },
-          { key: 'payments:create', label: 'Process Refunds / POS', description: 'Handle POS or refund-related payment entries.', icon: 'mdi:cash-register' },
-          { key: 'reports:view', label: 'View Reports', description: 'Access clinic performance and reports.', icon: 'mdi:chart-box-outline' },
-          { key: 'orders:view', label: 'View Orders', description: 'Open order and fulfillment tracking.', icon: 'mdi:cart-outline' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'account-system',
-    label: 'Account & System',
-    description: 'Subscription, backup, activity, and support tools.',
-    sections: [
-      {
-        key: 'access',
-        label: 'Administrator Access',
-        description: 'Full access and core account controls.',
-        permissions: [
-          { key: fullAccessPermissionKey, label: 'Administrator Full Access', description: 'Unlock every permission in the clinic workspace.', icon: 'mdi:key-star' },
-          { key: 'subscription:view', label: 'View Subscription', description: 'Open the clinic subscription plan screen.', icon: 'mdi:card-outline' },
-          { key: 'backup:view', label: 'View Backup', description: 'Access database backup tools.', icon: 'mdi:file-download-outline' },
-          { key: 'profile:view', label: 'View Profile', description: 'Open employee profile pages.', icon: 'mdi:card-account-details-outline' },
-          { key: 'password:update', label: 'Change Password', description: 'Access password reset and change screens.', icon: 'mdi:shield-key-outline' },
-        ],
-      },
-      {
-        key: 'system',
-        label: 'System Tools',
-        description: 'Logs, notifications, activities, and support.',
-        permissions: [
-          { key: 'activities:view', label: 'View Activities', description: 'Open user activity pages and logs.', icon: 'mdi:history' },
-          { key: 'notifications:view', label: 'View Notifications', description: 'Access in-app notifications.', icon: 'mdi:bell-outline' },
-          { key: 'support:view', label: 'View Support', description: 'Open support and issue reporting pages.', icon: 'mdi:lifebuoy' },
-        ],
-      },
-    ],
-  },
-]
-
-const allPermissionKeys = permissionGroups.flatMap((group) =>
-  group.sections.flatMap((section) => section.permissions.map((permission) => permission.key))
-)
-const permissionLabelMap = permissionGroups.reduce((acc, group) => {
-  group.sections.forEach((section) => {
-    section.permissions.forEach((permission) => {
-      acc[permission.key] = permission.label
-    })
-  })
-  return acc
-}, {})
 
 const permissionSuggestionRules = [
   {
@@ -907,49 +712,6 @@ export default {
       { label: 'Branches Covered', value: branchIds.value.length, description: 'Branches under this clinic admin account.' },
     ])
 
-    const permissionFeatureMap = {
-      'staff:view': 'staff_management',
-      'staff:create': 'staff_management',
-      'staff:update': 'staff_management',
-      'roles:view': 'staff_management',
-      'attendance:view': 'attendance',
-      'attendance:create': 'attendance',
-      'branches:view': 'multi_branch',
-      'branches:create': 'multi_branch',
-      'appointments:view': 'appointments',
-      'appointments:create': 'appointments',
-      'appointments:review': 'appointments',
-      'clients:view': 'appointments',
-      'clients:create': 'appointments',
-      'consultations:view': 'online_consultations',
-      'payments:view': 'reports',
-      'payments:create': 'pos_payments',
-      'reports:view': 'reports',
-      'inventory:view': 'inventory',
-      'inventory:create': 'inventory',
-      'inventory:review': 'inventory',
-      'orders:view': '',
-      'services:view': 'services',
-      'clinic_profile:view': '',
-      'clinic_profile:update': '',
-      'subscription:view': '',
-      'backup:view': '',
-      'profile:view': '',
-      'password:update': '',
-      'activities:view': '',
-      'notifications:view': '',
-      'support:view': '',
-      'hr:view': 'hr',
-      'hr:create': 'hr',
-      'hr:update': 'hr',
-      'leave:create': 'hr',
-      'leave:review': 'hr',
-      'inbox:view': '',
-      'payroll:view': 'payroll',
-      'payroll:update': 'payroll',
-      [fullAccessPermissionKey]: '',
-    }
-
     const isPermissionLocked = (permissionKey) => {
       const requiredFeature = permissionFeatureMap[permissionKey] || ''
       return Boolean(requiredFeature) && !hasFeature(requiredFeature)
@@ -961,6 +723,53 @@ export default {
       defaultPermissionKeys.has(permissionKey)
       || selectedRoleDraft.value.permissions.includes(permissionKey)
       || selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
+
+    const normalizePermissionSet = (permissionList = []) => {
+      const permissions = new Set(permissionList)
+      if (permissions.has(fullAccessPermissionKey)) return new Set([fullAccessPermissionKey])
+
+      const pending = [...permissions]
+      while (pending.length) {
+        const permissionKey = pending.pop()
+        ;(permissionDependencies[permissionKey] || []).forEach((dependency) => {
+          if (!permissions.has(dependency)) {
+            permissions.add(dependency)
+            pending.push(dependency)
+          }
+        })
+      }
+      return permissions
+    }
+
+    const removePermissionDependents = (permissions, removedPermission) => {
+      permissions.delete(removedPermission)
+      let changed = true
+      while (changed) {
+        changed = false
+        Object.entries(permissionDependencies).forEach(([permissionKey, dependencies]) => {
+          if (permissions.has(permissionKey) && dependencies.some((dependency) => !permissions.has(dependency))) {
+            permissions.delete(permissionKey)
+            changed = true
+          }
+        })
+      }
+    }
+
+    const accessPreview = computed(() => permissionGroups
+      .map((group) => {
+        const enabledSections = group.sections
+          .map((section) => ({
+            ...section,
+            enabledPermissions: section.permissions.filter((permission) => isPermissionEnabled(permission.key)),
+          }))
+          .filter((section) => section.enabledPermissions.length)
+        return {
+          ...group,
+          enabledSections,
+          enabledCount: enabledSections.reduce((total, section) => total + section.enabledPermissions.length, 0),
+        }
+      })
+      .filter((group) => group.enabledCount > 0))
 
     const suggestedPermissions = computed(() => {
       const roleName = String(selectedRoleDraft.value.name || '').trim().toLowerCase()
@@ -996,7 +805,7 @@ export default {
         description: selectedRole.value.description,
         color: selectedRole.value.color,
         permissions: allPermissionKeys.filter(
-          (key) => selectedRole.value.permissions.includes(key) || defaultPermissionKeys.has(key)
+          (key) => normalizePermissionSet(selectedRole.value.permissions).has(key) || defaultPermissionKeys.has(key)
         ),
       }
     }
@@ -1046,9 +855,12 @@ export default {
         const snapshot = await getDocs(query(collection(db, 'users'), where('branchId', 'in', chunk)))
         snapshot.forEach((userDoc) => {
           const data = userDoc.data() || {}
-          const customRoleId = String(data.customRoleId || '').trim()
-          if (!customRoleId) return
-          counts.set(customRoleId, (counts.get(customRoleId) || 0) + 1)
+          const assignedRoleIds = Array.isArray(data.customRoleIds)
+            ? data.customRoleIds
+            : [data.customRoleId]
+          ;[...new Set(assignedRoleIds.map((value) => String(value || '').trim()).filter(Boolean))].forEach((roleId) => {
+            counts.set(roleId, (counts.get(roleId) || 0) + 1)
+          })
         })
       }
 
@@ -1190,18 +1002,31 @@ export default {
         if (branchIds.value.length) {
           const branchChunks = chunkArray(branchIds.value, 10)
           for (const chunk of branchChunks) {
-            const assignedUsersSnapshot = await getDocs(
-              query(
-                collection(db, 'users'),
-                where('branchId', 'in', chunk),
-                where('customRoleId', '==', selectedRole.value.id)
-              )
-            )
+            const [legacySnapshot, multiRoleSnapshot] = await Promise.all([
+              getDocs(
+                query(
+                  collection(db, 'users'),
+                  where('branchId', 'in', chunk),
+                  where('customRoleId', '==', selectedRole.value.id)
+                )
+              ),
+              getDocs(
+                query(
+                  collection(db, 'users'),
+                  where('branchId', 'in', chunk),
+                  where('customRoleIds', 'array-contains', selectedRole.value.id)
+                )
+              ),
+            ])
+            const assignedUsers = new Map()
+            ;[...legacySnapshot.docs, ...multiRoleSnapshot.docs].forEach((userDoc) => {
+              assignedUsers.set(userDoc.id, userDoc)
+            })
 
-            if (assignedUsersSnapshot.empty) continue
+            if (!assignedUsers.size) continue
 
             const batch = writeBatch(db)
-            assignedUsersSnapshot.forEach((userDoc) => {
+            assignedUsers.forEach((userDoc) => {
               batch.update(userDoc.ref, {
                 customRoleName: trimmedRoleName
               })
@@ -1239,9 +1064,10 @@ export default {
         permissions.delete(fullAccessPermissionKey)
       }
       if (permissions.has(permissionKey)) {
-        permissions.delete(permissionKey)
+        removePermissionDependents(permissions, permissionKey)
       } else {
         permissions.add(permissionKey)
+        normalizePermissionSet([...permissions]).forEach((permission) => permissions.add(permission))
       }
       selectedRoleDraft.value.permissions = allPermissionKeys.filter((key) => permissions.has(key))
     }
@@ -1251,12 +1077,61 @@ export default {
 
       saving.value = true
       try {
+        const normalizedPermissions = normalizePermissionSet(selectedRoleDraft.value.permissions)
+        selectedRoleDraft.value.permissions = allPermissionKeys.filter((key) => normalizedPermissions.has(key))
         await updateDoc(doc(db, 'clinicRoles', selectedRole.value.id), {
           permissions: selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
             ? [fullAccessPermissionKey]
             : [...selectedRoleDraft.value.permissions],
           updatedAt: serverTimestamp(),
         })
+
+        // Keep a denormalized permission snapshot for Firestore rules and fast account loading.
+        const rolePermissionMap = new Map(
+          roles.value.map((role) => [role.id, Array.isArray(role.permissions) ? role.permissions : []])
+        )
+        rolePermissionMap.set(
+          selectedRole.value.id,
+          selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
+            ? [fullAccessPermissionKey]
+            : [...selectedRoleDraft.value.permissions]
+        )
+        const branchChunks = chunkArray(branchIds.value, 10)
+        for (const chunk of branchChunks) {
+          const assignedUsersSnapshot = await getDocs(
+            query(collection(db, 'users'), where('branchId', 'in', chunk))
+          )
+          let batch = writeBatch(db)
+          let batchSize = 0
+          const commits = []
+
+          assignedUsersSnapshot.forEach((userDoc) => {
+            const userData = userDoc.data() || {}
+            const assignedRoleIds = [
+              ...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []),
+              userData.customRoleId,
+            ]
+              .map((value) => String(value || '').trim())
+              .filter(Boolean)
+              .filter((value, index, values) => values.indexOf(value) === index)
+            if (!assignedRoleIds.includes(selectedRole.value.id)) return
+
+            const permissions = new Set(Array.isArray(userData.permissions) ? userData.permissions : [])
+            assignedRoleIds.forEach((roleId) => {
+              ;(rolePermissionMap.get(roleId) || []).forEach((permission) => permissions.add(permission))
+            })
+            batch.update(userDoc.ref, { effectivePermissions: [...permissions] })
+            batchSize += 1
+            if (batchSize >= 450) {
+              commits.push(batch.commit())
+              batch = writeBatch(db)
+              batchSize = 0
+            }
+          })
+
+          if (batchSize > 0) commits.push(batch.commit())
+          if (commits.length) await Promise.all(commits)
+        }
         toast.success('Role permissions saved.')
         await loadRoles()
         activeTab.value = 'permissions'
@@ -1370,6 +1245,7 @@ export default {
       resetNewRole,
       resetSelectedDraft,
       accessScopeLabel,
+      accessPreview,
       roles,
       saveRoleDetails,
       saveRolePermissions,

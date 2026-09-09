@@ -21,6 +21,43 @@
 
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
 
+      <section class="mb-6 rounded-xl border border-slate-700 bg-slate-800 p-4">
+        <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 class="font-semibold text-white">Feature Registry</h2>
+            <p class="text-xs text-slate-400">Add subscription feature keys used by plans and module access checks.</p>
+          </div>
+          <button
+            type="button"
+            class="rounded-lg border border-sky-500/40 px-3 py-2 text-xs text-sky-200 hover:bg-slate-700"
+            :disabled="savingFeature"
+            @click="addFeatureDefinition"
+          >
+            + Add Feature
+          </button>
+        </div>
+
+        <div class="mb-4 grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_1.4fr_0.8fr]">
+          <input v-model="newFeature.key" class="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100" placeholder="feature_key" />
+          <input v-model="newFeature.label" class="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100" placeholder="Feature label" />
+          <input v-model="newFeature.description" class="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100" placeholder="Description" />
+          <input v-model="newFeature.module" class="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100" placeholder="Module" />
+        </div>
+
+        <div class="space-y-2">
+          <div v-for="feature in featureDefinitions" :key="feature.key" class="grid grid-cols-1 gap-2 rounded-lg border border-slate-700/70 p-2 md:grid-cols-[1fr_1fr_1.4fr_0.8fr_auto_auto] md:items-center">
+            <input v-model="feature.key" disabled class="rounded bg-slate-900/70 px-2 py-1.5 text-xs text-slate-400" />
+            <input v-model="feature.label" class="rounded bg-slate-900 px-2 py-1.5 text-xs text-slate-100" />
+            <input v-model="feature.description" class="rounded bg-slate-900 px-2 py-1.5 text-xs text-slate-100" />
+            <input v-model="feature.module" class="rounded bg-slate-900 px-2 py-1.5 text-xs text-slate-100" />
+            <button type="button" class="rounded bg-emerald-600 px-2 py-1.5 text-xs text-white hover:bg-emerald-500" :disabled="savingFeature" @click="saveFeatureDefinition(feature)">Save</button>
+            <button type="button" class="rounded px-2 py-1.5 text-xs hover:bg-slate-700" :class="feature.isActive ? 'text-amber-300' : 'text-emerald-300'" :disabled="savingFeature" @click="toggleFeatureDefinition(feature)">
+              {{ feature.isActive ? 'Deactivate' : 'Activate' }}
+            </button>
+          </div>
+        </div>
+      </section>
+
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <div class="px-4 py-3 border-b border-slate-700 flex items-center justify-between gap-3">
           <div>
@@ -130,26 +167,15 @@ import {
   buildSubscriptionPlanCatalog,
   filterActiveSubscriptionPlans,
 } from '@/utils/subscriptionPlans'
+import {
+  buildSubscriptionFeatureRegistry,
+  DEFAULT_SUBSCRIPTION_FEATURES,
+} from '@/utils/subscriptionFeatureRegistry'
 
 const defaultPlanCatalog = [
   { id: 'free', key: 'free', label: 'Free Plan' },
   { id: 'basic', key: 'basic', label: 'Basic' },
   { id: 'premium', key: 'premium', label: 'Premium' },
-]
-
-const planFeatureCatalog = [
-  { key: 'multi_branch', label: 'Multi-Branch', description: 'Add and manage multiple branches.' },
-  { key: 'staff_management', label: 'Staff Management', description: 'Create and manage staff accounts.' },
-  { key: 'appointments', label: 'Appointments', description: 'Scheduling, rescheduling, and appointment management.' },
-  { key: 'pos_payments', label: 'POS & Payments', description: 'Collect payments and manage POS.' },
-  { key: 'inventory', label: 'Inventory', description: 'Suppliers, catalog, purchases, stock.' },
-  { key: 'services', label: 'Services & Posts', description: 'Manage services/products and posts.' },
-  { key: 'online_consultations', label: 'Online Consultations', description: 'Enable online consultations.' },
-  { key: 'reports', label: 'Reports', description: 'Access analytics and finance reports.' },
-  { key: 'hr', label: 'HR', description: 'Employee records, shifts, attendance management.' },
-  { key: 'payroll', label: 'Payroll', description: 'Payroll processing and payslips.' },
-  { key: 'attendance', label: 'Attendance', description: 'Attendance monitoring and logs.' },
-  { key: 'dss', label: 'DSS', description: 'Decision support recommendations.' },
 ]
 
 export default {
@@ -161,8 +187,13 @@ export default {
     const savingPlan = ref('')
     const planCatalog = ref([])
     const planPermissions = ref({})
+    const featureDefinitions = ref(DEFAULT_SUBSCRIPTION_FEATURES.map((feature) => ({ ...feature })))
+    const newFeature = ref({ key: '', label: '', description: '', module: 'Other' })
+    const savingFeature = ref(false)
     const planCatalogLoaded = ref(false)
     const planPermissionsLoaded = ref(false)
+
+    const planFeatureCatalog = computed(() => featureDefinitions.value.filter((feature) => feature.isActive !== false))
 
     const finishLoading = () => {
       if (planCatalogLoaded.value && planPermissionsLoaded.value) {
@@ -184,8 +215,9 @@ export default {
       })
     )
 
-    let unsubscribePermissions = null
+      let unsubscribePermissions = null
     let unsubscribePlans = null
+    let unsubscribeFeatures = null
 
     const loadPermissions = () => {
       loading.value = true
@@ -199,6 +231,10 @@ export default {
       if (unsubscribePlans) {
         unsubscribePlans()
         unsubscribePlans = null
+      }
+      if (unsubscribeFeatures) {
+        unsubscribeFeatures()
+        unsubscribeFeatures = null
       }
 
       try {
@@ -235,11 +271,72 @@ export default {
             loading.value = false
           }
         )
+
+        unsubscribeFeatures = onSnapshot(
+          collection(db, 'subscriptionFeatures'),
+          (snapshot) => {
+            featureDefinitions.value = buildSubscriptionFeatureRegistry(snapshot.docs)
+          },
+          (err) => {
+            console.error('Error loading subscription feature registry:', err)
+            error.value = 'Failed to load the subscription feature registry. Please try again.'
+          }
+        )
       } catch (err) {
         console.error('Error loading plan permissions:', err)
         error.value = 'Failed to load plan permissions. Please try again.'
         loading.value = false
       }
+    }
+
+    const normalizeFeatureKey = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+
+    const saveFeatureDefinition = async (feature) => {
+      const key = normalizeFeatureKey(feature.key)
+      if (!key || !String(feature.label || '').trim()) {
+        error.value = 'Feature key and label are required.'
+        return
+      }
+      savingFeature.value = true
+      error.value = ''
+      try {
+        await setDoc(doc(db, 'subscriptionFeatures', key), {
+          key,
+          label: String(feature.label || '').trim(),
+          description: String(feature.description || '').trim(),
+          module: String(feature.module || 'Other').trim() || 'Other',
+          isActive: feature.isActive !== false,
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+        feature.key = key
+        await Swal.fire({ title: 'Saved', text: `${feature.label} feature updated.`, icon: 'success', timer: 1100, showConfirmButton: false })
+      } catch (err) {
+        console.error('Error saving subscription feature:', err)
+        error.value = 'Failed to save the subscription feature.'
+      } finally {
+        savingFeature.value = false
+      }
+    }
+
+    const addFeatureDefinition = async () => {
+      const key = normalizeFeatureKey(newFeature.value.key)
+      if (!key || !String(newFeature.value.label || '').trim()) {
+        error.value = 'Feature key and label are required.'
+        return
+      }
+      if (featureDefinitions.value.some((feature) => feature.key === key)) {
+        error.value = 'That feature key already exists.'
+        return
+      }
+      const feature = { key, label: newFeature.value.label, description: newFeature.value.description, module: newFeature.value.module, isActive: true }
+      await saveFeatureDefinition(feature)
+      featureDefinitions.value = [...featureDefinitions.value, feature].sort((a, b) => a.label.localeCompare(b.label))
+      newFeature.value = { key: '', label: '', description: '', module: 'Other' }
+    }
+
+    const toggleFeatureDefinition = async (feature) => {
+      feature.isActive = feature.isActive === false
+      await saveFeatureDefinition(feature)
     }
 
     const savePlan = async (planEntry) => {
@@ -307,13 +404,13 @@ export default {
 
     const isPlanFullAccess = (planKey) => {
       const current = Array.isArray(planPermissions.value[planKey]) ? planPermissions.value[planKey] : []
-      if (!planFeatureCatalog.length) return false
-      return planFeatureCatalog.every((feature) => current.includes(feature.key))
+      if (!planFeatureCatalog.value.length) return false
+      return planFeatureCatalog.value.every((feature) => current.includes(feature.key))
     }
 
     const togglePlanFullAccess = (planKey) => {
       const current = new Set(Array.isArray(planPermissions.value[planKey]) ? planPermissions.value[planKey] : [])
-      const allKeys = planFeatureCatalog.map((feature) => feature.key)
+      const allKeys = planFeatureCatalog.value.map((feature) => feature.key)
       const enableAll = !allKeys.every((key) => current.has(key))
       planPermissions.value = {
         ...planPermissions.value,
@@ -331,6 +428,7 @@ export default {
     onUnmounted(() => {
       if (unsubscribePermissions) unsubscribePermissions()
       if (unsubscribePlans) unsubscribePlans()
+      if (unsubscribeFeatures) unsubscribeFeatures()
     })
 
     return {
@@ -338,7 +436,13 @@ export default {
       error,
       savingPlan,
       planEntries,
+      featureDefinitions,
+      newFeature,
+      savingFeature,
       planFeatureCatalog,
+      addFeatureDefinition,
+      saveFeatureDefinition,
+      toggleFeatureDefinition,
       loadPermissions,
       savePlan,
       hasFeature,

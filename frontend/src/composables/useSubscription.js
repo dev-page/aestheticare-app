@@ -9,6 +9,8 @@ export function useSubscription() {
     isLoading,
     isReadOnly,
     isExpired,
+    isSuspended,
+    subscriptionStatus,
     graceEndsAt,
     subscriptionExpiresAt,
     userRole
@@ -20,6 +22,8 @@ export function useSubscription() {
     isLoading,
     isReadOnly,
     isExpired,
+    isSuspended,
+    subscriptionStatus,
     graceEndsAt,
     subscriptionExpiresAt,
     userRole,

@@ -5,6 +5,11 @@ import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where }
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const GRACE_DAYS = 7
+const SUBSCRIPTION_STATUS = Object.freeze({
+  ACTIVE: 'active',
+  READ_ONLY: 'read_only',
+  SUSPENDED: 'suspended'
+})
 const PLAN_CACHE_KEY = 'subscription:plan'
 const PLAN_FEATURES_CACHE_PREFIX = 'subscription:features:'
 const PLAN_CACHE_TTL_MS = 5 * 60 * 1000
@@ -106,6 +111,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
   const isLoading = ref(false)
   const isReadOnly = ref(false)
   const isExpired = ref(false)
+  const isSuspended = ref(false)
+  const subscriptionStatus = ref(SUBSCRIPTION_STATUS.ACTIVE)
   const graceEndsAt = ref(null)
   const subscriptionExpiresAt = ref(null)
   const userRole = ref('')
@@ -121,19 +128,20 @@ export const useSubscriptionStore = defineStore('subscription', () => {
   const resolveSubscriptionForUser = async (userId) => {
     const userSnap = await getDoc(doc(db, 'users', userId))
     if (!userSnap.exists()) {
-      return { planKey: 'free', expiresAt: null, role: '', userType: '', paymentStatus: '', email: '' }
+      return { planKey: 'free', expiresAt: null, role: '', userType: '', paymentStatus: '', email: '', status: '' }
     }
     const userData = userSnap.data() || {}
     const role = String(userData.role || '').trim()
     const userTypeValue = String(userData.userType || '').trim()
     const userPaymentStatus = String(userData.paymentStatus || '').trim()
     const userEmail = String(userData.email || '').trim().toLowerCase()
+    const userSubscriptionStatus = String(userData.subscriptionAccessStatus || '').trim().toLowerCase()
 
     const hasDirectPlan = Boolean(userData.subscriptionPlan || userData.plan)
     if (hasDirectPlan) {
       const directPlan = normalizePlanKey(userData.subscriptionPlan || userData.plan)
       const directExpiresAt = toDate(userData.subscriptionExpiresAt)
-      return { planKey: directPlan, expiresAt: directExpiresAt, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail }
+      return { planKey: directPlan, expiresAt: directExpiresAt, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus }
     }
 
     const branchId = userData.branchId
@@ -149,6 +157,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
             role,
             userType: userTypeValue,
             paymentStatus: String(clinicData.paymentStatus || '').trim() || userPaymentStatus,
+            status: String(clinicData.subscriptionAccessStatus || '').trim().toLowerCase() || userSubscriptionStatus,
             email: userEmail
           }
         }
@@ -165,6 +174,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
                 role,
                 userType: userTypeValue,
                 paymentStatus: String(ownerData.paymentStatus || '').trim() || userPaymentStatus,
+                status: String(ownerData.subscriptionAccessStatus || '').trim().toLowerCase() || userSubscriptionStatus,
                 email: userEmail
               }
             }
@@ -184,13 +194,14 @@ export const useSubscriptionStore = defineStore('subscription', () => {
           expiresAt: toDate(clinicData.subscriptionExpiresAt),
           role,
           userType: userTypeValue,
-          paymentStatus: String(clinicData.paymentStatus || '').trim() || userPaymentStatus,
+            paymentStatus: String(clinicData.paymentStatus || '').trim() || userPaymentStatus,
+            status: String(clinicData.subscriptionAccessStatus || '').trim().toLowerCase() || userSubscriptionStatus,
           email: userEmail
         }
       }
     }
 
-    return { planKey: 'free', expiresAt: null, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail }
+    return { planKey: 'free', expiresAt: null, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus }
   }
 
   const loadLatestPaidPlanByEmail = async (email) => {
@@ -311,6 +322,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         activeFeatures.value = []
         isReadOnly.value = false
         isExpired.value = false
+        isSuspended.value = false
+        subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
         graceEndsAt.value = null
         subscriptionExpiresAt.value = null
         initialized = false
@@ -349,6 +362,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
           activeFeatures.value = []
           isReadOnly.value = false
           isExpired.value = false
+          isSuspended.value = false
+          subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
           graceEndsAt.value = null
           subscriptionExpiresAt.value = null
           userRole.value = 'Customer'
@@ -368,6 +383,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         activeFeatures.value = []
         isReadOnly.value = false
         isExpired.value = false
+        isSuspended.value = false
+        subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
         graceEndsAt.value = null
         subscriptionExpiresAt.value = null
         userRole.value = subscriptionMeta.role || subscriptionMeta.userType || ''
@@ -480,9 +497,19 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         const expiresAt = resolvedExpiresAt
         const graceEnd = new Date(expiresAt.getTime() + GRACE_DAYS * 24 * 60 * 60 * 1000)
         graceEndsAt.value = graceEnd
-        const expired = now.getTime() > expiresAt.getTime()
+        const expired = now.getTime() >= expiresAt.getTime()
+        const calculatedStatus = !expired
+          ? SUBSCRIPTION_STATUS.ACTIVE
+          : now.getTime() < graceEnd.getTime()
+            ? SUBSCRIPTION_STATUS.READ_ONLY
+            : SUBSCRIPTION_STATUS.SUSPENDED
+        // The timestamp is authoritative so renewal immediately restores access,
+        // even if the maintenance job has not yet copied the new status fields.
+        const nextStatus = calculatedStatus
+        subscriptionStatus.value = nextStatus
         isExpired.value = expired
-        isReadOnly.value = expired
+        isReadOnly.value = nextStatus === SUBSCRIPTION_STATUS.READ_ONLY
+        isSuspended.value = nextStatus === SUBSCRIPTION_STATUS.SUSPENDED
         const roleKey = String(userRole.value || '')
           .trim()
           .toLowerCase()
@@ -504,6 +531,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       } else {
         isExpired.value = false
         isReadOnly.value = false
+        isSuspended.value = false
+        subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
         graceEndsAt.value = null
       }
     } catch (error) {
@@ -512,6 +541,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       activeFeatures.value = DEFAULT_FEATURES.free
       isReadOnly.value = false
       isExpired.value = false
+      isSuspended.value = false
+      subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
       graceEndsAt.value = null
       subscriptionExpiresAt.value = null
     } finally {
@@ -528,8 +559,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     if (!initialized) {
       initSubscription()
     }
-    // If the subscription has expired, deny all feature access
-    if (isExpired.value) {
+    // Renewal remains available, but business modules are blocked after expiry.
+    if (subscriptionStatus.value !== SUBSCRIPTION_STATUS.ACTIVE) {
       return false
     }
     if (feature === 'hr_shifts') {
@@ -550,6 +581,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     isLoading,
     isReadOnly,
     isExpired,
+    isSuspended,
+    subscriptionStatus,
     graceEndsAt,
     subscriptionExpiresAt,
     userRole,

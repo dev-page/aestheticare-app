@@ -21,19 +21,20 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Approve Employees', icon: 'shield', to: '/owner/staff/approve', feature: 'staff_management', permission: 'staff:update' },
       { label: 'Archived Employees', icon: 'archive', to: '/owner/staff/archived', feature: 'staff_management', permission: 'staff:view' },
       { label: 'Attendance', icon: 'calendar', to: '/owner/staff/attendance', feature: 'attendance', permission: 'attendance:view' },
-      { label: 'Role Management', icon: 'shield', to: '/owner/staff/roles', feature: 'staff_management', permission: 'roles:view' }
+      { label: 'Role Management', icon: 'shield', to: '/owner/staff/roles', feature: 'staff_management', permission: 'roles:manage', ownerOnly: true }
     ]
   },
   {
     key: 'clinic-module',
-    label: 'Clinic Workspace',
+    label: 'CRM & Clinic',
     icon: 'clinic',
-    moduleKey: 'clinic',
+    moduleKey: 'crm',
     children: [
       { type: 'section', label: 'CLIENTS' },
       { label: 'Client List', icon: 'profile', to: '/receptionist/clients', permission: 'clients:view' },
       { label: 'Add Client', icon: 'userplus', to: '/receptionist/clients/add', permission: 'clients:create' },
       { type: 'section', label: 'APPOINTMENTS' },
+      { label: 'Bookings', icon: 'calendar-multiple', to: '/receptionist/bookings', permission: 'appointments:view' },
       { label: 'Appointments', icon: 'calendar', to: '/receptionist/appointments', permission: 'appointments:view' },
       { label: 'Appointment Requests', icon: 'calendar-check', to: '/receptionist/appointment-requests', permission: 'appointments:review' },
       { label: 'Online Consultation', icon: 'clinic', to: '/practitioner/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
@@ -45,7 +46,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
   },
   {
     key: 'operations-module',
-    label: 'Products & Services',
+    label: 'Inventory & Operations',
     icon: 'tag',
     moduleKey: 'operations',
     children: [
@@ -62,7 +63,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
   },
   {
     key: 'hr-module',
-    label: 'HR Workspace',
+    label: 'Human Resources',
     icon: 'users',
     moduleKey: 'hr',
     feature: 'hr',
@@ -81,7 +82,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
   },
   {
     key: 'finance-module',
-    label: 'Finance Workspace',
+    label: 'Finance',
     icon: 'card',
     moduleKey: 'finance',
     feature: 'reports',

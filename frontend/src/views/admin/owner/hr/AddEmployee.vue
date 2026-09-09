@@ -68,6 +68,7 @@ export default {
       address: '',
       role: '',
       customRoleId: '',
+      customRoleIds: [],
       customRoleName: '',
       employmentType: '',
       userType: 'Staff',
@@ -166,6 +167,7 @@ export default {
         address: '',
         role: '',
         customRoleId: '',
+        customRoleIds: [],
         customRoleName: '',
         employmentType: '',
         userType: 'Staff',
@@ -272,16 +274,28 @@ export default {
       validateField(field)
     }
 
-    const isPractitionerRole = computed(() => String(currentStaff.value.role || '').toLowerCase() === 'practitioner')
+    const selectedCustomRoles = computed(() => {
+      const ids = Array.isArray(currentStaff.value.customRoleIds)
+        ? currentStaff.value.customRoleIds
+        : [currentStaff.value.customRoleId].filter(Boolean)
+      return customRoles.value.filter((role) => ids.includes(role.id))
+    })
+
+    const isPractitionerRole = computed(() =>
+      selectedCustomRoles.value.some((role) => String(role.name || '').toLowerCase().includes('practitioner'))
+      || String(currentStaff.value.role || '').toLowerCase() === 'practitioner'
+    )
 
     watch(
-      () => currentStaff.value.customRoleId,
-      (nextCustomRoleId) => {
-        const selectedRole = customRoles.value.find((role) => role.id === nextCustomRoleId)
-        currentStaff.value.customRoleName = selectedRole?.name || ''
-        currentStaff.value.role = selectedRole?.name || ''
+      () => currentStaff.value.customRoleIds,
+      (nextCustomRoleIds) => {
+        const ids = Array.isArray(nextCustomRoleIds) ? nextCustomRoleIds : []
+        const selected = customRoles.value.filter((role) => ids.includes(role.id))
+        currentStaff.value.customRoleId = ids[0] || ''
+        currentStaff.value.customRoleName = selected.map((role) => role.name).join(', ')
+        currentStaff.value.role = selected.map((role) => role.name).join(', ')
       },
-      { immediate: true }
+      { immediate: true, deep: true }
     )
 
     const handlePractitionerFile = (event) => {
@@ -446,7 +460,9 @@ export default {
             address: currentStaff.value.address,
             role: currentStaff.value.role,
             customRoleId: currentStaff.value.customRoleId || null,
+            customRoleIds: Array.isArray(currentStaff.value.customRoleIds) ? currentStaff.value.customRoleIds : [],
             customRoleName: currentStaff.value.customRoleName || null,
+            effectivePermissions: [...new Set(selectedCustomRoles.value.flatMap((role) => role.permissions || []))],
             employmentType: currentStaff.value.employmentType,
             userType: 'Staff',
             branchId: currentStaff.value.branchId,   // ✅ consistent schema
@@ -609,11 +625,11 @@ export default {
           <div>
             <label class="block text-slate-400 mb-1">Role</label>
             <select
-              v-model="currentStaff.customRoleId"
+              v-model="currentStaff.customRoleIds"
+              multiple
               @blur="markTouched('role')"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+              class="w-full min-h-28 px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option class="bg-slate-800 text-white" disabled value="">Select Role</option>
               <option
                 v-for="role in customRoles"
                 :key="role.id"
@@ -623,6 +639,7 @@ export default {
                 {{ role.name }}
               </option>
             </select>
+            <p class="mt-1 text-xs text-slate-400">Hold Ctrl or Command to assign more than one role.</p>
             <p v-if="touchedFields.role && fieldErrors.role" class="mt-1 text-xs text-rose-400">
               {{ fieldErrors.role }}
             </p>

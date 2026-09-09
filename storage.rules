@@ -5,6 +5,11 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function isSuperadmin() {
+      return isSignedIn()
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['Superadmin', 'SuperAdmin', 'superadmin'];
+    }
+
     function isImageUpload() {
       return request.resource != null
         && request.resource.contentType.matches('image/.*')
@@ -51,13 +56,13 @@ service firebase.storage {
     }
 
     match /clinic-registration/{ownerId}/{documentType}/{fileName} {
-      allow read: if true;
+      allow read: if isSignedIn() && (request.auth.uid == ownerId || isSuperadmin());
       allow create: if request.auth != null && request.auth.uid == ownerId && isDocumentUpload();
       allow update, delete: if false;
     }
 
     match /supplier-registration/{ownerId}/{documentType}/{fileName} {
-      allow read: if request.auth != null && request.auth.uid == ownerId;
+      allow read: if isSignedIn() && (request.auth.uid == ownerId || isSuperadmin());
       allow create: if request.auth != null && request.auth.uid == ownerId && isDocumentUpload();
       allow update, delete: if false;
     }

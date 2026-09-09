@@ -19,8 +19,8 @@ export default {
     const items = [
       { label: 'Dashboard', icon: 'home', to: '/superadmin/dashboard' },
       {
-        key: 'account-management',
-        label: 'Account Management',
+        key: 'accounts',
+        label: 'Accounts',
         icon: 'users',
         children: [
           { label: 'Admin List', icon: 'shield-account', to: '/superadmin/admin-list' },
@@ -28,14 +28,12 @@ export default {
         ]
       },
       {
-        key: 'clinic-management',
-        label: 'Clinic & Supplier Management',
-        icon: 'box',
+        key: 'verification',
+        label: 'Verification',
+        icon: 'clipboard-list',
         children: [
-          { label: 'Verified Clinics', icon: 'shield', to: '/superadmin/clinics/verified' },
-          { label: 'Clinic Verification', icon: 'clipboard', to: '/superadmin/clinics/verification' },
-          { label: 'Supplier Verification', icon: 'truck', to: '/superadmin/suppliers/verification' },
-          { label: 'Archived Clinics', icon: 'archive', to: '/superadmin/clinics/archived' }
+          { label: 'Clinics', icon: 'shield', to: '/superadmin/clinics/verification' },
+          { label: 'Suppliers', icon: 'truck', to: '/superadmin/suppliers/verification' }
         ]
       },
       {
@@ -44,20 +42,21 @@ export default {
         icon: 'cash',
         children: [
           { label: 'Setup Plans', icon: 'settings', to: '/superadmin/subscription/plans' },
-          { label: 'Plan Payments', icon: 'money', to: '/superadmin/subscription/payments' },
-          { label: 'Subscription Permissions', icon: 'lock', to: '/superadmin/subscription/permissions' }
+          { label: 'Permissions', icon: 'lock', to: '/superadmin/subscription/permissions' }
         ]
       },
-      { label: 'Activity Logs', icon: 'activity', to: '/superadmin/activity-logs' },
       {
-        key: 'support',
-        label: 'Support & Reports',
-        icon: 'inbox',
+        key: 'payments',
+        label: 'Payments',
+        icon: 'credit-card',
         children: [
-          { label: 'User Issues', icon: 'reportIssue', to: '/superadmin/tickets' },
-          { label: 'Account Closure Requests', icon: 'account-off', to: '/superadmin/account-closure-requests' }
+          { label: 'Analytics', icon: 'chart-line', to: '/superadmin/payments/analytics' },
+          { label: 'Subscriptions', icon: 'receipt', to: '/superadmin/subscription/payments' }
         ]
-      }
+      },
+      { label: 'User Reports', icon: 'reportIssue', to: '/superadmin/tickets' },
+      { label: 'System Settings', icon: 'cog', to: '/superadmin/system-settings' },
+      { label: 'Activity Logs', icon: 'activity', to: '/superadmin/activity-logs' }
     ]
 
     return { items }

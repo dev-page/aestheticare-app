@@ -25,6 +25,34 @@ service cloud.firestore {
       return userData().role == 'Superadmin' || userData().role == 'SuperAdmin' || userData().role == 'superadmin';
     }
 
+    function applicantCannotChangeVerificationFields() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'status', 'approvalStatus', 'verificationStatus', 'verificationResults',
+        'verificationProcessedAt', 'verificationProcessedBy', 'approvedAt',
+        'approvedBy', 'rejectedAt', 'rejectionReason', 'reviewedBy', 'reviewedAt'
+      ]);
+    }
+
+    function applicantCanSubmitClinicDocuments() {
+      return request.resource.data.approvalStatus == 'Pending Approval'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'approvalStatus', 'documentsSubmittedAt', 'submittedDocuments',
+          'draftDocuments', 'draftDocumentsUpdatedAt'
+        ]);
+    }
+
+    function customerCanRequestAppointmentChange() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'status', 'cancellationReason', 'cancellationRequestedAt',
+        'cancellationPolicySnapshot', 'refundRequestedAmount',
+        'refundCommissionAmount', 'refundStatus', 'requestedDate',
+        'requestedTime', 'requestedPractitionerId', 'requestedSlotKey',
+        'rescheduleReason', 'rescheduleRequestedAt', 'reschedulePolicySnapshot'
+      ])
+        && (request.resource.data.status == 'Cancellation Requested'
+          || request.resource.data.status == 'Reschedule Requested');
+    }
+
     function rolePermissions() {
       return exists(/databases/$(database)/documents/rolePermissions/$(roleKey()))
         ? get(/databases/$(database)/documents/rolePermissions/$(roleKey())).data.permissions
@@ -33,6 +61,7 @@ service cloud.firestore {
 
     function hasPermission(permission) {
       return (userData().permissions != null && userData().permissions.hasAny([permission]))
+        || (userData().effectivePermissions != null && userData().effectivePermissions.hasAny([permission]))
         || (rolePermissions() != null && rolePermissions().hasAny([permission]));
     }
 
@@ -54,9 +83,32 @@ service cloud.firestore {
       return isOwnerOfBranch(branchId) || isStaffOfBranch(branchId);
     }
 
+    function isStaffOfOwner(ownerId) {
+      return isSignedIn()
+        && (userData().userType == 'Staff' || userData().userType == 'staff')
+        && userData().branchId != null
+        && exists(/databases/$(database)/documents/clinics/$(userData().branchId))
+        && clinicDoc(userData().branchId).data.ownerId == ownerId;
+    }
+
+    function isAssignedClinicRole(roleId) {
+      return isSignedIn()
+        && (userData().customRoleId == roleId
+          || (userData().customRoleIds != null && userData().customRoleIds.hasAny([roleId])));
+    }
+
     function isPublicClinic(clinicId) {
       return exists(/databases/$(database)/documents/clinics/$(clinicId))
         && clinicDoc(clinicId).data.isPublished == true;
+    }
+
+    // Use the server timestamp so expiry restrictions do not depend on the UI
+    // or on the hourly maintenance job running first.
+    function subscriptionAllowsBusinessWrite(branchId) {
+      return exists(/databases/$(database)/documents/clinics/$(branchId))
+        && (!('subscriptionExpiresAt' in clinicDoc(branchId).data)
+          || clinicDoc(branchId).data.subscriptionExpiresAt == null
+          || request.time < clinicDoc(branchId).data.subscriptionExpiresAt);
     }
 
     match /users/{userId} {
@@ -71,7 +123,7 @@ service cloud.firestore {
             && canAccessBranch(request.resource.data.branchId)
             && hasPermission('staff:create')));
       allow update: if isSignedIn()
-        && (request.auth.uid == userId
+        && ((request.auth.uid == userId && applicantCannotChangeVerificationFields())
           || isSuperadmin()
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
@@ -91,8 +143,10 @@ service cloud.firestore {
         && request.resource.data.ownerId == request.auth.uid;
       allow update: if isSignedIn()
         && (isSuperadmin()
-          || isOwnerOfBranch(clinicId)
-          || (isOwnerOfBranch(clinicId) && hasPermission('clinic_profile:update')));
+          || (isOwnerOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
+            && (applicantCannotChangeVerificationFields() || applicantCanSubmitClinicDocuments()))
+          || (isOwnerOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
+            && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields()));
       allow delete: if isSignedIn() && isSuperadmin();
     }
 
@@ -101,7 +155,33 @@ service cloud.firestore {
       allow write: if isSignedIn() && isSuperadmin();
     }
 
+    match /clinicRoles/{roleId} {
+      allow read: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid
+          || isSuperadmin()
+          || isAssignedClinicRole(roleId)
+          || isStaffOfOwner(resource.data.ownerId));
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && (isSuperadmin() || resource.data.ownerId == request.auth.uid);
+    }
+
+    match /ownerModuleSettings/{ownerId} {
+      allow read: if isSignedIn()
+        && (request.auth.uid == ownerId || isSuperadmin() || isStaffOfOwner(ownerId));
+      allow create, update: if isSignedIn()
+        && (request.auth.uid == ownerId || isSuperadmin());
+      allow delete: if isSignedIn()
+        && (request.auth.uid == ownerId || isSuperadmin());
+    }
+
     match /planPermissions/{planId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isSuperadmin();
+    }
+
+    match /subscriptionFeatures/{featureId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && isSuperadmin();
     }
@@ -126,7 +206,7 @@ service cloud.firestore {
         && ((request.resource.data.customerId == request.auth.uid)
           || (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('appointments:create')));
       allow update: if isSignedIn()
-        && ((resource.data.customerId == request.auth.uid)
+        && ((resource.data.customerId == request.auth.uid && customerCanRequestAppointmentChange())
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')));
       allow delete: if isSignedIn()
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')));
@@ -188,7 +268,8 @@ service cloud.firestore {
     match /supplierApplications/{supplierId} {
       allow read: if isSignedIn() && (request.auth.uid == supplierId || isSuperadmin());
       allow create: if isSignedIn() && request.auth.uid == supplierId;
-      allow update: if isSignedIn() && (request.auth.uid == supplierId || isSuperadmin());
+      allow update: if isSignedIn()
+        && ((request.auth.uid == supplierId && applicantCannotChangeVerificationFields()) || isSuperadmin());
       allow delete: if isSignedIn() && (request.auth.uid == supplierId || isSuperadmin());
     }
 
@@ -239,7 +320,11 @@ service cloud.firestore {
     match /reviews/{reviewId} {
       allow read: if isPublicClinic(resource.data.branchId)
         || (isSignedIn() && canAccessBranch(resource.data.branchId));
-      allow create: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.appointmentId != null
+        && get(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId)).data.customerId == request.auth.uid
+        && get(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId)).data.status == 'Completed';
       allow update, delete: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId));
     }

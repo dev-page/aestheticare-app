@@ -62,6 +62,44 @@
         </table>
       </section>
 
+      <!-- Verified suppliers table below pending suppliers -->
+      <section class="mt-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+        <div class="px-4 py-4 border-b border-slate-800">
+          <h2 class="text-lg font-semibold text-white">Verified Suppliers</h2>
+          <p class="text-slate-400 text-sm">Suppliers that have been approved and are active in the system.</p>
+        </div>
+        <table class="w-full text-sm">
+          <thead class="border-b border-slate-800">
+            <tr>
+              <th class="px-4 py-3 text-left text-slate-300">Business Name</th>
+              <th class="px-4 py-3 text-left text-slate-300">Owner</th>
+              <th class="px-4 py-3 text-left text-slate-300">Contact</th>
+              <th class="px-4 py-3 text-left text-slate-300">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loadingVerifiedSuppliers">
+              <td class="px-4 py-4 text-slate-300" colspan="4">Loading verified suppliers...</td>
+            </tr>
+            <tr v-else-if="!verifiedSuppliers.length">
+              <td class="px-4 py-4 text-slate-300" colspan="4">No verified suppliers found.</td>
+            </tr>
+            <tr v-else v-for="s in verifiedSuppliers" :key="s.id" class="border-b border-slate-800/70 last:border-b-0">
+              <td class="px-4 py-3 text-slate-100">{{ s.businessName }}</td>
+              <td class="px-4 py-3 text-slate-300">{{ s.ownerName }}</td>
+              <td class="px-4 py-3 text-slate-300">{{ s.contactNumber || '-' }}</td>
+              <td class="px-4 py-3 text-slate-300">{{ s.status || 'Active' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+ 
+      <div class="mt-3 flex justify-center">
+        <button v-if="hasMoreVerifiedSuppliers && !loadingVerifiedSuppliers" @click="loadMoreVerifiedSuppliers" class="px-4 py-2 rounded bg-slate-700 text-white">Load more</button>
+        <div v-else-if="loadingVerifiedSuppliers" class="text-slate-400">Loading more...</div>
+        <div v-else class="text-slate-500">No more items</div>
+      </div>
+ 
       <div v-if="showModal && selectedRecord" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
         <div class="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-800 bg-slate-950 p-6">
           <div class="mb-6 flex items-start justify-between gap-4">
@@ -171,6 +209,7 @@ import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { formatTinDisplay, normalizeTinDigits } from '@/utils/supplierTin'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 const auth = getAuth()
 const loading = ref(false)
@@ -219,7 +258,7 @@ const loadPendingSuppliers = async () => {
       .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
       .filter((supplier) => {
         const status = String(supplier.approvalStatus || supplier.status || '').trim().toLowerCase()
-        return status.includes('pending')
+        return status.includes('pending') || status.includes('manual review')
       })
 
     const rows = await Promise.all(
@@ -270,6 +309,81 @@ const loadPendingSuppliers = async () => {
   }
 }
 
+// Load verified suppliers (to display below the pending registrations) with pagination
+const verifiedSuppliers = ref([])
+const loadingVerifiedSuppliers = ref(false)
+const verifiedSuppliersPageSize = 20
+const verifiedSuppliersLastDoc = ref(null)
+const hasMoreVerifiedSuppliers = ref(true)
+
+const loadVerifiedSuppliers = async (reset = false) => {
+  if (reset) {
+    verifiedSuppliers.value = []
+    verifiedSuppliersLastDoc.value = null
+    hasMoreVerifiedSuppliers.value = true
+  }
+  if (!hasMoreVerifiedSuppliers.value) return
+  loadingVerifiedSuppliers.value = true
+  try {
+    // simple paged approach: fetch a page of suppliers ordered by createdAt (descending) and filter locally
+    const q = query(collection(db, 'suppliers'))
+    const snap = await getDocs(q)
+    const docs = snap.docs
+    let pageDocs = docs
+    if (verifiedSuppliersLastDoc.value) {
+      const idx = docs.findIndex((d) => d.id === verifiedSuppliersLastDoc.value)
+      pageDocs = idx >= 0 ? docs.slice(idx + 1, idx + 1 + verifiedSuppliersPageSize) : docs.slice(0, verifiedSuppliersPageSize)
+    } else {
+      pageDocs = docs.slice(0, verifiedSuppliersPageSize)
+    }
+
+    const rows = pageDocs.map((d) => {
+      const data = d.data() || {}
+      const businessName = String(data.businessName || data.name || '').trim() || 'Unnamed Supplier'
+      const ownerName = String(data.ownerName || data.fullName || '').trim() || ''
+      return { id: d.id, businessName, ownerName, contactNumber: data.contactNumber || data.phone || '', status: data.status || 'Active' }
+    })
+
+    if (rows.length) {
+      verifiedSuppliers.value = verifiedSuppliers.value.concat(sortRecordsNewestFirst(rows))
+      verifiedSuppliersLastDoc.value = pageDocs[pageDocs.length - 1]?.id || verifiedSuppliersLastDoc.value
+      if (pageDocs.length < verifiedSuppliersPageSize) hasMoreVerifiedSuppliers.value = false
+    } else {
+      hasMoreVerifiedSuppliers.value = false
+    }
+  } catch (e) {
+    console.error('Failed to load verified suppliers', e)
+    if (!verifiedSuppliers.value.length) verifiedSuppliers.value = []
+  } finally {
+    loadingVerifiedSuppliers.value = false
+  }
+}
+
+const loadMoreVerifiedSuppliers = () => loadVerifiedSuppliers(false)
+
+const fetchFromBackend = async (path, options = {}) => {
+  let lastError = null
+  for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, options)
+      if (response.status === 404) {
+        lastError = new Error(`Endpoint not found on ${baseUrl}`)
+        continue
+      }
+      return response
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError || new Error('Unable to reach the verification backend.')
+}
+
+const buildAuthHeaders = async () => {
+  const user = auth.currentUser
+  if (!user) throw new Error('Missing administrator session.')
+  return { 'content-type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` }
+}
+
 const openDetails = (record) => {
   selectedRecord.value = record
   rejectionRemark.value = ''
@@ -299,58 +413,13 @@ const approveSelected = async () => {
   processing.value = true
   try {
     const reviewerId = auth.currentUser?.uid || null
-    const application = selectedRecord.value.application || {}
-    const userData = selectedRecord.value.userData || {}
-
-    const supplierPayload = {
-      ownerId: selectedRecord.value.id,
-      name: selectedRecord.value.businessName,
-      businessName: selectedRecord.value.businessName,
-      email: selectedRecord.value.email || '',
-      contactNumber: selectedRecord.value.contactNumber || '',
-      businessType: selectedRecord.value.businessType || application.businessType || userData.businessType || '',
-      contact: selectedRecord.value.contactNumber || '',
-      phone: selectedRecord.value.contactNumber || '',
-      address: selectedRecord.value.businessAddress || '',
-      businessAddress: selectedRecord.value.businessAddress || '',
-      businessAddressStreet: application.businessAddressStreet || userData.addressStreet || '',
-      businessAddressBarangay: application.businessAddressBarangay || userData.addressBarangay || '',
-      businessAddressCity: application.businessAddressCity || userData.addressCity || '',
-      businessAddressProvince: application.businessAddressProvince || userData.addressProvince || '',
-      businessAddressPostalCode: application.businessAddressPostalCode || userData.addressPostalCode || '',
-      businessAddressLat: application.businessAddressLat || userData.addressLat || '',
-      businessAddressLng: application.businessAddressLng || userData.addressLng || '',
-      businessType: selectedRecord.value.businessType || application.businessType || userData.businessType || '',
-      taxRegistrationNumber: normalizeTinDigits(selectedRecord.value.taxRegistrationNumber || application.taxRegistrationNumber || userData.taxRegistrationNumber || ''),
-      profilePicture: userData.profilePicture || application.profilePicture || '',
-      approvalStatus: 'Approved',
-      status: 'Active',
-      reviewedBy: reviewerId,
-      reviewedAt: serverTimestamp(),
-      createdAt: application.createdAt || serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      offeredItems: Array.isArray(application.offeredItems) ? application.offeredItems : [],
-      documents: application.documents || {},
-    }
-
-    await Promise.all([
-      updateDoc(doc(db, 'supplierApplications', selectedRecord.value.id), {
-        approvalStatus: 'Approved',
-        status: 'Active',
-        approvedAt: serverTimestamp(),
-        rejectedAt: null,
-        rejectionReason: '',
-        reviewedBy: reviewerId,
-      }),
-      updateDoc(doc(db, 'users', selectedRecord.value.id), {
-        role: 'Supplier',
-        userType: 'supplier',
-        approvalStatus: 'Approved',
-        status: 'Active',
-        approvedAt: serverTimestamp(),
-      }),
-      setDoc(doc(db, 'suppliers', selectedRecord.value.id), supplierPayload, { merge: true }),
-    ])
+    const response = await fetchFromBackend('/admin/supplier/approve', {
+      method: 'POST',
+      headers: await buildAuthHeaders(),
+      body: JSON.stringify({ uid: selectedRecord.value.id, reviewer: reviewerId }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to approve supplier registration.')
 
     await Swal.fire({
       title: 'Approved',
@@ -397,21 +466,13 @@ const rejectSelected = async () => {
   processing.value = true
   try {
     const reviewerId = auth.currentUser?.uid || null
-    await Promise.all([
-      updateDoc(doc(db, 'supplierApplications', selectedRecord.value.id), {
-        approvalStatus: 'Rejected',
-        status: 'Inactive',
-        rejectionReason: remark,
-        rejectedAt: serverTimestamp(),
-        reviewedBy: reviewerId,
-      }),
-      updateDoc(doc(db, 'users', selectedRecord.value.id), {
-        status: 'Inactive',
-        approvalStatus: 'Rejected',
-        rejectionReason: remark,
-        rejectedAt: serverTimestamp(),
-      }),
-    ])
+    const response = await fetchFromBackend('/admin/supplier/reject', {
+      method: 'POST',
+      headers: await buildAuthHeaders(),
+      body: JSON.stringify({ uid: selectedRecord.value.id, reviewer: reviewerId, reason: remark }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to reject supplier registration.')
 
     await Swal.fire({
       title: 'Rejected',
@@ -431,5 +492,5 @@ const rejectSelected = async () => {
   }
 }
 
-onMounted(loadPendingSuppliers)
+onMounted(async () => { await Promise.all([loadPendingSuppliers(), loadVerifiedSuppliers()]) })
 </script>

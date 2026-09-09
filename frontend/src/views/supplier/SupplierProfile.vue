@@ -132,13 +132,13 @@
                 <div class="md:col-span-2">
                   <label class="profile-label">Pin Your Business Location</label>
                   <LocationPicker
-                    region="philippines"
-                    title="Select Business Location"
-                    instruction-title="Philippines only"
-                    instruction-text="Pin the exact location of your business in the Philippines."
-                    search-placeholder="Search your business address"
+                    region="cavite"
+                    title="Select Business Location in Cavite"
+                    instruction-title="Cavite only"
+                    instruction-text="Pin the exact location of your business inside Cavite."
+                    search-placeholder="Search your business address in Cavite"
                     search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
-                    allowed-area-label="Philippines"
+                    allowed-area-label="Cavite, Philippines"
                     pinned-address-label="Pinned Business Address"
                     :show-actions="false"
                     :initial-address="locationSearchValue"

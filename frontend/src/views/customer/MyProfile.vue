@@ -65,13 +65,13 @@
               <div>
                 <label class="profile-field-label">Address Search</label>
                 <LocationPicker
-                  region="philippines"
-                  title="Select Address in the Philippines"
-                  instruction-title="Philippines only"
-                  instruction-text="Pinning is limited to land locations inside the Philippines. Pins in the ocean or outside the country are blocked."
-                  search-placeholder="Search a city, barangay, or address"
+                  region="cavite"
+                  title="Select Address in Cavite"
+                  instruction-title="Cavite only"
+                  instruction-text="Pinning is limited to land locations inside Cavite. Pins in the ocean or outside Cavite are blocked."
+                  search-placeholder="Search a city, barangay, or address in Cavite"
                   search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
-                  allowed-area-label="Philippines"
+                  allowed-area-label="Cavite, Philippines"
                   pinned-address-label="Pinned Address"
                   :show-actions="false"
                   :initial-address="customer.address || buildLocationSearchQuery()"

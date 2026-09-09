@@ -74,6 +74,7 @@ export default {
       phoneNumber: '',
       role: '',
       customRoleId: '',
+      customRoleIds: [],
       employmentType: '',
       userType: 'Staff',
       clinicBranch: '',   // will hold branchId
@@ -167,6 +168,7 @@ export default {
         phoneNumber: '',
         role: '',
         customRoleId: '',
+        customRoleIds: [],
         employmentType: '',
         userType: 'Staff',
         clinicBranch: '',
@@ -186,10 +188,19 @@ export default {
       currentStaff.value.clinicLocation = selected ? selected.location : ""
     }
 
-    watch(() => currentStaff.value.customRoleId, (nextCustomRoleId) => {
-      const selectedRole = customRoles.value.find((role) => role.id === nextCustomRoleId)
-      currentStaff.value.role = selectedRole?.name || ''
-    }, { immediate: true })
+    watch(() => currentStaff.value.customRoleIds, (nextCustomRoleIds) => {
+      const ids = Array.isArray(nextCustomRoleIds) ? nextCustomRoleIds : []
+      const selectedRoles = customRoles.value.filter((role) => ids.includes(role.id))
+      currentStaff.value.customRoleId = ids[0] || ''
+      currentStaff.value.role = selectedRoles.map((role) => role.name).join(', ')
+    }, { immediate: true, deep: true })
+
+    const selectedCustomRoles = computed(() => {
+      const ids = Array.isArray(currentStaff.value.customRoleIds)
+        ? currentStaff.value.customRoleIds
+        : [currentStaff.value.customRoleId].filter(Boolean)
+      return customRoles.value.filter((role) => ids.includes(role.id))
+    })
 
     const sanitizeName = (value) => value.replace(/[^A-Za-z\s]/g, '')
     const sanitizeEmail = (value) => value.replace(/[^A-Za-z0-9@._]/g, '')
@@ -307,10 +318,12 @@ export default {
     }
 
     const hasErrors = computed(() => Object.values(fieldErrors.value).some(Boolean))
-    const isPractitionerRole = computed(() => String(currentStaff.value.role || '').toLowerCase() === 'practitioner')
+    const isPractitionerRole = computed(() =>
+      selectedCustomRoles.value.some((role) => String(role.name || '').toLowerCase().includes('practitioner'))
+      || String(currentStaff.value.role || '').toLowerCase() === 'practitioner'
+    )
     const selectedCustomRoleName = computed(() => {
-      const match = customRoles.value.find((role) => role.id === currentStaff.value.customRoleId)
-      return match?.name || ''
+      return selectedCustomRoles.value.map((role) => role.name).join(', ')
     })
 
     const handlePractitionerFile = (event) => {
@@ -437,7 +450,9 @@ export default {
             phoneNumber: `+63${currentStaff.value.phoneNumber}`,
             role: currentStaff.value.role,
             customRoleId: currentStaff.value.customRoleId || null,
+            customRoleIds: Array.isArray(currentStaff.value.customRoleIds) ? currentStaff.value.customRoleIds : [],
             customRoleName: selectedCustomRoleName.value || null,
+            effectivePermissions: [...new Set(selectedCustomRoles.value.flatMap((role) => role.permissions || []))],
             employmentType: currentStaff.value.employmentType,
             userType: 'Staff',
             branchId: currentStaff.value.clinicBranch,   // ✅ store branchId reference
@@ -657,10 +672,10 @@ export default {
               <div>
                 <label class="mb-1 block text-slate-400">Role <span class="text-red-400">*</span></label>
                 <select
-                  v-model="currentStaff.customRoleId"
-                  class="add-staff-select w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  v-model="currentStaff.customRoleIds"
+                  multiple
+                  class="add-staff-select w-full min-h-28 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option class="text-slate-300" value="" disabled>Select a role</option>
                   <option
                     v-for="role in customRoles"
                     :key="role.id"
@@ -670,6 +685,7 @@ export default {
                     {{ role.name }}
                   </option>
                 </select>
+                <p class="mt-1 text-xs text-slate-400">Hold Ctrl or Command to assign more than one role.</p>
                 <p class="mt-1 text-xs text-slate-400">
                   {{ selectedCustomRoleName ? `Selected: ${selectedCustomRoleName}` : 'Choose a role to define permissions.' }}
                 </p>

@@ -1,5 +1,5 @@
 <template>
-  <div :class="{ 'read-only-mode': isReadOnly && !isSubscriptionRoute }">
+  <div :class="{ 'read-only-mode': (isReadOnly || isSuspended) && !isSubscriptionRoute }">
     <div>
       <EmployeeTopbar
         v-if="showEmployeeTopbar"
@@ -20,9 +20,8 @@
       v-if="isExpired"
       class="readonly-exempt fixed left-1/2 top-4 z-[9997] -translate-x-1/2 rounded-full border border-amber-500/50 bg-[#2a170d] px-4 py-2 text-xs text-amber-200 shadow-xl"
     >
-      Subscription expired. Access is read-only
-      <span v-if="isInGracePeriod"> until {{ graceEndsAtDisplay }}.</span>
-      <span v-else>. Please renew your subscription to regain access.</span>
+      <span v-if="isInGracePeriod">Subscription expired. Access is read-only until {{ graceEndsAtDisplay }}.</span>
+      <span v-else>Subscription grace period ended. Please renew your subscription to regain access.</span>
     </div>
 
     <div v-if="isLoading" class="fixed inset-0 z-[9998] bg-[#0f0a07]">
@@ -142,7 +141,7 @@ import { useSidebarState } from '@/composables/useSidebarState'
 const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking } = useAuth()
 
 const route = useRoute()
-const { initSubscription, isReadOnly, isExpired, graceEndsAt, activePlan } = useSubscription()
+const { initSubscription, isReadOnly, isExpired, isSuspended, graceEndsAt, activePlan } = useSubscription()
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 const isPoorConnection = ref(false)
 

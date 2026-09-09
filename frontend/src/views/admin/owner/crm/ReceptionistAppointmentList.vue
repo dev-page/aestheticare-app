@@ -42,7 +42,8 @@
             <select v-model="statusFilter" class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none">
               <option value="">All</option>
               <option value="Scheduled">Scheduled</option>
-              <option value="Completed">Completed</option>
+              <option value="Ongoing">Ongoing</option>
+              <option value="Awaiting Customer Confirmation">Awaiting Customer Confirmation</option>
               <option value="Cancelled">Cancelled</option>
             </select>
           </div>
@@ -76,16 +77,28 @@
                   </span>
                 </td>
                 <td v-if="canManageStatus" class="px-6 py-4">
-                  <select
-                    :value="appointment.status || 'Scheduled'"
-                    @change="updateStatus(appointment, $event.target.value)"
-                    class="bg-slate-700 text-white px-3 py-1 rounded border border-slate-600 focus:border-purple-500 focus:outline-none"
-                  >
-                    <option value="Scheduled">Scheduled</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Cancelled">Cancelled</option>
-                  </select>
-                </td>
+                                  <div class="flex items-center gap-2">
+                                    <select
+                                      :value="appointment.status || 'Scheduled'"
+                                      @change="updateStatus(appointment, $event.target.value)"
+                                      class="bg-slate-700 text-white px-3 py-1 rounded border border-slate-600 focus:border-purple-500 focus:outline-none"
+                                    >
+                                      <option value="Scheduled">Scheduled</option>
+                                      <option value="Ongoing">Ongoing</option>
+                                      <option value="Awaiting Customer Confirmation">Awaiting Customer Confirmation</option>
+                                      <option value="Cancelled">Cancelled</option>
+                                    </select>
+                                    <button @click="openContractModal(appointment)" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-500">Manage Contract</button>
+                                    <button
+                                      v-if="appointment.serviceKey && !appointment.workerKeyVerified"
+                                      @click="verifyServiceKey(appointment)"
+                                      type="button"
+                                      class="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs hover:bg-amber-500"
+                                    >
+                                      Verify Key
+                                    </button>
+                                  </div>
+                                </td>
               </tr>
               <tr v-if="visibleAppointments.length === 0">
                 <td :colspan="canManageStatus ? 5 : 4" class="px-6 py-8 text-center text-slate-400">No appointments yet.</td>
@@ -99,11 +112,13 @@
       </div>
     </main>
   </div>
+
+          <BookingContractModal :visible="showContractModal" :appointment="selectedAppointment" @close="closeContractModal" @updated="contractUpdated" />
 </template>
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -111,10 +126,12 @@ import { toast } from 'vue3-toastify'
 import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import BookingContractModal from '@/components/BookingContractModal.vue'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 export default {
   name: 'ReceptionistAppointmentList',
-  components: { OwnerSidebar },
+  components: { OwnerSidebar, BookingContractModal },
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -244,10 +261,31 @@ export default {
 
     const updateStatus = async (appointment, nextStatus) => {
       try {
-        await updateDoc(doc(db, 'appointments', appointment.id), {
-          status: nextStatus,
-          updatedAt: serverTimestamp()
-        })
+        const currentStatus = String(appointment.status || '').trim().toLowerCase()
+        const action = nextStatus === 'Ongoing'
+          ? 'start'
+          : nextStatus === 'Awaiting Customer Confirmation'
+            ? 'worker_complete'
+            : ''
+
+        if (action) {
+          const user = auth.currentUser
+          const token = user ? await user.getIdToken() : ''
+          let response = null
+          for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+            response = await fetch(`${baseUrl}/appointments/${appointment.id}/transition`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ action }),
+            })
+            if (response.status !== 404) break
+          }
+          const payload = await response?.json().catch(() => null)
+          if (!response?.ok || !payload?.success) throw new Error(payload?.error || 'Failed to update appointment milestone.')
+          nextStatus = payload.data.status
+        } else {
+          throw new Error('This status must be changed through the appointment request workflow.')
+        }
         appointment.status = nextStatus
 
         await logActivity(db, {
@@ -261,6 +299,32 @@ export default {
       } catch (error) {
         console.error(error)
         toast.error('Failed to update appointment.')
+      }
+    }
+
+    const verifyServiceKey = async (appointment) => {
+      const serviceKey = String(window.prompt('Enter the service key provided by the customer:', '') || '').trim()
+      if (!serviceKey) return
+      try {
+        const user = auth.currentUser
+        const token = user ? await user.getIdToken() : ''
+        let response = null
+        for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+          response = await fetch(`${baseUrl}/appointments/${appointment.id}/verify-service-key`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ serviceKey }),
+          })
+          if (response.status !== 404) break
+        }
+        const payload = await response?.json().catch(() => null)
+        if (!response?.ok || !payload?.success) throw new Error(payload?.error || 'Unable to verify service key.')
+        appointment.status = payload.data.status
+        appointment.workerKeyVerified = true
+        toast.success('Service key verified.')
+      } catch (error) {
+        console.error(error)
+        toast.error(error?.message || 'Unable to verify service key.')
       }
     }
 
@@ -287,6 +351,22 @@ export default {
       if (unsubscribeAuth) unsubscribeAuth()
     })
 
+    const showContractModal = ref(false)
+    const selectedAppointment = ref(null)
+
+    const openContractModal = (appointment) => {
+      selectedAppointment.value = appointment
+      showContractModal.value = true
+    }
+    const closeContractModal = () => {
+      showContractModal.value = false
+      selectedAppointment.value = null
+    }
+    const contractUpdated = async () => {
+      // refresh appointments so contract state is reflected
+      await loadAppointments()
+    }
+
     return {
       pageTitle,
       pageSubtitle,
@@ -297,9 +377,16 @@ export default {
       filteredAppointments,
       statusClass,
       updateStatus,
+      verifyServiceKey,
       canManageStatus,
       canCreateAppointments,
-      canReviewRequests
+      canReviewRequests,
+      // contract modal
+      showContractModal,
+      selectedAppointment,
+      openContractModal,
+      closeContractModal,
+      contractUpdated,
     }
   }
 }

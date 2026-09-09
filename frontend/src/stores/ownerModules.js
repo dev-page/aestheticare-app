@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { auth, db } from '@/config/firebaseConfig'
-import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc } from 'firebase/firestore'
 
 const defaultModules = {
   crm: true,
@@ -50,14 +50,6 @@ export const useOwnerModulesStore = defineStore('ownerModules', () => {
     loading.value = true
     ownerId.value = nextOwnerId
     const settingsRef = doc(db, 'ownerModuleSettings', nextOwnerId)
-    const snap = await getDoc(settingsRef)
-    if (!snap.exists()) {
-      await setDoc(settingsRef, {
-        ownerId: nextOwnerId,
-        enabledModules: { ...defaultModules },
-      }, { merge: true })
-    }
-
     unsubscribe = onSnapshot(
       settingsRef,
       (snapshot) => {
