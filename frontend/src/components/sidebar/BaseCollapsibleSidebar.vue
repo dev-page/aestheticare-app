@@ -55,7 +55,7 @@
         </button>
       </div>
 
-      <nav class="sidebar-scroll flex-1 p-3 overflow-y-auto">
+      <nav class="sidebar-scroll min-h-0 flex-1 overflow-y-auto p-3">
       <ul v-if="showSkeleton" class="space-y-2">
         <li v-for="index in skeletonCount" :key="index">
           <div
@@ -376,8 +376,13 @@ export default {
         }
       }
       return {
+        position: 'fixed',
+        left: '0',
+        top: '0',
         width: collapsed.value ? '5rem' : '17rem',
-        minHeight: '100%'
+        height: '100vh',
+        minHeight: '100vh',
+        zIndex: 40
       }
     })
 
