@@ -90,6 +90,22 @@
           </div>
         </div>
 
+        <div v-if="form.postType === 'Product'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
+          <p class="mb-3 font-medium text-amber-200">FDA product documentation</p>
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label class="block text-slate-400 mb-1">FDA Registration Number (if applicable)</label>
+              <input v-model.trim="form.fdaRegistrationNumber" type="text" placeholder="e.g. FDA-REG-2026-543210" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1">FDA approval/registration document (optional)</label>
+              <input type="file" accept="image/*,.pdf" @change="handleFdaDocumentUpload" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-blue-600 file:text-white" />
+              <p v-if="fdaApprovalFileName" class="mt-1 text-xs text-slate-400">Selected: {{ fdaApprovalFileName }}</p>
+            </div>
+          </div>
+          <p class="mt-2 text-xs text-slate-400">Use this for regulated products. Clinic-level FDA documentation is no longer part of registration.</p>
+        </div>
+
         <div v-if="form.postType === 'Service' || form.postType === 'Consultation'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <label class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
             <input
@@ -440,6 +456,21 @@
               </div>
             </div>
 
+            <div v-if="editForm.postType === 'Product'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
+              <p class="mb-3 font-medium text-amber-200">FDA product documentation</p>
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label class="block text-slate-400 mb-1">FDA Registration Number (if applicable)</label>
+                  <input v-model.trim="editForm.fdaRegistrationNumber" type="text" placeholder="e.g. FDA-REG-2026-543210" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
+                </div>
+                <div>
+                  <label class="block text-slate-400 mb-1">Replace FDA document (optional)</label>
+                  <input type="file" accept="image/*,.pdf" @change="handleEditFdaDocumentUpload" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-blue-600 file:text-white" />
+                  <p v-if="editFdaApprovalFileName" class="mt-1 text-xs text-slate-400">Selected: {{ editFdaApprovalFileName }}</p>
+                </div>
+              </div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label class="block text-slate-400 mb-1">Title</label>
@@ -537,6 +568,8 @@ export default {
     const posts = ref([])
     const imageFile = ref(null)
     const imageFileName = ref('')
+    const fdaApprovalFile = ref(null)
+    const fdaApprovalFileName = ref('')
     const actionLoadingId = ref('')
 
     const showEditModal = ref(false)
@@ -554,11 +587,14 @@ export default {
       durationMinutes: 60,
       productVolume: '',
       productUnit: '',
+      fdaRegistrationNumber: '',
       termsAndConditions: ''
       , requiredSupplyIds: []
     })
     const editImageFile = ref(null)
     const editImageFileName = ref('')
+    const editFdaApprovalFile = ref(null)
+    const editFdaApprovalFileName = ref('')
 
     const form = ref({
       postType: 'Product',
@@ -577,6 +613,7 @@ export default {
       durationMinutes: 60,
       productVolume: '',
       productUnit: '',
+      fdaRegistrationNumber: '',
       termsAndConditions: ''
       , requiredSupplyIds: []
     })
@@ -600,6 +637,13 @@ export default {
       if (!file) return
       imageFile.value = file
       imageFileName.value = file.name
+    }
+
+    const handleFdaDocumentUpload = (event) => {
+      const file = event.target.files?.[0]
+      if (!file) return
+      fdaApprovalFile.value = file
+      fdaApprovalFileName.value = file.name
     }
 
     const savedBodyOverflow = ref('')
@@ -644,11 +688,14 @@ export default {
         durationMinutes: 60,
         productVolume: '',
         productUnit: '',
+        fdaRegistrationNumber: '',
         termsAndConditions: ''
         , requiredSupplyIds: []
       }
       imageFile.value = null
       imageFileName.value = ''
+      fdaApprovalFile.value = null
+      fdaApprovalFileName.value = ''
     }
 
     const resetEditState = () => {
@@ -666,11 +713,14 @@ export default {
         durationMinutes: 60,
         productVolume: '',
         productUnit: '',
+        fdaRegistrationNumber: '',
         termsAndConditions: ''
         , requiredSupplyIds: []
       }
       editImageFile.value = null
       editImageFileName.value = ''
+      editFdaApprovalFile.value = null
+      editFdaApprovalFileName.value = ''
     }
 
     const loadPosts = async () => {
@@ -836,6 +886,21 @@ export default {
         await uploadBytes(imageRef, imageFile.value)
         const imageUrl = await getDownloadURL(imageRef)
 
+        let fdaApprovalDocument = null
+        if (postType === 'Product' && fdaApprovalFile.value) {
+          const fdaExt = fdaApprovalFile.value.name.split('.').pop() || 'pdf'
+          const fdaPath = `product-fda-documents/${currentBranchId.value}/${Date.now()}.${fdaExt}`
+          const fdaRef = storageRef(storage, fdaPath)
+          const fdaSnapshot = await uploadBytes(fdaRef, fdaApprovalFile.value)
+          fdaApprovalDocument = {
+            name: fdaApprovalFile.value.name,
+            type: fdaApprovalFile.value.type || '',
+            size: fdaApprovalFile.value.size || 0,
+            path: fdaPath,
+            url: await getDownloadURL(fdaSnapshot.ref),
+          }
+        }
+
         await addDoc(collection(db, 'productServicePosts'), {
           postType,
           productName: postType === 'Product' ? selectedName.trim() : '',
@@ -861,6 +926,8 @@ export default {
             : Math.max(1, Number(form.value.durationMinutes || 60)),
           productVolume: postType === 'Product' ? String(form.value.productVolume || '').trim() : '',
           productUnit: postType === 'Product' ? String(form.value.productUnit || '').trim() : '',
+          fdaRegistrationNumber: postType === 'Product' ? String(form.value.fdaRegistrationNumber || '').trim().toUpperCase() : '',
+          fdaApprovalDocument: postType === 'Product' ? fdaApprovalDocument : null,
           termsAndConditions: String(form.value.termsAndConditions || '').trim(),
           requiredSupplyIds: postType === 'Service' ? [...(form.value.requiredSupplyIds || [])] : postType === 'Package'
             ? [...new Set((form.value.packageServiceIds || []).flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
@@ -902,11 +969,14 @@ export default {
         durationMinutes: Number(post.durationMinutes || 60)
         , productVolume: String(post.productVolume || '').trim()
         , productUnit: String(post.productUnit || '').trim()
+        , fdaRegistrationNumber: String(post.fdaRegistrationNumber || '').trim()
         , termsAndConditions: String(post.termsAndConditions || '').trim()
         , requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : []
       }
       editImageFile.value = null
       editImageFileName.value = ''
+      editFdaApprovalFile.value = null
+      editFdaApprovalFileName.value = ''
       showEditModal.value = true
     }
 
@@ -920,6 +990,13 @@ export default {
       if (!file) return
       editImageFile.value = file
       editImageFileName.value = file.name
+    }
+
+    const handleEditFdaDocumentUpload = (event) => {
+      const file = event.target.files?.[0]
+      if (!file) return
+      editFdaApprovalFile.value = file
+      editFdaApprovalFileName.value = file.name
     }
 
     const saveEditedPost = async () => {
@@ -963,6 +1040,21 @@ export default {
           nextImageUrl = await getDownloadURL(imageRef)
         }
 
+        let nextFdaApprovalDocument = currentPost?.fdaApprovalDocument || null
+        if (editForm.value.postType === 'Product' && editFdaApprovalFile.value) {
+          const fdaExt = editFdaApprovalFile.value.name.split('.').pop() || 'pdf'
+          const fdaPath = `product-fda-documents/${currentBranchId.value}/${Date.now()}.${fdaExt}`
+          const fdaRef = storageRef(storage, fdaPath)
+          const fdaSnapshot = await uploadBytes(fdaRef, editFdaApprovalFile.value)
+          nextFdaApprovalDocument = {
+            name: editFdaApprovalFile.value.name,
+            type: editFdaApprovalFile.value.type || '',
+            size: editFdaApprovalFile.value.size || 0,
+            path: fdaPath,
+            url: await getDownloadURL(fdaSnapshot.ref),
+          }
+        }
+
         const selectedProduct = inventoryProducts.value.find((item) => item.name === editForm.value.name) || null
         const payload = {
           title: editForm.value.title.trim(),
@@ -986,6 +1078,8 @@ export default {
             : Math.max(1, Number(editForm.value.durationMinutes || (editForm.value.postType === 'Consultation' ? 30 : 60))),
           productVolume: editForm.value.postType === 'Product' ? String(editForm.value.productVolume || '').trim() : '',
           productUnit: editForm.value.postType === 'Product' ? String(editForm.value.productUnit || '').trim() : '',
+          fdaRegistrationNumber: editForm.value.postType === 'Product' ? String(editForm.value.fdaRegistrationNumber || '').trim().toUpperCase() : '',
+          fdaApprovalDocument: editForm.value.postType === 'Product' ? nextFdaApprovalDocument : null,
           termsAndConditions: String(editForm.value.termsAndConditions || '').trim(),
           requiredSupplyIds: editForm.value.postType === 'Service' ? [...(editForm.value.requiredSupplyIds || [])] : [],
           updatedAt: serverTimestamp()
@@ -1113,10 +1207,14 @@ export default {
       showEditModal,
       editForm,
       editImageFileName,
+      editFdaApprovalFileName,
       imageFileName,
+      fdaApprovalFileName,
       inventoryProducts,
       handleImageUpload,
+      handleFdaDocumentUpload,
       handleEditImageUpload,
+      handleEditFdaDocumentUpload,
       createPost,
       openEditPost,
       closeEditModal,

@@ -369,7 +369,6 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
     { key: 'governmentIdRepresentativeFront', label: 'Government-Issued ID of Representative (Front)' },
     { key: 'governmentIdRepresentativeBack', label: 'Government-Issued ID of Representative (Back)' },
     { key: 'dohAccreditation', label: 'DOH Accreditation' },
-    { key: 'fdaApproval', label: 'FDA Approval' },
     { key: 'prcIdMedicalDirector', label: 'PRC ID of Medical Director' },
   ]
 
@@ -410,7 +409,6 @@ const documentLabel = (key) => ({
   governmentIdRepresentativeFront: 'Government-Issued ID (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID (Back)',
   dohAccreditation: 'DOH Accreditation',
-  fdaApproval: 'FDA Approval',
   prcIdMedicalDirector: 'PRC ID of Medical Director',
 }[key] || key)
 

@@ -62,7 +62,7 @@ const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = Math.max(0.85, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.9)))
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
-    clinic: ['businessPermit', 'governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'dohAccreditation', 'fdaApproval', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
+    clinic: ['businessPermit', 'governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
   supplier: ['taxRegistration', 'businessRegistration'],
 }
 const __filename = fileURLToPath(import.meta.url)

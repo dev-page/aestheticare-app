@@ -46,6 +46,12 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    match /product-fda-documents/{branchId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isDocumentUpload();
+      allow update, delete: if false;
+    }
+
     match /clinicMedia/{clinicId}/{fileName} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
