@@ -2379,7 +2379,8 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'otp-backend',
-    port: PORT,
+    deployment: process.env.VERCEL_GIT_COMMIT_SHA || process.env.RENDER_GIT_COMMIT || null,
+    explicitFirebaseCredentials: Boolean(googleCloudCredential),
     postmarkConfigured: Boolean(postmarkClient && senderEmail),
     paymongoConfigured: Boolean(payMongoSecretKey),
     googleMeetConfigured: isGoogleMeetConfigured(),
@@ -7055,6 +7056,28 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
       error: error?.message || 'Failed to cancel order',
     })
   }
+})
+
+// Keep unexpected middleware and CORS failures machine-readable in production.
+// Route handlers should still return their own domain-specific errors.
+app.use((error, req, res, _next) => {
+  const requestId = crypto.randomUUID()
+  console.error('API_REQUEST_FAILURE', {
+    requestId,
+    method: req.method,
+    path: req.originalUrl || req.url,
+    errorName: error?.name || null,
+    errorCode: error?.code || null,
+    errorMessage: error?.message || null,
+    stack: isDevelopment ? error?.stack || null : undefined,
+  })
+
+  if (res.headersSent) return
+  return res.status(500).json({
+    success: false,
+    error: 'The API request could not be completed.',
+    requestId,
+  })
 })
 
 if (isDirectRun) {
