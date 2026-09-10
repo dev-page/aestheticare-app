@@ -223,10 +223,12 @@ const handleLogin = async () => {
           } catch (otpError) {
             await signOut(auth).catch(() => {})
             const status = otpError?.response?.status
+            const responseData = otpError?.response?.data || null
             console.error('Login OTP request failed', {
               status,
-              response: otpError?.response?.data || null,
-              requestId: otpError?.response?.data?.requestId || null,
+              response: responseData,
+              responseJson: responseData ? JSON.stringify(responseData) : null,
+              requestId: responseData?.requestId || null,
               code: otpError?.code || null,
               message: otpError?.message || null,
             })

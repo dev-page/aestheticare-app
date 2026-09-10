@@ -88,6 +88,12 @@ console.log("Loaded ENV:", {
 const configuredCorsOrigins = new Set(
   [
     process.env.FRONTEND_BASE_URL,
+    process.env.APP_URL,
+    process.env.PUBLIC_APP_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '',
+    'https://aestheticare.online',
+    'https://www.aestheticare.online',
     ...(String(process.env.CORS_ORIGINS || '').split(',')),
     ...(isDevelopment ? ['http://localhost:5173', 'http://127.0.0.1:5173'] : []),
   ]
