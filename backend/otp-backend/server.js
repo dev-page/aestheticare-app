@@ -7083,6 +7083,11 @@ app.use((error, req, res, _next) => {
     success: false,
     error: 'The API request could not be completed.',
     requestId,
+    diagnostic: {
+      name: error?.name || null,
+      code: error?.code || null,
+      message: error?.message || null,
+    },
   })
 })
 
