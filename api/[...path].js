@@ -33,6 +33,11 @@ export default async function handler(req, res) {
         success: false,
         error: 'The API request could not be completed.',
         requestId,
+        diagnostic: {
+          name: error?.name || null,
+          code: error?.code || null,
+          message: error?.message || null,
+        },
       })
     }
   }
