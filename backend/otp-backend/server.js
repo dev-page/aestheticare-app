@@ -62,7 +62,7 @@ const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = Math.max(0.85, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.9)))
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
-  clinic: ['businessPermit', 'governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'dohAccreditation', 'fdaApproval', 'prcIdMedicalDirector'],
+    clinic: ['businessPermit', 'governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'dohAccreditation', 'fdaApproval', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
   supplier: ['taxRegistration', 'businessRegistration'],
 }
 const __filename = fileURLToPath(import.meta.url)
@@ -85,8 +85,25 @@ console.log("Loaded ENV:", {
   GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID || "primary",
 });
 
+const configuredCorsOrigins = new Set(
+  [
+    process.env.FRONTEND_BASE_URL,
+    ...(String(process.env.CORS_ORIGINS || '').split(',')),
+    ...(isDevelopment ? ['http://localhost:5173', 'http://127.0.0.1:5173'] : []),
+  ]
+    .map((value) => String(value || '').trim().replace(/\/+$/, ''))
+    .filter(Boolean)
+)
+
 const corsOptions = {
-  origin: true,
+  origin: (origin, callback) => {
+    // Allow server-to-server requests without an Origin header, but never allow
+    // an arbitrary browser origin to call the API.
+    if (!origin || configuredCorsOrigins.has(String(origin).trim().replace(/\/+$/, ''))) {
+      return callback(null, true)
+    }
+    return callback(new Error('Origin is not allowed by the API.'))
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   optionsSuccessStatus: 204,
@@ -195,6 +212,7 @@ let adminReady = false
 let adminInitError = ''
 let firebaseProjectId = ''
 let firebaseStorageBucket = ''
+let googleCloudCredential = null
 const backupScheduleEnabled = String(process.env.BACKUP_SCHEDULE_ENABLED || '').toLowerCase() === 'true'
 const backupDailyHour = Number(process.env.BACKUP_DAILY_HOUR || 2)
 const backupMonthlyDay = Number(process.env.BACKUP_MONTHLY_DAY || 1)
@@ -229,6 +247,7 @@ const parseServiceAccountFromEnv = () => {
 try {
   const envServiceAccount = parseServiceAccountFromEnv()
   if (envServiceAccount) {
+    googleCloudCredential = envServiceAccount
     firebaseProjectId = String(
       envServiceAccount?.project_id ||
       process.env.FIREBASE_PROJECT_ID ||
@@ -249,6 +268,7 @@ try {
   } else if (fs.existsSync(serviceAccountPath)) {
     const serviceAccountRaw = fs.readFileSync(serviceAccountPath, 'utf8')
     const serviceAccount = normalizeServiceAccount(JSON.parse(serviceAccountRaw))
+    googleCloudCredential = serviceAccount
     firebaseProjectId = String(serviceAccount?.project_id || '').trim()
     firebaseStorageBucket =
       process.env.FIREBASE_STORAGE_BUCKET ||
@@ -327,6 +347,23 @@ const sendPostmarkMessage = async (message) => {
     statusCode: response?.ErrorCode === 0 ? 200 : response?.ErrorCode || null,
     messageId: response?.MessageID || null,
   }
+}
+
+// Vision must use the same explicit credentials as Firebase Admin. Creating a
+// Vision client without options makes google-auth-library search for ADC and
+// can crash the backend on startup when ADC is not configured locally.
+const createVisionClient = () => {
+  if (!firebaseStorageBucket || !googleCloudCredential?.client_email || !googleCloudCredential?.private_key) {
+    return null
+  }
+
+  return new vision.ImageAnnotatorClient({
+    projectId: firebaseProjectId || googleCloudCredential.project_id,
+    credentials: {
+      client_email: googleCloudCredential.client_email,
+      private_key: googleCloudCredential.private_key,
+    },
+  })
 }
 
 const formatPhilippineCurrency = (value) =>
@@ -1442,7 +1479,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     : (application.submittedDocuments || {})
   const requiredKeys = REGISTRATION_DOCUMENT_REQUIREMENTS[normalizedType]
   const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
-  const visionClient = bucketName ? new vision.ImageAnnotatorClient() : null
+  const visionClient = createVisionClient()
   const results = {}
 
   for (const docKey of requiredKeys) {
@@ -2611,7 +2648,13 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
     // Mark as processing to avoid concurrent duplicate runs
     await reviewRef.set({ processing: true, processingStartedAt: admin.firestore.FieldValue.serverTimestamp(), processedBy: req.user?.uid || null }, { merge: true })
 
-    const visionClient = new vision.ImageAnnotatorClient()
+    const visionClient = createVisionClient()
+    if (!visionClient) {
+      return res.status(503).json({
+        success: false,
+        error: 'OCR is not configured. Add a valid Firebase service-account credential to the backend environment.',
+      })
+    }
     const gcsUri = `gs://${bucketName}/${String(storagePath || '').replace(/^\/+/, '')}`
 
     // Attempt document OCR (documentTextDetection works for many image/PDF inputs via GCS URI)
@@ -4336,8 +4379,8 @@ app.post('/admin/unpublish-expired-clinics', requireAuth, requireRole(['superadm
   }
 })
 
-app.post('/dev/backfill-client-contact-info', async (_req, res) => {
-  if (!isDevelopment) {
+app.post('/dev/backfill-client-contact-info', requireAuth, requireRole(['superadmin']), async (_req, res) => {
+  if (!isDevelopment || String(process.env.ENABLE_DEV_ENDPOINTS || '').toLowerCase() !== 'true') {
     return res.status(404).json({
       success: false,
       error: 'Not available in production.',
@@ -6817,10 +6860,10 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
     }
 
     const status = String(orderData.status || '').trim().toLowerCase()
-    if (['cancelled', 'completed', 'refunded'].includes(status)) {
+    if (['cancelled', 'completed', 'refunded', 'shipped', 'out for delivery', 'delivered'].includes(status)) {
       return res.status(400).json({
         success: false,
-        error: 'This order can no longer be cancelled.',
+        error: 'This order can no longer be cancelled because it has already been shipped or completed.',
       })
     }
 

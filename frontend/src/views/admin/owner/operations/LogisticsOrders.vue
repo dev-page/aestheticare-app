@@ -207,6 +207,17 @@
             </div>
             <p v-else class="text-slate-400 text-sm">No item details available.</p>
           </div>
+          <div v-if="selectedOrder.source === 'customer'" class="rounded-xl border border-slate-700 bg-slate-800 p-4 md:col-span-2">
+            <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">Rider Information</p>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <input v-model="riderForm.name" type="text" placeholder="Rider name" class="rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
+              <input v-model="riderForm.phone" type="text" placeholder="Rider phone" class="rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
+              <input v-model="riderForm.vehicle" type="text" placeholder="Vehicle / plate number" class="rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
+            </div>
+            <button type="button" class="mt-3 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-500 disabled:opacity-50" :disabled="!canUpdateLogistics" @click="saveRiderInformation">
+              Save Rider Information
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -243,6 +254,7 @@ export default {
     const businessOrders = ref([])
     const showDetailsModal = ref(false)
     const selectedOrder = ref(null)
+    const riderForm = ref({ name: '', phone: '', vehicle: '' })
     const canUpdateLogistics = computed(() => hasPermission('orders:update') || hasPermission('inventory:update') || hasPermission('inventory:review'))
 
     const formatDate = (value) => {
@@ -293,6 +305,9 @@ export default {
             createdAt: order.createdAt || null,
             updatedAt: order.updatedAt || order.createdAt || null,
             customerId: order.customerId || '',
+            riderName: order.riderName || '',
+            riderPhone: order.riderPhone || '',
+            riderVehicle: order.riderVehicle || '',
             partyName: order.customerName || order.delivery?.fullName || 'Customer',
             partyMeta: order.customerEmail || order.delivery?.email || 'No email',
             itemSummary: getCustomerItemSummary(order),
@@ -506,12 +521,42 @@ export default {
 
     const openDetails = (order) => {
       selectedOrder.value = order
+      riderForm.value = {
+        name: String(order?.riderName || '').trim(),
+        phone: String(order?.riderPhone || '').trim(),
+        vehicle: String(order?.riderVehicle || '').trim(),
+      }
       showDetailsModal.value = true
     }
 
     const closeDetails = () => {
       selectedOrder.value = null
       showDetailsModal.value = false
+    }
+
+    const saveRiderInformation = async () => {
+      if (!selectedOrder.value?.id || selectedOrder.value.source !== 'customer') return
+      if (!canUpdateLogistics.value) {
+        toast.error('You do not have permission to update logistics.')
+        return
+      }
+      try {
+        const payload = {
+          riderName: String(riderForm.value.name || '').trim(),
+          riderPhone: String(riderForm.value.phone || '').trim(),
+          riderVehicle: String(riderForm.value.vehicle || '').trim(),
+          riderAssignedAt: serverTimestamp(),
+          riderAssignedBy: currentUserId.value || null,
+          updatedAt: serverTimestamp(),
+        }
+        await updateDoc(doc(db, 'customerOrders', selectedOrder.value.id), payload)
+        Object.assign(selectedOrder.value, payload, { riderAssignedAt: new Date() })
+        toast.success('Rider information saved.')
+        await loadData()
+      } catch (error) {
+        console.error(error)
+        toast.error('Failed to save rider information.')
+      }
     }
 
     let unsubscribeAuth = null
@@ -559,8 +604,10 @@ export default {
       updateOrderStatus,
       openDetails,
       closeDetails,
+      saveRiderInformation,
       showDetailsModal,
       selectedOrder,
+      riderForm,
       canUpdateLogistics
     }
   }

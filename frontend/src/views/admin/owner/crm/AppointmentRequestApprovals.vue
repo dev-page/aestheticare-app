@@ -353,17 +353,19 @@ const selectRequest = (request) => {
 const loadRequests = async () => {
   loading.value = true
   try {
-    const [appointmentSnap, clinicSnap] = await Promise.all([
+    const [appointmentSnap, clinicSnap, policySnap] = await Promise.all([
       getDocs(query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))),
       getDoc(doc(db, 'clinics', currentBranchId.value)),
+      getDoc(doc(db, 'clinicPolicies', currentBranchId.value)),
     ])
 
     const clinicData = clinicSnap.exists() ? clinicSnap.data() || {} : {}
+    const policyData = policySnap.exists() ? policySnap.data() || {} : {}
     currentBranchName.value = String(clinicData.clinicName || clinicData.clinicBranch || currentBranchName.value || 'Branch').trim()
     currentBranchPolicy.value = {
-      cancellationPolicy: String(clinicData.cancellationPolicy || '').trim(),
-      reschedulePolicy: String(clinicData.reschedulePolicy || '').trim(),
-      refundPolicy: String(clinicData.refundPolicy || '').trim(),
+      cancellationPolicy: String(policyData.cancellationPolicy || clinicData.cancellationPolicy || '').trim(),
+      reschedulePolicy: String(policyData.reschedulePolicy || clinicData.reschedulePolicy || '').trim(),
+      refundPolicy: String(policyData.refundPolicy || clinicData.refundPolicy || '').trim(),
     }
 
     requests.value = appointmentSnap.docs

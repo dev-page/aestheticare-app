@@ -103,6 +103,8 @@ export const permissionGroups = [
         description: 'Product and service listing pages.',
         permissions: [
           { key: 'services:view', label: 'View Listings', description: 'Access product and service listings.', icon: 'mdi:tag-outline' },
+          { key: 'services:create', label: 'Create Listings', description: 'Create products, services, consultations, and packages.', icon: 'mdi:tag-plus-outline' },
+          { key: 'services:update', label: 'Update Listings', description: 'Edit listing details and package contents.', icon: 'mdi:tag-edit-outline' },
         ],
       },
       {
@@ -115,6 +117,9 @@ export const permissionGroups = [
           { key: 'inventory:review', label: 'Review Purchase Requests', description: 'Approve, reject, and manage purchase requests.', icon: 'mdi:cart-check' },
           { key: 'orders:view', label: 'View Orders', description: 'Open branch order and fulfillment tracking.', icon: 'mdi:cart-outline' },
           { key: 'orders:update', label: 'Update Logistics Orders', description: 'Claim orders and update shipment progress.', icon: 'mdi:truck-check-outline' },
+          { key: 'procurement:view', label: 'View Procurement', description: 'View quotes, purchase orders, and manual purchases.', icon: 'mdi:file-document-multiple-outline' },
+          { key: 'procurement:create', label: 'Create Procurement Records', description: 'Create supplier quotations, purchase orders, and manual purchases.', icon: 'mdi:file-plus-outline' },
+          { key: 'procurement:review', label: 'Review Procurement', description: 'Review and advance procurement records.', icon: 'mdi:file-check-outline' },
         ],
       },
     ],
@@ -172,9 +177,27 @@ export const permissionGroups = [
           { key: 'inventory:review', label: 'Review Inventory Purchases', description: 'Review purchase requests and costs.', icon: 'mdi:cart-check' },
           { key: 'orders:view', label: 'View Order Costs', description: 'Open order and fulfillment tracking.', icon: 'mdi:cart-outline' },
           { key: 'orders:update', label: 'Update Logistics Orders', description: 'Update order fulfillment and delivery progress.', icon: 'mdi:truck-check-outline' },
+          { key: 'procurement:view', label: 'View Procurement', description: 'View procurement records and costs.', icon: 'mdi:file-document-multiple-outline' },
+          { key: 'procurement:review', label: 'Approve Procurement', description: 'Approve budgets and purchase orders.', icon: 'mdi:file-check-outline' },
+          { key: 'commissions:view', label: 'View Commission Agreements', description: 'View commission terms and notifications.', icon: 'mdi:handshake-outline' },
+          { key: 'commissions:manage', label: 'Manage Commission Agreements', description: 'Create and update commission agreements.', icon: 'mdi:handshake-outline' },
         ],
       },
     ],
+  },
+  {
+    key: 'policies',
+    label: 'Policies',
+    description: 'Manage the clinic rules shown throughout booking and commerce.',
+    sections: [{
+      key: 'policy-management',
+      label: 'Policy Management',
+      description: 'Maintain dynamic appointment, service, product, and delivery policies.',
+      permissions: [
+        { key: 'policies:view', label: 'View Policies', description: 'Read the clinic policy configuration.', icon: 'mdi:text-box-outline' },
+        { key: 'policies:update', label: 'Manage Policies', description: 'Create and update clinic policies.', icon: 'mdi:text-box-edit-outline' },
+      ],
+    }],
   },
   {
     key: 'account-system',

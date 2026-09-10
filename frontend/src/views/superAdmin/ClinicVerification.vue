@@ -363,6 +363,9 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
   const docs = { ...(draftDocuments || {}), ...(submittedDocuments || {}) }
   const definitions = [
     { key: 'businessPermit', label: 'Business Permit/Registration' },
+    { key: 'birRegistration', label: 'BIR Registration' },
+    { key: 'sanitaryCertificate', label: 'Sanitary Certificate' },
+    { key: 'clinicLicense', label: 'Clinic License' },
     { key: 'governmentIdRepresentativeFront', label: 'Government-Issued ID of Representative (Front)' },
     { key: 'governmentIdRepresentativeBack', label: 'Government-Issued ID of Representative (Back)' },
     { key: 'dohAccreditation', label: 'DOH Accreditation' },
@@ -401,6 +404,9 @@ const formatDateValue = (value) => {
 
 const documentLabel = (key) => ({
   businessPermit: 'Business Permit/Registration',
+  birRegistration: 'BIR Registration',
+  sanitaryCertificate: 'Sanitary Certificate',
+  clinicLicense: 'Clinic License',
   governmentIdRepresentativeFront: 'Government-Issued ID (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID (Back)',
   dohAccreditation: 'DOH Accreditation',

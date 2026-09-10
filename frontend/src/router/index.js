@@ -19,7 +19,9 @@ const routes = [
   { path: "/clinic/register", name: "register-clinic", component: () => import("@/views/public/Register.vue") },
   { path: "/clinic/register/step-:step", name: "register-clinic-step", component: () => import("@/views/public/Register.vue") },
   { path: "/centers", name: "centers", component: () => import("@/views/public/ViewCenters.vue") },
-  { path: "/test", name: "test", component: () => import("@/views/public/Test.vue") }, ///Testing image uploads and displays
+  ...(import.meta.env.DEV
+    ? [{ path: "/test", name: "test", component: () => import("@/views/public/Test.vue") }]
+    : []), ///Testing image uploads and displays
  // { path: "/video", name: "video", component: () => import("@/views/public/Video.vue") }, ///Testing video conferencing
 
   // Subscription route
@@ -97,6 +99,8 @@ const routes = [
   { path: "/owner/account/subscription", name: "owner-subscription", component: () => import("@/views/admin/owner/OwnerSubscription.vue"), meta: { requiresAuth: true, requiresPermission: "subscription:view" } },
   { path: "/owner/account/plans", name: "owner-plan-selection", component: () => import("@/views/admin/owner/OwnerPlanSelection.vue"), meta: { requiresAuth: true } },
   { path: "/owner/clinic-page", name: "owner-clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:update" } },
+  { path: "/owner/policies", name: "owner-policies", component: () => import("@/views/admin/owner/OwnerPolicyManagement.vue"), meta: { requiresAuth: true, requiresPermission: "policies:view" } },
+  { path: "/owner/commission-contracts", name: "owner-commission-contracts", component: () => import("@/views/admin/owner/finance/CommissionContracts.vue"), meta: { requiresAuth: true, requiresPermission: "commissions:view" } },
 
   // Manager routes
   { path: "/manager/dashboard", name: "manager-dashboard", component: () => import("@/views/admin/owner/operations/ManagerDashboard.vue"), meta: { requiresAuth: true } },
@@ -106,6 +110,7 @@ const routes = [
   { path: "/manager/item-catalog", name: "manager-item-catalog", component: () => import("@/views/admin/owner/operations/SupplyCatalog.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
   { path: "/manager/suppliers", name: "manager-suppliers", component: () => import("@/views/admin/owner/operations/SupplySuppliers.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
   { path: "/manager/purchase-requests", name: "manager-purchase-requests", component: () => import("@/views/admin/owner/operations/SupplyPurchaseRequests.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:create" } },
+  { path: "/manager/procurement", name: "manager-procurement", component: () => import("@/views/admin/owner/operations/ProcurementManagement.vue"), meta: { requiresAuth: true, requiresPermission: "procurement:view" } },
   { path: "/manager/logistics", name: "manager-logistics", component: () => import("@/views/admin/owner/operations/LogisticsOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
   { path: "/manager/product-service-listing", name: "manager-product-service-listing", component: () => import("@/views/admin/owner/operations/ProductServiceListing.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },
   { path: "/manager/orders", name: "manager-orders", component: () => import("@/views/admin/owner/operations/ManagerOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },

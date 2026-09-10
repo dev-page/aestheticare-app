@@ -21,6 +21,7 @@
               <option value="Product">Product</option>
               <option value="Service">Service</option>
               <option value="Consultation">Consultation</option>
+              <option value="Package">Service Package</option>
             </select>
           </div>
 
@@ -47,12 +48,43 @@
             />
           </div>
 
-          <div v-else>
+          <div v-else-if="form.postType === 'Consultation'">
             <label class="block text-slate-400 mb-1">Consultation Name</label>
             <input
               type="text"
               v-model="form.consultationName"
               placeholder="Enter consultation name"
+              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        <div v-if="form.postType === 'Package'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
+          <label class="block text-slate-400 mb-1">Package Name</label>
+          <input v-model="form.packageName" type="text" placeholder="Consultation + service package" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
+          <label class="block text-slate-400 mt-4 mb-1">Included services and consultations</label>
+          <select v-model="form.packageServiceIds" multiple class="min-h-28 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
+            <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
+          </select>
+          <p class="mt-2 text-xs text-slate-400">The booking will carry each selected component, allowing the clinic to schedule the complete package instead of treating it as one unnamed service.</p>
+        </div>
+
+        <div v-if="form.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-slate-400 mb-1">Quantity / Volume</label>
+            <input
+              v-model="form.productVolume"
+              type="text"
+              placeholder="e.g. 30 mL or 1 L"
+              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label class="block text-slate-400 mb-1">Unit</label>
+            <input
+              v-model="form.productUnit"
+              type="text"
+              placeholder="e.g. bottle, box, piece"
               class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -132,6 +164,13 @@
                 : 'How long the service usually takes to complete.' }}
             </p>
           </div>
+          <div v-if="form.postType === 'Service'" class="md:col-span-2">
+            <label class="block text-slate-400 mb-1">Required Supplies</label>
+            <select v-model="form.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit || 'unit' }})</option>
+            </select>
+            <p class="mt-1 text-xs text-slate-400">Select every material or supply needed to perform this service.</p>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -168,6 +207,16 @@
             v-model="form.description"
             rows="3"
             placeholder="Write post description"
+            class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          ></textarea>
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-slate-400 mb-1">Product Terms and Conditions</label>
+          <textarea
+            v-model="form.termsAndConditions"
+            rows="3"
+            placeholder="Add product-specific terms, usage instructions, or return conditions"
             class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
           ></textarea>
         </div>
@@ -295,7 +344,7 @@
                 />
               </div>
               <div>
-                <label class="block text-slate-400 mb-1">
+            <label class="block text-slate-400 mb-1">
                   {{ editForm.postType === 'Product' ? 'Product' : (editForm.postType === 'Consultation' ? 'Consultation Name' : 'Service Name') }}
                 </label>
                 <input
@@ -343,6 +392,7 @@
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
             <label v-if="editForm.postType === 'Service'" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
               <input v-model="editForm.followUpAllowed" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
               <span>
@@ -371,6 +421,23 @@
                   class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              <div v-if="editForm.postType === 'Service'" class="md:col-span-2">
+                <label class="block text-slate-400 mb-1">Required Supplies</label>
+                <select v-model="editForm.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit || 'unit' }})</option>
+                </select>
+              </div>
+            </div>
+
+            <div v-if="editForm.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label class="block text-slate-400 mb-1">Quantity / Volume</label>
+                <input v-model="editForm.productVolume" type="text" placeholder="e.g. 30 mL or 1 L" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label class="block text-slate-400 mb-1">Unit</label>
+                <input v-model="editForm.productUnit" type="text" placeholder="e.g. bottle, box, piece" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -395,12 +462,15 @@
             </div>
 
             <div class="mb-4">
-              <label class="block text-slate-400 mb-1">Description</label>
+            <label class="block text-slate-400 mb-1">Description</label>
               <textarea
                 v-model="editForm.description"
                 rows="3"
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              ></textarea>
+            ></textarea>
+
+            <label class="block text-slate-400 mb-1 mt-4">Product Terms and Conditions</label>
+            <textarea v-model="editForm.termsAndConditions" rows="3" placeholder="Add product-specific terms, usage instructions, or return conditions" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
             </div>
 
             <div class="mb-4">
@@ -481,7 +551,11 @@ export default {
       consultationFee: 0,
       followUpAllowed: false,
       followUpWindowDays: 14,
-      durationMinutes: 60
+      durationMinutes: 60,
+      productVolume: '',
+      productUnit: '',
+      termsAndConditions: ''
+      , requiredSupplyIds: []
     })
     const editImageFile = ref(null)
     const editImageFileName = ref('')
@@ -491,6 +565,8 @@ export default {
       productName: '',
       serviceName: '',
       consultationName: '',
+      packageName: '',
+      packageServiceIds: [],
       title: '',
       description: '',
       price: 0,
@@ -498,7 +574,11 @@ export default {
       consultationFee: 0,
       followUpAllowed: false,
       followUpWindowDays: 14,
-      durationMinutes: 60
+      durationMinutes: 60,
+      productVolume: '',
+      productUnit: '',
+      termsAndConditions: ''
+      , requiredSupplyIds: []
     })
 
     const formatCurrency = (value) => {
@@ -550,8 +630,10 @@ export default {
       form.value = {
         postType: 'Product',
         productName: '',
-        serviceName: '',
-        consultationName: '',
+      serviceName: '',
+      consultationName: '',
+      packageName: '',
+      packageServiceIds: [],
         title: '',
         description: '',
         price: 0,
@@ -559,7 +641,11 @@ export default {
         consultationFee: 0,
         followUpAllowed: false,
         followUpWindowDays: 14,
-        durationMinutes: 60
+        durationMinutes: 60,
+        productVolume: '',
+        productUnit: '',
+        termsAndConditions: ''
+        , requiredSupplyIds: []
       }
       imageFile.value = null
       imageFileName.value = ''
@@ -577,7 +663,11 @@ export default {
         consultationFee: 0,
         followUpAllowed: false,
         followUpWindowDays: 14,
-        durationMinutes: 60
+        durationMinutes: 60,
+        productVolume: '',
+        productUnit: '',
+        termsAndConditions: ''
+        , requiredSupplyIds: []
       }
       editImageFile.value = null
       editImageFileName.value = ''
@@ -626,7 +716,9 @@ export default {
       () => {
         if (form.value.postType !== 'Product') return
         const selected = findSelectedProduct()
-        form.value.price = Number(selected?.unitPrice || 0)
+      form.value.price = Number(selected?.unitPrice || 0)
+      form.value.productVolume = String(selected?.volume || selected?.quantityLabel || '').trim()
+      form.value.productUnit = String(selected?.unit || '').trim()
       }
     )
 
@@ -694,7 +786,9 @@ export default {
         ? form.value.productName
         : postType === 'Service'
           ? form.value.serviceName
-          : form.value.consultationName
+          : postType === 'Consultation'
+            ? form.value.consultationName
+            : form.value.packageName
       const selectedProduct = postType === 'Product' ? findSelectedProduct() : null
 
       if (!selectedName?.trim() || !form.value.title?.trim() || !form.value.description?.trim()) {
@@ -717,8 +811,12 @@ export default {
         toast.error('User branch is not available.')
         return
       }
-      if (postType !== 'Product' && Number(form.value.durationMinutes) <= 0) {
+        if (postType !== 'Product' && Number(form.value.durationMinutes) <= 0) {
         toast.error('Please enter a valid duration.')
+        return
+      }
+      if (postType === 'Package' && !(form.value.packageServiceIds || []).length) {
+        toast.error('Select at least one service or consultation for this package.')
         return
       }
       if (postType === 'Service' && form.value.requiresConsultationFirst && Number(form.value.consultationFee) <= 0) {
@@ -743,6 +841,8 @@ export default {
           productName: postType === 'Product' ? selectedName.trim() : '',
           serviceName: postType === 'Service' ? selectedName.trim() : '',
           consultationName: postType === 'Consultation' ? selectedName.trim() : '',
+          packageName: postType === 'Package' ? String(form.value.packageName || selectedName || '').trim() : '',
+          packageServiceIds: postType === 'Package' ? [...(form.value.packageServiceIds || [])] : [],
           title: form.value.title.trim(),
           description: form.value.description.trim(),
           price: postType === 'Product'
@@ -756,7 +856,15 @@ export default {
           followUpWindowDays: postType === 'Service' && form.value.followUpAllowed
             ? Math.max(1, Number(form.value.followUpWindowDays || 14))
             : null,
-          durationMinutes: postType === 'Product' ? null : Math.max(1, Number(form.value.durationMinutes || 60)),
+          durationMinutes: postType === 'Product' ? null : postType === 'Package'
+            ? Math.max(1, (form.value.packageServiceIds || []).reduce((total, id) => total + Number(posts.value.find((post) => post.id === id)?.durationMinutes || 0), 0))
+            : Math.max(1, Number(form.value.durationMinutes || 60)),
+          productVolume: postType === 'Product' ? String(form.value.productVolume || '').trim() : '',
+          productUnit: postType === 'Product' ? String(form.value.productUnit || '').trim() : '',
+          termsAndConditions: String(form.value.termsAndConditions || '').trim(),
+          requiredSupplyIds: postType === 'Service' ? [...(form.value.requiredSupplyIds || [])] : postType === 'Package'
+            ? [...new Set((form.value.packageServiceIds || []).flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
+            : [],
           imageUrl,
           branchId: currentBranchId.value,
           createdBy: currentUserId.value,
@@ -792,6 +900,10 @@ export default {
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
         durationMinutes: Number(post.durationMinutes || 60)
+        , productVolume: String(post.productVolume || '').trim()
+        , productUnit: String(post.productUnit || '').trim()
+        , termsAndConditions: String(post.termsAndConditions || '').trim()
+        , requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : []
       }
       editImageFile.value = null
       editImageFileName.value = ''
@@ -872,6 +984,10 @@ export default {
           durationMinutes: editForm.value.postType === 'Product'
             ? null
             : Math.max(1, Number(editForm.value.durationMinutes || (editForm.value.postType === 'Consultation' ? 30 : 60))),
+          productVolume: editForm.value.postType === 'Product' ? String(editForm.value.productVolume || '').trim() : '',
+          productUnit: editForm.value.postType === 'Product' ? String(editForm.value.productUnit || '').trim() : '',
+          termsAndConditions: String(editForm.value.termsAndConditions || '').trim(),
+          requiredSupplyIds: editForm.value.postType === 'Service' ? [...(editForm.value.requiredSupplyIds || [])] : [],
           updatedAt: serverTimestamp()
         }
         if (nextImageUrl) payload.imageUrl = nextImageUrl

@@ -38,6 +38,9 @@ export const addCartItem = (item) => {
       variation: item.variation || 'Default',
       price: Number(item.price || 0),
       quantity: Math.max(1, Number(item.quantity || 1)),
+      productVolume: item.productVolume || '',
+      productUnit: item.productUnit || '',
+      termsAndConditions: item.termsAndConditions || '',
       selected: true,
       imageUrl: item.imageUrl || '',
     })

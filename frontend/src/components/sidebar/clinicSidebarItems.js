@@ -52,6 +52,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
     children: [
       { type: 'section', label: 'POSTS' },
       { label: 'Product & Service Listing', icon: 'layout', to: '/manager/product-service-listing', permission: 'services:view' },
+      { label: 'Procurement', icon: 'report', to: '/manager/procurement', permissionsAny: ['procurement:view', 'procurement:create', 'procurement:review'] },
       { label: 'Archived Posts', icon: 'archive', to: '/manager/archived-posts', permission: 'services:view' },
       { type: 'section', label: 'SUPPLY & INVENTORY' },
       { label: 'Item Catalog', icon: 'building', to: '/manager/item-catalog', permission: 'inventory:view' },
@@ -96,6 +97,15 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Refunds', icon: 'card', to: '/finance/refunds', feature: 'reports', permission: 'payments:view' },
       { label: 'Sales', icon: 'report', to: '/finance/sales', feature: 'reports', permission: 'reports:view' },
       { label: 'Reports', icon: 'report', to: '/finance/reports', feature: 'reports', permission: 'reports:view' }
+    ]
+  },
+  {
+    key: 'policies',
+    label: 'Policies',
+    icon: 'file',
+    children: [
+      { label: 'Policy Management', icon: 'file', to: '/owner/policies', permissionsAny: ['policies:view', 'policies:update'] },
+      { label: 'Commission Agreements', icon: 'handshake', to: '/owner/commission-contracts', permissionsAny: ['commissions:view', 'commissions:manage'] }
     ]
   },
   {

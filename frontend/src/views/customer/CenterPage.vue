@@ -165,6 +165,12 @@
                       <h3 class="text-xl font-semibold text-[#3d281d]">{{ item.title || item.name }}</h3>
                       <p class="mt-2 text-[#8b6a4d]">PHP {{ Number(item.price || 0).toFixed(2) }}</p>
                       <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
+                      <p v-if="item.productVolume || item.productUnit" class="mt-2 text-xs font-semibold text-[#8b6a4d]">
+                        {{ item.productVolume || '' }}{{ item.productVolume && item.productUnit ? ' · ' : '' }}{{ item.productUnit || '' }}
+                      </p>
+                      <p v-if="item.termsAndConditions" class="mt-2 whitespace-pre-wrap text-xs text-[#775743]">
+                        Terms: {{ item.termsAndConditions }}
+                      </p>
 
                       <div class="mt-4 flex flex-wrap items-center gap-3">
                         <div class="center-qty-stepper inline-flex items-center overflow-hidden rounded-2xl border border-[#e0c09a] bg-[#fff8ef]">
@@ -242,6 +248,12 @@
                           class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
                         >
                           {{ item.durationMinutes }} mins
+                        </span>
+                        <span
+                          v-if="item.requiredSupplyIds?.length"
+                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
+                        >
+                          {{ item.requiredSupplyIds.length }} required {{ item.requiredSupplyIds.length === 1 ? 'supply' : 'supplies' }}
                         </span>
                       </div>
 
@@ -1357,6 +1369,12 @@ const loadBranchData = async (branchId) => {
       followUpAllowed: Boolean(post.followUpAllowed),
       followUpWindowDays: post.followUpWindowDays != null ? Number(post.followUpWindowDays) : null,
       durationMinutes: post.durationMinutes != null ? Number(post.durationMinutes) : null,
+      productVolume: String(post.productVolume || '').trim(),
+      productUnit: String(post.productUnit || '').trim(),
+      termsAndConditions: String(post.termsAndConditions || '').trim(),
+      requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : [],
+      packageServiceIds: Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : [],
+      packageName: String(post.packageName || '').trim(),
       imageUrl: post.imageUrl || '',
       quantity: 1,
     }
@@ -1672,7 +1690,7 @@ const filteredProducts = computed(() => {
 
 const filteredServices = computed(() => {
   return items.value.filter((item) => {
-    if (item.type !== 'Service') return false
+    if (!['Service', 'Package'].includes(item.type)) return false
     if (!normalizedSearchQuery.value) return true
     return (item.title || item.name || '').toLowerCase().includes(normalizedSearchQuery.value)
   })
@@ -2077,7 +2095,9 @@ const sendQuickQuestion = async (question) => {
   }
 }
 
-const isServiceSelected = (item) => selectedServices.value.some((service) => service.id === item.id)
+const isServiceSelected = (item) => item.type === 'Package'
+  ? selectedServices.value.some((service) => service.packageId === item.id)
+  : selectedServices.value.some((service) => service.id === item.id)
 
 const isConsultationSelected = (item) => isServiceSelected(item)
 
@@ -2087,7 +2107,18 @@ const toggleServiceForBooking = (item) => {
     return
   }
 
-  selectedServices.value = [...selectedServices.value, item]
+  if (item.type === 'Package') {
+    const components = item.packageServiceIds
+      .map((id) => items.value.find((candidate) => candidate.id === id))
+      .filter(Boolean)
+    if (!components.length) {
+      toast.error('This package has no available component services.')
+      return
+    }
+    selectedServices.value = components.map((component) => ({ ...component, packageId: item.id, packageName: item.packageName || item.title }))
+  } else {
+    selectedServices.value = [...selectedServices.value, item]
+  }
   if (!bookingForm.value.date && availableDates.value.length) {
     bookingForm.value.date = availableDates.value[0]
   }
@@ -2108,7 +2139,7 @@ const toggleConsultationForBooking = (item) => {
 }
 
 const removeSelectedService = (serviceId) => {
-  selectedServices.value = selectedServices.value.filter((service) => service.id !== serviceId)
+  selectedServices.value = selectedServices.value.filter((service) => service.id !== serviceId && service.packageId !== serviceId)
   if (!selectedServices.value.length) {
     clearBookingSelection()
   }

@@ -1022,6 +1022,13 @@ export default {
           createdAt: serverTimestamp()
         })
 
+        const purchaseOrderNumber = `PO-${new Date().getFullYear()}-${createdRequestRef.id.slice(-6).toUpperCase()}`
+        await updateDoc(createdRequestRef, {
+          purchaseOrderNumber,
+          purchaseOrderStatus: 'Draft',
+          updatedAt: serverTimestamp(),
+        })
+
         await logManagerActivity(
           autoApproveRequests.value
             ? `Created and approved purchase request for ${selectedSupplierItem.value.name || 'item'}.`
@@ -1222,6 +1229,10 @@ export default {
 
         await updateDoc(doc(db, 'purchaseRequests', request.id), {
           logisticsStatus: 'Ready for Claim',
+          purchaseOrderStatus: 'Issued',
+          purchaseOrderIssuedAt: serverTimestamp(),
+          purchaseOrderIssuedBy: currentUserId.value || null,
+          procurementStatus: 'Purchase Order Issued',
           workflowStage: 'Ready for Logistics Claim',
           logisticsReadyAt: serverTimestamp(),
           logisticsReadyBy: currentUserId.value || null,

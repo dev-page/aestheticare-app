@@ -239,6 +239,9 @@ const registrationSteps = [
 const secCertificateFile = ref(null)
 const articlesOfIncorporationFile = ref(null)
 const businessPermitFile = ref(null)
+const birRegistrationFile = ref(null)
+const sanitaryCertificateFile = ref(null)
+const clinicLicenseFile = ref(null)
 const governmentIdRepresentativeFrontFile = ref(null)
 const governmentIdRepresentativeBackFile = ref(null)
 const dohAccreditationFile = ref(null)
@@ -248,6 +251,9 @@ const existingSubmittedDocuments = ref({
   secCertificate: null,
   articlesOfIncorporation: null,
   businessPermit: null,
+  birRegistration: null,
+  sanitaryCertificate: null,
+  clinicLicense: null,
   governmentIdRepresentativeFront: null,
   governmentIdRepresentativeBack: null,
   dohAccreditation: null,
@@ -258,6 +264,9 @@ const documentPreviewUrls = ref({
   secCertificate: '',
   articlesOfIncorporation: '',
   businessPermit: '',
+  birRegistration: '',
+  sanitaryCertificate: '',
+  clinicLicense: '',
   governmentIdRepresentativeFront: '',
   governmentIdRepresentativeBack: '',
   dohAccreditation: '',
@@ -269,6 +278,9 @@ const documentUploadState = ref({
   secCertificate: { uploading: false, progress: 0, error: '' },
   articlesOfIncorporation: { uploading: false, progress: 0, error: '' },
   businessPermit: { uploading: false, progress: 0, error: '' },
+  birRegistration: { uploading: false, progress: 0, error: '' },
+  sanitaryCertificate: { uploading: false, progress: 0, error: '' },
+  clinicLicense: { uploading: false, progress: 0, error: '' },
   governmentIdRepresentativeFront: { uploading: false, progress: 0, error: '' },
   governmentIdRepresentativeBack: { uploading: false, progress: 0, error: '' },
   dohAccreditation: { uploading: false, progress: 0, error: '' },
@@ -279,6 +291,9 @@ const documentFileMap = {
   secCertificate: secCertificateFile,
   articlesOfIncorporation: articlesOfIncorporationFile,
   businessPermit: businessPermitFile,
+  birRegistration: birRegistrationFile,
+  sanitaryCertificate: sanitaryCertificateFile,
+  clinicLicense: clinicLicenseFile,
   governmentIdRepresentativeFront: governmentIdRepresentativeFrontFile,
   governmentIdRepresentativeBack: governmentIdRepresentativeBackFile,
   dohAccreditation: dohAccreditationFile,
@@ -289,6 +304,9 @@ const documentLabelMap = {
   secCertificate: 'SEC Certificate of Registration',
   articlesOfIncorporation: 'Articles of Incorporation/Partnership Agreement',
   businessPermit: 'Business Permit/Registration',
+  birRegistration: 'BIR Registration',
+  sanitaryCertificate: 'Sanitary Certificate',
+  clinicLicense: 'Clinic License',
   governmentIdRepresentativeFront: 'Government-Issued ID of Registrant (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
   dohAccreditation: 'DOH Accreditation',
@@ -299,6 +317,9 @@ const documentInputKeys = ref({
   secCertificate: 0,
   articlesOfIncorporation: 0,
   businessPermit: 0,
+  birRegistration: 0,
+  sanitaryCertificate: 0,
+  clinicLicense: 0,
   governmentIdRepresentativeFront: 0,
   governmentIdRepresentativeBack: 0,
   dohAccreditation: 0,
@@ -313,6 +334,9 @@ const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
 // Documents that require an explicit expiry date (ISO string)
 const documentExpiryRequired = {
   businessPermit: true,
+  birRegistration: true,
+  sanitaryCertificate: true,
+  clinicLicense: true,
   prcIdMedicalDirector: true,
   dohAccreditation: true,
   fdaApproval: true,
@@ -323,6 +347,9 @@ const documentExpiryMap = {
   secCertificate: ref(''),
   articlesOfIncorporation: ref(''),
   businessPermit: ref(''),
+  birRegistration: ref(''),
+  sanitaryCertificate: ref(''),
+  clinicLicense: ref(''),
   governmentIdRepresentativeFront: ref(''),
   governmentIdRepresentativeBack: ref(''),
   dohAccreditation: ref(''),
@@ -331,6 +358,9 @@ const documentExpiryMap = {
 }
 const documentNumberMap = {
   businessPermit: ref(''),
+  birRegistration: ref(''),
+  sanitaryCertificate: ref(''),
+  clinicLicense: ref(''),
   dohAccreditation: ref(''),
   fdaApproval: ref(''),
   prcIdMedicalDirector: ref(''),
@@ -410,6 +440,9 @@ const currentStepTitle = computed(() => registrationSteps[currentStep.value - 1]
 const requiresPasswordForStep1 = computed(() => !(userUid.value && otpVerifiedForRegistration.value))
 const companyDocumentKeys = [
   'businessPermit',
+  'birRegistration',
+  'sanitaryCertificate',
+  'clinicLicense',
   'governmentIdRepresentativeFront',
   'governmentIdRepresentativeBack',
   'dohAccreditation',
@@ -1816,6 +1849,9 @@ const resetClinicRegistrationFlow = () => {
   secCertificateFile.value = null
   articlesOfIncorporationFile.value = null
   businessPermitFile.value = null
+  birRegistrationFile.value = null
+  sanitaryCertificateFile.value = null
+  clinicLicenseFile.value = null
   governmentIdRepresentativeFrontFile.value = null
   governmentIdRepresentativeBackFile.value = null
   dohAccreditationFile.value = null
@@ -1828,6 +1864,9 @@ const resetClinicRegistrationFlow = () => {
     secCertificate: null,
     articlesOfIncorporation: null,
     businessPermit: null,
+    birRegistration: null,
+    sanitaryCertificate: null,
+    clinicLicense: null,
     governmentIdRepresentativeFront: null,
     governmentIdRepresentativeBack: null,
     dohAccreditation: null,
@@ -3394,6 +3433,12 @@ const submitDocuments = async () => {
                     <label class="floating-label floating-label-raised">{{
                       docKey === 'businessPermit'
                         ? 'Business Permit No.'
+                        : docKey === 'birRegistration'
+                          ? 'BIR Registration No.'
+                          : docKey === 'sanitaryCertificate'
+                            ? 'Sanitary Certificate No.'
+                            : docKey === 'clinicLicense'
+                              ? 'Clinic License No.'
                         : docKey === 'dohAccreditation'
                           ? 'DOH Accreditation Number'
                           : docKey === 'fdaApproval'
@@ -3404,6 +3449,12 @@ const submitDocuments = async () => {
                       Format example: {{
                         docKey === 'businessPermit'
                           ? 'BP-2026-123456'
+                          : docKey === 'birRegistration'
+                            ? 'BIR-REG-2026-123456'
+                            : docKey === 'sanitaryCertificate'
+                              ? 'SAN-2026-123456'
+                              : docKey === 'clinicLicense'
+                                ? 'CL-2026-123456'
                           : docKey === 'dohAccreditation'
                             ? 'DOH-ACC-2026-987654'
                             : docKey === 'fdaApproval'

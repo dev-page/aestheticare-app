@@ -53,6 +53,14 @@ service cloud.firestore {
           || request.resource.data.status == 'Reschedule Requested');
     }
 
+    function staffCanUpdateCustomerOrderLogistics() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'status', 'logisticsStatus', 'logisticsUpdatedBy', 'logisticsUpdatedAt',
+        'riderName', 'riderPhone', 'riderVehicle', 'riderAssignedAt',
+        'riderAssignedBy', 'updatedAt'
+      ]);
+    }
+
     function rolePermissions() {
       return exists(/databases/$(database)/documents/rolePermissions/$(roleKey()))
         ? get(/databases/$(database)/documents/rolePermissions/$(roleKey())).data.permissions
@@ -328,6 +336,59 @@ service cloud.firestore {
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('services:disable'));
     }
 
+    match /clinicPolicies/{branchId} {
+      allow read: if isSignedIn() && (canAccessBranch(branchId) || isPublicClinic(branchId));
+      allow create, update: if isSignedIn()
+        && isOwnerOfBranch(branchId)
+        && (hasPermission('policies:update') || isOwnerOfBranch(branchId));
+      allow delete: if false;
+    }
+
+    match /supplierQuotes/{quoteId} {
+      allow read: if isSignedIn()
+        && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('procurement:view')));
+      allow create: if isSignedIn()
+        && request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)
+        && (hasPermission('procurement:create') || isOwnerOfBranch(request.resource.data.branchId));
+      allow update: if isSignedIn()
+        && resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+        && (hasPermission('procurement:review') || hasPermission('procurement:create') || isOwnerOfBranch(resource.data.branchId));
+      allow delete: if false;
+    }
+
+    match /purchaseOrders/{orderId} {
+      allow read: if isSignedIn()
+        && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('procurement:view')));
+      allow create: if isSignedIn()
+        && request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)
+        && (hasPermission('procurement:create') || isOwnerOfBranch(request.resource.data.branchId));
+      allow update: if isSignedIn()
+        && resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+        && (hasPermission('procurement:review') || isOwnerOfBranch(resource.data.branchId));
+      allow delete: if false;
+    }
+
+    match /manualPurchases/{purchaseId} {
+      allow read: if isSignedIn()
+        && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('procurement:view')));
+      allow create: if isSignedIn()
+        && request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)
+        && (hasPermission('procurement:create') || isOwnerOfBranch(request.resource.data.branchId));
+      allow update: if isSignedIn()
+        && resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+        && (hasPermission('procurement:review') || isOwnerOfBranch(resource.data.branchId));
+      allow delete: if false;
+    }
+
+    match /commissionContracts/{contractId} {
+      allow read: if isSignedIn()
+        && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('commissions:view')));
+      allow create, update: if isSignedIn()
+        && request.resource.data.branchId != null && isOwnerOfBranch(request.resource.data.branchId)
+        && (hasPermission('commissions:manage') || isOwnerOfBranch(request.resource.data.branchId));
+      allow delete: if false;
+    }
+
     match /archivedProductServicePosts/{postId} {
       allow read: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('services:view'));
@@ -446,7 +507,12 @@ service cloud.firestore {
     match /customerOrders/{orderId} {
       allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid || isSuperadmin());
       allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
-      allow update: if isSignedIn() && request.auth.uid == resource.data.customerId;
+      allow update: if isSignedIn()
+        && (request.auth.uid == resource.data.customerId
+          || (resource.data.branchId != null
+            && canAccessBranch(resource.data.branchId)
+            && hasPermission('orders:update')
+            && staffCanUpdateCustomerOrderLogistics()));
       allow delete: if false;
     }
 
@@ -486,6 +552,8 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && ((request.resource.data.senderId == request.auth.uid
           && request.resource.data.recipientRole == 'Superadmin')
+          || (request.resource.data.senderId == request.auth.uid
+            && request.resource.data.recipientUserId == request.auth.uid)
           || (isSuperadmin() && request.resource.data.recipientUserId != null));
       allow update: if isSignedIn()
         && (resource.data.recipientUserId == request.auth.uid || isSuperadmin());

@@ -131,7 +131,12 @@
           <div v-for="item in selectedOrder.items" :key="item.id" class="flex items-start justify-between py-2 border-b border-slate-700 last:border-b-0">
             <div>
               <p class="text-white font-medium">{{ item.name }}</p>
-              <p class="text-xs text-slate-400">Qty: {{ item.quantity }} • Branch: {{ item.branchName || 'N/A' }}</p>
+              <p class="text-xs text-slate-400">
+                Qty: {{ item.quantity }}
+                <span v-if="item.productVolume || item.productUnit"> • {{ item.productVolume || '' }}{{ item.productVolume && item.productUnit ? ' ' : '' }}{{ item.productUnit || '' }}</span>
+                • Branch: {{ item.branchName || 'N/A' }}
+              </p>
+              <p v-if="item.termsAndConditions" class="mt-1 whitespace-pre-wrap text-xs text-slate-400">Terms: {{ item.termsAndConditions }}</p>
             </div>
             <div class="text-amber-300">PHP {{ Number(item.price || 0).toFixed(2) }}</div>
           </div>
@@ -205,6 +210,13 @@
               </p>
             </div>
           </div>
+        </div>
+
+        <div v-if="selectedOrder.riderName || selectedOrder.riderPhone || selectedOrder.riderVehicle" class="bg-slate-800 rounded-lg p-4 border border-slate-700 mb-4">
+          <p class="text-xs uppercase text-slate-400">Rider Information</p>
+          <p class="text-white font-semibold mt-1">{{ selectedOrder.riderName || 'Assigned rider' }}</p>
+          <p v-if="selectedOrder.riderPhone" class="text-xs text-slate-400">Phone: {{ selectedOrder.riderPhone }}</p>
+          <p v-if="selectedOrder.riderVehicle" class="text-xs text-slate-400">Vehicle: {{ selectedOrder.riderVehicle }}</p>
         </div>
 
         <div class="space-y-4 sm:space-y-5">
@@ -556,8 +568,8 @@ export default {
     }
 
     const canCancelOrder = (order) => {
-      const status = String(order?.status || 'Pending')
-      if (status === 'Cancelled' || status === 'Completed') return false
+      const status = String(order?.status || 'Pending').trim().toLowerCase()
+      if (['cancelled', 'completed', 'refunded', 'shipped', 'out for delivery', 'delivered'].includes(status)) return false
       const createdAtMillis = getCreatedAtMillis(order)
       if (!createdAtMillis) return false
       const diffHours = (Date.now() - createdAtMillis) / (1000 * 60 * 60)
@@ -566,7 +578,7 @@ export default {
 
     const canMarkReceived = (order) => {
       const status = String(order?.status || '').trim().toLowerCase()
-      return status !== 'completed' && status !== 'cancelled' && status !== 'refunded'
+      return ['shipped', 'out for delivery', 'delivered'].includes(status)
     }
 
     const canRequestRefund = (order) => {
@@ -804,7 +816,7 @@ export default {
       const order = selectedCancelOrder.value
       if (!order?.id) return
       if (!canCancelOrder(order)) {
-        toast.error('Orders can only be cancelled within 24 hours.')
+        toast.error('Orders can only be cancelled within 24 hours and before shipment.')
         return
       }
 
