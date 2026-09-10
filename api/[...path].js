@@ -1,5 +1,13 @@
 import crypto from 'node:crypto'
-import app from '../backend/otp-backend/server.js'
+
+let backendAppPromise
+
+const loadBackendApp = () => {
+  if (!backendAppPromise) {
+    backendAppPromise = import('../backend/otp-backend/server.js').then((module) => module.default)
+  }
+  return backendAppPromise
+}
 
 export default async function handler(req, res) {
   const requestId = crypto.randomUUID()
@@ -7,6 +15,7 @@ export default async function handler(req, res) {
   req.url = originalUrl.startsWith('/api/') ? originalUrl.slice(4) : (originalUrl === '/api' ? '/' : originalUrl)
 
   try {
+    const app = await loadBackendApp()
     return await app(req, res)
   } catch (error) {
     console.error('VERCEL_API_HANDLER_FAILURE', {
