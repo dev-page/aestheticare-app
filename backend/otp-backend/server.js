@@ -3339,6 +3339,41 @@ app.post(REQUEST_REGISTRATION_OTP_PATH, async (req, res) => {
 app.post(REQUEST_LOGIN_OTP_PATH, requireAuth, async (req, res) => {
   const normalizedEmail = String(req.body?.email || '').trim().toLowerCase()
   const requestedUid = String(req.body?.uid || '').trim()
+  const requestId = crypto.randomUUID()
+
+  const logLoginOtpFailure = (stage, error = null) => {
+    console.error('LOGIN_OTP_FAILURE', {
+      requestId,
+      stage,
+      uid: requestedUid || null,
+      email: maskEmailAddress(normalizedEmail),
+      firebaseAdminReady: adminReady,
+      explicitFirebaseCredentials: Boolean(googleCloudCredential),
+      postmarkConfigured: Boolean(postmarkClient && senderEmail),
+      errorName: error?.name || null,
+      errorCode: error?.code || error?.statusCode || null,
+      errorMessage: error?.message || null,
+      stack: isDevelopment ? error?.stack || null : undefined,
+    })
+  }
+
+  if (!adminReady || !googleCloudCredential) {
+    logLoginOtpFailure('firebase_configuration')
+    return res.status(503).json({
+      success: false,
+      error: 'Login service is not configured on the production backend.',
+      requestId,
+    })
+  }
+
+  if (!postmarkClient || !senderEmail) {
+    logLoginOtpFailure('postmark_configuration')
+    return res.status(503).json({
+      success: false,
+      error: 'Login OTP email service is not configured on the production backend.',
+      requestId,
+    })
+  }
 
   if (!normalizedEmail || !EMAIL_ADDRESS_REGEX.test(normalizedEmail)) {
     return res.status(400).json({ success: false, error: 'A valid email is required.' })
@@ -3374,10 +3409,15 @@ app.post(REQUEST_LOGIN_OTP_PATH, requireAuth, async (req, res) => {
     })
   } catch (error) {
     if (error?.statusCode === 429) {
+      logLoginOtpFailure('rate_limit', error)
       return res.status(429).json({ success: false, error: error.message, retryAfterSeconds: error.retryAfterSeconds })
     }
-    console.error('Login OTP request error:', error)
-    return res.status(500).json({ success: false, error: 'Unable to send login OTP. Please try again later.' })
+    logLoginOtpFailure('request_processing', error)
+    return res.status(500).json({
+      success: false,
+      error: 'Unable to send login OTP. Please try again later.',
+      requestId,
+    })
   }
 })
 
