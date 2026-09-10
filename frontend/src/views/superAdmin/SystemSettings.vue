@@ -60,10 +60,10 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { db } from '@/config/firebaseConfig'
-import { collection, addDoc, serverTimestamp, query, orderBy, getDocs } from 'firebase/firestore'
+import { collection, addDoc, onSnapshot, serverTimestamp, query, orderBy } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 
 export default {
@@ -76,6 +76,7 @@ export default {
     const notifyByEmail = ref(false)
     const loading = ref(false)
     const announcements = ref([])
+    let unsubscribeAnnouncements = null
 
     const auth = getAuth()
 
@@ -101,26 +102,27 @@ export default {
       }
     }
 
-    const loadAnnouncements = async () => {
+    const loadAnnouncements = () => {
+      if (unsubscribeAnnouncements) unsubscribeAnnouncements()
       loading.value = true
       announcements.value = []
-      try {
-        const q = query(collection(db, 'systemAnnouncements'), orderBy('createdAt','desc'))
-        const snap = await getDocs(q)
+      const q = query(collection(db, 'systemAnnouncements'), orderBy('createdAt','desc'))
+      unsubscribeAnnouncements = onSnapshot(q, (snap) => {
         const rows = []
         snap.forEach((d) => {
           const data = d.data() || {}
           rows.push({ id: d.id, message: data.message, scheduledAt: data.scheduledAt ? (data.scheduledAt.toDate ? data.scheduledAt.toDate().toLocaleString() : String(data.scheduledAt)) : '-', createdBy: data.createdBy || null })
         })
         announcements.value = rows
-      } catch (e) {
-        console.error('Failed to load announcements', e)
-      } finally {
         loading.value = false
-      }
+      }, (e) => {
+        console.error('Failed to load announcements', e)
+        loading.value = false
+      })
     }
 
     onMounted(loadAnnouncements)
+    onUnmounted(() => unsubscribeAnnouncements?.())
 
     return { date, time, message, notifyByEmail, publish, loading, announcements }
   }

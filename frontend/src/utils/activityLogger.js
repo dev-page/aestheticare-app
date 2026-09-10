@@ -47,6 +47,7 @@ export const logActivity = async (db, payload = {}) => {
       details: payload.details || '',
       module: payload.module || 'General',
       actorId,
+      actorEmail: userData.email || payload.actorEmail || currentUser.email || '',
       actorName: buildActorName(userData, payload.actorEmail || currentUser.email),
       actorRole: userData.role || 'Unknown',
       actorUserType: userData.userType || '',
@@ -54,6 +55,9 @@ export const logActivity = async (db, payload = {}) => {
       ownerId: ownerId || null,
       targetUserId: payload.targetUserId || null,
       targetUserName: payload.targetUserName || null,
+      targetId: payload.targetId || null,
+      targetName: payload.targetName || null,
+      success: payload.success !== false,
       createdAt: serverTimestamp()
     })
   } catch (error) {

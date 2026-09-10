@@ -3,7 +3,7 @@
     <SuperAdminSidebar />
 
     <main class="flex-1 p-8">
-      <h1 class="text-3xl font-bold text-white mb-2">Verified Clinics</h1>
+      <h1 class="text-3xl font-bold text-white mb-2">Approved Clinics</h1>
       <p class="text-slate-400 mb-6">List of clinics that have been approved and verified.</p>
 
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
@@ -15,14 +15,15 @@
               <th class="text-left text-slate-300 px-4 py-3">Subscription</th>
               <th class="text-left text-slate-300 px-4 py-3">Center Status</th>
               <th class="text-left text-slate-300 px-4 py-3">Verified Date</th>
+              <th class="text-left text-slate-300 px-4 py-3">Reported Issues</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td class="px-4 py-3 text-slate-200" colspan="5">Loading verified clinics...</td>
+              <td class="px-4 py-3 text-slate-200" colspan="6">Loading approved clinics...</td>
             </tr>
             <tr v-else-if="!verifiedClinics.length">
-              <td class="px-4 py-3 text-slate-200" colspan="5">No verified clinics yet.</td>
+              <td class="px-4 py-3 text-slate-200" colspan="6">No approved clinics yet.</td>
             </tr>
             <tr
               v-else
@@ -48,6 +49,11 @@
                 </span>
               </td>
               <td class="px-4 py-3 text-slate-300">{{ clinic.approvedAtLabel }}</td>
+              <td class="px-4 py-3">
+                <span class="rounded-md border px-2 py-1 text-xs font-medium" :class="clinic.complaintCount ? 'border-amber-500/40 bg-amber-500/20 text-amber-200' : 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'">
+                  {{ clinic.complaintCount }}
+                </span>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -57,8 +63,8 @@
 </template>
 
 <script>
-import { onMounted, ref } from 'vue'
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
@@ -69,6 +75,7 @@ export default {
   setup() {
     const loading = ref(false)
     const verifiedClinics = ref([])
+    let unsubscribeClinics = null
 
     const normalizePlanLabel = (value) => {
       const raw = String(value || '').trim().toLowerCase()
@@ -86,10 +93,10 @@ export default {
 
     const isApproved = (value) => String(value || '').trim().toLowerCase().includes('approved')
 
-    const loadVerifiedClinics = async () => {
+    const loadVerifiedClinics = () => {
+      if (unsubscribeClinics) unsubscribeClinics()
       loading.value = true
-      try {
-        const clinicsSnap = await getDocs(collection(db, 'clinics'))
+      unsubscribeClinics = onSnapshot(collection(db, 'clinics'), async (clinicsSnap) => {
         const approvedClinics = clinicsSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
           .filter((clinic) => {
@@ -110,9 +117,14 @@ export default {
             const resolvedPlan = clinic.subscriptionPlan || user.subscriptionPlan || clinic.plan || user.plan || ''
             const resolvedPayment = clinic.paymentStatus || user.paymentStatus || ''
             const approvedAt = clinic.approvedAt || user.approvedAt || null
+            const complaintsSnap = await getDocs(query(
+              collection(db, 'supportTickets'),
+              where('branchId', '==', clinic.id),
+            ))
 
             return {
               id: clinic.id,
+              approvalStatus: clinic.approvalStatus || 'Approved',
               clinicName: clinic.clinicName || clinic.clinicBranch || '',
               clinicBranch: clinic.clinicBranch || '',
               clinicLocation: clinic.clinicLocation || '',
@@ -123,20 +135,22 @@ export default {
               centerStatus: clinic.status || clinic.moderationStatus || 'Active',
               approvedAtLabel: formatDate(approvedAt),
               approvedAt: approvedAt || null,
+              complaintCount: complaintsSnap.size,
             }
           })
         )
 
         verifiedClinics.value = sortRecordsNewestFirst(rows)
-      } catch (error) {
+        loading.value = false
+      }, (error) => {
         console.error('Failed to load verified clinics:', error)
         verifiedClinics.value = []
-      } finally {
         loading.value = false
-      }
+      })
     }
 
     onMounted(loadVerifiedClinics)
+    onUnmounted(() => unsubscribeClinics?.())
 
     return {
       loading,

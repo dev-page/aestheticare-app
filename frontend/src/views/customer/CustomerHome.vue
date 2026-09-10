@@ -72,6 +72,41 @@
                 <Icon icon="mdi:filter-off-outline" class="h-6 w-6" aria-hidden="true" />
               </button>
             </div>
+
+            <div class="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-gold-100/80 pt-4">
+              <button
+                type="button"
+                class="inline-flex h-11 items-center gap-2 rounded-2xl border px-4 text-sm font-semibold transition"
+                :class="favoritesOnly ? 'border-gold-500 bg-gold-700 text-white' : 'border-gold-200 bg-white text-charcoal-700 hover:border-gold-400'"
+                :aria-pressed="favoritesOnly"
+                @click="favoritesOnly = !favoritesOnly"
+              >
+                <Icon icon="mdi:heart" class="h-4 w-4" aria-hidden="true" />
+                Favorites only
+                <span v-if="favoriteClinicIds.size" class="rounded-full bg-white/80 px-2 py-0.5 text-xs text-gold-800">{{ favoriteClinicIds.size }}</span>
+              </button>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-charcoal-500">
+                  Rating
+                  <select v-model="minimumRating" class="filter-input h-11 rounded-2xl normal-case tracking-normal">
+                    <option :value="0">Any rating</option>
+                    <option :value="3">3.0+ stars</option>
+                    <option :value="4">4.0+ stars</option>
+                    <option :value="4.5">4.5+ stars</option>
+                  </select>
+                </label>
+                <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-charcoal-500">
+                  Sort
+                  <select v-model="sortBy" class="filter-input h-11 rounded-2xl normal-case tracking-normal">
+                    <option value="relevance">Best match</option>
+                    <option value="rating">Highest rated</option>
+                    <option value="name">Name A-Z</option>
+                    <option value="distance">Nearest first</option>
+                  </select>
+                </label>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -125,6 +160,15 @@
                     {{ center.rating > 0 ? `${center.rating.toFixed(1)} rating` : 'Recently added' }}
                   </span>
                 </div>
+                <button
+                  type="button"
+                  class="absolute right-5 top-5 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-charcoal-900/45 text-white backdrop-blur transition hover:scale-105 hover:bg-charcoal-900/70"
+                  :aria-label="isFavorite(center.id) ? `Remove ${center.name} from favorites` : `Save ${center.name} to favorites`"
+                  :aria-pressed="isFavorite(center.id)"
+                  @click.stop="toggleFavorite(center)"
+                >
+                  <Icon :icon="isFavorite(center.id) ? 'mdi:heart' : 'mdi:heart-outline'" class="h-5 w-5" aria-hidden="true" />
+                </button>
               </div>
 
             <div class="center-card-body">
@@ -176,6 +220,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
+import { getDoc, setDoc, doc } from 'firebase/firestore'
+import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { subscribeCustomerCenters } from '@/utils/customerCenters'
@@ -192,7 +238,12 @@ const userLocation = ref(null)
 const radiusKm = ref(15)
 const locationLoading = ref(false)
 const locationMessage = ref('')
+const favoritesOnly = ref(false)
+const favoriteClinicIds = ref(new Set())
+const minimumRating = ref(0)
+const sortBy = ref('relevance')
 const radiusOptions = [5, 10, 15, 25, 50]
+const FAVORITES_STORAGE_KEY = 'aestheticCare.favoriteClinicIds'
 let unsubscribeCenters = null
 
 const cities = computed(() => [...new Set(centers.value.map((item) => item.city).filter(Boolean))])
@@ -237,6 +288,8 @@ const filteredCenters = computed(() => {
         center.services.some((entry) => entry.toLowerCase().includes(keyword))
       const matchesCity = !city.value || center.city === city.value
       const matchesService = !service.value || center.services.includes(service.value)
+      const matchesRating = !minimumRating.value || center.rating >= Number(minimumRating.value)
+      const matchesFavorite = !favoritesOnly.value || favoriteClinicIds.value.has(center.id)
       const withinRadius =
         !locationFilterActive ||
         (distanceKm !== null && distanceKm <= radiusKm.value)
@@ -246,16 +299,22 @@ const filteredCenters = computed(() => {
         matchesKeyword,
         matchesCity,
         matchesService,
+        matchesRating,
+        matchesFavorite,
         withinRadius,
       }
     })
-    .filter((center) => center.matchesKeyword && center.matchesCity && center.matchesService && center.withinRadius)
+    .filter((center) => center.matchesKeyword && center.matchesCity && center.matchesService && center.matchesRating && center.matchesFavorite && center.withinRadius)
     .sort((a, b) => {
-      if (!locationFilterActive) return a.name.localeCompare(b.name)
-      if (a.distanceKm === null && b.distanceKm === null) return a.name.localeCompare(b.name)
-      if (a.distanceKm === null) return 1
-      if (b.distanceKm === null) return -1
-      return a.distanceKm - b.distanceKm || a.name.localeCompare(b.name)
+      if (sortBy.value === 'name') return a.name.localeCompare(b.name)
+      if (sortBy.value === 'rating') return b.rating - a.rating || a.name.localeCompare(b.name)
+      if (sortBy.value === 'distance' || locationFilterActive) {
+        if (a.distanceKm === null && b.distanceKm === null) return a.name.localeCompare(b.name)
+        if (a.distanceKm === null) return 1
+        if (b.distanceKm === null) return -1
+        return a.distanceKm - b.distanceKm || a.name.localeCompare(b.name)
+      }
+      return b.rating - a.rating || a.name.localeCompare(b.name)
     })
 })
 
@@ -263,9 +322,69 @@ const clearFilters = () => {
   search.value = ''
   city.value = ''
   service.value = ''
+  favoritesOnly.value = false
+  minimumRating.value = 0
+  sortBy.value = 'relevance'
   userLocation.value = null
   radiusKm.value = 15
   locationMessage.value = ''
+}
+
+const readLocalFavorites = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY) || '[]')
+    return new Set(Array.isArray(parsed) ? parsed.map((value) => String(value || '').trim()).filter(Boolean) : [])
+  } catch (_error) {
+    return new Set()
+  }
+}
+
+const isFavorite = (clinicId) => favoriteClinicIds.value.has(String(clinicId || '').trim())
+
+const persistFavorites = async () => {
+  const values = Array.from(favoriteClinicIds.value)
+  localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(values))
+  if (!auth.currentUser) return
+  try {
+    await setDoc(doc(db, 'users', auth.currentUser.uid), { favoriteClinicIds: values }, { merge: true })
+  } catch (error) {
+    console.error('Failed to sync favorite clinics:', error)
+    locationMessage.value = 'Your favorite was saved on this device, but could not sync to your account.'
+  }
+}
+
+const loadFavorites = async () => {
+  const localFavorites = readLocalFavorites()
+  if (!auth.currentUser) {
+    favoriteClinicIds.value = localFavorites
+    return
+  }
+  try {
+    const snapshot = await getDoc(doc(db, 'users', auth.currentUser.uid))
+    const remoteFavorites = snapshot.exists() && Array.isArray(snapshot.data()?.favoriteClinicIds)
+      ? snapshot.data().favoriteClinicIds.map((value) => String(value || '').trim()).filter(Boolean)
+      : []
+    favoriteClinicIds.value = new Set([...localFavorites, ...remoteFavorites])
+    await persistFavorites()
+  } catch (error) {
+    console.error('Failed to load favorite clinics:', error)
+    favoriteClinicIds.value = localFavorites
+  }
+}
+
+const toggleFavorite = async (center) => {
+  const clinicId = String(center?.id || '').trim()
+  if (!clinicId) return
+  const next = new Set(favoriteClinicIds.value)
+  if (next.has(clinicId)) {
+    next.delete(clinicId)
+    locationMessage.value = `${center.name} was removed from your favorites.`
+  } else {
+    next.add(clinicId)
+    locationMessage.value = `${center.name} was added to your favorites.`
+  }
+  favoriteClinicIds.value = next
+  await persistFavorites()
 }
 
 const clearNearbyFilter = () => {
@@ -321,6 +440,7 @@ const openCenter = (centerId) => {
 onMounted(() => {
   loading.value = true
   errorMessage.value = ''
+  loadFavorites()
   unsubscribeCenters = subscribeCustomerCenters(
     (nextCenters) => {
       centers.value = nextCenters

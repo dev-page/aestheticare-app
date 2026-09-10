@@ -71,8 +71,8 @@
 </template>
 
 <script>
-import { computed, onMounted, ref } from 'vue'
-import { collection, getDocs } from 'firebase/firestore'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { collection, getDocs, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
@@ -128,6 +128,9 @@ export default {
     const freeTrialCount = ref(0)
     const basicCount = ref(0)
     const premiumCount = ref(0)
+    const realtimeCollections = ['clinics', 'users', 'planPayments', 'subscriptionPayments', 'payments']
+    const realtimeUnsubscribers = []
+    let refreshTimer = null
 
     const formatCurrency = (amount) => {
       return new Intl.NumberFormat('en-PH', {
@@ -261,7 +264,32 @@ export default {
       }
     }
 
-    onMounted(loadDashboard)
+    const scheduleDashboardRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null
+        loadDashboard()
+      }, 150)
+    }
+
+    const startRealtimeDashboard = () => {
+      realtimeCollections.forEach((collectionName) => {
+        realtimeUnsubscribers.push(onSnapshot(
+          collection(db, collectionName),
+          scheduleDashboardRefresh,
+          (err) => console.error(`Failed to listen to ${collectionName}:`, err)
+        ))
+      })
+    }
+
+    onMounted(() => {
+      loadDashboard()
+      startRealtimeDashboard()
+    })
+    onUnmounted(() => {
+      realtimeUnsubscribers.forEach((unsubscribe) => unsubscribe())
+      if (refreshTimer) clearTimeout(refreshTimer)
+    })
 
     return {
       loading,

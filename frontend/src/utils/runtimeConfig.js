@@ -40,6 +40,14 @@ const uniqueUrls = (values) =>
 
 export const APP_ORIGIN = appOrigin
 export const OTP_API_BASE = resolveRuntimeUrl(import.meta.env.VITE_OTP_API_BASE_URL, 'http://localhost:3000')
-export const OTP_BACKEND_URL = resolveRuntimeUrl(import.meta.env.VITE_OTP_BACKEND_URL, 'http://localhost:3001')
+// The Express OTP backend defaults to port 3000. Keep the frontend default
+// aligned with it so admin actions do not first target an unused port.
+export const OTP_BACKEND_URL = resolveRuntimeUrl(import.meta.env.VITE_OTP_BACKEND_URL, 'http://localhost:3000')
 export const OTP_API_BASE_CANDIDATES = uniqueUrls([OTP_API_BASE, hostedApiBase])
-export const OTP_BACKEND_CANDIDATES = uniqueUrls([OTP_BACKEND_URL, OTP_API_BASE, hostedApiBase])
+// In local development, the Vite origin is only the frontend and cannot serve
+// backend routes. Avoid trying localhost:5173/api before showing the real error.
+export const OTP_BACKEND_CANDIDATES = uniqueUrls([
+  OTP_BACKEND_URL,
+  OTP_API_BASE,
+  isLocalBrowser ? '' : hostedApiBase,
+])

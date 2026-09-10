@@ -249,7 +249,7 @@ const handleChangePassword = async () => {
 
             <div class="text-center text-sm">
               <router-link
-                to="/forgot-password"
+                :to="{ path: '/forgot-password', query: { returnTo: '/change-password' } }"
                 class="text-gold-700 hover:text-gold-800 font-montserrat"
               >
                 Forgot your current password?

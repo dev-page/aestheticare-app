@@ -141,6 +141,7 @@
                   :is="child.locked ? 'button' : 'router-link'"
                   :to="child.locked ? undefined : child.to"
                   :disabled="child.locked"
+                  :data-onboarding-key="child.tourKey || undefined"
                   @click="handleItemNavigation"
                   :class="[
                     'group flex items-center gap-3 px-3 py-2 rounded-lg transition-colors duration-200',
@@ -180,6 +181,7 @@
               :is="item.locked ? 'button' : 'router-link'"
               :to="item.locked ? undefined : item.to"
               :disabled="item.locked"
+              :data-onboarding-key="item.tourKey || undefined"
               @click="handleItemNavigation"
               :class="[
                 'group relative w-full flex items-center rounded-lg transition-colors duration-200',
@@ -779,12 +781,21 @@ export default {
 
     const logout = async () => {
       const result = await Swal.fire({
-        title: 'Are you sure?',
-        text: 'Do you really want to log out?',
-        icon: 'warning',
+        title: 'Log out of your account?',
+        text: 'You can sign in again at any time.',
+        icon: 'question',
         showCancelButton: true,
-        confirmButtonText: 'Yes, log me out',
-        cancelButtonText: 'Cancel'
+        confirmButtonText: 'Log out',
+        cancelButtonText: 'Stay signed in',
+        customClass: {
+          popup: 'swal-logout-popup',
+          title: 'swal-logout-title',
+          htmlContainer: 'swal-logout-text',
+          icon: 'swal-logout-icon',
+          confirmButton: 'swal-logout-confirm',
+          cancelButton: 'swal-logout-cancel'
+        },
+        buttonsStyling: false
       })
       if (!result.isConfirmed) return
 

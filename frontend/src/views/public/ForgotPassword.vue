@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
 import { signOut } from 'firebase/auth'
 import { collection, query, where, getDocs } from 'firebase/firestore'
@@ -9,6 +10,7 @@ import { toast } from 'vue3-toastify'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 
 const router = useRouter()
+const route = useRoute()
 const step = ref(1)
 const email = ref('')
 const otpDigits = ref(Array(6).fill(''))
@@ -22,7 +24,9 @@ const resendCountdown = ref(0)
 let resendTimer = null
 
 const cancelReset = () => {
-  router.push('/login')
+  const requestedReturnPath = String(route.query.returnTo || '').trim()
+  const isSafeInternalPath = requestedReturnPath.startsWith('/') && !requestedReturnPath.startsWith('//') && requestedReturnPath !== '/forgot-password'
+  router.push(isSafeInternalPath ? requestedReturnPath : '/login')
 }
 
 const PASSWORD_MIN_LENGTH = 8

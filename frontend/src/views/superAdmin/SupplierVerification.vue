@@ -1,8 +1,8 @@
 <template>
-  <div class="flex min-h-screen bg-slate-950">
+  <div class="flex module-theme min-h-screen bg-slate-900">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-6 md:p-8">
+    <main class="flex-1 p-8">
       <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 class="text-3xl font-bold text-white">Supplier Verification</h1>
@@ -11,7 +11,7 @@
 
         <button
           type="button"
-          class="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+          class="rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
           :disabled="loading"
           @click="loadPendingSuppliers"
         >
@@ -23,29 +23,43 @@
         {{ error }}
       </p>
 
-      <section class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+      <section class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+        <div class="border-b border-slate-700 px-4 py-4">
+          <h2 class="text-lg font-semibold text-white">Pending Supplier Registrations</h2>
+          <p class="text-sm text-slate-400">Review supplier details and documents before approval.</p>
+        </div>
+        <div class="overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="border-b border-slate-800 bg-slate-900">
+          <thead class="border-b border-slate-700 bg-slate-900/70">
             <tr>
               <th class="px-4 py-3 text-left font-semibold text-slate-300">Business Name</th>
               <th class="px-4 py-3 text-left font-semibold text-slate-300">Email</th>
               <th class="px-4 py-3 text-left font-semibold text-slate-300">Status</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-300">Automatic Verification</th>
               <th class="px-4 py-3 text-left font-semibold text-slate-300">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="4" class="px-4 py-4 text-slate-300">Loading pending supplier registrations...</td>
+              <td colspan="5" class="px-4 py-4 text-slate-300">Loading pending supplier registrations...</td>
             </tr>
             <tr v-else-if="!pendingSuppliers.length">
-              <td colspan="4" class="px-4 py-4 text-slate-300">No pending supplier registrations.</td>
+              <td colspan="5" class="px-4 py-4 text-slate-300">No pending supplier registrations.</td>
             </tr>
-            <tr v-for="row in pendingSuppliers" :key="row.id" class="border-b border-slate-800/70 last:border-b-0">
+            <tr v-for="row in pendingSuppliers" :key="row.id" class="border-b border-slate-700/60 last:border-b-0">
               <td class="px-4 py-3 text-slate-100">{{ row.businessName }}</td>
               <td class="px-4 py-3 text-slate-300">{{ row.email || '-' }}</td>
               <td class="px-4 py-3">
                 <span class="rounded-full border border-amber-400/30 bg-amber-400/15 px-2.5 py-1 text-xs font-semibold text-amber-200">
                   {{ row.statusLabel }}
+                </span>
+              </td>
+              <td class="px-4 py-3">
+                <span
+                  class="rounded-md border px-2 py-1 text-xs font-medium"
+                  :class="row.verificationStatus === 'Automatically Verified' ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300' : 'border-amber-500/40 bg-amber-500/20 text-amber-300'"
+                >
+                  {{ row.verificationStatus || 'Not processed' }}
                 </span>
               </td>
               <td class="px-4 py-3">
@@ -60,16 +74,18 @@
             </tr>
           </tbody>
         </table>
+        </div>
       </section>
 
       <!-- Verified suppliers table below pending suppliers -->
-      <section class="mt-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-        <div class="px-4 py-4 border-b border-slate-800">
+      <section class="mt-6 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+        <div class="border-b border-slate-700 px-4 py-4">
           <h2 class="text-lg font-semibold text-white">Verified Suppliers</h2>
           <p class="text-slate-400 text-sm">Suppliers that have been approved and are active in the system.</p>
         </div>
+        <div class="overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="border-b border-slate-800">
+          <thead class="border-b border-slate-700 bg-slate-900/70">
             <tr>
               <th class="px-4 py-3 text-left text-slate-300">Business Name</th>
               <th class="px-4 py-3 text-left text-slate-300">Owner</th>
@@ -84,62 +100,119 @@
             <tr v-else-if="!verifiedSuppliers.length">
               <td class="px-4 py-4 text-slate-300" colspan="4">No verified suppliers found.</td>
             </tr>
-            <tr v-else v-for="s in verifiedSuppliers" :key="s.id" class="border-b border-slate-800/70 last:border-b-0">
+            <tr v-else v-for="s in verifiedSuppliers" :key="s.id" class="border-b border-slate-700/60 last:border-b-0">
               <td class="px-4 py-3 text-slate-100">{{ s.businessName }}</td>
               <td class="px-4 py-3 text-slate-300">{{ s.ownerName }}</td>
               <td class="px-4 py-3 text-slate-300">{{ s.contactNumber || '-' }}</td>
-              <td class="px-4 py-3 text-slate-300">{{ s.status || 'Active' }}</td>
+              <td class="px-4 py-3">
+                <span class="rounded-md border border-emerald-500/40 bg-emerald-500/20 px-2 py-1 text-xs font-medium text-emerald-300">
+                  {{ s.status || 'Active' }}
+                </span>
+              </td>
             </tr>
           </tbody>
         </table>
+        </div>
       </section>
  
       <div class="mt-3 flex justify-center">
-        <button v-if="hasMoreVerifiedSuppliers && !loadingVerifiedSuppliers" @click="loadMoreVerifiedSuppliers" class="px-4 py-2 rounded bg-slate-700 text-white">Load more</button>
+        <button v-if="hasMoreVerifiedSuppliers && !loadingVerifiedSuppliers" @click="loadMoreVerifiedSuppliers" class="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700">Load more</button>
         <div v-else-if="loadingVerifiedSuppliers" class="text-slate-400">Loading more...</div>
         <div v-else class="text-slate-500">No more items</div>
       </div>
  
-      <div v-if="showModal && selectedRecord" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-        <div class="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-800 bg-slate-950 p-6">
+      <div v-if="showModal && selectedRecord" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+        <div class="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
           <div class="mb-6 flex items-start justify-between gap-4">
             <div>
               <h2 class="text-2xl font-bold text-white">Supplier Registration Details</h2>
               <p class="mt-1 text-sm text-slate-400">Review the business profile and submitted documents.</p>
             </div>
-            <button class="text-sm text-slate-300 hover:text-white" @click="closeModal">Close</button>
+            <button type="button" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition hover:bg-slate-800 hover:text-white" @click="closeModal">Close</button>
           </div>
 
           <div class="grid gap-4 md:grid-cols-2">
-            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <div class="rounded-xl border border-slate-700 bg-slate-800 p-4">
               <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Business Name</p>
               <p class="mt-2 text-white">{{ selectedRecord.businessName }}</p>
             </div>
-            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <div class="rounded-xl border border-slate-700 bg-slate-800 p-4">
               <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Owner Name</p>
               <p class="mt-2 text-white">{{ selectedRecord.fullName }}</p>
             </div>
-            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <div class="rounded-xl border border-slate-700 bg-slate-800 p-4">
               <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Email</p>
               <p class="mt-2 text-white">{{ selectedRecord.email || '-' }}</p>
             </div>
-            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <div class="rounded-xl border border-slate-700 bg-slate-800 p-4">
               <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Contact Number</p>
               <p class="mt-2 text-white">{{ selectedRecord.contactNumber || '-' }}</p>
             </div>
-            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4 md:col-span-2">
+            <div class="rounded-xl border border-slate-700 bg-slate-800 p-4 md:col-span-2">
               <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Business Address</p>
               <p class="mt-2 text-white">{{ selectedRecord.businessAddress || '-' }}</p>
             </div>
-            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <div class="rounded-xl border border-slate-700 bg-slate-800 p-4">
               <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Business Type</p>
               <p class="mt-2 text-white">{{ selectedRecord.businessType || '-' }}</p>
             </div>
-            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4 md:col-span-2">
+            <div class="rounded-xl border border-slate-700 bg-slate-800 p-4 md:col-span-2">
               <p class="text-xs uppercase tracking-[0.16em] text-slate-400">TIN</p>
               <p class="mt-2 text-white">{{ formatTinDisplay(selectedRecord.taxRegistrationNumber) || '-' }}</p>
             </div>
           </div>
+
+          <section class="mt-6 rounded-xl border border-slate-700 bg-slate-800 p-4">
+            <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 class="font-semibold text-white">Automatic Verification and OCR</h3>
+                <p class="text-xs text-slate-400">OCR checks document readability, supplier identity, and document completeness.</p>
+              </div>
+              <span
+                class="rounded-md border px-2 py-1 text-xs font-medium"
+                :class="selectedRecord.verificationStatus === 'Automatically Verified' ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300' : 'border-amber-500/40 bg-amber-500/20 text-amber-200'"
+              >
+                {{ selectedRecord.verificationStatus || 'Not processed' }}
+              </span>
+            </div>
+            <p class="mt-2 text-xs text-slate-400">
+              Processed: {{ formatDateValue(selectedRecord.verificationProcessedAt) }}
+              <span v-if="selectedRecord.verificationThreshold !== null"> · Automatic threshold: {{ Math.round(Number(selectedRecord.verificationThreshold) * 100) }}%</span>
+            </p>
+            <div class="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-sm text-slate-300">Overall OCR confidence</span>
+                <strong class="text-lg text-white">{{ getOverallConfidence(selectedRecord.verificationResults) === null ? 'Not available' : `${getOverallConfidence(selectedRecord.verificationResults)}%` }}</strong>
+              </div>
+              <div v-if="getOverallConfidence(selectedRecord.verificationResults) !== null" class="mt-2 h-2 overflow-hidden rounded-full bg-slate-700">
+                <div class="h-full rounded-full bg-emerald-500 transition-all" :style="{ width: `${getOverallConfidence(selectedRecord.verificationResults)}%` }"></div>
+              </div>
+            </div>
+            <div v-if="selectedRecord.verificationResults?.length" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <article v-for="result in selectedRecord.verificationResults" :key="result.key" class="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                <div class="flex items-start justify-between gap-3">
+                  <p class="text-sm text-slate-200">{{ documentLabel(result.key) }}</p>
+                  <span class="text-xs capitalize" :class="result.status === 'verified' ? 'text-emerald-300' : 'text-amber-300'">{{ result.status }}</span>
+                </div>
+                <p class="mt-1 text-xs text-slate-400">Confidence: {{ result.confidence }}%</p>
+                <p class="mt-1 text-xs text-slate-300">{{ result.reason }}</p>
+                <details v-if="result.extractedText" class="mt-2">
+                  <summary class="cursor-pointer text-xs text-sky-300">View extracted text</summary>
+                  <pre class="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[11px] text-slate-400">{{ result.extractedText }}</pre>
+                </details>
+              </article>
+            </div>
+            <p v-else class="mt-4 text-xs text-slate-500">No automatic verification result is stored for this registration.</p>
+            <button
+              v-if="selectedRecord.verificationStatus !== 'Automatically Verified'"
+              type="button"
+              class="mt-4 rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="processing"
+              @click="runSupplierVerification"
+            >
+              {{ processing ? 'Processing documents...' : 'Run OCR and automatic verification' }}
+            </button>
+          </section>
 
           <section class="mt-6">
             <h3 class="mb-3 text-lg font-semibold text-white">Submitted Documents</h3>
@@ -147,7 +220,7 @@
               <article
                 v-for="docItem in selectedRecord.documents"
                 :key="docItem.key"
-                class="rounded-2xl border border-slate-800 bg-slate-900 p-4"
+                class="rounded-xl border border-slate-700 bg-slate-800 p-4"
               >
                 <p class="mb-3 text-sm text-slate-200">{{ docItem.label }}</p>
                 <div v-if="docItem.url">
@@ -171,7 +244,7 @@
             <textarea
               v-model="rejectionRemark"
               rows="3"
-              class="w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-slate-100 outline-none focus:border-slate-500"
+              class="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-slate-500"
               placeholder="Explain why the registration is being rejected..."
             ></textarea>
           </section>
@@ -201,10 +274,10 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { getAuth } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
-import Swal from 'sweetalert2'
+import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
@@ -238,6 +311,31 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
       isImage: type.startsWith('image/'),
     }
   })
+}
+
+const mapVerificationResults = (verificationResults = {}) => Object.entries(verificationResults || {}).map(([key, result = {}]) => ({
+  key,
+  status: String(result.status || 'manual_review').replaceAll('_', ' '),
+  confidence: Number.isFinite(Number(result.confidence)) ? Math.round(Number(result.confidence) * 100) : 0,
+  reason: String(result.reason || 'No verification explanation was returned.'),
+  extractedText: String(result.extractedText || '').trim(),
+}))
+
+const formatDateValue = (value) => {
+  if (!value) return '-'
+  const date = value?.toDate ? value.toDate() : new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString()
+}
+
+const documentLabel = (key) => ({
+  taxRegistration: 'Tax Registration Document',
+  businessRegistration: 'Business Registration Document',
+}[key] || key)
+
+const getOverallConfidence = (results = []) => {
+  const scores = results.map((result) => Number(result.confidence)).filter((score) => Number.isFinite(score))
+  if (!scores.length) return null
+  return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length)
 }
 
 const toBusinessName = (record = {}) => {
@@ -293,6 +391,10 @@ const loadPendingSuppliers = async () => {
           taxRegistrationNumber: normalizeTinDigits(application.taxRegistrationNumber || application.tinNumber || ''),
           statusLabel: String(application.approvalStatus || application.status || 'Pending Approval'),
           documents: mapDocs(application.documents || {}, application.draftDocuments || {}),
+          verificationStatus: application.verificationStatus || 'Not processed',
+          verificationThreshold: application.verificationThreshold ?? null,
+          verificationProcessedAt: application.verificationProcessedAt || null,
+          verificationResults: mapVerificationResults(application.verificationResults),
           application,
           userData,
           createdAt: application.createdAt || userData.createdAt || null,
@@ -381,7 +483,7 @@ const fetchFromBackend = async (path, options = {}) => {
 const buildAuthHeaders = async () => {
   const user = auth.currentUser
   if (!user) throw new Error('Missing administrator session.')
-  return { 'content-type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` }
+  return { 'content-type': 'application/json', Authorization: `Bearer ${await user.getIdToken(true)}` }
 }
 
 const openDetails = (record) => {
@@ -396,10 +498,51 @@ const closeModal = () => {
   rejectionRemark.value = ''
 }
 
+const runSupplierVerification = async () => {
+  if (!selectedRecord.value) return
+
+  const result = await systemAdminSwal.fire({
+    title: 'Run Automatic Verification?',
+    text: 'The supplier documents will be processed with OCR. Low-confidence results will remain for manual review.',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Run verification',
+    cancelButtonText: 'Cancel',
+  })
+  if (!result.isConfirmed) return
+
+  processing.value = true
+  try {
+    const response = await fetchFromBackend('/admin/trigger-registration-verification', {
+      method: 'POST',
+      headers: await buildAuthHeaders(),
+      body: JSON.stringify({ uid: selectedRecord.value.id, applicantType: 'supplier' }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Automatic verification failed.')
+
+    await systemAdminSwal.fire({
+      title: 'Verification Complete',
+      text: payload.data?.status === 'Automatically Verified'
+        ? 'All supplier documents passed the automatic verification threshold.'
+        : 'The documents require manual review because one or more confidence scores were below the threshold.',
+      icon: payload.data?.status === 'Automatically Verified' ? 'success' : 'info',
+      confirmButtonText: 'Continue',
+    })
+    closeModal()
+    await loadPendingSuppliers()
+  } catch (err) {
+    console.error('Failed to run supplier document verification:', err)
+    error.value = err?.message || 'Automatic verification failed. Please try again.'
+  } finally {
+    processing.value = false
+  }
+}
+
 const approveSelected = async () => {
   if (!selectedRecord.value) return
 
-  const result = await Swal.fire({
+  const result = await systemAdminSwal.fire({
     title: 'Approve Supplier?',
     text: `Approve ${selectedRecord.value.businessName} as a verified supplier?`,
     icon: 'question',
@@ -421,7 +564,7 @@ const approveSelected = async () => {
     const payload = await response.json().catch(() => null)
     if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to approve supplier registration.')
 
-    await Swal.fire({
+    await systemAdminSwal.fire({
       title: 'Approved',
       text: 'Supplier registration has been approved.',
       icon: 'success',
@@ -444,7 +587,7 @@ const rejectSelected = async () => {
 
   const remark = String(rejectionRemark.value || '').trim()
   if (!remark) {
-    await Swal.fire({
+    await systemAdminSwal.fire({
       title: 'Remark Required',
       text: 'Please enter a rejection reason before rejecting this supplier registration.',
       icon: 'warning',
@@ -452,7 +595,7 @@ const rejectSelected = async () => {
     return
   }
 
-  const result = await Swal.fire({
+  const result = await systemAdminSwal.fire({
     title: 'Reject Supplier?',
     text: `Reject ${selectedRecord.value.businessName}?`,
     icon: 'warning',
@@ -474,9 +617,11 @@ const rejectSelected = async () => {
     const payload = await response.json().catch(() => null)
     if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to reject supplier registration.')
 
-    await Swal.fire({
+    await systemAdminSwal.fire({
       title: 'Rejected',
-      text: 'Supplier registration has been rejected.',
+      text: payload.data?.emailSent
+        ? 'Supplier registration was rejected, deleted, and an email with the reason and re-registration link was sent.'
+        : 'Supplier registration was rejected and deleted. The email could not be sent, so contact the applicant manually.',
       icon: 'success',
       timer: 1500,
       showConfirmButton: false,
@@ -492,5 +637,21 @@ const rejectSelected = async () => {
   }
 }
 
-onMounted(async () => { await Promise.all([loadPendingSuppliers(), loadVerifiedSuppliers()]) })
+let unsubscribeSupplierApplications = null
+let unsubscribeSuppliers = null
+
+onMounted(async () => {
+  await Promise.all([loadPendingSuppliers(), loadVerifiedSuppliers()])
+  unsubscribeSupplierApplications = onSnapshot(collection(db, 'supplierApplications'), () => loadPendingSuppliers(), (err) => {
+    console.error('Failed to listen to supplier applications:', err)
+  })
+  unsubscribeSuppliers = onSnapshot(collection(db, 'suppliers'), () => loadVerifiedSuppliers(true), (err) => {
+    console.error('Failed to listen to verified suppliers:', err)
+  })
+})
+
+onUnmounted(() => {
+  unsubscribeSupplierApplications?.()
+  unsubscribeSuppliers?.()
+})
 </script>

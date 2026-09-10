@@ -96,6 +96,7 @@ import { toast } from 'vue3-toastify'
 import { useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
 import { classifyAttendanceRecord } from '@/utils/attendanceStatus'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 const READER_ID = 'attendance-qr-reader'
 
@@ -171,6 +172,35 @@ export default {
     }
 
     const getAttendanceDocRef = () => doc(db, 'attendance', `${currentUserId.value}_${todayKey.value}`)
+
+    const getCurrentLocation = () => new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error('Location is not supported by this browser.'))
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve(position.coords),
+        () => reject(new Error('Location permission is required to record attendance.')),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      )
+    })
+
+    const recordAttendance = async (payload) => {
+      const token = await auth.currentUser.getIdToken()
+      let lastError = null
+      for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+        try {
+          const response = await fetch(`${baseUrl}/attendance/record`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(payload),
+          })
+          const data = await response.json().catch(() => ({}))
+          if (!response.ok) throw new Error(data.error || 'Attendance request failed.')
+          return data
+        } catch (error) {
+          lastError = error
+        }
+      }
+      throw lastError || new Error('Attendance service is unavailable.')
+    }
 
     const loadEmployeeProfile = async () => {
       const user = auth.currentUser
@@ -263,6 +293,23 @@ export default {
           toast.error('Attendance QR is invalid.')
           return
         }
+
+        const coords = await getCurrentLocation()
+        const response = await recordAttendance({
+          branchId: currentBranchId.value,
+          qrToken: String(payload.token || '').trim(),
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: coords.accuracy,
+        })
+        const recordedAction = response.action === 'clock_out' ? 'Clock Out' : 'Clock In'
+        const record = response.record || {}
+        attendanceRecord.value = { ...attendanceRecord.value, ...record }
+        lastAttendanceAction.value = recordedAction
+        lastAttendanceTime.value = record.timeOut || record.timeIn || 'Recorded by server'
+        setStatus(`${recordedAction} recorded successfully using QR and location verification.`, 'success')
+        toast.success(`${recordedAction} recorded successfully.`)
+        return
 
         const now = new Date()
         const timeLabel = now.toLocaleTimeString('en-PH', {

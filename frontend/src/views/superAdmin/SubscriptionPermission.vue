@@ -160,7 +160,7 @@
 <script>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
-import Swal from 'sweetalert2'
+import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import {
@@ -309,7 +309,7 @@ export default {
           updatedAt: serverTimestamp(),
         }, { merge: true })
         feature.key = key
-        await Swal.fire({ title: 'Saved', text: `${feature.label} feature updated.`, icon: 'success', timer: 1100, showConfirmButton: false })
+        await systemAdminSwal.fire({ title: 'Saved', text: `${feature.label} feature updated.`, icon: 'success', timer: 1100, showConfirmButton: false })
       } catch (err) {
         console.error('Error saving subscription feature:', err)
         error.value = 'Failed to save the subscription feature.'
@@ -366,7 +366,7 @@ export default {
           [planEntry.key]: cleanPermissions,
         }
 
-        await Swal.fire({
+        await systemAdminSwal.fire({
           title: 'Saved',
           text: `${planEntry.label} permissions updated.`,
           icon: 'success',

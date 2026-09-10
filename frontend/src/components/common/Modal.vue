@@ -10,7 +10,7 @@
           <slot name="header">
             <h3 v-if="title" class="text-lg font-semibold">{{ title }}</h3>
           </slot>
-          <button @click="closeModal" class="text-gray-400 hover:text-gray-600">
+          <button type="button" @click="closeModal" class="text-gray-400 hover:text-gray-600">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
             </svg>

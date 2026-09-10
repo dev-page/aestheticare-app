@@ -176,6 +176,14 @@ export const usePermissionsStore = defineStore('permissions', () => {
             ...(Array.isArray(data.permissions) ? data.permissions : []),
             ...(Array.isArray(data.effectivePermissions) ? data.effectivePermissions : []),
           ]
+          const normalizedStoredRole = String(data.role || data.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+          if (
+            ['superadmin', 'systemadmin', 'sysadmin'].includes(normalizedStoredRole) &&
+            !data.adminRole &&
+            !userPermissions.value.length
+          ) {
+            userPermissions.value.push(fullAccessPermissionKey)
+          }
           const nextCustomRoleIds = normalizeCustomRoleIds(data)
           const nextUserType = String(data.userType || '').trim().toLowerCase()
           const isStaffUser = nextUserType === 'staff'

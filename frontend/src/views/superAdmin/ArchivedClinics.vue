@@ -80,8 +80,8 @@
 </template>
 
 <script>
-import { computed, onMounted, ref } from 'vue'
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { collection, doc, getDoc, getDocs, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
@@ -118,6 +118,7 @@ export default {
     const error = ref('')
     const search = ref('')
     const clinics = ref([])
+    let unsubscribeClinics = null
 
     const statusClass = (status) => {
       const normalized = normalizeStatus(status)
@@ -209,7 +210,13 @@ export default {
       })
     })
 
-    onMounted(loadArchivedClinics)
+    onMounted(() => {
+      loadArchivedClinics()
+      unsubscribeClinics = onSnapshot(collection(db, 'clinics'), () => loadArchivedClinics(), (err) => {
+        console.error('Failed to listen to archived clinics:', err)
+      })
+    })
+    onUnmounted(() => unsubscribeClinics?.())
 
     return {
       loading,

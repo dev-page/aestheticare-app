@@ -69,6 +69,9 @@
                 <option>Data Issue</option>
                 <option>Performance</option>
                 <option>Billing/Payments</option>
+                <option>Clinic Complaint</option>
+                <option>Service Complaint</option>
+                <option>Employee Complaint</option>
                 <option>Feature Request</option>
                 <option>Other</option>
               </select>
@@ -95,6 +98,19 @@
               :class="isModuleView ? 'support-input support-input-module' : 'support-input'"
               placeholder="Example: Owner Dashboard > Attendance"
             />
+          </div>
+
+          <div v-if="showClinicSelector">
+            <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Clinic involved</label>
+            <select
+              v-model="selectedClinicId"
+              :class="isModuleView ? 'support-input support-input-module' : 'support-input'"
+              :required="clinicSelectionRequired"
+            >
+              <option disabled value="">Select the clinic involved</option>
+              <option v-for="clinic in clinicOptions" :key="clinic.id" :value="clinic.id">{{ clinic.name }}</option>
+            </select>
+            <p v-if="branchId" class="mt-1 text-xs text-slate-400">The clinic is linked automatically from your account.</p>
           </div>
 
           <div>
@@ -162,7 +178,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { getFirestore, addDoc, collection, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { getFirestore, addDoc, collection, doc, getDoc, getDocs, query, setDoc, serverTimestamp, where } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { onAuthStateChanged } from 'firebase/auth'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
@@ -191,6 +207,8 @@ export default {
     const role = ref('')
     const userType = ref('')
     const branchId = ref('')
+    const clinicOptions = ref([])
+    const selectedClinicId = ref('')
     const reporterName = ref('')
     const reporterEmail = ref('')
     const sidebarCollapsed = ref(false)
@@ -215,6 +233,8 @@ export default {
       return ''
     })
     const isModuleView = computed(() => panelKey.value === 'owner' || panelKey.value === 'employee')
+    const showClinicSelector = computed(() => Boolean(branchId.value) || ['Clinic Complaint', 'Service Complaint', 'Employee Complaint'].includes(category.value) || panelKey.value === 'customer')
+    const clinicSelectionRequired = computed(() => ['Clinic Complaint', 'Service Complaint', 'Employee Complaint'].includes(category.value))
 
     const planLabel = computed(() => {
       const raw = String(activePlan.value || '').trim().toLowerCase()
@@ -301,12 +321,35 @@ export default {
       location.value = ''
       description.value = ''
       steps.value = ''
+      if (!branchId.value) selectedClinicId.value = ''
       clearProof()
+    }
+
+    const loadClinicOptions = async () => {
+      try {
+        const snapshot = await getDocs(query(collection(db, 'clinics'), where('isPublished', '==', true)))
+        clinicOptions.value = snapshot.docs
+          .map((clinicDoc) => ({ id: clinicDoc.id, ...clinicDoc.data() }))
+          .filter((clinic) => String(clinic.approvalStatus || '').toLowerCase().includes('approved') || clinic.isPublished === true)
+          .map((clinic) => ({
+            id: clinic.id,
+            name: clinic.clinicName || clinic.clinicBranch || clinic.companyName || 'Unnamed Clinic',
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name))
+      } catch (error) {
+        console.error('Failed to load clinic options for report:', error)
+      }
     }
 
     const submitReport = async () => {
       if (!subject.value || !category.value || !description.value) {
         toast.error('Please complete the required fields before submitting.')
+        return
+      }
+
+      const linkedClinicId = branchId.value || selectedClinicId.value
+      if (clinicSelectionRequired.value && !linkedClinicId) {
+        toast.error('Select the clinic involved in this complaint.')
         return
       }
 
@@ -336,7 +379,9 @@ export default {
           userName: reporterName.value || '',
           role: role.value || '',
           userType: userType.value || '',
-          branchId: branchId.value || '',
+          branchId: linkedClinicId || '',
+          clinicId: linkedClinicId || '',
+          clinicName: clinicOptions.value.find((clinic) => clinic.id === linkedClinicId)?.name || '',
           subject: subject.value,
           category: category.value,
           severity: severity.value,
@@ -346,6 +391,11 @@ export default {
           proofUrl,
           proofPath,
           status: 'Open',
+          assignedAdminId: '',
+          assignedAdminName: '',
+          internalNote: '',
+          resolutionNote: '',
+          statusHistory: [{ status: 'Open', byId: user.uid, byName: reporterName.value || user.email || 'Reporter', at: new Date() }],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         })
@@ -412,6 +462,18 @@ export default {
         userType.value = data.userType || ''
         branchId.value = data.branchId || ''
         reporterName.value = `${data.firstName || ''} ${data.lastName || ''}`.trim()
+        selectedClinicId.value = data.branchId || ''
+        await loadClinicOptions()
+        if (data.branchId && !clinicOptions.value.some((clinic) => clinic.id === data.branchId)) {
+          const branchSnapshot = await getDoc(doc(db, 'clinics', data.branchId))
+          if (branchSnapshot.exists()) {
+            const branchData = branchSnapshot.data() || {}
+            clinicOptions.value.push({
+              id: data.branchId,
+              name: branchData.clinicName || branchData.clinicBranch || branchData.companyName || 'Assigned Clinic',
+            })
+          }
+        }
 
         if (String(role.value || '').toLowerCase().includes('superadmin')) {
           router.replace('/superadmin/tickets')
@@ -434,6 +496,11 @@ export default {
     return {
       reporterName,
       reporterEmail,
+      branchId,
+      clinicOptions,
+      selectedClinicId,
+      showClinicSelector,
+      clinicSelectionRequired,
       subject,
       category,
       severity,

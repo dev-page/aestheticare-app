@@ -231,10 +231,10 @@
                     </button>
                     <button
                       @click="markForLogisticsClaim(request)"
-                      :disabled="request.status === 'Cancelled' || request.logisticsStatus === 'Claimed' || request.budgetStatus !== 'Approved'"
+                      :disabled="request.status === 'Cancelled' || ['Claimed', 'Ready for Claim'].includes(request.logisticsStatus) || request.budgetStatus !== 'Approved'"
                       class="text-sky-400 hover:text-sky-300 transition-colors"
-                      :class="{ 'opacity-40 cursor-not-allowed hover:text-sky-400': request.status === 'Cancelled' || request.logisticsStatus === 'Claimed' || request.budgetStatus !== 'Approved' }"
-                      title="Mark order for logistics claim"
+                      :class="{ 'opacity-40 cursor-not-allowed hover:text-sky-400': request.status === 'Cancelled' || ['Claimed', 'Ready for Claim'].includes(request.logisticsStatus) || request.budgetStatus !== 'Approved' }"
+                      title="Send order to Logistics for claiming"
                     >
                       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h18M12 3v18"></path>
@@ -1211,28 +1211,32 @@ export default {
           toast.info('Approve the budget first before claiming the order.')
           return
         }
+        if (String(request.logisticsStatus || '').toLowerCase() === 'ready for claim') {
+          toast.info('This order is already waiting for Logistics to claim it.')
+          return
+        }
         if (String(request.logisticsStatus || '').toLowerCase() === 'claimed') {
-          toast.info('This order has already been claimed for logistics.')
+          toast.info('This order has already been claimed by Logistics.')
           return
         }
 
         await updateDoc(doc(db, 'purchaseRequests', request.id), {
-          logisticsStatus: 'Claimed',
-          workflowStage: 'Claimed by Logistics',
-          logisticsClaimedAt: serverTimestamp(),
-          logisticsClaimedBy: currentUserId.value || null,
+          logisticsStatus: 'Ready for Claim',
+          workflowStage: 'Ready for Logistics Claim',
+          logisticsReadyAt: serverTimestamp(),
+          logisticsReadyBy: currentUserId.value || null,
           updatedAt: serverTimestamp()
         })
-        request.logisticsStatus = 'Claimed'
-        request.workflowStage = 'Claimed by Logistics'
-        await logManagerActivity(`Marked purchase order for logistics claim: ${request.item || 'item'}.`, {
-          type: 'purchase_request_logistics_claimed',
+        request.logisticsStatus = 'Ready for Claim'
+        request.workflowStage = 'Ready for Logistics Claim'
+        await logManagerActivity(`Sent purchase order to Logistics for claiming: ${request.item || 'item'}.`, {
+          type: 'purchase_request_logistics_ready',
           requestId: request.id,
           item: request.item || '',
           supplier: request.supplier || '',
-          details: `Order claimed for logistics dispatch: ${request.item || 'item'}.`
+          details: `Order is ready for Logistics to claim: ${request.item || 'item'}.`
         })
-        toast.success('Order marked for logistics claim.')
+        toast.success('Order sent to Logistics for claiming.')
         await loadRequests()
       } catch (error) {
         console.error(error)

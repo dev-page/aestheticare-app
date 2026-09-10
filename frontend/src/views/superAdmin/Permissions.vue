@@ -124,7 +124,7 @@
 <script>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
-import Swal from 'sweetalert2'
+import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 
@@ -283,7 +283,7 @@ export default {
         if (auto) {
           localStorage.setItem('permissions:autosync:v1', '1')
         } else {
-          await Swal.fire({
+          await systemAdminSwal.fire({
             title: 'Synced',
             text: 'Role permissions now reflect available pages.',
             icon: 'success',
@@ -326,7 +326,7 @@ export default {
           [roleEntry.key]: cleanPermissions,
         }
 
-        await Swal.fire({
+        await systemAdminSwal.fire({
           title: 'Saved',
           text: `${roleEntry.label} permissions updated.`,
           icon: 'success',

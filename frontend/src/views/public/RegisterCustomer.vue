@@ -20,8 +20,10 @@ const goToRegisterChooser = async () => {
 
 const firstName = ref('')
 const midName = ref('')
+const middleNameEnabled = ref(false)
 const lastName = ref('')
 const suffix = ref('')
+const suffixEnabled = ref(false)
 const email = ref('')
 const emailError = ref('')
 const emailCheckingTimer = ref(null)
@@ -61,6 +63,10 @@ const showPrivacy = ref(false)
 const termsAccepted = ref(false)
 const contactNumber = ref('')
 const address = ref('')
+const addressBuildingNumber = ref('')
+const addressStreetName = ref('')
+const addressBuildingNumberEnabled = ref(false)
+const addressStreetNameEnabled = ref(false)
 const addressStreet = ref('')
 const addressBarangay = ref('')
 const addressCity = ref('')
@@ -753,8 +759,10 @@ const handleEmailDraftInput = () => {
 const clearFormFields = () => {
   firstName.value = ''
   midName.value = ''
+  middleNameEnabled.value = false
   lastName.value = ''
   suffix.value = ''
+  suffixEnabled.value = false
   email.value = ''
   password.value = ''
   confirmPassword.value = ''
@@ -763,6 +771,10 @@ const clearFormFields = () => {
   birthDateError.value = ''
   contactNumber.value = ''
   address.value = ''
+  addressBuildingNumber.value = ''
+  addressStreetName.value = ''
+  addressBuildingNumberEnabled.value = false
+  addressStreetNameEnabled.value = false
   addressStreet.value = ''
   addressBarangay.value = ''
   addressCity.value = ''
@@ -1027,8 +1039,8 @@ const register = async () => {
     return
   }
 
-  if (!/^[1-9]\d{9}$/.test(String(contactNumber.value || '').trim())) {
-    toast.error('Please enter a valid 10-digit mobile number after +63.')
+  if (!/^9\d{9}$/.test(String(contactNumber.value || '').trim())) {
+    toast.error('Please enter a 10-digit mobile number starting with 9 after +63.')
     return
   }
 
@@ -1072,13 +1084,15 @@ const register = async () => {
 
     await setDoc(doc(db, 'users', uid), {
       firstName: firstName.value.trim(),
-      midName: midName.value.trim(),
+      midName: middleNameEnabled.value ? midName.value.trim() : '',
       lastName: lastName.value.trim(),
-      suffix: suffix.value.trim(),
+      suffix: suffixEnabled.value ? suffix.value.trim() : '',
       email: normalizedEmail,
       birthDate: birthDate.value ? new Date(birthDate.value) : null,
       contactNumber: `+63${String(contactNumber.value || '').trim()}`,
       address: String(address.value || '').trim(),
+      addressBuildingNumber: addressBuildingNumberEnabled.value ? addressBuildingNumber.value.trim() : '',
+      addressStreetName: addressStreetNameEnabled.value ? addressStreetName.value.trim() : '',
       addressStreet: String(addressStreet.value || '').trim(),
       addressBarangay: String(addressBarangay.value || '').trim(),
       addressCity: String(addressCity.value || '').trim(),
@@ -1253,22 +1267,41 @@ onBeforeUnmount(() => {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="relative">
                 <input v-model="firstName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
-                <label class="floating-label">First Name</label>
+                <label class="registration-name-label">First Name</label>
               </div>
-              <div class="relative">
-                <input v-model="midName" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" />
-                <label class="floating-label">Middle Name <span class="text-gold-500 font-normal">(Optional)</span></label>
+              <div class="registration-optional-field">
+                <div class="relative flex-1 min-w-0">
+                  <label class="registration-field-checkbox">
+                    <input v-model="middleNameEnabled" type="checkbox" aria-label="Enable middle name" @change="!middleNameEnabled && (midName = '')" />
+                  </label>
+                  <input v-model="midName" :disabled="!middleNameEnabled" placeholder=" " aria-label="Middle Name" class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3" />
+                  <label class="registration-name-label">Middle Name</label>
+                </div>
               </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="relative">
                 <input v-model="lastName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
-                <label class="floating-label">Last Name</label>
+                <label class="registration-name-label">Last Name</label>
               </div>
-              <div class="relative">
-                <input v-model="suffix" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" />
-                <label class="floating-label">Suffix <span class="text-gold-500 font-normal">(Optional)</span></label>
+              <div class="registration-optional-field">
+                <div class="relative flex-1 min-w-0">
+                  <label class="registration-field-checkbox">
+                    <input v-model="suffixEnabled" type="checkbox" aria-label="Enable suffix" @change="!suffixEnabled && (suffix = '')" />
+                  </label>
+                  <select v-model="suffix" :disabled="!suffixEnabled" aria-label="Suffix" class="peer input registration-suffix-select registration-checkbox-field h-16 pt-4 pb-2 px-3">
+                  <option value="" disabled hidden></option>
+                  <option value="Jr.">Jr.</option>
+                  <option value="Sr.">Sr.</option>
+                  <option value="I">I</option>
+                  <option value="II">II</option>
+                  <option value="III">III</option>
+                  <option value="IV">IV</option>
+                  <option value="V">V</option>
+                  </select>
+                  <label class="registration-name-label">Suffix</label>
+                </div>
               </div>
             </div>
 
@@ -1406,6 +1439,27 @@ onBeforeUnmount(() => {
                   class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-charcoal-700"
                 />
               </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="registration-optional-field">
+                  <div class="relative flex-1 min-w-0">
+                    <label class="registration-field-checkbox">
+                      <input v-model="addressBuildingNumberEnabled" type="checkbox" aria-label="Include house or building number" @change="!addressBuildingNumberEnabled && (addressBuildingNumber = '')" />
+                    </label>
+                    <input v-model="addressBuildingNumber" :disabled="!addressBuildingNumberEnabled" placeholder=" " aria-label="House / Building Number" class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3" />
+                    <label class="registration-name-label">House / Building Number</label>
+                  </div>
+                </div>
+                <div class="registration-optional-field">
+                  <div class="relative flex-1 min-w-0">
+                    <label class="registration-field-checkbox">
+                      <input v-model="addressStreetNameEnabled" type="checkbox" aria-label="Include street, subdivision, or village" @change="!addressStreetNameEnabled && (addressStreetName = '')" />
+                    </label>
+                    <input v-model="addressStreetName" :disabled="!addressStreetNameEnabled" placeholder=" " aria-label="Street / Subdivision / Village" class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3" />
+                    <label class="registration-name-label">Street / Subdivision / Village</label>
+                  </div>
+                </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1608,7 +1662,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <button @click="verifyOtp" class="w-full py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition">
+          <button type="button" @click="verifyOtp" class="w-full py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition">
             Verify OTP
           </button>
         </div>

@@ -226,9 +226,9 @@
 </template>
 
 <script>
-import { onMounted, ref } from 'vue'
-import { collection, doc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore'
-import Swal from 'sweetalert2'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 
@@ -466,7 +466,7 @@ export default {
       const key = planKey(plan)
       const planLabel = String(plan.label || plan.name || plan.id || 'this plan').trim()
 
-      const confirmation = await Swal.fire({
+      const confirmation = await systemAdminSwal.fire({
         title: plan.isDraft ? 'Discard this draft?' : 'Delete this plan?',
         text: plan.isDraft
           ? 'This draft will be removed from the page.'
@@ -500,7 +500,7 @@ export default {
         plans.value = plans.value.filter((entry) => planKey(entry) !== key)
         delete planErrors.value[key]
 
-        await Swal.fire({
+        await systemAdminSwal.fire({
           title: 'Deleted',
           text: `${planLabel} was removed successfully.`,
           icon: 'success',
@@ -524,13 +524,13 @@ export default {
         features: Array.isArray(dbPlan.features) ? dbPlan.features : basePlan.features,
       }, basePlan)
     }
+    let unsubscribePlans = null
 
-    const loadPlans = async () => {
+    const loadPlans = () => {
+      if (unsubscribePlans) unsubscribePlans()
       loading.value = true
       error.value = ''
-
-      try {
-        const snapshot = await getDocs(collection(db, 'subscriptionPlans'))
+      unsubscribePlans = onSnapshot(collection(db, 'subscriptionPlans'), (snapshot) => {
         const dbPlans = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
         const basePlans = defaultPlans()
           .map((plan) => mergePlan(plan, dbPlans.get(plan.id) || {}))
@@ -548,12 +548,12 @@ export default {
 
         plans.value = [...basePlans, ...extraPlans]
         planErrors.value = {}
-      } catch (err) {
+        loading.value = false
+      }, (err) => {
         console.error('Error loading subscription plans:', err)
         error.value = 'Failed to load subscription plans. Please try again.'
-      } finally {
         loading.value = false
-      }
+      })
     }
 
     const addFeature = (plan) => {
@@ -627,7 +627,7 @@ export default {
         plan.name = normalizedName || normalizedLabel
         delete planErrors.value[key]
 
-        await Swal.fire({
+        await systemAdminSwal.fire({
           title: 'Saved',
           text: `${plan.label} plan updated successfully.`,
           icon: 'success',
@@ -643,6 +643,7 @@ export default {
     }
 
     onMounted(loadPlans)
+    onUnmounted(() => unsubscribePlans?.())
 
     return {
       loading,

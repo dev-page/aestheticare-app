@@ -46,18 +46,20 @@
               <th class="text-left text-slate-300 px-4 py-3">Timestamp</th>
               <th class="text-left text-slate-300 px-4 py-3">User</th>
               <th class="text-left text-slate-300 px-4 py-3">Role</th>
+              <th class="text-left text-slate-300 px-4 py-3">Module</th>
               <th class="text-left text-slate-300 px-4 py-3">Action</th>
+              <th class="text-left text-slate-300 px-4 py-3">Details</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td class="px-4 py-3 text-slate-300" colspan="5">Loading activity logs...</td>
+              <td class="px-4 py-3 text-slate-300" colspan="6">Loading activity logs...</td>
             </tr>
             <tr v-else-if="error">
-              <td class="px-4 py-3 text-rose-300" colspan="5">{{ error }}</td>
+              <td class="px-4 py-3 text-rose-300" colspan="6">{{ error }}</td>
             </tr>
             <tr v-else-if="!logs.length">
-              <td class="px-4 py-3 text-slate-200" colspan="5">No activity logs yet.</td>
+              <td class="px-4 py-3 text-slate-200" colspan="6">No activity logs yet.</td>
             </tr>
             <tr v-else v-for="log in logs" :key="log.id" class="border-t border-slate-700/60">
               <td class="px-4 py-3 text-slate-300">{{ formatDate(log.createdAt) }}</td>
@@ -66,7 +68,9 @@
                 {{ log.actorRole || '-' }}
                 <span v-if="log.actorUserType" class="text-xs text-slate-500">({{ log.actorUserType }})</span>
               </td>
+              <td class="px-4 py-3 text-slate-300">{{ log.module || 'General' }}</td>
               <td class="px-4 py-3 text-slate-200">{{ log.action || '-' }}</td>
+              <td class="max-w-md truncate px-4 py-3 text-slate-400" :title="log.details || ''">{{ log.details || '-' }}</td>
             </tr>
           </tbody>
         </table>
@@ -76,8 +80,8 @@
 </template>
 
 <script>
-import { onMounted, ref } from 'vue'
-import { collection, getDocs, orderBy, query } from 'firebase/firestore'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 
@@ -93,6 +97,7 @@ export default {
     const toDate = ref(new Date().toISOString().slice(0,10))
     const roleFilter = ref('')
     const searchUser = ref('')
+    let unsubscribeLogs = null
 
     const formatDate = (timestamp) => {
       if (!timestamp?.toDate) return '-'
@@ -111,12 +116,12 @@ export default {
 
     const allowedRoles = new Set(['Superadmin', 'Clinic Admin', 'Customer', 'Supplier'])
 
-    const loadLogs = async () => {
+    const loadLogs = () => {
+      if (unsubscribeLogs) unsubscribeLogs()
       loading.value = true
       error.value = ''
-      try {
-        const activityQuery = query(collection(db, 'activities'), orderBy('createdAt', 'desc'))
-        const snapshot = await getDocs(activityQuery)
+      const activityQuery = query(collection(db, 'activities'), orderBy('createdAt', 'desc'))
+      unsubscribeLogs = onSnapshot(activityQuery, (snapshot) => {
         const all = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
 
         // Apply server-like filters client-side for now
@@ -142,21 +147,21 @@ export default {
             return allowedRoles.has(normalizeRole(log.actorRole))
           })
 
-      } catch (err) {
+        loading.value = false
+      }, (err) => {
         console.error('Failed to load activity logs:', err)
         error.value = 'Failed to load activity logs.'
         logs.value = []
-      } finally {
         loading.value = false
-      }
+      })
     }
 
     const reload = () => { fromDate.value = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0,10); toDate.value = new Date().toISOString().slice(0,10); roleFilter.value = ''; searchUser.value = ''; loadLogs() }
 
     const exportCsv = () => {
       if (!logs.value.length) return alert('No logs to export')
-      const rows = [['Timestamp','User','Email','Role','Action']]
-      logs.value.forEach((l) => rows.push([formatDate(l.createdAt), l.actorName || '-', l.actorEmail || '-', l.actorRole || '-', String(l.action || '-')]))
+      const rows = [['Timestamp','User','Email','Role','Module','Action','Details']]
+      logs.value.forEach((l) => rows.push([formatDate(l.createdAt), l.actorName || '-', l.actorEmail || '-', l.actorRole || '-', l.module || 'General', String(l.action || '-'), String(l.details || '-')]))
       const csv = rows.map(r=> r.map(c=> '"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n')
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
       const url = URL.createObjectURL(blob)
@@ -168,6 +173,7 @@ export default {
     }
 
     onMounted(loadLogs)
+    onUnmounted(() => unsubscribeLogs?.())
 
     return {
       logs,

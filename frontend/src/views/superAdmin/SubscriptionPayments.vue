@@ -45,8 +45,8 @@
 </template>
 
 <script>
-import { onMounted, ref } from 'vue'
-import { collection, getDocs, orderBy, query } from 'firebase/firestore'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 
@@ -57,6 +57,7 @@ export default {
     const payments = ref([])
     const loading = ref(false)
     const error = ref('')
+    let unsubscribePayments = null
 
     const toNumber = (value) => {
       const parsed = Number(value)
@@ -88,26 +89,27 @@ export default {
       }).format(date)
     }
 
-    const loadPayments = async () => {
+    const loadPayments = () => {
+      if (unsubscribePayments) unsubscribePayments()
       loading.value = true
       error.value = ''
-      try {
-        const q = query(collection(db, 'planPayments'), orderBy('createdAt', 'desc'))
-        const snapshot = await getDocs(q)
+      const q = query(collection(db, 'planPayments'), orderBy('createdAt', 'desc'))
+      unsubscribePayments = onSnapshot(q, (snapshot) => {
         payments.value = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data(),
         }))
-      } catch (err) {
+        loading.value = false
+      }, (err) => {
         console.error('Failed to load plan payments:', err)
         error.value = 'Failed to load payments.'
         payments.value = []
-      } finally {
         loading.value = false
-      }
+      })
     }
 
     onMounted(loadPayments)
+    onUnmounted(() => unsubscribePayments?.())
 
     return {
       payments,

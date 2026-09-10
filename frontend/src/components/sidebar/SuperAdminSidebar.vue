@@ -55,8 +55,9 @@ export default {
         ]
       },
       { label: 'User Reports', icon: 'reportIssue', to: '/superadmin/tickets' },
-      { label: 'System Settings', icon: 'cog', to: '/superadmin/system-settings' },
-      { label: 'Activity Logs', icon: 'activity', to: '/superadmin/activity-logs' }
+      { label: 'Activity Logs', icon: 'activity', to: '/superadmin/activity-logs' },
+      { label: 'Account Settings', icon: 'settings', to: '/superadmin/account-settings' },
+      { label: 'System Settings', icon: 'cog', to: '/superadmin/system-settings' }
     ]
 
     return { items }

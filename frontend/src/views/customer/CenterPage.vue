@@ -34,18 +34,21 @@
             </div>
           </div>
 
-          <div class="mt-6 border-t border-[#ebd6bc] pt-4">
+          <div class="center-tabs mt-6" role="tablist" aria-label="Center sections">
             <div class="flex flex-wrap gap-2">
               <button
                 v-for="tab in tabs"
                 :key="tab"
+                type="button"
                 @click="activeTab = tab"
                 :class="[
-                  'center-tab-button px-4 py-2 rounded-full text-sm font-semibold transition-colors',
+                  'center-tab-button',
                   activeTab === tab
                     ? 'is-active'
                     : ''
                 ]"
+                role="tab"
+                :aria-selected="activeTab === tab"
               >
                 {{ tab }}
               </button>
@@ -2775,17 +2778,33 @@ const formatChatTime = (timestamp) => {
 }
 
 .center-tab-button {
-  border: 1px solid rgba(224, 192, 154, 0.85);
-  background: rgba(255, 251, 244, 0.9);
-  color: #7b5534;
-  box-shadow: 0 8px 18px rgba(84, 54, 34, 0.08);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0.75rem 0.75rem 0 0;
+  padding: 0.8rem 1rem;
+  background: transparent;
+  color: #775743;
+  font-size: 0.875rem;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.center-tab-button:hover {
+  background: rgba(255, 255, 255, 0.55);
+  color: #3d281d;
 }
 
 .center-tab-button.is-active {
-  background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%);
-  color: #fff8eb;
-  border-color: rgba(111, 67, 41, 0.95);
-  box-shadow: 0 12px 28px rgba(111, 63, 42, 0.18);
+  border-color: #8d5a3b;
+  background: rgba(255, 255, 255, 0.72);
+  color: #3d281d;
+}
+
+.center-tabs {
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(180, 132, 87, 0.35);
+  padding: 0.25rem;
 }
 
 .center-panel,

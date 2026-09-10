@@ -35,7 +35,7 @@ const routes = [
   { path: "/face-reg", name: "face-registration", component: () => import("@/views/clinic/attendance/FaceRegistration.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:create" } },
   { path: "/support/report", name: "support-report", component: () => import("@/views/common/SupportReport.vue"), meta: { requiresAuth: true, requiresPermission: "support:view" } },
   { path: "/notifications", name: "notifications", component: () => import("@/views/common/Notifications.vue"), meta: { requiresAuth: true, requiresPermission: "notifications:view" } },
-  { path: "/attendance/scan", name: "attendance-qr-scan", component: () => import("@/views/clinic/attendance/AttendanceQrScan.vue"), meta: { requiresAuth: true, requiresFeature: "attendance" } },
+  { path: "/attendance/scan", name: "attendance-qr-scan", component: () => import("@/views/clinic/attendance/AttendanceQrScan.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:create", requiresFeature: "attendance" } },
 
   //{ path: "/customer/home", name: "customer-home", component: () => import("@/views/customer/CustomerHome.vue"), meta: { requiresAuth: true } },
   //{ path: "/customer/home/view-centers", name: "customer-view-center", component: () => import("@/views/customer/ViewCenterDetails.vue"), meta: { requiresAuth: true } },
@@ -138,6 +138,7 @@ const routes = [
   { path: "/customer/checkout", name: "customer-checkout", component: () => import("@/views/customer/Checkout.vue"), meta: { requiresAuth: true } },
   { path: "/customer/cart", name: "customer-cart", component: () => import("@/views/customer/MyCart.vue"), meta: { requiresAuth: true } },
   { path: "/customer/profile", name: "customer-profile", component: () => import("@/views/customer/MyProfile.vue"), meta: { requiresAuth: true } },
+  { path: "/customer/account-settings", name: "customer-account-settings", component: () => import("@/views/customer/AccountSettings.vue"), meta: { requiresAuth: true } },
 
   // Supplier routes
   { path: "/supplier", redirect: "/supplier/dashboard" },
@@ -146,21 +147,22 @@ const routes = [
   { path: "/supplier/supplies", name: "supplier-supplies", component: () => import("@/views/supplier/SupplierSupplies.vue"), meta: { requiresAuth: true } },
 
   // Superadmin routes
-  { path: "/superadmin/dashboard", name: "superadmin-dashboard", component: () => import("@/views/superAdmin/Dashboard.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/admin-list", name: "superadmin-admin-list", component: () => import("@/views/superAdmin/AdminList.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/subscription/plans", name: "superadmin-subscription-plans", component: () => import("@/views/superAdmin/SubscriptionPlans.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/subscription/permissions", name: "superadmin-subscription-permissions", component: () => import("@/views/superAdmin/SubscriptionPermission.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/subscription/payments", name: "superadmin-subscription-payments", component: () => import("@/views/superAdmin/SubscriptionPayments.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/payments/analytics", name: "superadmin-payments-analytics", component: () => import("@/views/superAdmin/PaymentsAnalytics.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/system-settings", name: "superadmin-system-settings", component: () => import("@/views/superAdmin/SystemSettings.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/clinics/verification", name: "superadmin-clinic-verification", component: () => import("@/views/superAdmin/ClinicVerification.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/suppliers/verification", name: "superadmin-supplier-verification", component: () => import("@/views/superAdmin/SupplierVerification.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/clinics/verified", name: "superadmin-clinics-verified", component: () => import("@/views/superAdmin/VerifiedClinics.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/clinics/archived", name: "superadmin-clinics-archived", component: () => import("@/views/superAdmin/ArchivedClinics.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/accounts/users", name: "superadmin-accounts-users", component: () => import("@/views/superAdmin/AccountManagement.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/activity-logs", name: "superadmin-activity-logs", component: () => import("@/views/superAdmin/ActivityLogs.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/account-closure-requests", name: "superadmin-account-closure-requests", component: () => import("@/views/superAdmin/AccountClosureRequests.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/tickets", name: "superadmin-tickets", component: () => import("@/views/superAdmin/UserTickets.vue"), meta: { requiresAuth: true } },
+  { path: "/superadmin/dashboard", name: "superadmin-dashboard", component: () => import("@/views/superAdmin/Dashboard.vue"), meta: { requiresAuth: true, requiresPermission: "system:dashboard:view" } },
+  { path: "/superadmin/admin-list", name: "superadmin-admin-list", component: () => import("@/views/superAdmin/AdminList.vue"), meta: { requiresAuth: true, requiresPermission: "system:admins:manage" } },
+  { path: "/superadmin/subscription/plans", name: "superadmin-subscription-plans", component: () => import("@/views/superAdmin/SubscriptionPlans.vue"), meta: { requiresAuth: true, requiresPermission: "system:plans:manage" } },
+  { path: "/superadmin/subscription/permissions", name: "superadmin-subscription-permissions", component: () => import("@/views/superAdmin/SubscriptionPermission.vue"), meta: { requiresAuth: true, requiresPermission: "system:permissions:manage" } },
+  { path: "/superadmin/subscription/payments", name: "superadmin-subscription-payments", component: () => import("@/views/superAdmin/SubscriptionPayments.vue"), meta: { requiresAuth: true, requiresPermission: "system:payments:view" } },
+  { path: "/superadmin/payments/analytics", name: "superadmin-payments-analytics", component: () => import("@/views/superAdmin/PaymentsAnalytics.vue"), meta: { requiresAuth: true, requiresPermission: "system:analytics:view" } },
+  { path: "/superadmin/system-settings", name: "superadmin-system-settings", component: () => import("@/views/superAdmin/SystemSettings.vue"), meta: { requiresAuth: true, requiresPermission: "system:settings:manage" } },
+  { path: "/superadmin/clinics/verification", name: "superadmin-clinic-verification", component: () => import("@/views/superAdmin/ClinicVerification.vue"), meta: { requiresAuth: true, requiresPermission: "system:clinics:verify" } },
+  { path: "/superadmin/suppliers/verification", name: "superadmin-supplier-verification", component: () => import("@/views/superAdmin/SupplierVerification.vue"), meta: { requiresAuth: true, requiresPermission: "system:suppliers:verify" } },
+  { path: "/superadmin/clinics/verified", name: "superadmin-clinics-verified", component: () => import("@/views/superAdmin/VerifiedClinics.vue"), meta: { requiresAuth: true, requiresPermission: "system:clinics:view" } },
+  { path: "/superadmin/clinics/archived", name: "superadmin-clinics-archived", component: () => import("@/views/superAdmin/ArchivedClinics.vue"), meta: { requiresAuth: true, requiresPermission: "system:clinics:view" } },
+  { path: "/superadmin/accounts/users", name: "superadmin-accounts-users", component: () => import("@/views/superAdmin/AccountManagement.vue"), meta: { requiresAuth: true, requiresPermission: "system:accounts:view" } },
+  { path: "/superadmin/activity-logs", name: "superadmin-activity-logs", component: () => import("@/views/superAdmin/ActivityLogs.vue"), meta: { requiresAuth: true, requiresPermission: "system:logs:view" } },
+  { path: "/superadmin/account-settings", name: "superadmin-account-settings", component: () => import("@/views/superAdmin/AccountSettings.vue"), meta: { requiresAuth: true } },
+  { path: "/superadmin/account-closure-requests", name: "superadmin-account-closure-requests", component: () => import("@/views/superAdmin/AccountClosureRequests.vue"), meta: { requiresAuth: true, requiresPermission: "system:closures:manage" } },
+  { path: "/superadmin/tickets", name: "superadmin-tickets", component: () => import("@/views/superAdmin/UserTickets.vue"), meta: { requiresAuth: true, requiresPermission: "system:tickets:manage" } },
   // Unknown URLs must never expose an unhandled route or blank protected view.
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
@@ -218,6 +220,7 @@ const permissionAlternates = {
   'inventory:create': ['inventory:review'],
   'inventory:review': ['inventory:create'],
   'orders:view': ['inventory:view'],
+  'orders:update': ['inventory:update', 'inventory:review'],
 };
 
 // 🔧 Global guard

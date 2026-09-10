@@ -273,7 +273,11 @@ const applyBoundaryOverlays = () => {
     paths: [outerRing, ...holeRings],
     fillColor: 'rgba(18, 11, 8, 0.72)',
     fillOpacity: 1,
-    strokeOpacity: 0,
+    // A small same-color stroke closes hairline seams between adjacent
+    // municipality polygons without exposing their individual borders.
+    strokeColor: '#120b08',
+    strokeOpacity: 0.95,
+    strokeWeight: 2,
     clickable: false,
     map,
     zIndex: 3,
@@ -792,9 +796,12 @@ const initMap = async () => {
   if (hasOfficialCaviteBoundary.value) {
     applyBoundaryOverlays()
     const bounds = geoJsonGeometryBounds(caviteBoundaryGeometry.value)
-    if (bounds) {
+    // Do not refit to the province after a pin/search selection. The
+    // coordinate props can reinitialize this component after selection.
+    if (bounds && !hasValidInitialCoords) {
       fitMapToBounds(expandBounds(bounds, 0.4))
     }
+    if (hasValidInitialCoords && map?.setZoom) map.setZoom(16)
   } else {
     clearBoundaryOverlays()
     if (!hasValidInitialCoords && map?.setZoom) {

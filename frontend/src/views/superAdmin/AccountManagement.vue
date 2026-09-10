@@ -77,8 +77,8 @@
 </template>
 
 <script>
-import { computed, onMounted, ref } from 'vue'
-import { collection, getDocs } from 'firebase/firestore'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
@@ -107,6 +107,7 @@ export default {
     const error = ref('')
     const search = ref('')
     const accounts = ref([])
+    let unsubscribeUsers = null
 
     const formatDate = (value) => {
       const date = readTimestamp(value)
@@ -139,13 +140,11 @@ export default {
       return user?.archived === true || status === 'inactive' || status === 'disabled'
     }
 
-    const loadUserAccounts = async () => {
+    const loadUserAccounts = () => {
+      if (unsubscribeUsers) unsubscribeUsers()
       loading.value = true
       error.value = ''
-
-      try {
-        const usersSnap = await getDocs(collection(db, 'users'))
-
+      unsubscribeUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
         const mapped = usersSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
           .filter((user) => !isSystemAdmin(user))
@@ -169,12 +168,12 @@ export default {
           })
 
         accounts.value = sortRecordsNewestFirst(mapped)
-      } catch (err) {
+        loading.value = false
+      }, (err) => {
         console.error('Error loading user accounts:', err)
         error.value = 'Failed to load user accounts. Please try again.'
-      } finally {
         loading.value = false
-      }
+      })
     }
 
 
@@ -198,6 +197,7 @@ export default {
     })
 
     onMounted(loadUserAccounts)
+    onUnmounted(() => unsubscribeUsers?.())
 
     return {
       loading,

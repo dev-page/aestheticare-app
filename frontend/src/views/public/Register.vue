@@ -76,8 +76,10 @@ const goToRegisterChooser = async () => {
 
 const firstName = ref('')
 const midName = ref('')
+const middleNameEnabled = ref(false)
 const lastName = ref('')
 const suffix = ref('')
+const suffixEnabled = ref(false)
 const birthDate = ref('')
 const manualBirthDate = ref('')
 const birthDateError = ref('')
@@ -130,6 +132,10 @@ const clinicLocation = ref('')
 const clinicLocationLat = ref('')
 const clinicLocationLng = ref('')
 const clinicLocationAddress = ref('')
+const clinicBuildingNumber = ref('')
+const clinicStreetName = ref('')
+const clinicBuildingNumberEnabled = ref(false)
+const clinicStreetNameEnabled = ref(false)
 const clinicBarangay = ref('')
 const clinicProvince = ref('')
 const clinicPostalCode = ref('')
@@ -323,6 +329,14 @@ const documentExpiryMap = {
   fdaApproval: ref(''),
   prcIdMedicalDirector: ref(''),
 }
+const documentNumberMap = {
+  businessPermit: ref(''),
+  dohAccreditation: ref(''),
+  fdaApproval: ref(''),
+  prcIdMedicalDirector: ref(''),
+}
+const documentNumberRequired = new Set(Object.keys(documentNumberMap))
+const documentNumberPattern = /^[A-Z0-9][A-Z0-9 ./-]{2,39}$/i
 const approvalRedirecting = ref(false)
 const approvalReviewState = ref('pending')
 const approvalReviewMessage = ref('Your registration is under review. Please allow at least 24 hours for admin review.')
@@ -842,8 +856,8 @@ const sanitizeContactNumber = () => {
     digits = digits.slice(2)
   }
 
-  // Local part after +63 should not start with 0.
-  digits = digits.replace(/^0+/, '')
+  // Normalize local Philippine mobile format to 9XXXXXXXXX after +63.
+  if (digits.startsWith('0')) digits = digits.slice(1)
 
   contactNumber.value = digits.slice(0, 10)
 }
@@ -1191,9 +1205,13 @@ const applyProfileData = (profile) => {
   if (!profile) return
   const safe = (value) => (value === null || value === undefined ? '' : value)
   firstName.value = safe(profile.firstName) || firstName.value
-  midName.value = safe(profile.midName) || midName.value
+  const profileMiddleName = safe(profile.midName)
+  midName.value = profileMiddleName || midName.value
+  middleNameEnabled.value = Boolean(profileMiddleName || midName.value)
   lastName.value = safe(profile.lastName) || lastName.value
-  suffix.value = safe(profile.suffix) || suffix.value
+  const profileSuffix = safe(profile.suffix)
+  suffix.value = profileSuffix || suffix.value
+  suffixEnabled.value = Boolean(profileSuffix || suffix.value)
   if (profile.email) {
     email.value = String(profile.email).trim().toLowerCase()
     otpRecipientEmail.value = email.value
@@ -1205,6 +1223,10 @@ const applyProfileData = (profile) => {
   clinicLocationLat.value = safe(profile.clinicLocationLat) || clinicLocationLat.value
   clinicLocationLng.value = safe(profile.clinicLocationLng) || clinicLocationLng.value
   clinicLocationAddress.value = safe(profile.clinicLocationAddress) || clinicLocationAddress.value
+  clinicBuildingNumber.value = safe(profile.clinicBuildingNumber) || clinicBuildingNumber.value
+  clinicStreetName.value = safe(profile.clinicStreetName) || clinicStreetName.value
+  clinicBuildingNumberEnabled.value = Boolean(clinicBuildingNumber.value)
+  clinicStreetNameEnabled.value = Boolean(clinicStreetName.value)
   authorizedRepPosition.value = safe(profile.authorizedRepPosition) || authorizedRepPosition.value
   companyType.value = safe(profile.companyType) || companyType.value
 
@@ -1228,6 +1250,9 @@ const applyProfileData = (profile) => {
     fdaApproval: storedDocuments?.fdaApproval || null,
     prcIdMedicalDirector: storedDocuments?.prcIdMedicalDirector || storedDocuments?.prcLicenseMedicalDirector || null,
   }
+  Object.keys(documentNumberMap).forEach((docKey) => {
+    documentNumberMap[docKey].value = String(storedDocuments?.[docKey]?.documentNumber || storedDocuments?.[docKey]?.number || '').trim()
+  })
   syncAuthorizedRepPositionOption(authorizedRepPosition.value)
   syncExistingDocumentPreviews()
 }
@@ -1634,6 +1659,8 @@ if (statusResult.resumeStep === 4) {
       clinicLocationLat: clinicData.clinicLocationLat,
       clinicLocationLng: clinicData.clinicLocationLng,
       clinicLocationAddress: clinicData.clinicLocationAddress,
+      clinicBuildingNumber: clinicData.clinicBuildingNumber,
+      clinicStreetName: clinicData.clinicStreetName,
       clinicBarangay: clinicData.clinicBarangay,
       clinicProvince: clinicData.clinicProvince,
       clinicPostalCode: clinicData.clinicPostalCode,
@@ -1777,6 +1804,14 @@ const resetClinicRegistrationFlow = () => {
   setStoredRegistrationUid('')
   setStoredOtpRecipientEmail('')
   otpRecipientEmail.value = ''
+  middleNameEnabled.value = false
+  suffixEnabled.value = false
+  clinicBuildingNumberEnabled.value = false
+  clinicStreetNameEnabled.value = false
+  clinicBuildingNumber.value = ''
+  clinicStreetName.value = ''
+  midName.value = ''
+  suffix.value = ''
   clearOtpInputs()
   secCertificateFile.value = null
   articlesOfIncorporationFile.value = null
@@ -1786,6 +1821,9 @@ const resetClinicRegistrationFlow = () => {
   dohAccreditationFile.value = null
   fdaApprovalFile.value = null
   prcIdMedicalDirectorFile.value = null
+  Object.keys(documentNumberMap).forEach((docKey) => {
+    documentNumberMap[docKey].value = ''
+  })
   existingSubmittedDocuments.value = {
     secCertificate: null,
     articlesOfIncorporation: null,
@@ -2311,8 +2349,8 @@ const checkRegistrationAttempt = async (emailValue) => {
 const registerClinic = async () => {
   if (currentStep.value !== 1) return
   if (!emailChecked.value) {
-    toast.error('Please verify your email first.')
-    return
+    await verifyRegistrationEmail()
+    if (!emailChecked.value || currentStep.value !== 1) return
   }
 
   if (!termsAccepted.value) {
@@ -2353,9 +2391,9 @@ const registerClinic = async () => {
     return
   }
 
-  const phoneRegex = /^[1-9][0-9]{9}$/
+  const phoneRegex = /^9[0-9]{9}$/
   if (!phoneRegex.test(contactNumber.value)) {
-    toast.error('Contact number must be 10 digits after +63 and cannot start with 0')
+    toast.error('Contact number must be 10 digits after +63 and start with 9.')
     return
   }
 
@@ -2411,6 +2449,8 @@ const registerClinic = async () => {
       await Promise.all([
         updateDoc(doc(db, 'users', userUid.value), {
           firstName: firstName.value.trim(),
+          midName: middleNameEnabled.value ? midName.value.trim() : '',
+          suffix: suffixEnabled.value ? suffix.value.trim() : '',
           lastName: lastName.value.trim(),
           birthDate: birthDate.value ? new Date(birthDate.value) : null,
           email: email.value.trim(),
@@ -2426,6 +2466,8 @@ const registerClinic = async () => {
           clinicLocationLat: clinicLocationLat.value,
           clinicLocationLng: clinicLocationLng.value,
           clinicLocationAddress: clinicLocationAddress.value,
+          clinicBuildingNumber: clinicBuildingNumberEnabled.value ? clinicBuildingNumber.value.trim() : '',
+          clinicStreetName: clinicStreetNameEnabled.value ? clinicStreetName.value.trim() : '',
           clinicBarangay: clinicBarangay.value,
           clinicProvince: clinicProvince.value,
           clinicPostalCode: clinicPostalCode.value,
@@ -2456,6 +2498,8 @@ const registerClinic = async () => {
     // 🔹 Save user
     const saveUserPromise = setDoc(doc(db, 'users', uid), {
       firstName: firstName.value.trim(),
+      midName: middleNameEnabled.value ? midName.value.trim() : '',
+      suffix: suffixEnabled.value ? suffix.value.trim() : '',
       lastName: lastName.value.trim(),
       birthDate: birthDate.value ? new Date(birthDate.value) : null,
       email: email.value.trim(),
@@ -2477,6 +2521,8 @@ const registerClinic = async () => {
       clinicLocationLat: clinicLocationLat.value,
       clinicLocationLng: clinicLocationLng.value,
       clinicLocationAddress: clinicLocationAddress.value,
+      clinicBuildingNumber: clinicBuildingNumberEnabled.value ? clinicBuildingNumber.value.trim() : '',
+      clinicStreetName: clinicStreetNameEnabled.value ? clinicStreetName.value.trim() : '',
       clinicBarangay: clinicBarangay.value,
       clinicProvince: clinicProvince.value,
       clinicPostalCode: clinicPostalCode.value,
@@ -2700,6 +2746,19 @@ const submitDocuments = async () => {
   try {
     // Validate required expiry dates before uploading/submitting
     for (const docKey of requiredDocumentKeys.value) {
+      if (documentNumberRequired.has(docKey)) {
+        const documentNumber = String(documentNumberMap[docKey]?.value || '').trim()
+        if (!documentNumber) {
+          toast.error(`Please provide the document number for ${documentLabelMap[docKey] || docKey}.`)
+          isSubmittingDocuments.value = false
+          return
+        }
+        if (!documentNumberPattern.test(documentNumber)) {
+          toast.error(`The document number for ${documentLabelMap[docKey] || docKey} contains invalid characters.`)
+          isSubmittingDocuments.value = false
+          return
+        }
+      }
       if (documentExpiryRequired[docKey]) {
         const expiryVal = documentExpiryMap[docKey]?.value || ''
         if (!expiryVal) {
@@ -2740,6 +2799,9 @@ const submitDocuments = async () => {
       const expiryVal = documentExpiryMap[docKey]?.value || null
       submittedDocumentsPayload[docKey] = {
         ...docPayload,
+        ...(documentNumberRequired.has(docKey)
+          ? { documentNumber: String(documentNumberMap[docKey]?.value || '').trim().toUpperCase() }
+          : {}),
         expiryDate: expiryVal || null,
       }
     })
@@ -2762,10 +2824,10 @@ const submitDocuments = async () => {
     existingSubmittedDocuments.value = submittedDocumentsPayload
     syncExistingDocumentPreviews()
     pendingApprovalMode.value = true
-    approvalReviewState.value = automaticVerification?.status === 'Approved' ? 'approved' : 'reviewing'
-    approvalReviewMessage.value = automaticVerification?.status === 'Approved'
-      ? 'Your documents passed automatic verification. You may now sign in.'
-      : 'Your registration is under review. Low-confidence documents are being checked by a system administrator.'
+    approvalReviewState.value = 'reviewing'
+    approvalReviewMessage.value = automaticVerification?.allVerified
+      ? 'Your documents passed automatic verification and are now waiting for system administrator approval.'
+      : 'Your registration is under review. Some documents require system administrator review.'
 
     currentStep.value = 4
     setStoredOtpRecipientEmail('')
@@ -2846,24 +2908,41 @@ const submitDocuments = async () => {
               Personal Information
             </p>
 
-            <div class="grid grid-cols-1 sm:grid-cols-7 gap-4">
-              <div class="relative sm:col-span-2">
+            <div class="registration-name-grid grid grid-cols-1 gap-4">
+              <div class="relative">
                 <input v-model="firstName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
-                <label class="floating-label">First Name</label>
+                <label class="registration-name-label">First Name</label>
               </div>              
-              <div class="relative sm:col-span-2">
-                <span class="text-[10px] text-[#9b7a5f] absolute -top-[16px] right-0 font-normal">(Optional)</span>
-                <input v-model="midName" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
-                <label class="floating-label">Middle Name</label>
+              <div class="registration-optional-field">
+                <div class="relative flex-1 min-w-0">
+                  <label class="registration-field-checkbox">
+                    <input v-model="middleNameEnabled" type="checkbox" aria-label="Enable middle name" @change="!middleNameEnabled && (midName = '')" />
+                  </label>
+                  <input v-model="midName" :disabled="!middleNameEnabled" placeholder=" " aria-label="Middle Name" class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
+                  <label class="registration-name-label">Middle Name</label>
+                </div>
               </div>
-              <div class="relative sm:col-span-2">
+              <div class="relative">
                 <input v-model="lastName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
-                <label class="floating-label">Last Name</label>
+                <label class="registration-name-label">Last Name</label>
               </div>
-              <div class="relative sm:col-span-1">
-                <span class="text-[10px] text-[#9b7a5f] absolute -top-[16px] right-0 font-normal">(Optional)</span>
-                <input v-model="suffix" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
-                <label class="floating-label">Suffix</label>
+              <div class="registration-optional-field">
+                <div class="relative flex-1 min-w-0">
+                  <label class="registration-field-checkbox">
+                    <input v-model="suffixEnabled" type="checkbox" aria-label="Enable suffix" @change="!suffixEnabled && (suffix = '')" />
+                  </label>
+                  <select v-model="suffix" :disabled="!suffixEnabled" aria-label="Suffix" class="peer input registration-suffix-select registration-checkbox-field h-16 pt-4 pb-2 px-3 text-sm sm:text-base">
+                  <option value="" disabled hidden></option>
+                  <option value="Jr.">Jr.</option>
+                  <option value="Sr.">Sr.</option>
+                  <option value="I">I</option>
+                  <option value="II">II</option>
+                  <option value="III">III</option>
+                  <option value="IV">IV</option>
+                  <option value="V">V</option>
+                  </select>
+                  <label class="registration-name-label">Suffix</label>
+                </div>
               </div>
             </div>
 
@@ -3068,6 +3147,27 @@ const submitDocuments = async () => {
             </div>
 
             <div class="space-y-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="registration-optional-field">
+                  <div class="relative flex-1 min-w-0">
+                    <label class="registration-field-checkbox">
+                      <input v-model="clinicBuildingNumberEnabled" type="checkbox" aria-label="Include house or building number" @change="!clinicBuildingNumberEnabled && (clinicBuildingNumber = '')" />
+                    </label>
+                    <input v-model="clinicBuildingNumber" :disabled="!clinicBuildingNumberEnabled" placeholder=" " aria-label="House / Building Number" class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3" />
+                    <label class="registration-name-label">House / Building Number</label>
+                  </div>
+                </div>
+                <div class="registration-optional-field">
+                  <div class="relative flex-1 min-w-0">
+                    <label class="registration-field-checkbox">
+                      <input v-model="clinicStreetNameEnabled" type="checkbox" aria-label="Include street, subdivision, or village" @change="!clinicStreetNameEnabled && (clinicStreetName = '')" />
+                    </label>
+                    <input v-model="clinicStreetName" :disabled="!clinicStreetNameEnabled" placeholder=" " aria-label="Street / Subdivision / Village" class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3" />
+                    <label class="registration-name-label">Street / Subdivision / Village</label>
+                  </div>
+                </div>
+              </div>
+
               <div class="relative">
                 <input :value="clinicFullAddressLabel" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
                 <label class="floating-label floating-label-raised">Full Address</label>
@@ -3127,7 +3227,7 @@ const submitDocuments = async () => {
             <div class="cta-row flex gap-3">
               <button
                 type="button"
-                :disabled="isSubmitting || !emailChecked"
+                :disabled="isSubmitting"
                 @click="registerClinic"
                 class="h-14 lg:h-12 flex-1 py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
@@ -3281,6 +3381,37 @@ const submitDocuments = async () => {
                   class="upload-card"
                 >
                   <p class="upload-label">{{ documentLabelMap[docKey] || docKey }}</p>
+                  <div v-if="documentNumberRequired.has(docKey)" class="relative mt-2">
+                    <input
+                      v-model="documentNumberMap[docKey].value"
+                      type="text"
+                      maxlength="40"
+                      placeholder=" "
+                      autocomplete="off"
+                      class="peer input h-14 pt-4 pb-2 px-3"
+                      :aria-label="`${documentLabelMap[docKey]} number`"
+                    />
+                    <label class="floating-label floating-label-raised">{{
+                      docKey === 'businessPermit'
+                        ? 'Business Permit No.'
+                        : docKey === 'dohAccreditation'
+                          ? 'DOH Accreditation Number'
+                          : docKey === 'fdaApproval'
+                            ? 'FDA Registration Number'
+                            : 'PRC ID No. of Medical Director'
+                    }}</label>
+                    <p class="mt-1 text-[11px] text-charcoal-500">
+                      Format example: {{
+                        docKey === 'businessPermit'
+                          ? 'BP-2026-123456'
+                          : docKey === 'dohAccreditation'
+                            ? 'DOH-ACC-2026-987654'
+                            : docKey === 'fdaApproval'
+                              ? 'FDA-REG-2026-543210'
+                              : 'MD-2026-789012'
+                      }}
+                    </p>
+                  </div>
                   <input :key="documentInputKeys[docKey]" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange(docKey, $event)" class="upload-input" />
 
                   <!-- Expiry date input for documents that require it -->

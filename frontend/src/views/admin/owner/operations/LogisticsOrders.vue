@@ -145,6 +145,7 @@
                       type="button"
                       class="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
                       :class="buttonClass(nextStatus)"
+                      :disabled="!canUpdateLogistics"
                       @click="updateOrderStatus(order, nextStatus)"
                     >
                       {{ nextStatus }}
@@ -220,6 +221,7 @@ import { addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, updat
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+import { usePermissions } from '@/composables/usePermissions'
 
 export default {
   name: 'LogisticsOrders',
@@ -227,6 +229,7 @@ export default {
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const { hasPermission } = usePermissions()
 
     const loading = ref(true)
     const currentBranchId = ref('')
@@ -240,6 +243,7 @@ export default {
     const businessOrders = ref([])
     const showDetailsModal = ref(false)
     const selectedOrder = ref(null)
+    const canUpdateLogistics = computed(() => hasPermission('orders:update') || hasPermission('inventory:update') || hasPermission('inventory:review'))
 
     const formatDate = (value) => {
       if (!value) return '-'
@@ -257,7 +261,7 @@ export default {
       const activeSource = selectedSource.value || selectedTab.value
       return activeSource === 'customer'
         ? ['Pending', 'Confirmed', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled']
-        : ['Pending', 'Approved', 'Claimed', 'Shipped', 'In Transit', 'Received', 'Cancelled']
+        : ['Pending', 'Approved', 'Ready for Claim', 'Claimed', 'Shipped', 'In Transit', 'Received', 'Cancelled']
     })
 
     const getCustomerItemSummary = (order) => {
@@ -312,7 +316,11 @@ export default {
           id: snap.id,
           source: 'business',
           sourceLabel: sourceLabel('business'),
-          status: normalizeStatus(order.status) || 'Pending',
+          status: ['', 'Not Claimed', 'Pending'].includes(normalizeStatus(order.logisticsStatus)) && normalizeStatus(order.status) === 'Approved' && normalizeStatus(order.budgetStatus) === 'Approved'
+            ? 'Ready for Claim'
+            : normalizeStatus(order.logisticsStatus) || normalizeStatus(order.status) || 'Pending',
+          budgetStatus: normalizeStatus(order.budgetStatus),
+          workflowStage: normalizeStatus(order.workflowStage),
           priority: normalizeStatus(order.priority) || 'Medium',
           createdAt: order.createdAt || null,
           updatedAt: order.updatedAt || order.createdAt || null,
@@ -380,20 +388,19 @@ export default {
         return ['Packed', 'Shipped', 'Delivered']
       }
 
-      if (current === 'Cancelled' || current === 'Received') return []
-      if (current === 'Pending') return ['Approved', 'Claimed']
-      if (current === 'Approved') return ['Claimed', 'Shipped']
+      if (current === 'Cancelled' || current === 'Received' || current === 'Delivered') return []
+      if (current === 'Ready for Claim') return ['Claimed']
       if (current === 'Claimed') return ['Shipped', 'In Transit']
       if (current === 'Shipped') return ['In Transit', 'Received']
       if (current === 'In Transit') return ['Received']
-      return ['Claimed', 'Shipped', 'Received']
+      return []
     }
 
     const buttonClass = (status) => {
       const normalized = normalizeStatus(status)
       if (['Delivered', 'Received'].includes(normalized)) return 'border border-emerald-500/30 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/25'
       if (['Shipped', 'Out for Delivery', 'In Transit'].includes(normalized)) return 'border border-cyan-500/30 bg-cyan-500/15 text-cyan-100 hover:bg-cyan-500/25'
-      if (['Claimed', 'Packed', 'Confirmed', 'Approved'].includes(normalized)) return 'border border-amber-500/30 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25'
+      if (['Ready for Claim', 'Claimed', 'Packed', 'Confirmed', 'Approved'].includes(normalized)) return 'border border-amber-500/30 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25'
       return 'border border-slate-600 bg-slate-700 text-slate-100 hover:bg-slate-600'
     }
 
@@ -401,7 +408,7 @@ export default {
       const normalized = normalizeStatus(status)
       if (['Delivered', 'Received'].includes(normalized)) return 'rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-200'
       if (['Shipped', 'Out for Delivery', 'In Transit'].includes(normalized)) return 'rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-semibold text-cyan-200'
-      if (['Claimed', 'Packed', 'Confirmed', 'Approved'].includes(normalized)) return 'rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-200'
+      if (['Ready for Claim', 'Claimed', 'Packed', 'Confirmed', 'Approved'].includes(normalized)) return 'rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-200'
       if (normalized === 'Cancelled') return 'rounded-full bg-rose-500/20 px-3 py-1 text-xs font-semibold text-rose-200'
       return 'rounded-full bg-slate-600/50 px-3 py-1 text-xs font-semibold text-slate-200'
     }
@@ -421,14 +428,42 @@ export default {
 
     const updateOrderStatus = async (order, nextStatus) => {
       if (!order?.id || !nextStatus) return
+      if (!canUpdateLogistics.value) {
+        toast.error('You have view-only access to logistics.')
+        return
+      }
+      if (order.source === 'business') {
+        if (!nextStatusOptions(order).includes(nextStatus)) {
+          toast.error('This logistics status transition is not allowed.')
+          return
+        }
+        if (normalizeStatus(order.budgetStatus) !== 'Approved') {
+          toast.info('Finance must approve the budget before Logistics can claim this order.')
+          return
+        }
+      }
 
       try {
         const updatePayload = {
-          status: nextStatus,
           logisticsStatus: nextStatus,
           logisticsUpdatedBy: currentUserId.value || null,
           logisticsUpdatedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
+        }
+
+        if (order.source === 'business') {
+          updatePayload.workflowStage = nextStatus === 'Claimed'
+            ? 'Claimed by Logistics'
+            : nextStatus === 'Received'
+              ? 'Delivered - Awaiting Finance Settlement'
+              : `Logistics: ${nextStatus}`
+          if (nextStatus === 'Claimed') {
+            updatePayload.logisticsClaimedBy = currentUserId.value || null
+            updatePayload.logisticsClaimedAt = serverTimestamp()
+          }
+          if (nextStatus === 'Received') updatePayload.status = 'Delivered'
+        } else {
+          updatePayload.status = nextStatus
         }
 
         if (order.source === 'customer') {
@@ -525,7 +560,8 @@ export default {
       openDetails,
       closeDetails,
       showDetailsModal,
-      selectedOrder
+      selectedOrder,
+      canUpdateLogistics
     }
   }
 }

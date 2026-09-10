@@ -109,10 +109,10 @@
 </template>
 
 <script>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { db } from '@/config/firebaseConfig'
-import { collection, query, getDocs } from 'firebase/firestore'
+import { collection, query, getDocs, onSnapshot } from 'firebase/firestore'
 
 export default {
   name: 'PaymentsAnalytics',
@@ -129,6 +129,7 @@ export default {
     const currentPage = ref(1)
     const typeFilter = ref('') // '', 'subscription', 'oneTime'
     const searchFilter = ref('')
+    let unsubscribePayments = null
 
     const refresh = async () => {
       loading.value = true
@@ -203,7 +204,13 @@ export default {
     // Reset page when filters or date range change
     watch([searchFilter, typeFilter, fromDate, toDate], () => { currentPage.value = 1 })
 
-    onMounted(() => refresh())
+    onMounted(() => {
+      refresh()
+      unsubscribePayments = onSnapshot(collection(db, 'planPayments'), () => refresh(), (err) => {
+        console.error('Failed to listen to payment analytics:', err)
+      })
+    })
+    onUnmounted(() => unsubscribePayments?.())
 
     return { fromDate, toDate, refresh, loading, transactions, totals, // pagination
       pageSize, currentPage, typeFilter, searchFilter, pagedTransactions, totalPages, prevPage, nextPage, filteredCount, startIndex, endIndex }

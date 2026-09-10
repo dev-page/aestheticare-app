@@ -96,11 +96,11 @@
 </template>
 
 <script>
-import { computed, onMounted, ref } from 'vue'
-import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { collection, deleteDoc, doc, onSnapshot, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
-import Swal from 'sweetalert2'
+import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 const normalizeRoleKey = (value) => {
@@ -121,6 +121,7 @@ export default {
     const search = ref('')
     const processingId = ref('')
     const accounts = ref([])
+    let unsubscribeUsers = null
 
     const statusClass = (status) => {
       const normalized = String(status || '').toLowerCase()
@@ -142,13 +143,11 @@ export default {
       return user?.archived === true || status === 'inactive' || status === 'disabled'
     }
 
-    const loadArchivedAccounts = async () => {
+    const loadArchivedAccounts = () => {
+      if (unsubscribeUsers) unsubscribeUsers()
       loading.value = true
       error.value = ''
-
-      try {
-        const usersSnap = await getDocs(collection(db, 'users'))
-
+      unsubscribeUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
         accounts.value = usersSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
           .filter((user) => !isSystemAdmin(user))
@@ -171,16 +170,16 @@ export default {
           })
 
         accounts.value = sortRecordsNewestFirst(accounts.value)
-      } catch (err) {
+        loading.value = false
+      }, (err) => {
         console.error('Error loading archived accounts:', err)
         error.value = 'Failed to load archived accounts. Please try again.'
-      } finally {
         loading.value = false
-      }
+      })
     }
 
     const enableAccount = async (account) => {
-      const result = await Swal.fire({
+      const result = await systemAdminSwal.fire({
         title: 'Enable Account?',
         text: `Enable ${account.fullName}?`,
         icon: 'question',
@@ -196,7 +195,7 @@ export default {
           archived: false,
           status: 'Active',
         })
-        await Swal.fire({
+        await systemAdminSwal.fire({
           title: 'Enabled',
           text: `${account.fullName} is active again.`,
           icon: 'success',
@@ -213,7 +212,7 @@ export default {
     }
 
     const deleteAccount = async (account) => {
-      const result = await Swal.fire({
+      const result = await systemAdminSwal.fire({
         title: 'Delete Account?',
         text: `Permanently delete ${account.fullName}? This cannot be undone.`,
         icon: 'warning',
@@ -226,7 +225,7 @@ export default {
       processingId.value = account.id
       try {
         await deleteDoc(doc(db, 'users', account.id))
-        await Swal.fire({
+        await systemAdminSwal.fire({
           title: 'Deleted',
           text: `${account.fullName} has been removed.`,
           icon: 'success',
@@ -262,6 +261,7 @@ export default {
     })
 
     onMounted(loadArchivedAccounts)
+    onUnmounted(() => unsubscribeUsers?.())
 
     return {
       loading,

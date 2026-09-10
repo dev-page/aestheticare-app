@@ -221,12 +221,6 @@ export default {
       currentStaff.value.lastName = sanitizeName(value)
     }
 
-    const handleSuffixInput = (event) => {
-      const value = event?.target?.value ?? ''
-      // Allow letters, spaces, periods (e.g. Jr., III, Sr., II)
-      currentStaff.value.suffix = value.replace(/[^A-Za-z\s.]/g, '')
-    }
-
     const handleEmailInput = (event) => {
       const value = event?.target?.value ?? ''
       currentStaff.value.email = sanitizeEmail(value)
@@ -524,7 +518,6 @@ export default {
       handleFirstNameInput,
       handleMiddleNameInput,
       handleLastNameInput,
-      handleSuffixInput,
       handleEmailInput,
       handlePhoneInput,
       updateLocation,
@@ -608,16 +601,22 @@ export default {
               <!-- Suffix -->
               <div>
                 <label class="mb-1 block text-slate-400">Suffix</label>
-                <input
-                  :value="currentStaff.suffix"
-                  type="text"
-                  placeholder="e.g. Jr., III, Sr. (optional)"
-                  @input="handleSuffixInput"
+                <select
+                  v-model="currentStaff.suffix"
                   :class="[
                     'w-full rounded-lg border bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2',
                     fieldErrors.suffix ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
                   ]"
-                />
+                >
+                  <option value="">None</option>
+                  <option value="Jr.">Jr.</option>
+                  <option value="Sr.">Sr.</option>
+                  <option value="I">I</option>
+                  <option value="II">II</option>
+                  <option value="III">III</option>
+                  <option value="IV">IV</option>
+                  <option value="V">V</option>
+                </select>
                 <p v-if="fieldErrors.suffix" class="mt-1 text-xs text-red-400">{{ fieldErrors.suffix }}</p>
               </div>
             </div>

@@ -54,6 +54,8 @@ const VERIFY_LOGIN_OTP_PATH = '/auth/verify-login-otp'
 const CHECK_SUPPLIER_REGISTRATION_STATUS_PATH = '/auth/check-supplier-registration-status'
 const CHECK_CUSTOMER_REGISTRATION_STATUS_PATH = '/auth/check-customer-registration-status'
 const ATTENDANCE_PIN_PATH = '/send-attendance-pin'
+const ATTENDANCE_RECORD_PATH = '/attendance/record'
+const ATTENDANCE_IMPORT_PATH = '/attendance/import'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
@@ -1169,6 +1171,7 @@ const requireAuth = async (req, res, next) => {
     req.user = decoded
     return next()
   } catch (error) {
+    console.warn('Firebase ID token verification failed:', error?.code || 'unknown', error?.message || 'unknown error')
     return res.status(401).json({
       success: false,
       error: 'Invalid authorization token',
@@ -1263,6 +1266,11 @@ const loadUserContext = async (uid) => {
     ...(Array.isArray(userData.permissions) ? userData.permissions : []),
     ...(Array.isArray(userData.effectivePermissions) ? userData.effectivePermissions : []),
   ]
+  // Existing system administrators were created before system-admin RBAC was added.
+  // Keep those legacy accounts functional until an explicit adminRole is assigned.
+  if (roleKey === 'Superadmin' && !userData.adminRole && !userPermissions.length && !rolePermissions.length) {
+    userPermissions.push('administrator:full_access')
+  }
   return {
     uid,
     roleKey,
@@ -1281,6 +1289,7 @@ const requirePermission = (permission) => async (req, res, next) => {
       req.userContext = await loadUserContext(uid)
     }
     const allowed = req.userContext.permissions.has(permission)
+      || req.userContext.permissions.has('administrator:full_access')
     if (!allowed) {
       return res.status(403).json({ success: false, error: 'Forbidden' })
     }
@@ -1288,6 +1297,133 @@ const requirePermission = (permission) => async (req, res, next) => {
   } catch (error) {
     return res.status(500).json({ success: false, error: 'Failed to verify permission' })
   }
+}
+
+// Keep platform audit records independent from a clinic branch. Audit failures
+// must never prevent the protected operation itself from completing.
+const writeSystemAdminActivity = async (req, {
+  action,
+  module = 'System Administration',
+  details = '',
+  targetId = null,
+  targetName = null,
+  success = true,
+} = {}) => {
+  try {
+    const actorId = req.user?.uid
+    if (!actorId) return
+
+    const userSnap = await admin.firestore().collection('users').doc(actorId).get()
+    const userData = userSnap.exists ? userSnap.data() || {} : {}
+    const actorName = userData.fullName
+      || `${userData.firstName || ''} ${userData.lastName || ''}`.trim()
+      || req.user.email
+      || 'System Administrator'
+
+    await admin.firestore().collection('activities').add({
+      action,
+      details,
+      module,
+      actorId,
+      actorName,
+      actorEmail: userData.email || req.user.email || '',
+      actorRole: userData.role || 'Superadmin',
+      actorUserType: userData.userType || 'systemadmin',
+      branchId: null,
+      ownerId: null,
+      targetId,
+      targetName,
+      success,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+  } catch (auditError) {
+    console.warn('System administrator activity log failed:', auditError?.message || auditError)
+  }
+}
+
+const manilaDateKey = (date = new Date()) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+
+const manilaTimeLabel = (date = new Date()) =>
+  new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }).format(date)
+
+const parseCsvLine = (line) => {
+  const values = []
+  let value = ''
+  let quoted = false
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (char === '"' && line[index + 1] === '"' && quoted) {
+      value += '"'
+      index += 1
+    } else if (char === '"') {
+      quoted = !quoted
+    } else if (char === ',' && !quoted) {
+      values.push(value.trim())
+      value = ''
+    } else {
+      value += char
+    }
+  }
+  values.push(value.trim())
+  return values
+}
+
+const parseAttendanceCsv = (text) => {
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim())
+  if (lines.length < 2) throw new Error('The CSV must contain a header row and at least one record.')
+  const headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase().replace(/[^a-z0-9]+/g, ''))
+  const rows = lines.slice(1).map((line) => {
+    const values = parseCsvLine(line)
+    return headers.reduce((row, header, index) => {
+      row[header] = values[index] || ''
+      return row
+    }, {})
+  })
+  return rows
+}
+
+const normalizeImportDate = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const match = raw.match(/^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})$/)
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : ''
+}
+
+const resolveBranchAccess = async (uid, branchId) => {
+  const firestore = admin.firestore()
+  const branchSnap = await firestore.collection('clinics').doc(branchId).get()
+  if (!branchSnap.exists) return false
+  const branch = branchSnap.data() || {}
+  if (String(branch.ownerId || '') === uid) return true
+  const userSnap = await firestore.collection('users').doc(uid).get()
+  return String(userSnap.data()?.branchId || '') === branchId
+}
+
+const loadAttendanceSchedule = async (employeeId, dateKey) => {
+  const firestore = admin.firestore()
+  const scheduleSnap = await firestore.collection('users').doc(employeeId).collection('schedules').doc('recurring').get()
+  const assignments = scheduleSnap.exists ? scheduleSnap.data()?.assignments || {} : {}
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).format(new Date(`${dateKey}T12:00:00+08:00`))
+  const shiftLabel = String(assignments[weekday] || '').trim()
+  if (!shiftLabel || shiftLabel.toLowerCase() === 'off') return { shiftLabel, shiftStart: '', shiftEnd: '' }
+  const shiftSnap = await firestore.collection('shifts').where('branchId', '==', (await firestore.collection('users').doc(employeeId).get()).data()?.branchId || '').get()
+  const shift = shiftSnap.docs.map((snap) => snap.data() || {}).find((entry) => {
+    const label = `${String(entry.shiftType || 'Shift').trim()} || ${String(entry.start || '').trim()} - ${String(entry.end || '').trim()}`
+    return label === shiftLabel
+  }) || {}
+  return { shiftLabel, shiftStart: String(shift.start || '').trim(), shiftEnd: String(shift.end || '').trim() }
 }
 
 const runRegistrationDocumentVerification = async ({ uid, applicantType, processedBy }) => {
@@ -1367,31 +1503,49 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
 
   const allRequiredDocumentsPresent = requiredKeys.every((key) => Boolean(documents?.[key]?.path || documents?.[key]?.storagePath))
   const allVerified = allRequiredDocumentsPresent && requiredKeys.every((key) => results[key]?.status === 'verified')
-  const nextStatus = allVerified ? 'Approved' : 'Manual Review Required'
-  const nextUserStatus = allVerified ? 'Active' : 'Manual Review Required'
+  const verificationStatus = allVerified ? 'Automatically Verified' : 'Manual Review Required'
   const verificationPayload = {
-    verificationStatus: nextStatus,
+    verificationStatus,
     verificationResults: results,
     verificationThreshold: AUTO_VERIFICATION_THRESHOLD,
     verificationProcessedAt: admin.firestore.FieldValue.serverTimestamp(),
     verificationProcessedBy: processedBy || 'automatic_processor',
-    ...(allVerified ? { approvalStatus: 'Approved', approvedAt: admin.firestore.FieldValue.serverTimestamp() } : { approvalStatus: 'Manual Review Required' }),
+    // OCR verifies document quality and consistency; it never grants account access.
+    approvalStatus: 'Pending Approval',
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }
 
   const batch = firestore.batch()
   batch.set(applicationRef, verificationPayload, { merge: true })
-  batch.set(userRef, { status: nextUserStatus, approvalStatus: nextStatus, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+  batch.set(userRef, {
+    status: 'Pending Approval',
+    approvalStatus: 'Pending Approval',
+    verificationStatus,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true })
   batch.set(applicationRef.collection('verificationHistory').doc(), {
-    action: allVerified ? 'automatically-approved' : 'manual-review-required',
+    action: allVerified ? 'automatically-verified-pending-approval' : 'manual-review-required',
     applicantType: normalizedType,
     results,
     processedBy: processedBy || 'automatic_processor',
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   })
+  const notificationLabel = normalizedType === 'supplier' ? 'Supplier' : 'Clinic'
+  batch.set(firestore.collection('notifications').doc(`${normalizedType}-registration-${uid}`), {
+    recipientRole: 'Superadmin',
+    senderId: uid,
+    type: `${normalizedType}_registration_verification`,
+    title: `${notificationLabel} Registration Ready for Review`,
+    message: allVerified
+      ? `A ${normalizedType} registration passed automatic verification and is awaiting your approval.`
+      : `A ${normalizedType} registration requires manual document review.`,
+    link: normalizedType === 'supplier' ? '/superadmin/suppliers/verification' : '/superadmin/clinics/verification',
+    read: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true })
   await batch.commit()
 
-  return { status: nextStatus, allVerified, results }
+  return { status: verificationStatus, approvalStatus: 'Pending Approval', allVerified, results }
 }
 
 app.post('/registration/auto-verify-documents', requireAuth, async (req, res) => {
@@ -1404,6 +1558,53 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
     return res.json({ success: true, data })
   } catch (error) {
     console.error('Automatic registration verification failed:', error)
+    return res.status(500).json({ success: false, error: error?.message || 'Automatic verification failed' })
+  }
+})
+
+// Allow authorized system administrators to rerun the same verifier for an
+// existing supplier application when processing failed or was never started.
+app.post('/admin/trigger-registration-verification', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:suppliers:verify'), async (req, res) => {
+  const uid = String(req.body?.uid || '').trim()
+  const applicantType = String(req.body?.applicantType || '').trim().toLowerCase()
+  if (!uid || applicantType !== 'supplier') {
+    return res.status(400).json({ success: false, error: 'A supplier uid is required' })
+  }
+
+  try {
+    const data = await runRegistrationDocumentVerification({ uid, applicantType, processedBy: req.user.uid })
+    await writeSystemAdminActivity(req, {
+      action: 'Reran supplier document OCR',
+      module: 'Supplier Verification',
+      details: `Reran automatic verification for supplier ${uid}; result: ${data.status}.`,
+      targetId: uid,
+      targetName: uid,
+    })
+    return res.json({ success: true, data })
+  } catch (error) {
+    console.error('Supplier document verification rerun failed:', error)
+    return res.status(500).json({ success: false, error: error?.message || 'Automatic verification failed' })
+  }
+})
+
+app.post('/admin/trigger-clinic-registration-verification', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
+  const uid = String(req.body?.uid || '').trim()
+  if (!uid) {
+    return res.status(400).json({ success: false, error: 'A clinic uid is required' })
+  }
+
+  try {
+    const data = await runRegistrationDocumentVerification({ uid, applicantType: 'clinic', processedBy: req.user.uid })
+    await writeSystemAdminActivity(req, {
+      action: 'Reran clinic document OCR',
+      module: 'Clinic Verification',
+      details: `Reran automatic verification for clinic ${uid}; result: ${data.status}.`,
+      targetId: uid,
+      targetName: uid,
+    })
+    return res.json({ success: true, data })
+  } catch (error) {
+    console.error('Clinic document verification rerun failed:', error)
     return res.status(500).json({ success: false, error: error?.message || 'Automatic verification failed' })
   }
 })
@@ -2229,7 +2430,44 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
   }
 })
 
-app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superadmin']), async (req, res) => {
+app.delete('/admin/system-admin/:uid', requireAuth, requireRole(['superadmin']), requirePermission('system:admins:manage'), async (req, res) => {
+  const uid = String(req.params?.uid || '').trim()
+  if (!uid) {
+    return res.status(400).json({ success: false, error: 'Admin uid is required' })
+  }
+  if (uid === req.user.uid) {
+    return res.status(403).json({ success: false, error: 'You cannot delete your own administrator account' })
+  }
+
+  try {
+    const userRef = admin.firestore().collection('users').doc(uid)
+    const userSnap = await userRef.get()
+    if (!userSnap.exists) {
+      return res.status(404).json({ success: false, error: 'Administrator account not found' })
+    }
+
+    const userData = userSnap.data() || {}
+    const role = normalizeRoleKey(userData.role || userData.userType || '')
+    if (role !== 'Superadmin') {
+      return res.status(400).json({ success: false, error: 'The selected account is not a system administrator' })
+    }
+
+    await admin.auth().deleteUser(uid)
+    await userRef.delete()
+    await writeSystemAdminActivity(req, {
+      action: 'Deleted system administrator',
+      details: `Deleted ${userData.fullName || userData.email || uid}'s administrator account.`,
+      targetId: uid,
+      targetName: userData.fullName || userData.email || uid,
+    })
+    return res.json({ success: true })
+  } catch (error) {
+    console.error('Failed to delete system administrator:', error)
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to delete administrator account' })
+  }
+})
+
+app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superadmin']), requirePermission('system:clinics:verify'), async (req, res) => {
 
   const uid = String(req.body?.uid || '').trim()
   const rejectionReason = String(req.body?.rejectionReason || '').trim()
@@ -2253,6 +2491,11 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
     const firestore = admin.firestore()
     const userRef = firestore.collection('users').doc(uid)
     const clinicRef = firestore.collection('clinics').doc(uid)
+    const [userBeforeRejection, clinicBeforeRejection] = await Promise.all([userRef.get(), clinicRef.get()])
+    const userData = userBeforeRejection.exists ? userBeforeRejection.data() || {} : {}
+    const clinicData = clinicBeforeRejection.exists ? clinicBeforeRejection.data() || {} : {}
+    const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
+    const applicantName = String(userData.firstName || '').trim() || 'Applicant'
 
     // Write rejection audit fields first, then hard delete docs.
     await Promise.all([
@@ -2278,7 +2521,7 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
 
     await Promise.all([
       userRef.delete(),
-      clinicRef.delete(),
+      firestore.recursiveDelete(clinicRef),
     ])
 
     try {
@@ -2289,9 +2532,49 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
       }
     }
 
+    await writeSystemAdminActivity(req, {
+      action: 'Rejected clinic registration',
+      module: 'Clinic Verification',
+      details: `Rejected ${applicantName}'s clinic registration. Reason: ${rejectionReason}`,
+      targetId: uid,
+      targetName: applicantName,
+    })
+
+    let emailSent = false
+    if (recipient && postmarkClient && senderEmail) {
+      try {
+        const registrationUrl = `${resolveFrontendBaseUrl(req)}/clinic/register`
+        const subject = 'AesthetiCare - Clinic Registration Update'
+        const textBody = `Hi ${applicantName},
+
+Your clinic registration was not approved at this time.
+
+Reason provided by the system administrator:
+${rejectionReason}
+
+You may correct the information or documents and submit a new clinic registration here:
+${registrationUrl}
+
+Please make sure that your details and uploaded documents are complete, valid, and readable before submitting again.
+
+Regards,
+The AesthetiCare Team`
+        const htmlReason = rejectionReason
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\n/g, '<br>')
+        const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${applicantName},</p><p>Your clinic registration was not approved at this time.</p><p><strong>Reason provided by the system administrator:</strong></p><p>${htmlReason}</p><p>You may correct the information or documents and submit a new clinic registration here:</p><p><a href="${registrationUrl}">${registrationUrl}</a></p><p>Please make sure that your details and uploaded documents are complete, valid, and readable before submitting again.</p><p>Regards,<br>The AesthetiCare Team</p></div>`
+        await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
+        emailSent = true
+      } catch (emailError) {
+        console.warn('Failed to send clinic rejection email:', emailError?.message || emailError)
+      }
+    }
+
     return res.json({
       success: true,
-      data: { uid, deleted: true },
+      data: { uid, deleted: true, emailSent },
     })
   } catch (error) {
     return res.status(500).json({
@@ -2302,7 +2585,7 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
 })
 
 // Admin-triggered OCR processing for clinic registration documents (production-safe)
-app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','reviewer']), async (req, res) => {
+app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   // Production: require authenticated admin role instead of a static secret
   if (!adminReady) {
     return res.status(500).json({ success: false, error: adminInitError || 'firebase-admin not ready' })
@@ -2419,6 +2702,13 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
 
     // add audit entry for OCR processing
     await clinicRef.collection('reviewHistory').add({ action: 'ocr-processed', docKey, processedBy: req.user?.uid || null, confidence, force: !!force, ts: admin.firestore.FieldValue.serverTimestamp() })
+    await writeSystemAdminActivity(req, {
+      action: 'Processed registration document OCR',
+      module: 'Clinic Verification',
+      details: `Processed ${docKey} for ${userData.fullName || userData.email || uid} with ${(confidence * 100).toFixed(1)}% confidence.`,
+      targetId: uid,
+      targetName: userData.fullName || userData.email || uid,
+    })
 
     // If all submitted documents are verified, auto-approve the clinic
     const allDocKeys = REGISTRATION_DOCUMENT_REQUIREMENTS.clinic
@@ -2458,7 +2748,7 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
 })
 
 // Admin clinic review endpoints (lightweight)
-app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','admin','reviewer']), async (req, res) => {
+app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const uid = String(req.params?.uid || '').trim()
   if (!uid) return res.status(400).json({ success: false, error: 'uid is required' })
   try {
@@ -2487,7 +2777,7 @@ app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','adm
   }
 })
 
-app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin','reviewer']), async (req, res) => {
+app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const { uid, docKey, reviewer, note } = req.body ?? {}
   if (!uid || !docKey) return res.status(400).json({ success: false, error: 'uid and docKey are required' })
   try {
@@ -2508,6 +2798,13 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
       clinicRef.set({ submittedDocuments: submittedDocs }, { merge: true }),
       clinicRef.collection('reviewHistory').add({ action: 'document-verified', docKey, reviewer: reviewer || null, note: note || null, ts: admin.firestore.FieldValue.serverTimestamp() }),
     ])
+    await writeSystemAdminActivity(req, {
+      action: 'Verified clinic document',
+      module: 'Clinic Verification',
+      details: `Verified ${docKey} for ${userData.fullName || userData.email || uid}.`,
+      targetId: uid,
+      targetName: userData.fullName || userData.email || uid,
+    })
 
     const allKeys = REGISTRATION_DOCUMENT_REQUIREMENTS.clinic
     const allVerified = allKeys.every((k) => Boolean(submittedDocs[k]?.verified))
@@ -2538,7 +2835,7 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
   }
 })
 
-app.post('/admin/document/reject', requireAuth, requireRole(['superadmin','admin','reviewer']), async (req, res) => {
+app.post('/admin/document/reject', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const { uid, docKey, reviewer, reason } = req.body ?? {}
   if (!uid || !docKey) return res.status(400).json({ success: false, error: 'uid and docKey are required' })
   try {
@@ -2560,6 +2857,13 @@ app.post('/admin/document/reject', requireAuth, requireRole(['superadmin','admin
       clinicRef.set({ submittedDocuments: submittedDocs, approvalStatus: 'Pending Approval' }, { merge: true }),
       clinicRef.collection('reviewHistory').add({ action: 'document-rejected', docKey, reviewer: reviewer || null, reason: reason || null, ts: admin.firestore.FieldValue.serverTimestamp() }),
     ])
+    await writeSystemAdminActivity(req, {
+      action: 'Rejected clinic document',
+      module: 'Clinic Verification',
+      details: `Rejected ${docKey} for ${userData.fullName || userData.email || uid}. Reason: ${reason || 'Not provided'}`,
+      targetId: uid,
+      targetName: userData.fullName || userData.email || uid,
+    })
 
     const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
     if (recipient && postmarkClient && senderEmail) {
@@ -2580,7 +2884,7 @@ app.post('/admin/document/reject', requireAuth, requireRole(['superadmin','admin
   }
 })
 
-app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin','reviewer']), async (req, res) => {
+app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const { uid, reviewer, note } = req.body ?? {}
   if (!uid) return res.status(400).json({ success: false, error: 'uid is required' })
   try {
@@ -2606,6 +2910,13 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
       userRef.set({ status: 'Active', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
       clinicRef.collection('reviewHistory').add({ action: 'clinic-approved', reviewer: reviewer || null, note: note || null, ts: admin.firestore.FieldValue.serverTimestamp() }),
     ])
+    await writeSystemAdminActivity(req, {
+      action: 'Approved clinic registration',
+      module: 'Clinic Verification',
+      details: `Approved ${userData.fullName || userData.email || uid}'s clinic registration.`,
+      targetId: uid,
+      targetName: userData.fullName || userData.email || uid,
+    })
 
     const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
     if (recipient && postmarkClient && senderEmail) {
@@ -2627,7 +2938,7 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
   }
 })
 
-app.post('/admin/supplier/approve', requireAuth, requireRole(['superadmin','admin','reviewer']), async (req, res) => {
+app.post('/admin/supplier/approve', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:suppliers:verify'), async (req, res) => {
   const uid = String(req.body?.uid || '').trim()
   const reviewer = String(req.body?.reviewer || req.user.uid || '').trim()
   if (!uid) return res.status(400).json({ success: false, error: 'uid is required' })
@@ -2693,6 +3004,13 @@ app.post('/admin/supplier/approve', requireAuth, requireRole(['superadmin','admi
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     })
     await batch.commit()
+    await writeSystemAdminActivity(req, {
+      action: 'Approved supplier registration',
+      module: 'Supplier Verification',
+      details: `Approved ${application.businessName || application.name || user.email || uid}'s supplier registration.`,
+      targetId: uid,
+      targetName: application.businessName || application.name || user.email || uid,
+    })
     return res.json({ success: true, data: { uid, approved: true } })
   } catch (error) {
     console.error('supplier approve error:', error)
@@ -2700,7 +3018,7 @@ app.post('/admin/supplier/approve', requireAuth, requireRole(['superadmin','admi
   }
 })
 
-app.post('/admin/supplier/reject', requireAuth, requireRole(['superadmin','admin','reviewer']), async (req, res) => {
+app.post('/admin/supplier/reject', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:suppliers:verify'), async (req, res) => {
   const uid = String(req.body?.uid || '').trim()
   const reason = String(req.body?.reason || '').trim()
   const reviewer = String(req.body?.reviewer || req.user.uid || '').trim()
@@ -2710,30 +3028,55 @@ app.post('/admin/supplier/reject', requireAuth, requireRole(['superadmin','admin
     const firestore = admin.firestore()
     const applicationRef = firestore.collection('supplierApplications').doc(uid)
     const userRef = firestore.collection('users').doc(uid)
-    const batch = firestore.batch()
-    batch.set(applicationRef, {
-      approvalStatus: 'Rejected',
-      status: 'Inactive',
-      rejectionReason: reason,
-      rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
-      reviewedBy: reviewer,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true })
-    batch.set(userRef, {
-      approvalStatus: 'Rejected',
-      status: 'Inactive',
-      rejectionReason: reason,
-      rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true })
-    batch.set(applicationRef.collection('verificationHistory').doc(), {
-      action: 'supplier-rejected',
-      reviewer,
-      reason,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    const supplierRef = firestore.collection('suppliers').doc(uid)
+    const [applicationSnap, userSnap] = await Promise.all([applicationRef.get(), userRef.get()])
+    const application = applicationSnap.exists ? applicationSnap.data() || {} : {}
+    const user = userSnap.exists ? userSnap.data() || {} : {}
+    const recipient = String(application.email || user.email || '').trim().toLowerCase()
+    const applicantName = String(user.fullName || '').trim()
+      || `${String(user.firstName || '').trim()} ${String(user.lastName || '').trim()}`.trim()
+      || String(application.businessName || '').trim()
+      || 'Applicant'
+
+    let emailSent = false
+    if (recipient && postmarkClient && senderEmail) {
+      try {
+        const registrationUrl = `${resolveFrontendBaseUrl(req)}/register?account=supplier`
+        const subject = 'AesthetiCare - Supplier Registration Update'
+        const textBody = `Hi ${applicantName},\n\nYour supplier registration was rejected.\n\nReason provided by the system administrator:\n${reason}\n\nYou may submit a new supplier registration after correcting the information or documents:\n${registrationUrl}\n\nRegards,\nThe AesthetiCare Team`
+        const htmlReason = reason
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\n/g, '<br>')
+        const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${applicantName},</p><p>Your supplier registration was rejected.</p><p><strong>Reason provided by the system administrator:</strong></p><p>${htmlReason}</p><p>You may submit a new supplier registration after correcting the information or documents:</p><p><a href="${registrationUrl}">${registrationUrl}</a></p><p>Regards,<br>The AesthetiCare Team</p></div>`
+        await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
+        emailSent = true
+      } catch (emailError) {
+        console.warn('Failed to send supplier rejection email:', emailError?.message || emailError)
+      }
+    }
+
+    // Rejecting a registration permanently removes its login and registration data.
+    try {
+      await admin.auth().deleteUser(uid)
+    } catch (authError) {
+      if (authError?.code !== 'auth/user-not-found') throw authError
+    }
+
+    await Promise.all([
+      firestore.recursiveDelete(applicationRef),
+      userRef.delete(),
+      supplierRef.delete(),
+    ])
+    await writeSystemAdminActivity(req, {
+      action: 'Rejected supplier registration',
+      module: 'Supplier Verification',
+      details: `Rejected and deleted ${applicantName}'s supplier registration. Reason: ${reason}`,
+      targetId: uid,
+      targetName: applicantName,
     })
-    await batch.commit()
-    return res.json({ success: true, data: { uid, rejected: true } })
+    return res.json({ success: true, data: { uid, rejected: true, deleted: true, emailSent } })
   } catch (error) {
     console.error('supplier reject error:', error)
     return res.status(500).json({ success: false, error: error?.message || 'Failed to reject supplier' })
@@ -4326,6 +4669,163 @@ if (backupScheduleEnabled && adminReady) {
   setInterval(runScheduledBackups, 15 * 60 * 1000)
   runScheduledBackups().catch(() => {})
 }
+
+app.post(ATTENDANCE_RECORD_PATH, requireAuth, requirePermission('attendance:create'), async (req, res) => {
+  const { branchId, qrToken, latitude, longitude, accuracy } = req.body ?? {}
+  const normalizedBranchId = String(branchId || '').trim()
+  if (!normalizedBranchId || !qrToken) {
+    return res.status(400).json({ success: false, error: 'branchId and qrToken are required' })
+  }
+
+  try {
+    const firestore = admin.firestore()
+    const userRef = firestore.collection('users').doc(req.user.uid)
+    const [userSnap, branchSnap] = await Promise.all([
+      userRef.get(),
+      firestore.collection('clinics').doc(normalizedBranchId).get(),
+    ])
+    const userData = userSnap.exists ? userSnap.data() || {} : {}
+    const branch = branchSnap.exists ? branchSnap.data() || {} : {}
+    if (!branchSnap.exists || !await resolveBranchAccess(req.user.uid, normalizedBranchId)) {
+      return res.status(403).json({ success: false, error: 'You are not assigned to this branch.' })
+    }
+    if (String(userData.branchId || '') !== normalizedBranchId) {
+      return res.status(403).json({ success: false, error: 'Your employee profile is not assigned to this branch.' })
+    }
+
+    const dateKey = manilaDateKey()
+    const qrSnap = await firestore.collection('attendanceDailyQRCodes').doc(`${normalizedBranchId}_${dateKey}`).get()
+    if (!qrSnap.exists || String(qrSnap.data()?.token || '') !== String(qrToken).trim()) {
+      return res.status(400).json({ success: false, error: 'The attendance QR is invalid or expired.' })
+    }
+
+    const settings = branch.attendanceSettings || {}
+    const latitudeNumber = Number(latitude)
+    const longitudeNumber = Number(longitude)
+    const accuracyNumber = Number(accuracy)
+    const hasLocation = Number.isFinite(latitudeNumber) && Number.isFinite(longitudeNumber)
+    const requiresLocation = settings.requireLocation !== false
+    if (requiresLocation && !hasLocation) {
+      return res.status(400).json({ success: false, error: 'Location permission is required to record attendance.' })
+    }
+    if (hasLocation && Number.isFinite(accuracyNumber) && accuracyNumber > Number(settings.maxAccuracyMeters || 150)) {
+      return res.status(400).json({ success: false, error: 'Your location accuracy is too low. Move to an open area and try again.' })
+    }
+
+    let distanceMeters = null
+    const branchLatitude = Number(branch.latitude ?? branch.lat ?? branch.clinicLocationLat)
+    const branchLongitude = Number(branch.longitude ?? branch.lng ?? branch.lon ?? branch.clinicLocationLng)
+    const radiusMeters = Math.max(25, Math.min(1000, Number(settings.geofenceRadiusMeters || 150)))
+    if (hasLocation && Number.isFinite(branchLatitude) && Number.isFinite(branchLongitude)) {
+      const toRadians = (value) => (value * Math.PI) / 180
+      const earthRadius = 6371000
+      const dLat = toRadians(latitudeNumber - branchLatitude)
+      const dLon = toRadians(longitudeNumber - branchLongitude)
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(branchLatitude)) * Math.cos(toRadians(latitudeNumber)) * Math.sin(dLon / 2) ** 2
+      distanceMeters = Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)))
+      if (distanceMeters > radiusMeters) {
+        return res.status(400).json({ success: false, error: `You are outside the allowed attendance area (${radiusMeters} meters).` })
+      }
+    } else if (requiresLocation) {
+      return res.status(400).json({ success: false, error: 'This branch has no valid attendance location configured.' })
+    }
+
+    const schedule = await loadAttendanceSchedule(req.user.uid, dateKey)
+    const attendanceRef = firestore.collection('attendance').doc(`${req.user.uid}_${dateKey}`)
+    const result = await firestore.runTransaction(async (transaction) => {
+      const existingSnap = await transaction.get(attendanceRef)
+      const existing = existingSnap.exists ? existingSnap.data() || {} : {}
+      const now = admin.firestore.Timestamp.now()
+      const next = {
+        employeeId: req.user.uid,
+        employeeName: String(userData.fullName || `${userData.firstName || ''} ${userData.lastName || ''}`).trim() || userData.email || 'Employee',
+        role: userData.customRoleName || userData.role || 'Staff',
+        branchId: normalizedBranchId,
+        date: dateKey,
+        attendanceMethod: 'qr_gps',
+        source: 'built_in',
+        qrToken: String(qrToken).trim(),
+        shiftLabel: schedule.shiftLabel,
+        shiftStart: schedule.shiftStart,
+        shiftEnd: schedule.shiftEnd,
+        locationVerified: hasLocation,
+        locationAccuracyMeters: Number.isFinite(accuracyNumber) ? Math.round(accuracyNumber) : null,
+        locationDistanceMeters: distanceMeters,
+        updatedAt: now,
+        createdAt: existing.createdAt || now,
+      }
+      if (!existing.timeIn) {
+        next.timeIn = manilaTimeLabel()
+        next.status = 'Logged'
+        next.action = 'clock_in'
+      } else if (!existing.timeOut) {
+        next.timeIn = existing.timeIn
+        next.timeOut = manilaTimeLabel()
+        next.status = 'Logged'
+        next.action = 'clock_out'
+      } else {
+        return { alreadyComplete: true }
+      }
+      transaction.set(attendanceRef, next, { merge: true })
+      return { ...next, alreadyComplete: false }
+    })
+    if (result.alreadyComplete) return res.status(409).json({ success: false, error: 'Attendance is already complete for today.' })
+    return res.json({ success: true, action: result.action, record: result })
+  } catch (error) {
+    console.error('Attendance record failed:', error)
+    return res.status(500).json({ success: false, error: 'Unable to record attendance.' })
+  }
+})
+
+app.post(ATTENDANCE_IMPORT_PATH, requireAuth, requirePermission('attendance:import'), async (req, res) => {
+  const { branchId, csvText, dryRun = false } = req.body ?? {}
+  const normalizedBranchId = String(branchId || '').trim()
+  if (!normalizedBranchId || !String(csvText || '').trim()) return res.status(400).json({ success: false, error: 'branchId and csvText are required' })
+  try {
+    if (!await resolveBranchAccess(req.user.uid, normalizedBranchId)) return res.status(403).json({ success: false, error: 'You cannot import attendance for this branch.' })
+    const rows = parseAttendanceCsv(csvText)
+    const firestore = admin.firestore()
+    const valid = []
+    const rejected = []
+    for (const [index, row] of rows.entries()) {
+      const employeeId = String(row.employeeid || row.uid || '').trim()
+      const email = String(row.email || '').trim().toLowerCase()
+      const date = normalizeImportDate(row.date || row.attendancedate)
+      const timeIn = String(row.timein || row.clockin || '').trim()
+      const timeOut = String(row.timeout || row.clockout || '').trim()
+      if (!date || (!employeeId && !email) || (!timeIn && !timeOut)) {
+        rejected.push({ row: index + 2, reason: 'Required fields: date, employeeId/email, and timeIn or timeOut.' })
+        continue
+      }
+      let resolvedId = employeeId
+      if (!resolvedId) {
+        const userSnap = await firestore.collection('users').where('email', '==', email).limit(2).get()
+        if (userSnap.size !== 1) {
+          rejected.push({ row: index + 2, reason: 'Email did not resolve to exactly one employee.' })
+          continue
+        }
+        resolvedId = userSnap.docs[0].id
+      }
+      const userSnap = await firestore.collection('users').doc(resolvedId).get()
+      if (!userSnap.exists || String(userSnap.data()?.branchId || '') !== normalizedBranchId) {
+        rejected.push({ row: index + 2, reason: 'Employee does not belong to this branch.' })
+        continue
+      }
+      valid.push({ employeeId: resolvedId, branchId: normalizedBranchId, date, timeIn, timeOut, source: 'imported', importSource: 'clinic_csv' })
+    }
+    if (!dryRun && valid.length) {
+      const batch = firestore.batch()
+      valid.forEach((record) => batch.set(firestore.collection('attendance').doc(`${record.employeeId}_${record.date}`), { ...record, importedBy: req.user.uid, importedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }))
+      const importRef = firestore.collection('attendanceImports').doc()
+      batch.set(importRef, { branchId: normalizedBranchId, importedBy: req.user.uid, validRows: valid.length, rejectedRows: rejected.length, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      await batch.commit()
+    }
+    return res.json({ success: true, dryRun: Boolean(dryRun), validRows: valid.length, rejectedRows: rejected.length, rejected })
+  } catch (error) {
+    console.error('Attendance import failed:', error)
+    return res.status(400).json({ success: false, error: error.message || 'Unable to import attendance.' })
+  }
+})
 
 app.post(ATTENDANCE_PIN_PATH, requireAuth, requirePermission('staff:create'), async (req, res) => {
   const { recipient, attendancePin, fullName } = req.body ?? {}

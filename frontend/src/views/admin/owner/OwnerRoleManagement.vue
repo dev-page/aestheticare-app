@@ -618,23 +618,23 @@ const permissionSuggestionRules = [
   },
   {
     match: ['hr', 'human resources'],
-    permissions: ['staff:view', 'staff:create', 'staff:update', 'attendance:view', 'attendance:create', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:update', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['staff:view', 'staff:create', 'staff:update', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:update', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['finance', 'accounting', 'cashier'],
-    permissions: ['payments:view', 'payments:create', 'reports:view', 'payroll:view', 'inventory:view', 'inventory:review', 'orders:view', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['payments:view', 'payments:create', 'reports:view', 'payroll:view', 'inventory:view', 'inventory:review', 'orders:view', 'orders:update', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['manager', 'operations', 'supervisor'],
-    permissions: ['staff:view', 'staff:update', 'appointments:view', 'appointments:review', 'inventory:view', 'inventory:review', 'orders:view', 'services:view', 'reports:view', 'leave:create', 'leave:review', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['staff:view', 'staff:update', 'appointments:view', 'appointments:review', 'inventory:view', 'inventory:review', 'orders:view', 'orders:update', 'services:view', 'reports:view', 'leave:create', 'leave:review', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['supply', 'inventory', 'warehouse', 'stock'],
-    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'orders:view', 'reports:view', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'orders:view', 'orders:update', 'reports:view', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['admin', 'owner', 'administrator'],
-    permissions: [fullAccessPermissionKey, 'clinic_profile:view', 'clinic_profile:update', 'branches:view', 'branches:create', 'staff:view', 'staff:create', 'staff:update', 'attendance:view', 'attendance:create', 'clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'consultations:view', 'payments:view', 'payments:create', 'reports:view', 'inventory:view', 'inventory:create', 'inventory:review', 'orders:view', 'services:view', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:view', 'payroll:update', 'subscription:view', 'backup:view', 'profile:view', 'password:update', 'activities:view', 'notifications:view', 'support:view'],
+    permissions: [fullAccessPermissionKey, 'clinic_profile:view', 'clinic_profile:update', 'branches:view', 'branches:create', 'staff:view', 'staff:create', 'staff:update', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'consultations:view', 'payments:view', 'payments:create', 'reports:view', 'inventory:view', 'inventory:create', 'inventory:review', 'orders:view', 'orders:update', 'services:view', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:view', 'payroll:update', 'subscription:view', 'backup:view', 'profile:view', 'password:update', 'activities:view', 'notifications:view', 'support:view'],
   },
 ]
 
@@ -782,7 +782,7 @@ export default {
         }
       }
 
-      return [fullAccessPermissionKey, 'staff:view', 'staff:create', 'staff:update', 'attendance:view', 'attendance:create', 'clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'consultations:view', 'payments:view', 'payments:create', 'inventory:view', 'inventory:create', 'inventory:review', 'orders:view', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:view', 'payroll:update', 'services:view', 'inbox:view', 'subscription:view', 'backup:view', 'profile:view', 'password:update', 'activities:view', 'notifications:view', 'support:view']
+      return [fullAccessPermissionKey, 'staff:view', 'staff:create', 'staff:update', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'consultations:view', 'payments:view', 'payments:create', 'inventory:view', 'inventory:create', 'inventory:review', 'orders:view', 'orders:update', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:view', 'payroll:update', 'services:view', 'inbox:view', 'subscription:view', 'backup:view', 'profile:view', 'password:update', 'activities:view', 'notifications:view', 'support:view']
         .filter((permission) => allPermissionKeys.includes(permission))
         .filter((permission) => !selectedPermissions.has(permission))
     })

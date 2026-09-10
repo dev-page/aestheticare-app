@@ -124,6 +124,11 @@ service cloud.firestore {
             && hasPermission('staff:create')));
       allow update: if isSignedIn()
         && ((request.auth.uid == userId && applicantCannotChangeVerificationFields())
+          || (request.auth.uid == userId
+            && request.resource.data.status == 'Inactive'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'accountDeactivationRequested', 'accountDeactivationReason', 'accountDeactivatedAt', 'updatedAt'
+            ]))
           || isSuperadmin()
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
@@ -153,6 +158,18 @@ service cloud.firestore {
     match /rolePermissions/{roleId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && isSuperadmin();
+    }
+
+    match /accountClosureRequests/{requestId} {
+      allow read: if isSignedIn()
+        && (isSuperadmin() || resource.data.ownerId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && (!('requestType' in request.resource.data)
+          || request.resource.data.requestType == 'customer_account_deletion');
+      allow update: if isSignedIn()
+        && (isSuperadmin() || resource.data.ownerId == request.auth.uid);
+      allow delete: if isSuperadmin();
     }
 
     match /clinicRoles/{roleId} {
@@ -223,13 +240,27 @@ service cloud.firestore {
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:disable'));
     }
 
+    match /attendanceDailyQRCodes/{qrId} {
+      allow read: if isSignedIn()
+        && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId)
+        && (hasPermission('attendance:view') || hasPermission('attendance:create'));
+      allow create, update: if isSignedIn()
+        && request.resource.data.branchId != null
+        && isOwnerOfBranch(request.resource.data.branchId)
+        && hasPermission('attendance:create');
+      allow delete: if false;
+    }
+
     match /attendance/{attendanceId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('attendance:view')) || isSuperadmin());
+        && ((resource.data.employeeId == request.auth.uid)
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('attendance:view'))
+          || isSuperadmin());
       allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('attendance:create'));
+        && (request.resource.data.branchId != null && isOwnerOfBranch(request.resource.data.branchId) && hasPermission('attendance:create'));
       allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('attendance:update'));
+        && (resource.data.branchId != null && isOwnerOfBranch(resource.data.branchId) && hasPermission('attendance:update'));
       allow delete: if false;
     }
 
@@ -275,11 +306,13 @@ service cloud.firestore {
 
     match /purchaseRequests/{requestId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view')) || isSuperadmin());
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+          && (hasPermission('inventory:view') || hasPermission('orders:view'))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
       allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:update'));
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+          && (hasPermission('inventory:update') || hasPermission('orders:update') || hasPermission('inventory:review')));
       allow delete: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
     }
@@ -361,7 +394,10 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)));
       allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId));
+        && ((isSuperadmin()
+          && request.resource.data.actorId == request.auth.uid
+          && request.resource.data.branchId == null)
+          || (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)));
       allow update, delete: if false;
     }
 
@@ -418,7 +454,26 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && (resource.data.userId == request.auth.uid || isSuperadmin());
       allow create: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() > 0
+        && request.resource.data.subject.size() <= 160
+        && request.resource.data.description is string
+        && request.resource.data.description.size() > 0
+        && request.resource.data.description.size() <= 5000
+        && request.resource.data.category in [
+          'Bug/Error', 'Data Issue', 'Performance', 'Billing/Payments',
+          'Clinic Complaint', 'Service Complaint', 'Employee Complaint',
+          'Feature Request', 'Other'
+        ]
+        && request.resource.data.severity in ['Low', 'Medium', 'High', 'Critical']
+        && request.resource.data.status == 'Open'
+        && request.resource.data.branchId is string
+        && (
+          request.resource.data.branchId == ''
+          || request.resource.data.branchId == userData().branchId
+          || isPublicClinic(request.resource.data.branchId)
+        );
       allow update: if isSignedIn() && isSuperadmin();
       allow delete: if false;
     }

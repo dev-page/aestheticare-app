@@ -296,7 +296,7 @@ const resendLoginOtp = async () => {
 }
 
 const handleForgotPassword = async () => {
-  router.push('/forgot-password')
+  router.push({ path: '/forgot-password', query: { returnTo: '/login' } })
 }
 
 onBeforeUnmount(() => {

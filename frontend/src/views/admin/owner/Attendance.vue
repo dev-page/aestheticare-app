@@ -9,6 +9,8 @@ import { auth } from '@/config/firebaseConfig'
 import { classifyAttendanceRecord } from '@/utils/attendanceStatus'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
+import { toast } from 'vue3-toastify'
 
 export default {
   name: 'AttendanceReports',
@@ -24,6 +26,9 @@ export default {
     const qrCodeUrl = ref('')
     const qrLoading = ref(false)
     const qrTokenRecord = ref(null)
+    const importFile = ref(null)
+    const importPreview = ref(null)
+    const importLoading = ref(false)
     const nowRef = ref(new Date())
 
     const branchFilter = ref('')
@@ -146,6 +151,53 @@ export default {
 
     const regenerateDailyAttendanceQr = async () => {
       await ensureDailyAttendanceQr(true)
+    }
+
+    const readImportFile = async (event) => {
+      const file = event.target.files?.[0]
+      importFile.value = file || null
+      importPreview.value = null
+      if (!file) return
+      if (!/\.csv$/i.test(file.name)) {
+        toast.error('Please select a CSV attendance file.')
+        return
+      }
+      importPreview.value = await file.text()
+      toast.info('CSV loaded. Review the file, then import it.')
+    }
+
+    const importAttendance = async () => {
+      if (!importPreview.value || !selectedQrBranchId.value) return
+      importLoading.value = true
+      try {
+        const token = await auth.currentUser.getIdToken()
+        let responseData = null
+        let lastError = null
+        for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+          try {
+            const response = await fetch(`${baseUrl}/attendance/import`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ branchId: selectedQrBranchId.value, csvText: importPreview.value }),
+            })
+            const data = await response.json().catch(() => ({}))
+            if (!response.ok) throw new Error(data.error || 'Attendance import failed.')
+            responseData = data
+            break
+          } catch (error) {
+            lastError = error
+          }
+        }
+        if (!responseData) throw lastError || new Error('Attendance service is unavailable.')
+        toast.success(`Imported ${responseData.validRows} attendance row(s). ${responseData.rejectedRows} rejected.`)
+        importPreview.value = null
+        importFile.value = null
+        await loadAttendance()
+      } catch (error) {
+        toast.error(error.message || 'Attendance import failed.')
+      } finally {
+        importLoading.value = false
+      }
     }
 
     const loadAttendance = async () => {
@@ -332,6 +384,11 @@ export default {
       qrTokenRecord,
       ensureDailyAttendanceQr,
       regenerateDailyAttendanceQr,
+      importFile,
+      importPreview,
+      importLoading,
+      readImportFile,
+      importAttendance,
       todayDailyRecords,
       statusRows,
       todaySummary
@@ -366,6 +423,22 @@ export default {
           class="px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
         />
       </div>
+
+      <section class="bg-slate-800 rounded-xl shadow-lg p-6 border border-slate-700 mb-6">
+        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-white">Import Clinic Attendance</h2>
+            <p class="mt-1 text-sm text-slate-400">Upload a CSV exported by your existing attendance system. Required columns: <span class="text-slate-300">date, employeeId or email, timeIn or timeOut</span>.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <input type="file" accept=".csv,text/csv" class="max-w-xs text-sm text-slate-300" @change="readImportFile" />
+            <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="importLoading || !importPreview || !selectedQrBranchId" @click="importAttendance">
+              {{ importLoading ? 'Importing...' : 'Import CSV' }}
+            </button>
+          </div>
+        </div>
+        <p v-if="importPreview" class="mt-3 text-xs text-emerald-300">File loaded and ready for validation. The system will reject invalid rows and keep an import audit record.</p>
+      </section>
 
       <section class="bg-slate-800 rounded-xl shadow-lg p-6 border border-slate-700 mb-6">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

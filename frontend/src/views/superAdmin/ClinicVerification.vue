@@ -28,16 +28,17 @@
               <th class="text-left text-slate-300 px-4 py-3">Full Name</th>
               <th class="text-left text-slate-300 px-4 py-3">Email</th>
               <th class="text-left text-slate-300 px-4 py-3">Status</th>
+              <th class="text-left text-slate-300 px-4 py-3">Automatic Verification</th>
               <th class="text-left text-slate-300 px-4 py-3">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td class="px-4 py-3 text-slate-200" colspan="4">Loading pending clinics...</td>
+              <td class="px-4 py-3 text-slate-200" colspan="5">Loading pending clinics...</td>
             </tr>
 
             <tr v-else-if="!pendingClinics.length">
-              <td class="px-4 py-3 text-slate-200" colspan="4">No pending clinics.</td>
+              <td class="px-4 py-3 text-slate-200" colspan="5">No pending clinics.</td>
             </tr>
 
             <tr v-for="row in pendingClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0">
@@ -46,6 +47,11 @@
               <td class="px-4 py-3 text-slate-300">
                 <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-300">
                   {{ row.statusLabel }}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-slate-300">
+                <span class="px-2 py-1 rounded-md text-xs border" :class="row.verificationStatus === 'Automatically Verified' ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300' : 'border-amber-500/40 bg-amber-500/20 text-amber-300'">
+                  {{ row.verificationStatus || 'Not processed' }}
                 </span>
               </td>
               <td class="px-4 py-3">
@@ -65,7 +71,7 @@
       <!-- Verified clinics table placed under pending clinics -->
       <section class="mt-6 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <div class="px-4 py-4 border-b border-slate-700">
-          <h2 class="text-lg font-semibold text-white">Verified Clinics</h2>
+          <h2 class="text-lg font-semibold text-white">Approved Clinics</h2>
           <p class="text-slate-400 text-sm">List of clinics that have been approved and verified.</p>
         </div>
         <table class="w-full text-sm">
@@ -76,14 +82,16 @@
               <th class="text-left text-slate-300 px-4 py-3">Subscription</th>
               <th class="text-left text-slate-300 px-4 py-3">Center Status</th>
               <th class="text-left text-slate-300 px-4 py-3">Verified Date</th>
+              <th class="text-left text-slate-300 px-4 py-3">Reported Issues</th>
+              <th class="text-left text-slate-300 px-4 py-3">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loadingVerifiedClinics">
-              <td class="px-4 py-3 text-slate-200" colspan="5">Loading verified clinics...</td>
+              <td class="px-4 py-3 text-slate-200" colspan="7">Loading approved clinics...</td>
             </tr>
             <tr v-else-if="!verifiedClinics.length">
-              <td class="px-4 py-3 text-slate-200" colspan="5">No verified clinics yet.</td>
+              <td class="px-4 py-3 text-slate-200" colspan="7">No approved clinics yet.</td>
             </tr>
             <tr
               v-else
@@ -109,6 +117,20 @@
                 </span>
               </td>
               <td class="px-4 py-3 text-slate-300">{{ clinic.approvedAtLabel }}</td>
+              <td class="px-4 py-3">
+                <span class="rounded-md border px-2 py-1 text-xs font-medium" :class="clinic.complaintCount ? 'border-amber-500/40 bg-amber-500/20 text-amber-200' : 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'">
+                  {{ clinic.complaintCount }}
+                </span>
+              </td>
+              <td class="px-4 py-3">
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs"
+                  @click="openDetails(clinic)"
+                >
+                  View
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -131,7 +153,7 @@
           <div class="flex items-start justify-between gap-4 mb-6">
             <div>
               <h2 class="text-2xl text-white font-semibold">Clinic Registration Details</h2>
-              <p class="text-slate-400 text-sm">Review and approve/reject this clinic owner registration.</p>
+              <p class="text-slate-400 text-sm">{{ isPendingRecord(selectedRecord) ? 'Review and approve/reject this clinic owner registration.' : 'View the approved clinic registration and its verification record.' }}</p>
             </div>
             <button class="text-slate-300 hover:text-white" @click="closeModal">Close</button>
           </div>
@@ -156,10 +178,92 @@
           </div>
 
           <section class="mb-6">
+            <h3 class="text-white font-semibold mb-3">Registration Details</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div v-for="item in [
+                ['Birth Date', formatDateValue(selectedRecord.birthDate)],
+                ['Contact Number', selectedRecord.contactNumber],
+                ['House / Building Number', selectedRecord.clinicBuildingNumber],
+                ['Street / Subdivision / Village', selectedRecord.clinicStreetName],
+                ['Barangay', selectedRecord.clinicBarangay],
+                ['Province', selectedRecord.clinicProvince],
+                ['Postal Code', selectedRecord.clinicPostalCode],
+                ['Resolved Address', selectedRecord.clinicLocationAddress],
+                ['Coordinates', selectedRecord.clinicLocationLat && selectedRecord.clinicLocationLng ? `${selectedRecord.clinicLocationLat}, ${selectedRecord.clinicLocationLng}` : 'Not available'],
+              ]" :key="item[0]" class="bg-slate-800 border border-slate-700 rounded-xl p-3">
+                <p class="text-xs text-slate-400 mb-1">{{ item[0] }}</p>
+                <p class="text-sm text-white break-words">{{ item[1] || '-' }}</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="mb-6 bg-slate-800 border border-slate-700 rounded-xl p-4">
+            <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 class="text-white font-semibold">Automatic Verification and OCR</h3>
+                <p class="text-xs text-slate-400">Document text extraction and automatic checks run when the applicant submits the documents.</p>
+              </div>
+              <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-200 capitalize">
+                {{ selectedRecord.verificationStatus || 'Not processed' }}
+              </span>
+            </div>
+            <p class="mt-2 text-xs text-slate-400">
+              Processed: {{ formatDateValue(selectedRecord.verificationProcessedAt) }}
+              <span v-if="selectedRecord.verificationThreshold !== null"> · Automatic threshold: {{ Math.round(Number(selectedRecord.verificationThreshold) * 100) }}%</span>
+            </p>
+            <div class="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-sm text-slate-300">Overall OCR confidence</span>
+                <strong class="text-lg text-white">{{ getOverallConfidence(selectedRecord.verificationResults) === null ? 'Not available' : `${getOverallConfidence(selectedRecord.verificationResults)}%` }}</strong>
+              </div>
+              <div v-if="getOverallConfidence(selectedRecord.verificationResults) !== null" class="mt-2 h-2 overflow-hidden rounded-full bg-slate-700">
+                <div
+                  class="h-full rounded-full bg-emerald-500 transition-all"
+                  :style="{ width: `${getOverallConfidence(selectedRecord.verificationResults)}%` }"
+                ></div>
+              </div>
+            </div>
+            <div v-if="selectedRecord.verificationResults?.length" class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <article v-for="result in selectedRecord.verificationResults" :key="result.key" class="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                <div class="flex items-start justify-between gap-3">
+                  <p class="text-sm text-slate-200">{{ documentLabel(result.key) }}</p>
+                  <span class="text-xs capitalize" :class="result.status === 'verified' ? 'text-emerald-300' : 'text-amber-300'">{{ result.status }}</span>
+                </div>
+                <p class="mt-1 text-xs text-slate-400">Confidence: {{ result.confidence }}%</p>
+                <p class="mt-1 text-xs text-slate-300">{{ result.reason }}</p>
+                <details v-if="result.extractedText" class="mt-2">
+                  <summary class="cursor-pointer text-xs text-sky-300">View extracted text</summary>
+                  <pre class="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[11px] text-slate-400">{{ result.extractedText }}</pre>
+                </details>
+              </article>
+            </div>
+            <p v-else class="mt-4 text-xs text-slate-500">No automatic verification result is stored for this registration.</p>
+            <button
+              v-if="isPendingRecord(selectedRecord) && selectedRecord.verificationStatus !== 'Automatically Verified'"
+              type="button"
+              class="mt-4 rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="processing"
+              @click="runClinicVerification"
+            >
+              {{ processing ? 'Processing documents...' : 'Run OCR and automatic verification' }}
+            </button>
+          </section>
+
+          <section class="mb-6">
             <h3 class="text-white font-semibold mb-3">Submitted Documents</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <article v-for="docItem in selectedRecord.documents" :key="docItem.key" class="bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <p class="text-sm text-slate-200 mb-3">{{ docItem.label }}</p>
+                <div class="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div class="rounded-md bg-slate-900/60 p-2">
+                    <span class="text-slate-500">Document number</span>
+                    <p class="mt-1 text-slate-200">{{ docItem.documentNumber || '-' }}</p>
+                  </div>
+                  <div class="rounded-md bg-slate-900/60 p-2">
+                    <span class="text-slate-500">Expiry date</span>
+                    <p class="mt-1 text-slate-200">{{ formatDateValue(docItem.expiryDate) }}</p>
+                  </div>
+                </div>
                 <div v-if="docItem.url">
                   <img
                     v-if="docItem.isImage"
@@ -182,7 +286,7 @@
             </div>
           </section>
 
-          <section class="mb-4">
+          <section v-if="isPendingRecord(selectedRecord)" class="mb-4">
             <label class="block text-xs text-slate-400 mb-1">Rejection Remark (required when rejecting)</label>
             <textarea
               v-model="rejectionRemark"
@@ -192,7 +296,7 @@
             ></textarea>
           </section>
 
-          <div class="flex flex-col sm:flex-row gap-3 sm:justify-end">
+          <div v-if="isPendingRecord(selectedRecord)" class="flex flex-col sm:flex-row gap-3 sm:justify-end">
             <button
               type="button"
               class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white"
@@ -211,6 +315,9 @@
               {{ processing ? 'Processing...' : 'Reject' }}
             </button>
           </div>
+          <div v-else class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            This clinic is already approved. Approval and rejection actions are unavailable.
+          </div>
         </div>
       </div>
     </main>
@@ -218,10 +325,10 @@
 </template>
 
 <script>
-import { onMounted, ref } from 'vue'
-import { doc, getDoc, getDocs, collection, updateDoc, serverTimestamp, query, where } from 'firebase/firestore'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { doc, getDoc, getDocs, collection, onSnapshot, updateDoc, serverTimestamp, query, where } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
-import Swal from 'sweetalert2'
+import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
@@ -238,6 +345,18 @@ const normalizePlanLabel = (value) => {
 
 const normalizeStatusLabel = (clinicStatus, userStatus) => {
   return String(clinicStatus || userStatus || 'Pending Approval')
+}
+
+const isPendingRecord = (record) => {
+  const status = String(record?.approvalStatus || record?.status || '').trim().toLowerCase()
+  return status.includes('pending approval') || status.includes('manual review') || status.includes('pending')
+}
+
+const formatApplicantName = (user = {}) => {
+  const parts = [user.firstName, user.midName || user.middleName, user.lastName, user.suffix]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+  return String(user.fullName || '').trim() || parts.join(' ') || 'Unnamed User'
 }
 
 const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
@@ -260,8 +379,39 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
       label: item.label,
       url,
       isImage: type.startsWith('image/'),
+      documentNumber: String(file?.documentNumber || file?.number || '').trim(),
+      expiryDate: String(file?.expiryDate || '').trim(),
     }
   })
+}
+
+const mapVerificationResults = (verificationResults = {}) => Object.entries(verificationResults || {}).map(([key, result = {}]) => ({
+  key,
+  status: String(result.status || 'manual_review').replaceAll('_', ' '),
+  confidence: Number.isFinite(Number(result.confidence)) ? Math.round(Number(result.confidence) * 100) : 0,
+  reason: String(result.reason || 'No verification explanation was returned.'),
+  extractedText: String(result.extractedText || '').trim(),
+}))
+
+const formatDateValue = (value) => {
+  if (!value) return '-'
+  const date = value?.toDate ? value.toDate() : new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString()
+}
+
+const documentLabel = (key) => ({
+  businessPermit: 'Business Permit/Registration',
+  governmentIdRepresentativeFront: 'Government-Issued ID (Front)',
+  governmentIdRepresentativeBack: 'Government-Issued ID (Back)',
+  dohAccreditation: 'DOH Accreditation',
+  fdaApproval: 'FDA Approval',
+  prcIdMedicalDirector: 'PRC ID of Medical Director',
+}[key] || key)
+
+const getOverallConfidence = (results = []) => {
+  const scores = results.map((result) => Number(result.confidence)).filter((score) => Number.isFinite(score))
+  if (!scores.length) return null
+  return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length)
 }
 
 const getPlanDurationDays = (planKey) => (planKey === 'free-trial' ? 14 : 30)
@@ -283,6 +433,7 @@ export default {
     const processing = ref(false)
     const error = ref('')
     const pendingClinics = ref([])
+    let unsubscribeClinics = null
 
     const showModal = ref(false)
     const selectedRecord = ref(null)
@@ -348,20 +499,37 @@ export default {
             const ownerLookupId = clinic.ownerId || clinic.id
             const userSnap = await getDoc(doc(db, 'users', ownerLookupId))
             const user = userSnap.exists() ? userSnap.data() : {}
-            const fullName =
-              String(user.fullName || '').trim() ||
-              `${String(user.firstName || '').trim()} ${String(user.lastName || '').trim()}`.trim() ||
-              'Unnamed Owner'
+            const fullName = formatApplicantName(user).replace('Unnamed User', 'Unnamed Owner')
 
             const resolvedPlan = clinic.subscriptionPlan || user.subscriptionPlan || clinic.plan || user.plan || ''
             const resolvedPayment = clinic.paymentStatus || user.paymentStatus || ''
             const approvedAt = clinic.approvedAt || user.approvedAt || null
+            const complaintsSnap = await getDocs(query(
+              collection(db, 'supportTickets'),
+              where('branchId', '==', clinic.id),
+            ))
 
             return {
               id: clinic.id,
+              approvalStatus: clinic.approvalStatus || 'Approved',
               clinicName: clinic.clinicName || clinic.clinicBranch || '',
               clinicBranch: clinic.clinicBranch || '',
-              clinicLocation: clinic.clinicLocation || '',
+              clinicLocation: clinic.clinicLocation || clinic.clinicLocationAddress || clinic.clinicBranch || '',
+              middleName: user.midName || user.middleName || '',
+              suffix: user.suffix || '',
+              birthDate: user.birthDate || null,
+              contactNumber: user.contactNumber || clinic.contactNumber || '',
+              authorizedRepPosition: clinic.authorizedRepPosition || user.authorizedRepPosition || '',
+              companyName: clinic.companyName || user.companyName || clinic.clinicName || '',
+              companyType: clinic.companyType || user.companyType || '',
+              clinicLocationAddress: clinic.clinicLocationAddress || '',
+              clinicBuildingNumber: clinic.clinicBuildingNumber || '',
+              clinicStreetName: clinic.clinicStreetName || '',
+              clinicBarangay: clinic.clinicBarangay || '',
+              clinicProvince: clinic.clinicProvince || '',
+              clinicPostalCode: clinic.clinicPostalCode || '',
+              clinicLocationLat: clinic.clinicLocationLat || '',
+              clinicLocationLng: clinic.clinicLocationLng || '',
               ownerName: fullName,
               ownerEmail: user.email || clinic.ownerEmail || '',
               planLabel: normalizePlanLabel(resolvedPlan),
@@ -369,6 +537,12 @@ export default {
               centerStatus: clinic.status || clinic.moderationStatus || 'Active',
               approvedAtLabel: approvedAt && approvedAt.toDate ? approvedAt.toDate().toLocaleDateString() : '-',
               approvedAt: approvedAt || null,
+              documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
+              verificationStatus: clinic.verificationStatus || 'Not processed',
+              verificationThreshold: clinic.verificationThreshold || null,
+              verificationProcessedAt: clinic.verificationProcessedAt || null,
+              verificationResults: mapVerificationResults(clinic.verificationResults),
+              complaintCount: complaintsSnap.size,
             }
           })
         )
@@ -415,14 +589,40 @@ export default {
       throw lastError || new Error(`Failed to reach backend service at ${BACKEND_URL}. Ensure otp-backend is running.`)
     }
 
-    const loadPendingClinics = async () => {
+    const loadPendingClinics = () => {
+      if (unsubscribeClinics) unsubscribeClinics()
       loading.value = true
       error.value = ''
+      unsubscribeClinics = onSnapshot(collection(db, 'clinics'), async (clinicsSnap) => {
+        try {
+        const clinicRecords = await Promise.all(clinicsSnap.docs.map(async (docSnap) => {
+          const clinic = { id: docSnap.id, ...docSnap.data() }
+          const wasAutoApproved =
+            String(clinic.approvalStatus || '').toLowerCase() === 'approved' &&
+            String(clinic.verificationProcessedBy || '').toLowerCase() === 'automatic_processor' &&
+            !clinic.approvedBy
 
-      try {
-        const clinicsSnap = await getDocs(collection(db, 'clinics'))
-        const pending = clinicsSnap.docs
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+          if (wasAutoApproved) {
+            await Promise.all([
+              updateDoc(doc(db, 'clinics', clinic.id), {
+                approvalStatus: 'Pending Approval',
+                verificationStatus: 'Automatically Verified',
+                updatedAt: serverTimestamp(),
+              }),
+              updateDoc(doc(db, 'users', clinic.id), {
+                status: 'Pending Approval',
+                approvalStatus: 'Pending Approval',
+                verificationStatus: 'Automatically Verified',
+                updatedAt: serverTimestamp(),
+              }),
+            ])
+            clinic.approvalStatus = 'Pending Approval'
+            clinic.verificationStatus = 'Automatically Verified'
+          }
+
+          return clinic
+        }))
+        const pending = clinicRecords
           .filter((clinic) => {
             const status = String(clinic.approvalStatus || '').toLowerCase()
             return status.includes('pending approval') || status.includes('manual review')
@@ -432,10 +632,7 @@ export default {
           pending.map(async (clinic) => {
             const userSnap = await getDoc(doc(db, 'users', clinic.id))
             const user = userSnap.exists() ? userSnap.data() : {}
-            const fullName =
-              String(user.fullName || '').trim() ||
-              `${String(user.firstName || '').trim()} ${String(user.lastName || '').trim()}`.trim() ||
-              'Unnamed User'
+            const fullName = formatApplicantName(user)
 
             const normalizedEmail = String(user.email || '').trim().toLowerCase()
             const forcedPlan = forcedPlanByEmail[normalizedEmail] || null
@@ -488,15 +685,35 @@ export default {
 
             return {
               id: clinic.id,
+              approvalStatus: clinic.approvalStatus || 'Pending Approval',
               fullName,
               email: user.email || '',
+              middleName: user.midName || user.middleName || '',
+              suffix: user.suffix || '',
+              birthDate: user.birthDate || null,
+              contactNumber: user.contactNumber || clinic.contactNumber || '',
+              authorizedRepPosition: clinic.authorizedRepPosition || user.authorizedRepPosition || '',
+              companyName: clinic.companyName || user.companyName || clinic.clinicName || '',
+              companyType: clinic.companyType || user.companyType || '',
               statusLabel: normalizeStatusLabel(clinic.approvalStatus, user.status),
-              clinicName: clinic.clinicName || '',
-              clinicLocation: clinic.clinicLocation || '',
+              clinicName: clinic.clinicName || clinic.companyName || user.companyName || '',
+              clinicLocation: clinic.clinicLocation || clinic.clinicLocationAddress || '',
+              clinicLocationAddress: clinic.clinicLocationAddress || '',
+              clinicBuildingNumber: clinic.clinicBuildingNumber || '',
+              clinicStreetName: clinic.clinicStreetName || '',
+              clinicBarangay: clinic.clinicBarangay || '',
+              clinicProvince: clinic.clinicProvince || '',
+              clinicPostalCode: clinic.clinicPostalCode || '',
+              clinicLocationLat: clinic.clinicLocationLat || '',
+              clinicLocationLng: clinic.clinicLocationLng || '',
               planKey: String(resolvedPlan || '').trim().toLowerCase(),
               planLabel: normalizePlanLabel(resolvedPlan),
               paymentStatus: resolvedPayment,
               documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
+              verificationStatus: clinic.verificationStatus || 'Not processed',
+              verificationThreshold: clinic.verificationThreshold || null,
+              verificationProcessedAt: clinic.verificationProcessedAt || null,
+              verificationResults: mapVerificationResults(clinic.verificationResults),
               createdAt: clinic.createdAt || user.createdAt || null,
             }
           })
@@ -509,6 +726,11 @@ export default {
       } finally {
         loading.value = false
       }
+      }, (snapshotError) => {
+        console.error('Failed to listen to pending clinic registrations:', snapshotError)
+        error.value = 'Failed to listen for clinic registration updates.'
+        loading.value = false
+      })
     }
 
     const openDetails = (record) => {
@@ -523,10 +745,56 @@ export default {
       rejectionRemark.value = ''
     }
 
+    const runClinicVerification = async () => {
+      if (!selectedRecord.value) return
+
+      const result = await systemAdminSwal.fire({
+        title: 'Run Automatic Verification?',
+        text: 'The clinic documents will be processed with OCR. Low-confidence results will remain for manual review.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Run verification',
+        cancelButtonText: 'Cancel',
+      })
+      if (!result.isConfirmed) return
+
+      processing.value = true
+      try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken(true) : ''
+        if (!token) throw new Error('Missing authorization token')
+        const response = await fetchFromBackend('/admin/trigger-clinic-registration-verification', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ uid: selectedRecord.value.id, applicantType: 'clinic' }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Automatic verification failed.')
+
+        await systemAdminSwal.fire({
+          title: 'Verification Complete',
+          text: payload.data?.status === 'Automatically Verified'
+            ? 'All clinic documents passed the automatic verification threshold.'
+            : 'The documents require manual review because one or more confidence scores were below the threshold.',
+          icon: payload.data?.status === 'Automatically Verified' ? 'success' : 'info',
+          confirmButtonText: 'Continue',
+        })
+        closeModal()
+        await loadPendingClinics()
+      } catch (err) {
+        console.error('Failed to run clinic document verification:', err)
+        error.value = err?.message || 'Automatic verification failed. Please try again.'
+      } finally {
+        processing.value = false
+      }
+    }
+
     const approveSelected = async () => {
       if (!selectedRecord.value) return
 
-      const result = await Swal.fire({
+      const result = await systemAdminSwal.fire({
         title: 'Approve Registration?',
         text: `Approve ${selectedRecord.value.fullName} as a verified clinic owner?`,
         icon: 'question',
@@ -557,7 +825,7 @@ export default {
           throw new Error(payload?.error || 'Failed to approve registration')
         }
 
-        await Swal.fire({
+        await systemAdminSwal.fire({
           title: 'Approved',
           text: 'Clinic registration has been approved.',
           icon: 'success',
@@ -579,15 +847,15 @@ export default {
       if (!selectedRecord.value) return
       const remark = String(rejectionRemark.value || '').trim()
       if (!remark) {
-        await Swal.fire({
+        await systemAdminSwal.fire({
           title: 'Remark Required',
           text: 'Please enter a rejection reason before rejecting this registration.',
           icon: 'warning',
         })
         return
-      }
+        }
 
-      const result = await Swal.fire({
+      const result = await systemAdminSwal.fire({
         title: 'Reject Registration?',
         text: `Reject ${selectedRecord.value.fullName}?`,
         icon: 'warning',
@@ -622,9 +890,11 @@ export default {
           throw new Error(payload?.error || 'Failed to reject and delete account.')
         }
 
-        await Swal.fire({
+        await systemAdminSwal.fire({
           title: 'Rejected',
-          text: 'Clinic registration has been rejected and account removed.',
+          text: payload.data?.emailSent
+            ? 'Clinic registration was rejected, the account was removed, and an email with the reason and re-registration link was sent.'
+            : 'Clinic registration was rejected and the account was removed. The email could not be sent, so contact the applicant manually.',
           icon: 'success',
           timer: 1500,
           showConfirmButton: false,
@@ -640,6 +910,7 @@ export default {
       }
     }
     onMounted(async () => { await Promise.all([loadPendingClinics(), loadVerifiedClinics()]) })
+    onUnmounted(() => unsubscribeClinics?.())
 
     return {
       loading,
@@ -647,6 +918,7 @@ export default {
       error,
       pendingClinics,
       verifiedClinics,
+      isPendingRecord,
       loadingVerifiedClinics,
       hasMoreVerified,
       loadMoreVerifiedClinics,
@@ -659,6 +931,10 @@ export default {
       closeModal,
       approveSelected,
       rejectSelected,
+      runClinicVerification,
+      formatDateValue,
+      documentLabel,
+      getOverallConfidence,
       statusClass: (value) => {
         const normalized = String(value || '').trim().toLowerCase()
         if (normalized.includes('review')) {

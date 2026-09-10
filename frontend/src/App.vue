@@ -14,6 +14,18 @@
         :show-badge-status="showTopbarStatus"
       />
       <router-view :key="$route.fullPath" />
+      <OnboardingTour
+        :is-open="onboardingIsOpen"
+        :tour="onboardingTour"
+        :step="onboardingStep"
+        :step-index="onboardingStepIndex"
+        :is-last-step="onboardingIsLastStep"
+        :dont-show-again="onboardingDontShowAgain"
+        @close="onboardingClose"
+        @next="onboardingNext"
+        @previous="onboardingPrevious"
+        @update:dont-show-again="setOnboardingDontShowAgain"
+      />
     </div>
 
     <div
@@ -136,11 +148,25 @@ import EmployeeTopbar from '@/components/common/EmployeeTopbar.vue'
 import disconnectIllustration from '@/assets/disconnect.png'
 import { lockPageScroll, unlockPageScroll } from '@/utils/scrollLock'
 import { useSidebarState } from '@/composables/useSidebarState'
+import { useOnboardingTour } from '@/composables/useOnboardingTour'
+import OnboardingTour from '@/components/common/OnboardingTour.vue'
 
 // Initialize auth state globally
 const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking } = useAuth()
 
 const route = useRoute()
+const {
+  isOpen: onboardingIsOpen,
+  tour: onboardingTour,
+  step: onboardingStep,
+  stepIndex: onboardingStepIndex,
+  isLastStep: onboardingIsLastStep,
+  dontShowAgain: onboardingDontShowAgain,
+  close: onboardingClose,
+  next: onboardingNext,
+  previous: onboardingPrevious,
+  setDontShowAgain: setOnboardingDontShowAgain,
+} = useOnboardingTour({ route, user })
 const { initSubscription, isReadOnly, isExpired, isSuspended, graceEndsAt, activePlan } = useSubscription()
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 const isPoorConnection = ref(false)
