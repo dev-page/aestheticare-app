@@ -223,6 +223,13 @@ const handleLogin = async () => {
           } catch (otpError) {
             await signOut(auth).catch(() => {})
             const status = otpError?.response?.status
+            console.error('Login OTP request failed', {
+              status,
+              response: otpError?.response?.data || null,
+              requestId: otpError?.response?.data?.requestId || null,
+              code: otpError?.code || null,
+              message: otpError?.message || null,
+            })
             const message = firebaseLoginMessages[otpError?.code]
               || otpError?.response?.data?.error
               || (status === 404 ? 'Login OTP service is unavailable. Please restart or deploy the OTP backend.' : '')
