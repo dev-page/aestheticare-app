@@ -924,6 +924,23 @@ const getSupplierRegistrationState = async (email) => {
   }
 }
 
+const hashOtp = (value) => crypto.createHash('sha256').update(String(value || '')).digest('hex')
+
+const otpMatches = (otpData, candidate) => {
+  const expectedHash = String(otpData?.otpHash || '').trim()
+  if (expectedHash) {
+    const actualHash = hashOtp(candidate)
+    const expectedBuffer = Buffer.from(expectedHash, 'hex')
+    const actualBuffer = Buffer.from(actualHash, 'hex')
+    return expectedBuffer.length === actualBuffer.length
+      && crypto.timingSafeEqual(expectedBuffer, actualBuffer)
+  }
+
+  // Records without a hash are invalid. This prevents legacy plaintext OTP
+  // records from remaining usable after the secure storage migration.
+  return false
+}
+
 const sendRegistrationOtpMessage = async ({
   email,
   uid,
@@ -932,46 +949,67 @@ const sendRegistrationOtpMessage = async ({
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedUid = String(uid || '').trim()
   const otpRef = getRegistrationOtpDocRef(purpose, normalizedEmail)
-  const existingSnap = await otpRef.get()
-  const existingData = existingSnap.data() || {}
-  const now = new Date()
-  const lastSentAt = getTimestampDate(existingData.lastSentAt)
-  const secondsSinceLastSend = lastSentAt
-    ? Math.floor((now.getTime() - lastSentAt.getTime()) / 1000)
-    : Number.POSITIVE_INFINITY
+  const reservation = await admin.firestore().runTransaction(async (transaction) => {
+    const existingSnap = await transaction.get(otpRef)
+    const existingData = existingSnap.exists ? existingSnap.data() || {} : {}
+    const now = new Date()
+    const lastSentAt = getTimestampDate(existingData.lastSentAt)
+    const secondsSinceLastSend = lastSentAt
+      ? Math.floor((now.getTime() - lastSentAt.getTime()) / 1000)
+      : Number.POSITIVE_INFINITY
+    const sendWindowStartedAt = getTimestampDate(existingData.sendWindowStartedAt)
+    const secondsSinceWindowStart = sendWindowStartedAt
+      ? Math.floor((now.getTime() - sendWindowStartedAt.getTime()) / 1000)
+      : Number.POSITIVE_INFINITY
+    const sendCountInWindow = secondsSinceWindowStart >= REGISTRATION_OTP_SEND_WINDOW_SECONDS
+      ? 0
+      : Math.max(Number(existingData.sendCount || 0), 0)
 
-  const sendWindowStartedAt = getTimestampDate(existingData.sendWindowStartedAt)
-  const secondsSinceWindowStart = sendWindowStartedAt
-    ? Math.floor((now.getTime() - sendWindowStartedAt.getTime()) / 1000)
-    : Number.POSITIVE_INFINITY
-  const sendCountInWindow = secondsSinceWindowStart >= REGISTRATION_OTP_SEND_WINDOW_SECONDS
-    ? 0
-    : Math.max(Number(existingData.sendCount || 0), 0)
+    if (sendCountInWindow >= REGISTRATION_OTP_MAX_SENDS) {
+      const retryAfterSeconds = Math.max(
+        REGISTRATION_OTP_SEND_WINDOW_SECONDS - Math.max(secondsSinceWindowStart, 0),
+        1
+      )
+      const limitError = new Error(`You have reached the OTP request limit. Please try again in ${retryAfterSeconds}s.`)
+      limitError.statusCode = 429
+      limitError.retryAfterSeconds = retryAfterSeconds
+      limitError.maxAttempts = REGISTRATION_OTP_MAX_SENDS
+      throw limitError
+    }
 
-  if (sendCountInWindow >= REGISTRATION_OTP_MAX_SENDS) {
-    const retryAfterSeconds = Math.max(
-      REGISTRATION_OTP_SEND_WINDOW_SECONDS - Math.max(secondsSinceWindowStart, 0),
-      1
-    )
-    const limitError = new Error(
-      `You have reached the OTP request limit. Please try again in ${retryAfterSeconds}s.`
-    )
-    limitError.statusCode = 429
-    limitError.retryAfterSeconds = retryAfterSeconds
-    limitError.maxAttempts = REGISTRATION_OTP_MAX_SENDS
-    throw limitError
-  }
+    if (secondsSinceLastSend < REGISTRATION_OTP_COOLDOWN_SECONDS) {
+      const retryAfterSeconds = Math.max(REGISTRATION_OTP_COOLDOWN_SECONDS - secondsSinceLastSend, 1)
+      const rateLimitError = new Error(`Please wait ${retryAfterSeconds}s before requesting a new OTP.`)
+      rateLimitError.statusCode = 429
+      rateLimitError.retryAfterSeconds = retryAfterSeconds
+      throw rateLimitError
+    }
 
-  if (secondsSinceLastSend < REGISTRATION_OTP_COOLDOWN_SECONDS) {
-    const retryAfterSeconds = Math.max(REGISTRATION_OTP_COOLDOWN_SECONDS - secondsSinceLastSend, 1)
-    const rateLimitError = new Error(`Please wait ${retryAfterSeconds}s before requesting a new OTP.`)
-    rateLimitError.statusCode = 429
-    rateLimitError.retryAfterSeconds = retryAfterSeconds
-    throw rateLimitError
-  }
+    const otp = generateSixDigitOtp()
+    const expiresAt = new Date(now.getTime() + REGISTRATION_OTP_EXPIRY_MINUTES * 60 * 1000)
+    transaction.set(otpRef, {
+      email: normalizedEmail,
+      uid: normalizedUid || String(existingData.uid || '').trim(),
+      purpose,
+      otpHash: hashOtp(otp),
+      otp: admin.firestore.FieldValue.delete(),
+      used: false,
+      attempts: 0,
+      messageId: null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+      sendCount: sendCountInWindow + 1,
+      sendWindowStartedAt: sendWindowStartedAt && secondsSinceWindowStart < REGISTRATION_OTP_SEND_WINDOW_SECONDS
+        ? existingData.sendWindowStartedAt
+        : admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+      deliveryStatus: 'pending',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true })
+    return { existingData, otp, expiresAt }
+  })
 
-  const otp = generateSixDigitOtp()
-  const expiresAt = new Date(now.getTime() + REGISTRATION_OTP_EXPIRY_MINUTES * 60 * 1000)
+  const { existingData, otp, expiresAt } = reservation
   const message = {
     to: normalizedEmail,
     from: senderEmail,
@@ -997,6 +1035,12 @@ const sendRegistrationOtpMessage = async ({
   // If delivery indicates failure, and this is a registration OTP, attempt server-side cleanup
   if (!delivery || delivery.statusCode !== 200) {
     console.error('OTP delivery failed', { delivery, normalizedEmail, normalizedUid, purpose })
+    await otpRef.set({
+      deliveryStatus: 'failed',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true }).catch((statusError) => {
+      console.error('Failed to update OTP delivery status:', statusError)
+    })
     try {
       if (
         (purpose === CLINIC_REGISTRATION_OTP_PURPOSE || purpose === CUSTOMER_REGISTRATION_OTP_PURPOSE) &&
@@ -1040,20 +1084,8 @@ const sendRegistrationOtpMessage = async ({
   }
 
   await otpRef.set({
-    email: normalizedEmail,
-    uid: normalizedUid || String(existingData.uid || '').trim(),
-    purpose,
-    otp,
-    used: false,
-    attempts: 0,
     messageId: delivery.messageId || null,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
-    sendCount: sendCountInWindow + 1,
-    sendWindowStartedAt: sendWindowStartedAt && secondsSinceWindowStart < REGISTRATION_OTP_SEND_WINDOW_SECONDS
-      ? existingData.sendWindowStartedAt
-      : admin.firestore.FieldValue.serverTimestamp(),
-    expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+    deliveryStatus: 'sent',
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true })
 
@@ -3381,7 +3413,7 @@ app.post(VERIFY_LOGIN_OTP_PATH, async (req, res) => {
       await otpRef.set({ used: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
       return res.status(400).json({ success: false, error: 'This login OTP has expired. Please sign in again.' })
     }
-    if (String(otpData.uid || '').trim() !== normalizedUid || String(otpData.otp || '').trim() !== normalizedOtp) {
+    if (String(otpData.uid || '').trim() !== normalizedUid || !otpMatches(otpData, normalizedOtp)) {
       const attempts = Number(otpData.attempts || 0) + 1
       await otpRef.set({
         attempts,
@@ -3994,7 +4026,7 @@ app.post(VERIFY_REGISTRATION_OTP_PATH, async (req, res) => {
       })
     }
 
-    if (String(otpData.otp || '').trim() !== normalizedOtp) {
+    if (!otpMatches(otpData, normalizedOtp)) {
       await otpRef.set({
         attempts: admin.firestore.FieldValue.increment(1),
         lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -4150,7 +4182,7 @@ app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
       })
     }
 
-    if (String(otpData.otp || '').trim() !== normalizedOtp) {
+    if (!otpMatches(otpData, normalizedOtp)) {
       await otpRef.set({
         attempts: admin.firestore.FieldValue.increment(1),
         lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -5194,7 +5226,7 @@ app.post(VERIFY_SUPPLIER_OTP_PATH, async (req, res) => {
       })
     }
 
-    if (String(otpData.otp || '').trim() !== normalizedOtp) {
+    if (!otpMatches(otpData, normalizedOtp)) {
       await otpRef.set({
         attempts: admin.firestore.FieldValue.increment(1),
         lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
