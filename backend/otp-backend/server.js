@@ -3341,6 +3341,7 @@ app.post(REQUEST_LOGIN_OTP_PATH, requireAuth, async (req, res) => {
   const normalizedEmail = String(req.body?.email || '').trim().toLowerCase()
   const requestedUid = String(req.body?.uid || '').trim()
   const requestId = crypto.randomUUID()
+  let failureStage = 'validation'
 
   const logLoginOtpFailure = (stage, error = null) => {
     console.error('LOGIN_OTP_FAILURE', {
@@ -3384,6 +3385,7 @@ app.post(REQUEST_LOGIN_OTP_PATH, requireAuth, async (req, res) => {
   }
 
   try {
+    failureStage = 'firestore_account_lookup'
     const userSnap = await admin.firestore().collection('users').doc(requestedUid).get()
     const userData = userSnap.exists ? userSnap.data() || {} : {}
     const roleKey = normalizeRoleKey(userData.role || userData.userType || '')
@@ -3391,11 +3393,13 @@ app.post(REQUEST_LOGIN_OTP_PATH, requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Login OTP is not required for this account.' })
     }
 
+    failureStage = 'firebase_auth_lookup'
     const authUser = await admin.auth().getUser(requestedUid)
     if (String(authUser.email || '').trim().toLowerCase() !== normalizedEmail) {
       return res.status(403).json({ success: false, error: 'Email does not match the account.' })
     }
 
+    failureStage = 'otp_reservation_or_email_delivery'
     const otpResult = await sendRegistrationOtpMessage({
       email: normalizedEmail,
       uid: requestedUid,
@@ -3418,6 +3422,8 @@ app.post(REQUEST_LOGIN_OTP_PATH, requireAuth, async (req, res) => {
       success: false,
       error: 'Unable to send login OTP. Please try again later.',
       requestId,
+      stage: failureStage,
+      errorCode: error?.code || error?.statusCode || null,
     })
   }
 })
