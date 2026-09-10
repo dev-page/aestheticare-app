@@ -1014,3 +1014,86 @@ table {
     right: 0.5rem !important;
   }
 }
+
+/* System-admin pages use dense data views. Keep the layout inside the viewport
+   while allowing wide records to scroll inside their own table area. */
+.system-admin-route {
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+.system-admin-route .module-theme {
+  min-width: 0;
+}
+
+.system-admin-route .module-theme > main {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.system-admin-route .module-theme img,
+.system-admin-route .module-theme iframe,
+.system-admin-route .module-theme video {
+  max-width: 100%;
+}
+
+.system-admin-route .module-theme input,
+.system-admin-route .module-theme select,
+.system-admin-route .module-theme textarea,
+.system-admin-route .module-theme button {
+  max-width: 100%;
+}
+
+@media (max-width: 1023px) {
+  .system-admin-route .module-theme > main {
+    padding: 1.25rem !important;
+  }
+
+  .system-admin-route .module-theme :is(.flex.items-start, .flex.items-center).justify-between {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 767px) {
+  .system-admin-route .module-theme > main {
+    padding: 1rem !important;
+  }
+
+  .system-admin-route .module-theme .grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .system-admin-route .module-theme :is(.flex, .inline-flex).gap-4,
+  .system-admin-route .module-theme :is(.flex, .inline-flex).gap-6 {
+    gap: 0.75rem;
+  }
+
+  .system-admin-route .module-theme table {
+    display: block;
+    width: 100%;
+    min-width: 42rem;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .system-admin-route .module-theme :is(th, td) {
+    max-width: 18rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .system-admin-route .module-theme :is(.overflow-x-auto, .overflow-y-auto) {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .system-admin-route .module-theme :is(.fixed.inset-0, [role='dialog']) {
+    max-width: 100vw;
+  }
+
+  .system-admin-route .module-theme [class*='max-h-'] {
+    max-height: calc(100dvh - 2rem);
+  }
+}

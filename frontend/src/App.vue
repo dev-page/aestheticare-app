@@ -1,5 +1,5 @@
 <template>
-  <div :class="{ 'read-only-mode': (isReadOnly || isSuspended) && !isSubscriptionRoute }">
+  <div :class="{ 'read-only-mode': (isReadOnly || isSuspended) && !isSubscriptionRoute, 'system-admin-route': isSystemAdminRoute }">
     <div>
       <EmployeeTopbar
         v-if="showEmployeeTopbar"
@@ -155,6 +155,7 @@ import OnboardingTour from '@/components/common/OnboardingTour.vue'
 const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking } = useAuth()
 
 const route = useRoute()
+const isSystemAdminRoute = computed(() => String(route.path || '').toLowerCase().startsWith('/superadmin/'))
 const {
   isOpen: onboardingIsOpen,
   tour: onboardingTour,
