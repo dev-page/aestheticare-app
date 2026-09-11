@@ -60,7 +60,7 @@ const routes = [
   // HR routes
   { path: "/hr/dashboard", redirect: "/owner/dashboard" },
   { path: "/hr/employee-profile", redirect: "/owner/staff/profiles" },
-  { path: "/hr/add-employee", name: "hr-add-employee", component: () => import("@/views/admin/owner/hr/AddEmployee.vue"), meta: { requiresAuth: true, requiresPermission: "staff:create", requiresFeature: "staff_management" } },
+  { path: "/hr/add-employee", redirect: "/owner/staff/add-staff" },
   { path: "/hr/sales", redirect: "/finance/reports" },
   //{ path: "/hr/schedule", name: "hr-schedule", component: () => import("@/views/clinic/hr/HRSchedule.vue"), meta: { requiresAuth: true } },
   { path: "/hr/add-shift", name: "hr-add-shift", component: () => import("@/views/admin/owner/hr/AddShift.vue"), meta: { requiresAuth: true, requiresPermission: "hr:create", requiresFeature: "hr" } },
@@ -68,7 +68,7 @@ const routes = [
   { path: "/hr/leave-request", name: "hr-leave-request", component: () => import("@/views/admin/owner/hr/LeaveRequest.vue"), meta: { requiresAuth: true, requiresPermission: "leave:create", requiresFeature: "hr" } },
   { path: "/hr/leave-management", name: "hr-leave-management", component: () => import("@/views/admin/owner/hr/LeaveManagement.vue"), meta: { requiresAuth: true, requiresPermission: "leave:review", requiresFeature: "hr" } },
   { path: "/hr/attendance", name: "hr-attendance", component: () => import("@/views/admin/owner/hr/Attendance.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
-  { path: "/hr/archives", name: "hr-archives", component: () => import("@/views/admin/owner/hr/Archive.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view", requiresFeature: "staff_management" } },
+  { path: "/hr/archives", redirect: "/owner/staff/archived" },
   { path: "/hr/base-pay", name: "hr-base-pay", component: () => import("@/views/admin/owner/hr/BasePay.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
   { path: "/hr/payroll", name: "hr-payroll", component: () => import("@/views/admin/owner/hr/Payroll.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
   { path: "/hr/payslip-generation", name: "hr-payslip-generation", component: () => import("@/views/admin/owner/hr/PayslipGeneration.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },

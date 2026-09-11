@@ -113,8 +113,8 @@ export default {
         label: 'Employees',
         entries: [
           { label: 'Employee Directory', to: '/hr/employee-profile', permission: 'staff:view', feature: 'staff_management', description: 'View employee profiles and role assignments.' },
-          { label: 'Add Employee', to: '/hr/add-employee', permission: 'staff:create', feature: 'staff_management', description: 'Create employee accounts under the clinic.' },
-          { label: 'Employee Archives', to: '/hr/archives', permission: 'staff:view', feature: 'staff_management', description: 'Review archived employee records.' }
+          { label: 'Create Employee Account', to: '/owner/staff/add-staff', permission: 'staff:create', feature: 'staff_management', description: 'Create employee accounts under the clinic.' },
+          { label: 'Employee Archives', to: '/owner/staff/archived', permission: 'staff:view', feature: 'staff_management', description: 'Review archived employee records.' }
         ]
       },
       {

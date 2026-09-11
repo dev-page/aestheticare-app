@@ -76,7 +76,7 @@ const loadStaff = async () => {
   }
 
   staffList.value = users
-    .filter(user => user.status === 'Inactive' && !user.archived)
+    .filter(user => ['Pending Approval', 'Inactive'].includes(String(user.status || '').trim()) && !user.archived)
     .map(user => {
       const branch = branches.value.find(
         b => b.id === user.branchId

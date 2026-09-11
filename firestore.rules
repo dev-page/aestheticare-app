@@ -129,7 +129,9 @@ service cloud.firestore {
           || isSuperadmin()
           || (request.resource.data.branchId != null
             && canAccessBranch(request.resource.data.branchId)
-            && hasPermission('staff:create')));
+            && hasPermission('staff:create')
+            && request.resource.data.userType == 'Staff'
+            && request.resource.data.status == 'Pending Approval')));
       allow update: if isSignedIn()
         && ((request.auth.uid == userId && applicantCannotChangeVerificationFields())
           || (request.auth.uid == userId

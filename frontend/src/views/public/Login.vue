@@ -191,7 +191,7 @@ const handleLogin = async () => {
         const userData = userSnap.data()
 
         const accountStatus = String(userData.status || '').trim().toLowerCase()
-        const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
+        const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated', 'rejected'].includes(accountStatus)
         if (accountClosed) {
           await signOut(auth)
           toast.error('This account has been closed. Please contact the system administrator.')
@@ -199,8 +199,8 @@ const handleLogin = async () => {
           return
         }
 
-        if (userData.status === 'Pending') {
-          toast.error('Your account is still pending verification. Please check your email for the OTP.')
+        if (['pending', 'pending approval'].includes(accountStatus)) {
+          toast.error('Your employee account is still awaiting approval.')
           setProcessLoading(false)
           return
         }

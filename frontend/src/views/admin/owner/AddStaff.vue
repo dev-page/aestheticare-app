@@ -79,7 +79,7 @@ export default {
       userType: 'Staff',
       clinicBranch: '',   // will hold branchId
       clinicLocation: '',
-      status: 'Active'
+      status: 'Pending Approval'
     })
     const practitionerIdFile = ref(null)
 
@@ -173,7 +173,7 @@ export default {
         userType: 'Staff',
         clinicBranch: '',
         clinicLocation: '',
-        status: 'Active'
+        status: 'Pending Approval'
       }
       practitionerIdFile.value = null
       if (isBasicPlan.value && branches.value.length > 0) {
@@ -451,7 +451,7 @@ export default {
             userType: 'Staff',
             branchId: currentStaff.value.clinicBranch,   // ✅ store branchId reference
             clinicLocation: currentStaff.value.clinicLocation,
-            status: currentStaff.value.status ?? "Active",
+            status: 'Pending Approval',
             practitionerLicenseUrl: practitionerLicenseUrl || null,
             practitionerLicenseName: practitionerLicenseName || null,
             practitionerLicenseUploadedBy: practitionerLicenseUrl ? (auth.currentUser?.uid || null) : null,

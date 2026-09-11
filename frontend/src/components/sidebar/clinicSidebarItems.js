@@ -11,20 +11,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
     ]
   },
   {
-    key: 'team-management',
-    label: 'Team Management',
-    icon: 'users',
-    feature: 'staff_management',
-    children: [
-      { label: 'Employee Profiles', icon: 'profile', to: '/owner/staff/profiles', feature: 'staff_management', permission: 'staff:view' },
-      { label: 'Add Employee', icon: 'userplus', to: '/owner/staff/add-staff', feature: 'staff_management', permission: 'staff:create' },
-      { label: 'Approve Employees', icon: 'shield', to: '/owner/staff/approve', feature: 'staff_management', permission: 'staff:update' },
-      { label: 'Archived Employees', icon: 'archive', to: '/owner/staff/archived', feature: 'staff_management', permission: 'staff:view' },
-      { label: 'Attendance', icon: 'calendar', to: '/owner/staff/attendance', feature: 'attendance', permission: 'attendance:view' },
-      { label: 'Role Management', icon: 'shield', to: '/owner/staff/roles', feature: 'staff_management', permission: 'roles:manage', ownerOnly: true }
-    ]
-  },
-  {
     key: 'clinic-module',
     label: 'CRM & Clinic',
     icon: 'clinic',
@@ -67,8 +53,15 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
     label: 'Human Resources',
     icon: 'users',
     moduleKey: 'hr',
-    feature: 'hr',
     children: [
+      { type: 'section', label: 'EMPLOYEES' },
+      { label: 'Profiles', icon: 'profile', to: '/owner/staff/profiles', feature: 'staff_management', permission: 'staff:view' },
+      { label: 'Create Account', icon: 'userplus', to: '/owner/staff/add-staff', feature: 'staff_management', permission: 'staff:create' },
+      { label: 'Account Approval', icon: 'shield', to: '/owner/staff/approve', feature: 'staff_management', permission: 'staff:update' },
+      { label: 'Archived', icon: 'archive', to: '/owner/staff/archived', feature: 'staff_management', permission: 'staff:view' },
+      { type: 'section', label: 'ATTENDANCE' },
+      { label: 'Attendance', icon: 'calendar', to: '/owner/staff/attendance', feature: 'attendance', permission: 'attendance:view' },
+      { label: 'Role Management', icon: 'shield', to: '/owner/staff/roles', feature: 'staff_management', permission: 'roles:manage', ownerOnly: true },
       { type: 'section', label: 'SHIFTS' },
       { label: 'Add Shift', icon: 'plus', to: '/hr/add-shift', feature: 'hr', permission: 'hr:create' },
       { label: 'Shift Assignment', icon: 'calendar', to: '/hr/schedule-assignment', feature: 'hr', permission: 'hr:update' },
