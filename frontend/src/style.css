@@ -1015,6 +1015,97 @@ table {
   }
 }
 
+/* Keep dense system-admin screens usable on very narrow phones. Tables retain
+   their columns inside a local scroller so the page itself never overflows. */
+@media (max-width: 480px) {
+  .system-admin-route .module-theme > main {
+    width: 100%;
+    padding: 0.75rem !important;
+  }
+
+  .system-admin-route .module-theme :is(.p-8, .p-6, .p-5) {
+    padding: 0.75rem !important;
+  }
+
+  .system-admin-route .module-theme :is(h1, .text-3xl) {
+    font-size: 1.2rem !important;
+    line-height: 1.25 !important;
+  }
+
+  .system-admin-route .module-theme :is(h2, .text-2xl) {
+    font-size: 1.05rem !important;
+    line-height: 1.3 !important;
+  }
+
+  .system-admin-route .module-theme :is(h3, .text-xl) {
+    font-size: 0.95rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .system-admin-route .module-theme :is(p, li, label, button, input, select, textarea) {
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .system-admin-route .module-theme :is(.flex, .inline-flex, .grid) {
+    min-width: 0;
+  }
+
+  .system-admin-route .module-theme :is(.flex.items-start, .flex.items-center, .flex.justify-between) {
+    flex-wrap: wrap;
+  }
+
+  .system-admin-route .module-theme :is(button, a) {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .system-admin-route .module-theme :is(input, select, textarea) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .system-admin-route .module-theme :is(.fixed.inset-0, [role='dialog']) {
+    padding: 0.5rem !important;
+  }
+
+  .system-admin-route .module-theme :is(.fixed.inset-0, [role='dialog']) > :is(.max-w-5xl, .max-w-4xl, .max-w-3xl, .max-w-2xl) {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - 1rem) !important;
+    padding: 0.75rem !important;
+    border-radius: 0.9rem !important;
+  }
+
+  .system-admin-route .module-theme :is(.overflow-x-auto, .overflow-y-auto) {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  .system-admin-route .module-theme table {
+    min-width: 34rem;
+    font-size: 0.7rem;
+  }
+
+  .system-admin-route .module-theme :is(th, td) {
+    max-width: 13rem;
+    padding: 0.45rem 0.5rem !important;
+    line-height: 1.3;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .system-admin-route .module-theme pre {
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* System-admin pages use dense data views. Keep the layout inside the viewport
    while allowing wide records to scroll inside their own table area. */
 .system-admin-route {
@@ -1095,5 +1186,31 @@ table {
 
   .system-admin-route .module-theme [class*='max-h-'] {
     max-height: calc(100dvh - 2rem);
+  }
+}
+
+/* Final narrow-screen overrides come after the shared admin rules so they win
+   over the desktop/tablet defaults above. */
+@media (max-width: 480px) {
+  .system-admin-route .module-theme > main {
+    padding: 0.75rem !important;
+  }
+
+  .system-admin-route .module-theme table {
+    min-width: 34rem !important;
+    font-size: 0.7rem;
+  }
+
+  .system-admin-route .module-theme :is(th, td) {
+    padding: 0.45rem 0.5rem !important;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .system-admin-route .module-theme :is(.fixed.inset-0, [role='dialog']) > :is(.max-w-5xl, .max-w-4xl, .max-w-3xl, .max-w-2xl) {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - 1rem) !important;
+    padding: 0.75rem !important;
   }
 }

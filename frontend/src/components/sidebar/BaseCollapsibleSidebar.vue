@@ -81,18 +81,14 @@
                 collapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2.5',
                 item.locked
                   ? 'text-[#b99b88] bg-[#24160f]'
-                  : isGroupOpen(item)
-                    ? 'text-white bg-[#6b3f27]'
-                    : 'text-[#e8d8cf] hover:text-white hover:bg-[#3a2417]'
+                  : 'text-[#e8d8cf] hover:text-white hover:bg-[#3a2417]'
               ]"
               :title="collapsed ? item.lockTitle || item.label : item.lockTitle || ''"
             >
                 <span
                 :class="[
                   'h-8 w-8 rounded-lg border flex items-center justify-center',
-                  isGroupOpen(item)
-                    ? 'bg-[#8b5a3c] border-[#8b5a3c] text-white'
-                    : 'bg-[#3a2417] border-[#5a3927] text-[#f3e7e0]'
+                  'bg-[#3a2417] border-[#5a3927] text-[#f3e7e0]'
                 ]"
               >
                 <Icon :icon="item.locked ? 'mdi:lock-outline' : iconName(item.icon)" class="w-4 h-4" />
