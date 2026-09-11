@@ -335,4 +335,25 @@ router.beforeEach(async (to, from, next) => {
   next();
 });
 
+router.onError((error) => {
+  const message = String(error?.message || error || '')
+  const isChunkLoadFailure = /dynamically imported module|importing a module script failed|failed to fetch dynamically imported module/i.test(message)
+  if (!isChunkLoadFailure || typeof window === 'undefined') {
+    console.error('Router navigation failed:', error)
+    return
+  }
+
+  // Recover once from an old cached index that points to a removed Vite chunk.
+  // The deployment cache headers prevent this in new releases; the guard keeps
+  // an existing browser session from getting stuck during rollout.
+  const reloadKey = `chunk-reload:${window.location.pathname}`
+  if (!sessionStorage.getItem(reloadKey)) {
+    sessionStorage.setItem(reloadKey, '1')
+    window.location.reload()
+    return
+  }
+  sessionStorage.removeItem(reloadKey)
+  console.error('A page asset could not be loaded after a cache refresh:', error)
+});
+
 export default router;
