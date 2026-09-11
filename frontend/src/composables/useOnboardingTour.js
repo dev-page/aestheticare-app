@@ -195,6 +195,13 @@ export const useOnboardingTour = ({ route, user }) => {
         isOpen.value = false
         return
       }
+      // The clinic owner tutorial belongs on the dashboard, not on the
+      // subscription onboarding or checkout screens.
+      if (routeTourKey.value === 'owner' && String(nextPath || '').toLowerCase() !== '/owner/dashboard') {
+        activeTourKey.value = ''
+        isOpen.value = false
+        return
+      }
       if (routeTourKey.value) activeTourKey.value = routeTourKey.value
       if (!nextPath || !tourKey.value || triggeredForUid.value === nextUid || loading.value) return
       loading.value = true
