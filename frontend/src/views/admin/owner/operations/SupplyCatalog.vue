@@ -177,8 +177,8 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -348,6 +348,9 @@ export default {
       )
     }
 
+    let unsubscribeItems = null
+    let unsubscribePurchaseRequests = null
+
     const loadItems = async () => {
       if (!currentBranchId.value) {
         items.value = []
@@ -419,6 +422,10 @@ export default {
     onMounted(() => {
       onAuthStateChanged(auth, async (user) => {
         if (!user) {
+          if (unsubscribeItems) unsubscribeItems()
+          if (unsubscribePurchaseRequests) unsubscribePurchaseRequests()
+          unsubscribeItems = null
+          unsubscribePurchaseRequests = null
           currentBranchId.value = ''
           currentOwnerId.value = ''
           currentBranchIds.value = []
@@ -434,9 +441,22 @@ export default {
         currentScopeMode.value = scope.scopeMode || 'owner'
 
         await loadSuppliers()
-        await loadDeliveredTotals()
-        await loadItems()
+        if (unsubscribeItems) unsubscribeItems()
+        if (unsubscribePurchaseRequests) unsubscribePurchaseRequests()
+        unsubscribeItems = onSnapshot(
+          query(collection(db, 'inventoryItems'), where('branchId', '==', currentBranchId.value)),
+          (snapshot) => { items.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })) }
+        )
+        unsubscribePurchaseRequests = onSnapshot(
+          query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value)),
+          (snapshot) => { deliveredTotals.value = buildDeliveredTotals(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))) }
+        )
       })
+    })
+
+    onUnmounted(() => {
+      if (unsubscribeItems) unsubscribeItems()
+      if (unsubscribePurchaseRequests) unsubscribePurchaseRequests()
     })
 
     return {

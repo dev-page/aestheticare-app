@@ -592,7 +592,7 @@
 
 <script>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc } from 'firebase/firestore'
+import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { getApp } from 'firebase/app'
@@ -1527,10 +1527,16 @@ export default {
     }
 
     let unsubscribeAuth = null
+    let unsubscribeInventory = null
+    let unsubscribeRequests = null
 
     onMounted(() => {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
+          if (unsubscribeInventory) unsubscribeInventory()
+          if (unsubscribeRequests) unsubscribeRequests()
+          unsubscribeInventory = null
+          unsubscribeRequests = null
           currentUserId.value = ''
           currentUserName.value = ''
           currentUserRole.value = 'Manager'
@@ -1569,13 +1575,42 @@ export default {
         }
 
         await loadSuppliers()
-        await loadInventoryItems()
-        await loadRequests()
+        if (unsubscribeInventory) unsubscribeInventory()
+        if (unsubscribeRequests) unsubscribeRequests()
+        unsubscribeInventory = onSnapshot(
+          query(collection(db, 'inventoryItems'), where('branchId', '==', currentBranchId.value)),
+          (snapshot) => {
+            inventoryItems.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+          }
+        )
+        unsubscribeRequests = onSnapshot(
+          query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value)),
+          (snapshot) => {
+            requests.value = snapshot.docs.map((snap) => {
+              const data = snap.data()
+              return {
+                id: snap.id,
+                item: data.item || '-', category: data.category || '', supplier: data.supplier || '-',
+                branch: data.branch || currentBranchName.value || '-', quantity: data.quantity || 0,
+                unit: data.unit || 'units', unitCost: Number(data.unitCost || 0), totalCost: Number(data.totalCost || 0),
+                priority: data.priority || 'Low', date: formatDate(data.createdAt), status: data.status || 'Pending',
+                paymentStatus: data.paymentStatus || 'Unpaid', amountPaid: Number(data.amountPaid || 0), balance: Number(data.balance || 0),
+                budgetStatus: data.budgetStatus || 'Not Requested', budgetRequestedAmount: Number(data.budgetRequestedAmount || 0),
+                approvedBudgetAmount: Number(data.approvedBudgetAmount || 0), budgetVariance: Number(data.budgetVariance || 0),
+                budgetSettlementStatus: data.budgetSettlementStatus || '', logisticsStatus: data.logisticsStatus || '',
+                workflowStage: data.workflowStage || '', receiptUrl: data.receiptUrl || '', receiptFileName: data.receiptFileName || '',
+                receiptMimeType: data.receiptMimeType || '', receiptUploadedAt: data.receiptUploadedAt || null
+              }
+            })
+          }
+        )
       })
     })
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
+      if (unsubscribeInventory) unsubscribeInventory()
+      if (unsubscribeRequests) unsubscribeRequests()
     })
 
     watch(

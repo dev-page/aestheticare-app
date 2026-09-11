@@ -1664,6 +1664,170 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
   }
 })
 
+const procurementTransitionMap = {
+  supplierQuotes: { Submitted: 'Accepted' },
+  purchaseOrders: { 'Pending Finance': 'Approved', Approved: 'Issued', Issued: 'Shipped', Shipped: 'Received' },
+  purchaseRequests: { 'Pending Finance': 'Approved', Approved: 'Issued', Issued: 'Shipped', Shipped: 'Received' },
+}
+
+const canAccessBranchRecord = (context, record) => {
+  const permissions = context?.permissions || new Set()
+  const role = String(context?.roleKey || '').toLowerCase()
+  if (role === 'superadmin' || permissions.has('administrator:full_access')) return true
+  const branchId = String(context?.userData?.branchId || context?.userData?.clinicId || '').trim()
+  return Boolean(branchId && String(record?.branchId || '').trim() === branchId && (
+    role === 'owner' ||
+    permissions.has('procurement:create') || permissions.has('procurement:review') ||
+    permissions.has('inventory:review') || permissions.has('orders:update')
+  ))
+}
+
+app.post('/procurement/:collection/:id/transition', requireAuth, async (req, res) => {
+  const collectionName = String(req.params.collection || '').trim()
+  const recordId = String(req.params.id || '').trim()
+  const transitions = procurementTransitionMap[collectionName]
+  if (!transitions || !recordId) return res.status(400).json({ success: false, error: 'Invalid procurement transition.' })
+
+  try {
+    const context = await loadUserContext(req.user.uid)
+    const recordRef = admin.firestore().collection(collectionName).doc(recordId)
+    const recordSnap = await recordRef.get()
+    if (!recordSnap.exists) return res.status(404).json({ success: false, error: 'Procurement record not found.' })
+    const record = recordSnap.data() || {}
+    if (!canAccessBranchRecord(context, record)) return res.status(403).json({ success: false, error: 'Forbidden' })
+
+    const rawPurchaseOrderStatus = String(record.purchaseOrderStatus || '').trim()
+    const currentStatus = collectionName === 'purchaseRequests'
+      ? (rawPurchaseOrderStatus === 'Draft' || !rawPurchaseOrderStatus ? 'Pending Finance' : rawPurchaseOrderStatus)
+      : String(record.status || '').trim()
+    const nextStatus = transitions[currentStatus]
+    if (!nextStatus) return res.status(409).json({ success: false, error: `Record cannot move forward from ${currentStatus || 'its current status'}.` })
+
+    const payload = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: req.user.uid,
+    }
+    if (collectionName === 'purchaseRequests') {
+      payload.purchaseOrderStatus = nextStatus
+      payload.procurementStatus = nextStatus === 'Received' ? 'Received' : `Purchase Order ${nextStatus}`
+      payload.workflowStage = nextStatus === 'Received' ? 'Delivered - Awaiting Finance Settlement' : `${nextStatus} Purchase Order`
+    } else {
+      payload.status = nextStatus
+    }
+    if (nextStatus === 'Approved') payload.financeApprovedAt = admin.firestore.FieldValue.serverTimestamp()
+    if (nextStatus === 'Issued') payload.purchaseOrderIssuedAt = admin.firestore.FieldValue.serverTimestamp()
+    if (nextStatus === 'Shipped') payload.shippedAt = admin.firestore.FieldValue.serverTimestamp()
+    if (nextStatus === 'Received') payload.receivedAt = admin.firestore.FieldValue.serverTimestamp()
+    if (collectionName === 'supplierQuotes' && record.purchaseRequestId && nextStatus === 'Accepted') {
+      const requestRef = admin.firestore().collection('purchaseRequests').doc(String(record.purchaseRequestId))
+      const requestSnap = await requestRef.get()
+      if (requestSnap.exists) {
+        await requestRef.update({
+          supplierQuoteId: recordSnap.id,
+          supplierQuoteStatus: 'Accepted',
+          supplierQuoteReference: record.reference || record.id || recordSnap.id,
+          supplierQuoteAmount: Number(record.amount || record.totalAmount || record.totalCost || 0),
+          quotedSupplier: record.supplierName || record.supplier || '',
+          purchaseOrderStatus: 'Pending Finance',
+          procurementStatus: 'Pending Finance',
+          workflowStage: 'Pending Finance Approval',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+      }
+    }
+    if (collectionName === 'purchaseRequests' && nextStatus === 'Received') {
+      payload.status = 'Delivered'
+      payload.logisticsStatus = 'Delivered'
+      payload.deliveredAt = admin.firestore.FieldValue.serverTimestamp()
+    }
+    await recordRef.update(payload)
+    if (collectionName === 'purchaseRequests' && nextStatus === 'Received') {
+      const branchId = String(record.branchId || '').trim()
+      const itemName = String(record.item || '').trim()
+      const supplierName = String(record.supplier || '').trim()
+      const quantity = Number(record.quantity || 0)
+      const unitCost = Number(record.unitCost || 0)
+      if (branchId && itemName && quantity > 0) {
+        const inventorySnap = await admin.firestore().collection('inventoryItems').where('branchId', '==', branchId).get()
+        const existing = inventorySnap.docs
+          .map((itemSnap) => ({ id: itemSnap.id, data: itemSnap.data() || {} }))
+          .find(({ data }) => String(data.name || '').trim().toLowerCase() === itemName.toLowerCase()
+            && String(data.supplier || '').trim().toLowerCase() === supplierName.toLowerCase())
+        if (existing) {
+          const currentStock = Number(existing.data.currentStock || 0)
+          await admin.firestore().collection('inventoryItems').doc(existing.id).update({
+            currentStock: currentStock + quantity,
+            maxStock: Number(existing.data.maxStock || currentStock) + quantity,
+            ...(unitCost > 0 && Number(existing.data.costPrice || 0) <= 0 ? { costPrice: unitCost, unitPrice: unitCost } : {}),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+        } else {
+          await admin.firestore().collection('inventoryItems').add({
+            name: itemName,
+            sku: `AUTO-${recordSnap.id.slice(-8).toUpperCase()}`,
+            category: record.category || '',
+            supplier: supplierName,
+            currentStock: quantity,
+            minStock: 1,
+            maxStock: quantity,
+            unit: record.unit || 'units',
+            costPrice: unitCost,
+            unitPrice: unitCost,
+            description: 'Auto-added from received purchase order',
+            stockStatus: 'In Stock',
+            branchId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+        }
+      }
+    }
+    return res.json({ success: true, data: { id: recordId, status: nextStatus } })
+  } catch (error) {
+    console.error('Procurement transition failed:', error)
+    return res.status(500).json({ success: false, error: 'Could not update procurement status.' })
+  }
+})
+
+app.post('/finance/purchase-requests/:id/settle', requireAuth, async (req, res) => {
+  const recordId = String(req.params.id || '').trim()
+  if (!recordId) return res.status(400).json({ success: false, error: 'Purchase request id is required.' })
+  try {
+    const context = await loadUserContext(req.user.uid)
+    const recordRef = admin.firestore().collection('purchaseRequests').doc(recordId)
+    const recordSnap = await recordRef.get()
+    if (!recordSnap.exists) return res.status(404).json({ success: false, error: 'Purchase request not found.' })
+    const record = recordSnap.data() || {}
+    const permissions = context.permissions || new Set()
+    const role = String(context.roleKey || '').toLowerCase()
+    const branchId = String(context.userData?.branchId || context.userData?.clinicId || '').trim()
+    const authorized = role === 'superadmin' || permissions.has('administrator:full_access') || (
+      branchId && String(record.branchId || '').trim() === branchId && (
+        role === 'owner' || permissions.has('payments:create') || permissions.has('inventory:review') || permissions.has('orders:update')
+      )
+    )
+    if (!authorized) return res.status(403).json({ success: false, error: 'Forbidden' })
+    if (String(record.status || '').trim() !== 'Delivered') {
+      return res.status(409).json({ success: false, error: 'Only delivered purchase requests can be settled.' })
+    }
+
+    const total = Math.max(0, Number(record.totalCost || record.total || 0) || (Number(record.quantity || 0) * Number(record.unitCost || 0)))
+    const paid = req.body?.paid === true
+    await recordRef.update({
+      paymentStatus: paid ? 'Paid' : 'Unpaid',
+      amountPaid: paid ? total : 0,
+      balance: paid ? 0 : total,
+      paidAt: paid ? admin.firestore.FieldValue.serverTimestamp() : null,
+      paidBy: paid ? req.user.uid : null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    return res.json({ success: true, data: { id: recordId, paymentStatus: paid ? 'Paid' : 'Unpaid', amountPaid: paid ? total : 0, balance: paid ? 0 : total } })
+  } catch (error) {
+    console.error('Purchase settlement failed:', error)
+    return res.status(500).json({ success: false, error: 'Could not update payment status.' })
+  }
+})
+
 // Allow authorized system administrators to rerun the same verifier for an
 // existing supplier application when processing failed or was never started.
 app.post('/admin/trigger-registration-verification', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:suppliers:verify'), async (req, res) => {

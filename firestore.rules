@@ -315,12 +315,13 @@ service cloud.firestore {
     match /purchaseRequests/{requestId} {
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (hasPermission('inventory:view') || hasPermission('orders:view'))) || isSuperadmin());
+          && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view'))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
       allow update: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (hasPermission('inventory:update') || hasPermission('orders:update') || hasPermission('inventory:review')));
+          && (hasPermission('inventory:update') || hasPermission('orders:update') || hasPermission('inventory:review')
+            || hasPermission('procurement:create') || hasPermission('procurement:review')));
       allow delete: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
     }

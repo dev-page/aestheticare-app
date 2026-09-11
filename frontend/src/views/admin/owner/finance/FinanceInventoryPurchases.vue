@@ -181,12 +181,13 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { loadOwnerBranchScope, loadScopedCollectionDocs } from '@/utils/ownerBranchScope'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 export default {
   name: 'FinanceInventoryPurchases',
@@ -413,27 +414,28 @@ export default {
       const amountPaid = nextStatus === 'Paid' ? totalCost : 0
       const balance = nextStatus === 'Paid' ? 0 : totalCost
 
-      const paidAt = nextStatus === 'Paid' ? serverTimestamp() : null
-
       savingPaymentId.value = purchase.id
       try {
-        await updateDoc(doc(db, 'purchaseRequests', purchase.id), {
-          paymentStatus: nextStatus,
-          amountPaid,
-          balance,
-          paidAt,
-          paidBy: currentUserId.value || null,
-          updatedAt: serverTimestamp()
-        })
-
-        const target = purchases.value.find((entry) => entry.id === purchase.id)
-        if (target) {
-          target.paymentStatus = nextStatus
-          target.amountPaid = amountPaid
-          target.balance = balance
+        const token = auth.currentUser ? await auth.currentUser.getIdToken(true) : ''
+        let response
+        let lastError
+        for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+          try {
+            response = await fetch(`${baseUrl}/finance/purchase-requests/${purchase.id}/settle`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ paid: nextStatus === 'Paid' })
+            })
+            if (response.status !== 404) break
+          } catch (error) {
+            lastError = error
+          }
         }
+        if (!response) throw lastError || new Error('Finance service is unavailable.')
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(payload.error || 'Failed to update payment status.')
 
-        toast.success('Payment status updated.')
+        toast.success(`Payment status set to ${payload.data?.paymentStatus || nextStatus}.`)
       } catch (error) {
         console.error(error)
         toast.error('Failed to update payment status.')
@@ -443,10 +445,16 @@ export default {
     }
 
     let unsubscribeAuth = null
+    let unsubscribePurchases = null
+    let unsubscribeInventory = null
 
     onMounted(() => {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
+          if (unsubscribePurchases) unsubscribePurchases()
+          if (unsubscribeInventory) unsubscribeInventory()
+          unsubscribePurchases = null
+          unsubscribeInventory = null
           currentBranchId.value = ''
           currentOwnerId.value = ''
           currentBranchIds.value = []
@@ -469,12 +477,26 @@ export default {
           return
         }
 
-        await loadInventoryPurchaseData()
+        if (unsubscribePurchases) unsubscribePurchases()
+        if (unsubscribeInventory) unsubscribeInventory()
+        unsubscribePurchases = onSnapshot(
+          query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value)),
+          (snapshot) => { purchases.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })) }
+        )
+        unsubscribeInventory = onSnapshot(
+          query(collection(db, 'inventoryItems'), where('branchId', '==', currentBranchId.value)),
+          (snapshot) => { inventoryItems.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })) }
+        )
+        suppliers.value = await loadScopedCollectionDocs(
+          db, 'suppliers', currentOwnerId.value, currentBranchIds.value, { scopeMode: currentScopeMode.value }
+        )
       })
     })
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
+      if (unsubscribePurchases) unsubscribePurchases()
+      if (unsubscribeInventory) unsubscribeInventory()
     })
 
     return {
