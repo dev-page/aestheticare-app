@@ -2823,8 +2823,16 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
     const allDocKeys = REGISTRATION_DOCUMENT_REQUIREMENTS.clinic
     const allVerified = allDocKeys.every((k) => Boolean(submittedDocs[k]?.verified))
     if (allVerified) {
-      await clinicRef.set({ approvalStatus: 'Approved', approvedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
-      await userRef.set({ status: 'Active', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+      await clinicRef.set({
+        approvalStatus: 'Approved',
+        approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        subscriptionOnboardingRequired: true,
+      }, { merge: true })
+      await userRef.set({
+        status: 'Active',
+        subscriptionOnboardingRequired: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
 
       // Send welcome email to clinic owner (best-effort)
       const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
@@ -2919,8 +2927,16 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
     const allVerified = allKeys.every((k) => Boolean(submittedDocs[k]?.verified))
     if (allVerified) {
       await Promise.all([
-        clinicRef.set({ approvalStatus: 'Approved', approvedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
-        userRef.set({ status: 'Active', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
+        clinicRef.set({
+          approvalStatus: 'Approved',
+          approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+          subscriptionOnboardingRequired: true,
+        }, { merge: true }),
+        userRef.set({
+          status: 'Active',
+          subscriptionOnboardingRequired: true,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true }),
       ])
 
       const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
@@ -3015,8 +3031,17 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
     }
 
     await Promise.all([
-      clinicRef.set({ approvalStatus: 'Approved', approvedAt: admin.firestore.FieldValue.serverTimestamp(), approvedBy: reviewer || null }, { merge: true }),
-      userRef.set({ status: 'Active', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
+      clinicRef.set({
+        approvalStatus: 'Approved',
+        approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        approvedBy: reviewer || null,
+        subscriptionOnboardingRequired: true,
+      }, { merge: true }),
+      userRef.set({
+        status: 'Active',
+        subscriptionOnboardingRequired: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }),
       clinicRef.collection('reviewHistory').add({ action: 'clinic-approved', reviewer: reviewer || null, note: note || null, ts: admin.firestore.FieldValue.serverTimestamp() }),
     ])
     await writeSystemAdminActivity(req, {

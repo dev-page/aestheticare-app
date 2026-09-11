@@ -2894,9 +2894,16 @@ const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () =
 }
 
 const requestAutomaticClinicVerification = async (uid) => {
+  if (!uid) throw new Error('Registration ID is missing.')
+
+  // Auth can still be restoring its persisted session immediately after a refresh.
+  if (typeof auth.authStateReady === 'function') {
+    await auth.authStateReady()
+  }
   const currentUser = auth.currentUser
-  if (!currentUser || !uid) return null
-  const token = await currentUser.getIdToken()
+  if (!currentUser) throw new Error('Your registration session expired. Please sign in again to process the documents.')
+
+  const token = await currentUser.getIdToken(true)
   const response = await fetch(`${OTP_API_BASE}/registration/auto-verify-documents`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
@@ -3008,7 +3015,8 @@ const submitDocuments = async () => {
     try {
       automaticVerification = await requestAutomaticClinicVerification(userUid.value)
     } catch (verificationError) {
-      console.warn('Automatic clinic verification was not completed:', verificationError)
+      console.error('Automatic clinic verification was not completed:', verificationError)
+      toast.warning(`Documents were submitted, but automatic OCR could not start: ${verificationError?.message || 'Please ask an administrator to run verification.'}`)
     }
 
     existingSubmittedDocuments.value = submittedDocumentsPayload

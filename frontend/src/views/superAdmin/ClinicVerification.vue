@@ -484,17 +484,7 @@ export default {
 
         // perform fetch and then filter and sort locally
         const snap = await getDocs(q)
-        const docs = snap.docs
-        // If we previously had a lastDoc, start after it by slicing results; otherwise take first pageSize
-        let pageDocs = docs
-        if (verifiedLastDoc.value) {
-          const idx = docs.findIndex((d) => d.id === verifiedLastDoc.value)
-          pageDocs = idx >= 0 ? docs.slice(idx + 1, idx + 1 + verifiedPageSize) : docs.slice(0, verifiedPageSize)
-        } else {
-          pageDocs = docs.slice(0, verifiedPageSize)
-        }
-
-        const approved = pageDocs
+        const approved = snap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
           .filter((clinic) => String(clinic.approvalStatus || '').toLowerCase().includes('approved'))
 
@@ -551,10 +541,14 @@ export default {
           })
         )
 
-        if (rows.length) {
-          verifiedClinics.value = verifiedClinics.value.concat(sortRecordsNewestFirst(rows))
-          verifiedLastDoc.value = pageDocs[pageDocs.length - 1]?.id || verifiedLastDoc.value
-          if (pageDocs.length < verifiedPageSize) hasMoreVerified.value = false
+        const sortedRows = sortRecordsNewestFirst(rows)
+        const pageStart = reset ? 0 : verifiedClinics.value.length
+        const pageRows = sortedRows.slice(pageStart, pageStart + verifiedPageSize)
+
+        if (pageRows.length) {
+          verifiedClinics.value = reset ? pageRows : verifiedClinics.value.concat(pageRows)
+          verifiedLastDoc.value = pageRows[pageRows.length - 1]?.id || verifiedLastDoc.value
+          hasMoreVerified.value = pageStart + pageRows.length < sortedRows.length
         } else {
           hasMoreVerified.value = false
         }
@@ -787,6 +781,7 @@ export default {
         })
         closeModal()
         await loadPendingClinics()
+        await loadVerifiedClinics(true)
       } catch (err) {
         console.error('Failed to run clinic document verification:', err)
         error.value = err?.message || 'Automatic verification failed. Please try again.'
@@ -839,6 +834,7 @@ export default {
 
         closeModal()
         await loadPendingClinics()
+        await loadVerifiedClinics(true)
       } catch (err) {
         console.error('Failed to approve clinic registration:', err)
         error.value = 'Failed to approve registration. Please try again.'

@@ -82,6 +82,7 @@ const routes = [
   { path: "/supply/logistics", name: "supply-logistics", component: () => import("@/views/admin/owner/operations/LogisticsOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
 
   // Owner routes
+  { path: "/owner/onboarding", name: "owner-onboarding", component: () => import("@/views/admin/owner/OwnerSubscriptionOnboarding.vue"), meta: { requiresAuth: true } },
   { path: "/owner/dashboard", name: "owner-dashboard", component: () => import("@/views/admin/owner/OwnerDashboard.vue"), meta: { requiresAuth: true } },
   { path: "/owner/branch/branch-info", name: "owner-branch-info", component: () => import("@/views/admin/owner/BranchInfo.vue"), meta: { requiresAuth: true, requiresPermission: "branches:view" } },
   { path: "/owner/branch/add-branch", name: "owner-add-branch", component: () => import("@/views/admin/owner/AddBranch.vue"), meta: { requiresAuth: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
@@ -285,6 +286,18 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const routePath = String(to.path || '').toLowerCase()
+  const isOwnerRoute = isOwnerLikeRole(currentUserData.role || currentUserData.userType)
+  const needsSubscriptionOnboarding = currentUser && isOwnerRoute && (
+    currentUserData.subscriptionOnboardingRequired === true
+    || String(currentUserData.subscriptionOnboardingRequired || '').trim().toLowerCase() === 'true'
+  )
+  const isSubscriptionOnboardingRoute = routePath === '/owner/onboarding'
+  const isSubscriptionCheckoutRoute = routePath === '/subscription/checkout'
+
+  if (needsSubscriptionOnboarding && !isSubscriptionOnboardingRoute && !isSubscriptionCheckoutRoute) {
+    return next('/owner/onboarding')
+  }
+
   if (currentUser && routePath.startsWith('/superadmin') && !isSuperadminRole(currentUserData)) {
     return next(safeUnauthorizedRedirect(currentUser))
   }

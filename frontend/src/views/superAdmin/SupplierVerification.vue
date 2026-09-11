@@ -427,29 +427,39 @@ const loadVerifiedSuppliers = async (reset = false) => {
   if (!hasMoreVerifiedSuppliers.value) return
   loadingVerifiedSuppliers.value = true
   try {
-    // simple paged approach: fetch a page of suppliers ordered by createdAt (descending) and filter locally
+    // Read the full approved set before paginating so a newly approved supplier is not
+    // hidden by Firestore's unspecified document order.
     const q = query(collection(db, 'suppliers'))
     const snap = await getDocs(q)
-    const docs = snap.docs
-    let pageDocs = docs
-    if (verifiedSuppliersLastDoc.value) {
-      const idx = docs.findIndex((d) => d.id === verifiedSuppliersLastDoc.value)
-      pageDocs = idx >= 0 ? docs.slice(idx + 1, idx + 1 + verifiedSuppliersPageSize) : docs.slice(0, verifiedSuppliersPageSize)
-    } else {
-      pageDocs = docs.slice(0, verifiedSuppliersPageSize)
-    }
-
-    const rows = pageDocs.map((d) => {
+    const rows = snap.docs.map((d) => {
       const data = d.data() || {}
       const businessName = String(data.businessName || data.name || '').trim() || 'Unnamed Supplier'
       const ownerName = String(data.ownerName || data.fullName || '').trim() || ''
-      return { id: d.id, businessName, ownerName, contactNumber: data.contactNumber || data.phone || '', status: data.status || 'Active' }
-    })
+      const approvalStatus = String(data.approvalStatus || '').toLowerCase()
+      const status = String(data.status || '').toLowerCase()
+      const isApproved = approvalStatus
+        ? approvalStatus.includes('approved')
+        : status === 'active' || status === 'approved'
+      return isApproved
+        ? {
+            id: d.id,
+            businessName,
+            ownerName,
+            contactNumber: data.contactNumber || data.phone || '',
+            status: data.status || 'Active',
+            approvedAt: data.approvedAt || data.updatedAt || data.createdAt || null,
+          }
+        : null
+    }).filter(Boolean)
 
-    if (rows.length) {
-      verifiedSuppliers.value = verifiedSuppliers.value.concat(sortRecordsNewestFirst(rows))
-      verifiedSuppliersLastDoc.value = pageDocs[pageDocs.length - 1]?.id || verifiedSuppliersLastDoc.value
-      if (pageDocs.length < verifiedSuppliersPageSize) hasMoreVerifiedSuppliers.value = false
+    const sortedRows = sortRecordsNewestFirst(rows)
+    const pageStart = reset ? 0 : verifiedSuppliers.value.length
+    const pageRows = sortedRows.slice(pageStart, pageStart + verifiedSuppliersPageSize)
+
+    if (pageRows.length) {
+      verifiedSuppliers.value = reset ? pageRows : verifiedSuppliers.value.concat(pageRows)
+      verifiedSuppliersLastDoc.value = pageRows[pageRows.length - 1]?.id || verifiedSuppliersLastDoc.value
+      hasMoreVerifiedSuppliers.value = pageStart + pageRows.length < sortedRows.length
     } else {
       hasMoreVerifiedSuppliers.value = false
     }
@@ -531,6 +541,7 @@ const runSupplierVerification = async () => {
     })
     closeModal()
     await loadPendingSuppliers()
+    await loadVerifiedSuppliers(true)
   } catch (err) {
     console.error('Failed to run supplier document verification:', err)
     error.value = err?.message || 'Automatic verification failed. Please try again.'
@@ -574,6 +585,7 @@ const approveSelected = async () => {
 
     closeModal()
     await loadPendingSuppliers()
+    await loadVerifiedSuppliers(true)
   } catch (err) {
     console.error('Failed to approve supplier registration:', err)
     error.value = 'Failed to approve supplier registration. Please try again.'

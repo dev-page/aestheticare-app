@@ -615,6 +615,8 @@ const handlePayMongoReturn = async () => {
           subscriptionPlan: targetPlan,
           paymentStatus: 'Paid',
           paymentId: paymentDoc.id,
+          subscriptionOnboardingRequired: false,
+          subscriptionOnboardingCompletedAt: serverTimestamp(),
           subscriptionStartedAt: startedAt,
           subscriptionExpiresAt: expiresAt,
           pendingSubscriptionPlan: deleteField(),
