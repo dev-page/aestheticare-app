@@ -445,6 +445,28 @@ const otpCountdownLabel = computed(() => {
 })
 const currentStepTitle = computed(() => registrationSteps[currentStep.value - 1] || registrationSteps[0])
 const requiresPasswordForStep1 = computed(() => !(userUid.value && otpVerifiedForRegistration.value))
+const isStep1FormComplete = computed(() => {
+  const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email.value || '').trim())
+  const phoneIsValid = /^9[0-9]{9}$/.test(String(contactNumber.value || '').trim())
+  const passwordIsValid = !requiresPasswordForStep1.value || (
+    PASSWORD_REGEX.test(String(password.value || '')) &&
+    String(password.value || '') === String(confirmPassword.value || '')
+  )
+
+  return Boolean(
+    firstName.value?.trim() &&
+    lastName.value?.trim() &&
+    emailIsValid &&
+    birthDate.value &&
+    clinicName.value?.trim() &&
+    clinicLocation.value?.trim() &&
+    clinicLocationLat.value &&
+    clinicLocationLng.value &&
+    phoneIsValid &&
+    termsAccepted.value &&
+    passwordIsValid
+  )
+})
 const companyDocumentKeys = [
   'businessPermit',
   'birRegistration',
@@ -3097,7 +3119,7 @@ const submitDocuments = async () => {
               <p v-if="birthDateError" class="mt-1 text-xs text-red-600">{{ birthDateError }}</p>
             </div>
 
-            <div class="relative">
+            <div v-if="requiresPasswordForStep1" class="relative">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="relative">
                   <input :type="passwordVisible ? 'text' : 'password'" v-model="password" required maxlength="32" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @focus="passwordFocused = true" @blur="passwordFocused = false" />
@@ -3285,7 +3307,7 @@ const submitDocuments = async () => {
             <div class="cta-row flex gap-3">
               <button
                 type="button"
-                :disabled="isSubmitting"
+                :disabled="isSubmitting || !isStep1FormComplete"
                 @click="registerClinic"
                 class="h-14 lg:h-12 flex-1 py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
