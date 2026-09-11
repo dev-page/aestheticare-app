@@ -60,6 +60,21 @@
         </button>
       </div>
 
+      <label class="dismiss-option">
+        <input v-model="dontShowAgain" type="checkbox" @change="saveDismissalPreference" />
+        <span>Don't show this again</span>
+      </label>
+
+      <button
+        v-if="dontShowAgain"
+        type="button"
+        class="continue-later-button"
+        :disabled="savingDismissal"
+        @click="continueWithoutPlan"
+      >
+        {{ savingDismissal ? 'Saving...' : 'Continue to dashboard' }}
+      </button>
+
       <p class="onboarding-note">Your account details will be filled in automatically on the payment page.</p>
     </section>
   </main>
@@ -69,11 +84,12 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { collection, onSnapshot } from 'firebase/firestore'
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import {
   buildSubscriptionPlanCatalog,
   filterActiveSubscriptionPlans,
 } from '@/utils/subscriptionPlans'
-import { db } from '@/config/firebaseConfig'
+import { auth, db } from '@/config/firebaseConfig'
 
 const router = useRouter()
 const loading = ref(true)
@@ -81,6 +97,8 @@ const submitting = ref(false)
 const error = ref('')
 const plans = ref([])
 const selectedPlan = ref('')
+const dontShowAgain = ref(false)
+const savingDismissal = ref(false)
 let unsubscribePlans = null
 
 const defaultPlans = () => [
@@ -130,6 +148,30 @@ const continueToCheckout = async () => {
     path: '/subscription/checkout',
     query: { plan: selectedPlan.value, from: 'owner', onboarding: '1' },
   })
+}
+
+const saveDismissalPreference = async () => {
+  if (!dontShowAgain.value || !auth.currentUser) return
+  try {
+    await setDoc(doc(db, 'users', auth.currentUser.uid), {
+      subscriptionOnboardingDismissed: true,
+      subscriptionOnboardingDismissedAt: serverTimestamp(),
+    }, { merge: true })
+  } catch (dismissalError) {
+    dontShowAgain.value = false
+    error.value = dismissalError?.message || 'Unable to save this preference.'
+  }
+}
+
+const continueWithoutPlan = async () => {
+  if (!dontShowAgain.value) return
+  savingDismissal.value = true
+  try {
+    await saveDismissalPreference()
+    if (dontShowAgain.value) await router.push('/owner/dashboard')
+  } finally {
+    savingDismissal.value = false
+  }
 }
 
 onMounted(loadPlans)

@@ -3,7 +3,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useAuth } from "@/composables/useAuth";
 import { usePermissions } from "@/composables/usePermissions";
 import { useSubscription } from "@/composables/useSubscription";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, limit, query, where } from "firebase/firestore";
 import { auth, db } from "@/config/firebaseConfig";
 
 const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
@@ -208,6 +208,13 @@ const isClinicAccount = (userData = {}) => {
     || userType === 'employee'
 }
 
+const isFreeSubscriptionPlan = (value) => {
+  const plan = String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-')
+  return !plan || plan === 'free' || plan === 'free-plan' || plan === 'free-trial' || plan === 'trial'
+}
+
+const isTrueFlag = (value) => value === true || String(value || '').trim().toLowerCase() === 'true'
+
 const isAuthReady = (isLoading) => {
   if (!isLoading.value) return Promise.resolve()
 
@@ -287,12 +294,41 @@ router.beforeEach(async (to, from, next) => {
 
   const routePath = String(to.path || '').toLowerCase()
   const isOwnerRoute = isOwnerLikeRole(currentUserData.role || currentUserData.userType)
-  const needsSubscriptionOnboarding = currentUser && isOwnerRoute && (
-    currentUserData.subscriptionOnboardingRequired === true
-    || String(currentUserData.subscriptionOnboardingRequired || '').trim().toLowerCase() === 'true'
-  )
   const isSubscriptionOnboardingRoute = routePath === '/owner/onboarding'
   const isSubscriptionCheckoutRoute = routePath === '/subscription/checkout'
+
+  let clinicSubscriptionData = {}
+  if (currentUser && isOwnerRoute) {
+    try {
+      const candidateClinicIds = [currentUserData.branchId, currentUser.uid]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+      for (const clinicId of candidateClinicIds) {
+        const clinicSnap = await getDoc(doc(db, 'clinics', clinicId))
+        if (clinicSnap.exists()) {
+          clinicSubscriptionData = clinicSnap.data() || {}
+          break
+        }
+      }
+      if (!Object.keys(clinicSubscriptionData).length) {
+        const ownerClinicSnap = await getDocs(query(
+          collection(db, 'clinics'),
+          where('ownerId', '==', currentUser.uid),
+          limit(1),
+        ))
+        clinicSubscriptionData = ownerClinicSnap.docs[0]?.data() || {}
+      }
+    } catch (error) {
+      console.error('Error loading clinic subscription state:', error)
+    }
+  }
+
+  const activeSubscriptionPlan = currentUserData.subscriptionPlan
+    || currentUserData.plan
+    || clinicSubscriptionData.subscriptionPlan
+    || clinicSubscriptionData.plan
+  const needsSubscriptionOnboarding = currentUser && isOwnerRoute && isFreeSubscriptionPlan(activeSubscriptionPlan)
+    && !isTrueFlag(currentUserData.subscriptionOnboardingDismissed)
 
   if (needsSubscriptionOnboarding && !isSubscriptionOnboardingRoute && !isSubscriptionCheckoutRoute) {
     return next('/owner/onboarding')

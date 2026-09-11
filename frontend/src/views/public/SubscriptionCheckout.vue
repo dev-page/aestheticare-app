@@ -698,6 +698,10 @@ const handlePayMongoReturn = async () => {
 }
 
 const goBack = () => {
+  if (String(route.query.onboarding || '').trim() === '1') {
+    router.push({ path: '/owner/onboarding', query: { plan: selectedPlanId.value || 'basic' } })
+    return
+  }
   if (shouldPrefill.value) {
     router.push({ path: '/owner/account/plans', query: { plan: selectedPlanId.value || 'basic' } })
     return
