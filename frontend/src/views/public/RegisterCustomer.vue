@@ -53,6 +53,28 @@ const confirmPasswordMatches = computed(() => {
   return password.value === confirmPassword.value
 })
 
+const isCustomerFormComplete = computed(() => {
+  const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email.value || '').trim())
+  const phoneIsValid = /^9[0-9]{9}$/.test(String(contactNumber.value || '').trim())
+
+  return Boolean(
+    firstName.value?.trim() &&
+    lastName.value?.trim() &&
+    emailIsValid &&
+    birthDate.value &&
+    PASSWORD_REGEX.test(String(password.value || '')) &&
+    String(password.value || '') === String(confirmPassword.value || '') &&
+    phoneIsValid &&
+    String(address.value || '').trim() &&
+    addressLat.value &&
+    addressLng.value &&
+    termsAccepted.value &&
+    emailAvailability.value !== 'used' &&
+    emailAvailability.value !== 'error' &&
+    emailAvailability.value !== 'invalid'
+  )
+})
+
 const isSubmitting = ref(false)
 const passwordVisible = ref(false)
 const confirmPasswordVisible = ref(false)
@@ -61,6 +83,9 @@ const confirmPasswordFocused = ref(false)
 const showTerms = ref(false)
 const showPrivacy = ref(false)
 const termsAccepted = ref(false)
+const isCheckingEmail = ref(false)
+const emailAvailability = ref('idle')
+const emailAvailabilityMessage = ref('')
 const contactNumber = ref('')
 const address = ref('')
 const addressBuildingNumber = ref('')
@@ -89,6 +114,7 @@ const otpResendCountdown = ref(0)
 const OTP_LENGTH = 6
 const OTP_COOLDOWN_SECONDS = 60
 let otpResendInterval = null
+let emailLookupSequence = 0
 let mapsReady = false
 let locationMap = null
 let locationMarker = null
@@ -754,6 +780,18 @@ const validateEmailFormat = (value) => {
 
 const handleEmailDraftInput = () => {
   validateEmailFormat(email.value)
+
+  emailLookupSequence += 1
+  emailAvailability.value = 'idle'
+  emailAvailabilityMessage.value = ''
+  if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
+
+  const normalizedEmail = String(email.value || '').trim().toLowerCase()
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    emailCheckingTimer.value = setTimeout(() => {
+      checkCustomerEmailAvailability(normalizedEmail)
+    }, 600)
+  }
 }
 
 const clearFormFields = () => {
@@ -764,6 +802,8 @@ const clearFormFields = () => {
   suffix.value = ''
   suffixEnabled.value = false
   email.value = ''
+  emailAvailability.value = 'idle'
+  emailAvailabilityMessage.value = ''
   password.value = ''
   confirmPassword.value = ''
   birthDate.value = ''
@@ -1018,6 +1058,71 @@ const checkRegistrationAttempt = async (emailValue) => {
   }
 }
 
+const checkCustomerEmailAvailability = async (emailValue) => {
+  const normalizedEmail = String(emailValue || '').trim().toLowerCase()
+  const lookupSequence = ++emailLookupSequence
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    emailAvailability.value = normalizedEmail ? 'invalid' : 'idle'
+    emailAvailabilityMessage.value = normalizedEmail ? 'Enter a valid email address.' : ''
+    return
+  }
+
+  isCheckingEmail.value = true
+  emailAvailability.value = 'checking'
+  emailAvailabilityMessage.value = ''
+
+  try {
+    const statusResult = await checkCustomerRegistrationStatus(normalizedEmail)
+    if (lookupSequence !== emailLookupSequence || normalizedEmail !== String(email.value || '').trim().toLowerCase()) return
+
+    if (!statusResult) {
+      emailAvailability.value = 'error'
+      emailAvailabilityMessage.value = 'Unable to check this email right now.'
+      return
+    }
+
+    if (!statusResult.exists) {
+      emailAvailability.value = 'available'
+      emailAvailabilityMessage.value = 'Email is available for registration.'
+      return
+    }
+
+    const role = String(statusResult.role || '').trim().toLowerCase()
+    if (role !== 'customer') {
+      emailAvailability.value = 'used'
+      emailAvailabilityMessage.value = 'This email is already used by another account.'
+      return
+    }
+
+    if (statusResult.emailVerified || String(statusResult.status || '').trim().toLowerCase() === 'active') {
+      emailAvailability.value = 'used'
+      emailAvailabilityMessage.value = 'This customer account is already verified. Please sign in.'
+      return
+    }
+
+    if (statusResult.canResumeOtp) {
+      emailAvailability.value = 'resume'
+      emailAvailabilityMessage.value = 'Registration found. Continuing with email verification.'
+      userUid.value = String(statusResult.uid || '').trim()
+      otpRecipientEmail.value = normalizedEmail
+      const otpResult = await requestCustomerOtp(normalizedEmail, userUid.value)
+      applyOtpRequestResult(
+        otpResult,
+        'Registration found. A new OTP was sent to your email.',
+        'Unable to send OTP right now. Please try again shortly.'
+      )
+    }
+  } catch (error) {
+    if (lookupSequence !== emailLookupSequence) return
+    console.error('Failed to check customer registration email:', error)
+    emailAvailability.value = 'error'
+    emailAvailabilityMessage.value = 'Unable to check this email right now.'
+  } finally {
+    if (lookupSequence === emailLookupSequence) isCheckingEmail.value = false
+  }
+}
+
 const register = async () => {
   if (password.value !== confirmPassword.value) {
     toast.error('Passwords do not match')
@@ -1228,6 +1333,7 @@ const verifyOtp = async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('click', onWindowClick)
   stopOtpCountdown()
+  if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
   locationMap = null
   locationMarker = null
   locationLoading.value = false
@@ -1488,9 +1594,30 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="relative">
-              <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" :class="{ 'input-error': emailError }" @input="handleEmailDraftInput" />
+              <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" :class="{ 'input-error': emailError }" @input="handleEmailDraftInput" />
               <label class="floating-label">Email Address</label>
+              <span class="absolute right-4 top-1/2 -translate-y-1/2" aria-hidden="true">
+                <span v-if="isCheckingEmail" class="block h-5 w-5 animate-spin rounded-full border-2 border-gold-300 border-t-gold-700"></span>
+                <svg v-else-if="emailAvailability === 'available'" class="h-5 w-5 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 12.5 9.5 17 19 7.5" />
+                </svg>
+                <svg v-else-if="emailAvailability === 'used'" class="h-5 w-5 text-rose-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m7 7 10 10M17 7 7 17" />
+                </svg>
+                <svg v-else-if="emailAvailability === 'resume'" class="h-5 w-5 text-gold-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l2.5 2.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <svg v-else-if="emailAvailability === 'error' || emailAvailability === 'invalid'" class="h-5 w-5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M10.3 4.7 3.4 17a2 2 0 0 0 1.7 3h13.8a2 2 0 0 0 1.7-3l-6.9-12.3a2 2 0 0 0-3.4 0Z" />
+                </svg>
+              </span>
               <p v-if="emailError" class="mt-1 text-xs text-red-600">{{ emailError }}</p>
+              <p v-else-if="emailAvailabilityMessage" aria-live="polite" class="mt-1 text-xs" :class="{
+                'text-emerald-700': emailAvailability === 'available',
+                'text-rose-700': emailAvailability === 'used',
+                'text-gold-700': emailAvailability === 'resume',
+                'text-amber-700': emailAvailability === 'error' || emailAvailability === 'invalid'
+              }">{{ emailAvailabilityMessage }}</p>
             </div>
 
             <div class="relative">
@@ -1580,7 +1707,7 @@ onBeforeUnmount(() => {
               <a href="#" @click.prevent="showPrivacy = true" class="text-gold-700 hover:underline">Privacy Policy</a>
             </label>
 
-            <button type="submit" :disabled="isSubmitting" class="w-full py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100">
+            <button type="submit" :disabled="isSubmitting || !isCustomerFormComplete" class="w-full py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100">
               {{ isSubmitting ? 'Registering...' : 'Create Account' }}
             </button>
 
