@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
-import { createUserWithEmailAndPassword, deleteUser, signInWithCustomToken, signOut } from 'firebase/auth'
+import { createUserWithEmailAndPassword, deleteUser, signOut } from 'firebase/auth'
 import { collection, deleteField, doc, deleteDoc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
@@ -382,7 +382,6 @@ const approvalUserExists = ref(false)
 const approvalClinicExists = ref(false)
 const approvalUserStatus = ref('')
 const approvalClinicStatus = ref('')
-const continuationMissingDocuments = ref([])
 let unsubscribeApprovalUser = null
 let unsubscribeApprovalClinic = null
 
@@ -778,48 +777,8 @@ const onWindowClick = (event) => {
   }
 }
 
-const openDocumentContinuation = async (token) => {
-  const response = await axios.post(`${OTP_API_BASE}/auth/validate-document-continuation`, { token })
-  const payload = response?.data
-  if (!payload?.success || !payload.data?.customToken) {
-    throw new Error(payload?.error || 'This document continuation link is invalid or expired.')
-  }
-
-  await signInWithCustomToken(auth, payload.data.customToken)
-  const normalizedEmail = String(payload.data.email || '').trim().toLowerCase()
-  userUid.value = String(payload.data.uid || '').trim()
-  email.value = normalizedEmail
-  otpRecipientEmail.value = normalizedEmail
-  emailChecked.value = true
-  otpVerifiedForRegistration.value = true
-  pendingApprovalMode.value = false
-  continuationMissingDocuments.value = Array.isArray(payload.data.missingDocuments) ? payload.data.missingDocuments : []
-  setStoredRegistrationUid(userUid.value)
-  setStoredOtpRecipientEmail(normalizedEmail)
-  sessionStorage.setItem('registration_continuation_session', 'true')
-
-  const profileResult = await fetchRegistrationProfile(normalizedEmail)
-  if (profileResult?.profile) applyProfileData(profileResult.profile)
-  currentStep.value = 3
-  const continuationQuery = { ...route.query, account: 'clinic' }
-  delete continuationQuery.resumeToken
-  await router.replace({ path: '/clinic/register/step-3', query: continuationQuery })
-  syncStepRoute(3)
-}
-
 onMounted(async () => {
     if (!isClinicRegistrationActive.value) return
-    const resumeToken = String(route.query.resumeToken || '').trim()
-    if (resumeToken) {
-      try {
-        await openDocumentContinuation(resumeToken)
-        toast.info('Continue by uploading the requested clinic documents.')
-      } catch (error) {
-        console.error('Failed to open document continuation:', error)
-        toast.error(error?.message || 'This document continuation link is invalid or expired.')
-      }
-      return
-    }
     const immediateStep = parseStepParam(route.params?.step)
     if (immediateStep && immediateStep > 1) {
       currentStep.value = immediateStep
@@ -2919,7 +2878,6 @@ const submitDocuments = async () => {
 
     existingSubmittedDocuments.value = submittedDocumentsPayload
     syncExistingDocumentPreviews()
-    sessionStorage.removeItem('registration_continuation_session')
     await signOut(auth).catch(() => {})
     pendingApprovalMode.value = true
     approvalReviewState.value = 'reviewing'
@@ -3405,11 +3363,6 @@ const submitDocuments = async () => {
               <p class="text-sm text-charcoal-600">
                 Upload your required documents for legitimacy checks before approval.
               </p>
-              <div v-if="continuationMissingDocuments.length" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-charcoal-700">
-                <p class="font-semibold">Additional documents requested</p>
-                <p class="mt-1">Please review and replace or upload the documents identified by the System Administrator.</p>
-              </div>
-
               <div class="upload-grid">
                 <div class="upload-row">
                   <details class="upload-row-header">
