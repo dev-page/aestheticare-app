@@ -788,15 +788,17 @@ onMounted(async () => {
     const qLastName = String(route.query.lastName || '').trim()
     const qEmail = String(route.query.email || '').trim()
     const qResume = String(route.query.resume || '').trim()
-
     const stepParam = parseStepParam(route.params?.step)
+
     if (stepParam) {
       currentStep.value = stepParam
     }
 
   if (qFirstName && !firstName.value) firstName.value = qFirstName
   if (qLastName && !lastName.value) lastName.value = qLastName
-  const resumeEmail = qResume ? (qEmail || sessionStorage.getItem('resume_email') || '') : (qEmail || '')
+  const resumeEmail = (qResume || stepParam)
+    ? (qEmail || sessionStorage.getItem('resume_email') || auth.currentUser?.email || '')
+    : (qEmail || '')
   if (resumeEmail && !email.value) email.value = String(resumeEmail).toLowerCase()
 
     syncManualBirthDate()
