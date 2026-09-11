@@ -51,6 +51,8 @@ const REQUEST_SUPPLIER_OTP_PATH = '/auth/request-supplier-otp'
 const VERIFY_SUPPLIER_OTP_PATH = '/auth/verify-supplier-otp'
 const REQUEST_LOGIN_OTP_PATH = '/auth/request-login-otp'
 const VERIFY_LOGIN_OTP_PATH = '/auth/verify-login-otp'
+const REQUEST_DOCUMENT_CONTINUATION_PATH = '/admin/clinic/request-documents'
+const VALIDATE_DOCUMENT_CONTINUATION_PATH = '/auth/validate-document-continuation'
 const CHECK_SUPPLIER_REGISTRATION_STATUS_PATH = '/auth/check-supplier-registration-status'
 const CHECK_CUSTOMER_REGISTRATION_STATUS_PATH = '/auth/check-customer-registration-status'
 const ATTENDANCE_PIN_PATH = '/send-attendance-pin'
@@ -64,6 +66,16 @@ const AUTO_VERIFICATION_THRESHOLD = Math.max(0.85, Math.min(1, Number(process.en
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
     clinic: ['businessPermit', 'governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
   supplier: ['taxRegistration', 'businessRegistration'],
+}
+const REGISTRATION_DOCUMENT_LABELS = {
+  businessPermit: 'Business Permit/Registration',
+  governmentIdRepresentativeFront: 'Government-Issued ID (Front)',
+  governmentIdRepresentativeBack: 'Government-Issued ID (Back)',
+  dohAccreditation: 'DOH Accreditation',
+  prcIdMedicalDirector: 'PRC ID of Medical Director',
+  birRegistration: 'BIR Registration',
+  sanitaryCertificate: 'Sanitary Certificate',
+  clinicLicense: 'Clinic License',
 }
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -1681,6 +1693,98 @@ app.post('/admin/trigger-clinic-registration-verification', requireAuth, require
   } catch (error) {
     console.error('Clinic document verification rerun failed:', error)
     return res.status(500).json({ success: false, error: error?.message || 'Automatic verification failed' })
+  }
+})
+
+app.post(REQUEST_DOCUMENT_CONTINUATION_PATH, requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
+  const uid = String(req.body?.uid || '').trim()
+  const requestedDocuments = Array.isArray(req.body?.missingDocuments) ? req.body.missingDocuments : []
+  const missingDocuments = [...new Set(requestedDocuments.map((value) => String(value || '').trim()).filter(Boolean))].slice(0, 20)
+  if (!uid || !missingDocuments.length) {
+    return res.status(400).json({ success: false, error: 'A clinic uid and at least one missing document are required.' })
+  }
+
+  try {
+    const firestore = admin.firestore()
+    const [userSnap, clinicSnap] = await Promise.all([
+      firestore.collection('users').doc(uid).get(),
+      firestore.collection('clinics').doc(uid).get(),
+    ])
+    if (!userSnap.exists || !clinicSnap.exists) {
+      return res.status(404).json({ success: false, error: 'Clinic registration was not found.' })
+    }
+
+    const userData = userSnap.data() || {}
+    const clinicData = clinicSnap.data() || {}
+    const email = String(userData.email || clinicData.email || '').trim().toLowerCase()
+    if (!email || !EMAIL_ADDRESS_REGEX.test(email)) {
+      return res.status(400).json({ success: false, error: 'The registrant does not have a valid email address.' })
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    const tokenHash = hashOtp(rawToken)
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000)
+    await firestore.collection('registrationContinuations').doc(tokenHash).set({
+      tokenHash,
+      uid,
+      email,
+      purpose: 'clinic-document-continuation',
+      missingDocuments,
+      used: false,
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: req.user.uid,
+    })
+
+    const continuationUrl = `${resolveFrontendBaseUrl(req)}/register?account=clinic&resumeToken=${encodeURIComponent(rawToken)}`
+    const documentLabels = missingDocuments.map((key) => REGISTRATION_DOCUMENT_LABELS[key] || key).join(', ')
+    let emailSent = false
+    if (postmarkClient && senderEmail) {
+      const delivery = await sendPostmarkMessage({
+        to: email,
+        subject: 'Additional clinic documents required',
+        text: `Please submit the following clinic documents: ${documentLabels}. Continue here: ${continuationUrl}\n\nThis secure link expires in 48 hours and can be used once.`,
+        html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408"><p>Additional documents are required for your clinic registration.</p><p><strong>Documents needed:</strong> ${documentLabels}</p><p><a href="${continuationUrl}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#7b4f37;color:#fff;text-decoration:none">Continue document submission</a></p><p>This secure link expires in 48 hours and can be used once.</p></div>`,
+      })
+      emailSent = delivery?.statusCode === 200
+    }
+
+    await Promise.all([
+      firestore.collection('users').doc(uid).set({ status: 'Pending Documents', approvalStatus: 'Pending Documents', missingDocuments, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
+      firestore.collection('clinics').doc(uid).set({ status: 'Pending Documents', approvalStatus: 'Pending Documents', missingDocuments, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
+      firestore.collection('notifications').doc(`clinic-documents-${uid}`).set({ recipientId: uid, recipientEmail: email, type: 'clinic_documents_required', title: 'Additional documents required', message: `Please submit: ${documentLabels}. A secure continuation link was sent to your email.`, missingDocuments, read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
+    ])
+
+    await writeSystemAdminActivity(req, { action: 'Requested missing clinic documents', module: 'Clinic Verification', details: `Requested additional documents: ${documentLabels}.`, targetId: uid, targetName: clinicData.clinicName || uid })
+    return res.json({ success: true, data: { emailSent, expiresAt: expiresAt.toISOString(), missingDocuments } })
+  } catch (error) {
+    console.error('Request clinic documents failed:', error)
+    return res.status(500).json({ success: false, error: 'Unable to request additional clinic documents.' })
+  }
+})
+
+app.post(VALIDATE_DOCUMENT_CONTINUATION_PATH, async (req, res) => {
+  const rawToken = String(req.body?.token || '').trim()
+  if (!rawToken) return res.status(400).json({ success: false, error: 'Continuation token is required.' })
+
+  try {
+    const tokenHash = hashOtp(rawToken)
+    const tokenRef = admin.firestore().collection('registrationContinuations').doc(tokenHash)
+    const tokenSnap = await tokenRef.get()
+    const tokenData = tokenSnap.exists ? tokenSnap.data() || {} : {}
+    const expiresAt = getTimestampDate(tokenData.expiresAt)
+    if (!tokenSnap.exists || tokenData.used || (expiresAt && expiresAt.getTime() <= Date.now()) || tokenData.purpose !== 'clinic-document-continuation') {
+      return res.status(400).json({ success: false, error: 'This document continuation link is invalid or expired.' })
+    }
+
+    const uid = String(tokenData.uid || '').trim()
+    const authUser = await admin.auth().getUser(uid)
+    await tokenRef.set({ used: true, usedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+    const customToken = await admin.auth().createCustomToken(uid, { registrationContinuation: true })
+    return res.json({ success: true, data: { customToken, uid, email: String(authUser.email || tokenData.email || '').trim().toLowerCase(), missingDocuments: tokenData.missingDocuments || [] } })
+  } catch (error) {
+    console.error('Validate document continuation failed:', error)
+    return res.status(500).json({ success: false, error: 'Unable to open this document continuation link.' })
   }
 })
 

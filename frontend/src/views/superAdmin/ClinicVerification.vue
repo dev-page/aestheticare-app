@@ -298,6 +298,15 @@
 
           <div v-if="isPendingRecord(selectedRecord)" class="flex flex-col sm:flex-row gap-3 sm:justify-end">
             <button
+              v-if="missingDocumentKeys.length"
+              type="button"
+              class="px-4 py-2 rounded-lg border border-amber-400/60 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+              :disabled="processing"
+              @click="requestMissingDocuments"
+            >
+              {{ processing ? 'Sending...' : 'Request Missing Documents' }}
+            </button>
+            <button
               type="button"
               class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white"
               :disabled="processing"
@@ -325,7 +334,7 @@
 </template>
 
 <script>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { doc, getDoc, getDocs, collection, onSnapshot, updateDoc, serverTimestamp, query, where } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
@@ -442,6 +451,7 @@ export default {
     const showModal = ref(false)
     const selectedRecord = ref(null)
     const rejectionRemark = ref('')
+    const missingDocumentKeys = computed(() => (selectedRecord.value?.documents || []).filter((item) => !item.url).map((item) => item.key))
     const forcedPlanByEmail = {
       'kenken.leon31@gmail.com': { plan: 'basic', paymentStatus: 'paid' },
     }
@@ -629,7 +639,7 @@ export default {
         const pending = clinicRecords
           .filter((clinic) => {
             const status = String(clinic.approvalStatus || '').toLowerCase()
-            return status.includes('pending approval') || status.includes('manual review')
+            return status.includes('pending approval') || status.includes('manual review') || status.includes('pending documents')
           })
 
         const rows = await Promise.all(
@@ -795,6 +805,45 @@ export default {
       }
     }
 
+    const requestMissingDocuments = async () => {
+      if (!selectedRecord.value || !missingDocumentKeys.value.length) return
+      const result = await systemAdminSwal.fire({
+        title: 'Request Missing Documents?',
+        text: `A secure upload link will be sent to ${selectedRecord.value.email}.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Send request',
+        cancelButtonText: 'Cancel',
+      })
+      if (!result.isConfirmed) return
+
+      processing.value = true
+      try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
+        if (!token) throw new Error('Missing authorization token')
+        const response = await fetchFromBackend('/admin/clinic/request-documents', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ uid: selectedRecord.value.id, missingDocuments: missingDocumentKeys.value }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to request missing documents.')
+        await systemAdminSwal.fire({
+          title: 'Request Sent',
+          text: payload.data?.emailSent ? 'The registrant received a secure document-upload link.' : 'The registration was marked as pending documents, but the email could not be sent.',
+          icon: payload.data?.emailSent ? 'success' : 'warning',
+          confirmButtonText: 'Continue',
+        })
+        closeModal()
+        await loadPendingClinics()
+      } catch (err) {
+        console.error('Failed to request missing clinic documents:', err)
+        error.value = err?.message || 'Unable to request missing documents.'
+      } finally {
+        processing.value = false
+      }
+    }
+
     const approveSelected = async () => {
       if (!selectedRecord.value) return
 
@@ -936,6 +985,8 @@ export default {
       approveSelected,
       rejectSelected,
       runClinicVerification,
+      requestMissingDocuments,
+      missingDocumentKeys,
       formatDateValue,
       documentLabel,
       getOverallConfidence,

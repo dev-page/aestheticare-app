@@ -242,6 +242,20 @@ router.beforeEach(async (to, from, next) => {
   await isAuthReady(isLoading)
   const currentUser = user.value || auth.currentUser
 
+  if (currentUser) {
+    try {
+      const tokenResult = await currentUser.getIdTokenResult()
+      const isContinuationSession = tokenResult?.claims?.registrationContinuation === true
+      const isRegistrationRoute = String(to.path || '').startsWith('/register') || String(to.path || '').startsWith('/clinic/register')
+      if (isContinuationSession && !isRegistrationRoute) {
+        await signOut(auth).catch(() => {})
+        return next('/register?account=clinic')
+      }
+    } catch (error) {
+      console.error('Error checking registration continuation session:', error)
+    }
+  }
+
   // Auth-required routes
   if (to.meta.requiresAuth && !currentUser) {
     return next("/login");
