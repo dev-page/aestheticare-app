@@ -212,6 +212,8 @@ const showPrivacy = ref(false)
 const termsAccepted = ref(false)
 const emailChecked = ref(false)
 const isCheckingEmail = ref(false)
+const emailAvailability = ref('idle')
+const emailAvailabilityMessage = ref('')
 const otpVerifiedForRegistration = ref(false)
 const pendingApprovalMode = ref(false)
 
@@ -227,6 +229,7 @@ const REGISTRATION_UID_KEY = 'registration_uid'
 const OTP_SENT_AT_KEY = 'registration_otp_sent_at'
 const OTP_COOLDOWN_SECONDS = 60 // 1 minute resend cooldown
 let otpResendInterval = null
+let emailLookupSequence = 0
 
 const currentStep = ref(1)
 const registrationSteps = [
@@ -464,6 +467,7 @@ const isStep1FormComplete = computed(() => {
     clinicLocationLng.value &&
     phoneIsValid &&
     termsAccepted.value &&
+    (emailAvailability.value === 'available' || emailChecked.value) &&
     passwordIsValid
   )
 })
@@ -1264,6 +1268,98 @@ const fetchRegistrationProfile = async (emailValue) => {
   }
 }
 
+const checkEmailAvailability = async (emailValue) => {
+  const normalizedEmail = String(emailValue || '').trim().toLowerCase()
+  const lookupSequence = ++emailLookupSequence
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    emailAvailability.value = normalizedEmail ? 'invalid' : 'idle'
+    emailAvailabilityMessage.value = normalizedEmail ? 'Enter a valid email address.' : ''
+    return
+  }
+
+  isCheckingEmail.value = true
+  emailAvailability.value = 'checking'
+  emailAvailabilityMessage.value = ''
+
+  try {
+    const statusResult = await checkRegistrationStatus(normalizedEmail)
+    if (lookupSequence !== emailLookupSequence || normalizedEmail !== String(email.value || '').trim().toLowerCase()) return
+
+    if (!statusResult) {
+      emailAvailability.value = 'error'
+      emailAvailabilityMessage.value = 'Unable to check this email right now.'
+      return
+    }
+
+    if (!statusResult.exists) {
+      emailChecked.value = false
+      emailAvailability.value = 'available'
+      emailAvailabilityMessage.value = 'Email is available for registration.'
+      return
+    }
+
+    const profileResult = await fetchRegistrationProfile(normalizedEmail)
+    if (lookupSequence !== emailLookupSequence || normalizedEmail !== String(email.value || '').trim().toLowerCase()) return
+
+    const profile = profileResult?.profile || {}
+    const role = String(statusResult.role || profile.role || '').trim().toLowerCase()
+    const isClinicRegistration = ['clinic admin', 'clinicadmin', 'owner', 'clinic owner'].includes(role)
+
+    if (!isClinicRegistration) {
+      emailChecked.value = false
+      emailAvailability.value = 'used'
+      emailAvailabilityMessage.value = 'This email is already used by another account.'
+      return
+    }
+
+    applyProfileData(profile)
+    userUid.value = String(statusResult.uid || profileResult.uid || '').trim()
+    setStoredRegistrationUid(userUid.value)
+    emailChecked.value = true
+    otpRecipientEmail.value = normalizedEmail
+    setStoredOtpRecipientEmail(normalizedEmail)
+
+    const resolvedStep = inferResumeStep(statusResult, profile)
+    if (resolvedStep === 'active') {
+      emailAvailability.value = 'used'
+      emailAvailabilityMessage.value = 'This registration is already approved. Please log in.'
+      return
+    }
+
+    emailAvailability.value = 'resume'
+    emailAvailabilityMessage.value = `Registration found. Continuing from Step ${resolvedStep}.`
+    otpVerifiedForRegistration.value = resolvedStep === 3 || resolvedStep === 4
+    pendingApprovalMode.value = resolvedStep === 4
+    currentStep.value = resolvedStep
+    syncStepRoute(resolvedStep)
+
+    if (resolvedStep === 2) {
+      const lastSentAt = getLastOtpSentAt()
+      const canSend = !lastSentAt || (Date.now() - lastSentAt) > (OTP_COOLDOWN_SECONDS * 1000)
+      if (canSend) {
+        const otpResult = await sendOtpEmail(normalizedEmail)
+        clearOtpInputs()
+        if (otpResult.success) {
+          beginOtpCooldown()
+          toast.info('Registration found. A new OTP was sent to your email.')
+        }
+      } else {
+        restoreOtpCountdown()
+      }
+    } else {
+      toast.info(emailAvailabilityMessage.value)
+    }
+  } catch (error) {
+    if (lookupSequence !== emailLookupSequence) return
+    console.error('Failed to check registration email:', error)
+    emailAvailability.value = 'error'
+    emailAvailabilityMessage.value = 'Unable to check this email right now.'
+  } finally {
+    if (lookupSequence === emailLookupSequence) isCheckingEmail.value = false
+  }
+}
+
 const applyProfileData = (profile) => {
   if (!profile) return
   const safe = (value) => (value === null || value === undefined ? '' : value)
@@ -1789,6 +1885,11 @@ const handleEmailDraftInput = () => {
   // Real-time email format validation
   validateEmailFormat(email.value)
 
+  emailLookupSequence += 1
+  emailAvailability.value = 'idle'
+  emailAvailabilityMessage.value = ''
+  if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
+
   const normalizedEmail = String(email.value || '').trim().toLowerCase()
   if (emailChecked.value && normalizedEmail !== String(otpRecipientEmail.value || '').toLowerCase()) {
     emailChecked.value = false
@@ -1829,6 +1930,12 @@ const handleEmailDraftInput = () => {
     approvalUserStatus.value = ''
     approvalClinicStatus.value = ''
     stopApprovalCheck()
+  }
+
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    emailCheckingTimer.value = setTimeout(() => {
+      checkEmailAvailability(normalizedEmail)
+    }, 600)
   }
 }
 
@@ -2978,9 +3085,30 @@ const submitDocuments = async () => {
             <section v-if="currentStep === 1" key="step-1" class="registration-step-panel space-y-4">
 <div class="space-y-2 rounded-2xl border border-gold-200/80 bg-cream-50/80 p-4">
               <div class="relative flex-1">
-                <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @input="handleEmailDraftInput" />
+                <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" @input="handleEmailDraftInput" />
                 <label class="floating-label">Email Address</label>
+                <span class="absolute right-4 top-1/2 -translate-y-1/2" aria-hidden="true">
+                  <span v-if="isCheckingEmail" class="block h-5 w-5 animate-spin rounded-full border-2 border-gold-300 border-t-gold-700"></span>
+                  <svg v-else-if="emailAvailability === 'available'" class="h-5 w-5 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 12.5 9.5 17 19 7.5" />
+                  </svg>
+                  <svg v-else-if="emailAvailability === 'used'" class="h-5 w-5 text-rose-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m7 7 10 10M17 7 7 17" />
+                  </svg>
+                  <svg v-else-if="emailAvailability === 'resume'" class="h-5 w-5 text-gold-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l2.5 2.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                  </svg>
+                  <svg v-else-if="emailAvailability === 'error' || emailAvailability === 'invalid'" class="h-5 w-5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M10.3 4.7 3.4 17a2 2 0 0 0 1.7 3h13.8a2 2 0 0 0 1.7-3l-6.9-12.3a2 2 0 0 0-3.4 0Z" />
+                  </svg>
+                </span>
                 <p v-if="emailError" class="mt-1 text-xs text-red-600">{{ emailError }}</p>
+                <p v-else-if="emailAvailabilityMessage" aria-live="polite" class="mt-1 text-xs" :class="{
+                  'text-emerald-700': emailAvailability === 'available',
+                  'text-rose-700': emailAvailability === 'used',
+                  'text-gold-700': emailAvailability === 'resume',
+                  'text-amber-700': emailAvailability === 'error' || emailAvailability === 'invalid'
+                }">{{ emailAvailabilityMessage }}</p>
               </div>
             </div>
 
