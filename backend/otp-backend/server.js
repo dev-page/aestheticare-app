@@ -1789,6 +1789,74 @@ app.post('/procurement/:collection/:id/transition', requireAuth, async (req, res
   }
 })
 
+const logisticsTransitionMap = {
+  'Ready for Claim': ['Claimed'],
+  Claimed: ['Shipped', 'In Transit'],
+  Shipped: ['In Transit', 'Received'],
+  'In Transit': ['Received'],
+}
+
+app.post('/logistics/purchase-requests/:id/transition', requireAuth, async (req, res) => {
+  const recordId = String(req.params.id || '').trim()
+  const nextStatus = String(req.body?.nextStatus || '').trim()
+  if (!recordId || !nextStatus) return res.status(400).json({ success: false, error: 'A purchase request and next logistics status are required.' })
+  try {
+    const context = await loadUserContext(req.user.uid)
+    const recordRef = admin.firestore().collection('purchaseRequests').doc(recordId)
+    const recordSnap = await recordRef.get()
+    if (!recordSnap.exists) return res.status(404).json({ success: false, error: 'Business order not found.' })
+    const record = recordSnap.data() || {}
+    if (!canAccessBranchRecord(context, record)) return res.status(403).json({ success: false, error: 'Forbidden' })
+    if (String(record.budgetStatus || '').trim() !== 'Approved') return res.status(409).json({ success: false, error: 'Finance must approve the budget before Logistics can claim this order.' })
+
+    let currentStatus = String(record.logisticsStatus || '').trim()
+    if (!currentStatus && String(record.status || '').trim() === 'Approved') currentStatus = 'Ready for Claim'
+    if (!logisticsTransitionMap[currentStatus]?.includes(nextStatus)) {
+      return res.status(409).json({ success: false, error: `The order cannot move from ${currentStatus || 'its current status'} to ${nextStatus}.` })
+    }
+    const payload = {
+      logisticsStatus: nextStatus,
+      logisticsUpdatedBy: req.user.uid,
+      logisticsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      workflowStage: nextStatus === 'Claimed' ? 'Claimed by Logistics' : nextStatus === 'Received' ? 'Delivered - Awaiting Finance Settlement' : `Logistics: ${nextStatus}`,
+    }
+    if (nextStatus === 'Claimed') {
+      payload.logisticsClaimedBy = req.user.uid
+      payload.logisticsClaimedAt = admin.firestore.FieldValue.serverTimestamp()
+    }
+    if (nextStatus === 'Received') {
+      payload.status = 'Delivered'
+      payload.deliveredAt = admin.firestore.FieldValue.serverTimestamp()
+    }
+    await recordRef.update(payload)
+
+    if (nextStatus === 'Received') {
+      const branchId = String(record.branchId || '').trim()
+      const itemName = String(record.item || '').trim()
+      const supplierName = String(record.supplier || '').trim()
+      const quantity = Number(record.quantity || 0)
+      const unitCost = Number(record.unitCost || 0)
+      if (branchId && itemName && quantity > 0) {
+        const inventorySnap = await admin.firestore().collection('inventoryItems').where('branchId', '==', branchId).get()
+        const existing = inventorySnap.docs.map((itemSnap) => ({ id: itemSnap.id, data: itemSnap.data() || {} })).find(({ data }) => String(data.name || '').trim().toLowerCase() === itemName.toLowerCase() && String(data.supplier || '').trim().toLowerCase() === supplierName.toLowerCase())
+        if (existing) {
+          const currentStock = Number(existing.data.currentStock || 0)
+          await admin.firestore().collection('inventoryItems').doc(existing.id).update({ currentStock: currentStock + quantity, maxStock: Number(existing.data.maxStock || currentStock) + quantity, ...(unitCost > 0 && Number(existing.data.costPrice || 0) <= 0 ? { costPrice: unitCost, unitPrice: unitCost } : {}), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+        } else {
+          await admin.firestore().collection('inventoryItems').add({ name: itemName, sku: `AUTO-${recordSnap.id.slice(-8).toUpperCase()}`, category: record.category || '', supplier: supplierName, currentStock: quantity, minStock: 1, maxStock: quantity, unit: record.unit || 'units', costPrice: unitCost, unitPrice: unitCost, description: 'Auto-added from received logistics order', stockStatus: 'In Stock', branchId, createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+        }
+      }
+    }
+
+    await Promise.all(['Owner', 'Manager'].map((recipientRole) => admin.firestore().collection('notifications').add({ recipientRole, title: `Business Order ${nextStatus}`, message: `Business order ${recordId} has been updated to ${nextStatus}.`, link: '/manager/logistics', read: false, deleted: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })))
+    return res.json({ success: true, data: { id: recordId, status: nextStatus } })
+  } catch (error) {
+    console.error('Logistics transition failed:', error)
+    return res.status(500).json({ success: false, error: 'Could not update logistics status.' })
+  }
+})
+
 app.post('/finance/purchase-requests/:id/settle', requireAuth, async (req, res) => {
   const recordId = String(req.params.id || '').trim()
   if (!recordId) return res.status(400).json({ success: false, error: 'Purchase request id is required.' })

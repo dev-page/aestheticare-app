@@ -228,11 +228,12 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where, getFirestore } from 'firebase/firestore'
+import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, updateDoc, where, getFirestore } from 'firebase/firestore'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { usePermissions } from '@/composables/usePermissions'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 export default {
   name: 'LogisticsOrders',
@@ -459,6 +460,26 @@ export default {
       }
 
       try {
+        if (order.source === 'business') {
+          const token = auth.currentUser ? await auth.currentUser.getIdToken(true) : ''
+          let response
+          let lastError
+          for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+            try {
+              response = await fetch(`${baseUrl}/logistics/purchase-requests/${order.id}/transition`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ nextStatus })
+              })
+              if (response.status !== 404) break
+            } catch (error) { lastError = error }
+          }
+          if (!response) throw lastError || new Error('Logistics service is unavailable.')
+          const payload = await response.json().catch(() => ({}))
+          if (!response.ok) throw new Error(payload.error || 'The logistics status could not be updated.')
+          toast.success(`Order updated to ${payload.data?.status || nextStatus}.`)
+          return
+        }
         const updatePayload = {
           logisticsStatus: nextStatus,
           logisticsUpdatedBy: currentUserId.value || null,
@@ -560,10 +581,16 @@ export default {
     }
 
     let unsubscribeAuth = null
+    let unsubscribeCustomerOrders = null
+    let unsubscribeBusinessOrders = null
 
     onMounted(() => {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
+          if (unsubscribeCustomerOrders) unsubscribeCustomerOrders()
+          if (unsubscribeBusinessOrders) unsubscribeBusinessOrders()
+          unsubscribeCustomerOrders = null
+          unsubscribeBusinessOrders = null
           currentBranchId.value = ''
           currentUserId.value = ''
           customerOrders.value = []
@@ -576,12 +603,30 @@ export default {
         const scope = await loadOwnerBranchScope(db, user.uid)
         currentBranchId.value = scope.branchId || ''
 
-        await loadData()
+        if (unsubscribeCustomerOrders) unsubscribeCustomerOrders()
+        if (unsubscribeBusinessOrders) unsubscribeBusinessOrders()
+        unsubscribeCustomerOrders = onSnapshot(collection(db, 'customerOrders'), (snapshot) => {
+          const docs = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+          customerOrders.value = docs.filter((order) => (Array.isArray(order.items) ? order.items : []).some((item) => String(item.branchId || '').trim() === currentBranchId.value)).map((order) => {
+            const items = Array.isArray(order.items) ? order.items : []
+            return { id: order.id, source: 'customer', sourceLabel: sourceLabel('customer'), status: normalizeStatus(order.status) || 'Pending', priority: 'Medium', createdAt: order.createdAt || null, updatedAt: order.updatedAt || order.createdAt || null, customerId: order.customerId || '', riderName: order.riderName || '', riderPhone: order.riderPhone || '', riderVehicle: order.riderVehicle || '', partyName: order.customerName || order.delivery?.fullName || 'Customer', partyMeta: order.customerEmail || order.delivery?.email || 'No email', itemSummary: getCustomerItemSummary(order), quantitySummary: `${items.length} item(s)`, items: items.map((item, index) => ({ key: `${order.id}-${index}`, name: item.name || 'Item', details: `${item.branchName || 'Branch'}${item.category ? ` - ${item.category}` : ''}`, quantityText: `Qty: ${Number(item.quantity || 0)}`, valueText: formatMoney(item.price || 0) })) }
+          })
+        })
+        unsubscribeBusinessOrders = onSnapshot(query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value)), (snapshot) => {
+          businessOrders.value = snapshot.docs.map((snap) => {
+            const order = snap.data()
+            const readyForClaim = ['', 'Not Claimed', 'Pending'].includes(normalizeStatus(order.logisticsStatus)) && normalizeStatus(order.status) === 'Approved' && normalizeStatus(order.budgetStatus) === 'Approved'
+            return { id: snap.id, source: 'business', sourceLabel: sourceLabel('business'), status: readyForClaim ? 'Ready for Claim' : normalizeStatus(order.logisticsStatus) || (normalizeStatus(order.purchaseOrderStatus) === 'Received' ? 'Received' : normalizeStatus(order.status)) || 'Pending', budgetStatus: normalizeStatus(order.budgetStatus), workflowStage: normalizeStatus(order.workflowStage), priority: normalizeStatus(order.priority) || 'Medium', createdAt: order.createdAt || null, updatedAt: order.updatedAt || order.createdAt || null, customerId: '', partyName: order.supplier || 'Supplier', partyMeta: order.category || order.branch || 'Business order', itemSummary: getBusinessItemSummary(order), quantitySummary: `${Number(order.quantity || 0)} ${order.unit || 'units'}`, items: [{ key: snap.id, name: order.item || 'Item', details: `${order.supplier || 'Supplier'}${order.category ? ` - ${order.category}` : ''}`, quantityText: `Qty: ${Number(order.quantity || 0)} ${order.unit || 'units'}`, valueText: formatMoney(order.totalCost || 0) }] }
+          })
+          loading.value = false
+        })
       })
     })
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
+      if (unsubscribeCustomerOrders) unsubscribeCustomerOrders()
+      if (unsubscribeBusinessOrders) unsubscribeBusinessOrders()
     })
 
     return {
