@@ -1398,7 +1398,11 @@ const applyProfileData = (profile) => {
     }
   }
 
-  const storedDocuments = profile.submittedDocuments || profile.draftDocuments || {}
+  const submittedDocuments = profile.submittedDocuments || {}
+  const draftDocuments = profile.draftDocuments || {}
+  const storedDocuments = Object.keys(submittedDocuments).length > 0
+    ? submittedDocuments
+    : draftDocuments
   existingSubmittedDocuments.value = {
     secCertificate: storedDocuments?.secCertificate || null,
     articlesOfIncorporation: storedDocuments?.articlesOfIncorporation || null,
