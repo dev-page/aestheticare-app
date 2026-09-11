@@ -1203,8 +1203,8 @@ table {
 
   .system-admin-route .module-theme :is(th, td) {
     padding: 0.45rem 0.5rem !important;
-    white-space: normal;
-    overflow-wrap: anywhere;
+    white-space: nowrap !important;
+    overflow-wrap: normal;
   }
 
   .system-admin-route .module-theme :is(.fixed.inset-0, [role='dialog']) > :is(.max-w-5xl, .max-w-4xl, .max-w-3xl, .max-w-2xl) {
