@@ -72,7 +72,7 @@ const routes = [
   { path: "/hr/archives", redirect: "/owner/staff/archived" },
   { path: "/hr/base-pay", name: "hr-base-pay", component: () => import("@/views/admin/owner/hr/BasePay.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
   { path: "/hr/payroll", name: "hr-payroll", component: () => import("@/views/admin/owner/hr/Payroll.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
-  { path: "/hr/payslip-generation", name: "hr-payslip-generation", component: () => import("@/views/admin/owner/hr/PayslipGeneration.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
+  { path: "/hr/payslip-generation", name: "hr-payslip-generation", redirect: "/hr/payroll" },
   //{ path: "/hr/calendar", name: "hr-calendar", component: () => import("@/views/clinic/hr/Calendar.vue"), meta: { requiresAuth: true } },
 
   // Supply routes
@@ -136,7 +136,7 @@ const routes = [
   { path: "/finance/inventory-purchases", name: "finance-inventory-purchases", component: () => import("@/views/admin/owner/finance/FinanceInventoryPurchases.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view", requiresFeature: "reports" } },
   { path: "/finance/accounts-payable", name: "finance-accounts-payable", component: () => import("@/views/admin/owner/finance/FinanceAccountsPayable.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view", requiresFeature: "reports" } },
   { path: "/finance/payroll-summary", name: "finance-payroll-summary", component: () => import("@/views/admin/owner/finance/FinancePayrollSummary.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:view", requiresFeature: "payroll" } },
-  { path: "/finance/payroll-approval", name: "finance-payroll-approval", component: () => import("@/views/admin/owner/finance/FinancePayrollApproval.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:view", requiresFeature: "payroll" } },
+  { path: "/finance/payroll-approval", name: "finance-payroll-approval", component: () => import("@/views/admin/owner/finance/FinancePayrollApproval.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:approve", requiresFeature: "payroll" } },
   // Customer routes
   { path: "/customer/home", name: "customer-home", component: () => import("@/views/customer/CustomerHome.vue"), meta: { requiresAuth: true } },
   { path: "/customer/center/:id", name: "customer-center", component: () => import("@/views/customer/CenterPage.vue"), meta: { requiresAuth: true } },

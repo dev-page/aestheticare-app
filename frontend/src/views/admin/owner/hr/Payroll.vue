@@ -396,7 +396,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { auth } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -758,6 +758,7 @@ export default {
           salaryType: entry.salaryType || 'Hourly',
           branchId: currentBranchId.value,
           payPeriod: approvalMonthLabel.value,
+          payPeriodMonthKey: approvalMonthKey.value,
           earnings: {
             hoursWorked: Number(entry.hoursWorked || 0),
             hourlyRate: Number(entry.hourlyRate || 0),
@@ -773,8 +774,9 @@ export default {
           payrollEntryId: entry.id
         }
 
-        await addDoc(collection(db, 'users', entry.employeeId, 'payslips'), payload)
-        await addDoc(collection(db, 'payslips'), payload)
+        const payslipId = `${currentBranchId.value}_${entry.employeeId}_${approvalMonthKey.value}`
+        await setDoc(doc(db, 'users', entry.employeeId, 'payslips', payslipId), payload, { merge: true })
+        await setDoc(doc(db, 'payslips', payslipId), payload, { merge: true })
 
         await logActivity(db, {
           module: 'HR',
@@ -1132,14 +1134,15 @@ export default {
           return getMonthKeyFromDate(dateValue) === monthKey
         })
 
-        const existingByEmployee = new Set(
-          existingMonthPayrolls.map((entry) => String(entry.employeeId || '').trim()).filter(Boolean)
+        const existingByEmployee = new Map(
+          existingMonthPayrolls
+            .filter((entry) => entry.employeeId)
+            .map((entry) => [String(entry.employeeId).trim(), entry])
         )
 
-        const autoCreatedIds = []
+        const generatedIds = []
         for (const employee of employees.value) {
           if (!employee?.id) continue
-          if (existingByEmployee.has(employee.id)) continue
 
           const employeeHours = await computeWorkedHoursFromAttendance(employee.id, monthKey)
           if (!employeeHours || employeeHours <= 0) continue
@@ -1165,7 +1168,7 @@ export default {
           const netPay = roundCurrency(totalPay - totalDeductions)
 
           const salaryType = employee.isCommissionBased ? 'Hourly + Commission' : 'Hourly'
-          const payrollDoc = await addDoc(collection(db, 'payrolls'), {
+          const payrollPayload = {
             employeeId: employee.id,
             employeeName: employee.fullName,
             branchId: currentBranchId.value,
@@ -1186,11 +1189,23 @@ export default {
             payPeriodEnd: monthEnd,
             createdBy: currentUserId.value,
             createdAt: serverTimestamp()
-          })
-          autoCreatedIds.push(payrollDoc.id)
+          }
+          const existingPayroll = existingByEmployee.get(employee.id)
+          if (existingPayroll?.id) {
+            await updateDoc(doc(db, 'payrolls', existingPayroll.id), {
+              ...payrollPayload,
+              createdAt: existingPayroll.createdAt || serverTimestamp(),
+              updatedBy: currentUserId.value,
+              updatedAt: serverTimestamp()
+            })
+            generatedIds.push(existingPayroll.id)
+          } else {
+            const payrollDoc = await addDoc(collection(db, 'payrolls'), payrollPayload)
+            generatedIds.push(payrollDoc.id)
+          }
         }
 
-        if (autoCreatedIds.length) {
+        if (generatedIds.length) {
           await loadPayrolls()
         }
 
@@ -1239,8 +1254,8 @@ export default {
           { merge: true }
         )
 
-        const autoCreatedMessage = autoCreatedIds.length
-          ? `Auto-generated ${autoCreatedIds.length} payroll entr${autoCreatedIds.length === 1 ? 'y' : 'ies'}. `
+        const autoCreatedMessage = generatedIds.length
+          ? `Prepared ${generatedIds.length} payroll entr${generatedIds.length === 1 ? 'y' : 'ies'}. `
           : ''
         toast.success(`${autoCreatedMessage}Monthly payroll summary generated and sent for approval.`)
       } catch (error) {

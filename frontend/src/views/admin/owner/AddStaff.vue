@@ -1,5 +1,5 @@
 <script>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { getFirestore, collection, doc, getDocs, setDoc, query, where } from 'firebase/firestore'
 import { deleteApp, getApp, initializeApp } from 'firebase/app'
 import { getAuth, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth'
@@ -63,6 +63,10 @@ export default {
     const customRoles = ref([])
     const currentOwnerId = ref('')
     const currentBranchIds = ref([])
+    const emailCheckingTimer = ref(null)
+    let emailLookupSequence = 0
+    const emailAvailability = ref('idle')
+    const emailAvailabilityMessage = ref('')
     const { initSubscription, activePlan } = useSubscription()
 
     const currentStaff = ref({
@@ -224,6 +228,7 @@ export default {
     const handleEmailInput = (event) => {
       const value = event?.target?.value ?? ''
       currentStaff.value.email = sanitizeEmail(value)
+      scheduleEmailCheck()
     }
 
     const handlePhoneInput = (event) => {
@@ -274,6 +279,12 @@ export default {
         errors.email = 'Email is required.'
       } else if (!emailRegex.test(currentStaff.value.email.trim())) {
         errors.email = 'Use letters, numbers, and @ . _ only.'
+      } else if (emailAvailability.value === 'used') {
+        errors.email = 'This email is already registered.'
+      } else if (emailAvailability.value === 'checking') {
+        errors.email = 'Checking email availability...'
+      } else if (emailAvailability.value !== 'available') {
+        errors.email = 'Wait for the email availability check to finish.'
       }
 
       if (!currentStaff.value.phoneNumber.trim()) {
@@ -312,6 +323,50 @@ export default {
     }
 
     const hasErrors = computed(() => Object.values(fieldErrors.value).some(Boolean))
+
+    const checkEmailAvailability = async (emailValue) => {
+      const normalizedEmail = String(emailValue || '').trim().toLowerCase()
+      const lookupSequence = ++emailLookupSequence
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        emailAvailability.value = normalizedEmail ? 'invalid' : 'idle'
+        emailAvailabilityMessage.value = normalizedEmail ? 'Enter a valid email address.' : ''
+        return
+      }
+
+      emailAvailability.value = 'checking'
+      emailAvailabilityMessage.value = 'Checking email availability...'
+      try {
+        const response = await fetch(`${OTP_API_BASE}/auth/check-user`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: normalizedEmail })
+        })
+        const result = await response.json().catch(() => null)
+        if (lookupSequence !== emailLookupSequence || normalizedEmail !== currentStaff.value.email.trim().toLowerCase()) return
+        if (!response.ok || !result) throw new Error(result?.error || 'Email check failed.')
+        emailAvailability.value = result.exists ? 'used' : 'available'
+        emailAvailabilityMessage.value = result.exists ? 'This email is already registered.' : 'Email is available.'
+      } catch (error) {
+        if (lookupSequence !== emailLookupSequence) return
+        console.error('Failed to check employee email:', error)
+        emailAvailability.value = 'error'
+        emailAvailabilityMessage.value = 'Unable to check this email right now.'
+      }
+    }
+
+    const scheduleEmailCheck = () => {
+      emailLookupSequence += 1
+      emailAvailability.value = 'idle'
+      emailAvailabilityMessage.value = ''
+      if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
+      const normalizedEmail = currentStaff.value.email.trim().toLowerCase()
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return
+      emailCheckingTimer.value = setTimeout(() => checkEmailAvailability(normalizedEmail), 600)
+    }
+
+    onUnmounted(() => {
+      if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
+    })
     const isPractitionerRole = computed(() =>
       selectedCustomRoles.value.some((role) => String(role.name || '').toLowerCase().includes('practitioner'))
       || String(currentStaff.value.role || '').toLowerCase() === 'practitioner'
@@ -519,6 +574,8 @@ export default {
       handleMiddleNameInput,
       handleLastNameInput,
       handleEmailInput,
+      emailAvailability,
+      emailAvailabilityMessage,
       handlePhoneInput,
       updateLocation,
       handlePractitionerFile,
@@ -629,17 +686,27 @@ export default {
               <!-- Email -->
               <div>
                 <label class="mb-1 block text-slate-400">Email <span class="text-red-400">*</span></label>
-                <input
-                  :value="currentStaff.email"
-                  type="email"
-                  placeholder="Enter email address"
-                  @input="handleEmailInput"
-                  :class="[
-                    'w-full rounded-lg border bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2',
-                    fieldErrors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
-                  ]"
-                />
+                <div class="relative">
+                  <input
+                    :value="currentStaff.email"
+                    type="email"
+                    placeholder="Enter email address"
+                    @input="handleEmailInput"
+                    :class="[
+                      'w-full rounded-lg border bg-slate-800 px-3 py-2 pr-10 text-white focus:outline-none focus:ring-2',
+                      fieldErrors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-amber-500'
+                    ]"
+                  />
+                  <span v-if="emailAvailability === 'checking'" class="absolute right-3 top-1/2 -translate-y-1/2 text-amber-300" aria-label="Checking email availability">&#8987;</span>
+                  <span v-else-if="emailAvailability === 'available'" class="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-300" aria-label="Email available">&#10003;</span>
+                  <span v-else-if="emailAvailability === 'used'" class="absolute right-3 top-1/2 -translate-y-1/2 text-rose-300" aria-label="Email already used">&#10005;</span>
+                </div>
                 <p v-if="fieldErrors.email" class="mt-1 text-xs text-red-400">{{ fieldErrors.email }}</p>
+                <p v-else-if="emailAvailabilityMessage" class="mt-1 text-xs" :class="{
+                  'text-emerald-300': emailAvailability === 'available',
+                  'text-rose-300': emailAvailability === 'used',
+                  'text-amber-300': ['checking', 'error', 'invalid'].includes(emailAvailability)
+                }">{{ emailAvailabilityMessage }}</p>
               </div>
 
               <!-- Phone Number -->

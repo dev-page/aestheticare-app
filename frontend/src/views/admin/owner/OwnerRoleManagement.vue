@@ -541,7 +541,7 @@
                                   v-else-if="isPermissionLocked(permission.key)"
                                   class="text-right text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]"
                                 >
-                                  Locked by current plan
+                                  {{ isOwnerOnlyPermission(permission.key) ? 'Clinic owner only' : 'Locked by current plan' }}
                                 </div>
                               </div>
                             </div>
@@ -606,6 +606,11 @@ import {
 
 const colorPresets = ['#5865F2', '#57F287', '#FEE75C', '#EB459E', '#ED4245', '#3BA55D', '#1ABC9C', '#FAA61A', '#2D7DFA', '#A56EFF']
 const defaultPermissionKeys = new Set([])
+const ownerOnlyPermissionKeys = new Set(
+  permissionGroups.flatMap((group) => group.sections.flatMap((section) =>
+    section.permissions.filter((permission) => permission.ownerOnly).map((permission) => permission.key)
+  ))
+)
 
 const permissionSuggestionRules = [
   {
@@ -622,7 +627,7 @@ const permissionSuggestionRules = [
   },
   {
     match: ['finance', 'accounting', 'cashier'],
-    permissions: ['payments:view', 'payments:create', 'reports:view', 'payroll:view', 'inventory:view', 'inventory:review', 'orders:view', 'orders:update', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['payments:view', 'payments:create', 'reports:view', 'payroll:view', 'payroll:approve', 'inventory:view', 'inventory:review', 'orders:view', 'orders:update', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['manager', 'operations', 'supervisor'],
@@ -714,10 +719,13 @@ export default {
 
     const isPermissionLocked = (permissionKey) => {
       const requiredFeature = permissionFeatureMap[permissionKey] || ''
-      return Boolean(requiredFeature) && !hasFeature(requiredFeature)
+      return isOwnerOnlyPermission(permissionKey)
+        || (Boolean(requiredFeature) && !hasFeature(requiredFeature))
     }
 
     const isDefaultPermission = (permissionKey) => defaultPermissionKeys.has(permissionKey)
+
+    const isOwnerOnlyPermission = (permissionKey) => ownerOnlyPermissionKeys.has(permissionKey)
 
     const isPermissionEnabled = (permissionKey) =>
       defaultPermissionKeys.has(permissionKey)
@@ -727,6 +735,8 @@ export default {
     const normalizePermissionSet = (permissionList = []) => {
       const permissions = new Set(permissionList)
       if (permissions.has(fullAccessPermissionKey)) return new Set([fullAccessPermissionKey])
+
+      ownerOnlyPermissionKeys.forEach((permissionKey) => permissions.delete(permissionKey))
 
       const pending = [...permissions]
       while (pending.length) {
@@ -1232,6 +1242,7 @@ export default {
       countPermissionsInGroup,
       enabledCountForGroup,
       isPermissionLocked,
+      isOwnerOnlyPermission,
       isDefaultPermission,
       isPermissionEnabled,
       loadRoles,

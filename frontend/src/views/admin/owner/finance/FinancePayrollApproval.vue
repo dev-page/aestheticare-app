@@ -58,10 +58,17 @@
                     </button>
                     <button
                       class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-500/60 text-amber-200 hover:bg-amber-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
-                      :disabled="processingId === summary.id || summary.status === 'approved'"
+                      :disabled="processingId === summary.id || ['approved', 'rejected'].includes(summary.status)"
                       @click="approveSummary(summary)"
                     >
                       {{ summary.status === 'approved' ? 'Approved' : 'Approve' }}
+                    </button>
+                    <button
+                      class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-rose-500/60 text-rose-200 hover:bg-rose-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+                      :disabled="processingId === summary.id || ['approved', 'rejected'].includes(summary.status)"
+                      @click="rejectSummary(summary)"
+                    >
+                      {{ summary.status === 'rejected' ? 'Rejected' : 'Reject' }}
                     </button>
                   </div>
                 </td>
@@ -80,6 +87,9 @@
             <div>
               <h3 class="text-lg font-semibold text-white">Payroll Summary Details</h3>
               <p class="text-xs text-slate-400">{{ selectedSummary?.monthLabel || selectedSummary?.monthKey }}</p>
+              <p v-if="selectedSummary?.rejectionReason" class="mt-1 text-xs text-rose-300">
+                Rejection reason: {{ selectedSummary.rejectionReason }}
+              </p>
             </div>
             <button
               class="text-slate-400 hover:text-white text-xl leading-none"
@@ -161,6 +171,7 @@ import { auth, db } from '@/config/firebaseConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { toast } from 'vue3-toastify'
+import Swal from 'sweetalert2'
 
 export default {
   name: 'FinancePayrollApproval',
@@ -258,6 +269,41 @@ export default {
       }
     }
 
+    const rejectSummary = async (summary) => {
+      if (!summary?.id || summary.status === 'approved') return
+      const result = await Swal.fire({
+        title: 'Reject Payroll Summary',
+        input: 'textarea',
+        inputLabel: 'Reason for rejection',
+        inputPlaceholder: 'Explain what HR needs to correct before resubmission.',
+        inputAttributes: { 'aria-label': 'Reason for rejection' },
+        showCancelButton: true,
+        confirmButtonText: 'Reject Summary',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#8f4f35',
+        inputValidator: (value) => String(value || '').trim() ? undefined : 'A rejection reason is required.'
+      })
+      if (!result.isConfirmed) return
+
+      processingId.value = summary.id
+      try {
+        await updateDoc(doc(db, 'payrollSummaries', summary.id), {
+          status: 'rejected',
+          rejectionReason: String(result.value || '').trim(),
+          approvedBy: currentUserId.value,
+          approvedByName: currentUserName.value || 'Finance',
+          approvedAt: null,
+          updatedAt: serverTimestamp()
+        })
+        toast.success('Payroll summary rejected and returned to HR.')
+      } catch (error) {
+        console.error('Failed to reject summary:', error)
+        toast.error('Unable to reject payroll summary.')
+      } finally {
+        processingId.value = ''
+      }
+    }
+
     const getMonthKeyFromDate = (value) => {
       if (!value) return ''
       if (value?.toDate) return getMonthKeyFromDate(value.toDate())
@@ -323,7 +369,8 @@ export default {
       formatDate,
       statusBadge,
       openSummaryModal,
-      approveSummary
+      approveSummary,
+      rejectSummary
     }
   }
 }

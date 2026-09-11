@@ -94,6 +94,9 @@ const run = async () => {
     if (role.key === 'HR') {
       permissions.push('payroll:view', 'payroll:update', 'payroll:create')
     }
+    if (role.key === 'Finance') {
+      permissions.push('payroll:view', 'payroll:approve')
+    }
     updated[role.key] = Array.from(new Set(permissions))
     await db.collection('rolePermissions').doc(role.key).set(
       {

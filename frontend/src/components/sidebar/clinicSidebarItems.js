@@ -71,7 +71,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { type: 'section', label: 'PAYROLL' },
       { label: 'Base Pay', icon: 'card', to: '/hr/base-pay', feature: 'payroll', permission: 'payroll:update' },
       { label: 'Payroll Management', icon: 'card', to: '/hr/payroll', feature: 'payroll', permission: 'payroll:update' },
-      { label: 'Payslip Generation', icon: 'file', to: '/hr/payslip-generation', feature: 'payroll', permission: 'payroll:update' }
     ]
   },
   {
@@ -83,7 +82,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
     children: [
       { type: 'section', label: 'PAYROLL' },
       { label: 'Payroll Summary', icon: 'card', to: '/finance/payroll-summary', feature: 'payroll', permission: 'payroll:view' },
-      { label: 'Payroll Approval', icon: 'shield', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:view' },
+      { label: 'Payroll Approval', icon: 'shield', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },
       { type: 'section', label: 'FINANCE OPERATIONS' },
       { label: 'Inventory Purchases', icon: 'building', to: '/finance/inventory-purchases', feature: 'reports', permission: 'inventory:view' },
       { label: 'Accounts Payable', icon: 'card', to: '/finance/accounts-payable', feature: 'reports', permission: 'inventory:view' },

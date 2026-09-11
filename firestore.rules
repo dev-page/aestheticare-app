@@ -25,6 +25,18 @@ service cloud.firestore {
       return userData().role == 'Superadmin' || userData().role == 'SuperAdmin' || userData().role == 'superadmin';
     }
 
+    function isClinicOwner() {
+      return isSignedIn()
+        && (userData().role == 'Owner'
+          || userData().role == 'owner'
+          || userData().role == 'Clinic Admin'
+          || userData().role == 'clinicadmin'
+          || userData().role == 'Clinic Administrator'
+          || userData().role == 'clinicadministrator'
+          || userData().userType == 'Owner'
+          || userData().userType == 'owner');
+    }
+
     function applicantCannotChangeVerificationFields() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'status', 'approvalStatus', 'verificationStatus', 'verificationResults',
@@ -68,9 +80,9 @@ service cloud.firestore {
     }
 
     function hasPermission(permission) {
-      return (userData().permissions != null && userData().permissions.hasAny([permission]))
-        || (userData().effectivePermissions != null && userData().effectivePermissions.hasAny([permission]))
-        || (rolePermissions() != null && rolePermissions().hasAny([permission]));
+      return (userData().permissions != null && userData().permissions.hasAny([permission, 'administrator:full_access']))
+        || (userData().effectivePermissions != null && userData().effectivePermissions.hasAny([permission, 'administrator:full_access']))
+        || (rolePermissions() != null && rolePermissions().hasAny([permission, 'administrator:full_access']));
     }
 
     function clinicDoc(branchId) {
@@ -212,9 +224,13 @@ service cloud.firestore {
           || isAssignedClinicRole(roleId)
           || isStaffOfOwner(resource.data.ownerId));
       allow create: if isSignedIn()
-        && request.resource.data.ownerId == request.auth.uid;
+        && (isSuperadmin()
+          || (isClinicOwner() && request.resource.data.ownerId == request.auth.uid));
       allow update, delete: if isSignedIn()
-        && (isSuperadmin() || resource.data.ownerId == request.auth.uid);
+        && (isSuperadmin()
+          || (isClinicOwner()
+            && resource.data.ownerId == request.auth.uid
+            && (request.method == 'delete' || request.resource.data.ownerId == resource.data.ownerId)));
     }
 
     match /ownerModuleSettings/{ownerId} {
@@ -318,6 +334,40 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'reviewRemarks', 'reviewedBy', 'reviewedById', 'reviewedAt', 'updatedAt'
         ]);
+      allow delete: if false;
+    }
+
+    match /leaveRequests/{requestId} {
+      allow read: if isSignedIn()
+        && (isSuperadmin()
+          || resource.data.requesterId == request.auth.uid
+          || (resource.data.branchId != null
+            && canAccessBranch(resource.data.branchId)
+            && hasPermission('leave:review')));
+      allow create: if isSignedIn()
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('leave:create')
+        && request.resource.data.status == 'Pending';
+      allow update: if isSignedIn()
+        && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId)
+        && ((resource.data.requesterId == request.auth.uid
+          && resource.data.status == 'Pending'
+          && (request.resource.data.status == 'Pending' || request.resource.data.status == 'Cancelled')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'requesterName', 'requesterRole', 'employmentType', 'branchName',
+            'paymentType', 'leaveType', 'startDate', 'endDate', 'daysRequested',
+            'year', 'reason', 'attachmentUrl', 'attachmentFileName',
+            'attachmentMimeType', 'updatedAt'
+          ]))
+          || (hasPermission('leave:review')
+            && (request.resource.data.status == 'Approved' || request.resource.data.status == 'Rejected')
+            && (request.resource.data.status == 'Approved' || ('reviewRemarks' in request.resource.data))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'reviewRemarks', 'reviewedBy', 'reviewedById', 'reviewedAt', 'updatedAt'
+            ])));
       allow delete: if false;
     }
 
@@ -526,14 +576,108 @@ service cloud.firestore {
     match /payrolls/{payrollId} {
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
-      allow create, update: if isSignedIn()
+      allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update'));
+      allow update: if isSignedIn()
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('payroll:update')
+        && ('payPeriodMonthKey' in request.resource.data)
+        && exists(/databases/$(database)/documents/payrollSummaries/$(request.resource.data.branchId + '_' + request.resource.data.payPeriodMonthKey))
+        && get(/databases/$(database)/documents/payrollSummaries/$(request.resource.data.branchId + '_' + request.resource.data.payPeriodMonthKey)).data.status == 'pending';
+      allow delete: if false;
+    }
+
+    match /payrollSummaries/{summaryId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
+      allow create: if isSignedIn()
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('payroll:update')
+        && request.resource.data.status == 'pending';
+      allow update: if isSignedIn()
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && ((hasPermission('payroll:approve')
+          && resource.data.status == 'pending'
+          && (request.resource.data.status == 'approved' || request.resource.data.status == 'rejected')
+          && (request.resource.data.status == 'approved' || ('rejectionReason' in request.resource.data))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'approvedBy', 'approvedByName', 'approvedAt', 'rejectionReason', 'updatedAt'
+          ]))
+          || (hasPermission('payroll:update')
+            && request.resource.data.status == 'pending'));
+      allow delete: if false;
+    }
+
+    function approvedPayrollForPayslip() {
+      return ('payrollEntryId' in request.resource.data)
+        && ('payPeriodMonthKey' in request.resource.data)
+        && exists(/databases/$(database)/documents/payrolls/$(request.resource.data.payrollEntryId))
+        && get(/databases/$(database)/documents/payrolls/$(request.resource.data.payrollEntryId)).data.branchId == request.resource.data.branchId
+        && exists(/databases/$(database)/documents/payrollSummaries/$(request.resource.data.branchId + '_' + request.resource.data.payPeriodMonthKey))
+        && get(/databases/$(database)/documents/payrollSummaries/$(request.resource.data.branchId + '_' + request.resource.data.payPeriodMonthKey)).data.status == 'approved';
+    }
+
+    match /payslips/{payslipId} {
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
+      allow create: if isSignedIn()
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('payroll:update')
+        && approvedPayrollForPayslip();
+      allow update: if isSignedIn()
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('payroll:update')
+        && approvedPayrollForPayslip()
+        && request.resource.data.payrollEntryId == resource.data.payrollEntryId;
+      allow delete: if false;
+    }
+
+    match /users/{employeeId}/payslips/{payslipId} {
+      allow read: if isSignedIn()
+        && (request.auth.uid == employeeId
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payroll:view'))
+          || isSuperadmin());
+      allow create: if isSignedIn()
+        && request.resource.data.employeeId == employeeId
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('payroll:update')
+        && approvedPayrollForPayslip();
+      allow update: if isSignedIn()
+        && request.resource.data.employeeId == employeeId
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('payroll:update')
+        && approvedPayrollForPayslip()
+        && request.resource.data.payrollEntryId == resource.data.payrollEntryId;
+      allow delete: if false;
+    }
+
+    match /payrollSettings/{branchId} {
+      allow read: if isSignedIn()
+        && canAccessBranch(branchId)
+        && hasPermission('payroll:view');
+      allow create, update: if isSignedIn()
+        && request.resource.data.branchId == branchId
+        && canAccessBranch(branchId)
+        && hasPermission('payroll:update');
       allow delete: if false;
     }
 
     match /payrollSettingsAudit/{auditId} {
-      allow read, create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update'));
+      allow read: if isSignedIn()
+        && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId)
+        && hasPermission('payroll:view');
+      allow create: if isSignedIn()
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('payroll:update');
       allow update, delete: if false;
     }
 

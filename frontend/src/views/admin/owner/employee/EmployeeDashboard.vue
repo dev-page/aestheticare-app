@@ -145,9 +145,8 @@ export default {
           { label: 'Leave Management', to: '/hr/leave-management', permission: 'leave:review', feature: 'hr', description: 'Track or review leave requests.' },
           { label: 'Base Pay', to: '/hr/base-pay', permission: 'payroll:update', feature: 'payroll', description: 'Manage base pay settings.' },
           { label: 'Payroll', to: '/hr/payroll', permission: 'payroll:update', feature: 'payroll', description: 'Run payroll and payslip workflows.' },
-          { label: 'Payslip Generation', to: '/hr/payslip-generation', permission: 'payroll:update', feature: 'payroll', description: 'Generate staff payslips.' },
           { label: 'Payroll Summary', to: '/finance/payroll-summary', permission: 'payroll:view', feature: 'payroll', description: 'Review payroll summary results.' },
-          { label: 'Payroll Approval', to: '/finance/payroll-approval', permission: 'payroll:view', feature: 'payroll', description: 'Approve payroll summary items.' }
+          { label: 'Payroll Approval', to: '/finance/payroll-approval', permission: 'payroll:approve', feature: 'payroll', description: 'Approve payroll summary items.' }
         ]
       },
       {

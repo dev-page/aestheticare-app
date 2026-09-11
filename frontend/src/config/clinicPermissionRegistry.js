@@ -158,6 +158,7 @@ export const permissionGroups = [
         permissions: [
           { key: 'payroll:view', label: 'View Payroll', description: 'Open payroll summaries and approvals.', icon: 'mdi:file-chart-outline' },
           { key: 'payroll:update', label: 'Manage Payroll', description: 'Adjust payroll settings and payslips.', icon: 'mdi:cash-edit' },
+          { key: 'payroll:approve', label: 'Approve Payroll', description: 'Approve payroll summaries before payslips are issued.', icon: 'mdi:shield-check-outline' },
         ],
       },
     ],
@@ -263,6 +264,7 @@ export const permissionDependencies = {
   'overtime:create': ['overtime:view'],
   'overtime:review': ['overtime:view', 'attendance:view'],
   'payroll:update': ['payroll:view', 'overtime:view'],
+  'payroll:approve': ['payroll:view'],
 }
 
 export const permissionFeatureMap = {
@@ -297,6 +299,7 @@ export const permissionFeatureMap = {
   'overtime:review': 'hr',
   'payroll:view': 'payroll',
   'payroll:update': 'payroll',
+  'payroll:approve': 'payroll',
 }
 
 export const knownPermissionKeys = new Set(allPermissionKeys)
