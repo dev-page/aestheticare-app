@@ -131,7 +131,9 @@ service cloud.firestore {
             && canAccessBranch(request.resource.data.branchId)
             && hasPermission('staff:create')
             && request.resource.data.userType == 'Staff'
-            && request.resource.data.status == 'Pending Approval')));
+            && ((isOwnerOfBranch(request.resource.data.branchId)
+              && request.resource.data.status == 'Active')
+              || request.resource.data.status == 'Pending Approval'))));
       allow update: if isSignedIn()
         && ((request.auth.uid == userId && applicantCannotChangeVerificationFields())
           || (request.auth.uid == userId
@@ -148,6 +150,27 @@ service cloud.firestore {
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
             && hasPermission('staff:disable')));
+    }
+
+    match /users/{userId}/schedules/{scheduleId} {
+      allow read: if isSignedIn()
+        && (request.auth.uid == userId
+          || isSuperadmin()
+          || resource.data.recurring == true
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)));
+      allow create: if isSignedIn()
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('hr:update');
+      allow update: if isSignedIn()
+        && resource.data.branchId != null
+        && request.resource.data.branchId == resource.data.branchId
+        && canAccessBranch(resource.data.branchId)
+        && hasPermission('hr:update');
+      allow delete: if isSignedIn()
+        && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId)
+        && hasPermission('hr:update');
     }
 
     match /clinics/{clinicId} {
@@ -271,6 +294,30 @@ service cloud.firestore {
         && (request.resource.data.branchId != null && isOwnerOfBranch(request.resource.data.branchId) && hasPermission('attendance:create'));
       allow update: if isSignedIn()
         && (resource.data.branchId != null && isOwnerOfBranch(resource.data.branchId) && hasPermission('attendance:update'));
+      allow delete: if false;
+    }
+
+    match /overtimeRequests/{requestId} {
+      allow read: if isSignedIn()
+        && (isSuperadmin()
+          || resource.data.requesterId == request.auth.uid
+          || (resource.data.branchId != null
+            && canAccessBranch(resource.data.branchId)
+            && (hasPermission('overtime:view') || hasPermission('payroll:update'))));
+      allow create: if isSignedIn()
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('overtime:create')
+        && request.resource.data.status == 'Pending'
+        && request.resource.data.calculatedOvertimeMinutes > 0;
+      allow update: if isSignedIn()
+        && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId)
+        && hasPermission('overtime:review')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'reviewRemarks', 'reviewedBy', 'reviewedById', 'reviewedAt', 'updatedAt'
+        ]);
       allow delete: if false;
     }
 

@@ -79,7 +79,7 @@ export default {
       userType: 'Staff',
       clinicBranch: '',   // will hold branchId
       clinicLocation: '',
-      status: 'Pending Approval'
+      status: 'Active'
     })
     const practitionerIdFile = ref(null)
 
@@ -173,7 +173,7 @@ export default {
         userType: 'Staff',
         clinicBranch: '',
         clinicLocation: '',
-        status: 'Pending Approval'
+        status: 'Active'
       }
       practitionerIdFile.value = null
       if (isBasicPlan.value && branches.value.length > 0) {
@@ -451,7 +451,7 @@ export default {
             userType: 'Staff',
             branchId: currentStaff.value.clinicBranch,   // ✅ store branchId reference
             clinicLocation: currentStaff.value.clinicLocation,
-            status: 'Pending Approval',
+            status: 'Active',
             practitionerLicenseUrl: practitionerLicenseUrl || null,
             practitionerLicenseName: practitionerLicenseName || null,
             practitionerLicenseUploadedBy: practitionerLicenseUrl ? (auth.currentUser?.uid || null) : null,
@@ -700,9 +700,7 @@ export default {
                   <option class="text-slate-300" value="" disabled>Select employment type</option>
                   <option class="text-white" value="Full-time">Full-time</option>
                   <option class="text-white" value="Part-time">Part-time</option>
-                  <option class="text-white" value="Contractual">Contractual</option>
                   <option class="text-white" value="Intern">Intern</option>
-                  <option class="text-white" value="Freelance">Freelance</option>
                 </select>
                 <p v-if="fieldErrors.employmentType" class="mt-1 text-xs text-red-400">{{ fieldErrors.employmentType }}</p>
               </div>

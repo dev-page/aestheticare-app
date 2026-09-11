@@ -27,13 +27,13 @@ export const buildWeekScheduleMap = (scheduleDocs = []) => {
       String(data.type || '').trim().toLowerCase() === RECURRING_SCHEDULE_ID
 
     if (isRecurring) {
-      weekMap[RECURRING_WEEKMAP_KEY] = data.assignments || {}
+      weekMap[RECURRING_WEEKMAP_KEY] = data.assignmentLabels || data.assignments || {}
       return
     }
 
     const weekKey = String(data.weekStart || docId || '').trim()
     if (!weekKey) return
-    weekMap[weekKey] = data.assignments || {}
+    weekMap[weekKey] = data.assignmentLabels || data.assignments || {}
   })
 
   return weekMap
@@ -67,14 +67,15 @@ export const parseShiftDurationHours = (shift = {}) => {
 
   const startTotal = startHour * 60 + startMinute
   const endTotal = endHour * 60 + endMinute
-  const adjustedEnd = endTotal <= startTotal ? endTotal + (24 * 60) : endTotal
-  return Math.max(0, (adjustedEnd - startTotal) / 60)
+  if (endTotal <= startTotal) return 0
+  return (endTotal - startTotal) / 60
 }
 
 export const normalizeEmploymentType = (value = '') => {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized.includes('full')) return 'full-time'
   if (normalized.includes('part')) return 'part-time'
+  if (normalized === 'intern' || normalized.includes('intern')) return 'intern'
   return ''
 }
 

@@ -218,6 +218,20 @@ export default {
         return false
       }
 
+      const duplicateShift = shifts.value.some((shift) =>
+        shift.id !== editingShiftId.value &&
+        String(shift.branchId || '') === String(
+          branches.value.find((branch) => branch.branch === currentShift.value.branch)?.id || ''
+        ) &&
+        String(shift.shiftType || '').trim().toLowerCase() === String(currentShift.value.shiftType || '').trim().toLowerCase() &&
+        String(shift.start || '').trim() === String(currentShift.value.start || '').trim() &&
+        String(shift.end || '').trim() === String(currentShift.value.end || '').trim()
+      )
+      if (duplicateShift) {
+        toast.error('A shift with the same type and time already exists for this branch.')
+        return false
+      }
+
       const capacity = Number(currentShift.value.capacity || 0)
       if (!Number.isFinite(capacity) || capacity < 1) {
         toast.error('Capacity must be at least 1.')

@@ -115,7 +115,7 @@
                 <li>Bookings use practitioner schedules stored under each employee.</li>
                 <li>Schedules saved here are recurring by default for future weeks.</li>
                 <li>The start date helps show when you began using this recurring pattern.</li>
-                <li>Shift templates that run for 8 hours or more are treated as full-time; shorter ones are treated as part-time.</li>
+                <li>Full-time and part-time shifts are suggested by duration; intern schedules are assigned manually.</li>
                 <li>Choose Off for days when the employee should not accept work or appointments.</li>
               </ul>
             </div>
@@ -185,7 +185,7 @@
                   class="mt-4 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white"
                 >
                   <option value="">Off</option>
-                  <option v-for="shift in displayShiftTemplates" :key="shift.id" :value="shift.label">
+                  <option v-for="shift in displayShiftTemplates" :key="shift.id" :value="shift.id">
                     {{ shift.label }}{{ shift.scheduleType === selectedEmployeeScheduleType ? ' (Recommended)' : '' }}
                   </option>
                 </select>
@@ -201,7 +201,7 @@
                     type="button"
                     class="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="!getSuggestedShiftForDay(day)"
-                    @click="applySuggestedShiftToDay(day, getSuggestedShiftForDay(day)?.label)"
+                    @click="applySuggestedShiftToDay(day, getSuggestedShiftForDay(day)?.id)"
                   >
                     Use DSS
                   </button>
@@ -317,12 +317,8 @@ const selectedEmployeeScheduleType = computed(() => {
 
 const parseShiftHours = (shiftLabel) => {
   if (!shiftLabel) return 0
-  const match = branchShifts.value.find((shift) => shift.label === shiftLabel)
-  if (!match?.start || !match?.end) return 0
-  const [startHour, startMinute] = String(match.start).split(':').map(Number)
-  const [endHour, endMinute] = String(match.end).split(':').map(Number)
-  if ([startHour, startMinute, endHour, endMinute].some((value) => Number.isNaN(value))) return 0
-  return Math.max(0, (endHour * 60 + endMinute - (startHour * 60 + startMinute)) / 60)
+  const match = branchShifts.value.find((shift) => shift.id === shiftLabel || shift.label === shiftLabel)
+  return match ? parseShiftDurationHours(match) : 0
 }
 
 const totalAssignedHours = computed(() =>
@@ -334,9 +330,8 @@ const isFullTimeEmployee = computed(() =>
 )
 
 const hoursWarning = computed(() => {
-  if (!selectedEmployee.value || !isFullTimeEmployee.value) return ''
-  if (totalAssignedHours.value <= 48) return ''
-  return `This full-time employee is assigned ${totalAssignedHours.value} hours. Please keep the weekly total at 48 hours or below.`
+  if (!selectedEmployee.value || totalAssignedHours.value <= 48) return ''
+  return `${scheduleTypeLabel.value} schedules cannot exceed 48 assigned hours per week.`
 })
 
 const weeklyHoursSummary = computed(() => {
@@ -348,7 +343,11 @@ const weeklyHoursSummary = computed(() => {
 })
 
 const scheduleTypeLabel = computed(() =>
-  selectedEmployeeScheduleType.value === 'full-time' ? 'Full-time' : 'Part-time'
+  selectedEmployeeScheduleType.value === 'full-time'
+    ? 'Full-time'
+    : selectedEmployeeScheduleType.value === 'intern'
+      ? 'Intern'
+      : 'Part-time'
 )
 
 const matchingShiftTemplates = computed(() => {
@@ -397,6 +396,10 @@ const recommendedShiftSummary = computed(() => {
     return 'Create shift templates first so the DSS can recommend the right schedule.'
   }
 
+  if (scheduleType === 'intern') {
+    return 'Intern schedules are assigned manually, so all branch shifts are available to choose from.'
+  }
+
   if (matchingCount > 0) {
     return scheduleType === 'part-time'
       ? 'The system detected a part-time employee and is prioritizing shifts shorter than 8 hours.'
@@ -406,9 +409,9 @@ const recommendedShiftSummary = computed(() => {
   return 'No exact DSS match is available for this employee, so all branch shifts are being shown.'
 })
 
-const applySuggestedShiftToDay = (day, shiftLabel) => {
+const applySuggestedShiftToDay = (day, shiftId) => {
   if (!day) return
-  assignments.value[day] = String(shiftLabel || '').trim()
+  assignments.value[day] = String(shiftId || '').trim()
 }
 
 const applySuggestedShifts = () => {
@@ -423,7 +426,7 @@ const applySuggestedShifts = () => {
     if (!assignments.value[day]) {
       const suggestion = suggestions[index % suggestions.length]
       if (!suggestion) return
-      assignments.value[day] = suggestion.label
+      assignments.value[day] = suggestion.id
       updated = true
     }
   })
@@ -620,7 +623,13 @@ const loadAssignments = async () => {
   }
 
   const recurringSnap = await getDoc(doc(db, 'users', selectedEmployeeId.value, 'schedules', RECURRING_SCHEDULE_ID))
-  const nextAssignments = normalizeAssignments(recurringSnap.exists() ? recurringSnap.data()?.assignments || {} : {}, daysOfWeek)
+  const scheduleData = recurringSnap.exists() ? recurringSnap.data() || {} : {}
+  const nextAssignments = normalizeAssignments(scheduleData.assignments || {}, daysOfWeek)
+  daysOfWeek.forEach((day) => {
+    const value = nextAssignments[day]
+    const matchingShift = branchShifts.value.find((shift) => shift.id === value || shift.label === value)
+    nextAssignments[day] = matchingShift?.id || value
+  })
 
   assignments.value = { ...nextAssignments }
   loadedAssignments.value = { ...nextAssignments }
@@ -688,6 +697,12 @@ const saveAssignments = async () => {
       recurring: true,
       type: RECURRING_SCHEDULE_ID,
       assignments: { ...assignments.value },
+      assignmentLabels: Object.fromEntries(
+        daysOfWeek.map((day) => {
+          const shift = branchShifts.value.find((entry) => entry.id === assignments.value[day])
+          return [day, shift?.label || '']
+        })
+      ),
       updatedAt: serverTimestamp()
     }
 

@@ -141,11 +141,14 @@ export const permissionGroups = [
       },
       {
         key: 'leaves',
-        label: 'Leaves',
-        description: 'Leave requests and management.',
+        label: 'Leave & Overtime',
+        description: 'Leave requests and overtime tracking.',
         permissions: [
           { key: 'leave:create', label: 'Submit Leave Requests', description: 'Submit leave requests.', icon: 'mdi:file-plus-outline' },
           { key: 'leave:review', label: 'Manage Leave Requests', description: 'Approve or reject leave requests.', icon: 'mdi:calendar-check-outline' },
+          { key: 'overtime:view', label: 'View Overtime', description: 'View overtime records and evidence.', icon: 'mdi:clock-outline' },
+          { key: 'overtime:create', label: 'Submit Overtime', description: 'Submit overtime based on attendance.', icon: 'mdi:clock-plus-outline' },
+          { key: 'overtime:review', label: 'Approve Overtime', description: 'Approve or reject overtime requests.', icon: 'mdi:clock-check-outline' },
         ],
       },
       {
@@ -256,7 +259,10 @@ export const permissionDependencies = {
   'hr:update': ['hr:view'],
   'leave:create': ['hr:view'],
   'leave:review': ['hr:view'],
-  'payroll:update': ['payroll:view'],
+  'overtime:view': ['hr:view'],
+  'overtime:create': ['overtime:view'],
+  'overtime:review': ['overtime:view', 'attendance:view'],
+  'payroll:update': ['payroll:view', 'overtime:view'],
 }
 
 export const permissionFeatureMap = {
@@ -286,6 +292,9 @@ export const permissionFeatureMap = {
   'hr:update': 'hr',
   'leave:create': 'hr',
   'leave:review': 'hr',
+  'overtime:view': 'hr',
+  'overtime:create': 'hr',
+  'overtime:review': 'hr',
   'payroll:view': 'payroll',
   'payroll:update': 'payroll',
 }

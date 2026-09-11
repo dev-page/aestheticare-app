@@ -1498,16 +1498,26 @@ const resolveBranchAccess = async (uid, branchId) => {
 const loadAttendanceSchedule = async (employeeId, dateKey) => {
   const firestore = admin.firestore()
   const scheduleSnap = await firestore.collection('users').doc(employeeId).collection('schedules').doc('recurring').get()
-  const assignments = scheduleSnap.exists ? scheduleSnap.data()?.assignments || {} : {}
+  const scheduleData = scheduleSnap.exists ? scheduleSnap.data() || {} : {}
+  const assignments = scheduleData.assignments || {}
+  const assignmentLabels = scheduleData.assignmentLabels || {}
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).format(new Date(`${dateKey}T12:00:00+08:00`))
-  const shiftLabel = String(assignments[weekday] || '').trim()
-  if (!shiftLabel || shiftLabel.toLowerCase() === 'off') return { shiftLabel, shiftStart: '', shiftEnd: '' }
-  const shiftSnap = await firestore.collection('shifts').where('branchId', '==', (await firestore.collection('users').doc(employeeId).get()).data()?.branchId || '').get()
-  const shift = shiftSnap.docs.map((snap) => snap.data() || {}).find((entry) => {
+  const assignmentValue = String(assignments[weekday] || '').trim()
+  const shiftLabel = String(assignmentLabels[weekday] || assignmentValue).trim()
+  if (!assignmentValue || assignmentValue.toLowerCase() === 'off' || shiftLabel.toLowerCase() === 'off') {
+    return { shiftLabel, shiftStart: '', shiftEnd: '' }
+  }
+  const employeeData = (await firestore.collection('users').doc(employeeId).get()).data() || {}
+  const shiftSnap = await firestore.collection('shifts').where('branchId', '==', employeeData.branchId || '').get()
+  const shift = shiftSnap.docs.map((snap) => ({ id: snap.id, ...(snap.data() || {}) })).find((entry) => {
     const label = `${String(entry.shiftType || 'Shift').trim()} || ${String(entry.start || '').trim()} - ${String(entry.end || '').trim()}`
-    return label === shiftLabel
+    return entry.id === assignmentValue || label === shiftLabel || label === assignmentValue
   }) || {}
-  return { shiftLabel, shiftStart: String(shift.start || '').trim(), shiftEnd: String(shift.end || '').trim() }
+  return {
+    shiftLabel: shift.id ? `${String(shift.shiftType || 'Shift').trim()} || ${String(shift.start || '').trim()} - ${String(shift.end || '').trim()}` : shiftLabel,
+    shiftStart: String(shift.start || '').trim(),
+    shiftEnd: String(shift.end || '').trim()
+  }
 }
 
 const runRegistrationDocumentVerification = async ({ uid, applicantType, processedBy }) => {

@@ -1016,6 +1016,22 @@ export default {
       return roundToQuarterHour(totalMinutes / 60)
     }
 
+    const computeApprovedOvertimeMinutes = async (employeeId, monthKey = '') => {
+      if (!employeeId || !currentBranchId.value) return 0
+
+      const snapshot = await getDocs(query(
+        collection(db, 'overtimeRequests'),
+        where('branchId', '==', currentBranchId.value)
+      ))
+
+      return snapshot.docs.reduce((total, overtimeDoc) => {
+        const data = overtimeDoc.data() || {}
+        if (data.requesterId !== employeeId || data.status !== 'Approved') return total
+        if (monthKey && !isDateInMonth(data.date || data.createdAt || data.updatedAt, monthKey)) return total
+        return total + Math.max(0, Number(data.calculatedOvertimeMinutes || 0))
+      }, 0)
+    }
+
     const resetForm = () => {
       selectedEmployeeId.value = ''
       hoursWorked.value = 0
@@ -1128,6 +1144,9 @@ export default {
           const employeeHours = await computeWorkedHoursFromAttendance(employee.id, monthKey)
           if (!employeeHours || employeeHours <= 0) continue
 
+          const overtimeMinutes = await computeApprovedOvertimeMinutes(employee.id, monthKey)
+          const overtimeHours = roundToQuarterHour(overtimeMinutes / 60)
+
           const basePay = Number(employee.basePay || 0)
           if (basePay <= 0) continue
 
@@ -1137,7 +1156,8 @@ export default {
             commissionAmount = Number(commissionResult.total || 0)
           }
 
-          const totalPay = Number(employeeHours || 0) * basePay + commissionAmount
+          const overtimePay = Number(overtimeHours || 0) * basePay * 1.25
+          const totalPay = Number(employeeHours || 0) * basePay + overtimePay + commissionAmount
           const deductions = computeDeductions(totalPay)
           const totalDeductions = roundCurrency(
             Object.values(deductions).reduce((sum, entry) => sum + Number(entry?.amount || 0), 0)
@@ -1152,6 +1172,9 @@ export default {
             employmentType: employee.employmentType || null,
             salaryType,
             hoursWorked: Number(employeeHours || 0),
+            overtimeHours: Number(overtimeHours || 0),
+            overtimeRateMultiplier: 1.25,
+            overtimePay: Number(overtimePay.toFixed(2)),
             hourlyRate: Number(basePay || 0),
             commission: commissionAmount,
             totalPay,
