@@ -505,7 +505,7 @@ export default {
 }
 
 .notifications-shell-module {
-  background: #0f172a;
+  background: #1f120b;
 }
 
 .notifications-main {

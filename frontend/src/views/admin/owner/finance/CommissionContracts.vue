@@ -49,7 +49,7 @@ onMounted(async () => { const uid = auth.currentUser?.uid; if (!uid) return; con
 onUnmounted(() => stopListening?.())
 </script>
 <style scoped>
-.label { display:block; margin-bottom:.5rem; color:#cbd5e1; font-size:.875rem }
-.field { width:100%; border:1px solid #475569; border-radius:.75rem; background:#0f172a; color:white; padding:.75rem; outline:none }
+.label { display:block; margin-bottom:.5rem; color:#d2bda7; font-size:.875rem }
+.field { width:100%; border:1px solid #6b4934; border-radius:.75rem; background:#1f120b; color:white; padding:.75rem; outline:none }
 .field:focus { border-color:#f59e0b }
 </style>

@@ -496,13 +496,13 @@ export default {
 <style scoped>
 .report-filter-select,
 .report-filter-select option {
-  color: #f1f5f9;
-  background-color: #1e293b;
+  color: #f7f2eb;
+  background-color: #2a180f;
 }
 
 .report-filter-select option:checked,
 .report-filter-select option:hover {
-  color: #f8fafc;
-  background-color: #334155;
+  color: #fffbf4;
+  background-color: #4b3020;
 }
 </style>

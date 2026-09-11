@@ -406,7 +406,7 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: #475569;
+  background: #6b4934;
   transition: background 0.2s ease;
   border: 1px solid rgba(148, 163, 184, 0.4);
 }

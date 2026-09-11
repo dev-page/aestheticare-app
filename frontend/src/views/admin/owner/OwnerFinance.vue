@@ -166,8 +166,8 @@ export default {
           responsive: true,
           plugins: { legend: { labels: { color: 'white' } } },
           scales: {
-            x: { ticks: { color: 'white' }, grid: { color: '#334155' } },
-            y: { ticks: { color: 'white' }, grid: { color: '#334155' } }
+          x: { ticks: { color: 'white' }, grid: { color: '#4b3020' } },
+          y: { ticks: { color: 'white' }, grid: { color: '#4b3020' } }
           }
         }
       });
@@ -207,8 +207,8 @@ export default {
           responsive: true,
           plugins: { legend: { labels: { color: 'white' } } },
           scales: {
-            x: { ticks: { color: 'white' }, grid: { color: '#334155' } },
-            y: { ticks: { color: 'white' }, grid: { color: '#334155' } }
+          x: { ticks: { color: 'white' }, grid: { color: '#4b3020' } },
+          y: { ticks: { color: 'white' }, grid: { color: '#4b3020' } }
           }
         }
       });

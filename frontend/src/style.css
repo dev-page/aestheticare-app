@@ -866,6 +866,107 @@ table {
   }
 }
 
+/* Keep the application on its warm mocha palette. Some older screens still
+   use cool Tailwind utility names; these selectors normalize their rendered
+   colors without changing their semantic states or component behavior. */
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="text-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="text-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="text-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="text-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="text-purple-"] {
+  color: #c6946c !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="text-slate-"] {
+  color: #c9b3a5 !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="bg-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="bg-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="bg-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="bg-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="bg-purple-"] {
+  background-color: #7b4f37 !important;
+  background-image: none !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="bg-slate-"] {
+  background-color: #2a180f !important;
+  background-image: none !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="border-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="border-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="border-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="border-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="border-purple-"] {
+  border-color: #8b5f43 !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="border-slate-"] {
+  border-color: #5a3927 !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="ring-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="ring-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="ring-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="ring-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="ring-purple-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="focus:ring-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="focus:ring-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="focus:ring-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="focus:ring-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="focus:ring-purple-"] {
+  --tw-ring-color: #c6946c !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="ring-slate-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="focus:ring-slate-"] {
+  --tw-ring-color: #c6946c !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="from-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="from-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="from-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="from-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="from-purple-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="via-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="via-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="via-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="via-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="via-purple-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="to-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="to-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="to-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="to-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="to-purple-"] {
+  --tw-gradient-from: #7b4f37 var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: #c6946c var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="from-slate-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="via-slate-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="to-slate-"] {
+  --tw-gradient-from: #2a180f var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: #7b4f37 var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="fill-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="fill-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="fill-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="fill-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="fill-purple-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="stroke-blue-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="stroke-sky-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="stroke-cyan-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="stroke-indigo-"],
+:is(.owner-theme, .module-theme, .customer-theme, body) [class*="stroke-purple-"] {
+  fill: #c6946c !important;
+  stroke: #c6946c !important;
+}
+
 /* Toastify theme + icons */
 .Toastify__toast {
   background: linear-gradient(150deg, #2f2015 0%, #24180f 100%) !important;

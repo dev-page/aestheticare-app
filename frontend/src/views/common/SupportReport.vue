@@ -539,7 +539,7 @@ export default {
 }
 
 .support-shell-module {
-  background: #0f172a;
+  background: #1f120b;
 }
 
 .support-main {

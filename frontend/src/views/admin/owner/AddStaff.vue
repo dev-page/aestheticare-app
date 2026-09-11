@@ -819,20 +819,20 @@ export default {
 }
 
 .add-staff-select {
-  color: #f8fafc;
-  background-color: #0f172a;
+  color: #fffbf4;
+  background-color: #1f120b;
 }
 
 .add-staff-select option {
-  color: #f8fafc;
-  background-color: #0f172a;
+  color: #fffbf4;
+  background-color: #1f120b;
 }
 
 .add-staff-select option:disabled {
-  color: #94a3b8;
+  color: #b99b88;
 }
 
 .add-staff-select::-ms-expand {
-  color: #f8fafc;
+  color: #fffbf4;
 }
 </style>

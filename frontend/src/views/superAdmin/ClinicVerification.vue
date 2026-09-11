@@ -255,7 +255,7 @@
               <article v-for="docItem in selectedRecord.documents" :key="docItem.key" class="bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <p class="text-sm text-slate-200 mb-3">{{ docItem.label }}</p>
                 <div class="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div class="rounded-md bg-slate-900/60 p-2">
+                  <div v-if="docItem.key !== 'birRegistration'" class="rounded-md bg-slate-900/60 p-2">
                     <span class="text-slate-500">Document number</span>
                     <p class="mt-1 text-slate-200">{{ docItem.documentNumber || '-' }}</p>
                   </div>

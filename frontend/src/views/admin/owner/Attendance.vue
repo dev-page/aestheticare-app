@@ -89,8 +89,8 @@ export default {
         width: 320,
         margin: 2,
         color: {
-          dark: '#0f172a',
-          light: '#f8fafc'
+          dark: '#1f120b',
+          light: '#fffbf4'
         }
       })
     }

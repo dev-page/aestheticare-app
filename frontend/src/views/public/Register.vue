@@ -334,7 +334,7 @@ const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
 // Documents that require an explicit expiry date (ISO string)
 const documentExpiryRequired = {
   businessPermit: true,
-  birRegistration: true,
+  birRegistration: false,
   sanitaryCertificate: true,
   clinicLicense: true,
   prcIdMedicalDirector: true,
@@ -2857,7 +2857,7 @@ const submitDocuments = async () => {
         ...(documentNumberRequired.has(docKey)
           ? { documentNumber: String(documentNumberMap[docKey]?.value || '').trim().toUpperCase() }
           : {}),
-        expiryDate: expiryVal || null,
+        ...(docKey === 'birRegistration' ? {} : { expiryDate: expiryVal || null }),
       }
     })
 
