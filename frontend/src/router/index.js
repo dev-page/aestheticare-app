@@ -296,6 +296,7 @@ router.beforeEach(async (to, from, next) => {
 
   const routePath = String(to.path || '').toLowerCase()
   const isOwnerRoute = isOwnerLikeRole(currentUserData.role || currentUserData.userType)
+  const isRegistrationRoute = routePath === '/register' || routePath.startsWith('/clinic/register')
   const isSubscriptionOnboardingRoute = routePath === '/owner/onboarding'
   const isSubscriptionCheckoutRoute = routePath === '/subscription/checkout'
 
@@ -329,7 +330,17 @@ router.beforeEach(async (to, from, next) => {
     || currentUserData.plan
     || clinicSubscriptionData.subscriptionPlan
     || clinicSubscriptionData.plan
-  const needsSubscriptionOnboarding = currentUser && isOwnerRoute && isFreeSubscriptionPlan(activeSubscriptionPlan)
+  const userStatus = String(currentUserData.status || '').trim().toLowerCase()
+  const clinicApprovalStatus = String(
+    clinicSubscriptionData.approvalStatus || currentUserData.approvalStatus || ''
+  ).trim().toLowerCase()
+  const isApprovedClinicOwner = currentUser
+    && isOwnerRoute
+    && userStatus === 'active'
+    && clinicApprovalStatus.includes('approved')
+  const needsSubscriptionOnboarding = isApprovedClinicOwner
+    && !isRegistrationRoute
+    && isFreeSubscriptionPlan(activeSubscriptionPlan)
     && !isTrueFlag(currentUserData.subscriptionOnboardingDismissed)
 
   if (needsSubscriptionOnboarding && !isSubscriptionOnboardingRoute && !isSubscriptionCheckoutRoute) {
@@ -341,6 +352,15 @@ router.beforeEach(async (to, from, next) => {
   }
   if (currentUser && routePath.startsWith('/supplier') && !isSupplierRole(currentUserData)) {
     return next(safeUnauthorizedRedirect(currentUser))
+  }
+  if (
+    currentUser
+    && routePath.startsWith('/supplier')
+    && userStatus !== 'active'
+    && !clinicApprovalStatus.includes('approved')
+  ) {
+    await signOut(auth).catch(() => {})
+    return next('/login')
   }
   if (currentUser && routePath.startsWith('/customer') && !isCustomerRole(currentUserData)) {
     return next(safeUnauthorizedRedirect(currentUser))

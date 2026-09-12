@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { auth, db, storage } from '@/config/firebaseConfig'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, signOut } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
@@ -1361,6 +1361,9 @@ const verifyOtp = async () => {
       console.warn('Automatic supplier verification was not completed:', verificationError)
     }
 
+    // Supplier accounts remain pending until administrator approval. Do not
+    // leave the registrant authenticated while they are waiting.
+    await signOut(auth).catch(() => {})
     toast.success(
       automaticVerification?.status === 'Automatically Verified'
         ? 'Email and documents automatically verified. Your supplier registration is pending administrator approval.'
