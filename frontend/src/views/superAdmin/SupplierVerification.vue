@@ -181,9 +181,10 @@
             </p>
             <div class="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
               <div class="flex items-center justify-between gap-3">
-                <span class="text-sm text-slate-300">Overall OCR confidence</span>
+                <span class="text-sm text-slate-300">Overall verification score</span>
                 <strong class="text-lg text-white">{{ getOverallConfidence(selectedRecord.verificationResults) === null ? 'Not available' : `${getOverallConfidence(selectedRecord.verificationResults)}%` }}</strong>
               </div>
+              <p class="mt-1 text-[11px] text-slate-500">Weighted OCR and consistency checks. This does not prove document authenticity.</p>
               <div v-if="getOverallConfidence(selectedRecord.verificationResults) !== null" class="mt-2 h-2 overflow-hidden rounded-full bg-slate-700">
                 <div class="h-full rounded-full bg-emerald-500 transition-all" :style="{ width: `${getOverallConfidence(selectedRecord.verificationResults)}%` }"></div>
               </div>
@@ -195,6 +196,16 @@
                   <span class="text-xs capitalize" :class="result.status === 'verified' ? 'text-emerald-300' : 'text-amber-300'">{{ result.status }}</span>
                 </div>
                 <p class="mt-1 text-xs text-slate-400">Confidence: {{ result.confidence }}%</p>
+                <div v-if="result.checks" class="mt-2 grid grid-cols-2 gap-1 text-[11px] text-slate-400">
+                  <span>OCR engine: {{ result.ocrConfidence === null ? 'Unavailable' : `${result.ocrConfidence}%` }}</span>
+                  <span>Readable text: {{ result.checks.readableText ? 'Passed' : 'Needs review' }}</span>
+                  <span v-if="result.checks.numberMatch !== null">Document number: {{ result.checks.numberMatch ? 'Matched' : 'Not matched' }}</span>
+                  <span>Business/owner name: {{ result.checks.nameMatch ? 'Matched' : 'Not matched' }}</span>
+                  <span>Expiry: {{ result.checks.expiryValid === null ? 'Not applicable' : result.checks.expiryValid ? 'Valid' : 'Invalid' }}</span>
+                </div>
+                <p v-if="result.scoreBreakdown" class="mt-1 text-[11px] text-slate-500">
+                  Calculation: OCR {{ result.scoreBreakdown.ocrQuality }}% × 35%, text {{ result.scoreBreakdown.readability }}% × 15%, identity {{ result.scoreBreakdown.identityMatch }}% × 10%, number {{ result.scoreBreakdown.documentNumberMatch }}% × 35%, expiry {{ result.scoreBreakdown.expiryValidity }}% × 5%.
+                </p>
                 <p class="mt-1 text-xs text-slate-300">{{ result.reason }}</p>
                 <details v-if="result.extractedText" class="mt-2">
                   <summary class="cursor-pointer text-xs text-sky-300">View extracted text</summary>
@@ -317,6 +328,9 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
   key,
   status: String(result.status || 'manual_review').replaceAll('_', ' '),
   confidence: Number.isFinite(Number(result.confidence)) ? Math.round(Number(result.confidence) * 100) : 0,
+  ocrConfidence: Number.isFinite(Number(result.ocrConfidence)) ? Math.round(Number(result.ocrConfidence) * 100) : null,
+  checks: result.checks || null,
+  scoreBreakdown: result.scoreBreakdown || null,
   reason: String(result.reason || 'No verification explanation was returned.'),
   extractedText: String(result.extractedText || '').trim(),
 }))

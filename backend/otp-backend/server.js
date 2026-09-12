@@ -60,7 +60,7 @@ const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
-const AUTO_VERIFICATION_THRESHOLD = Math.max(0.85, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.9)))
+const AUTO_VERIFICATION_THRESHOLD = Math.max(0.85, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.85)))
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
     clinic: ['businessPermit', 'governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
   supplier: ['taxRegistration', 'businessRegistration'],
@@ -74,6 +74,21 @@ const DOCUMENT_NUMBER_REQUIREMENTS = new Set([
   'prcIdMedicalDirector',
 ])
 const normalizeOcrComparable = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+const getVisionWordConfidence = (annotation) => {
+  const confidences = []
+  for (const page of annotation?.pages || []) {
+    for (const block of page.blocks || []) {
+      for (const paragraph of block.paragraphs || []) {
+        for (const word of paragraph.words || []) {
+          const confidence = Number(word.confidence)
+          if (Number.isFinite(confidence) && confidence >= 0 && confidence <= 1) confidences.push(confidence)
+        }
+      }
+    }
+  }
+  if (!confidences.length) return null
+  return confidences.reduce((sum, confidence) => sum + confidence, 0) / confidences.length
+}
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const isDirectRun = process.argv[1] ? path.resolve(process.argv[1]) === __filename : false
@@ -1546,10 +1561,19 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     const result = {
       status: 'manual_review',
       confidence: 0,
+      ocrConfidence: null,
       storagePath,
       reason: '',
       numberMatch: null,
       expectedDocumentNumber: String(document.documentNumber || document.number || '').trim(),
+      checks: {
+        readableText: false,
+        ocrConfidence: null,
+        nameMatch: false,
+        numberMatch: null,
+        expiryValid: null,
+      },
+      scoreBreakdown: null,
       processedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
 
@@ -1578,34 +1602,77 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     try {
       const gcsUri = `gs://${bucketName}/${storagePath}`
       const [visionResult] = await visionClient.documentTextDetection(gcsUri)
-      const extractedText = String(visionResult?.fullTextAnnotation?.text || '').trim()
-      const textLower = extractedText.toLowerCase()
-      const businessName = String(application.businessName || application.clinicName || '').trim().toLowerCase()
-      const ownerName = `${String(user.firstName || application.firstName || '')} ${String(user.lastName || application.lastName || '')}`.trim().toLowerCase()
-      const nameMatch = (businessName.length >= 3 && textLower.includes(businessName)) || (ownerName.length >= 3 && textLower.includes(ownerName))
+      const annotation = visionResult?.fullTextAnnotation
+      const extractedText = String(annotation?.text || '').trim()
+      const textComparable = normalizeOcrComparable(extractedText)
+      const nameCandidates = [
+        String(application.businessName || application.clinicName || '').trim(),
+        `${String(user.firstName || application.firstName || '')} ${String(user.lastName || application.lastName || '')}`.trim(),
+      ].map(normalizeOcrComparable).filter((value) => value.length >= 3)
+      const nameMatch = nameCandidates.some((candidate) => textComparable.includes(candidate))
       const hasReadableText = extractedText.length >= 30
+      const hasSomeText = extractedText.length > 0
+      const ocrConfidence = getVisionWordConfidence(annotation)
       const expiry = document.expiryDate ? new Date(document.expiryDate) : null
-      const expiryValid = !expiry || (Number.isFinite(expiry.getTime()) && expiry.getTime() >= Date.now())
+      const expiryApplicable = Boolean(document.expiryDate)
+      const expiryValid = !expiryApplicable || (Number.isFinite(expiry.getTime()) && expiry.getTime() >= Date.now())
       const requiresDocumentNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
       const expectedNumber = normalizeOcrComparable(document.documentNumber || document.number)
-      const extractedComparable = normalizeOcrComparable(extractedText)
       const numberMatch = requiresDocumentNumber
-        ? Boolean(expectedNumber && extractedComparable.includes(expectedNumber))
+        ? Boolean(expectedNumber && textComparable.includes(expectedNumber))
         : null
+      const ocrQuality = ocrConfidence ?? (hasReadableText ? 0.75 : hasSomeText ? 0.4 : 0)
+      const readabilityScore = hasReadableText ? 1 : hasSomeText ? 0.5 : 0
+      const identityScore = nameMatch ? 1 : 0
+      const numberScore = requiresDocumentNumber ? (numberMatch ? 1 : 0) : 1
+      const expiryScore = expiryValid ? 1 : 0
+      const confidence = Math.min(1, (
+        ocrQuality * 0.35
+        + readabilityScore * 0.15
+        + identityScore * 0.1
+        + numberScore * 0.35
+        + expiryScore * 0.05
+      ))
       result.numberMatch = numberMatch
-      const numberCheckPassed = !requiresDocumentNumber || numberMatch
-      const confidence = Math.min(1, (hasReadableText ? 0.6 : 0.15) + (nameMatch ? 0.25 : 0) + (expiryValid ? 0.15 : 0))
+      result.ocrConfidence = ocrConfidence
+      result.checks = {
+        readableText: hasReadableText,
+        ocrConfidence,
+        nameMatch,
+        numberMatch,
+        expiryValid: expiryApplicable ? expiryValid : null,
+      }
+      result.scoreBreakdown = {
+        ocrQuality: Math.round(ocrQuality * 100),
+        readability: Math.round(readabilityScore * 100),
+        identityMatch: Math.round(identityScore * 100),
+        documentNumberMatch: Math.round(numberScore * 100),
+        expiryValidity: Math.round(expiryScore * 100),
+        weights: {
+          ocrQuality: 35,
+          readability: 15,
+          identityMatch: 10,
+          documentNumberMatch: 35,
+          expiryValidity: 5,
+        },
+      }
       result.confidence = confidence
       result.extractedText = extractedText.slice(0, 2000)
-      result.status = confidence >= AUTO_VERIFICATION_THRESHOLD && numberCheckPassed ? 'verified' : 'manual_review'
-      if (!requiresDocumentNumber) {
-        result.reason = result.status === 'verified' ? 'Passed automatic checks.' : 'Confidence is below the automatic approval threshold.'
+      result.status = confidence >= AUTO_VERIFICATION_THRESHOLD ? 'verified' : 'manual_review'
+      if (!hasSomeText) {
+        result.reason = 'OCR could not extract readable text from the document.'
       } else if (!expectedNumber) {
-        result.reason = 'The required document number was not provided for comparison.'
+        result.reason = requiresDocumentNumber
+          ? 'The required document number was not provided for comparison.'
+          : (result.status === 'verified' ? 'Passed automatic consistency checks.' : 'The document needs manual review because its weighted score is below the threshold.')
       } else if (!numberMatch) {
         result.reason = 'The document number does not match the number entered during registration.'
+      } else if (!expiryValid) {
+        result.reason = 'The document expiry date is invalid or expired.'
       } else {
-        result.reason = result.status === 'verified' ? 'Document number and automatic checks matched.' : 'Confidence is below the automatic approval threshold.'
+        result.reason = result.status === 'verified'
+          ? 'OCR, identity, document number, and validity checks passed.'
+          : 'The document needs manual review because its weighted score is below the automatic verification threshold.'
       }
     } catch (error) {
       result.reason = error?.message || 'Automatic document processing failed.'

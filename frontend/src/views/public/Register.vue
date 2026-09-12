@@ -3628,7 +3628,7 @@ const submitDocuments = async () => {
                       type="text"
                       maxlength="40"
                       inputmode="text"
-                      pattern="[A-Za-z0-9-]+"
+                      pattern="[A-Za-z0-9\-]+"
                       placeholder=" "
                       autocomplete="off"
                       class="peer input h-14 pt-4 pb-2 px-3"
