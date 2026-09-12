@@ -58,9 +58,8 @@
 
       <div class="popup-actions">
         <button type="button" class="btn-secondary" @click="maybeLater">Maybe Later</button>
-        <router-link to="/clinic/register" class="btn-primary">Register your clinic</router-link>
+        <router-link to="/register" class="btn-primary">Register your clinic</router-link>
       </div>
-      <p class="login-prompt">Already have an account? <router-link to="/login">Log in</router-link></p>
     </div>
   </section>
 </template>
@@ -578,7 +577,7 @@ onBeforeUnmount(() => {
 
   .popup-actions {
     flex-direction: row;
-    justify-content: flex-end;
+    justify-content: flex-start;
     align-items: center;
   }
 
@@ -589,20 +588,6 @@ onBeforeUnmount(() => {
   .btn-primary {
     width: 285px;
   }
-}
-
-.login-prompt {
-  margin-top: 1rem;
-  color: #8c6b52;
-  font-size: 0.86rem;
-  text-align: center;
-}
-
-.login-prompt a {
-  color: #8f5738;
-  font-weight: 800;
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
 }
 
 @media (min-width: 1024px) {

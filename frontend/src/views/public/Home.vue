@@ -229,36 +229,36 @@
         <div class="mx-auto grid h-full max-w-7xl grid-cols-1 items-center px-4 sm:px-6 md:px-8 lg:grid-cols-[240px_minmax(0,1fr)_240px] lg:gap-8">
           <div class="hidden lg:flex flex-col gap-4 justify-center">
             <div class="video-feature-card video-feature-card-soft">
-              <p class="video-feature-kicker">Treatment Focus</p>
-              <h3 class="video-feature-title">Laser Precision</h3>
-              <p class="video-feature-copy">Refined workflows for advanced skin, tone, and texture sessions.</p>
+              <p class="video-feature-kicker">Clinic Operations</p>
+              <h3 class="video-feature-title">Appointments & Clients</h3>
+              <p class="video-feature-copy">Manage client records, appointment requests, schedules, and practitioner assignments.</p>
             </div>
             <div class="video-feature-card video-feature-card-soft">
-              <p class="video-feature-kicker">Client Comfort</p>
-              <h3 class="video-feature-title">Seamless Visits</h3>
-              <p class="video-feature-copy">Guide every appointment with calm, premium, clinic-ready coordination.</p>
+              <p class="video-feature-kicker">Care Access</p>
+              <h3 class="video-feature-title">Online Consultations</h3>
+              <p class="video-feature-copy">Support permitted practitioners with online consultation scheduling and meeting access.</p>
             </div>
           </div>
 
           <div class="flex flex-col items-center justify-center text-center px-4">
-            <p class="video-showcase-kicker">Advanced aesthetic care</p>
+            <p class="video-showcase-kicker">Connected clinic operations</p>
             <h2 class="video-showcase-title">
-              SOLACE AESTHETIQUE
+              AESTHETICARE PLATFORM
             </h2>
             <p class="video-showcase-copy">
-              Where precision meets beauty in every personalized aesthetic journey.
+              One role-aware system for appointments, clients, supplies, staff, payroll, procurement, and finance.
             </p>
           </div>
 
           <div class="hidden lg:flex flex-col gap-4 justify-center">
             <div class="video-feature-card video-feature-card-accent">
-              <p class="video-feature-kicker">Signature Result</p>
-              <h3 class="video-feature-title">Glow-First Care</h3>
-              <p class="video-feature-copy">Tailored treatment paths designed for visible outcomes and patient trust.</p>
+              <p class="video-feature-kicker">Operations Control</p>
+              <h3 class="video-feature-title">Supplies to Payment</h3>
+              <p class="video-feature-copy">Connect suppliers, inventory, purchase requests, logistics, orders, payments, and financial records.</p>
             </div>
             <div class="video-stat-card">
-              <p class="video-stat-value">3k+</p>
-              <p class="video-stat-label">beauty-led workflows supported inside AesthetiCare experiences</p>
+              <p class="video-stat-value">RBAC</p>
+              <p class="video-stat-label">Role-based access keeps each team member in the workflows they are permitted to use.</p>
             </div>
           </div>
         </div>
@@ -269,10 +269,10 @@
     <section id="solutions-section" class="solutions-section py-16 sm:py-24 md:py-32 text-charcoal-800">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         <div class="solutions-header text-center">
-          <p class="solutions-kicker">Tailored platform modes</p>
-          <h2 class="solutions-title">Built for the Aesthetic Industry</h2>
+          <p class="solutions-kicker">Connected workflows</p>
+          <h2 class="solutions-title">One Platform, Every Team</h2>
           <p class="solutions-subtitle">
-            From boutique med spas to advanced laser centers, AesthetiCare adapts to the pace, treatments, and workflows each practice depends on.
+            AesthetiCare connects the people and processes behind an aesthetic clinic, from client bookings to purchasing, payroll, and financial review.
           </p>
         </div>
 
@@ -280,25 +280,25 @@
           <div class="solution-card delay-0">
             <div class="solution-card-top">
               <span class="solution-step">01</span>
-              <span class="solution-tag">Clinic Core</span>
+              <span class="solution-tag">Client Care</span>
             </div>
             <div class="solution-icon-wrap">
               <svg class="h-10 w-10 text-gold-800" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M5 20V7a2 2 0 012-2h10a2 2 0 012 2v13M9 20v-4h6v4M9 10h6M12 8v4M10 10h4" />
               </svg>
             </div>
-            <h3 class="solution-title">Aesthetic Clinics</h3>
-            <p class="solution-description">Tailored workflows and features designed specifically for this practice type.</p>
+            <h3 class="solution-title">Clinic Operations</h3>
+            <p class="solution-description">Give clinic owners and front-desk teams a shared view of clients, appointments, requests, payments, and daily activity.</p>
             <div class="solution-footer">
               <span class="solution-chip">Appointments</span>
-              <span class="solution-chip">Treatment flow</span>
+              <span class="solution-chip">Client records</span>
             </div>
           </div>
 
           <div class="solution-card delay-1">
             <div class="solution-card-top">
               <span class="solution-step">02</span>
-              <span class="solution-tag">Luxury Service</span>
+              <span class="solution-tag">People & Access</span>
             </div>
             <div class="solution-icon-wrap solution-icon-wrap-rose">
               <svg class="h-10 w-10 text-gold-800" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -306,18 +306,18 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M17.5 7.5v3M16 9h3" />
               </svg>
             </div>
-            <h3 class="solution-title">Med Spas</h3>
-            <p class="solution-description">Tailored workflows and features designed specifically for this practice type.</p>
+            <h3 class="solution-title">Staff & Payroll</h3>
+            <p class="solution-description">Manage employee accounts, roles, attendance, shifts, leave, overtime, payroll preparation, and finance approval.</p>
             <div class="solution-footer">
-              <span class="solution-chip">Packages</span>
-              <span class="solution-chip">Client retention</span>
+              <span class="solution-chip">HR workflows</span>
+              <span class="solution-chip">Role-based access</span>
             </div>
           </div>
 
           <div class="solution-card delay-2">
             <div class="solution-card-top">
               <span class="solution-step">03</span>
-              <span class="solution-tag">Clinical Detail</span>
+              <span class="solution-tag">Supply Chain</span>
             </div>
             <div class="solution-icon-wrap solution-icon-wrap-cream">
               <svg class="h-10 w-10 text-gold-800" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -325,18 +325,18 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M9 10.5c.8-.8 1.8-1.2 3-1.2s2.2.4 3 1.2M9.5 14h5" />
               </svg>
             </div>
-            <h3 class="solution-title">Cosmetic Dermatology</h3>
-            <p class="solution-description">Tailored workflows and features designed specifically for this practice type.</p>
+            <h3 class="solution-title">Inventory & Procurement</h3>
+            <p class="solution-description">Track products and supplies, work with suppliers, submit purchase requests, manage procurement, and follow logistics.</p>
             <div class="solution-footer">
-              <span class="solution-chip">Clinical notes</span>
-              <span class="solution-chip">Follow-ups</span>
+              <span class="solution-chip">Stock control</span>
+              <span class="solution-chip">Purchase orders</span>
             </div>
           </div>
 
           <div class="solution-card delay-3">
             <div class="solution-card-top">
               <span class="solution-step">04</span>
-              <span class="solution-tag">Precision Tech</span>
+              <span class="solution-tag">Business Control</span>
             </div>
             <div class="solution-icon-wrap">
               <svg class="h-10 w-10 text-gold-800" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -345,11 +345,11 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M12 3v3M12 18v3M3 12h3M18 12h3" />
               </svg>
             </div>
-            <h3 class="solution-title">Laser & Skin Centers</h3>
-            <p class="solution-description">Tailored workflows and features designed specifically for this practice type.</p>
+            <h3 class="solution-title">Finance & Governance</h3>
+            <p class="solution-description">Review sales, refunds, payables, payroll summaries, reports, policies, and commission contracts with controlled access.</p>
             <div class="solution-footer">
-              <span class="solution-chip">Device tracking</span>
-              <span class="solution-chip">Outcome review</span>
+              <span class="solution-chip">Financial reports</span>
+              <span class="solution-chip">Audit visibility</span>
             </div>
           </div>
         </div>
@@ -369,7 +369,7 @@
           <p class="capability-section-kicker">Designed for modern clinic teams</p>
           <h2 class="capability-section-title">Platform Capabilities</h2>
           <p class="capability-section-subtitle">
-            Explore the operational systems that help aesthetic clinics streamline appointments, treatment visibility, inventory control, and growth decisions.
+            Explore the operational systems that connect appointments, client care, inventory, procurement, logistics, staffing, payroll, and finance.
           </p>
         </div>
 
@@ -592,7 +592,7 @@ export default {
       {
         eyebrow: "Aesthetic Center Workflow",
         title: "Smart Appointment Flow",
-        description: "Automate bookings, assign practitioners, and reduce no-shows with reminders tuned for high-volume aesthetic clinics.",
+        description: "Manage appointment requests, schedules, practitioner assignments, payments, and online consultations from one clinic workflow.",
         miniEyebrow: "Core System",
         miniTitle: "Appointments",
         image: appointmentLanding,
@@ -600,7 +600,7 @@ export default {
       {
         eyebrow: "Clinical Precision",
         title: "Patient Treatment Timeline",
-        description: "Document every procedure with photos, notes, consent history, and outcomes in one longitudinal treatment timeline.",
+        description: "Keep client profiles and appointment history available to the permitted clinic team for more consistent service coordination.",
         miniEyebrow: "Patient Care",
         miniTitle: "Treatment Records",
         image: bg,
@@ -608,7 +608,7 @@ export default {
       {
         eyebrow: "Operations Control",
         title: "Inventory and Product Tracking",
-        description: "Track usage per service, monitor stock thresholds, and avoid treatment delays with real-time supply visibility.",
+        description: "Track products and supplies, stock levels, expiry information, suppliers, and purchase history across clinic operations.",
         miniEyebrow: "Clinic Ops",
         miniTitle: "Inventory",
         image: inventoryLanding,
@@ -616,7 +616,7 @@ export default {
       {
         eyebrow: "Team Visibility",
         title: "Staff Performance Dashboard",
-        description: "Review practitioner productivity, service completion rates, and schedule utilization across your branches.",
+        description: "Support employee accounts, roles, attendance, shifts, leave, overtime, and payroll preparation with permission-aware access.",
         miniEyebrow: "People",
         miniTitle: "Staff Insights",
         image: staffInsightLanding,
@@ -624,7 +624,7 @@ export default {
       {
         eyebrow: "Growth Intelligence",
         title: "Revenue and Service Analytics",
-        description: "Visualize top-performing services, monthly trends, and conversion metrics to guide better business decisions.",
+        description: "Review sales, refunds, payables, payroll summaries, purchase costs, and reports to support operational decisions.",
         miniEyebrow: "Growth",
         miniTitle: "Analytics",
         image: meetingRoomLanding,
