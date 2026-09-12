@@ -934,7 +934,19 @@ const applyOtpRequestResult = (otpResult, successMessage, fallbackMessage) => {
 }
 
 const handleSupplierDocumentChange = (documentKey, event) => {
-  const selectedFile = event?.target?.files?.[0] || null
+  const selectedFiles = Array.from(event?.target?.files || [])
+  if (selectedFiles.length > 1) {
+    toast.error('Please select only one PDF or image for this document.')
+    if (event?.target) event.target.value = ''
+    return
+  }
+  const selectedFile = selectedFiles[0] || null
+
+  if (selectedFile && !['application/pdf', 'image/png', 'image/jpeg'].includes(String(selectedFile.type || '').toLowerCase())) {
+    toast.error('Unsupported file type. Please upload PDF, PNG or JPEG files only.')
+    if (event?.target) event.target.value = ''
+    return
+  }
 
   if (documentKey === 'taxRegistration') {
     taxRegistrationFile.value = selectedFile
@@ -1772,7 +1784,7 @@ onBeforeUnmount(() => {
 
                   <div class="rounded-xl border border-gold-200/80 bg-white/80 p-3 space-y-3">
                     <p class="text-sm font-semibold text-charcoal-700">Tax Registration Document</p>
-                    <input type="file" accept=".pdf,image/*" class="upload-input" @change="handleSupplierDocumentChange('taxRegistration', $event)" />
+                    <input type="file" accept=".pdf,application/pdf,image/png,image/jpeg" class="upload-input" @change="handleSupplierDocumentChange('taxRegistration', $event)" />
                     <div class="rounded-lg border border-dashed border-gold-200 bg-cream-50/80 p-3">
                       <img v-if="taxRegistrationPreviewUrl" :src="taxRegistrationPreviewUrl" alt="Tax registration preview" class="upload-preview-image" />
                       <p class="upload-file-name">{{ taxRegistrationFile?.name || 'No file selected' }}</p>
@@ -1782,7 +1794,7 @@ onBeforeUnmount(() => {
 
                   <div class="rounded-xl border border-gold-200/80 bg-white/80 p-3 space-y-3">
                     <p class="text-sm font-semibold text-charcoal-700">Business Registration Document</p>
-                    <input type="file" accept=".pdf,image/*" class="upload-input" @change="handleSupplierDocumentChange('businessRegistration', $event)" />
+                    <input type="file" accept=".pdf,application/pdf,image/png,image/jpeg" class="upload-input" @change="handleSupplierDocumentChange('businessRegistration', $event)" />
                     <div class="rounded-lg border border-dashed border-gold-200 bg-cream-50/80 p-3">
                       <img v-if="businessRegistrationPreviewUrl" :src="businessRegistrationPreviewUrl" alt="Business registration preview" class="upload-preview-image" />
                       <p class="upload-file-name">{{ businessRegistrationFile?.name || 'No file selected' }}</p>

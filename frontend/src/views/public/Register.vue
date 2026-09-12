@@ -1109,9 +1109,14 @@ const startOtpCountdown = (seconds = OTP_COOLDOWN_SECONDS) => {
 }
 
 const handleDocumentFileChange = async (key, event) => {
-  const selectedFile = event?.target?.files?.[0] || null
+  const selectedFiles = Array.from(event?.target?.files || [])
+  if (selectedFiles.length > 1) {
+    toast.error('Please select only one PDF or image for this document.')
+    documentInputKeys.value[key] = (documentInputKeys.value[key] || 0) + 1
+    return
+  }
+  const selectedFile = selectedFiles[0] || null
 
-  // enforce single-file selection - we only pick the first file
   if (documentFileMap[key]) {
     documentFileMap[key].value = selectedFile
   }

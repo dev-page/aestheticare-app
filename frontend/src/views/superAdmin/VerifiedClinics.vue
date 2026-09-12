@@ -106,13 +106,17 @@ export default {
 
         const rows = await Promise.all(
           approvedClinics.map(async (clinic) => {
-            const ownerLookupId = clinic.ownerId || clinic.id
+            const ownerLookupId = clinic.ownerId || clinic.ownerUid || clinic.userId || clinic.uid || clinic.branchAdminId || clinic.id
             const userSnap = await getDoc(doc(db, 'users', ownerLookupId))
             const user = userSnap.exists() ? userSnap.data() : {}
-            const fullName =
+            const userName =
               String(user.fullName || '').trim() ||
               `${String(user.firstName || '').trim()} ${String(user.lastName || '').trim()}`.trim() ||
-              'Unnamed Owner'
+              ''
+            const clinicName = String(
+              clinic.ownerName || clinic.registrantName || clinic.fullName || clinic.applicantName || clinic.branchAdminName || ''
+            ).trim()
+            const fullName = userName || clinicName || `${String(clinic.firstName || '').trim()} ${String(clinic.lastName || '').trim()}`.trim() || 'Unnamed Owner'
 
             const resolvedPlan = clinic.subscriptionPlan || user.subscriptionPlan || clinic.plan || user.plan || ''
             const resolvedPayment = clinic.paymentStatus || user.paymentStatus || ''
@@ -129,7 +133,7 @@ export default {
               clinicBranch: clinic.clinicBranch || '',
               clinicLocation: clinic.clinicLocation || '',
               ownerName: fullName,
-              ownerEmail: user.email || clinic.ownerEmail || '',
+              ownerEmail: user.email || clinic.ownerEmail || clinic.email || clinic.registrantEmail || clinic.applicantEmail || '',
               planLabel: normalizePlanLabel(resolvedPlan),
               paymentStatus: resolvedPayment,
               centerStatus: clinic.status || clinic.moderationStatus || 'Active',

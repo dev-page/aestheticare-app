@@ -374,14 +374,14 @@ const formatApplicantName = (user = {}) => {
 const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
   const docs = { ...(draftDocuments || {}), ...(submittedDocuments || {}) }
   const definitions = [
+    { key: 'governmentIdRepresentativeFront', label: 'Government-Issued ID of Registrant (Front)' },
+    { key: 'governmentIdRepresentativeBack', label: 'Government-Issued ID of Registrant (Back)' },
     { key: 'businessPermit', label: 'Business Permit/Registration' },
+    { key: 'dohAccreditation', label: 'DOH Accreditation' },
+    { key: 'prcIdMedicalDirector', label: 'PRC ID of Medical Director' },
     { key: 'birRegistration', label: 'BIR Registration' },
     { key: 'sanitaryCertificate', label: 'Sanitary Certificate' },
     { key: 'clinicLicense', label: 'Clinic License' },
-    { key: 'governmentIdRepresentativeFront', label: 'Government-Issued ID of Representative (Front)' },
-    { key: 'governmentIdRepresentativeBack', label: 'Government-Issued ID of Representative (Back)' },
-    { key: 'dohAccreditation', label: 'DOH Accreditation' },
-    { key: 'prcIdMedicalDirector', label: 'PRC ID of Medical Director' },
   ]
 
   return definitions.map((item) => {
@@ -399,7 +399,25 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
   })
 }
 
-const mapVerificationResults = (verificationResults = {}) => Object.entries(verificationResults || {}).map(([key, result = {}]) => ({
+const verificationDocumentOrder = [
+  'governmentIdRepresentativeFront',
+  'governmentIdRepresentativeBack',
+  'businessPermit',
+  'dohAccreditation',
+  'prcIdMedicalDirector',
+  'birRegistration',
+  'sanitaryCertificate',
+  'clinicLicense',
+]
+
+const mapVerificationResults = (verificationResults = {}) => Object.entries(verificationResults || {})
+  .sort(([firstKey], [secondKey]) => {
+    const firstIndex = verificationDocumentOrder.indexOf(firstKey)
+    const secondIndex = verificationDocumentOrder.indexOf(secondKey)
+    return (firstIndex < 0 ? verificationDocumentOrder.length : firstIndex)
+      - (secondIndex < 0 ? verificationDocumentOrder.length : secondIndex)
+  })
+  .map(([key, result = {}]) => ({
   key,
   status: String(result.status || 'manual_review').replaceAll('_', ' '),
   confidence: Number.isFinite(Number(result.confidence)) ? Math.round(Number(result.confidence) * 100) : 0,
@@ -413,7 +431,7 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
   scoreBreakdown: result.scoreBreakdown || null,
   reason: String(result.reason || 'No verification explanation was returned.'),
   extractedText: String(result.extractedText || '').trim(),
-}))
+  }))
 
 const formatDateValue = (value) => {
   if (!value) return '-'
@@ -422,14 +440,14 @@ const formatDateValue = (value) => {
 }
 
 const documentLabel = (key) => ({
+  governmentIdRepresentativeFront: 'Government-Issued ID of Registrant (Front)',
+  governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
   businessPermit: 'Business Permit/Registration',
+  dohAccreditation: 'DOH Accreditation',
+  prcIdMedicalDirector: 'PRC ID of Medical Director',
   birRegistration: 'BIR Registration',
   sanitaryCertificate: 'Sanitary Certificate',
   clinicLicense: 'Clinic License',
-  governmentIdRepresentativeFront: 'Government-Issued ID (Front)',
-  governmentIdRepresentativeBack: 'Government-Issued ID (Back)',
-  dohAccreditation: 'DOH Accreditation',
-  prcIdMedicalDirector: 'PRC ID of Medical Director',
 }[key] || key)
 
 const getOverallConfidence = (results = []) => {
@@ -510,10 +528,18 @@ export default {
 
         const rows = await Promise.all(
           approved.map(async (clinic) => {
-            const ownerLookupId = clinic.ownerId || clinic.id
+            const ownerLookupId = clinic.ownerId || clinic.ownerUid || clinic.userId || clinic.uid || clinic.branchAdminId || clinic.id
             const userSnap = await getDoc(doc(db, 'users', ownerLookupId))
             const user = userSnap.exists() ? userSnap.data() : {}
-            const fullName = formatApplicantName(user).replace('Unnamed User', 'Unnamed Owner')
+            const clinicName = String(
+              clinic.ownerName || clinic.registrantName || clinic.fullName || clinic.applicantName || clinic.branchAdminName || ''
+            ).trim()
+            const clinicFirstName = String(clinic.firstName || '').trim()
+            const clinicLastName = String(clinic.lastName || '').trim()
+            const fullName = formatApplicantName(user).replace('Unnamed User', '').trim()
+              || clinicName
+              || `${clinicFirstName} ${clinicLastName}`.trim()
+              || 'Unnamed Owner'
 
             const resolvedPlan = clinic.subscriptionPlan || user.subscriptionPlan || clinic.plan || user.plan || ''
             const resolvedPayment = clinic.paymentStatus || user.paymentStatus || ''
@@ -545,7 +571,7 @@ export default {
               clinicLocationLat: clinic.clinicLocationLat || '',
               clinicLocationLng: clinic.clinicLocationLng || '',
               ownerName: fullName,
-              ownerEmail: user.email || clinic.ownerEmail || '',
+              ownerEmail: user.email || clinic.ownerEmail || clinic.email || clinic.registrantEmail || clinic.applicantEmail || '',
               planLabel: normalizePlanLabel(resolvedPlan),
               paymentStatus: resolvedPayment,
               centerStatus: clinic.status || clinic.moderationStatus || 'Active',
@@ -648,11 +674,20 @@ export default {
 
         const rows = await Promise.all(
           pending.map(async (clinic) => {
-            const userSnap = await getDoc(doc(db, 'users', clinic.id))
+            const ownerLookupId = clinic.ownerId || clinic.ownerUid || clinic.userId || clinic.uid || clinic.branchAdminId || clinic.id
+            const userSnap = await getDoc(doc(db, 'users', ownerLookupId))
             const user = userSnap.exists() ? userSnap.data() : {}
-            const fullName = formatApplicantName(user)
+            const clinicName = String(
+              clinic.ownerName || clinic.registrantName || clinic.fullName || clinic.applicantName || clinic.branchAdminName || ''
+            ).trim()
+            const clinicFirstName = String(clinic.firstName || '').trim()
+            const clinicLastName = String(clinic.lastName || '').trim()
+            const fullName = formatApplicantName(user).replace('Unnamed User', '').trim()
+              || clinicName
+              || `${clinicFirstName} ${clinicLastName}`.trim()
+              || 'Unnamed User'
 
-            const normalizedEmail = String(user.email || '').trim().toLowerCase()
+            const normalizedEmail = String(user.email || clinic.email || clinic.ownerEmail || clinic.registrantEmail || '').trim().toLowerCase()
             const forcedPlan = forcedPlanByEmail[normalizedEmail] || null
 
             if (forcedPlan) {
@@ -705,7 +740,7 @@ export default {
               id: clinic.id,
               approvalStatus: clinic.approvalStatus || 'Pending Approval',
               fullName,
-              email: user.email || '',
+              email: normalizedEmail,
               middleName: user.midName || user.middleName || '',
               suffix: user.suffix || '',
               birthDate: user.birthDate || null,

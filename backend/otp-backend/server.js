@@ -62,7 +62,7 @@ const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = Math.max(0.85, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.85)))
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
-    clinic: ['businessPermit', 'governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
+    clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
   supplier: ['taxRegistration', 'businessRegistration'],
 }
 const DOCUMENT_NUMBER_REQUIREMENTS = new Set([
@@ -1602,8 +1602,20 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     try {
       const gcsUri = `gs://${bucketName}/${storagePath}`
       const [visionResult] = await visionClient.documentTextDetection(gcsUri)
-      const annotation = visionResult?.fullTextAnnotation
-      const extractedText = String(annotation?.text || '').trim()
+      let annotation = visionResult?.fullTextAnnotation
+      let extractedText = String(annotation?.text || '').trim()
+      if (!extractedText) {
+        try {
+          const [fallbackResult] = await visionClient.textDetection(gcsUri)
+          const fallbackText = String(fallbackResult?.textAnnotations?.[0]?.description || '').trim()
+          if (fallbackText) {
+            annotation = fallbackResult?.fullTextAnnotation || annotation
+            extractedText = fallbackText
+          }
+        } catch (fallbackError) {
+          console.warn(`Vision text fallback failed for ${docKey}:`, fallbackError?.message || fallbackError)
+        }
+      }
       const textComparable = normalizeOcrComparable(extractedText)
       const nameCandidates = [
         String(application.businessName || application.clinicName || '').trim(),
@@ -1660,7 +1672,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.extractedText = extractedText.slice(0, 2000)
       result.status = confidence >= AUTO_VERIFICATION_THRESHOLD ? 'verified' : 'manual_review'
       if (!hasSomeText) {
-        result.reason = 'OCR could not extract readable text from the document.'
+        result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
       } else if (!expectedNumber) {
         result.reason = requiresDocumentNumber
           ? 'The required document number was not provided for comparison.'
