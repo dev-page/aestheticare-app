@@ -22,18 +22,12 @@
       <p v-if="error" class="popup-error">{{ error }}</p>
 
       <div class="plan-grid">
-        <button
+        <article
           v-for="plan in plans"
           :key="plan.id"
-          type="button"
           class="plan-card group"
-          :class="[
-            planCardClass(plan),
-            { 'plan-card-active': selectedPlan === plan.id }
-          ]"
-          @click="selectedPlan = plan.id"
+          :class="planCardClass(plan)"
         >
-          <span v-if="selectedPlan === plan.id" class="plan-selected-badge">Selected</span>
           <span class="plan-orb"></span>
           <span class="card-shine"></span>
 
@@ -57,25 +51,22 @@
           </ul>
 
           <div class="plan-footer">
-            <span class="plan-select-indicator">
-              {{ selectedPlan === plan.id ? "Selected plan" : "Click to select" }}
-            </span>
+            <span class="plan-select-indicator">Available plan</span>
           </div>
-        </button>
+        </article>
       </div>
 
       <div class="popup-actions">
         <button type="button" class="btn-secondary" @click="maybeLater">Maybe Later</button>
-        <button type="button" class="btn-primary" @click="continueWithPlan">
-          {{ ctaLabel }}
-        </button>
+        <router-link to="/clinic/register" class="btn-primary">Register your clinic</router-link>
       </div>
+      <p class="login-prompt">Already have an account? <router-link to="/login">Log in</router-link></p>
     </div>
   </section>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
@@ -88,7 +79,6 @@ const router = useRouter();
 
 const plans = ref([]);
 const error = ref("");
-const selectedPlan = ref("free");
 let unsubscribePlans = null;
 
 const defaultPlans = () => [
@@ -139,9 +129,6 @@ const loadPlans = async () => {
         const merged = buildSubscriptionPlanCatalog(defaultPlans(), snapshot.docs);
         plans.value = filterActiveSubscriptionPlans(merged);
 
-        if (!plans.value.some((plan) => plan.id === selectedPlan.value)) {
-          selectedPlan.value = plans.value[0]?.id || "free";
-        }
       },
       (err) => {
         console.error("Failed to load public subscription plans:", err);
@@ -154,18 +141,6 @@ const loadPlans = async () => {
     error.value = "Unable to load latest plans right now.";
     plans.value = filterActiveSubscriptionPlans(buildSubscriptionPlanCatalog(defaultPlans(), []));
   }
-};
-
-const selectedPlanData = computed(() => plans.value.find((plan) => plan.id === selectedPlan.value) || null);
-
-const ctaLabel = computed(() => {
-  const current = selectedPlanData.value;
-  if (!current) return "Continue";
-  return `Continue with ${current.name}`;
-});
-
-const continueWithPlan = () => {
-  router.push({ name: "login" });
 };
 
 const maybeLater = () => {
@@ -614,6 +589,20 @@ onBeforeUnmount(() => {
   .btn-primary {
     width: 285px;
   }
+}
+
+.login-prompt {
+  margin-top: 1rem;
+  color: #8c6b52;
+  font-size: 0.86rem;
+  text-align: center;
+}
+
+.login-prompt a {
+  color: #8f5738;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 @media (min-width: 1024px) {
