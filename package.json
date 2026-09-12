@@ -9,6 +9,7 @@
     "backend": "node backend/otp-backend/server.js",
     "start": "concurrently \"npm run backend\" \"npm run frontend\"",
     "build": "vite build --config frontend/vite.config.js --configLoader runner",
+    "verify:production": "node scripts/verify-production-readiness.mjs",
     "preview": "vite preview --config frontend/vite.config.js --configLoader runner"
   },
   "dependencies": {
