@@ -136,7 +136,7 @@
                 <td class="px-6 py-4">
                   <div class="flex items-center gap-2 flex-wrap">
                     <button
-                      v-if="canProcessFinanceWorkflow"
+                      v-if="canApproveBudget"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs disabled:opacity-50"
                       :disabled="String(row.budgetStatus || '').toLowerCase() === 'approved'"
@@ -145,7 +145,7 @@
                       {{ String(row.budgetStatus || '').toLowerCase() === 'approved' ? 'Budget Approved' : 'Approve Budget' }}
                     </button>
                     <button
-                      v-if="canProcessFinanceWorkflow"
+                      v-if="canSettlePayables"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs disabled:opacity-50"
                       :disabled="!canSettleBudget(row)"
@@ -223,6 +223,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import { usePermissions } from '@/composables/usePermissions'
 
 export default {
   name: 'FinanceAccountsPayable',
@@ -230,6 +231,7 @@ export default {
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const { hasPermission } = usePermissions()
 
     const currentBranchId = ref('')
     const currentUserRole = ref('')
@@ -242,10 +244,9 @@ export default {
     const selectedPaymentStatus = ref('')
     const searchQuery = ref('')
 
-    const canProcessFinanceWorkflow = computed(() => {
-      const compactRole = String(currentUserRole.value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
-      return compactRole === 'finance' || compactRole === 'owner' || compactRole === 'clinicadmin' || compactRole === 'clinicadministrator'
-    })
+    const canViewPayables = computed(() => hasPermission('finance:payables:view'))
+    const canApproveBudget = computed(() => hasPermission('finance:payables:approve'))
+    const canSettlePayables = computed(() => hasPermission('finance:payables:settle'))
 
     const formatCurrency = (value) =>
       new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
@@ -369,7 +370,7 @@ export default {
     }
 
     const approveBudget = async (row) => {
-      if (!canProcessFinanceWorkflow.value) {
+      if (!canApproveBudget.value) {
         toast.error('You do not have permission to approve budgets.')
         return
       }
@@ -397,7 +398,7 @@ export default {
     }
 
     const canSettleBudget = (row) => {
-      if (!canProcessFinanceWorkflow.value) return false
+      if (!canSettlePayables.value) return false
       if (!row?.id) return false
       if (String(row.budgetStatus || '').toLowerCase() !== 'approved') return false
       if (String(row.status || '').toLowerCase() !== 'delivered') return false
@@ -523,7 +524,9 @@ export default {
       isReceiptImage,
       openReceiptModal,
       closeReceiptModal,
-      canProcessFinanceWorkflow,
+      canViewPayables,
+      canApproveBudget,
+      canSettlePayables,
       approveBudget,
       canSettleBudget,
       settleBudgetVariance,

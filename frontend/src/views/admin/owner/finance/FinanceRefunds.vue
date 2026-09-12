@@ -312,10 +312,10 @@
 
             <div class="mt-6 flex gap-3">
               <button
-                v-if="selectedOrder.refundRequestId && selectedOrder.refundRequestStatus === 'Pending' && !selectedOrder.refundVoucherId"
+                v-if="canManageRefunds && selectedOrder.refundRequestId && selectedOrder.refundRequestStatus === 'Pending' && !selectedOrder.refundVoucherId"
                 type="button"
                 class="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-red-200 transition hover:bg-red-500/20"
-                :disabled="issuingRefund"
+                :disabled="!canManageRefunds || issuingRefund"
                 @click="rejectRefundRequest"
               >
                 Reject Request
@@ -323,7 +323,7 @@
               <button
                 type="button"
                 class="flex-1 rounded-lg bg-purple-600 px-4 py-2 text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="issuingRefund || Boolean(selectedOrder.refundVoucherId) || (selectedOrder.refundRequestId && selectedOrder.refundRequestStatus !== 'Pending')"
+                :disabled="!canManageRefunds || issuingRefund || Boolean(selectedOrder.refundVoucherId) || (selectedOrder.refundRequestId && selectedOrder.refundRequestStatus !== 'Pending')"
                 @click="issueRefund"
               >
                 {{ issuingRefund ? 'Issuing...' : selectedOrder.refundRequestId ? 'Approve and Issue Voucher' : 'Issue Voucher Refund' }}
@@ -366,6 +366,7 @@ import { getFirestore } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
+import { usePermissions } from '@/composables/usePermissions'
 
 const OWNER_ROLES = new Set(['owner', 'clinicadmin', 'clinicadministrator'])
 
@@ -375,6 +376,7 @@ export default {
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const { hasPermission } = usePermissions()
 
     const loading = ref(true)
     const issuingRefund = ref(false)
@@ -393,6 +395,7 @@ export default {
       amount: 0,
       code: '',
     })
+    const canManageRefunds = computed(() => hasPermission('finance:refunds:manage'))
 
     const formatCurrency = (value) =>
       new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
@@ -499,16 +502,30 @@ export default {
 
       loading.value = true
       try {
-        const requestSnapshot = await getDocs(collection(db, 'refundRequests'))
+        const branchChunks = []
+        for (let index = 0; index < accessibleBranchIds.value.length; index += 10) {
+          branchChunks.push(accessibleBranchIds.value.slice(index, index + 10))
+        }
+        const readBranchScoped = async (collectionName) => {
+          const snapshots = await Promise.all(
+            branchChunks.map((branchChunk) => getDocs(query(
+              collection(db, collectionName),
+              where('branchId', 'in', branchChunk)
+            )))
+          )
+          return snapshots.flatMap((snapshot) => snapshot.docs)
+        }
+
+        const requestDocs = await readBranchScoped('refundRequests')
         refundRequestMap.value = Object.fromEntries(
-          requestSnapshot.docs.map((snap) => [snap.id, { id: snap.id, ...snap.data() }])
+          requestDocs.map((snap) => [snap.id, { id: snap.id, ...snap.data() }])
         )
 
-        const snapshot = await getDocs(collection(db, 'customerOrders'))
-        const allOrders = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+        const orderDocs = await readBranchScoped('customerOrders')
+        const allOrders = orderDocs.map((snap) => ({ id: snap.id, ...snap.data() }))
 
-        const appointmentSnapshot = await getDocs(collection(db, 'appointments'))
-        const allAppointments = appointmentSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+        const appointmentDocs = await readBranchScoped('appointments')
+        const allAppointments = appointmentDocs.map((snap) => ({ id: snap.id, ...snap.data() }))
 
         orders.value = allOrders
           .map((order) => {
@@ -617,6 +634,10 @@ export default {
     }
 
     const issueRefund = async () => {
+      if (!canManageRefunds.value) {
+        toast.error('You do not have permission to manage refunds.')
+        return
+      }
       if (!selectedOrder.value?.id) {
         toast.error('Select an order first.')
         return
@@ -720,6 +741,10 @@ export default {
     }
 
     const rejectRefundRequest = async () => {
+      if (!canManageRefunds.value) {
+        toast.error('You do not have permission to manage refunds.')
+        return
+      }
       if (!selectedOrder.value?.refundRequestId) {
         toast.error('No refund request selected.')
         return
@@ -783,6 +808,7 @@ export default {
       statusFilter,
       refundStateFilter,
       refundForm,
+      canManageRefunds,
       filteredOrders,
       eligibleOrders,
       pendingRefundRequests,

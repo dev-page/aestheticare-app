@@ -1881,7 +1881,7 @@ app.post('/finance/purchase-requests/:id/settle', requireAuth, async (req, res) 
     const branchId = String(context.userData?.branchId || context.userData?.clinicId || '').trim()
     const authorized = role === 'superadmin' || permissions.has('administrator:full_access') || (
       branchId && String(record.branchId || '').trim() === branchId && (
-        role === 'owner' || permissions.has('payments:create') || permissions.has('inventory:review') || permissions.has('orders:update')
+        role === 'owner' || permissions.has('finance:payables:settle')
       )
     )
     if (!authorized) return res.status(403).json({ success: false, error: 'Forbidden' })

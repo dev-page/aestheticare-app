@@ -155,9 +155,9 @@ export default {
         entries: [
           { label: 'POS', to: '/receptionist/pos', permission: 'payments:create', feature: 'pos_payments', description: 'Process in-clinic payments.' },
           { label: 'Transactions', to: '/receptionist/transactions/history', permission: 'payments:view', feature: 'reports', description: 'Review payment history.' },
-          { label: 'Sales', to: '/finance/sales', permission: 'reports:view', feature: 'reports', description: 'Open the sales analytics view.' },
-          { label: 'Refunds', to: '/finance/refunds', permission: 'payments:view', feature: 'reports', description: 'Manage refund workflows.' },
-          { label: 'Reports', to: '/finance/reports', permission: 'reports:view', feature: 'reports', description: 'See finance reports and summaries.' }
+          { label: 'Sales Ledger', to: '/finance/sales', permission: 'finance:sales:view', feature: 'reports', description: 'Open the sales ledger and reconciliation view.' },
+          { label: 'Refunds', to: '/finance/refunds', permission: 'finance:refunds:view', feature: 'reports', description: 'Review refund workflows.' },
+          { label: 'Financial Reports', to: '/finance/reports', permission: 'finance:reports:view', feature: 'reports', description: 'See finance reports and summaries.' }
         ]
       },
       {
@@ -170,8 +170,8 @@ export default {
           { label: 'Supply Dashboard', to: '/supply/dashboard', permission: 'inventory:view', feature: 'inventory', description: 'Open the supply dashboard.' },
           { label: 'Supply Catalog', to: '/supply/catalog', permission: 'inventory:view', feature: 'inventory', description: 'Access supply catalog pages.' },
           { label: 'Supply Requests', to: '/supply/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'], feature: 'inventory', description: 'Manage supply requests.' },
-          { label: 'Inventory Purchases', to: '/finance/inventory-purchases', permission: 'inventory:view', feature: 'reports', description: 'Review inventory purchases.' },
-          { label: 'Accounts Payable', to: '/finance/accounts-payable', permission: 'inventory:view', feature: 'reports', description: 'Open accounts payable.' },
+          { label: 'Purchase History', to: '/manager/purchase-history', permission: 'finance:purchases:view', feature: 'inventory', description: 'Review inventory purchase costs.' },
+          { label: 'Accounts Payable', to: '/finance/accounts-payable', permission: 'finance:payables:view', feature: 'reports', description: 'Open accounts payable.' },
           { label: 'Product Service Listing', to: '/manager/product-service-listing', permission: 'services:view', feature: 'services', description: 'View products and services.' },
           { label: 'Orders', to: '/manager/orders', permissionsAny: ['orders:view', 'inventory:view'], feature: 'inventory', description: 'Track branch orders.' }
         ]

@@ -627,7 +627,7 @@ const permissionSuggestionRules = [
   },
   {
     match: ['finance', 'accounting', 'cashier'],
-    permissions: ['payments:view', 'payments:create', 'reports:view', 'payroll:view', 'payroll:approve', 'inventory:view', 'inventory:review', 'orders:view', 'orders:update', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['payments:view', 'payments:create', 'reports:view', 'payroll:view', 'payroll:approve', 'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['manager', 'operations', 'supervisor'],

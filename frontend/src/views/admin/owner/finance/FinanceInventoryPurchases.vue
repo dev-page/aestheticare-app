@@ -4,8 +4,8 @@
 
     <main class="flex-1 p-6">
       <div class="mb-6">
-        <h1 class="text-xl font-semibold text-white mb-1">Inventory & Purchases</h1>
-        <p class="text-slate-400 text-xs">Track supplier spending, stock levels, expiry, and item cost trends.</p>
+        <h1 class="text-xl font-semibold text-white mb-1">Purchase History</h1>
+        <p class="text-slate-400 text-xs">Read-only supplier spending, stock levels, expiry, and item cost history.</p>
       </div>
 
       <div class="bg-slate-800 rounded-xl p-5 border border-slate-700 mb-5">
@@ -92,15 +92,12 @@
                 <td class="px-5 py-3 text-slate-300 text-sm">{{ formatDate(purchase.deliveredAt || purchase.createdAt) }}</td>
                 <td class="px-5 py-3 text-slate-300 text-sm">{{ purchase.status || '-' }}</td>
                 <td class="px-5 py-3">
-                  <button
-                    @click="togglePaymentQuick(purchase)"
-                    :disabled="savingPaymentId === purchase.id"
-                    class="px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors disabled:opacity-60"
+                  <span
+                    class="px-2.5 py-1 rounded-full text-[11px] font-medium"
                     :class="paymentBadgeClass(getPaymentStatus(purchase))"
-                    title="Click to toggle unpaid/paid"
                   >
                     {{ getPaymentStatus(purchase) }}
-                  </button>
+                  </span>
                 </td>
                 <td class="px-5 py-3 text-slate-300 text-sm">{{ formatCurrency(getAmountPaid(purchase)) }}</td>
                 <td class="px-5 py-3 text-slate-300 text-sm">{{ formatCurrency(getBalance(purchase)) }}</td>

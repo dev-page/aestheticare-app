@@ -85,6 +85,31 @@ service cloud.firestore {
         || (rolePermissions() != null && rolePermissions().hasAny([permission, 'administrator:full_access']));
     }
 
+    function financeCanApprovePurchaseBudget() {
+      return hasPermission('finance:payables:approve')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'budgetStatus', 'approvedBudgetAmount', 'budgetApprovedAt',
+          'budgetSettlementStatus', 'workflowStage', 'updatedAt'
+        ]);
+    }
+
+    function financeCanSettlePurchase() {
+      return hasPermission('finance:payables:settle')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'budgetVariance', 'budgetSettledAt', 'budgetSettlementStatus',
+          'reimbursementAmount', 'returnedFundsAmount', 'workflowStage', 'updatedAt',
+          'paymentStatus', 'amountPaid', 'balance', 'paidAt', 'paidBy'
+        ]);
+    }
+
+    function financeCanUpdateRefund() {
+      return hasPermission('finance:refunds:manage')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'refundType', 'refundReason', 'refundAmount', 'refundVoucherId',
+          'refundVoucherCode', 'refundRequestStatus', 'refundedAt', 'refundedBy', 'updatedAt'
+        ]);
+    }
+
     function clinicDoc(branchId) {
       return get(/databases/$(database)/documents/clinics/$(branchId));
     }
@@ -266,7 +291,8 @@ service cloud.firestore {
     match /appointments/{appointmentId} {
       allow read: if isSignedIn()
         && (resource.data.customerId == request.auth.uid
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:view'))
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+            && (hasPermission('appointments:view') || hasPermission('finance:refunds:view')))
           || isSuperadmin());
       allow create: if isSignedIn()
         && ((request.resource.data.customerId == request.auth.uid)
@@ -373,9 +399,11 @@ service cloud.firestore {
 
     match /transactions/{transactionId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payments:view')) || isSuperadmin());
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+          && (hasPermission('payments:view') || hasPermission('finance:sales:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
       allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('payments:create'));
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)
+          && (hasPermission('payments:create') || hasPermission('finance:refunds:manage')));
       allow update: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payments:update'));
       allow delete: if false;
@@ -383,7 +411,8 @@ service cloud.firestore {
 
     match /inventoryItems/{itemId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view')) || isSuperadmin());
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+          && (hasPermission('inventory:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
       allow update: if isSignedIn()
@@ -394,7 +423,8 @@ service cloud.firestore {
 
     match /suppliers/{supplierId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view')) || isSuperadmin());
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+          && (hasPermission('inventory:view') || hasPermission('finance:purchases:view'))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
       allow update: if isSignedIn()
@@ -414,13 +444,16 @@ service cloud.firestore {
     match /purchaseRequests/{requestId} {
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view'))) || isSuperadmin());
+          && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view')
+            || hasPermission('finance:purchases:view') || hasPermission('finance:payables:view')
+            || hasPermission('finance:reports:view'))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
       allow update: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
           && (hasPermission('inventory:update') || hasPermission('orders:update') || hasPermission('inventory:review')
-            || hasPermission('procurement:create') || hasPermission('procurement:review')));
+            || hasPermission('procurement:create') || hasPermission('procurement:review')
+            || financeCanApprovePurchaseBudget() || financeCanSettlePurchase()));
       allow delete: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
     }
@@ -590,7 +623,8 @@ service cloud.firestore {
 
     match /payrollSummaries/{summaryId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+          && (hasPermission('payroll:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
       allow create: if isSignedIn()
         && request.resource.data.branchId != null
         && canAccessBranch(request.resource.data.branchId)
@@ -699,15 +733,47 @@ service cloud.firestore {
     }
 
     match /customerOrders/{orderId} {
-      allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid || isSuperadmin());
+      allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid
+        || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('finance:refunds:view'))
+        || isSuperadmin());
       allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
       allow update: if isSignedIn()
         && (request.auth.uid == resource.data.customerId
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
-            && hasPermission('orders:update')
-            && staffCanUpdateCustomerOrderLogistics()));
+            && ((hasPermission('orders:update') && staffCanUpdateCustomerOrderLogistics()) || financeCanUpdateRefund())));
       allow delete: if false;
+    }
+
+    match /refundRequests/{requestId} {
+      allow read: if isSignedIn()
+        && (resource.data.customerId == request.auth.uid
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('finance:refunds:view'))
+          || isSuperadmin());
+      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
+      allow update: if isSignedIn()
+        && ((request.auth.uid == resource.data.customerId && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'updatedAt'
+        ]))
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+            && hasPermission('finance:refunds:manage')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'voucherId', 'voucherCode', 'reviewedBy', 'reviewedAt', 'updatedAt'
+            ]))
+          || isSuperadmin());
+      allow delete: if false;
+    }
+
+    match /refundVouchers/{voucherId} {
+      allow read: if isSignedIn()
+        && (resource.data.customerId == request.auth.uid
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('finance:refunds:view'))
+          || isSuperadmin());
+      allow create: if isSignedIn()
+        && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('finance:refunds:manage');
+      allow update, delete: if false;
     }
 
     match /supportTickets/{ticketId} {

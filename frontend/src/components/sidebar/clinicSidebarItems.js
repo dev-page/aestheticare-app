@@ -45,6 +45,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Suppliers', icon: 'building', to: '/manager/suppliers', permission: 'inventory:view' },
       { label: 'Purchase Requests', icon: 'plus', to: '/manager/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'] },
       { label: 'Logistics', icon: 'truck', to: '/manager/logistics', permissionsAny: ['orders:view', 'inventory:view'] },
+      { label: 'Purchase History', icon: 'report', to: '/manager/purchase-history', permission: 'finance:purchases:view' },
       { label: 'Orders', icon: 'report', to: '/manager/orders', permissionsAny: ['orders:view', 'inventory:view'] }
     ]
   },
@@ -84,11 +85,10 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Payroll Summary', icon: 'card', to: '/finance/payroll-summary', feature: 'payroll', permission: 'payroll:view' },
       { label: 'Payroll Approval', icon: 'shield', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },
       { type: 'section', label: 'FINANCE OPERATIONS' },
-      { label: 'Inventory Purchases', icon: 'building', to: '/finance/inventory-purchases', feature: 'reports', permission: 'inventory:view' },
-      { label: 'Accounts Payable', icon: 'card', to: '/finance/accounts-payable', feature: 'reports', permission: 'inventory:view' },
-      { label: 'Refunds', icon: 'card', to: '/finance/refunds', feature: 'reports', permission: 'payments:view' },
-      { label: 'Sales', icon: 'report', to: '/finance/sales', feature: 'reports', permission: 'reports:view' },
-      { label: 'Reports', icon: 'report', to: '/finance/reports', feature: 'reports', permission: 'reports:view' }
+      { label: 'Accounts Payable', icon: 'card', to: '/finance/accounts-payable', feature: 'reports', permission: 'finance:payables:view' },
+      { label: 'Refunds', icon: 'card', to: '/finance/refunds', feature: 'reports', permission: 'finance:refunds:view' },
+      { label: 'Sales Ledger', icon: 'report', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },
+      { label: 'Financial Reports', icon: 'report', to: '/finance/reports', feature: 'reports', permission: 'finance:reports:view' }
     ]
   },
   {

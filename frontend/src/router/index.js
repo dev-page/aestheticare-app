@@ -130,11 +130,12 @@ const routes = [
   { path: "/receptionist/activity-logs", name: "receptionist-activity-logs", component: () => import("@/views/admin/owner/crm/ReceptionistActivityLogs.vue"), meta: { requiresAuth: true } },
   // Finance routes
   { path: "/finance/dashboard", redirect: "/finance/reports" },
-  { path: "/finance/sales", name: "finance-sales", component: () => import("@/views/admin/owner/finance/FinanceSales.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
-  { path: "/finance/refunds", name: "finance-refunds", component: () => import("@/views/admin/owner/finance/FinanceRefunds.vue"), meta: { requiresAuth: true, requiresPermission: "payments:view", requiresFeature: "reports" } },
-  { path: "/finance/reports", name: "finance-reports", component: () => import("@/views/admin/owner/finance/FinanceReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
-  { path: "/finance/inventory-purchases", name: "finance-inventory-purchases", component: () => import("@/views/admin/owner/finance/FinanceInventoryPurchases.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view", requiresFeature: "reports" } },
-  { path: "/finance/accounts-payable", name: "finance-accounts-payable", component: () => import("@/views/admin/owner/finance/FinanceAccountsPayable.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view", requiresFeature: "reports" } },
+  { path: "/finance/sales", name: "finance-sales", component: () => import("@/views/admin/owner/finance/FinanceSales.vue"), meta: { requiresAuth: true, requiresPermission: "finance:sales:view", requiresFeature: "reports" } },
+  { path: "/finance/refunds", name: "finance-refunds", component: () => import("@/views/admin/owner/finance/FinanceRefunds.vue"), meta: { requiresAuth: true, requiresPermission: "finance:refunds:view", requiresFeature: "reports" } },
+  { path: "/finance/reports", name: "finance-reports", component: () => import("@/views/admin/owner/finance/FinanceReports.vue"), meta: { requiresAuth: true, requiresPermission: "finance:reports:view", requiresFeature: "reports" } },
+  { path: "/manager/purchase-history", name: "manager-purchase-history", component: () => import("@/views/admin/owner/finance/FinanceInventoryPurchases.vue"), meta: { requiresAuth: true, requiresPermission: "finance:purchases:view", requiresFeature: "inventory" } },
+  { path: "/finance/inventory-purchases", redirect: "/manager/purchase-history" },
+  { path: "/finance/accounts-payable", name: "finance-accounts-payable", component: () => import("@/views/admin/owner/finance/FinanceAccountsPayable.vue"), meta: { requiresAuth: true, requiresPermission: "finance:payables:view", requiresFeature: "reports" } },
   { path: "/finance/payroll-summary", name: "finance-payroll-summary", component: () => import("@/views/admin/owner/finance/FinancePayrollSummary.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:view", requiresFeature: "payroll" } },
   { path: "/finance/payroll-approval", name: "finance-payroll-approval", component: () => import("@/views/admin/owner/finance/FinancePayrollApproval.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:approve", requiresFeature: "payroll" } },
   // Customer routes

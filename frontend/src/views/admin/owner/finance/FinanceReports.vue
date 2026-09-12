@@ -165,7 +165,10 @@ export default {
     const isInSelectedMonth = (timestamp) => monthKey(toDate(timestamp)) === selectedMonth.value
 
     const monthlyTransactions = computed(() => transactions.value.filter((tx) => isInSelectedMonth(tx.createdAt)))
-    const monthlyPayrolls = computed(() => payrolls.value.filter((entry) => isInSelectedMonth(entry.createdAt)))
+    const monthlyPayrolls = computed(() => payrolls.value.filter((entry) => {
+      const month = String(entry.monthKey || monthKey(toDate(entry.createdAt || entry.updatedAt)))
+      return month === selectedMonth.value && String(entry.status || '').toLowerCase() === 'approved'
+    }))
     const monthlyPurchases = computed(() =>
       purchases.value.filter((entry) => {
         if (String(entry.status || '').toLowerCase() !== 'delivered') return false
@@ -187,7 +190,7 @@ export default {
 
     const report = computed(() => {
       const revenue = monthlyTransactions.value.reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
-      const payroll = monthlyPayrolls.value.reduce((sum, entry) => sum + Number(entry.totalPay || 0), 0)
+      const payroll = monthlyPayrolls.value.reduce((sum, entry) => sum + Number(entry.totalPayroll || 0), 0)
       const inventoryCost = monthlyPurchases.value.reduce((sum, entry) => sum + purchaseTotal(entry), 0)
       const netProfit = revenue - payroll - inventoryCost
       const inventoryValuation = inventoryItems.value.reduce(
@@ -246,7 +249,7 @@ export default {
       if (!currentBranchId.value) return
       const [txSnap, payrollSnap, purchaseSnap, inventorySnap, usersSnap] = await Promise.all([
         getDocs(query(collection(db, 'transactions'), where('branchId', '==', currentBranchId.value))),
-        getDocs(query(collection(db, 'payrolls'), where('branchId', '==', currentBranchId.value))),
+        getDocs(query(collection(db, 'payrollSummaries'), where('branchId', '==', currentBranchId.value))),
         getDocs(query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value))),
         getDocs(query(collection(db, 'inventoryItems'), where('branchId', '==', currentBranchId.value))),
         getDocs(query(collection(db, 'users'), where('branchId', '==', currentBranchId.value), where('userType', '==', 'Staff')))

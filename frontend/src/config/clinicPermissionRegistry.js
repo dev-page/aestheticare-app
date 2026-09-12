@@ -173,16 +173,14 @@ export const permissionGroups = [
         label: 'Finance Operations',
         description: 'Purchases, payables, refunds, sales, and reports.',
         permissions: [
-          { key: 'payments:view', label: 'View Payments', description: 'Open refund, sales, and transaction records.', icon: 'mdi:cash-multiple' },
-          { key: 'payments:create', label: 'Process Payments', description: 'Handle POS or refund-related payment entries.', icon: 'mdi:cash-register' },
-          { key: 'reports:view', label: 'View Reports', description: 'Access clinic performance and financial reports.', icon: 'mdi:chart-box-outline' },
-          { key: 'inventory:view', label: 'View Inventory Purchases', description: 'Open inventory purchases and related records.', icon: 'mdi:package-variant-closed' },
-          { key: 'inventory:create', label: 'Create Inventory Purchases', description: 'Create purchase-linked finance actions.', icon: 'mdi:cart-plus' },
-          { key: 'inventory:review', label: 'Review Inventory Purchases', description: 'Review purchase requests and costs.', icon: 'mdi:cart-check' },
-          { key: 'orders:view', label: 'View Order Costs', description: 'Open order and fulfillment tracking.', icon: 'mdi:cart-outline' },
-          { key: 'orders:update', label: 'Update Logistics Orders', description: 'Update order fulfillment and delivery progress.', icon: 'mdi:truck-check-outline' },
-          { key: 'procurement:view', label: 'View Procurement', description: 'View procurement records and costs.', icon: 'mdi:file-document-multiple-outline' },
-          { key: 'procurement:review', label: 'Approve Procurement', description: 'Approve budgets and purchase orders.', icon: 'mdi:file-check-outline' },
+          { key: 'finance:purchases:view', label: 'View Purchase History', description: 'Review purchase costs without managing procurement.', icon: 'mdi:package-variant-closed' },
+          { key: 'finance:payables:view', label: 'View Accounts Payable', description: 'Review supplier balances, budgets, and settlement status.', icon: 'mdi:cash-minus' },
+          { key: 'finance:payables:approve', label: 'Approve Purchase Budgets', description: 'Approve finance budgets for purchase requests.', icon: 'mdi:check-decagram-outline' },
+          { key: 'finance:payables:settle', label: 'Settle Supplier Balances', description: 'Record payment and settle delivered purchase variances.', icon: 'mdi:bank-check' },
+          { key: 'finance:refunds:view', label: 'View Refunds', description: 'Review refund requests and issued vouchers.', icon: 'mdi:cash-refund' },
+          { key: 'finance:refunds:manage', label: 'Manage Refunds', description: 'Approve or reject refunds and issue vouchers.', icon: 'mdi:cash-refund' },
+          { key: 'finance:sales:view', label: 'View Sales Ledger', description: 'Review sales transactions and daily reconciliation.', icon: 'mdi:cash-multiple' },
+          { key: 'finance:reports:view', label: 'View Financial Reports', description: 'Access profit, cost, payroll, and sales analysis.', icon: 'mdi:chart-box-outline' },
           { key: 'commissions:view', label: 'View Commission Agreements', description: 'View commission terms and notifications.', icon: 'mdi:handshake-outline' },
           { key: 'commissions:manage', label: 'Manage Commission Agreements', description: 'Create and update commission agreements.', icon: 'mdi:handshake-outline' },
         ],
@@ -265,6 +263,9 @@ export const permissionDependencies = {
   'overtime:review': ['overtime:view', 'attendance:view'],
   'payroll:update': ['payroll:view', 'overtime:view'],
   'payroll:approve': ['payroll:view'],
+  'finance:payables:approve': ['finance:payables:view'],
+  'finance:payables:settle': ['finance:payables:view'],
+  'finance:refunds:manage': ['finance:refunds:view'],
 }
 
 export const permissionFeatureMap = {
@@ -300,6 +301,14 @@ export const permissionFeatureMap = {
   'payroll:view': 'payroll',
   'payroll:update': 'payroll',
   'payroll:approve': 'payroll',
+  'finance:purchases:view': 'inventory',
+  'finance:payables:view': 'reports',
+  'finance:payables:approve': 'reports',
+  'finance:payables:settle': 'reports',
+  'finance:refunds:view': 'reports',
+  'finance:refunds:manage': 'reports',
+  'finance:sales:view': 'reports',
+  'finance:reports:view': 'reports',
 }
 
 export const knownPermissionKeys = new Set(allPermissionKeys)
