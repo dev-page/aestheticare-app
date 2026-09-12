@@ -376,7 +376,13 @@ const birRegistrationTypeOptions = [
   { value: 'form-1904', label: 'BIR Form 1904 (One-time taxpayer/EO 98)' },
 ]
 const documentNumberRequired = new Set(Object.keys(documentNumberMap))
-const documentNumberPattern = /^[A-Z0-9][A-Z0-9 ./-]{2,39}$/i
+const documentNumberPattern = /^[A-Z0-9][A-Z0-9-]{2,39}$/i
+const normalizeDocumentNumber = (value) => String(value || '').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 40)
+const handleDocumentNumberInput = (docKey, event) => {
+  const normalized = normalizeDocumentNumber(event.target.value)
+  documentNumberMap[docKey].value = normalized
+  event.target.value = normalized
+}
 const approvalRedirecting = ref(false)
 const approvalReviewState = ref('pending')
 const approvalReviewMessage = ref('Your registration is under review. Please allow at least 24 hours for admin review.')
@@ -1418,7 +1424,9 @@ const applyProfileData = (profile) => {
   }
   birRegistrationType.value = String(storedDocuments?.birRegistration?.registrationType || '').trim()
   Object.keys(documentNumberMap).forEach((docKey) => {
-    documentNumberMap[docKey].value = String(storedDocuments?.[docKey]?.documentNumber || storedDocuments?.[docKey]?.number || '').trim()
+    documentNumberMap[docKey].value = normalizeDocumentNumber(
+      storedDocuments?.[docKey]?.documentNumber || storedDocuments?.[docKey]?.number || ''
+    )
   })
   syncAuthorizedRepPositionOption(authorizedRepPosition.value)
   syncExistingDocumentPreviews()
@@ -3616,8 +3624,11 @@ const submitDocuments = async () => {
                   <div v-if="documentNumberRequired.has(docKey)" class="relative mt-2">
                     <input
                       v-model="documentNumberMap[docKey].value"
+                      @input="handleDocumentNumberInput(docKey, $event)"
                       type="text"
                       maxlength="40"
+                      inputmode="text"
+                      pattern="[A-Za-z0-9-]+"
                       placeholder=" "
                       autocomplete="off"
                       class="peer input h-14 pt-4 pb-2 px-3"
