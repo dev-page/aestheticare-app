@@ -11,7 +11,7 @@
 
       <p v-if="error" class="onboarding-error">{{ error }}</p>
 
-      <section v-if="loading" class="plan-grid" aria-label="Loading subscription plans">
+      <section v-if="loading" class="plan-list" aria-label="Loading subscription plans">
         <div v-for="index in 2" :key="`plan-skeleton-${index}`" class="plan-card plan-skeleton">
           <span></span>
           <span></span>
@@ -20,7 +20,7 @@
         </div>
       </section>
 
-      <section v-else class="plan-grid" aria-label="Subscription plans">
+      <section v-else class="plan-list" aria-label="Subscription plans">
         <button
           v-for="plan in plans"
           :key="plan.id"
@@ -181,8 +181,9 @@ onBeforeUnmount(() => unsubscribePlans?.())
 <style scoped>
 .onboarding-page {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: clamp(1rem, 4vw, 3rem);
   background:
     radial-gradient(circle at 15% 10%, rgba(183, 135, 93, 0.2), transparent 35%),
@@ -209,8 +210,10 @@ h1 { margin: 0.6rem 0 0.75rem; font-size: clamp(2rem, 5vw, 3.6rem); line-height:
 .onboarding-error,
 .empty-state { margin: 1rem 0; color: #f0b7a0; }
 
-.plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.plan-list { display: flex; flex-direction: column; gap: 1rem; width: 100%; }
 .plan-card {
+  display: block;
+  width: 100%;
   min-width: 0;
   padding: clamp(1.1rem, 3vw, 1.7rem);
   text-align: left;
@@ -229,14 +232,14 @@ h2 { margin: 0.45rem 0 0; font-size: clamp(1.3rem, 3vw, 1.8rem); }
 .plan-price { margin: 1.35rem 0 0.1rem; font-size: clamp(1.6rem, 4vw, 2.2rem); font-weight: 800; }
 .plan-cycle { margin: 0; color: #c8af97; font-size: 0.85rem; }
 .plan-description { min-height: 3.2em; margin: 1.2rem 0; color: #dcc6b1; line-height: 1.55; }
-ul { display: grid; gap: 0.55rem; margin: 0; padding: 0; list-style: none; color: #c8af97; font-size: 0.9rem; }
+ul { display: flex; flex-direction: column; gap: 0.55rem; margin: 0; padding: 0; list-style: none; color: #c8af97; font-size: 0.9rem; }
 li::before { content: '✓'; margin-right: 0.5rem; color: #d6a878; font-weight: 800; }
 .onboarding-actions { display: flex; justify-content: flex-end; margin-top: 1.5rem; }
 .continue-button { padding: 0.8rem 1.3rem; color: #24180f; background: #d6a878; border: 0; border-radius: 0.7rem; font-weight: 800; cursor: pointer; }
 .continue-button:hover { background: #e1bb8f; }
 .continue-button:disabled { cursor: not-allowed; opacity: 0.55; }
 .onboarding-note { margin-top: 1rem; color: #9f826a; font-size: 0.82rem; text-align: right; }
-.plan-skeleton { display: grid; gap: 0.9rem; cursor: default; }
+.plan-skeleton { display: flex; flex-direction: column; gap: 0.9rem; cursor: default; }
 .plan-skeleton span { display: block; height: 1rem; border-radius: 0.4rem; background: #3a281b; animation: pulse 1.3s ease-in-out infinite alternate; }
 .plan-skeleton span:nth-child(2) { width: 45%; height: 2rem; }
 .plan-skeleton span:nth-child(3) { width: 85%; }
@@ -244,7 +247,6 @@ li::before { content: '✓'; margin-right: 0.5rem; color: #d6a878; font-weight: 
 @keyframes pulse { to { opacity: 0.45; } }
 
 @media (max-width: 640px) {
-  .plan-grid { grid-template-columns: 1fr; }
   .plan-description { min-height: 0; }
   .onboarding-actions { justify-content: stretch; }
   .continue-button { width: 100%; }
