@@ -532,12 +532,15 @@ onBeforeUnmount(() => {
   margin-top: 1rem;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 0.65rem;
 }
 
 .btn-secondary,
 .btn-primary {
-  width: 100%;
+  width: auto;
+  max-width: 100%;
+  min-width: 10rem;
   border-radius: 1rem;
   padding: 0.82rem 1rem;
   font-weight: 700;
@@ -579,14 +582,7 @@ onBeforeUnmount(() => {
     flex-direction: row;
     justify-content: flex-start;
     align-items: center;
-  }
-
-  .btn-secondary {
-    width: 165px;
-  }
-
-  .btn-primary {
-    width: 285px;
+    flex-wrap: wrap;
   }
 }
 
