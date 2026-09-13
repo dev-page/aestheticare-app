@@ -180,6 +180,14 @@
                 : 'How long the service usually takes to complete.' }}
             </p>
           </div>
+          <div v-if="form.postType === 'Consultation'" class="md:col-span-2">
+            <label class="block text-slate-400 mb-1">Consultation Mode</label>
+            <select v-model="form.consultationMode" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="on-site">On-site consultation</option>
+              <option value="online">Online consultation</option>
+            </select>
+            <p class="mt-1 text-xs text-slate-400">Choose one mode for this consultation. Packages inherit the mode of their included consultation.</p>
+          </div>
           <div v-if="form.postType === 'Service'" class="md:col-span-2">
             <label class="block text-slate-400 mb-1">Required Supplies</label>
             <select v-model="form.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -421,6 +429,14 @@
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            <div v-if="editForm.postType === 'Consultation'" class="md:col-span-2">
+              <label class="block text-slate-400 mb-1">Consultation Mode</label>
+              <select v-model="editForm.consultationMode" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="on-site">On-site consultation</option>
+                <option value="online">Online consultation</option>
+              </select>
+              <p class="mt-1 text-xs text-slate-400">Packages inherit the mode of their included consultation.</p>
+            </div>
 
             <label v-if="editForm.postType === 'Service'" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
               <input v-model="editForm.followUpAllowed" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
@@ -595,6 +611,7 @@ export default {
       price: 0,
       requiresConsultationFirst: false,
       consultationFee: 0,
+      consultationMode: 'on-site',
       followUpAllowed: false,
       followUpWindowDays: 14,
       durationMinutes: 60,
@@ -622,6 +639,7 @@ export default {
       price: 0,
       requiresConsultationFirst: false,
       consultationFee: 0,
+      consultationMode: 'on-site',
       followUpAllowed: false,
       followUpWindowDays: 14,
       durationMinutes: 60,
@@ -645,6 +663,9 @@ export default {
       if (value?.seconds) return new Date(value.seconds * 1000).toLocaleDateString('en-PH')
       return '-'
     }
+
+    const normalizeConsultationMode = (value) =>
+      String(value || '').trim().toLowerCase() === 'on-site' ? 'on-site' : 'online'
 
     const handleImageUpload = (event) => {
       const file = event.target.files?.[0]
@@ -697,6 +718,7 @@ export default {
         price: 0,
         requiresConsultationFirst: false,
         consultationFee: 0,
+        consultationMode: 'on-site',
         followUpAllowed: false,
         followUpWindowDays: 14,
         durationMinutes: 60,
@@ -723,6 +745,7 @@ export default {
         price: 0,
         requiresConsultationFirst: false,
         consultationFee: 0,
+        consultationMode: 'on-site',
         followUpAllowed: false,
         followUpWindowDays: 14,
         durationMinutes: 60,
@@ -889,10 +912,11 @@ export default {
         const selectedComponents = (form.value.packageServiceIds || [])
           .map((id) => posts.value.find((post) => post.id === id))
           .filter(Boolean)
-        const hasConsultation = selectedComponents.some((post) => post.postType === 'Consultation')
+        const consultationComponents = selectedComponents.filter((post) => post.postType === 'Consultation')
+        const hasConsultation = consultationComponents.length === 1
         const hasService = selectedComponents.some((post) => post.postType === 'Service')
         if (!hasConsultation || !hasService) {
-          toast.error('A package must include one consultation and at least one service.')
+          toast.error('A package must include exactly one consultation and at least one service.')
           return
         }
         if (Number(form.value.price) <= 0) {
@@ -939,6 +963,11 @@ export default {
           consultationName: postType === 'Consultation' ? selectedName.trim() : '',
           packageName: postType === 'Package' ? String(form.value.packageName || selectedName || '').trim() : '',
           packageServiceIds: postType === 'Package' ? [...(form.value.packageServiceIds || [])] : [],
+          consultationMode: postType === 'Consultation'
+            ? normalizeConsultationMode(form.value.consultationMode)
+            : postType === 'Package'
+              ? normalizeConsultationMode(packageComponents.find((post) => post.postType === 'Consultation')?.consultationMode)
+              : null,
           title: form.value.title.trim(),
           description: form.value.description.trim(),
           price: postType === 'Product'
@@ -1001,6 +1030,7 @@ export default {
         price: Number(post.price || 0),
         requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
         consultationFee: Number(post.consultationFee || 0),
+        consultationMode: normalizeConsultationMode(post.consultationMode),
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
         durationMinutes: Number(post.durationMinutes || 60)
@@ -1055,10 +1085,11 @@ export default {
         const selectedComponents = (editForm.value.packageServiceIds || [])
           .map((id) => posts.value.find((post) => post.id === id))
           .filter(Boolean)
-        const hasConsultation = selectedComponents.some((post) => post.postType === 'Consultation')
+        const consultationComponents = selectedComponents.filter((post) => post.postType === 'Consultation')
+        const hasConsultation = consultationComponents.length === 1
         const hasService = selectedComponents.some((post) => post.postType === 'Service')
         if (!hasConsultation || !hasService) {
-          toast.error('A package must include one consultation and at least one service.')
+          toast.error('A package must include exactly one consultation and at least one service.')
           return
         }
         if (Number(editForm.value.price) <= 0) {
@@ -1121,6 +1152,11 @@ export default {
           consultationName: editForm.value.postType === 'Consultation' ? editForm.value.name.trim() : '',
           packageName: editForm.value.postType === 'Package' ? editForm.value.name.trim() : '',
           packageServiceIds: editForm.value.postType === 'Package' ? [...(editForm.value.packageServiceIds || [])] : [],
+          consultationMode: editForm.value.postType === 'Consultation'
+            ? normalizeConsultationMode(editForm.value.consultationMode)
+            : editForm.value.postType === 'Package'
+              ? normalizeConsultationMode(editPackageComponents.find((post) => post.postType === 'Consultation')?.consultationMode)
+              : null,
           price: editForm.value.postType === 'Product'
             ? Number(selectedProduct?.unitPrice || editForm.value.price || 0)
             : Number(editForm.value.price || editForm.value.consultationFee || 0),

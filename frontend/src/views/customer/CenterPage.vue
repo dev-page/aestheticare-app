@@ -232,6 +232,12 @@
                           Consultation package
                         </span>
                         <span
+                          v-if="item.type === 'Package' || item.type === 'Consultation'"
+                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
+                        >
+                          {{ item.consultationMode === 'on-site' ? 'On-site consultation' : 'Online consultation' }}
+                        </span>
+                        <span
                           v-if="item.requiresConsultationFirst"
                           class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium"
                         >
@@ -307,6 +313,9 @@
                       <div class="mt-3 flex flex-wrap gap-2">
                         <span class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium">
                           Consultation
+                        </span>
+                        <span class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium">
+                          {{ item.consultationMode === 'on-site' ? 'On-site consultation' : 'Online consultation' }}
                         </span>
                         <span
                           v-if="item.durationMinutes"
@@ -735,6 +744,7 @@ const philippinesBounds = { north: 21.5, south: 4.3, east: 127.5, west: 116.0 }
 const defaultCenter = { lat: 12.8797, lng: 121.774 }
 const practitioners = ref([])
 const practitionerSchedules = ref({})
+const practitionerLeaves = ref({})
 const appointments = ref([])
 const bookingReservations = ref([])
 const assignedPractitioner = ref(null)
@@ -1265,6 +1275,40 @@ const loadPractitionerSchedules = async (list) => {
   practitionerSchedules.value = Object.fromEntries(pairs)
 }
 
+const loadPractitionerLeaves = async (list) => {
+  if (!auth.currentUser) {
+    practitionerLeaves.value = {}
+    return
+  }
+
+  const pairs = await Promise.all(
+    list.map(async (practitioner) => {
+      const leaveSnap = await getDocs(query(
+        collection(db, 'leaveRequests'),
+        where('requesterId', '==', practitioner.id)
+      ))
+      const approved = leaveSnap.docs
+        .map((snap) => snap.data() || {})
+        .filter((request) => String(request.status || '').trim().toLowerCase() === 'approved')
+        .map((request) => ({
+          startDate: String(request.startDate || '').trim(),
+          endDate: String(request.endDate || '').trim(),
+          leaveType: String(request.leaveType || 'Approved leave').trim(),
+        }))
+        .filter((request) => request.startDate && request.endDate)
+      return [practitioner.id, approved]
+    })
+  )
+  practitionerLeaves.value = Object.fromEntries(pairs)
+}
+
+const isPractitionerOnApprovedLeave = (practitionerId, dateKey) => {
+  const normalizedDate = String(dateKey || '').trim()
+  return (practitionerLeaves.value?.[practitionerId] || []).some((leave) =>
+    leave.startDate <= normalizedDate && normalizedDate <= leave.endDate
+  )
+}
+
 const startAppointmentsListener = async (branchId) => {
   if (appointmentsUnsubscribe) {
     appointmentsUnsubscribe()
@@ -1315,6 +1359,7 @@ const loadPractitioners = async (branchId = activeBranchId.value) => {
   if (!allowedRoleIds.size) {
     practitioners.value = []
     practitionerSchedules.value = {}
+    practitionerLeaves.value = {}
     return
   }
 
@@ -1335,7 +1380,7 @@ const loadPractitioners = async (branchId = activeBranchId.value) => {
     }))
     .sort((a, b) => String(a.fullName || '').localeCompare(String(b.fullName || '')))
   practitioners.value = list
-  await loadPractitionerSchedules(list)
+  await Promise.all([loadPractitionerSchedules(list), loadPractitionerLeaves(list)])
 }
 
 const loadBranchData = async (branchId) => {
@@ -1365,6 +1410,11 @@ const loadBranchData = async (branchId) => {
 
   items.value = postSnap.docs.map((snap) => {
     const post = snap.data() || {}
+    const packageComponents = Array.isArray(post.packageServiceIds)
+      ? post.packageServiceIds.map((componentId) => postSnap.docs.find((candidate) => candidate.id === componentId)?.data() || {}).filter(Boolean)
+      : []
+    const packageConsultation = packageComponents.find((component) => component.postType === 'Consultation')
+    const rawConsultationMode = post.consultationMode || packageConsultation?.consultationMode || 'online'
     return {
       id: snap.id,
       type: post.postType || 'Service',
@@ -1390,6 +1440,7 @@ const loadBranchData = async (branchId) => {
         }).filter(Boolean)
         : [],
       packageName: String(post.packageName || '').trim(),
+      consultationMode: String(rawConsultationMode).trim().toLowerCase() === 'on-site' ? 'on-site' : 'online',
       imageUrl: post.imageUrl || '',
       quantity: 1,
     }
@@ -1428,9 +1479,10 @@ const bookingSlots = computed(() => {
     date.setDate(today.getDate() + offset)
     const dateKey = toDateInput(date)
     const weekKey = getWeekStartKey(date)
-    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
 
     practitioners.value.forEach((practitioner) => {
+      if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitioner.id] || {}, weekKey)
       const shiftLabel = String(assignments?.[dayName] || '').trim()
       if (!shiftLabel) return
@@ -1612,6 +1664,7 @@ const buildBookingSlotsForPractitioners = (practitionerList = []) => {
     const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
 
     practitionerList.forEach((practitioner) => {
+      if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitioner.id] || {}, weekKey)
       const shiftLabel = String(assignments?.[dayName] || '').trim()
       if (!shiftLabel) return
@@ -2305,8 +2358,10 @@ const releaseBookingReservation = async (reservationId) => {
 
 const buildBookingPayMongoLineItems = ({ flowType = 'booking', consultationFeePeso = 0 } = {}) => {
   if (flowType === 'consultation') {
+    const consultationMode = selectedServices.value.find((service) => service.consultationMode)?.consultationMode
+    const consultationName = consultationMode === 'on-site' ? 'On-site Consultation' : 'Online Consultation'
     return [{
-      name: 'Online Consultation',
+      name: consultationName,
       amount: Math.round(Number(consultationFeePeso || 0) * 100),
       currency: 'PHP',
       quantity: 1,
@@ -2459,6 +2514,9 @@ const finalizeSuccessfulBooking = async (pending, payload) => {
   const selectedServiceNames = Array.isArray(pending.selectedServices)
     ? pending.selectedServices.map((service) => service.title || service.name || '').filter(Boolean)
     : []
+  const consultationMode = Array.isArray(pending.selectedServices) && pending.selectedServices.some((service) => service.consultationMode === 'on-site')
+    ? 'on-site'
+    : 'online'
   const selectedServiceIds = Array.isArray(pending.selectedServices)
     ? pending.selectedServices.map((service) => service.id).filter(Boolean)
     : []
@@ -2542,6 +2600,7 @@ const finalizeSuccessfulBooking = async (pending, payload) => {
       commissionAmount,
       merchantNetAmount: netAmount,
       requiresConsultationFirst: Boolean(pending.requiresConsultationFirst),
+      consultationMode,
       followUpAllowed: Boolean(pending.followUpAllowed),
       followUpWindowDays: pending.followUpWindowDays != null ? Number(pending.followUpWindowDays) : null,
       branchId: pending.branchId || activeBranchId.value,
@@ -2567,7 +2626,7 @@ const finalizeSuccessfulBooking = async (pending, payload) => {
         ? 'Follow-up Booking Confirmed'
         : 'Booking Confirmed',
     message: flowType === 'consultation'
-      ? `Your online consultation for ${selectedServiceNames.join(', ') || 'selected service'} has been paid and scheduled.`
+      ? `Your ${consultationMode === 'on-site' ? 'on-site' : 'online'} consultation for ${selectedServiceNames.join(', ') || 'selected service'} has been paid and scheduled.`
       : isFollowUpBookingFlow.value
         ? `Your follow-up booking for ${selectedServiceNames.join(', ') || 'selected service'} has been paid and confirmed.`
         : `Your booking for ${selectedServiceNames.join(', ') || 'selected service'} has been paid and confirmed.`,
@@ -2704,6 +2763,7 @@ const submitBooking = async () => {
           time: bookingForm.value.time,
           endTime: bookingForm.value.endTime || '',
           notes: bookingForm.value.notes || '',
+          consultationMode: selectedServices.value.find((service) => service.consultationMode)?.consultationMode || null,
           bookingType: isFollowUpBookingFlow.value ? 'follow-up' : 'standard',
           followUpOf: followUpSourceAppointmentId.value,
           followUpSourceServiceIds: followUpSourceServiceIds.value,

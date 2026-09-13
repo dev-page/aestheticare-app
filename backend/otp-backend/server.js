@@ -1510,8 +1510,40 @@ const resolveBranchAccess = async (uid, branchId) => {
   return String(userSnap.data()?.branchId || '') === branchId
 }
 
+const getApprovedLeaveForDate = async (employeeId, dateKey) => {
+  const normalizedEmployeeId = String(employeeId || '').trim()
+  const normalizedDate = String(dateKey || '').trim()
+  if (!normalizedEmployeeId || !/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) return null
+
+  const leaveSnap = await admin.firestore()
+    .collection('leaveRequests')
+    .where('requesterId', '==', normalizedEmployeeId)
+    .get()
+
+  return leaveSnap.docs
+    .map((snap) => ({ id: snap.id, ...(snap.data() || {}) }))
+    .find((request) => {
+      const status = String(request.status || '').trim().toLowerCase()
+      const startDate = String(request.startDate || '').trim()
+      const endDate = String(request.endDate || '').trim()
+      return status === 'approved' && startDate && endDate && startDate <= normalizedDate && normalizedDate <= endDate
+    }) || null
+}
+
 const loadAttendanceSchedule = async (employeeId, dateKey) => {
   const firestore = admin.firestore()
+  const approvedLeave = await getApprovedLeaveForDate(employeeId, dateKey)
+  if (approvedLeave) {
+    return {
+      onLeave: true,
+      leaveId: approvedLeave.id,
+      leaveType: String(approvedLeave.leaveType || 'Approved leave').trim(),
+      shiftLabel: 'Approved leave',
+      shiftStart: '',
+      shiftEnd: '',
+    }
+  }
+
   const scheduleSnap = await firestore.collection('users').doc(employeeId).collection('schedules').doc('recurring').get()
   const scheduleData = scheduleSnap.exists ? scheduleSnap.data() || {} : {}
   const assignments = scheduleData.assignments || {}
@@ -2347,6 +2379,7 @@ const buildBookingAppointmentPayload = ({
   const serviceDurations = Array.isArray(reservation.serviceDurations) ? reservation.serviceDurations.map((value) => Number(value || 0)).filter((value) => value > 0) : []
   const totalServiceDurationMinutes = Number(reservation.totalServiceDurationMinutes || serviceDurations.reduce((sum, value) => sum + value, 0) || 0)
   const totalAmount = Number(reservation.amount || reservation.consultationFee || 0)
+  const consultationMode = String(reservation.consultationMode || '').trim().toLowerCase() === 'on-site' ? 'on-site' : 'online'
   const installmentsAllowed = reservation.allowInstallments === true || selectedServices.some((service) => service?.allowInstallments === true)
   // A payment cannot make a booking active until the shop has approved it.
   // This protects the legacy finalize endpoint from bypassing approval.
@@ -2391,6 +2424,7 @@ const buildBookingAppointmentPayload = ({
     commissionAmount,
     merchantNetAmount: netAmount,
     requiresConsultationFirst: Boolean(reservation.requiresConsultationFirst),
+    consultationMode,
     followUpAllowed: Boolean(reservation.followUpAllowed),
     followUpWindowDays: reservation.followUpWindowDays != null ? Number(reservation.followUpWindowDays) : null,
     bookingType: reservation.bookingType || 'standard',
@@ -2416,9 +2450,9 @@ const buildBookingAppointmentPayload = ({
     ? {
         ...basePayload,
         type: 'Consultation',
-        service: 'Online Consultation',
-        services: ['Online Consultation'],
-        consultationMode: 'online',
+        service: consultationMode === 'on-site' ? 'On-site Consultation' : 'Online Consultation',
+        services: [consultationMode === 'on-site' ? 'On-site Consultation' : 'Online Consultation'],
+        consultationMode,
         consultationFee: totalAmount,
         consultationForServices: serviceNames,
         consultationForServiceIds: serviceIds,
@@ -4063,6 +4097,16 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     if (!branchId) return res.status(400).json({ success: false, error: 'branchId is required' })
     if (!date) return res.status(400).json({ success: false, error: 'date is required' })
 
+    const approvedLeave = await getApprovedLeaveForDate(practitionerId, date)
+    if (approvedLeave) {
+      return res.status(409).json({
+        success: false,
+        code: 'PRACTITIONER_ON_LEAVE',
+        error: 'The selected practitioner is on approved leave for this date. Please choose another schedule.',
+        leaveId: approvedLeave.id,
+      })
+    }
+
     // Compute requested booking time range in minutes
     const requestedRange = getBookingRange(reservation)
     if (!requestedRange) return res.status(400).json({ success: false, error: 'Invalid or missing time/duration for reservation' })
@@ -5217,6 +5261,16 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requirePermission('attendance:crea
       return res.status(403).json({ success: false, error: 'Your employee profile is not assigned to this branch.' })
     }
 
+    const approvedLeave = await getApprovedLeaveForDate(req.user.uid, dateKey)
+    if (approvedLeave) {
+      return res.status(409).json({
+        success: false,
+        code: 'APPROVED_LEAVE',
+        error: `Attendance is unavailable because you are on approved ${String(approvedLeave.leaveType || 'leave').toLowerCase()}.`,
+        leaveId: approvedLeave.id,
+      })
+    }
+
     const qrSnap = await firestore.collection('attendanceDailyQRCodes').doc(`${normalizedBranchId}_${dateKey}`).get()
     if (!qrSnap.exists || String(qrSnap.data()?.token || '') !== String(qrToken).trim()) {
       return res.status(400).json({ success: false, error: 'The attendance QR is invalid or expired.' })
@@ -5898,6 +5952,16 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
   const normalizedEnd = end !== null && end > start ? end : start + totalServiceDurationMinutes
 
   const firestore = admin.firestore()
+  const approvedLeave = await getApprovedLeaveForDate(practitionerId, date)
+  if (approvedLeave) {
+    return res.status(409).json({
+      success: false,
+      code: 'PRACTITIONER_ON_LEAVE',
+      error: 'The selected practitioner is on approved leave for this date. Please choose another schedule.',
+      leaveId: approvedLeave.id,
+    })
+  }
+
   const consultationRequiredIds = selectedServices
     .filter((service) => service?.requiresConsultationFirst === true)
     .map((service) => String(service.id || '').trim())
@@ -6136,6 +6200,14 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
       }
       if (toMillis(reservation.expiresAt) <= Date.now()) {
         throw new Error('This reservation has expired. Please book again.')
+      }
+
+      const approvedLeave = await getApprovedLeaveForDate(
+        reservation.practitionerId,
+        reservation.date
+      )
+      if (approvedLeave) {
+        throw new Error('The selected practitioner is on approved leave for this date. Please choose another schedule.')
       }
 
       const range = getBookingRange(reservation)

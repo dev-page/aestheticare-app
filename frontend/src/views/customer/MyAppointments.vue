@@ -465,6 +465,7 @@ const requestModal = ref({
 })
 const requestModalPractitioner = ref(null)
 const requestModalSchedules = ref({})
+const requestModalLeaves = ref([])
 const requestModalAppointments = ref([])
 const requestModalReservations = ref([])
 const requestModalLoadSeq = ref(0)
@@ -664,6 +665,10 @@ const requestAvailableSlots = computed(() => {
     const date = new Date(today)
     date.setDate(today.getDate() + offset)
     const dateKey = toDateInput(date)
+    const onApprovedLeave = requestModalLeaves.value.some((leave) =>
+      leave.startDate <= dateKey && dateKey <= leave.endDate
+    )
+    if (onApprovedLeave) continue
     const weekKey = getWeekStartKey(date)
     const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
     const assignments = resolveWeekAssignments(requestModalSchedules.value, weekKey)
@@ -817,6 +822,7 @@ const resetRequestModalState = () => {
   }
   requestModalPractitioner.value = null
   requestModalSchedules.value = {}
+  requestModalLeaves.value = []
   requestModalAppointments.value = []
   requestModalReservations.value = []
 }
@@ -830,6 +836,7 @@ const loadRescheduleAvailability = async (appointment, { autoSelect = true } = {
   requestModal.value.availabilityError = ''
   requestModalPractitioner.value = null
   requestModalSchedules.value = {}
+  requestModalLeaves.value = []
   requestModalAppointments.value = []
   requestModalReservations.value = []
 
@@ -839,8 +846,9 @@ const loadRescheduleAvailability = async (appointment, { autoSelect = true } = {
       return
     }
 
-    const [scheduleSnap, appointmentsSnap, reservationsSnap, practitionerSnap] = await Promise.all([
+    const [scheduleSnap, leaveSnap, appointmentsSnap, reservationsSnap, practitionerSnap] = await Promise.all([
       getDocs(collection(db, 'users', practitionerId, 'schedules')),
+      getDocs(query(collection(db, 'leaveRequests'), where('requesterId', '==', practitionerId))),
       getDocs(query(collection(db, 'appointments'), where('branchId', '==', branchId))),
       getDocs(query(collection(db, 'bookingReservations'), where('branchId', '==', branchId))),
       getDoc(doc(db, 'users', practitionerId)),
@@ -851,6 +859,14 @@ const loadRescheduleAvailability = async (appointment, { autoSelect = true } = {
     requestModalSchedules.value = buildWeekScheduleMap(
       scheduleSnap.docs.map((snap) => ({ id: snap.id, data: snap.data() || {} }))
     )
+    requestModalLeaves.value = leaveSnap.docs
+      .map((snap) => snap.data() || {})
+      .filter((request) => String(request.status || '').trim().toLowerCase() === 'approved')
+      .map((request) => ({
+        startDate: String(request.startDate || '').trim(),
+        endDate: String(request.endDate || '').trim(),
+      }))
+      .filter((request) => request.startDate && request.endDate)
     requestModalAppointments.value = appointmentsSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
     requestModalReservations.value = reservationsSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
     const practitionerData = practitionerSnap.exists() ? practitionerSnap.data() || {} : {}

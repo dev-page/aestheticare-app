@@ -60,7 +60,7 @@
                 <td class="px-6 py-4 text-slate-300">{{ appointment.service || appointment.type || '-' }}</td>
                 <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ appointment.time || '' }}</td>
                 <td class="px-6 py-4">
-                  <div v-if="appointment.meetLink" class="flex items-center gap-2">
+                  <div v-if="appointment.consultationMode === 'online' && appointment.meetLink" class="flex items-center gap-2">
                     <span class="text-sky-300 text-sm break-all">
                       {{ appointment.meetLink }}
                     </span>
@@ -74,11 +74,14 @@
                       <Icon icon="mdi:content-copy" class="h-4 w-4" />
                     </button>
                   </div>
-                  <span v-else class="text-slate-400 text-sm">No link yet</span>
+                  <span v-else class="text-slate-400 text-sm">
+                    {{ appointment.consultationMode === 'on-site' ? 'On-site consultation' : 'No link yet' }}
+                  </span>
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap gap-2">
                     <button
+                      v-if="appointment.consultationMode !== 'on-site'"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs hover:bg-sky-500 disabled:opacity-60"
                       :disabled="creatingId === appointment.id || isExpiredAppointment(appointment) || isCancelledAppointment(appointment)"
@@ -187,6 +190,7 @@ export default {
 
     const filteredAppointments = computed(() =>
       assignedAppointments.value.filter((item) => {
+        if (String(item.consultationMode || '').trim().toLowerCase() !== 'online' && !item.meetLink) return false
         const queryText = searchQuery.value.trim().toLowerCase()
         const clientName = (item.clientName || item.patientName || '').toLowerCase()
         const service = (item.service || item.type || '').toLowerCase()
