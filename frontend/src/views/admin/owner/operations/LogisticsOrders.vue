@@ -7,27 +7,8 @@
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Logistics</h1>
           <p class="text-slate-400">
-            Manage customer deliveries and business-side shipments, then notify stakeholders as status changes.
+            Coordinate supplier pickup and delivery for clinic purchases, then confirm receipt so Inventory can be updated.
           </p>
-        </div>
-
-        <div class="flex flex-wrap gap-3">
-          <button
-            type="button"
-            class="rounded-lg border px-4 py-2 text-sm font-semibold transition-colors"
-            :class="selectedTab === 'customer' ? 'border-cyan-400 bg-cyan-500/20 text-cyan-200' : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'"
-            @click="selectedTab = 'customer'; selectedSource = 'customer'"
-          >
-            Customer Orders
-          </button>
-          <button
-            type="button"
-            class="rounded-lg border px-4 py-2 text-sm font-semibold transition-colors"
-            :class="selectedTab === 'business' ? 'border-amber-400 bg-amber-500/20 text-amber-200' : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'"
-            @click="selectedTab = 'business'; selectedSource = 'business'"
-          >
-            Business Orders
-          </button>
         </div>
       </div>
 
@@ -37,11 +18,11 @@
           <p class="mt-2 text-3xl font-bold text-orange-400">{{ pendingCount }}</p>
         </div>
         <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400">In Transit</p>
+          <p class="text-xs uppercase tracking-wider text-slate-400">Ready / In Transit</p>
           <p class="mt-2 text-3xl font-bold text-cyan-400">{{ inTransitCount }}</p>
         </div>
         <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400">Shipped</p>
+          <p class="text-xs uppercase tracking-wider text-slate-400">Claimed / Shipped</p>
           <p class="mt-2 text-3xl font-bold text-sky-400">{{ shippedCount }}</p>
         </div>
         <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
@@ -57,7 +38,7 @@
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="Search order, customer, or item..."
+              placeholder="Search supplier, request, or item..."
               class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white focus:border-cyan-400 focus:outline-none"
             />
           </div>
@@ -83,17 +64,6 @@
               <option value="Low">Low</option>
             </select>
           </div>
-          <div>
-            <label class="mb-2 block text-sm text-slate-400">Type</label>
-            <select
-              v-model="selectedSource"
-              class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white focus:border-cyan-400 focus:outline-none"
-            >
-              <option value="">All</option>
-              <option value="customer">Customer Orders</option>
-              <option value="business">Business Orders</option>
-            </select>
-          </div>
         </div>
       </div>
 
@@ -103,8 +73,8 @@
             <thead class="bg-slate-700 text-slate-300">
               <tr>
                 <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Order ID</th>
-                <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Source</th>
-                <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Party</th>
+                <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Supplier</th>
+                <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Request</th>
                 <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Items</th>
                 <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Status</th>
                 <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Updated</th>
@@ -119,8 +89,7 @@
                 <td class="px-4 py-3 text-slate-300">{{ order.id }}</td>
                 <td class="px-4 py-3">
                   <span
-                    class="rounded-full px-3 py-1 text-xs font-semibold"
-                    :class="order.source === 'customer' ? 'bg-cyan-500/20 text-cyan-200' : 'bg-amber-500/20 text-amber-200'"
+                    class="rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-200"
                   >
                     {{ order.sourceLabel }}
                   </span>
@@ -207,17 +176,6 @@
             </div>
             <p v-else class="text-slate-400 text-sm">No item details available.</p>
           </div>
-          <div v-if="selectedOrder.source === 'customer'" class="rounded-xl border border-slate-700 bg-slate-800 p-4 md:col-span-2">
-            <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">Rider Information</p>
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <input v-model="riderForm.name" type="text" placeholder="Rider name" class="rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
-              <input v-model="riderForm.phone" type="text" placeholder="Rider phone" class="rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
-              <input v-model="riderForm.vehicle" type="text" placeholder="Vehicle / plate number" class="rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
-            </div>
-            <button type="button" class="mt-3 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-500 disabled:opacity-50" :disabled="!canUpdateLogistics" @click="saveRiderInformation">
-              Save Rider Information
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -246,8 +204,7 @@ export default {
     const loading = ref(true)
     const currentBranchId = ref('')
     const currentUserId = ref('')
-    const selectedTab = ref('customer')
-    const selectedSource = ref('customer')
+    const selectedSource = ref('business')
     const selectedStatus = ref('')
     const selectedPriority = ref('')
     const searchQuery = ref('')
@@ -271,10 +228,7 @@ export default {
     const normalizeStatus = (value) => String(value || '').trim()
 
     const statusOptions = computed(() => {
-      const activeSource = selectedSource.value || selectedTab.value
-      return activeSource === 'customer'
-        ? ['Pending', 'Confirmed', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled']
-        : ['Pending', 'Approved', 'Ready for Claim', 'Claimed', 'Shipped', 'In Transit', 'Received', 'Cancelled']
+      return ['Pending', 'Approved', 'Ready for Claim', 'Claimed', 'Shipped', 'In Transit', 'Received', 'Cancelled']
     })
 
     const getCustomerItemSummary = (order) => {
@@ -362,7 +316,7 @@ export default {
       if (!currentBranchId.value) return
       loading.value = true
       try {
-        await Promise.all([loadCustomerOrders(), loadBusinessOrders()])
+        await loadBusinessOrders()
       } finally {
         loading.value = false
       }
@@ -374,7 +328,7 @@ export default {
     const filteredOrders = computed(() => {
       const keyword = String(searchQuery.value || '').trim().toLowerCase()
       return allOrders.value.filter((order) => {
-        const matchesSource = !selectedSource.value || order.source === selectedSource.value
+        const matchesSource = order.source === 'business'
         const matchesStatus = !selectedStatus.value || normalizeStatus(order.status) === selectedStatus.value
         const matchesPriority = !selectedPriority.value || normalizeStatus(order.priority) === selectedPriority.value
         if (!matchesSource || !matchesStatus || !matchesPriority) return false

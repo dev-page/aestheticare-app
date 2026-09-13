@@ -55,7 +55,7 @@
         </button>
       </div>
 
-      <nav class="sidebar-scroll min-h-0 flex-1 overflow-y-auto p-3">
+      <nav ref="sidebarNav" class="sidebar-scroll min-h-0 flex-1 overflow-y-auto p-3">
       <ul v-if="showSkeleton" class="space-y-2">
         <li v-for="index in skeletonCount" :key="index">
           <div
@@ -283,7 +283,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getFirestore, collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth'
@@ -326,6 +326,8 @@ export default {
     const displayName = ref(props.defaultName)
     const displayEmail = ref(props.defaultEmail)
     const openGroups = ref({})
+    const sidebarNav = ref(null)
+    const sidebarScrollStorageKey = `sidebar:${props.panelKey}:scroll-top`
     const notificationsUnread = ref(0)
     const notificationsRoleKey = ref('')
     let unsubscribeNotificationsUser = null
@@ -639,9 +641,38 @@ export default {
     }
 
     const handleItemNavigation = () => {
+      saveSidebarScrollPosition()
       if (isSmallScreen.value) {
         closeSidebar()
       }
+    }
+
+    const saveSidebarScrollPosition = () => {
+      if (!sidebarNav.value) return
+
+      try {
+        sessionStorage.setItem(sidebarScrollStorageKey, String(sidebarNav.value.scrollTop))
+      } catch (_error) {
+        // Scroll restoration is a convenience and must not affect navigation.
+      }
+    }
+
+    const restoreSidebarScrollPosition = async () => {
+      await nextTick()
+      if (!sidebarNav.value) return
+
+      let savedScrollTop = 0
+      try {
+        savedScrollTop = Number(sessionStorage.getItem(sidebarScrollStorageKey) || 0)
+      } catch (_error) {
+        return
+      }
+
+      if (!Number.isFinite(savedScrollTop) || savedScrollTop <= 0) return
+
+      requestAnimationFrame(() => {
+        if (sidebarNav.value) sidebarNav.value.scrollTop = savedScrollTop
+      })
     }
 
     const iconName = (name) => {
@@ -861,6 +892,8 @@ export default {
       syncCollapsedWithViewport()
       viewportHandler = () => syncCollapsedWithViewport()
       window.addEventListener('resize', viewportHandler)
+      sidebarNav.value?.addEventListener('scroll', saveSidebarScrollPosition, { passive: true })
+      restoreSidebarScrollPosition()
 
       unsubscribe = onAuthStateChanged(auth, async (user) => {
         await loadUserDetails(user)
@@ -871,6 +904,7 @@ export default {
       () => route.path,
       () => {
         syncOpenGroupsToRoute()
+        restoreSidebarScrollPosition()
       }
     )
 
@@ -893,6 +927,8 @@ export default {
     )
 
     onUnmounted(() => {
+      saveSidebarScrollPosition()
+      sidebarNav.value?.removeEventListener('scroll', saveSidebarScrollPosition)
       if (unsubscribe) unsubscribe()
       if (viewportHandler) {
         window.removeEventListener('resize', viewportHandler)
@@ -905,6 +941,7 @@ export default {
     })
 
     return {
+      sidebarNav,
       collapsed,
       closeSidebar,
       displayName,
