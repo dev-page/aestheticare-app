@@ -10,7 +10,7 @@
               <p class="text-xs font-semibold uppercase tracking-[0.28em] text-[#d2b7a6]">Clinic Admin</p>
               <h1 class="mt-2 text-3xl font-bold tracking-tight text-[#f3e7e0]">Role Management</h1>
               <p class="mt-3 max-w-3xl text-sm leading-6 text-[#e2c7b6]">
-                Create clinic-owned staff roles, keep role records organized in tabs, and save permission sets without involving super admin.
+                Start with protected built-in roles, customize their permissions, or create clinic-owned roles for your staff.
               </p>
             </div>
 
@@ -181,7 +181,7 @@
                     <div>
                       <p class="text-xs uppercase tracking-[0.18em] text-[#d2b7a6]">Roles Overview</p>
                       <h3 class="mt-1 text-xl font-semibold text-[#f3e7e0]">Clinic Role Library</h3>
-                      <p class="mt-2 text-sm text-[#e2c7b6]">This tab shows the roles already created for your clinic admin account.</p>
+                <p class="mt-2 text-sm text-[#e2c7b6]">Built-in roles are ready to customize, and custom roles can be added for your clinic.</p>
                     </div>
                     <button
                       type="button"
@@ -197,7 +197,7 @@
                     <Icon icon="mdi:shield-off-outline" class="mx-auto h-12 w-12 text-[#d2b7a6]" />
                     <h4 class="mt-4 text-lg font-semibold text-[#f3e7e0]">No roles yet created</h4>
                     <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#e2c7b6]">
-                      The clinic admin has not created any custom staff roles yet. Use the add tab to start building your role setup.
+                      Your built-in roles will appear here after the clinic role library loads. Use the add tab for additional custom roles.
                     </p>
                   </div>
 
@@ -733,8 +733,8 @@ const builtInRoleTemplates = [
     suggestion: 'supply',
   },
   {
-    key: 'clinic-owner',
-    name: 'Clinic Owner',
+    key: 'clinic-admin',
+    name: 'Clinic Admin',
     description: 'Full access to the clinic workspace and all available administration tools.',
     color: '#d09a61',
     suggestion: 'admin',
@@ -982,6 +982,40 @@ export default {
       return counts
     }
 
+    const ensureOwnerClinicAdminAssignment = async (ownerId, roleSnapshot) => {
+      if (auth.currentUser?.uid !== ownerId) return
+
+      const clinicAdminDoc = roleSnapshot.docs.find(
+        (roleDoc) => roleDoc.data()?.builtinKey === 'clinic-admin'
+      )
+      if (!clinicAdminDoc) return
+
+      const ownerRef = doc(db, 'users', ownerId)
+      const ownerSnapshot = await getDoc(ownerRef)
+      if (!ownerSnapshot.exists()) return
+
+      const ownerData = ownerSnapshot.data() || {}
+      const existingIds = [
+        ...(Array.isArray(ownerData.customRoleIds) ? ownerData.customRoleIds : []),
+        ownerData.customRoleId,
+      ]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+
+      if (existingIds.includes(clinicAdminDoc.id)) return
+
+      const nextRoleIds = [...new Set([clinicAdminDoc.id, ...existingIds])]
+      const existingRoleNames = String(ownerData.customRoleName || '').trim()
+      await updateDoc(ownerRef, {
+        customRoleId: nextRoleIds[0],
+        customRoleIds: nextRoleIds,
+        customRoleName: existingRoleNames
+          ? `Clinic Admin, ${existingRoleNames}`
+          : 'Clinic Admin',
+        updatedAt: serverTimestamp(),
+      })
+    }
+
     const loadRoles = async (ownerId = accessScopeOwnerId.value || auth.currentUser?.uid) => {
       if (ownerId && typeof ownerId !== 'string') {
         ownerId = accessScopeOwnerId.value || auth.currentUser?.uid
@@ -1032,6 +1066,7 @@ export default {
           )
         }
 
+        await ensureOwnerClinicAdminAssignment(ownerId, roleSnapshot)
         const roleCounts = await buildRoleCounts()
 
         roles.value = roleSnapshot.docs
