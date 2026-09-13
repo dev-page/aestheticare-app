@@ -196,6 +196,19 @@ export default {
       return hours * 60 + minutes
     }
 
+    const shiftTimeRules = {
+      Morning: { minStart: 5 * 60, maxStart: 12 * 60, start: '08:00', end: '17:00' },
+      Afternoon: { minStart: 12 * 60, maxStart: 18 * 60, start: '13:00', end: '21:00' },
+      Evening: { minStart: 18 * 60, maxStart: 24 * 60, start: '18:00', end: '23:00' },
+    }
+
+    const applyShiftTypeDefaults = () => {
+      const rule = shiftTimeRules[currentShift.value.shiftType]
+      if (!rule) return
+      currentShift.value.start = rule.start
+      currentShift.value.end = rule.end
+    }
+
     const validateShiftInput = () => {
       if (
         !currentShift.value.shiftType ||
@@ -213,8 +226,13 @@ export default {
         toast.error('Please provide a valid start and end time.')
         return false
       }
+      const timeRule = shiftTimeRules[currentShift.value.shiftType]
+      if (timeRule && (startMinutes < timeRule.minStart || startMinutes >= timeRule.maxStart)) {
+        toast.error(`${currentShift.value.shiftType} shifts must start during the selected period.`)
+        return false
+      }
       if (endMinutes <= startMinutes) {
-        toast.error('End time must be later than start time.')
+        toast.error('End time must be later than start time on the same day.')
         return false
       }
 
@@ -359,6 +377,7 @@ export default {
       currentShift,
       branches,
       shiftTypes,
+      applyShiftTypeDefaults,
       shifts,
       shiftsLoading,
       editingShiftId,
@@ -389,6 +408,7 @@ export default {
             <label class="block text-slate-400 mb-1">Shift Type</label>
             <select
               v-model="currentShift.shiftType"
+              @change="applyShiftTypeDefaults"
               class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
             >
               <option disabled value="">Select Shift Type</option>
@@ -414,6 +434,7 @@ export default {
               />
             </div>
           </div>
+          <p class="text-xs text-slate-400">Morning shifts must start between 5:00 AM and 11:59 AM, afternoon shifts between 12:00 PM and 5:59 PM, and evening shifts from 6:00 PM onward. Selecting a type fills a suggested time.</p>
 
           <div>
             <label class="block text-slate-400 mb-1">Branch</label>
