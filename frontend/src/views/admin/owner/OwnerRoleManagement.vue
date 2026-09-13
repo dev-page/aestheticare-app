@@ -982,13 +982,15 @@ export default {
       return counts
     }
 
-    const ensureOwnerClinicAdminAssignment = async (ownerId, roleSnapshot) => {
+    const removeOwnerFromStaffRoles = async (ownerId, roleSnapshot) => {
       if (auth.currentUser?.uid !== ownerId) return
 
-      const clinicAdminDoc = roleSnapshot.docs.find(
-        (roleDoc) => roleDoc.data()?.builtinKey === 'clinic-admin'
+      const staffRoleIds = new Set(
+        roleSnapshot.docs
+          .filter((roleDoc) => ['clinic-admin', 'clinic-owner'].includes(roleDoc.data()?.builtinKey))
+          .map((roleDoc) => roleDoc.id)
       )
-      if (!clinicAdminDoc) return
+      if (!staffRoleIds.size) return
 
       const ownerRef = doc(db, 'users', ownerId)
       const ownerSnapshot = await getDoc(ownerRef)
@@ -1001,17 +1003,18 @@ export default {
       ]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
+      const nextRoleIds = [...new Set(existingIds)].filter((roleId) => !staffRoleIds.has(roleId))
+      const nextRoleNames = String(ownerData.customRoleName || '')
+        .split(',')
+        .map((name) => name.trim())
+        .filter((name) => name && name.toLowerCase() !== 'clinic admin' && name.toLowerCase() !== 'clinic owner')
 
-      if (existingIds.includes(clinicAdminDoc.id)) return
+      if (nextRoleIds.length === existingIds.length && nextRoleNames.join(', ') === String(ownerData.customRoleName || '').trim()) return
 
-      const nextRoleIds = [...new Set([clinicAdminDoc.id, ...existingIds])]
-      const existingRoleNames = String(ownerData.customRoleName || '').trim()
       await updateDoc(ownerRef, {
-        customRoleId: nextRoleIds[0],
+        customRoleId: nextRoleIds[0] || null,
         customRoleIds: nextRoleIds,
-        customRoleName: existingRoleNames
-          ? `Clinic Admin, ${existingRoleNames}`
-          : 'Clinic Admin',
+        customRoleName: nextRoleNames.join(', ') || null,
         updatedAt: serverTimestamp(),
       })
     }
@@ -1053,6 +1056,7 @@ export default {
       if (assignedUsers.size) {
         const batch = writeBatch(db)
         assignedUsers.forEach((userDoc) => {
+          if (userDoc.id === ownerId) return
           const userData = userDoc.data() || {}
           const roleIds = [
             ...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []),
@@ -1127,7 +1131,7 @@ export default {
           )
         }
 
-        await ensureOwnerClinicAdminAssignment(ownerId, roleSnapshot)
+        await removeOwnerFromStaffRoles(ownerId, roleSnapshot)
         const roleCounts = await buildRoleCounts()
 
         roles.value = roleSnapshot.docs
