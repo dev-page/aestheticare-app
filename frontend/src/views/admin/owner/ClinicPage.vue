@@ -135,6 +135,28 @@
                   </div>
                 </div>
 
+                <div class="rounded-xl border border-slate-600 bg-slate-800/70 p-4">
+                  <h4 class="text-slate-200 font-medium">Clinic Address and Map Location</h4>
+                  <p class="mt-1 mb-4 text-xs text-slate-400">Search the address, then drag or click the pin to the clinic's exact location before saving.</p>
+                  <LocationPicker
+                    region="cavite"
+                    title="Select Clinic Location in Cavite"
+                    instruction-title="Cavite only"
+                    instruction-text="The clinic pin must be on land inside Cavite."
+                    search-placeholder="Search the clinic address"
+                    search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
+                    allowed-area-label="Cavite, Philippines"
+                    pinned-address-label="Clinic Address"
+                    :show-actions="false"
+                    :initial-address="editForm.clinicLocationAddress || editForm.clinicLocation"
+                    :initial-lat="editForm.clinicLocationLat"
+                    :initial-lng="editForm.clinicLocationLng"
+                    @selection-change="handleLocationSelection"
+                    @error="locationError = $event"
+                  />
+                  <p v-if="locationError" class="mt-3 text-sm text-amber-300">{{ locationError }}</p>
+                </div>
+
                 <div>
                   <label class="block text-slate-300 text-sm mb-1">About Us (Description)</label>
                   <textarea
@@ -370,12 +392,13 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { auth, storage } from '@/config/firebaseConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
+import LocationPicker from '@/components/common/LocationPicker.vue'
 import { toast } from 'vue3-toastify'
 import { useSubscription } from '@/composables/useSubscription'
 
 export default {
   name: 'ClinicPage',
-  components: { OwnerSidebar, OwnerPageSkeleton },
+  components: { OwnerSidebar, OwnerPageSkeleton, LocationPicker },
   setup() {
     const db = getFirestore(getApp())
     const { isExpired, initSubscription } = useSubscription()
@@ -394,6 +417,7 @@ export default {
     const activeTab = ref('about')
     const isEditing = ref(false)
     const saving = ref(false)
+    const locationError = ref('')
 
     const editForm = ref({
       clinicName: '',
@@ -401,6 +425,12 @@ export default {
       contactNumber: '',
       description: '',
       services: [],
+      clinicLocation: '',
+      clinicLocationAddress: '',
+      clinicBarangay: '',
+      clinicPostalCode: '',
+      clinicLocationLat: '',
+      clinicLocationLng: '',
       profilePicture: '',
       bannerPicture: ''
     })
@@ -614,10 +644,28 @@ export default {
         services: Array.isArray(selectedBranch.value.services)
           ? selectedBranch.value.services.map((entry) => String(entry || '').trim()).filter(Boolean)
           : [],
+        clinicLocation: selectedBranch.value.clinicLocation || '',
+        clinicLocationAddress: selectedBranch.value.clinicLocationAddress || selectedBranch.value.clinicLocation || '',
+        clinicBarangay: selectedBranch.value.clinicBarangay || '',
+        clinicPostalCode: selectedBranch.value.clinicPostalCode || '',
+        clinicLocationLat: selectedBranch.value.clinicLocationLat ?? '',
+        clinicLocationLng: selectedBranch.value.clinicLocationLng ?? '',
         profilePicture: selectedBranch.value.profilePicture || '',
         bannerPicture: selectedBranch.value.bannerPicture || ''
       }
       serviceInput.value = ''
+      locationError.value = ''
+    }
+
+    const handleLocationSelection = (selection) => {
+      if (!selection) return
+      editForm.value.clinicLocationAddress = String(selection.address || selection.formattedAddress || '').trim()
+      editForm.value.clinicLocation = String(selection.city || '').trim()
+      editForm.value.clinicBarangay = String(selection.barangay || '').trim()
+      editForm.value.clinicPostalCode = String(selection.postalCode || '').trim()
+      editForm.value.clinicLocationLat = Number(selection.lat)
+      editForm.value.clinicLocationLng = Number(selection.lng)
+      locationError.value = ''
     }
 
     const normalizeService = (value) => String(value || '').replace(/\s+/g, ' ').trim()
@@ -880,6 +928,12 @@ export default {
           contactNumber: (editForm.value.contactNumber || '').trim(),
           description: (editForm.value.description || '').trim(),
           services: uniqueServices,
+          clinicLocation: (editForm.value.clinicLocation || '').trim(),
+          clinicLocationAddress: (editForm.value.clinicLocationAddress || '').trim(),
+          clinicBarangay: (editForm.value.clinicBarangay || '').trim(),
+          clinicPostalCode: (editForm.value.clinicPostalCode || '').trim(),
+          clinicLocationLat: Number(editForm.value.clinicLocationLat),
+          clinicLocationLng: Number(editForm.value.clinicLocationLng),
           profilePicture: profilePictureUrl,
           bannerPicture: bannerPictureUrl,
           updatedAt: serverTimestamp()
@@ -999,6 +1053,8 @@ export default {
       removeServiceTag,
       handleProfileUpload,
       handleBannerUpload,
+      handleLocationSelection,
+      locationError,
       isExpired
     }
   }

@@ -376,14 +376,21 @@ export default {
     })
 
     const handlePractitionerFile = (event) => {
+      if ((event?.target?.files?.length || 0) > 1) {
+        toast.error('Select only one practitioner license file.')
+        event.target.value = ''
+        practitionerIdFile.value = null
+        return
+      }
       const file = event?.target?.files?.[0] || null
       if (!file) {
         practitionerIdFile.value = null
         return
       }
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
-      if (!allowedTypes.includes(file.type)) {
-        toast.error('Allowed file types: JPG, PNG, WEBP, PDF.')
+      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')
+      const isImage = String(file.type || '').toLowerCase().startsWith('image/')
+      if (!isPdf && !isImage) {
+        toast.error('Upload one PDF or image file only.')
         event.target.value = ''
         practitionerIdFile.value = null
         return
@@ -832,7 +839,7 @@ export default {
                   <span v-else class="text-green-400">{{ practitionerIdFile.name }}</span>
                   <input
                     type="file"
-                    accept=".jpg,.jpeg,.png,.webp,.pdf"
+                    accept="application/pdf,.pdf,image/*"
                     class="hidden"
                     @change="handlePractitionerFile"
                   />
@@ -847,7 +854,7 @@ export default {
                 </button>
               </div>
               <p v-if="fieldErrors.practitionerId" class="mt-1 text-xs text-red-400">{{ fieldErrors.practitionerId }}</p>
-              <p class="mt-1 text-xs text-slate-400">Accepted formats: JPG, PNG, WEBP, PDF (max 5MB).</p>
+              <p class="mt-1 text-xs text-slate-400">Accepted formats: one PDF or image file (max 5MB).</p>
             </div>
           </div>
 
