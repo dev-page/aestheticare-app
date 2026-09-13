@@ -11,6 +11,7 @@ import Modal from '@/components/common/Modal.vue'
 import LocationPicker from '@/components/common/LocationPicker.vue'
 import Terms from '@/components/common/Terms.vue'
 import PrivacyPolicy from '@/components/common/PrivacyPolicy.vue'
+import ClinicPlatformAgreement from '@/components/common/ClinicPlatformAgreement.vue'
 import RegisterCustomer from '@/views/public/RegisterCustomer.vue'
 import RegisterSupplier from '@/views/public/RegisterSupplier.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
@@ -209,7 +210,12 @@ const passwordFocused = ref(false)
 const confirmPasswordFocused = ref(false)
 const showTerms = ref(false)
 const showPrivacy = ref(false)
+const showClinicAgreement = ref(false)
 const termsAccepted = ref(false)
+const clinicAgreementRead = ref(false)
+const clinicAgreementAccepted = ref(false)
+const clinicAgreementSignature = ref('')
+const CLINIC_PLATFORM_AGREEMENT_VERSION = 'clinic-platform-agreement-v1'
 const emailChecked = ref(false)
 const isCheckingEmail = ref(false)
 const emailAvailability = ref('idle')
@@ -473,10 +479,23 @@ const isStep1FormComplete = computed(() => {
     clinicLocationLng.value &&
     phoneIsValid &&
     termsAccepted.value &&
+    clinicAgreementSignatureMatches.value &&
     (emailAvailability.value === 'available' || emailChecked.value) &&
     passwordIsValid
   )
 })
+const registeredOwnerLegalName = computed(() => [
+  firstName.value,
+  middleNameEnabled.value ? midName.value : '',
+  lastName.value,
+  suffixEnabled.value ? suffix.value : '',
+].map((part) => String(part || '').trim()).filter(Boolean).join(' '))
+const normalizeAgreementName = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+const clinicAgreementSignatureMatches = computed(() => (
+  clinicAgreementRead.value &&
+  clinicAgreementAccepted.value &&
+  normalizeAgreementName(clinicAgreementSignature.value) === normalizeAgreementName(registeredOwnerLegalName.value)
+))
 const companyDocumentKeys = [
   'businessPermit',
   'birRegistration',
@@ -2555,6 +2574,16 @@ const registerClinic = async () => {
     return
   }
 
+  if (!clinicAgreementRead.value) {
+    toast.error('Please review the Clinic Platform Agreement before continuing.')
+    return
+  }
+
+  if (!clinicAgreementSignatureMatches.value) {
+    toast.error('Please accept the Clinic Platform Agreement and enter your full legal name as your electronic signature.')
+    return
+  }
+
   if (requiresPasswordForStep1.value) {
     if (password.value !== confirmPassword.value) {
       toast.error('Passwords do not match')
@@ -2609,6 +2638,13 @@ const registerClinic = async () => {
     authorizedRepPosition: '',
     companyName: clinicName.value.trim(),
     companyType: '',
+  }
+  const platformAgreementAcceptance = {
+    version: CLINIC_PLATFORM_AGREEMENT_VERSION,
+    signerName: registeredOwnerLegalName.value,
+    signerEmail: email.value.trim().toLowerCase(),
+    method: 'typed-name',
+    acceptedAt: serverTimestamp(),
   }
 
   sessionStorage.setItem('resume_email', String(email.value || '').trim().toLowerCase())
@@ -2671,6 +2707,7 @@ const registerClinic = async () => {
           authorizedRepPosition: companyPayload.authorizedRepPosition,
           companyName: companyPayload.companyName,
           companyType: companyPayload.companyType,
+          platformAgreementAcceptance,
           updatedAt: serverTimestamp(),
         }),
       ])
@@ -2690,7 +2727,7 @@ const registerClinic = async () => {
     userUid.value = uid
     createdRegistrationUid = uid
     setStoredRegistrationUid(uid)
-    const ownerFullName = `${firstName.value.trim()} ${lastName.value.trim()}`.trim()
+    const ownerFullName = registeredOwnerLegalName.value
 
     // 🔹 Save user
     const saveUserPromise = setDoc(doc(db, 'users', uid), {
@@ -2731,6 +2768,7 @@ const registerClinic = async () => {
       isMainBranch: true,
       branchAdminId: uid,
       branchAdminName: ownerFullName || 'Owner',
+      platformAgreementAcceptance,
       approvalStatus: 'Pending OTP Verification',
       createdAt: serverTimestamp(),
     })
@@ -3457,6 +3495,38 @@ const submitDocuments = async () => {
               <a href="#" @click.prevent="showPrivacy = true" class="text-gold-700 hover:underline">Privacy Policy</a>
             </label>
 
+            <div v-if="isClinicRegistrationActive" class="space-y-3 rounded-xl border border-gold-200 bg-cream-50 p-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p class="font-semibold text-charcoal-800">Clinic Platform Agreement</p>
+                  <p class="text-xs text-charcoal-600">This includes the platform commission schedule: 5% on products and 10% on completed services.</p>
+                </div>
+                <button type="button" class="text-sm font-semibold text-gold-700 hover:underline" @click="showClinicAgreement = true">
+                  Review agreement
+                </button>
+              </div>
+
+              <label class="flex items-start gap-2 text-sm text-charcoal-700">
+                <input v-model="clinicAgreementAccepted" type="checkbox" :disabled="!clinicAgreementRead" class="mt-1 accent-gold-700" />
+                <span>I agree to the Clinic Platform Agreement and confirm that I am authorized to bind this clinic.</span>
+              </label>
+
+              <div v-if="clinicAgreementRead" class="space-y-2">
+                <label class="block text-sm font-medium text-charcoal-700" for="clinic-agreement-signature">Electronic signature</label>
+                <input
+                  id="clinic-agreement-signature"
+                  v-model="clinicAgreementSignature"
+                  type="text"
+                  autocomplete="name"
+                  :placeholder="registeredOwnerLegalName || 'Type your full legal name'"
+                  class="h-12 w-full rounded-lg border border-gold-200 bg-white px-3 text-charcoal-800 focus:border-gold-500 focus:outline-none"
+                />
+                <p class="text-xs text-charcoal-600">
+                  Type your full legal name exactly as entered above: {{ registeredOwnerLegalName || 'your registered name' }}
+                </p>
+              </div>
+            </div>
+
             <div class="cta-row flex gap-3">
               <button
                 type="button"
@@ -3809,6 +3879,18 @@ const submitDocuments = async () => {
       </Modal>
       <Modal panelClass="bg-white" :isOpen="showPrivacy" :title="'Privacy Policy'" @close="showPrivacy = false" :showConfirm="false">
         <PrivacyPolicy />
+      </Modal>
+      <Modal
+        panelClass="bg-white w-full max-w-4xl"
+        :isOpen="showClinicAgreement"
+        :title="'Clinic Platform Agreement'"
+        @close="showClinicAgreement = false"
+        :showConfirm="false"
+      >
+        <ClinicPlatformAgreement
+          :version="CLINIC_PLATFORM_AGREEMENT_VERSION"
+          @reached-end="clinicAgreementRead = true"
+        />
       </Modal>
 
       <Modal
