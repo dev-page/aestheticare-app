@@ -153,6 +153,7 @@ const routes = [
   { path: "/supplier/dashboard", name: "supplier-dashboard", component: () => import("@/views/supplier/SupplierDashboard.vue"), meta: { requiresAuth: true } },
   { path: "/supplier/profile", name: "supplier-profile", component: () => import("@/views/supplier/SupplierProfile.vue"), meta: { requiresAuth: true } },
   { path: "/supplier/supplies", name: "supplier-supplies", component: () => import("@/views/supplier/SupplierSupplies.vue"), meta: { requiresAuth: true } },
+  { path: "/supplier/quote-requests", name: "supplier-quote-requests", component: () => import("@/views/supplier/SupplierQuoteRequests.vue"), meta: { requiresAuth: true } },
 
   // Superadmin routes
   { path: "/superadmin/dashboard", name: "superadmin-dashboard", component: () => import("@/views/superAdmin/Dashboard.vue"), meta: { requiresAuth: true, requiresPermission: "system:dashboard:view" } },

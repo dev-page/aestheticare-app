@@ -20,6 +20,7 @@ export default {
       { label: 'Dashboard', icon: 'home', to: '/supplier/dashboard' },
       { label: 'Business Profile', icon: 'profile', to: '/supplier/profile' },
       { label: 'My Supplies', icon: 'box', to: '/supplier/supplies' },
+      { label: 'Quote Requests', icon: 'report', to: '/supplier/quote-requests' },
       {
         key: 'supplier-support',
         label: 'Support',
