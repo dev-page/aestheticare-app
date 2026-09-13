@@ -759,9 +759,19 @@ export default {
                   </option>
                 </select>
                 <p class="mt-1 text-xs text-slate-400">Hold Ctrl or Command to assign more than one role.</p>
-                <p class="mt-1 text-xs text-slate-400">
-                  {{ selectedCustomRoleName ? `Selected: ${selectedCustomRoleName}` : 'Choose a role to define permissions.' }}
-                </p>
+                <div v-if="selectedCustomRoles.length" class="mt-3 rounded-lg border border-gold-500/40 bg-gold-500/10 p-3">
+                  <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gold-200">Selected roles</p>
+                  <div class="flex flex-wrap gap-2">
+                    <span
+                      v-for="role in selectedCustomRoles"
+                      :key="role.id"
+                      class="rounded-full border border-gold-400/50 bg-gold-500/20 px-2.5 py-1 text-xs font-medium text-gold-100"
+                    >
+                      {{ role.name }}
+                    </span>
+                  </div>
+                </div>
+                <p v-else class="mt-1 text-xs text-slate-400">Choose a role to define permissions.</p>
               </div>
 
               <!-- Employment Type -->
