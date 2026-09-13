@@ -41,8 +41,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { type: 'section', label: 'POSTS' },
       { label: 'Product & Service Listing', icon: 'layout', to: '/manager/product-service-listing', permission: 'services:view' },
       { label: 'Archived Posts', icon: 'archive', to: '/manager/archived-posts', permission: 'services:view' },
-      { label: 'Item Catalog', icon: 'building', to: '/manager/item-catalog', permission: 'inventory:view' },
-      { label: 'Purchase History', icon: 'report', to: '/manager/purchase-history', permission: 'finance:purchases:view' }
+      { label: 'Item Catalog', icon: 'building', to: '/manager/item-catalog', permission: 'inventory:view' }
     ]
   },
   {
@@ -64,6 +63,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { type: 'section', label: 'PURCHASING' },
       { label: 'Procurement', icon: 'report', to: '/manager/procurement', permissionsAny: ['procurement:view', 'procurement:create', 'procurement:review'] },
       { label: 'Purchase Requests', icon: 'plus', to: '/manager/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'] },
+      { label: 'Purchase History', icon: 'report', to: '/manager/purchase-history', permission: 'finance:purchases:view' },
     ]
   },
   {
