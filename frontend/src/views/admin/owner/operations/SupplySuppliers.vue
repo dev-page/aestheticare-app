@@ -265,67 +265,6 @@
               </div>
             </div>
             <div>
-              <div class="flex items-center justify-between mb-2">
-                <label class="block text-slate-400 text-sm">Offered Items</label>
-                <button type="button" @click="addOfferedItemRow" class="text-xs px-2 py-1 rounded bg-slate-700 text-slate-200 hover:bg-slate-600">
-                  Add Item Row
-                </button>
-              </div>
-              <div class="space-y-2">
-                <div v-for="(item, index) in newSupplier.offeredItems" :key="`offer-${index}`" class="grid grid-cols-12 gap-2">
-                  <input
-                    v-model="item.name"
-                    type="text"
-                    placeholder="Item name"
-                    class="col-span-4 bg-slate-700 text-white px-3 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
-                    @input="markOfferedTouched(index, 'name')"
-                    @blur="markOfferedTouched(index, 'name')"
-                  />
-                  <select
-                    v-model="item.category"
-                    class="col-span-3 bg-slate-700 text-white px-3 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
-                    @change="markOfferedTouched(index, 'category')"
-                    @blur="markOfferedTouched(index, 'category')"
-                  >
-                    <option value="">Category</option>
-                    <option v-for="cat in categoryOptions" :key="`offer-${index}-${cat}`" :value="cat">{{ cat }}</option>
-                  </select>
-                  <div class="col-span-3 relative">
-                    <span class="absolute left-2 top-1/2 -translate-y-1/2 text-slate-300 text-xs">PHP</span>
-                    <input
-                      v-model.number="item.unitCost"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Unit cost"
-                      class="w-full bg-slate-700 text-white pl-10 pr-2 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
-                      @input="markOfferedTouched(index, 'unitCost')"
-                      @blur="markOfferedTouched(index, 'unitCost')"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    @click="removeOfferedItemRow(index)"
-                    class="col-span-2 px-3 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700"
-                  >
-                    Remove
-                  </button>
-                  <p
-                    v-if="showAddItemError(index, 'name')"
-                    class="col-span-12 text-xs text-red-400"
-                  >
-                    {{ addErrors.offeredItems[index].name }}
-                  </p>
-                  <p
-                    v-if="showAddItemError(index, 'unitCost')"
-                    class="col-span-12 text-xs text-red-400"
-                  >
-                    {{ addErrors.offeredItems[index].unitCost }}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div>
               <label class="block text-slate-400 text-sm mb-2">Address</label>
               <textarea
                 v-model="newSupplier.address"
@@ -419,49 +358,6 @@
               </div>
             </div>
             <div>
-              <div class="flex items-center justify-between mb-2">
-                <label class="block text-slate-400 text-sm">Offered Items</label>
-                <button type="button" @click="addOfferedItemRow('edit')" class="text-xs px-2 py-1 rounded bg-slate-700 text-slate-200 hover:bg-slate-600">
-                  Add Item Row
-                </button>
-              </div>
-              <div class="space-y-2">
-                <div v-for="(item, index) in editSupplier.offeredItems" :key="`edit-offer-${index}`" class="grid grid-cols-12 gap-2">
-                  <input
-                    v-model="item.name"
-                    type="text"
-                    placeholder="Item name"
-                    class="col-span-4 bg-slate-700 text-white px-3 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
-                  />
-                  <select
-                    v-model="item.category"
-                    class="col-span-3 bg-slate-700 text-white px-3 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
-                  >
-                    <option value="">Category</option>
-                    <option v-for="cat in categoryOptions" :key="`edit-offer-${index}-${cat}`" :value="cat">{{ cat }}</option>
-                  </select>
-                  <div class="col-span-3 relative">
-                    <span class="absolute left-2 top-1/2 -translate-y-1/2 text-slate-300 text-xs">PHP</span>
-                    <input
-                      v-model.number="item.unitCost"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Unit cost"
-                      class="w-full bg-slate-700 text-white pl-10 pr-2 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    @click="removeOfferedItemRow(index, 'edit')"
-                    class="col-span-2 px-3 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div>
               <label class="block text-slate-400 text-sm mb-2">Address</label>
               <textarea v-model="editSupplier.address" rows="3" class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"></textarea>
             </div>
@@ -520,8 +416,7 @@ export default {
       email: false,
       phone: false,
       status: false,
-      address: false,
-      offeredItems: [{ name: false, category: false, unitCost: false }]
+      address: false
     })
 
     const currentBranchId = ref('')
@@ -548,8 +443,7 @@ export default {
       email: '',
       phone: '',
       status: 'Active',
-      address: '',
-      offeredItems: [{ name: '', category: '', unitCost: 0 }]
+      address: ''
     })
 
     const newSupplier = ref({
@@ -606,14 +500,6 @@ export default {
     })
 
     const getSupplierPayload = (supplier) => {
-      const cleanedOfferedItems = (supplier.offeredItems || [])
-        .filter((item) => (item.name || '').trim())
-        .map((item) => ({
-          name: item.name.trim(),
-          category: item.category || supplier.categories[0] || '',
-          unitCost: Math.max(0, Number(item.unitCost || 0))
-        }))
-
       return {
         name: supplier.name,
         businessType: supplier.businessType,
@@ -623,47 +509,12 @@ export default {
         email: supplier.email,
         phone: supplier.phone,
         status: supplier.status,
-        address: supplier.address,
-        offeredItems: cleanedOfferedItems
-      }
-    }
-
-    const addOfferedItemRow = (target = 'new') => {
-      if (target === 'edit') {
-        editSupplier.value.offeredItems.push({ name: '', category: '', unitCost: 0 })
-        return
-      }
-      newSupplier.value.offeredItems.push({ name: '', category: '', unitCost: 0 })
-      addTouched.value.offeredItems.push({ name: false, category: false, unitCost: false })
-    }
-
-    const removeOfferedItemRow = (index, target = 'new') => {
-      const list = target === 'edit' ? editSupplier.value.offeredItems : newSupplier.value.offeredItems
-      list.splice(index, 1)
-      if (list.length === 0) {
-        list.push({ name: '', category: '', unitCost: 0 })
-      }
-      if (target !== 'edit') {
-        addTouched.value.offeredItems.splice(index, 1)
-        if (addTouched.value.offeredItems.length === 0) {
-          addTouched.value.offeredItems.push({ name: false, category: false, unitCost: false })
-        }
-      }
-    }
-
-    const ensureOfferedTouched = (index) => {
-      if (!addTouched.value.offeredItems[index]) {
-        addTouched.value.offeredItems[index] = { name: false, category: false, unitCost: false }
+        address: supplier.address
       }
     }
 
     const markTouched = (field) => {
       addTouched.value[field] = true
-    }
-
-    const markOfferedTouched = (index, field) => {
-      ensureOfferedTouched(index)
-      addTouched.value.offeredItems[index][field] = true
     }
 
     const inputClass = (hasError) => [
@@ -681,8 +532,7 @@ export default {
         email: '',
         phone: '',
         status: '',
-        address: '',
-        offeredItems: newSupplier.value.offeredItems.map(() => ({ name: '', unitCost: '' }))
+        address: ''
       }
 
       const hasLettersOrNumbers = (value) => /[A-Za-z0-9]/.test(value || '')
@@ -740,23 +590,10 @@ export default {
         }
       }
 
-      newSupplier.value.offeredItems.forEach((item, index) => {
-        const name = (item.name || '').trim()
-        const unitCost = Number(item.unitCost || 0)
-        const rowHasData = name || item.category || unitCost > 0
-        if (rowHasData && !name) {
-          errors.offeredItems[index].name = 'Item name is required when adding an item.'
-        }
-        if (unitCost < 0) {
-          errors.offeredItems[index].unitCost = 'Unit cost cannot be negative.'
-        }
-      })
-
       return errors
     })
 
     const hasAddErrors = computed(() => {
-      const itemErrors = addErrors.value.offeredItems.some((item) => item.name || item.unitCost)
       return (
         addErrors.value.name ||
         addErrors.value.businessType ||
@@ -766,18 +603,12 @@ export default {
         addErrors.value.email ||
         addErrors.value.phone ||
         addErrors.value.status ||
-        addErrors.value.address ||
-        itemErrors
+        addErrors.value.address
       )
     })
 
     const showAddError = (field) => {
       return (submitAttempted.value || addTouched.value[field]) && Boolean(addErrors.value[field])
-    }
-
-    const showAddItemError = (index, field) => {
-      ensureOfferedTouched(index)
-      return (submitAttempted.value || addTouched.value.offeredItems[index][field]) && Boolean(addErrors.value.offeredItems[index][field])
     }
 
     const addSupplier = async () => {
@@ -837,14 +668,7 @@ export default {
         email: supplier.email || '',
         phone: supplier.phone || '',
         status: supplier.status || 'Active',
-        address: supplier.address || '',
-        offeredItems: normalizedOfferedItems(supplier).length
-          ? normalizedOfferedItems(supplier).map((item) => ({
-              name: item.name || '',
-              category: item.category || '',
-              unitCost: Math.max(0, Number(item.unitCost || item.costPerUnit || item.price || 0))
-            }))
-          : [{ name: '', category: '', unitCost: 0 }]
+        address: supplier.address || ''
       }
       showEditModal.value = true
     }
@@ -968,8 +792,7 @@ export default {
         email: false,
         phone: false,
         status: false,
-        address: false,
-        offeredItems: [{ name: false, category: false, unitCost: false }]
+        address: false
       }
     }
 
@@ -1001,12 +824,8 @@ export default {
       handleTinInput,
       newSupplier,
       editSupplier,
-      addOfferedItemRow,
-      removeOfferedItemRow,
       markTouched,
-      markOfferedTouched,
       showAddError,
-      showAddItemError,
       inputClass,
       addSupplier,
       openEditModal,

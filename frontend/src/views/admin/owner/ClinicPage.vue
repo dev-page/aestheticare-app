@@ -282,9 +282,15 @@
                   </div>
 
                   <div class="overflow-hidden rounded-xl border border-slate-600 bg-slate-900/80">
-                    <div ref="branchMapEl" class="h-56 w-full"></div>
-                    <p v-if="!selectedBranch.clinicLocationLat || !selectedBranch.clinicLocationLng" class="border-t border-slate-700 px-4 py-3 text-xs text-slate-400">
-                      Map preview will appear once coordinates are available.
+                    <div ref="branchMapEl" class="h-56 min-h-56 w-full"></div>
+                    <p v-if="mapLoading" class="border-t border-slate-700 px-4 py-3 text-xs text-slate-400">
+                      Loading map...
+                    </p>
+                    <p v-else-if="mapError" class="border-t border-slate-700 px-4 py-3 text-xs text-amber-300">
+                      {{ mapError }}
+                    </p>
+                    <p v-else-if="!branchCoordinates" class="border-t border-slate-700 px-4 py-3 text-xs text-slate-400">
+                      No saved pin yet. The map is centered on Cavite until a location is selected.
                     </p>
                   </div>
                 </div>
@@ -365,6 +371,8 @@ export default {
     const selectedBranchId = ref('')
     const branchScopeLabel = ref('')
     const branchMapEl = ref(null)
+    const mapLoading = ref(false)
+    const mapError = ref('')
     const products = ref([])
     const reviews = ref([])
     const ownerEmail = ref('')
@@ -411,6 +419,16 @@ export default {
     const selectedBranch = computed(() =>
       branches.value.find((branch) => branch.id === selectedBranchId.value) || null
     )
+
+    const branchCoordinates = computed(() => {
+      const branch = selectedBranch.value
+      if (!branch) return null
+
+      const location = branch.locationCoordinates || branch.coordinates || branch.location || {}
+      const lat = Number(branch.clinicLocationLat ?? branch.latitude ?? branch.lat ?? location.latitude ?? location.lat)
+      const lng = Number(branch.clinicLocationLng ?? branch.longitude ?? branch.lng ?? branch.lon ?? location.longitude ?? location.lng)
+      return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null
+    })
 
     const displayClinicName = computed(() => {
       if (isEditing.value && editForm.value.clinicName) return editForm.value.clinicName
@@ -468,6 +486,8 @@ export default {
     const initBranchMap = async () => {
       if (!branchMapEl.value || !selectedBranch.value) return
 
+      mapLoading.value = true
+      mapError.value = ''
       try {
         if (!mapsReady) {
           await loadMapsScript()
@@ -475,12 +495,13 @@ export default {
         }
       } catch (error) {
         console.error('Failed to load branch map:', error)
+        mapError.value = error?.message || 'The map could not be loaded.'
+        mapLoading.value = false
         return
       }
 
-      const lat = Number(selectedBranch.value.clinicLocationLat)
-      const lng = Number(selectedBranch.value.clinicLocationLng)
-      const center = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : defaultCaviteCenter
+      const center = branchCoordinates.value || defaultCaviteCenter
+      const hasCoordinates = Boolean(branchCoordinates.value)
 
       let MapCtor = window.google?.maps?.Map
       let AdvancedMarkerElement = window.google?.maps?.marker?.AdvancedMarkerElement
@@ -495,17 +516,21 @@ export default {
         }
       }
 
-      if (!MapCtor) return
+      if (!MapCtor) {
+        mapError.value = 'Google Maps did not provide a map constructor.'
+        mapLoading.value = false
+        return
+      }
 
       if (!branchMap) {
         branchMap = new MapCtor(branchMapEl.value, {
           center,
-          zoom: Number.isFinite(lat) && Number.isFinite(lng) ? 15 : 12,
+          zoom: hasCoordinates ? 15 : 12,
           restriction: { latLngBounds: caviteBounds, strictBounds: true },
           streetViewControl: false,
           fullscreenControl: false,
           mapTypeControl: false,
-          mapId: import.meta.env.VITE_GOOGLE_MAP_ID
+          ...(import.meta.env.VITE_GOOGLE_MAP_ID ? { mapId: import.meta.env.VITE_GOOGLE_MAP_ID } : {})
         })
       } else {
         branchMap.setCenter(center)
@@ -516,19 +541,23 @@ export default {
       }
       branchMarker = null
 
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        if (AdvancedMarkerElement) {
+      if (hasCoordinates) {
+        if (AdvancedMarkerElement && import.meta.env.VITE_GOOGLE_MAP_ID) {
           branchMarker = new AdvancedMarkerElement({
             map: branchMap,
-            position: { lat, lng }
+            position: center
           })
         } else if (window.google?.maps?.Marker) {
           branchMarker = new window.google.maps.Marker({
             map: branchMap,
-            position: { lat, lng }
+            position: center
           })
         }
       }
+
+      window.google?.maps?.event?.trigger(branchMap, 'resize')
+      branchMap.setCenter(center)
+      mapLoading.value = false
     }
 
     const hydrateEditForm = () => {
@@ -690,6 +719,7 @@ export default {
           selectedBranchId.value = ''
           products.value = []
           reviews.value = []
+          mapError.value = ''
         }
       } catch (error) {
         console.error('Failed to load clinic page:', error)
@@ -896,6 +926,9 @@ export default {
       togglePublish,
       selectBranch,
       branchMapEl,
+      branchCoordinates,
+      mapLoading,
+      mapError,
       serviceInput,
       handleServiceKeydown,
       commitServiceInput,
