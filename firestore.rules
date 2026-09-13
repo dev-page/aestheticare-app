@@ -804,6 +804,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /registrationRejectionHistory/{historyId} {
+      allow read: if isSignedIn() && isSuperadmin();
+      allow write: if false;
+    }
+
     match /notifications/{notificationId} {
       allow read: if isSignedIn()
         && (resource.data.recipientUserId == request.auth.uid

@@ -36,15 +36,16 @@
               <th class="px-4 py-3 text-left font-semibold text-slate-300">Email</th>
               <th class="px-4 py-3 text-left font-semibold text-slate-300">Status</th>
               <th class="px-4 py-3 text-left font-semibold text-slate-300">Automatic Verification</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-300">Total Resubmissions</th>
               <th class="px-4 py-3 text-left font-semibold text-slate-300">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="5" class="px-4 py-4 text-slate-300">Loading pending supplier registrations...</td>
+              <td colspan="6" class="px-4 py-4 text-slate-300">Loading pending supplier registrations...</td>
             </tr>
             <tr v-else-if="!pendingSuppliers.length">
-              <td colspan="5" class="px-4 py-4 text-slate-300">No pending supplier registrations.</td>
+              <td colspan="6" class="px-4 py-4 text-slate-300">No pending supplier registrations.</td>
             </tr>
             <tr v-for="row in pendingSuppliers" :key="row.id" class="border-b border-slate-700/60 last:border-b-0">
               <td class="px-4 py-3 text-slate-100">{{ row.businessName }}</td>
@@ -62,6 +63,7 @@
                   {{ row.verificationStatus || 'Not processed' }}
                 </span>
               </td>
+              <td class="px-4 py-3 text-slate-300">{{ row.resubmissionCount }}</td>
               <td class="px-4 py-3">
                 <button
                   type="button"
@@ -91,14 +93,15 @@
               <th class="px-4 py-3 text-left text-slate-300">Owner</th>
               <th class="px-4 py-3 text-left text-slate-300">Contact</th>
               <th class="px-4 py-3 text-left text-slate-300">Status</th>
+              <th class="px-4 py-3 text-left text-slate-300">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loadingVerifiedSuppliers">
-              <td class="px-4 py-4 text-slate-300" colspan="4">Loading verified suppliers...</td>
+              <td class="px-4 py-4 text-slate-300" colspan="5">Loading verified suppliers...</td>
             </tr>
             <tr v-else-if="!verifiedSuppliers.length">
-              <td class="px-4 py-4 text-slate-300" colspan="4">No verified suppliers found.</td>
+              <td class="px-4 py-4 text-slate-300" colspan="5">No verified suppliers found.</td>
             </tr>
             <tr v-else v-for="s in verifiedSuppliers" :key="s.id" class="border-b border-slate-700/60 last:border-b-0">
               <td class="px-4 py-3 text-slate-100">{{ s.businessName }}</td>
@@ -108,6 +111,11 @@
                 <span class="rounded-md border border-emerald-500/40 bg-emerald-500/20 px-2 py-1 text-xs font-medium text-emerald-300">
                   {{ s.status || 'Active' }}
                 </span>
+              </td>
+              <td class="px-4 py-3">
+                <button type="button" class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500" @click="openDetails(s)">
+                  View
+                </button>
               </td>
             </tr>
           </tbody>
@@ -288,7 +296,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { getAuth } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
@@ -323,6 +331,23 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
       isImage: type.startsWith('image/'),
     }
   })
+}
+
+const formatSupplierOwnerName = (user = {}, supplier = {}) => {
+  const parts = [user.firstName || supplier.firstName, user.midName || user.middleName || supplier.midName || supplier.middleName, user.lastName || supplier.lastName, user.suffix || supplier.suffix]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+  return parts.join(' ') || String(user.fullName || supplier.ownerName || supplier.fullName || '').trim() || 'Unnamed Owner'
+}
+
+const getResubmissionCount = async (email, applicantType) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  if (!normalizedEmail) return 0
+  const snapshot = await getDocs(query(
+    collection(db, 'registrationRejectionHistory'),
+    where('email', '==', normalizedEmail),
+  ))
+  return snapshot.docs.filter((item) => item.data()?.applicantType === applicantType).length
 }
 
 const mapVerificationResults = (verificationResults = {}) => Object.entries(verificationResults || {}).map(([key, result = {}]) => ({
@@ -387,12 +412,15 @@ const loadPendingSuppliers = async () => {
           String(userData.fullName || '').trim() ||
           `${String(userData.firstName || '').trim()} ${String(userData.lastName || '').trim()}`.trim() ||
           'Unnamed User'
+        const email = application.email || userData.email || ''
+        const resubmissionCount = await getResubmissionCount(email, 'supplier')
 
         return {
           id: application.id,
           businessName: toBusinessName(application),
           fullName,
-          email: application.email || userData.email || '',
+          email,
+          resubmissionCount,
           contactNumber: application.contactNumber || userData.contactNumber || '',
           businessAddress:
             application.businessAddress ||
@@ -451,10 +479,14 @@ const loadVerifiedSuppliers = async (reset = false) => {
     // hidden by Firestore's unspecified document order.
     const q = query(collection(db, 'suppliers'))
     const snap = await getDocs(q)
-    const rows = snap.docs.map((d) => {
+    const rows = await Promise.all(snap.docs.map(async (d) => {
       const data = d.data() || {}
       const businessName = String(data.businessName || data.name || '').trim() || 'Unnamed Supplier'
-      const ownerName = String(data.ownerName || data.fullName || '').trim() || ''
+      const ownerLookupId = data.ownerId || data.ownerUid || data.userId || data.uid || d.id
+      const userSnap = await getDoc(doc(db, 'users', ownerLookupId))
+      const user = userSnap.exists() ? userSnap.data() || {} : {}
+      const ownerName = formatSupplierOwnerName(user, data)
+      const email = String(user.email || data.email || data.ownerEmail || '').trim()
       const approvalStatus = String(data.approvalStatus || '').toLowerCase()
       const status = String(data.status || '').toLowerCase()
       const isApproved = approvalStatus
@@ -464,13 +496,24 @@ const loadVerifiedSuppliers = async (reset = false) => {
         ? {
             id: d.id,
             businessName,
+            ...data,
             ownerName,
+            fullName: ownerName,
+            email,
             contactNumber: data.contactNumber || data.phone || '',
+            businessAddress: data.businessAddress || data.address || '',
+            businessType: data.businessType || '',
+            taxRegistrationNumber: normalizeTinDigits(data.taxRegistrationNumber || data.tinNumber || ''),
+            documents: mapDocs(data.documents || {}, data.draftDocuments || {}),
+            verificationStatus: data.verificationStatus || 'Not processed',
+            verificationThreshold: data.verificationThreshold ?? null,
+            verificationProcessedAt: data.verificationProcessedAt || null,
+            verificationResults: mapVerificationResults(data.verificationResults),
             status: data.status || 'Active',
             approvedAt: data.approvedAt || data.updatedAt || data.createdAt || null,
           }
         : null
-    }).filter(Boolean)
+    })).then((items) => items.filter(Boolean))
 
     const sortedRows = sortRecordsNewestFirst(rows)
     const pageStart = reset ? 0 : verifiedSuppliers.value.length

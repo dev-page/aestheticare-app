@@ -29,16 +29,17 @@
               <th class="text-left text-slate-300 px-4 py-3">Email</th>
               <th class="text-left text-slate-300 px-4 py-3">Status</th>
               <th class="text-left text-slate-300 px-4 py-3">Automatic Verification</th>
+              <th class="text-left text-slate-300 px-4 py-3">Total Resubmissions</th>
               <th class="text-left text-slate-300 px-4 py-3">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td class="px-4 py-3 text-slate-200" colspan="5">Loading pending clinics...</td>
+              <td class="px-4 py-3 text-slate-200" colspan="6">Loading pending clinics...</td>
             </tr>
 
             <tr v-else-if="!pendingClinics.length">
-              <td class="px-4 py-3 text-slate-200" colspan="5">No pending clinics.</td>
+              <td class="px-4 py-3 text-slate-200" colspan="6">No pending clinics.</td>
             </tr>
 
             <tr v-for="row in pendingClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0">
@@ -54,6 +55,7 @@
                   {{ row.verificationStatus || 'Not processed' }}
                 </span>
               </td>
+              <td class="px-4 py-3 text-slate-300">{{ row.resubmissionCount }}</td>
               <td class="px-4 py-3">
                 <button
                   type="button"
@@ -370,6 +372,16 @@ const formatApplicantName = (user = {}, fallback = {}) => {
     .map((value) => String(value || '').trim())
     .filter(Boolean)
   return parts.join(' ') || String(user.fullName || fallback.fullName || '').trim() || 'Unnamed User'
+}
+
+const getResubmissionCount = async (email, applicantType) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  if (!normalizedEmail) return 0
+  const snapshot = await getDocs(query(
+    collection(db, 'registrationRejectionHistory'),
+    where('email', '==', normalizedEmail),
+  ))
+  return snapshot.docs.filter((item) => item.data()?.applicantType === applicantType).length
 }
 
 const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
@@ -691,6 +703,7 @@ export default {
               || 'Unnamed User'
 
             const normalizedEmail = String(user.email || clinic.email || clinic.ownerEmail || clinic.registrantEmail || '').trim().toLowerCase()
+            const resubmissionCount = await getResubmissionCount(normalizedEmail, 'clinic')
             const forcedPlan = forcedPlanByEmail[normalizedEmail] || null
 
             if (forcedPlan) {
@@ -744,6 +757,7 @@ export default {
               approvalStatus: clinic.approvalStatus || 'Pending Approval',
               fullName,
               email: normalizedEmail,
+              resubmissionCount,
               middleName: user.midName || user.middleName || '',
               suffix: user.suffix || '',
               birthDate: user.birthDate || null,

@@ -2921,6 +2921,15 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
     const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
     const applicantName = String(userData.firstName || '').trim() || 'Applicant'
 
+    await firestore.collection('registrationRejectionHistory').add({
+      email: recipient,
+      applicantType: 'clinic',
+      originalUid: uid,
+      reason: rejectionReason,
+      rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedBy,
+    })
+
     // Write rejection audit fields first, then hard delete docs.
     await Promise.all([
       userRef.set(
@@ -3511,6 +3520,15 @@ app.post('/admin/supplier/reject', requireAuth, requireRole(['superadmin','admin
         console.warn('Failed to send supplier rejection email:', emailError?.message || emailError)
       }
     }
+
+    await firestore.collection('registrationRejectionHistory').add({
+      email: recipient,
+      applicantType: 'supplier',
+      originalUid: uid,
+      reason,
+      rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: reviewer,
+    })
 
     // Rejecting a registration permanently removes its login and registration data.
     try {
