@@ -27,26 +27,53 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { type: 'section', label: 'PAYMENTS & MESSAGES' },
       { label: 'POS', icon: 'card', to: '/receptionist/pos', permission: 'payments:create' },
       { label: 'Transactions', icon: 'report', to: '/receptionist/transactions/history', permission: 'payments:view' },
+      { type: 'section', label: 'ORDERS' },
+      { label: 'Customer Orders', icon: 'report', to: '/manager/orders', permissionsAny: ['orders:view', 'inventory:view'] },
       { label: 'Inbox', icon: 'bell', to: '/receptionist/inbox', permission: 'inbox:view' }
     ]
   },
   {
-    key: 'operations-module',
-    label: 'Inventory & Operations',
+    key: 'inventory-module',
+    label: 'Inventory Management',
     icon: 'tag',
-    moduleKey: 'operations',
+    moduleKey: 'inventory',
     children: [
       { type: 'section', label: 'POSTS' },
       { label: 'Product & Service Listing', icon: 'layout', to: '/manager/product-service-listing', permission: 'services:view' },
-      { label: 'Procurement', icon: 'report', to: '/manager/procurement', permissionsAny: ['procurement:view', 'procurement:create', 'procurement:review'] },
       { label: 'Archived Posts', icon: 'archive', to: '/manager/archived-posts', permission: 'services:view' },
-      { type: 'section', label: 'SUPPLY & INVENTORY' },
       { label: 'Item Catalog', icon: 'building', to: '/manager/item-catalog', permission: 'inventory:view' },
+      { label: 'Purchase History', icon: 'report', to: '/manager/purchase-history', permission: 'finance:purchases:view' }
+    ]
+  },
+  {
+    key: 'supply-chain-module',
+    label: 'Supply Chain Management',
+    icon: 'building',
+    moduleKey: 'supply-chain',
+    children: [
+      { type: 'section', label: 'SUPPLIERS' },
       { label: 'Suppliers', icon: 'building', to: '/manager/suppliers', permission: 'inventory:view' },
+    ]
+  },
+  {
+    key: 'procurement-module',
+    label: 'Procurement',
+    icon: 'report',
+    moduleKey: 'procurement',
+    children: [
+      { type: 'section', label: 'PURCHASING' },
+      { label: 'Procurement', icon: 'report', to: '/manager/procurement', permissionsAny: ['procurement:view', 'procurement:create', 'procurement:review'] },
       { label: 'Purchase Requests', icon: 'plus', to: '/manager/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'] },
-      { label: 'Logistics', icon: 'truck', to: '/manager/logistics', permissionsAny: ['orders:view', 'inventory:view'] },
-      { label: 'Purchase History', icon: 'report', to: '/manager/purchase-history', permission: 'finance:purchases:view' },
-      { label: 'Orders', icon: 'report', to: '/manager/orders', permissionsAny: ['orders:view', 'inventory:view'] }
+    ]
+  },
+  {
+    key: 'logistics-module',
+    label: 'Logistics',
+    icon: 'truck',
+    moduleKey: 'logistics',
+    children: [
+      { type: 'section', label: 'DELIVERIES & RECEIVING' },
+      { label: 'Logistics', icon: 'truck', to: '/manager/logistics', permissionsAny: ['orders:view', 'inventory:view'] }
     ]
   },
   {
@@ -69,7 +96,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
     label: 'Finance',
     icon: 'card',
     moduleKey: 'finance',
-    feature: 'reports',
     children: [
       { type: 'section', label: 'PAYROLL' },
       { label: 'Payroll Summary', icon: 'card', to: '/finance/payroll-summary', feature: 'payroll', permission: 'payroll:view' },

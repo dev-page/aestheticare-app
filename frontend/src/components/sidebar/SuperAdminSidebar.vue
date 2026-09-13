@@ -32,8 +32,7 @@ export default {
         label: 'Verification',
         icon: 'clipboard-list',
         children: [
-          { label: 'Clinics', icon: 'shield', to: '/superadmin/clinics/verification' },
-          { label: 'Suppliers', icon: 'truck', to: '/superadmin/suppliers/verification' }
+          { label: 'Clinics', icon: 'shield', to: '/superadmin/clinics/verification' }
         ]
       },
       {

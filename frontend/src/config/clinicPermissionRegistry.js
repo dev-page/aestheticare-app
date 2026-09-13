@@ -113,6 +113,8 @@ export const permissionGroups = [
         description: 'Catalog, suppliers, requests, logistics, and orders.',
         permissions: [
           { key: 'inventory:view', label: 'View Inventory', description: 'Open suppliers, catalog, and inventory pages.', icon: 'mdi:package-variant-closed' },
+          { key: 'suppliers:create', label: 'Create Suppliers', description: 'Create clinic-managed supplier records.', icon: 'mdi:account-plus-outline' },
+          { key: 'suppliers:update', label: 'Manage Suppliers', description: 'Edit, activate, deactivate, or archive supplier records.', icon: 'mdi:account-edit-outline' },
           { key: 'inventory:create', label: 'Create Purchase Requests', description: 'Create purchase requests and inventory actions.', icon: 'mdi:cart-plus' },
           { key: 'inventory:review', label: 'Review Purchase Requests', description: 'Approve, reject, and manage purchase requests.', icon: 'mdi:cart-check' },
           { key: 'orders:view', label: 'View Orders', description: 'Open branch order and fulfillment tracking.', icon: 'mdi:cart-outline' },

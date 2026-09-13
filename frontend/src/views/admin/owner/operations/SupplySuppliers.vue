@@ -9,6 +9,7 @@
           <p class="text-slate-400">Manage all suppliers and vendors</p>
         </div>
         <button
+          v-if="canCreateSuppliers"
           @click="showAddModal = true"
           class="bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors"
         >
@@ -50,6 +51,7 @@
               class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
             >
               <option value="">All Status</option>
+              <option value="Invited">Invited</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
@@ -74,7 +76,7 @@
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"></path>
                 </svg>
               </div>
-              <span :class="['px-3 py-1 rounded-full text-xs font-medium', supplier.status === 'Active' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400']">
+              <span :class="['px-3 py-1 rounded-full text-xs font-medium', statusClass(supplier.status)]">
                 {{ supplier.status }}
               </span>
             </div>
@@ -123,6 +125,7 @@
               </div>
               <div class="mt-4 flex items-center justify-end gap-2">
                 <button
+                  v-if="canManageSuppliers"
                   type="button"
                   @click="openEditModal(supplier)"
                   class="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700 text-xs"
@@ -130,6 +133,7 @@
                   Edit
                 </button>
                 <button
+                  v-if="canManageSuppliers"
                   type="button"
                   @click="deleteSupplier(supplier)"
                   class="px-3 py-1.5 rounded-lg border border-red-500/40 text-red-300 hover:bg-red-500/10 text-xs"
@@ -253,8 +257,9 @@
                   @change="markTouched('status')"
                   @blur="markTouched('status')"
                 >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
+              <option value="Invited">Invited</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
                 </select>
                 <p v-if="showAddError('status')" class="mt-1 text-xs text-red-400">{{ addErrors.status }}</p>
               </div>
@@ -481,6 +486,7 @@ import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
+import { usePermissions } from '@/composables/usePermissions'
 import { loadOwnerBranchScope, loadScopedCollectionDocs } from '@/utils/ownerBranchScope'
 import {
   SUPPLIER_BUSINESS_TYPES,
@@ -495,6 +501,7 @@ export default {
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const { hasPermission, isClinicAdminOwner } = usePermissions()
 
     const showAddModal = ref(false)
     const showEditModal = ref(false)
@@ -523,6 +530,14 @@ export default {
     const currentUserId = ref('')
     const suppliers = ref([])
     const categoryOptions = ['Injectables', 'Equipment', 'Skincare', 'Medical Supplies']
+    const canCreateSuppliers = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('suppliers:create')))
+    const canManageSuppliers = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('suppliers:update')))
+
+    const statusClass = (status) => {
+      if (status === 'Active') return 'bg-green-500/20 text-green-400'
+      if (status === 'Invited') return 'bg-amber-500/20 text-amber-300'
+      return 'bg-red-500/20 text-red-400'
+    }
 
     const getEmptySupplier = () => ({
       name: '',
@@ -766,6 +781,10 @@ export default {
     }
 
     const addSupplier = async () => {
+      if (!canCreateSuppliers.value) {
+        toast.error('You do not have permission to create suppliers.')
+        return
+      }
       submitAttempted.value = true
       if (hasAddErrors.value) {
         toast.error('Please fix the highlighted fields before saving.')
@@ -831,6 +850,10 @@ export default {
     }
 
     const saveSupplierEdit = async () => {
+      if (!canManageSuppliers.value) {
+        toast.error('You do not have permission to manage suppliers.')
+        return
+      }
       if (!editSupplier.value.id) return
       if (!currentBranchId.value) {
         toast.error('Your account has no branch assignment.')
@@ -876,6 +899,10 @@ export default {
     }
 
     const deleteSupplier = async (supplier) => {
+      if (!canManageSuppliers.value) {
+        toast.error('You do not have permission to archive suppliers.')
+        return
+      }
       const confirmed = window.confirm(`Archive supplier "${supplier.name}"? You can restore it from Archives.`)
       if (!confirmed) return
 
@@ -984,7 +1011,10 @@ export default {
       addSupplier,
       openEditModal,
       saveSupplierEdit,
-      deleteSupplier
+      deleteSupplier,
+      canCreateSuppliers,
+      canManageSuppliers,
+      statusClass
     }
   }
 }

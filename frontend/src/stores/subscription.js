@@ -30,6 +30,8 @@ const DEFAULT_FEATURES = {
     'pos_payments',
     'inventory',
     'services',
+    'payroll',
+    'attendance',
   ],
   premium: [
     'subscription',
