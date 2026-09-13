@@ -70,7 +70,7 @@
 
       <div class="flex justify-between items-center mt-6">
         <div class="text-sm text-gray-600">
-          Showing {{ (currentPage - 1) * itemsPerPage + 1 }} to {{ Math.min(currentPage * itemsPerPage, totalPatients) }} of {{ totalPatients }} patients
+          Showing {{ totalPatients ? (currentPage - 1) * itemsPerPage + 1 : 0 }} to {{ Math.min(currentPage * itemsPerPage, totalPatients) }} of {{ totalPatients }} patients
         </div>
         <div class="flex space-x-2">
           <button
@@ -120,7 +120,10 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { auth, db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
+import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import Table from '@/components/common/Table.vue'
 import Modal from '@/components/common/Modal.vue'
 import PatientForm from '@/components/clinic/PatientForm.vue'
@@ -139,31 +142,8 @@ const showEditPatientModal = ref(false)
 const showViewPatientModal = ref(false)
 const selectedPatient = ref(null)
 
-// Static data
-const patients = ref([
-  {
-    id: '1',
-    firstName: 'John',
-    lastName: 'Doe',
-    email: 'john.doe@email.com',
-    phone: '+1-555-0123',
-    dateOfBirth: '1985-03-15',
-    status: 'active',
-    lastVisit: '2024-01-15',
-    createdAt: '2024-01-01'
-  },
-  {
-    id: '2',
-    firstName: 'Jane',
-    lastName: 'Smith',
-    email: 'jane.smith@email.com',
-    phone: '+1-555-0124',
-    dateOfBirth: '1990-07-22',
-    status: 'active',
-    lastVisit: '2024-01-10',
-    createdAt: '2024-01-05'
-  }
-])
+const patients = ref([])
+const currentBranchId = ref('')
 
 const tableHeaders = [
   { key: 'firstName', label: 'First Name' },
@@ -191,10 +171,18 @@ const filteredPatients = computed(() => {
     filtered = filtered.filter(patient => patient.status === statusFilter.value)
   }
 
-  return filtered
+  return filtered.slice((currentPage.value - 1) * itemsPerPage.value, currentPage.value * itemsPerPage.value)
 })
 
-const totalPatients = computed(() => filteredPatients.value.length)
+const totalPatients = computed(() => {
+  let filtered = patients.value
+  const query = searchQuery.value.trim().toLowerCase()
+  if (query) {
+    filtered = filtered.filter((patient) => [patient.firstName, patient.lastName, patient.email].some((value) => String(value || '').toLowerCase().includes(query)))
+  }
+  if (statusFilter.value) filtered = filtered.filter((patient) => patient.status === statusFilter.value)
+  return filtered.length
+})
 const totalPages = computed(() => Math.ceil(totalPatients.value / itemsPerPage.value))
 
 const handlePatientClick = (patient) => {
@@ -217,24 +205,29 @@ const editPatient = (patient) => {
 }
 
 const handleSavePatient = async (patientData) => {
+  if (!currentBranchId.value) return
   try {
     if (showEditPatientModal.value) {
-      const index = patients.value.findIndex(p => p.id === patientData.id)
-      if (index !== -1) {
-        patients.value[index] = { ...patients.value[index], ...patientData }
-      }
-    } else {
-      const newPatient = {
+      await updateDoc(doc(db, 'patients', patientData.id), {
         ...patientData,
-        id: Date.now().toString(),
-        createdAt: new Date().toISOString().split('T')[0]
-      }
-      patients.value.push(newPatient)
+        branchId: currentBranchId.value,
+        updatedAt: serverTimestamp(),
+      })
+    } else {
+      await addDoc(collection(db, 'patients'), {
+        ...patientData,
+        branchId: currentBranchId.value,
+        status: patientData.status || 'active',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
     }
 
     closeModals()
+    await loadPatients()
   } catch (error) {
     console.error('Error saving patient:', error)
+    window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Unable to save patient record.', type: 'error' } }))
   }
 }
 
@@ -252,8 +245,15 @@ onMounted(() => {
 const loadPatients = async () => {
   loading.value = true
   try {
-    // const querySnapshot = await getDocs(collection(db, 'patients'))
-    // patients.value = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    const scope = await loadOwnerBranchScope(db, auth.currentUser?.uid)
+    currentBranchId.value = scope.branchId
+    if (!currentBranchId.value) {
+      patients.value = []
+      return
+    }
+    const snapshot = await getDocs(query(collection(db, 'patients'), where('branchId', '==', currentBranchId.value)))
+    patients.value = snapshot.docs.map((patientDoc) => ({ id: patientDoc.id, ...patientDoc.data() }))
+    if (currentPage.value > totalPages.value && totalPages.value > 0) currentPage.value = totalPages.value
   } catch (error) {
     console.error('Error loading patients:', error)
   } finally {

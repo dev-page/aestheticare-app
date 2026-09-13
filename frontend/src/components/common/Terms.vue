@@ -48,15 +48,14 @@
 
         <section>
           <h2 class="text-xl font-playfair font-semibold text-gold-700 mb-3">9. Governing Law</h2>
-          <p>These Terms and Conditions shall be governed by and construed in accordance with the laws of [Your Jurisdiction], without regard to its conflict of law principles. Any legal action or proceeding arising from these terms shall be brought exclusively in the courts of [Your Jurisdiction].</p>
+          <p>These Terms and Conditions shall be governed by and construed in accordance with the laws of the Philippines, without regard to its conflict of law principles. Any legal action or proceeding arising from these terms shall be brought before the appropriate courts of the Philippines.</p>
         </section>
 
         <section>
           <h2 class="text-xl font-playfair font-semibold text-gold-700 mb-3">10. Contact Information</h2>
           <p>For questions or concerns about these Terms and Conditions, please contact us at:</p>
           <p class="mt-2 text-gold-700 font-semibold">AesthetiCare Support</p>
-          <p>Email: support@aestheticare.com</p>
-          <p>Phone: +1 (555) 123-4567</p>
+          <p>Email: support@aestheticare.online</p>
         </section>
 
         <div class="mt-8 pt-6 border-t border-gold-200">

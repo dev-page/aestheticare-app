@@ -10,6 +10,16 @@ service firebase.storage {
         && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['Superadmin', 'SuperAdmin', 'superadmin'];
     }
 
+    function userData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function canAccessBranch(branchId) {
+      return isSignedIn()
+        && (firestore.get(/databases/(default)/documents/clinics/$(branchId)).data.ownerId == request.auth.uid
+          || userData().branchId == branchId);
+    }
+
     function isImageUpload() {
       return request.resource != null
         && request.resource.contentType.matches('image/.*')
@@ -41,20 +51,20 @@ service firebase.storage {
     }
 
     match /product-service-posts/{branchId}/{fileName} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isImageUpload();
+      allow read: if isSignedIn() && canAccessBranch(branchId);
+      allow create: if canAccessBranch(branchId) && isImageUpload();
       allow update, delete: if false;
     }
 
     match /product-fda-documents/{branchId}/{fileName} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isDocumentUpload();
+      allow read: if isSignedIn() && (canAccessBranch(branchId) || isSuperadmin());
+      allow create: if canAccessBranch(branchId) && isDocumentUpload();
       allow update, delete: if false;
     }
 
     match /clinicMedia/{clinicId}/{fileName} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
+      allow read: if isSignedIn() && canAccessBranch(clinicId);
+      allow create: if canAccessBranch(clinicId)
         && request.resource != null
         && request.resource.contentType.matches('image/.*')
         && request.resource.size < 5 * 1024 * 1024;
@@ -67,12 +77,6 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
-    match /supplier-registration/{ownerId}/{documentType}/{fileName} {
-      allow read: if isSignedIn() && (request.auth.uid == ownerId || isSuperadmin());
-      allow create: if request.auth != null && request.auth.uid == ownerId && isDocumentUpload();
-      allow update, delete: if false;
-    }
-
     match /support-tickets/{userId}/{ticketId}/{fileName} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == userId && isImageUpload();
@@ -80,8 +84,8 @@ service firebase.storage {
     }
 
     match /purchase-receipts/{branchId}/{fileName} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isImageUpload();
+      allow read: if isSignedIn() && (canAccessBranch(branchId) || isSuperadmin());
+      allow create: if canAccessBranch(branchId) && isImageUpload();
       allow update, delete: if false;
     }
 
@@ -104,8 +108,11 @@ service firebase.storage {
     }
 
     match /practitioner-licenses/{uploaderId}/{staffId}/{fileName} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isDocumentUpload();
+      allow read: if isSignedIn()
+        && (request.auth.uid == uploaderId || request.auth.uid == staffId || isSuperadmin());
+      allow create: if isSignedIn()
+        && (request.auth.uid == uploaderId || request.auth.uid == staffId)
+        && isDocumentUpload();
       allow update, delete: if false;
     }
   }

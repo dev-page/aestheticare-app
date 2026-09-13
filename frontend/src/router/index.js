@@ -48,8 +48,7 @@ const routes = [
   //
   // Practitioner routes
   //{ path: "/dashboard", name: "dashboard", component: () => import("@/views/clinic/practitioners/Dashboard.vue"), meta: { requiresAuth: true } },
-  //{ path: "/patients", name: "patients", component: () => import("@/views/clinic/practitioners/Patients.vue"), meta: { requiresAuth: true } },
-  //{ path: "/appointments", name: "appointments", component: () => import("@/views/clinic/practitioners/Appointments.vue"), meta: { requiresAuth: true } },
+  { path: "/patients", name: "patients", component: () => import("@/views/admin/owner/clinic/Patients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/practitioner/dashboard", name: "practitioner-dashboard", component: () => import("@/views/admin/owner/clinic/PractitionerDashboard.vue"), meta: { requiresAuth: true } },
   { path: "/practitioner/clients", name: "practitioner-clients", component: () => import("@/views/admin/owner/clinic/PractitionerClients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/practitioner/appointments", name: "practitioner-appointments", component: () => import("@/views/admin/owner/crm/ReceptionistAppointmentList.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:view" } },

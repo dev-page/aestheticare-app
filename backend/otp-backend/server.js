@@ -40,18 +40,14 @@ const REGISTRATION_ATTEMPT_MAX_PER_DAY = 10
 const REGISTRATION_ATTEMPT_DAY_SECONDS = 24 * 60 * 60
 const CLINIC_REGISTRATION_OTP_PURPOSE = 'clinic-registration'
 const CUSTOMER_REGISTRATION_OTP_PURPOSE = 'customer-registration'
-const SUPPLIER_REGISTRATION_OTP_PURPOSE = 'supplier-registration'
 const LOGIN_OTP_PURPOSE = 'login-otp'
 const OTP_PATH = '/send-otp'
 const REQUEST_REGISTRATION_OTP_PATH = '/auth/request-registration-otp'
 const VERIFY_REGISTRATION_OTP_PATH = '/auth/verify-registration-otp'
 const REQUEST_CUSTOMER_OTP_PATH = '/auth/request-customer-otp'
 const VERIFY_CUSTOMER_OTP_PATH = '/auth/verify-customer-otp'
-const REQUEST_SUPPLIER_OTP_PATH = '/auth/request-supplier-otp'
-const VERIFY_SUPPLIER_OTP_PATH = '/auth/verify-supplier-otp'
 const REQUEST_LOGIN_OTP_PATH = '/auth/request-login-otp'
 const VERIFY_LOGIN_OTP_PATH = '/auth/verify-login-otp'
-const CHECK_SUPPLIER_REGISTRATION_STATUS_PATH = '/auth/check-supplier-registration-status'
 const CHECK_CUSTOMER_REGISTRATION_STATUS_PATH = '/auth/check-customer-registration-status'
 const ATTENDANCE_PIN_PATH = '/send-attendance-pin'
 const ATTENDANCE_RECORD_PATH = '/attendance/record'
@@ -62,8 +58,7 @@ const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = Math.max(0.85, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.85)))
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
-    clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
-  supplier: ['taxRegistration', 'businessRegistration'],
+  clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
 }
 const DOCUMENT_NUMBER_REQUIREMENTS = new Set([
   'businessPermit',
@@ -913,47 +908,6 @@ const getCustomerRegistrationState = async (email) => {
   }
 }
 
-const getSupplierRegistrationState = async (email) => {
-  const normalizedEmail = String(email || '').trim().toLowerCase()
-  const firestore = admin.firestore()
-  const authUser = await getAuthUserByEmail(normalizedEmail)
-
-  let uid = String(authUser?.uid || '').trim()
-  let userSnap = null
-
-  if (uid) {
-    const directUserSnap = await firestore.collection('users').doc(uid).get()
-    if (directUserSnap.exists) {
-      userSnap = directUserSnap
-    }
-  }
-
-  if (!userSnap) {
-    userSnap = await getUserDocByEmail(firestore, normalizedEmail)
-    if (userSnap?.id && !uid) {
-      uid = userSnap.id
-    }
-  }
-
-  const userData = userSnap?.data?.() || {}
-  const role = String(userData.role || userData.userType || '').trim()
-  const status = String(userData.status || '').trim()
-  const approvalStatus = String(userData.approvalStatus || '').trim()
-  const emailVerified = Boolean(userData.emailVerified || authUser?.emailVerified)
-
-  return {
-    exists: Boolean(authUser || userSnap),
-    uid,
-    authUser,
-    userSnap,
-    userData,
-    role,
-    status,
-    approvalStatus,
-    emailVerified,
-  }
-}
-
 const hashOtp = (value) => crypto.createHash('sha256').update(String(value || '')).digest('hex')
 
 const otpMatches = (otpData, candidate) => {
@@ -1568,9 +1522,12 @@ const loadAttendanceSchedule = async (employeeId, dateKey) => {
 }
 
 const runRegistrationDocumentVerification = async ({ uid, applicantType, processedBy }) => {
+  if (String(applicantType || '').trim().toLowerCase() !== 'clinic') {
+    throw new Error('Only clinic registration verification is supported.')
+  }
   const firestore = admin.firestore()
-  const normalizedType = applicantType === 'supplier' ? 'supplier' : 'clinic'
-  const collectionName = normalizedType === 'supplier' ? 'supplierApplications' : 'clinics'
+  const normalizedType = 'clinic'
+  const collectionName = 'clinics'
   const applicationRef = firestore.collection(collectionName).doc(uid)
   const userRef = firestore.collection('users').doc(uid)
   const [applicationSnap, userSnap] = await Promise.all([applicationRef.get(), userRef.get()])
@@ -1578,9 +1535,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
 
   const application = applicationSnap.data() || {}
   const user = userSnap.exists ? userSnap.data() || {} : {}
-  const documents = normalizedType === 'supplier'
-    ? (application.documents || application.submittedDocuments || {})
-    : (application.submittedDocuments || {})
+  const documents = application.submittedDocuments || {}
   const requiredKeys = REGISTRATION_DOCUMENT_REQUIREMENTS[normalizedType]
   const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
   const visionClient = createVisionClient()
@@ -1588,7 +1543,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
 
   for (const docKey of requiredKeys) {
     const document = documents?.[docKey] || {}
-    const expectedPrefix = `${normalizedType === 'supplier' ? 'supplier-registration' : 'clinic-registration'}/${uid}/${docKey}/`
+    const expectedPrefix = `clinic-registration/${uid}/${docKey}/`
     const storagePath = String(document.path || document.storagePath || '').trim()
     const result = {
       status: 'manual_review',
@@ -1753,7 +1708,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     processedBy: processedBy || 'automatic_processor',
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   })
-  const notificationLabel = normalizedType === 'supplier' ? 'Supplier' : 'Clinic'
+  const notificationLabel = 'Clinic'
   batch.set(firestore.collection('notifications').doc(`${normalizedType}-registration-${uid}`), {
     recipientRole: 'Superadmin',
     senderId: uid,
@@ -1762,7 +1717,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     message: allVerified
       ? `A ${normalizedType} registration passed automatic verification and is awaiting your approval.`
       : `A ${normalizedType} registration requires manual document review.`,
-    link: normalizedType === 'supplier' ? '/superadmin/suppliers/verification' : '/superadmin/clinics/verification',
+    link: '/superadmin/clinics/verification',
     read: false,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true })
@@ -3411,160 +3366,6 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
   }
 })
 
-app.post('/admin/supplier/approve', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:suppliers:verify'), async (req, res) => {
-  const uid = String(req.body?.uid || '').trim()
-  const reviewer = String(req.body?.reviewer || req.user.uid || '').trim()
-  if (!uid) return res.status(400).json({ success: false, error: 'uid is required' })
-
-  try {
-    const firestore = admin.firestore()
-    const applicationRef = firestore.collection('supplierApplications').doc(uid)
-    const userRef = firestore.collection('users').doc(uid)
-    const [applicationSnap, userSnap] = await Promise.all([applicationRef.get(), userRef.get()])
-    if (!applicationSnap.exists) return res.status(404).json({ success: false, error: 'Supplier application not found' })
-    const application = applicationSnap.data() || {}
-    const user = userSnap.exists ? userSnap.data() || {} : {}
-    const supplierRef = firestore.collection('suppliers').doc(uid)
-    const supplierPayload = {
-      ownerId: uid,
-      name: application.businessName || application.name || 'Supplier',
-      businessName: application.businessName || application.name || 'Supplier',
-      email: application.email || user.email || '',
-      contactNumber: application.contactNumber || user.contactNumber || '',
-      businessType: application.businessType || user.businessType || '',
-      contact: application.contactNumber || user.contactNumber || '',
-      phone: application.contactNumber || user.contactNumber || '',
-      address: application.businessAddress || user.address || '',
-      businessAddress: application.businessAddress || user.address || '',
-      businessAddressStreet: application.businessAddressStreet || user.addressStreet || '',
-      businessAddressBarangay: application.businessAddressBarangay || user.addressBarangay || '',
-      businessAddressCity: application.businessAddressCity || user.addressCity || '',
-      businessAddressProvince: application.businessAddressProvince || user.addressProvince || '',
-      businessAddressPostalCode: application.businessAddressPostalCode || user.addressPostalCode || '',
-      businessAddressLat: application.businessAddressLat || user.addressLat || '',
-      businessAddressLng: application.businessAddressLng || user.addressLng || '',
-      taxRegistrationNumber: application.taxRegistrationNumber || user.taxRegistrationNumber || '',
-      approvalStatus: 'Approved',
-      status: 'Active',
-      reviewedBy: reviewer,
-      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: application.createdAt || admin.firestore.FieldValue.serverTimestamp(),
-      offeredItems: Array.isArray(application.offeredItems) ? application.offeredItems : [],
-      documents: application.documents || {},
-    }
-    const batch = firestore.batch()
-    batch.set(applicationRef, {
-      approvalStatus: 'Approved',
-      status: 'Active',
-      approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-      reviewedBy: reviewer,
-      rejectionReason: '',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true })
-    batch.set(userRef, {
-      role: 'Supplier',
-      userType: 'supplier',
-      approvalStatus: 'Approved',
-      status: 'Active',
-      approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true })
-    batch.set(supplierRef, supplierPayload, { merge: true })
-    batch.set(applicationRef.collection('verificationHistory').doc(), {
-      action: 'supplier-approved',
-      reviewer,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
-    await batch.commit()
-    await writeSystemAdminActivity(req, {
-      action: 'Approved supplier registration',
-      module: 'Supplier Verification',
-      details: `Approved ${application.businessName || application.name || user.email || uid}'s supplier registration.`,
-      targetId: uid,
-      targetName: application.businessName || application.name || user.email || uid,
-    })
-    return res.json({ success: true, data: { uid, approved: true } })
-  } catch (error) {
-    console.error('supplier approve error:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to approve supplier' })
-  }
-})
-
-app.post('/admin/supplier/reject', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:suppliers:verify'), async (req, res) => {
-  const uid = String(req.body?.uid || '').trim()
-  const reason = String(req.body?.reason || '').trim()
-  const reviewer = String(req.body?.reviewer || req.user.uid || '').trim()
-  if (!uid || !reason) return res.status(400).json({ success: false, error: 'uid and reason are required' })
-
-  try {
-    const firestore = admin.firestore()
-    const applicationRef = firestore.collection('supplierApplications').doc(uid)
-    const userRef = firestore.collection('users').doc(uid)
-    const supplierRef = firestore.collection('suppliers').doc(uid)
-    const [applicationSnap, userSnap] = await Promise.all([applicationRef.get(), userRef.get()])
-    const application = applicationSnap.exists ? applicationSnap.data() || {} : {}
-    const user = userSnap.exists ? userSnap.data() || {} : {}
-    const recipient = String(application.email || user.email || '').trim().toLowerCase()
-    const applicantName = String(user.fullName || '').trim()
-      || `${String(user.firstName || '').trim()} ${String(user.lastName || '').trim()}`.trim()
-      || String(application.businessName || '').trim()
-      || 'Applicant'
-
-    let emailSent = false
-    if (recipient && postmarkClient && senderEmail) {
-      try {
-        const registrationUrl = `${resolveFrontendBaseUrl(req)}/register?account=supplier`
-        const subject = 'AesthetiCare - Supplier Registration Update'
-        const textBody = `Hi ${applicantName},\n\nYour supplier registration was rejected.\n\nReason provided by the system administrator:\n${reason}\n\nYou may submit a new supplier registration after correcting the information or documents:\n${registrationUrl}\n\nRegards,\nThe AesthetiCare Team`
-        const htmlReason = reason
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/\n/g, '<br>')
-        const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${applicantName},</p><p>Your supplier registration was rejected.</p><p><strong>Reason provided by the system administrator:</strong></p><p>${htmlReason}</p><p>You may submit a new supplier registration after correcting the information or documents:</p><p><a href="${registrationUrl}">${registrationUrl}</a></p><p>Regards,<br>The AesthetiCare Team</p></div>`
-        await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
-        emailSent = true
-      } catch (emailError) {
-        console.warn('Failed to send supplier rejection email:', emailError?.message || emailError)
-      }
-    }
-
-    await firestore.collection('registrationRejectionHistory').add({
-      email: recipient,
-      applicantType: 'supplier',
-      originalUid: uid,
-      reason,
-      rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
-      reviewedBy: reviewer,
-    })
-
-    // Rejecting a registration permanently removes its login and registration data.
-    try {
-      await admin.auth().deleteUser(uid)
-    } catch (authError) {
-      if (authError?.code !== 'auth/user-not-found') throw authError
-    }
-
-    await Promise.all([
-      firestore.recursiveDelete(applicationRef),
-      userRef.delete(),
-      supplierRef.delete(),
-    ])
-    await writeSystemAdminActivity(req, {
-      action: 'Rejected supplier registration',
-      module: 'Supplier Verification',
-      details: `Rejected and deleted ${applicantName}'s supplier registration. Reason: ${reason}`,
-      targetId: uid,
-      targetName: applicantName,
-    })
-    return res.json({ success: true, data: { uid, rejected: true, deleted: true, emailSent } })
-  } catch (error) {
-    console.error('supplier reject error:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to reject supplier' })
-  }
-})
-
 app.post(OTP_PATH, async (req, res) => {
   try {
     const { recipient, otp } = req.body ?? {}
@@ -3634,7 +3435,6 @@ app.post(CHECK_REGISTRATION_ATTEMPT_PATH, async (req, res) => {
   const purposeMap = {
     clinic: CLINIC_REGISTRATION_OTP_PURPOSE,
     customer: CUSTOMER_REGISTRATION_OTP_PURPOSE,
-    supplier: SUPPLIER_REGISTRATION_OTP_PURPOSE,
   }
   const normalizedPurpose = purposeMap[String(purpose || '').trim().toLowerCase()]
 
@@ -5506,7 +5306,11 @@ app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), asy
   }
 })
 
-app.post(CHECK_SUPPLIER_REGISTRATION_STATUS_PATH, async (req, res) => {
+/*
+ * Supplier self-registration was removed. These legacy endpoint bodies are
+ * retained only as a migration marker and are not registered at runtime.
+app.post('/auth/check-supplier-registration-status', async (req, res) => {
+  return res.status(410).json({ success: false, error: 'Supplier self-registration is no longer supported.' })
   const { email } = req.body ?? {}
 
   if (!adminReady) {
@@ -5552,7 +5356,8 @@ app.post(CHECK_SUPPLIER_REGISTRATION_STATUS_PATH, async (req, res) => {
   }
 })
 
-app.post(REQUEST_SUPPLIER_OTP_PATH, async (req, res) => {
+app.post('/auth/request-supplier-otp', async (req, res) => {
+  return res.status(410).json({ success: false, error: 'Supplier self-registration is no longer supported.' })
   const { email, uid } = req.body ?? {}
 
   if (!adminReady) {
@@ -5640,7 +5445,8 @@ app.post(REQUEST_SUPPLIER_OTP_PATH, async (req, res) => {
   }
 })
 
-app.post(VERIFY_SUPPLIER_OTP_PATH, async (req, res) => {
+app.post('/auth/verify-supplier-otp', async (req, res) => {
+  return res.status(410).json({ success: false, error: 'Supplier self-registration is no longer supported.' })
   const { uid, email, otp } = req.body ?? {}
 
   if (!adminReady) {
@@ -5793,6 +5599,8 @@ app.post(VERIFY_SUPPLIER_OTP_PATH, async (req, res) => {
     })
   }
 })
+
+*/
 
 app.post('/send-payment-receipt', async (req, res) => {
   const { recipient, payerName, planName, amount, currency, referenceNumber, paymentMethod } = req.body ?? {}
