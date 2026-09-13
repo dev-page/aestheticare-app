@@ -570,6 +570,7 @@ export default {
       resetForm,
       branches,
       customRoles,
+      selectedCustomRoles,
       selectedCustomRoleName,
       isPractitionerRole,
       practitionerIdFile,
