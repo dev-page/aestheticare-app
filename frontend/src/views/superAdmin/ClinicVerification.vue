@@ -394,7 +394,6 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
     { key: 'prcIdMedicalDirector', label: 'PRC ID of Medical Director' },
     { key: 'birRegistration', label: 'BIR Registration' },
     { key: 'sanitaryCertificate', label: 'Sanitary Certificate' },
-    { key: 'clinicLicense', label: 'Clinic License' },
   ]
 
   return definitions.map((item) => {
@@ -420,7 +419,6 @@ const verificationDocumentOrder = [
   'prcIdMedicalDirector',
   'birRegistration',
   'sanitaryCertificate',
-  'clinicLicense',
 ]
 
 const mapVerificationResults = (verificationResults = {}) => Object.entries(verificationResults || {})
@@ -460,7 +458,6 @@ const documentLabel = (key) => ({
   prcIdMedicalDirector: 'PRC ID of Medical Director',
   birRegistration: 'BIR Registration',
   sanitaryCertificate: 'Sanitary Certificate',
-  clinicLicense: 'Clinic License',
 }[key] || key)
 
 const getOverallConfidence = (results = []) => {

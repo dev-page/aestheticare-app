@@ -73,7 +73,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
-import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import { buildSubscriptionPlanCatalog, filterActiveSubscriptionPlans } from '@/utils/subscriptionPlans'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
@@ -253,49 +253,7 @@ const resumeRegistration = async () => {
       return
     }
 
-    const paymentsSnap = await getDocs(query(
-      collection(db, 'planPayments'),
-      where('payerEmail', '==', normalizedEmail),
-      where('status', '==', 'Paid'),
-    ))
-
-    if (paymentsSnap.empty) {
-      resumeError.value = 'No paid subscription found for that email.'
-      return
-    }
-
-    let latestPayment = null
-    paymentsSnap.forEach((docSnap) => {
-      const data = docSnap.data() || {}
-      const createdAt = data.createdAt?.seconds || 0
-      if (!latestPayment || createdAt > latestPayment.createdAt) {
-        latestPayment = {
-          id: docSnap.id,
-          planId: String(data.planId || data.planName || '').trim().toLowerCase(),
-          firstName: data.payerFirstName || '',
-          lastName: data.payerLastName || '',
-        }
-      }
-    })
-
-    if (!latestPayment?.planId) {
-      resumeError.value = 'Payment record missing plan data.'
-      return
-    }
-
-    router.push({
-      name: 'register',
-      query: {
-        account: 'clinic',
-        plan: latestPayment.planId,
-        paymentId: latestPayment.id,
-        paymentStatus: 'paid',
-        firstName: latestPayment.firstName,
-        lastName: latestPayment.lastName,
-        email: normalizedEmail,
-      },
-    })
-    emit('close')
+    resumeError.value = 'No in-progress registration was found. Please sign in to manage a clinic subscription.'
   } catch (err) {
     console.error('Failed to resume registration:', err)
     resumeError.value = 'Unable to resume right now. Please try again.'

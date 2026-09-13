@@ -58,13 +58,12 @@ const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = Math.max(0.85, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.85)))
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
-  clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate', 'clinicLicense'],
+  clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate'],
 }
 const DOCUMENT_NUMBER_REQUIREMENTS = new Set([
   'businessPermit',
   'birRegistration',
   'sanitaryCertificate',
-  'clinicLicense',
   'dohAccreditation',
   'prcIdMedicalDirector',
 ])
@@ -6619,7 +6618,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
   }
 })
 
-app.post('/paymongo/create-checkout-session', optionalAuth, async (req, res) => {
+app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
   if (!assertPayMongoConfigured(res)) return
 
   const {
@@ -7095,6 +7094,7 @@ app.get('/paymongo/checkout-session/:id', optionalAuth, async (req, res) => {
     }
 
     let subscriptionAction = null
+    let paymentRecordId = null
 
     if (isPaid && String(metadata?.module || '').trim().toLowerCase() === 'subscription') {
       try {
@@ -7129,6 +7129,30 @@ app.get('/paymongo/checkout-session/:id', optionalAuth, async (req, res) => {
       } catch (error) {
         console.error('Failed to backfill subscription after PayMongo payment:', error?.message || error)
       }
+
+      const firestore = admin.firestore()
+      const paymentRecordRef = firestore.collection('planPayments').doc(`paymongo-${checkoutSessionId}`)
+      paymentRecordId = paymentRecordRef.id
+      await paymentRecordRef.set({
+        ownerUid: String(metadata?.ownerUid || req.user?.uid || '').trim(),
+        planId: String(metadata?.planId || '').trim().toLowerCase(),
+        planName: String(metadata?.planName || metadata?.planId || 'Subscription').trim(),
+        amount: Number(attributes?.line_items?.[0]?.amount || 0) / 100,
+        currency: 'PHP',
+        billingCycle: String(metadata?.billingCycle || 'month').trim() || 'month',
+        payerFirstName: String(metadata?.payerFirstName || '').trim(),
+        payerLastName: String(metadata?.payerLastName || '').trim(),
+        payerName: `${String(metadata?.payerFirstName || '').trim()} ${String(metadata?.payerLastName || '').trim()}`.trim(),
+        payerEmail: String(metadata?.payerEmail || metadata?.email || '').trim().toLowerCase(),
+        referenceNumber: String(attributes?.reference_number || metadata?.referenceNumber || '').trim(),
+        paymongoCheckoutSessionId: checkoutSessionId,
+        paymongoStatus: attributes?.status || null,
+        paymongoPaidAt: attributes?.paid_at || null,
+        paymongoPaymentId: attributes?.payments?.[0]?.id || null,
+        status: 'Paid',
+        source: 'paymongo_checkout',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
     }
 
     return res.json({
@@ -7141,6 +7165,7 @@ app.get('/paymongo/checkout-session/:id', optionalAuth, async (req, res) => {
         metadata: attributes?.metadata || {},
         isPaid,
         subscriptionAction,
+        paymentRecordId,
       },
     })
   } catch (error) {

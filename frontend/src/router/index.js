@@ -26,7 +26,7 @@ const routes = [
 
   // Subscription route
   { path: "/subscription-features", name: "subscription-features", component: () => import("@/views/public/Subscription.vue"), meta: { requiresFeature: "subscription" } },
-  { path: "/subscription/checkout", name: "subscription-checkout", component: () => import("@/views/public/SubscriptionCheckout.vue"), meta: { requiresFeature: "subscription" } },
+  { path: "/subscription/checkout", name: "subscription-checkout", component: () => import("@/views/public/SubscriptionCheckout.vue"), meta: { requiresAuth: true, requiresFeature: "subscription" } },
 
   //Hidden routes
   { path: "/change-password", name: "change-password", component: () => import("@/views/auth/ChangePassword.vue"), meta: { requiresAuth: true } },

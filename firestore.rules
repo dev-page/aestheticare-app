@@ -283,8 +283,13 @@ service cloud.firestore {
     }
 
     match /planPayments/{paymentId} {
-      allow read: if true;
-      allow create: if request.resource.data.source == 'paymongo_checkout';
+      // Payment records are created by the trusted PayMongo verification endpoint.
+      // Never trust a browser-provided source/status/amount for financial records.
+      allow read: if isSignedIn()
+        && (isSuperadmin()
+          || resource.data.ownerUid == request.auth.uid
+          || resource.data.payerEmail == userData().email);
+      allow create: if false;
       allow update, delete: if isSignedIn() && isSuperadmin();
     }
 

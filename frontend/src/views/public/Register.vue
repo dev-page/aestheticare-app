@@ -239,7 +239,6 @@ const articlesOfIncorporationFile = ref(null)
 const businessPermitFile = ref(null)
 const birRegistrationFile = ref(null)
 const sanitaryCertificateFile = ref(null)
-const clinicLicenseFile = ref(null)
 const governmentIdRepresentativeFrontFile = ref(null)
 const governmentIdRepresentativeBackFile = ref(null)
 const dohAccreditationFile = ref(null)
@@ -251,7 +250,6 @@ const existingSubmittedDocuments = ref({
   businessPermit: null,
   birRegistration: null,
   sanitaryCertificate: null,
-  clinicLicense: null,
   governmentIdRepresentativeFront: null,
   governmentIdRepresentativeBack: null,
   dohAccreditation: null,
@@ -264,7 +262,6 @@ const documentPreviewUrls = ref({
   businessPermit: '',
   birRegistration: '',
   sanitaryCertificate: '',
-  clinicLicense: '',
   governmentIdRepresentativeFront: '',
   governmentIdRepresentativeBack: '',
   dohAccreditation: '',
@@ -278,7 +275,6 @@ const documentUploadState = ref({
   businessPermit: { uploading: false, progress: 0, error: '' },
   birRegistration: { uploading: false, progress: 0, error: '' },
   sanitaryCertificate: { uploading: false, progress: 0, error: '' },
-  clinicLicense: { uploading: false, progress: 0, error: '' },
   governmentIdRepresentativeFront: { uploading: false, progress: 0, error: '' },
   governmentIdRepresentativeBack: { uploading: false, progress: 0, error: '' },
   dohAccreditation: { uploading: false, progress: 0, error: '' },
@@ -291,7 +287,6 @@ const documentFileMap = {
   businessPermit: businessPermitFile,
   birRegistration: birRegistrationFile,
   sanitaryCertificate: sanitaryCertificateFile,
-  clinicLicense: clinicLicenseFile,
   governmentIdRepresentativeFront: governmentIdRepresentativeFrontFile,
   governmentIdRepresentativeBack: governmentIdRepresentativeBackFile,
   dohAccreditation: dohAccreditationFile,
@@ -304,7 +299,6 @@ const documentLabelMap = {
   businessPermit: 'Business Permit/Registration',
   birRegistration: 'BIR Registration',
   sanitaryCertificate: 'Sanitary Certificate',
-  clinicLicense: 'Clinic License',
   governmentIdRepresentativeFront: 'Government-Issued ID of Registrant (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
   dohAccreditation: 'DOH Accreditation',
@@ -317,7 +311,6 @@ const documentInputKeys = ref({
   businessPermit: 0,
   birRegistration: 0,
   sanitaryCertificate: 0,
-  clinicLicense: 0,
   governmentIdRepresentativeFront: 0,
   governmentIdRepresentativeBack: 0,
   dohAccreditation: 0,
@@ -334,7 +327,6 @@ const documentExpiryRequired = {
   businessPermit: true,
   birRegistration: false,
   sanitaryCertificate: true,
-  clinicLicense: true,
   prcIdMedicalDirector: true,
   dohAccreditation: true,
   fdaApproval: true,
@@ -347,7 +339,6 @@ const documentExpiryMap = {
   businessPermit: ref(''),
   birRegistration: ref(''),
   sanitaryCertificate: ref(''),
-  clinicLicense: ref(''),
   governmentIdRepresentativeFront: ref(''),
   governmentIdRepresentativeBack: ref(''),
   dohAccreditation: ref(''),
@@ -358,7 +349,6 @@ const documentNumberMap = {
   businessPermit: ref(''),
   birRegistration: ref(''),
   sanitaryCertificate: ref(''),
-  clinicLicense: ref(''),
   dohAccreditation: ref(''),
   fdaApproval: ref(''),
   prcIdMedicalDirector: ref(''),
@@ -491,7 +481,6 @@ const companyDocumentKeys = [
   'businessPermit',
   'birRegistration',
   'sanitaryCertificate',
-  'clinicLicense',
   'governmentIdRepresentativeFront',
   'governmentIdRepresentativeBack',
   'dohAccreditation',
@@ -1430,7 +1419,6 @@ const applyProfileData = (profile) => {
     businessPermit: storedDocuments?.businessPermit || null,
     birRegistration: storedDocuments?.birRegistration || null,
     sanitaryCertificate: storedDocuments?.sanitaryCertificate || null,
-    clinicLicense: storedDocuments?.clinicLicense || null,
     governmentIdRepresentativeFront: storedDocuments?.governmentIdRepresentativeFront || storedDocuments?.governmentIdRepresentative || null,
     governmentIdRepresentativeBack: storedDocuments?.governmentIdRepresentativeBack || null,
     dohAccreditation: storedDocuments?.dohAccreditation || null,
@@ -2022,7 +2010,6 @@ const resetClinicRegistrationFlow = () => {
   businessPermitFile.value = null
   birRegistrationFile.value = null
   sanitaryCertificateFile.value = null
-  clinicLicenseFile.value = null
   governmentIdRepresentativeFrontFile.value = null
   governmentIdRepresentativeBackFile.value = null
   dohAccreditationFile.value = null
@@ -2037,7 +2024,6 @@ const resetClinicRegistrationFlow = () => {
     businessPermit: null,
     birRegistration: null,
     sanitaryCertificate: null,
-    clinicLicense: null,
     governmentIdRepresentativeFront: null,
     governmentIdRepresentativeBack: null,
     dohAccreditation: null,
@@ -3703,8 +3689,6 @@ const submitDocuments = async () => {
                           ? 'BIR Registration No.'
                           : docKey === 'sanitaryCertificate'
                             ? 'Sanitary Certificate No.'
-                            : docKey === 'clinicLicense'
-                              ? 'Clinic License No.'
                         : docKey === 'dohAccreditation'
                           ? 'DOH Accreditation Number'
                           : docKey === 'fdaApproval'
@@ -3719,8 +3703,6 @@ const submitDocuments = async () => {
                             ? 'BIR-REG-2026-123456'
                             : docKey === 'sanitaryCertificate'
                               ? 'SAN-2026-123456'
-                              : docKey === 'clinicLicense'
-                                ? 'CL-2026-123456'
                           : docKey === 'dohAccreditation'
                             ? 'DOH-ACC-2026-987654'
                             : docKey === 'fdaApproval'

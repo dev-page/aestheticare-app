@@ -6,7 +6,7 @@
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">User Accounts</h1>
-          <p class="text-slate-400">All user accounts except system admins. Disable an account to move it to archives.</p>
+          <p class="text-slate-400">Active user accounts only. Pending, inactive, and archived records are handled in their dedicated workflows.</p>
         </div>
 
         <div class="flex gap-3">
@@ -31,7 +31,7 @@
 
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <div class="px-4 py-3 border-b border-slate-700 text-sm text-slate-400">
-          Total Active/Visible Accounts: <span class="text-slate-200 font-semibold">{{ filteredAccounts.length }}</span>
+          Total Active Accounts: <span class="text-slate-200 font-semibold">{{ filteredAccounts.length }}</span>
         </div>
 
         <div class="overflow-x-auto">
@@ -92,6 +92,19 @@ const normalizeRoleKey = (value) => {
   return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
 }
 
+const displayUserType = (user) => {
+  const explicitType = String(user?.userType || user?.accountType || '').trim()
+  if (explicitType) return explicitType
+
+  const role = normalizeRoleKey(user?.role)
+  if (role === 'Clinic Admin' || role === 'Owner') return 'Clinic'
+  if (role === 'Customer') return 'Customer'
+  if (role === 'Supplier') return 'Supplier'
+  if (role === 'HR' || role === 'Finance' || role === 'Manager' || role === 'Receptionist' || role === 'Practitioner') return 'Staff'
+  if (user?.branchId || user?.clinicId) return 'Staff'
+  return 'User'
+}
+
 const readTimestamp = (value) => {
   if (!value) return null
   if (typeof value?.toDate === 'function') return value.toDate()
@@ -135,9 +148,8 @@ export default {
       return role === 'Superadmin' || userType === 'systemadmin'
     }
 
-    const isArchived = (user) => {
-      const status = String(user?.status || '').trim().toLowerCase()
-      return user?.archived === true || status === 'inactive' || status === 'disabled'
+    const isActive = (user) => {
+      return user?.archived !== true && String(user?.status || '').trim().toLowerCase() === 'active'
     }
 
     const loadUserAccounts = () => {
@@ -148,7 +160,7 @@ export default {
         const mapped = usersSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
           .filter((user) => !isSystemAdmin(user))
-          .filter((user) => !isArchived(user))
+          .filter(isActive)
           .map((user) => {
             const fullName =
               String(user.fullName || '').trim() ||
@@ -160,7 +172,7 @@ export default {
               fullName,
               email: user.email || '',
               role: normalizeRoleKey(user.role) || 'User',
-              userType: user.userType || '-',
+              userType: displayUserType(user),
               status: user.status || 'Unknown',
               createdLabel: formatDate(user.createdAt),
               createdAt: user.createdAt || null,

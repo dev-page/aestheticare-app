@@ -137,7 +137,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { addDoc, collection, deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+import { collection, deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { auth, db } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -418,7 +418,7 @@ const cancelUrl = `${window.location.origin}/subscription/checkout?plan=${select
 
   const response = await fetchFromBackend('/paymongo/create-checkout-session', {
     method: 'POST',
-    headers: await buildBackendHeaders(shouldPrefill.value, { 'content-type': 'application/json' }),
+    headers: await buildBackendHeaders(true, { 'content-type': 'application/json' }),
     body: JSON.stringify({
       amount: toCentavos(selectedPlan.value.price),
       ...(paymentMethodTypes ? { paymentMethodTypes } : {}),
@@ -549,29 +549,10 @@ const handlePayMongoReturn = async () => {
 
     const subscriptionAction = payload?.data?.subscriptionAction || null
 
-    const paymentDoc = await addDoc(collection(db, 'planPayments'), {
-      planId: pending.planId,
-      planName: pending.planName,
-      amount: Number(pending.amount || 0),
-      currency: 'PHP', currencyDisplay: 'code',
-      billingCycle: pending.billingCycle || 'month',
-      payerFirstName: pending.payerFirstName,
-      payerLastName: pending.payerLastName,
-      payerName: `${pending.payerFirstName || ''} ${pending.payerLastName || ''}`.trim(),
-      payerEmail: pending.payerEmail,
-      paymentMethod: paymentMethodType,
-      referenceNumber: pending.referenceNumber,
-      paymongoCheckoutSessionId: pending.checkoutSessionId,
-      paymongoStatus: payload?.data?.status || null,
-      paymongoPaidAt: payload?.data?.paid_at || null,
-      paymongoPaymentId: firstPayment?.id || null,
-      subscriptionAction: subscriptionAction?.action || null,
-      subscriptionActionEffectiveAt: subscriptionAction?.effectiveAt || null,
-      subscriptionActionMessage: subscriptionAction?.message || null,
-      status: 'Paid',
-      source: 'paymongo_checkout',
-      createdAt: serverTimestamp(),
-    })
+    const paymentDocId = String(payload?.data?.paymentRecordId || '').trim()
+    if (!paymentDocId) {
+      throw new Error('Payment was verified, but its platform record was not created. Please contact support before retrying.')
+    }
 
     try {
       await fetchFromBackend('/send-payment-receipt', {
@@ -614,7 +595,7 @@ const handlePayMongoReturn = async () => {
         const immediatePayload = {
           subscriptionPlan: targetPlan,
           paymentStatus: 'Paid',
-          paymentId: paymentDoc.id,
+          paymentId: paymentDocId,
           subscriptionOnboardingRequired: false,
           subscriptionOnboardingCompletedAt: serverTimestamp(),
           subscriptionStartedAt: startedAt,
@@ -667,7 +648,7 @@ const handlePayMongoReturn = async () => {
         lastName: pending.payerLastName,
         selectedPlan: pending.planId,
         paymentStatus: 'paid',
-        paymentId: paymentDoc.id,
+        paymentId: paymentDocId,
       }))
       if (pending.payerEmail) {
         sessionStorage.setItem('resume_email', pending.payerEmail)
@@ -681,7 +662,7 @@ const handlePayMongoReturn = async () => {
       query: {
         account: 'clinic',
         plan: pending.planId,
-        paymentId: paymentDoc.id,
+        paymentId: paymentDocId,
         paymentStatus: 'paid',
         firstName: pending.payerFirstName,
         lastName: pending.payerLastName,
