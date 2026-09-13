@@ -196,6 +196,21 @@ export default {
       return hours * 60 + minutes
     }
 
+    const formatTime = (value) => {
+      const parts = String(value || '').split(':')
+      if (parts.length < 2) return value || '-'
+
+      const hours = Number(parts[0])
+      const minutes = Number(parts[1])
+      if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+        return value || '-'
+      }
+
+      const period = hours >= 12 ? 'PM' : 'AM'
+      const displayHour = hours % 12 || 12
+      return `${displayHour}:${String(minutes).padStart(2, '0')} ${period}`
+    }
+
     const shiftTimeRules = {
       Morning: { minStart: 5 * 60, maxStart: 12 * 60, start: '08:00', end: '17:00' },
       Afternoon: { minStart: 12 * 60, maxStart: 18 * 60, start: '13:00', end: '21:00' },
@@ -378,6 +393,7 @@ export default {
       branches,
       shiftTypes,
       applyShiftTypeDefaults,
+      formatTime,
       shifts,
       shiftsLoading,
       editingShiftId,
@@ -511,7 +527,7 @@ export default {
             <tbody class="text-white">
               <tr v-for="shift in shifts" :key="shift.id" class="border-b border-slate-800 hover:bg-slate-700/40">
                 <td class="py-3 px-3 font-medium">{{ shift.shiftType || 'Shift' }}</td>
-                <td class="py-3 px-3">{{ shift.start }} - {{ shift.end }}</td>
+                <td class="py-3 px-3">{{ formatTime(shift.start) }} - {{ formatTime(shift.end) }}</td>
                 <td class="py-3 px-3">{{ shift.branch || 'Unknown Branch' }}</td>
                 <td class="py-3 px-3">{{ shift.capacity || 0 }}</td>
                 <td class="py-3 px-3 text-slate-300">{{ shift.notes || 'No notes' }}</td>

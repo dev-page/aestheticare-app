@@ -117,6 +117,7 @@
                 <li>The start date helps show when you began using this recurring pattern.</li>
                 <li>Full-time and part-time shifts are suggested by duration; intern schedules are assigned manually.</li>
                 <li>Choose Off for days when the employee should not accept work or appointments.</li>
+                <li>Each shift's capacity is enforced per day when the schedule is saved.</li>
               </ul>
             </div>
           </section>
@@ -186,7 +187,7 @@
                 >
                   <option value="">Off</option>
                   <option v-for="shift in displayShiftTemplates" :key="shift.id" :value="shift.id">
-                    {{ shift.label }}{{ shift.scheduleType === selectedEmployeeScheduleType ? ' (Recommended)' : '' }}
+                    {{ shift.label }} - {{ shift.capacity }} slot{{ shift.capacity === 1 ? '' : 's' }}{{ shift.scheduleType === selectedEmployeeScheduleType ? ' (Recommended)' : '' }}
                   </option>
                 </select>
 
@@ -224,8 +225,8 @@ import {
   getDoc,
   getDocs,
   query,
+  runTransaction,
   serverTimestamp,
-  setDoc,
   where
 } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -609,6 +610,7 @@ const hydrateBranchShifts = async () => {
         shiftType,
         start,
         end,
+        capacity: Math.max(1, Number(data.capacity) || 1),
         durationHours,
         scheduleType: classifyShiftEmploymentType({ start, end })
       }
@@ -660,6 +662,58 @@ const resetAssignments = () => {
   assignments.value = { ...loadedAssignments.value }
 }
 
+const getShiftForAssignment = (value) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) return null
+  return branchShifts.value.find((shift) => shift.id === normalized || shift.label === normalized) || null
+}
+
+const saveScheduleWithCapacityCheck = async (scheduleRef, payload) => {
+  const scheduleRefs = employees.value.map((employee) =>
+    doc(db, 'users', employee.id, 'schedules', RECURRING_SCHEDULE_ID)
+  )
+
+  return runTransaction(db, async (transaction) => {
+    const scheduleSnapshots = await Promise.all(scheduleRefs.map((schedule) => transaction.get(schedule)))
+    const assignedCounts = new Map()
+
+    scheduleSnapshots.forEach((scheduleSnap, index) => {
+      if (!scheduleSnap.exists() || employees.value[index]?.id === selectedEmployee.value?.id) return
+
+      const existingAssignments = scheduleSnap.data()?.assignments || {}
+      daysOfWeek.forEach((day) => {
+        const shift = getShiftForAssignment(existingAssignments[day])
+        if (!shift) return
+        const key = `${day}:${shift.id}`
+        assignedCounts.set(key, (assignedCounts.get(key) || 0) + 1)
+      })
+    })
+
+    for (const day of daysOfWeek) {
+      const shift = getShiftForAssignment(assignments.value[day])
+      if (!shift) continue
+
+      const key = `${day}:${shift.id}`
+      const assignedCount = (assignedCounts.get(key) || 0) + 1
+      if (assignedCount > shift.capacity) {
+        const capacityError = new Error('Shift capacity reached.')
+        capacityError.code = 'SHIFT_CAPACITY'
+        capacityError.day = day
+        capacityError.shiftLabel = shift.label
+        capacityError.capacity = shift.capacity
+        throw capacityError
+      }
+    }
+
+    const selectedScheduleSnapshot = scheduleSnapshots.find((scheduleSnap) => scheduleSnap.id === scheduleRef.id)
+    if (!selectedScheduleSnapshot?.exists()) {
+      payload.createdAt = serverTimestamp()
+    }
+
+    transaction.set(scheduleRef, payload, { merge: true })
+  })
+}
+
 const saveAssignments = async () => {
   if (!selectedEmployee.value || !selectedBranchId.value || !selectedWeekStart.value) {
     toast.error('Please complete the branch, employee, and start date fields first.')
@@ -707,12 +761,7 @@ const saveAssignments = async () => {
     }
 
     const scheduleRef = doc(db, 'users', selectedEmployee.value.id, 'schedules', RECURRING_SCHEDULE_ID)
-    const existingSnap = await getDoc(scheduleRef)
-    if (!existingSnap.exists()) {
-      payload.createdAt = serverTimestamp()
-    }
-
-    await setDoc(scheduleRef, payload, { merge: true })
+    await saveScheduleWithCapacityCheck(scheduleRef, payload)
     await logActivity(db, {
       module: 'HR',
       action: 'Updated recurring staff schedule',
@@ -723,7 +772,11 @@ const saveAssignments = async () => {
     toast.success('Recurring schedule saved successfully.')
   } catch (error) {
     console.error(error)
-    toast.error('Failed to save recurring schedule.')
+    if (error?.code === 'SHIFT_CAPACITY') {
+      toast.error(`${error.shiftLabel} is already full on ${error.day}. Capacity is ${error.capacity}.`)
+    } else {
+      toast.error('Failed to save recurring schedule.')
+    }
   } finally {
     saving.value = false
   }
