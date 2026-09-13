@@ -368,7 +368,8 @@ export default {
       }
     }
 
-    const allOrders = computed(() => [...customerOrders.value, ...businessOrders.value])
+    // Customer orders are pickup-only and are managed from CRM Orders, not Logistics.
+    const allOrders = computed(() => [...businessOrders.value])
 
     const filteredOrders = computed(() => {
       const keyword = String(searchQuery.value || '').trim().toLowerCase()

@@ -83,7 +83,7 @@
                         class="orders-button orders-button-success"
                         @click="openReceiveModal(order)"
                       >
-                        Order Received
+                        Confirm Pickup
                       </button>
                       <button
                         v-if="canRequestRefund(order)"
@@ -110,10 +110,10 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <p class="text-xs uppercase text-slate-400">Delivery</p>
+            <p class="text-xs uppercase text-slate-400">Pickup</p>
             <p class="text-white font-semibold mt-1">{{ selectedOrder.delivery?.fullName || selectedOrder.customerName || 'Customer' }}</p>
             <p class="text-xs text-slate-400">Phone: {{ selectedOrder.delivery?.phone || 'N/A' }}</p>
-            <p class="text-xs text-slate-400">Address: {{ selectedOrder.delivery?.address || 'N/A' }}</p>
+            <p class="text-xs text-slate-400">Branch: {{ selectedOrder.pickupBranchName || selectedOrder.delivery?.pickupBranchName || 'N/A' }}</p>
           </div>
           <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <p class="text-xs uppercase text-slate-400">Payment</p>
@@ -578,7 +578,7 @@ export default {
 
     const canMarkReceived = (order) => {
       const status = String(order?.status || '').trim().toLowerCase()
-      return ['shipped', 'out for delivery', 'delivered'].includes(status)
+      return ['ready for pickup', 'picked up'].includes(status)
     }
 
     const canRequestRefund = (order) => {

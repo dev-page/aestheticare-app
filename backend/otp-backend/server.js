@@ -7336,7 +7336,7 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
     }
 
     const status = String(orderData.status || '').trim().toLowerCase()
-    if (['cancelled', 'completed', 'refunded', 'shipped', 'out for delivery', 'delivered'].includes(status)) {
+    if (['cancelled', 'completed', 'refunded', 'shipped', 'out for delivery', 'delivered', 'ready for pickup', 'picked up'].includes(status)) {
       return res.status(400).json({
         success: false,
         error: 'This order can no longer be cancelled because it has already been shipped or completed.',

@@ -17,7 +17,7 @@
         <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 class="checkout-title">Checkout</h2>
-            <p class="checkout-subtitle">Review your order, fill in delivery details, and choose a payment method.</p>
+            <p class="checkout-subtitle">Review your order, choose a pickup branch, and complete payment.</p>
           </div>
           <div class="checkout-stat-chip">
             <Icon icon="mdi:cart-outline" class="h-5 w-5" />
@@ -91,8 +91,8 @@
       <div class="checkout-panel mb-8">
         <div class="checkout-panel-head">
           <div>
-            <p class="checkout-panel-kicker">Delivery Information</p>
-            <h2 class="checkout-panel-title">Where should we reach you?</h2>
+            <p class="checkout-panel-kicker">Pickup Information</p>
+            <h2 class="checkout-panel-title">Where will you pick up your order?</h2>
           </div>
           <Icon icon="mdi:account-box-outline" class="h-5 w-5 text-[#8b6a4d]" />
         </div>
@@ -105,10 +105,12 @@
             </div>
           </label>
           <label class="checkout-field md:col-span-2">
-            <span>Address</span>
+            <span>Pickup Branch</span>
             <div class="checkout-input-wrap">
-              <Icon icon="mdi:map-marker-outline" class="h-4 w-4 text-[#a77d57]" />
-              <input type="text" placeholder="Street, barangay, city" v-model="delivery.address" />
+              <Icon icon="mdi:store-marker-outline" class="h-4 w-4 text-[#a77d57]" />
+              <select v-model="selectedPickupBranchId" class="min-w-0 flex-1 bg-transparent text-[#3d281d] outline-none">
+                <option v-for="branch in pickupBranches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
+              </select>
             </div>
           </label>
           <label class="checkout-field md:col-span-2">
@@ -155,48 +157,6 @@
         <p class="mt-4 text-xs text-[#8b6a4d]">Payment is processed in full through PayMongo before the order is created.</p>
       </div>
 
-      <div class="checkout-panel mb-8">
-        <div class="checkout-panel-head">
-          <div>
-            <p class="checkout-panel-kicker">Delivery Location</p>
-            <h2 class="checkout-panel-title">Customer address details</h2>
-          </div>
-          <Icon icon="mdi:map-outline" class="h-5 w-5 text-[#8b6a4d]" />
-        </div>
-
-        <div class="mt-5 space-y-4">
-          <p class="text-sm leading-relaxed text-[#6f4a2d]">
-            {{ delivery.address || 'No detailed address has been saved yet.' }}
-          </p>
-
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div class="checkout-location-box">
-              <p class="checkout-location-label">City / Municipality</p>
-              <p class="checkout-location-value mt-1">{{ delivery.addressCity || '-' }}</p>
-            </div>
-            <div class="checkout-location-box">
-              <p class="checkout-location-label">Barangay</p>
-              <p class="checkout-location-value mt-1">{{ delivery.addressBarangay || '-' }}</p>
-            </div>
-            <div class="checkout-location-box">
-              <p class="checkout-location-label">Actual Location</p>
-              <p class="checkout-location-value mt-1">{{ delivery.address || '-' }}</p>
-            </div>
-            <div class="checkout-location-box">
-              <p class="checkout-location-label">Postal Code</p>
-              <p class="checkout-location-value mt-1">{{ delivery.addressPostalCode || '-' }}</p>
-            </div>
-          </div>
-
-          <div class="overflow-hidden rounded-2xl border border-[#e0c09a] bg-[#fffaf3]">
-            <div ref="checkoutLocationMapEl" class="checkout-location-map"></div>
-            <p v-if="!hasDeliveryLocationCoords" class="border-t border-[#ead6b8] px-4 py-3 text-xs text-[#8b6a4d]">
-              Add a pinned location in your profile so the checkout map can show it.
-            </p>
-          </div>
-        </div>
-      </div>
-
       <div class="flex justify-end">
         <button
           type="button"
@@ -232,6 +192,7 @@ const route = useRoute()
 const selectedItems = ref([])
 const paymentMethod = ref('GCash')
 const saving = ref(false)
+const selectedPickupBranchId = ref('')
 
 const PENDING_PAYMONGO_KEY = 'customer_checkout_pending_paymongo'
 
@@ -244,6 +205,15 @@ const delivery = ref({
   addressLat: '',
   addressLng: '',
   phone: '',
+})
+
+const pickupBranches = computed(() => {
+  const branches = new Map()
+  selectedItems.value.forEach((item) => {
+    const id = String(item.branchId || '').trim()
+    if (id && !branches.has(id)) branches.set(id, { id, name: item.branchName || 'Pickup branch' })
+  })
+  return Array.from(branches.values())
 })
 
 const checkoutLocationMapEl = ref(null)
@@ -527,8 +497,8 @@ const startPayMongoCheckout = async () => {
     toast.error('No selected items to checkout.')
     return
   }
-  if (!delivery.value.fullName || !delivery.value.address || !delivery.value.phone) {
-    toast.error('Please complete delivery details.')
+  if (!delivery.value.fullName || !delivery.value.phone || !selectedPickupBranchId.value) {
+    toast.error('Please complete your pickup and contact details.')
     return
   }
   if (paymentMethod.value === 'GCash' && !String(delivery.value.phone || '').trim()) {
@@ -538,6 +508,14 @@ const startPayMongoCheckout = async () => {
 
   saving.value = true
   try {
+    const pickupBranch = pickupBranches.value.find((branch) => branch.id === selectedPickupBranchId.value)
+    delivery.value = {
+      ...delivery.value,
+      fulfillmentType: 'pickup',
+      pickupBranchId: pickupBranch?.id || '',
+      pickupBranchName: pickupBranch?.name || '',
+      address: '',
+    }
     const { session, referenceNumber } = await createPayMongoCheckoutSession()
     savePendingPayMongoState({
       checkoutSessionId: session.id,
@@ -590,7 +568,10 @@ const finalizeSuccessfulOrder = async (pending, payload) => {
     paymentMethod: pending.paymentMethod,
     paymentStatus: 'Paid',
     total: Number(pending.total || 0),
-    status: 'Paid',
+    status: 'Preparing',
+    fulfillmentType: 'pickup',
+    pickupBranchId: pending.delivery?.pickupBranchId || '',
+    pickupBranchName: pending.delivery?.pickupBranchName || '',
     referenceNumber: pending.referenceNumber || '',
     source: 'paymongo_checkout',
     paymongoCheckoutSessionId: pending.checkoutSessionId,
@@ -702,6 +683,7 @@ const prefillDeliveryInfo = async (user) => {
 
 onMounted(() => {
   selectedItems.value = readCheckoutItems()
+  selectedPickupBranchId.value = String(selectedItems.value.find((item) => item.branchId)?.branchId || '')
   if (!selectedItems.value.length && !loadPendingPayMongoState()) {
     router.push({ name: 'customer-cart' })
     return
