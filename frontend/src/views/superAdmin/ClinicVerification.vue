@@ -364,11 +364,12 @@ const isPendingRecord = (record) => {
   return status.includes('pending approval') || status.includes('manual review') || status.includes('pending')
 }
 
-const formatApplicantName = (user = {}) => {
-  const parts = [user.firstName, user.midName || user.middleName, user.lastName, user.suffix]
+const formatApplicantName = (user = {}, fallback = {}) => {
+  const getValue = (...keys) => keys.map((key) => user[key] || fallback[key]).find(Boolean) || ''
+  const parts = [getValue('firstName'), getValue('midName', 'middleName'), getValue('lastName'), getValue('suffix')]
     .map((value) => String(value || '').trim())
     .filter(Boolean)
-  return String(user.fullName || '').trim() || parts.join(' ') || 'Unnamed User'
+  return parts.join(' ') || String(user.fullName || fallback.fullName || '').trim() || 'Unnamed User'
 }
 
 const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
@@ -536,7 +537,7 @@ export default {
             ).trim()
             const clinicFirstName = String(clinic.firstName || '').trim()
             const clinicLastName = String(clinic.lastName || '').trim()
-            const fullName = formatApplicantName(user).replace('Unnamed User', '').trim()
+            const fullName = formatApplicantName(user, clinic).replace('Unnamed User', '').trim()
               || clinicName
               || `${clinicFirstName} ${clinicLastName}`.trim()
               || 'Unnamed Owner'
@@ -570,6 +571,8 @@ export default {
               clinicPostalCode: clinic.clinicPostalCode || '',
               clinicLocationLat: clinic.clinicLocationLat || '',
               clinicLocationLng: clinic.clinicLocationLng || '',
+              fullName,
+              email: user.email || clinic.ownerEmail || clinic.email || clinic.registrantEmail || clinic.applicantEmail || '',
               ownerName: fullName,
               ownerEmail: user.email || clinic.ownerEmail || clinic.email || clinic.registrantEmail || clinic.applicantEmail || '',
               planLabel: normalizePlanLabel(resolvedPlan),
@@ -682,7 +685,7 @@ export default {
             ).trim()
             const clinicFirstName = String(clinic.firstName || '').trim()
             const clinicLastName = String(clinic.lastName || '').trim()
-            const fullName = formatApplicantName(user).replace('Unnamed User', '').trim()
+            const fullName = formatApplicantName(user, clinic).replace('Unnamed User', '').trim()
               || clinicName
               || `${clinicFirstName} ${clinicLastName}`.trim()
               || 'Unnamed User'
