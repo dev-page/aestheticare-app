@@ -66,7 +66,7 @@
           <select v-model="form.packageServiceIds" multiple class="min-h-28 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
             <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
           </select>
-          <p class="mt-2 text-xs text-slate-400">The booking will carry each selected component, allowing the clinic to schedule the complete package instead of treating it as one unnamed service.</p>
+          <p class="mt-2 text-xs text-slate-400">A package must include one consultation and at least one service. Customers book and pay for the package as one appointment.</p>
         </div>
 
         <div v-if="form.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -189,7 +189,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label class="block text-slate-400 mb-1">Title</label>
             <input
@@ -215,6 +215,16 @@
               Product price comes from inventory unit price.
             </p>
           </div>
+        </div>
+
+        <div v-if="editForm.postType === 'Package'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
+          <label class="block text-slate-400 mb-1">Package Name</label>
+          <input v-model="editForm.name" type="text" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
+          <label class="block text-slate-400 mt-4 mb-1">Included consultation and services</label>
+          <select v-model="editForm.packageServiceIds" multiple class="min-h-28 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
+            <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
+          </select>
+          <p class="mt-2 text-xs text-slate-400">Keep one consultation and at least one service selected.</p>
         </div>
 
         <div class="mb-4">
@@ -280,7 +290,10 @@
                 <span class="text-xs text-slate-400">{{ formatDate(post.createdAt) }}</span>
               </div>
               <h3 class="font-semibold mb-1">{{ post.title }}</h3>
-              <p class="text-sm text-slate-300 mb-1">{{ post.productName || post.serviceName || post.consultationName }}</p>
+              <p class="text-sm text-slate-300 mb-1">{{ post.productName || post.serviceName || post.consultationName || post.packageName }}</p>
+              <p v-if="post.postType === 'Package'" class="mb-2 text-xs text-amber-200">
+                Includes {{ (post.packageServiceIds || []).length }} consultation/service component(s).
+              </p>
               <p class="text-sm text-slate-400 mb-2">{{ post.description }}</p>
               <div v-if="post.postType === 'Service' || post.postType === 'Consultation'" class="mb-2 flex flex-wrap gap-2">
                 <span
@@ -361,7 +374,7 @@
               </div>
               <div>
             <label class="block text-slate-400 mb-1">
-                  {{ editForm.postType === 'Product' ? 'Product' : (editForm.postType === 'Consultation' ? 'Consultation Name' : 'Service Name') }}
+                  {{ editForm.postType === 'Product' ? 'Product' : (editForm.postType === 'Consultation' ? 'Consultation Name' : (editForm.postType === 'Package' ? 'Package Name' : 'Service Name')) }}
                 </label>
                 <input
                   v-model="editForm.name"
@@ -588,8 +601,9 @@ export default {
       productVolume: '',
       productUnit: '',
       fdaRegistrationNumber: '',
-      termsAndConditions: ''
-      , requiredSupplyIds: []
+      termsAndConditions: '',
+      requiredSupplyIds: [],
+      packageServiceIds: []
     })
     const editImageFile = ref(null)
     const editImageFileName = ref('')
@@ -689,8 +703,9 @@ export default {
         productVolume: '',
         productUnit: '',
         fdaRegistrationNumber: '',
-        termsAndConditions: ''
-        , requiredSupplyIds: []
+        termsAndConditions: '',
+        requiredSupplyIds: [],
+        packageServiceIds: []
       }
       imageFile.value = null
       imageFileName.value = ''
@@ -714,8 +729,9 @@ export default {
         productVolume: '',
         productUnit: '',
         fdaRegistrationNumber: '',
-        termsAndConditions: ''
-        , requiredSupplyIds: []
+        termsAndConditions: '',
+        requiredSupplyIds: [],
+        packageServiceIds: []
       }
       editImageFile.value = null
       editImageFileName.value = ''
@@ -840,6 +856,10 @@ export default {
             ? form.value.consultationName
             : form.value.packageName
       const selectedProduct = postType === 'Product' ? findSelectedProduct() : null
+      const packageComponents = postType === 'Package'
+        ? (form.value.packageServiceIds || []).map((id) => posts.value.find((post) => post.id === id)).filter(Boolean)
+        : []
+      const packageFollowUpComponents = packageComponents.filter((post) => post.followUpAllowed === true)
 
       if (!selectedName?.trim() || !form.value.title?.trim() || !form.value.description?.trim()) {
         toast.error('Please complete all required fields.')
@@ -865,9 +885,20 @@ export default {
         toast.error('Please enter a valid duration.')
         return
       }
-      if (postType === 'Package' && !(form.value.packageServiceIds || []).length) {
-        toast.error('Select at least one service or consultation for this package.')
-        return
+      if (postType === 'Package') {
+        const selectedComponents = (form.value.packageServiceIds || [])
+          .map((id) => posts.value.find((post) => post.id === id))
+          .filter(Boolean)
+        const hasConsultation = selectedComponents.some((post) => post.postType === 'Consultation')
+        const hasService = selectedComponents.some((post) => post.postType === 'Service')
+        if (!hasConsultation || !hasService) {
+          toast.error('A package must include one consultation and at least one service.')
+          return
+        }
+        if (Number(form.value.price) <= 0) {
+          toast.error('Enter a package price greater than zero.')
+          return
+        }
       }
       if (postType === 'Service' && form.value.requiresConsultationFirst && Number(form.value.consultationFee) <= 0) {
         toast.error('Please enter a valid consultation fee.')
@@ -917,10 +948,16 @@ export default {
           consultationFee: postType === 'Service' && form.value.requiresConsultationFirst
             ? Number(form.value.consultationFee || 0)
             : (postType === 'Consultation' ? Number(form.value.consultationFee || 0) : null),
-          followUpAllowed: postType === 'Service' ? Boolean(form.value.followUpAllowed) : false,
+          followUpAllowed: postType === 'Service'
+            ? Boolean(form.value.followUpAllowed)
+            : postType === 'Package'
+              ? packageFollowUpComponents.length > 0
+              : false,
           followUpWindowDays: postType === 'Service' && form.value.followUpAllowed
             ? Math.max(1, Number(form.value.followUpWindowDays || 14))
-            : null,
+            : postType === 'Package' && packageFollowUpComponents.length
+              ? Math.min(...packageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
+              : null,
           durationMinutes: postType === 'Product' ? null : postType === 'Package'
             ? Math.max(1, (form.value.packageServiceIds || []).reduce((total, id) => total + Number(posts.value.find((post) => post.id === id)?.durationMinutes || 0), 0))
             : Math.max(1, Number(form.value.durationMinutes || 60)),
@@ -958,7 +995,7 @@ export default {
       editTargetId.value = post.id
       editForm.value = {
         postType: post.postType || 'Product',
-        name: post.productName || post.serviceName || post.consultationName || '',
+        name: post.productName || post.serviceName || post.consultationName || post.packageName || '',
         title: post.title || '',
         description: post.description || '',
         price: Number(post.price || 0),
@@ -972,6 +1009,7 @@ export default {
         , fdaRegistrationNumber: String(post.fdaRegistrationNumber || '').trim()
         , termsAndConditions: String(post.termsAndConditions || '').trim()
         , requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : []
+        , packageServiceIds: Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : []
       }
       editImageFile.value = null
       editImageFileName.value = ''
@@ -1013,6 +1051,25 @@ export default {
         toast.error('Price cannot be negative.')
         return
       }
+      if (editForm.value.postType === 'Package') {
+        const selectedComponents = (editForm.value.packageServiceIds || [])
+          .map((id) => posts.value.find((post) => post.id === id))
+          .filter(Boolean)
+        const hasConsultation = selectedComponents.some((post) => post.postType === 'Consultation')
+        const hasService = selectedComponents.some((post) => post.postType === 'Service')
+        if (!hasConsultation || !hasService) {
+          toast.error('A package must include one consultation and at least one service.')
+          return
+        }
+        if (Number(editForm.value.price) <= 0) {
+          toast.error('Enter a package price greater than zero.')
+          return
+        }
+      }
+      const editPackageComponents = editForm.value.postType === 'Package'
+        ? (editForm.value.packageServiceIds || []).map((id) => posts.value.find((post) => post.id === id)).filter(Boolean)
+        : []
+      const editPackageFollowUpComponents = editPackageComponents.filter((post) => post.followUpAllowed === true)
       if (editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst && Number(editForm.value.consultationFee) <= 0) {
         toast.error('Please enter a valid consultation fee.')
         return
@@ -1062,6 +1119,8 @@ export default {
           productName: editForm.value.postType === 'Product' ? editForm.value.name.trim() : '',
           serviceName: editForm.value.postType === 'Service' ? editForm.value.name.trim() : '',
           consultationName: editForm.value.postType === 'Consultation' ? editForm.value.name.trim() : '',
+          packageName: editForm.value.postType === 'Package' ? editForm.value.name.trim() : '',
+          packageServiceIds: editForm.value.postType === 'Package' ? [...(editForm.value.packageServiceIds || [])] : [],
           price: editForm.value.postType === 'Product'
             ? Number(selectedProduct?.unitPrice || editForm.value.price || 0)
             : Number(editForm.value.price || editForm.value.consultationFee || 0),
@@ -1069,19 +1128,29 @@ export default {
           consultationFee: editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst
             ? Number(editForm.value.consultationFee || 0)
             : (editForm.value.postType === 'Consultation' ? Number(editForm.value.consultationFee || 0) : null),
-          followUpAllowed: editForm.value.postType === 'Service' ? Boolean(editForm.value.followUpAllowed) : false,
+          followUpAllowed: editForm.value.postType === 'Service'
+            ? Boolean(editForm.value.followUpAllowed)
+            : editForm.value.postType === 'Package'
+              ? editPackageFollowUpComponents.length > 0
+              : false,
           followUpWindowDays: editForm.value.postType === 'Service' && editForm.value.followUpAllowed
             ? Math.max(1, Number(editForm.value.followUpWindowDays || 14))
-            : null,
+            : editForm.value.postType === 'Package' && editPackageFollowUpComponents.length
+              ? Math.min(...editPackageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
+              : null,
           durationMinutes: editForm.value.postType === 'Product'
             ? null
-            : Math.max(1, Number(editForm.value.durationMinutes || (editForm.value.postType === 'Consultation' ? 30 : 60))),
+            : editForm.value.postType === 'Package'
+              ? Math.max(1, editForm.value.packageServiceIds.reduce((total, id) => total + Number(posts.value.find((post) => post.id === id)?.durationMinutes || 0), 0))
+              : Math.max(1, Number(editForm.value.durationMinutes || (editForm.value.postType === 'Consultation' ? 30 : 60))),
           productVolume: editForm.value.postType === 'Product' ? String(editForm.value.productVolume || '').trim() : '',
           productUnit: editForm.value.postType === 'Product' ? String(editForm.value.productUnit || '').trim() : '',
           fdaRegistrationNumber: editForm.value.postType === 'Product' ? String(editForm.value.fdaRegistrationNumber || '').trim().toUpperCase() : '',
           fdaApprovalDocument: editForm.value.postType === 'Product' ? nextFdaApprovalDocument : null,
           termsAndConditions: String(editForm.value.termsAndConditions || '').trim(),
-          requiredSupplyIds: editForm.value.postType === 'Service' ? [...(editForm.value.requiredSupplyIds || [])] : [],
+          requiredSupplyIds: editForm.value.postType === 'Service' ? [...(editForm.value.requiredSupplyIds || [])] : editForm.value.postType === 'Package'
+            ? [...new Set(editForm.value.packageServiceIds.flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
+            : [],
           updatedAt: serverTimestamp()
         }
         if (nextImageUrl) payload.imageUrl = nextImageUrl

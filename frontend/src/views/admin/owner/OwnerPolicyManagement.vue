@@ -5,6 +5,9 @@
       <div class="mx-auto max-w-5xl">
         <h1 class="text-3xl font-bold">Policy Management</h1>
         <p class="mt-2 text-slate-400">Maintain the rules shown to customers before they book, buy, or request delivery.</p>
+        <p class="mt-3 rounded-xl border border-amber-700/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+          Disable a policy when the clinic does not offer it. Disabled policies are removed from the customer-facing clinic page and related actions, such as cancellation or refund requests, are unavailable.
+        </p>
         <form class="mt-8 space-y-6" @submit.prevent="savePolicies">
           <section v-for="group in policyGroups" :key="group.key" class="rounded-2xl border border-slate-700 bg-slate-800 p-6">
             <h2 class="text-lg font-semibold">{{ group.label }}</h2>
@@ -95,9 +98,9 @@ const savePolicies = async () => {
     await setDoc(doc(db, 'clinicPolicies', branchId.value), payload, { merge: true })
     // Keep appointment approval compatible with the legacy clinic policy fields.
     await updateDoc(doc(db, 'clinics', branchId.value), {
-      cancellationPolicy: form.cancellationPolicy,
+      cancellationPolicy: form.cancellationPolicyEnabled ? form.cancellationPolicy : '',
       cancellationPolicyEnabled: form.cancellationPolicyEnabled,
-      reschedulePolicy: form.reschedulePolicy,
+      reschedulePolicy: form.reschedulePolicyEnabled ? form.reschedulePolicy : '',
       reschedulePolicyEnabled: form.reschedulePolicyEnabled,
       refundPolicy: form.refundPolicyEnabled ? form.refundPolicy : '',
       refundPolicyEnabled: form.refundPolicyEnabled,

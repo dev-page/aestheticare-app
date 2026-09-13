@@ -226,6 +226,12 @@
                       <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
                       <div class="mt-3 flex flex-wrap gap-2">
                         <span
+                          v-if="item.type === 'Package'"
+                          class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium"
+                        >
+                          Consultation package
+                        </span>
+                        <span
                           v-if="item.requiresConsultationFirst"
                           class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium"
                         >
@@ -256,6 +262,9 @@
                           {{ item.requiredSupplyIds.length }} required {{ item.requiredSupplyIds.length === 1 ? 'supply' : 'supplies' }}
                         </span>
                       </div>
+                      <p v-if="item.type === 'Package' && item.packageServiceNames.length" class="mt-3 text-xs text-[#6f4a2d]">
+                        Includes: {{ item.packageServiceNames.join(', ') }}
+                      </p>
 
                       <div class="mt-4">
                         <button
@@ -1374,6 +1383,12 @@ const loadBranchData = async (branchId) => {
       termsAndConditions: String(post.termsAndConditions || '').trim(),
       requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : [],
       packageServiceIds: Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : [],
+      packageServiceNames: Array.isArray(post.packageServiceIds)
+        ? post.packageServiceIds.map((componentId) => {
+          const component = postSnap.docs.find((candidate) => candidate.id === componentId)?.data() || {}
+          return component.title || component.serviceName || component.consultationName || ''
+        }).filter(Boolean)
+        : [],
       packageName: String(post.packageName || '').trim(),
       imageUrl: post.imageUrl || '',
       quantity: 1,
@@ -2115,7 +2130,7 @@ const toggleServiceForBooking = (item) => {
       toast.error('This package has no available component services.')
       return
     }
-    selectedServices.value = components.map((component) => ({ ...component, packageId: item.id, packageName: item.packageName || item.title }))
+    selectedServices.value = [{ ...item, packageComponents: components }]
   } else {
     selectedServices.value = [...selectedServices.value, item]
   }
