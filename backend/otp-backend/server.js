@@ -1775,7 +1775,7 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
   const uid = String(req.body?.uid || '').trim()
   const applicantType = String(req.body?.applicantType || '').trim().toLowerCase()
   if (!uid || uid !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
-  if (!['clinic', 'supplier'].includes(applicantType)) return res.status(400).json({ success: false, error: 'applicantType must be clinic or supplier' })
+  if (applicantType !== 'clinic') return res.status(400).json({ success: false, error: 'Only clinic registration verification is supported.' })
   try {
     const data = await runRegistrationDocumentVerification({ uid, applicantType, processedBy: 'automatic_processor' })
     return res.json({ success: true, data })
@@ -2014,31 +2014,6 @@ app.post('/finance/purchase-requests/:id/settle', requireAuth, async (req, res) 
   } catch (error) {
     console.error('Purchase settlement failed:', error)
     return res.status(500).json({ success: false, error: 'Could not update payment status.' })
-  }
-})
-
-// Allow authorized system administrators to rerun the same verifier for an
-// existing supplier application when processing failed or was never started.
-app.post('/admin/trigger-registration-verification', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:suppliers:verify'), async (req, res) => {
-  const uid = String(req.body?.uid || '').trim()
-  const applicantType = String(req.body?.applicantType || '').trim().toLowerCase()
-  if (!uid || applicantType !== 'supplier') {
-    return res.status(400).json({ success: false, error: 'A supplier uid is required' })
-  }
-
-  try {
-    const data = await runRegistrationDocumentVerification({ uid, applicantType, processedBy: req.user.uid })
-    await writeSystemAdminActivity(req, {
-      action: 'Reran supplier document OCR',
-      module: 'Supplier Verification',
-      details: `Reran automatic verification for supplier ${uid}; result: ${data.status}.`,
-      targetId: uid,
-      targetName: uid,
-    })
-    return res.json({ success: true, data })
-  } catch (error) {
-    console.error('Supplier document verification rerun failed:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Automatic verification failed' })
   }
 })
 

@@ -16,7 +16,6 @@ export const systemAdminPermissionGroups = [
     label: 'Registration Verification',
     permissions: [
       { key: 'system:clinics:verify', label: 'Verify Clinics' },
-      { key: 'system:suppliers:verify', label: 'Verify Suppliers' },
       { key: 'system:clinics:view', label: 'View Verified Clinics' },
       { key: 'system:accounts:view', label: 'View User Accounts' },
       { key: 'system:accounts:archive', label: 'Manage Archived Accounts' },
@@ -54,7 +53,7 @@ export const systemAdminRoleTemplates = [
   {
     key: 'verification_admin',
     label: 'Verification Administrator',
-    description: 'Reviews clinics, suppliers, accounts, and verification records.',
+    description: 'Reviews clinics, accounts, and verification records.',
     permissions: ['system:dashboard:view', ...systemAdminPermissionGroups.find((group) => group.key === 'verification').permissions.map((permission) => permission.key)],
   },
   {
