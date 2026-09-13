@@ -44,16 +44,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Item Catalog', icon: 'building', to: '/manager/item-catalog', permission: 'inventory:view' }
     ]
   },
-  {
-    key: 'supply-chain-module',
-    label: 'Supply Chain Management',
-    icon: 'building',
-    moduleKey: 'supply-chain',
-    children: [
-      { type: 'section', label: 'SUPPLIERS' },
-      { label: 'Suppliers', icon: 'building', to: '/manager/suppliers', permission: 'inventory:view' },
-    ]
-  },
+  { label: 'Suppliers', icon: 'building', to: '/manager/suppliers', permission: 'inventory:view' },
   {
     key: 'procurement-module',
     label: 'Procurement',
@@ -66,16 +57,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Purchase History', icon: 'report', to: '/manager/purchase-history', permission: 'finance:purchases:view' },
     ]
   },
-  {
-    key: 'logistics-module',
-    label: 'Logistics',
-    icon: 'truck',
-    moduleKey: 'logistics',
-    children: [
-      { type: 'section', label: 'DELIVERIES & RECEIVING' },
-      { label: 'Logistics', icon: 'truck', to: '/manager/logistics', permissionsAny: ['orders:view', 'inventory:view'] }
-    ]
-  },
+  { label: 'Logistics', icon: 'truck', to: '/manager/logistics', permissionsAny: ['orders:view', 'inventory:view'] },
   {
     key: 'hr-module',
     label: 'Human Resources',
