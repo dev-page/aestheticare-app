@@ -752,13 +752,13 @@ service cloud.firestore {
           || isSuperadmin());
       allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
       allow update: if isSignedIn()
-        && ((request.auth.uid == resource.data.customerId && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'updatedAt'
-        ]))
+        && ((request.auth.uid == resource.data.customerId
+          && request.resource.data.status == 'Cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
             && hasPermission('finance:refunds:manage')
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'status', 'voucherId', 'voucherCode', 'reviewedBy', 'reviewedAt', 'updatedAt'
+              'status', 'voucherId', 'voucherCode', 'reviewedBy', 'reviewReason', 'reviewedAt', 'updatedAt'
             ]))
           || isSuperadmin());
       allow delete: if false;

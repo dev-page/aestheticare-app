@@ -359,7 +359,7 @@ import {
   getDocs,
   query,
   serverTimestamp,
-  updateDoc,
+  writeBatch,
   where,
 } from 'firebase/firestore'
 import { getFirestore } from 'firebase/firestore'
@@ -646,12 +646,23 @@ export default {
         toast.info('This order already has a refund voucher.')
         return
       }
+      const paymentStatus = String(selectedOrder.value.paymentStatus || '').trim().toLowerCase()
+      if (!['paid', 'completed'].includes(paymentStatus)) {
+        toast.error('Only successfully paid orders can receive a refund voucher.')
+        return
+      }
       if (!refundForm.value.reason.trim()) {
         toast.error('Refund reason is required.')
         return
       }
-      if (Number(refundForm.value.amount) <= 0) {
-        toast.error('Voucher amount must be greater than zero.')
+      const paidAmount = Number(selectedOrder.value.amountPaid || selectedOrder.value.totalPaid || selectedOrder.value.total || 0)
+      const refundAmount = Number(refundForm.value.amount)
+      if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+        toast.error('The paid amount could not be verified for this order.')
+        return
+      }
+      if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > paidAmount) {
+        toast.error(`Voucher amount must be greater than zero and no more than ${formatCurrency(paidAmount)}.`)
         return
       }
 
@@ -663,7 +674,7 @@ export default {
           customerId: selectedOrder.value.customerId || '',
           customerName: selectedOrder.value.customerName || selectedOrder.value.delivery?.fullName || 'Customer',
           code: refundForm.value.code,
-          amount: Number(refundForm.value.amount),
+          amount: refundAmount,
           reason: refundForm.value.reason.trim(),
           status: 'Issued',
           issuedBy: currentUserId.value,
@@ -672,13 +683,14 @@ export default {
           type: 'refund_voucher',
         }
 
-        const voucherRef = await addDoc(collection(db, 'refundVouchers'), voucherPayload)
-
-        await updateDoc(doc(db, 'customerOrders', selectedOrder.value.id), {
+        const voucherRef = doc(collection(db, 'refundVouchers'))
+        const batch = writeBatch(db)
+        batch.set(voucherRef, voucherPayload)
+        batch.update(doc(db, 'customerOrders', selectedOrder.value.id), {
           status: 'Refunded',
           refundType: 'Voucher',
           refundReason: refundForm.value.reason.trim(),
-          refundAmount: Number(refundForm.value.amount),
+          refundAmount,
           refundVoucherId: voucherRef.id,
           refundVoucherCode: refundForm.value.code,
           refundRequestStatus: selectedOrder.value.refundRequestId ? 'Approved' : '',
@@ -688,7 +700,7 @@ export default {
         })
 
         if (selectedOrder.value.refundRequestId) {
-          await updateDoc(doc(db, 'refundRequests', selectedOrder.value.refundRequestId), {
+          batch.update(doc(db, 'refundRequests', selectedOrder.value.refundRequestId), {
             status: 'Approved',
             voucherId: voucherRef.id,
             voucherCode: refundForm.value.code,
@@ -698,9 +710,10 @@ export default {
           })
         }
 
-        await addDoc(collection(db, 'transactions'), {
+        const transactionRef = doc(collection(db, 'transactions'))
+        batch.set(transactionRef, {
           branchId: selectedOrder.value.branchId,
-          amount: -Math.abs(Number(refundForm.value.amount)),
+          amount: -Math.abs(refundAmount),
           method: 'Voucher',
           status: 'Refunded',
           type: 'refund_voucher',
@@ -712,13 +725,14 @@ export default {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
+        await batch.commit()
 
         const target = orders.value.find((entry) => entry.id === selectedOrder.value.id)
         if (target) {
           target.status = 'Refunded'
           target.refundType = 'Voucher'
           target.refundReason = refundForm.value.reason.trim()
-          target.refundAmount = Number(refundForm.value.amount)
+          target.refundAmount = refundAmount
           target.refundVoucherId = voucherRef.id
           target.refundVoucherCode = refundForm.value.code
           if (target.refundRequestId) target.refundRequestStatus = 'Approved'
@@ -750,19 +764,28 @@ export default {
         return
       }
 
+      const rejectionReason = window.prompt('Reason for rejecting this refund request:')?.trim() || ''
+      if (!rejectionReason) {
+        toast.error('A rejection reason is required.')
+        return
+      }
+
       try {
-        await updateDoc(doc(db, 'refundRequests', selectedOrder.value.refundRequestId), {
+        const batch = writeBatch(db)
+        batch.update(doc(db, 'refundRequests', selectedOrder.value.refundRequestId), {
           status: 'Rejected',
+          reviewReason: rejectionReason,
           reviewedBy: currentUserId.value,
           reviewedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
 
-        await updateDoc(doc(db, 'customerOrders', selectedOrder.value.id), {
+        batch.update(doc(db, 'customerOrders', selectedOrder.value.id), {
           status: selectedOrder.value.orderStatusAtRequest || 'Completed',
           refundRequestStatus: 'Rejected',
           updatedAt: serverTimestamp(),
         })
+        await batch.commit()
 
         const target = orders.value.find((entry) => entry.id === selectedOrder.value.id)
         if (target) {
@@ -775,7 +798,7 @@ export default {
         await createCustomerNotification(
           selectedOrder.value.customerId,
           'Refund Request Rejected',
-          `Your refund request for order ${selectedOrder.value.id} was reviewed and rejected.`
+          `Your refund request for order ${selectedOrder.value.id} was rejected. Reason: ${rejectionReason}`
         )
         toast.success('Refund request rejected.')
       } catch (error) {

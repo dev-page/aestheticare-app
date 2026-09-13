@@ -730,6 +730,11 @@ export default {
         toast.error('No order selected.')
         return
       }
+      const paymentStatus = String(selectedRefundOrder.value.paymentStatus || '').trim().toLowerCase()
+      if (!['paid', 'completed'].includes(paymentStatus)) {
+        toast.error('Only successfully paid orders can be submitted for a refund.')
+        return
+      }
       if (!String(refundRequestForm.value.issueType || '').trim()) {
         toast.error('Please choose a refund reason.')
         return
@@ -751,13 +756,18 @@ export default {
         await uploadBytes(fileRef, refundRequestForm.value.file)
         const proofUrl = await getDownloadURL(fileRef)
 
+        const paidAmount = Number(selectedRefundOrder.value.amountPaid || selectedRefundOrder.value.totalPaid || selectedRefundOrder.value.total || 0)
+        if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+          throw new Error('The paid amount could not be verified for this order.')
+        }
+
         const requestPayload = {
           orderId: selectedRefundOrder.value.id,
           customerId: selectedRefundOrder.value.customerId || auth.currentUser?.uid || '',
           customerName: selectedRefundOrder.value.customerName || selectedRefundOrder.value.delivery?.fullName || 'Customer',
           branchId: selectedRefundOrder.value.branchId || '',
           branchName: selectedRefundOrder.value.branchName || '',
-          amount: Number(selectedRefundOrder.value.total || 0),
+          amount: paidAmount,
           issueType: String(refundRequestForm.value.issueType || '').trim(),
           reason: String(refundRequestForm.value.reason || '').trim(),
           proofUrl,

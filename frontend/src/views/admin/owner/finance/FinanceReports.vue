@@ -8,13 +8,16 @@
           <h1 class="text-3xl font-bold text-white mb-2">Finance Reports</h1>
           <p class="text-slate-400">Monthly report view for profit, payroll, inventory valuation, and sales mix.</p>
         </div>
-        <div>
+        <div class="flex flex-wrap items-end gap-3">
           <label class="block text-slate-400 text-sm mb-2">Report Month</label>
           <input
             v-model="selectedMonth"
             type="month"
             class="bg-slate-700 text-white px-3 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
           />
+          <button type="button" class="rounded-lg border border-amber-500/60 px-3 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-500/10" @click="exportPdf">
+            Export PDF
+          </button>
         </div>
       </div>
 
@@ -161,6 +164,7 @@ export default {
     const formatCurrency = (value) =>
       new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
     const percent = (value) => `${Number(value || 0).toFixed(2)}%`
+    const exportPdf = () => window.print()
 
     const isInSelectedMonth = (timestamp) => monthKey(toDate(timestamp)) === selectedMonth.value
 
@@ -300,7 +304,8 @@ export default {
       salesByStaff,
       salesByService,
       formatCurrency,
-      percent
+      percent,
+      exportPdf
     }
   }
 }
