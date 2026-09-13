@@ -461,7 +461,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { addDoc, getFirestore, collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { addDoc, getDoc, getFirestore, collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
@@ -482,6 +482,7 @@ export default {
     const loading = ref(true)
     const search = ref('')
     const orders = ref([])
+    const policiesByBranch = ref({})
     const showModal = ref(false)
     const selectedOrder = ref(null)
     const showReceiveModal = ref(false)
@@ -568,6 +569,8 @@ export default {
     }
 
     const canCancelOrder = (order) => {
+      const policy = getPolicyForOrder(order)
+      if (!policy.cancellationPolicyEnabled || !policy.cancellationPolicy) return false
       const status = String(order?.status || 'Pending').trim().toLowerCase()
       if (['cancelled', 'completed', 'refunded', 'shipped', 'out for delivery', 'delivered'].includes(status)) return false
       const createdAtMillis = getCreatedAtMillis(order)
@@ -582,12 +585,29 @@ export default {
     }
 
     const canRequestRefund = (order) => {
+      const policy = getPolicyForOrder(order)
+      if (!policy.refundPolicyEnabled || !policy.refundPolicy) return false
       const status = String(order?.status || '').trim().toLowerCase()
       const refundRequestStatus = String(order?.refundRequestStatus || '').trim().toLowerCase()
       if (status !== 'completed') return false
       if (order?.refundVoucherId) return false
       if (order?.refundRequestId && refundRequestStatus !== 'rejected') return false
       return refundRequestStatus !== 'approved' && refundRequestStatus !== 'pending'
+    }
+
+    const getPolicyForOrder = (order) => {
+      const branchId = String(order?.branchId || order?.items?.find((item) => item?.branchId)?.branchId || '').trim()
+      const policy = policiesByBranch.value[branchId] || {}
+      return {
+        cancellationPolicy: String(policy.cancellationPolicy || '').trim(),
+        cancellationPolicyEnabled: Object.prototype.hasOwnProperty.call(policy, 'cancellationPolicyEnabled')
+          ? policy.cancellationPolicyEnabled === true
+          : Boolean(String(policy.cancellationPolicy || '').trim()),
+        refundPolicy: String(policy.refundPolicy || '').trim(),
+        refundPolicyEnabled: Object.prototype.hasOwnProperty.call(policy, 'refundPolicyEnabled')
+          ? policy.refundPolicyEnabled === true
+          : Boolean(String(policy.refundPolicy || '').trim()),
+      }
     }
 
     const handleProofFileChange = (event) => {
@@ -768,6 +788,7 @@ export default {
           branchId: selectedRefundOrder.value.branchId || '',
           branchName: selectedRefundOrder.value.branchName || '',
           amount: paidAmount,
+          refundPolicySnapshot: getPolicyForOrder(selectedRefundOrder.value).refundPolicy,
           issueType: String(refundRequestForm.value.issueType || '').trim(),
           reason: String(refundRequestForm.value.reason || '').trim(),
           proofUrl,
@@ -928,7 +949,7 @@ export default {
       const ordersQuery = query(collection(db, 'customerOrders'), where('customerId', '==', userId))
       unsubscribeOrders = onSnapshot(
         ordersQuery,
-        (snapshot) => {
+        async (snapshot) => {
           orders.value = snapshot.docs
             .map((snap) => ({ id: snap.id, ...snap.data() }))
             .sort((a, b) => {
@@ -936,6 +957,15 @@ export default {
               const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
               return bTime - aTime
             })
+          const branchIds = Array.from(new Set(orders.value.flatMap((order) => [
+            order.branchId,
+            ...(Array.isArray(order.items) ? order.items.map((item) => item?.branchId) : []),
+          ]).map((value) => String(value || '').trim()).filter(Boolean)))
+          const policyEntries = await Promise.all(branchIds.map(async (branchId) => {
+            const policySnap = await getDoc(doc(db, 'clinicPolicies', branchId))
+            return [branchId, policySnap.exists() ? policySnap.data() || {} : {}]
+          }))
+          policiesByBranch.value = Object.fromEntries(policyEntries)
           loading.value = false
         },
         (error) => {

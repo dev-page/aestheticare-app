@@ -7341,6 +7341,23 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
       })
     }
 
+    const branchId = String(orderData.branchId || orderData.items?.[0]?.branchId || '').trim()
+    const policySnap = branchId
+      ? await firestore.collection('clinicPolicies').doc(branchId).get()
+      : null
+    const policy = policySnap?.exists ? policySnap.data() || {} : {}
+    const cancellationPolicy = String(policy.cancellationPolicy || '').trim()
+    const refundPolicy = String(policy.refundPolicy || '').trim()
+    const cancellationPolicyEnabled = Object.prototype.hasOwnProperty.call(policy, 'cancellationPolicyEnabled')
+      ? policy.cancellationPolicyEnabled === true
+      : Boolean(cancellationPolicy)
+    const refundPolicyEnabled = Object.prototype.hasOwnProperty.call(policy, 'refundPolicyEnabled')
+      ? policy.refundPolicyEnabled === true
+      : Boolean(refundPolicy)
+    if (!cancellationPolicyEnabled || !cancellationPolicy) {
+      return res.status(400).json({ success: false, error: 'This clinic has not enabled a cancellation policy.' })
+    }
+
     const status = String(orderData.status || '').trim().toLowerCase()
     if (['cancelled', 'completed', 'refunded', 'shipped', 'out for delivery', 'delivered', 'ready for pickup', 'picked up'].includes(status)) {
       return res.status(400).json({
@@ -7371,6 +7388,10 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
       String(orderData.source || '').trim().toLowerCase() === 'paymongo_checkout' &&
       String(orderData.paymentStatus || '').trim().toLowerCase() === 'paid' &&
       Boolean(paymentId)
+
+    if (isPayMongoPaid && (!refundPolicyEnabled || !refundPolicy)) {
+      return res.status(400).json({ success: false, error: 'This clinic has not enabled a refund policy for paid cancellations.' })
+    }
 
     let refundId = null
     let refundStatus = null
@@ -7407,6 +7428,7 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
       status: 'Cancelled',
       cancelReasonType: reasonType,
       cancelReasonDetails: reasonType === 'Other' ? reasonDetails : '',
+      cancellationPolicySnapshot: cancellationPolicy,
       cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
@@ -7424,11 +7446,6 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
     await orderRef.update(updatePayload)
 
     if (isPayMongoPaid) {
-      const branchId =
-        String(orderData.branchId || '').trim() ||
-        String(orderData.items?.[0]?.branchId || '').trim() ||
-        ''
-
       await firestore.collection('transactions').add({
         branchId,
         amount: -Math.abs(totalAmount),
