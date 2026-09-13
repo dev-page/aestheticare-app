@@ -12,6 +12,7 @@ import LocationPicker from '@/components/common/LocationPicker.vue'
 import Terms from '@/components/common/Terms.vue'
 import PrivacyPolicy from '@/components/common/PrivacyPolicy.vue'
 import ClinicPlatformAgreement from '@/components/common/ClinicPlatformAgreement.vue'
+import ElectronicSignaturePad from '@/components/common/ElectronicSignaturePad.vue'
 import RegisterCustomer from '@/views/public/RegisterCustomer.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import {
@@ -202,7 +203,7 @@ const showClinicAgreement = ref(false)
 const termsAccepted = ref(false)
 const clinicAgreementRead = ref(false)
 const clinicAgreementAccepted = ref(false)
-const clinicAgreementSignature = ref('')
+const clinicAgreementSignatureImage = ref('')
 const CLINIC_PLATFORM_AGREEMENT_VERSION = 'clinic-platform-agreement-v1'
 const emailChecked = ref(false)
 const isCheckingEmail = ref(false)
@@ -478,12 +479,14 @@ const registeredOwnerLegalName = computed(() => [
   lastName.value,
   suffixEnabled.value ? suffix.value : '',
 ].map((part) => String(part || '').trim()).filter(Boolean).join(' '))
-const normalizeAgreementName = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
 const clinicAgreementSignatureMatches = computed(() => (
   clinicAgreementRead.value &&
   clinicAgreementAccepted.value &&
-  normalizeAgreementName(clinicAgreementSignature.value) === normalizeAgreementName(registeredOwnerLegalName.value)
+  Boolean(clinicAgreementSignatureImage.value)
 ))
+watch(clinicAgreementSignatureImage, (value) => {
+  if (!value) clinicAgreementAccepted.value = false
+})
 const companyDocumentKeys = [
   'businessPermit',
   'birRegistration',
@@ -1995,6 +1998,9 @@ const resetClinicRegistrationFlow = () => {
   approvalUserStatus.value = ''
   approvalClinicStatus.value = ''
   pendingApprovalMode.value = false
+  clinicAgreementRead.value = false
+  clinicAgreementAccepted.value = false
+  clinicAgreementSignatureImage.value = ''
   otpVerifiedForRegistration.value = false
   emailChecked.value = false
   currentStep.value = 1
@@ -2568,7 +2574,7 @@ const registerClinic = async () => {
   }
 
   if (!clinicAgreementSignatureMatches.value) {
-    toast.error('Please accept the Clinic Platform Agreement and enter your full legal name as your electronic signature.')
+    toast.error('Please accept the Clinic Platform Agreement and draw your electronic signature.')
     return
   }
 
@@ -2631,7 +2637,8 @@ const registerClinic = async () => {
     version: CLINIC_PLATFORM_AGREEMENT_VERSION,
     signerName: registeredOwnerLegalName.value,
     signerEmail: email.value.trim().toLowerCase(),
-    method: 'typed-name',
+    method: 'drawn-signature',
+    signatureImage: clinicAgreementSignatureImage.value,
     acceptedAt: serverTimestamp(),
   }
 
@@ -3498,17 +3505,11 @@ const submitDocuments = async () => {
               </label>
 
               <div v-if="clinicAgreementRead" class="space-y-2">
-                <label class="block text-sm font-medium text-charcoal-700" for="clinic-agreement-signature">Electronic signature</label>
-                <input
-                  id="clinic-agreement-signature"
-                  v-model="clinicAgreementSignature"
-                  type="text"
-                  autocomplete="name"
-                  :placeholder="registeredOwnerLegalName || 'Type your full legal name'"
-                  class="h-12 w-full rounded-lg border border-gold-200 bg-white px-3 text-charcoal-800 focus:border-gold-500 focus:outline-none"
-                />
+                <label class="block text-sm font-medium text-charcoal-700">Electronic signature</label>
+                <ElectronicSignaturePad v-model="clinicAgreementSignatureImage" label="Draw your electronic signature" />
                 <p class="text-xs text-charcoal-600">
-                  Type your full legal name exactly as entered above: {{ registeredOwnerLegalName || 'your registered name' }}
+                  Draw your signature below. Your registered legal name will be stored with the signature:
+                  {{ registeredOwnerLegalName || 'your registered name' }}
                 </p>
               </div>
             </div>
