@@ -5190,10 +5190,15 @@ if (backupScheduleEnabled && adminReady) {
 }
 
 app.post(ATTENDANCE_RECORD_PATH, requireAuth, requirePermission('attendance:create'), async (req, res) => {
-  const { branchId, qrToken, latitude, longitude, accuracy } = req.body ?? {}
+  const { branchId, qrToken, latitude, longitude, accuracy, proofStoragePath, proofUrl } = req.body ?? {}
   const normalizedBranchId = String(branchId || '').trim()
   if (!normalizedBranchId || !qrToken) {
     return res.status(400).json({ success: false, error: 'branchId and qrToken are required' })
+  }
+  const dateKey = manilaDateKey()
+  const expectedProofPrefix = `attendanceProofs/${normalizedBranchId}/${req.user.uid}/${dateKey}/`
+  if (!String(proofStoragePath || '').startsWith(expectedProofPrefix)) {
+    return res.status(400).json({ success: false, error: 'A current attendance photo proof is required.' })
   }
 
   try {
@@ -5212,7 +5217,6 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requirePermission('attendance:crea
       return res.status(403).json({ success: false, error: 'Your employee profile is not assigned to this branch.' })
     }
 
-    const dateKey = manilaDateKey()
     const qrSnap = await firestore.collection('attendanceDailyQRCodes').doc(`${normalizedBranchId}_${dateKey}`).get()
     if (!qrSnap.exists || String(qrSnap.data()?.token || '') !== String(qrToken).trim()) {
       return res.status(400).json({ success: false, error: 'The attendance QR is invalid or expired.' })
@@ -5270,6 +5274,8 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requirePermission('attendance:crea
         locationVerified: hasLocation,
         locationAccuracyMeters: Number.isFinite(accuracyNumber) ? Math.round(accuracyNumber) : null,
         locationDistanceMeters: distanceMeters,
+        proofStoragePath: String(proofStoragePath),
+        proofUrl: String(proofUrl || ''),
         updatedAt: now,
         createdAt: existing.createdAt || now,
       }

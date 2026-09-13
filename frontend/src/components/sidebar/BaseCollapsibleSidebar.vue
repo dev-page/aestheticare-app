@@ -713,7 +713,8 @@ export default {
         key: 'mdi:key-outline',
         qr: 'mdi:qrcode-scan',
         check: 'mdi:check-circle-outline',
-        video: 'mdi:video-outline'
+        video: 'mdi:video-outline',
+        clock: 'mdi:clock-outline'
       }
 
       return map[key] || 'mdi:circle-outline'

@@ -268,6 +268,10 @@ export const permissionDependencies = {
   'finance:payables:approve': ['finance:payables:view'],
   'finance:payables:settle': ['finance:payables:view'],
   'finance:refunds:manage': ['finance:refunds:view'],
+  'procurement:create': ['procurement:view'],
+  'procurement:review': ['procurement:view'],
+  'policies:update': ['policies:view'],
+  'commissions:manage': ['commissions:view'],
 }
 
 export const permissionFeatureMap = {

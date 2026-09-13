@@ -53,7 +53,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
     children: [
       { type: 'section', label: 'PURCHASING' },
       { label: 'Procurement', icon: 'report', to: '/manager/procurement', permissionsAny: ['procurement:view', 'procurement:create', 'procurement:review'] },
-      { label: 'Purchase Requests', icon: 'plus', to: '/manager/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'] },
+      { label: 'Purchase Requests', icon: 'plus', to: '/manager/purchase-requests', permission: 'inventory:view' },
       { label: 'Purchase History', icon: 'report', to: '/manager/purchase-history', permission: 'finance:purchases:view' },
     ]
   },
@@ -68,9 +68,20 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Employee Profiles', icon: 'profile', to: '/owner/staff/profiles', feature: 'staff_management', permission: 'staff:view' },
       { label: 'Create Account', icon: 'userplus', to: '/owner/staff/add-staff', feature: 'staff_management', permission: 'staff:create' },
       { label: 'Archived Employees', icon: 'archive', to: '/owner/staff/archived', feature: 'staff_management', permission: 'staff:view' },
+      { label: 'Attendance', icon: 'calendar', to: '/owner/staff/attendance', feature: 'attendance', permission: 'attendance:view' },
       { type: 'section', label: 'ROLES & REPORTING' },
       { label: 'Roles', icon: 'shield', to: '/owner/staff/roles', feature: 'staff_management', permission: 'roles:manage', ownerOnly: true },
       { label: 'HR Reports', icon: 'report', to: '/owner/reports', feature: 'reports', permission: 'reports:view' },
+      { type: 'section', label: 'SHIFTS' },
+      { label: 'Add Shift', icon: 'plus', to: '/hr/add-shift', feature: 'hr', permission: 'hr:create' },
+      { label: 'Shift Assignment', icon: 'calendar', to: '/hr/schedule-assignment', feature: 'hr', permission: 'hr:update' },
+      { type: 'section', label: 'LEAVE & OVERTIME' },
+      { label: 'Leave Management', icon: 'calendar', to: '/hr/leave-management', feature: 'hr', permission: 'leave:review' },
+      { label: 'Leave Request', icon: 'file', to: '/hr/leave-request', feature: 'hr', permission: 'leave:create' },
+      { label: 'Overtime', icon: 'clock', to: '/hr/overtime', feature: 'hr', permission: 'overtime:view' },
+      { type: 'section', label: 'PAYROLL' },
+      { label: 'Base Pay', icon: 'cash', to: '/hr/base-pay', feature: 'payroll', permission: 'payroll:update' },
+      { label: 'Payroll Management', icon: 'cash', to: '/hr/payroll', feature: 'payroll', permission: 'payroll:update' },
     ]
   },
   {

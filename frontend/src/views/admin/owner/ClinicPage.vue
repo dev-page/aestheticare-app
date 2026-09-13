@@ -297,6 +297,20 @@
               </div>
             </section>
 
+            <section v-else-if="activeTab === 'policies'" class="space-y-4">
+              <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600">
+                <h3 class="text-white font-semibold mb-2">Clinic Policies</h3>
+                <p class="text-slate-400 text-sm mb-4">These are the policies currently visible to customers for this branch.</p>
+                <div v-if="visiblePolicies.length" class="space-y-3">
+                  <article v-for="policy in visiblePolicies" :key="policy.key" class="rounded-lg border border-slate-600 bg-slate-800/70 p-4">
+                    <h4 class="text-slate-100 font-medium">{{ policy.label }}</h4>
+                    <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{{ policy.text }}</p>
+                  </article>
+                </div>
+                <p v-else class="text-slate-400 text-sm">No clinic policies have been published for this branch.</p>
+              </div>
+            </section>
+
             <section v-else-if="activeTab === 'products'" class="space-y-4">
               <div v-if="products.length === 0" class="bg-slate-700/60 rounded-xl p-5 border border-slate-600 text-slate-300">
                 No products or services posted yet for this branch.
@@ -349,7 +363,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -375,6 +389,7 @@ export default {
     const mapError = ref('')
     const products = ref([])
     const reviews = ref([])
+    const clinicPolicy = ref({})
     const ownerEmail = ref('')
     const activeTab = ref('about')
     const isEditing = ref(false)
@@ -396,6 +411,7 @@ export default {
     const bannerPreviewUrl = ref('')
     let branchMap = null
     let branchMarker = null
+    let stopPolicyListener = null
     let mapsReady = false
     const caviteBounds = {
       north: 14.459,
@@ -408,8 +424,28 @@ export default {
     const tabs = [
       { id: 'about', label: 'About Us' },
       { id: 'products', label: 'Products & Services' },
-      { id: 'reviews', label: 'Reviews' }
+      { id: 'reviews', label: 'Reviews' },
+      { id: 'policies', label: 'Policies' }
     ]
+
+    const policyDefinitions = [
+      { key: 'cancellationPolicy', enabledKey: 'cancellationPolicyEnabled', label: 'Cancellation Policy' },
+      { key: 'reschedulePolicy', enabledKey: 'reschedulePolicyEnabled', label: 'Reschedule Policy' },
+      { key: 'refundPolicy', enabledKey: 'refundPolicyEnabled', label: 'Refund Policy' },
+      { key: 'consultationPolicy', enabledKey: 'consultationPolicyEnabled', label: 'Consultation Policy' },
+      { key: 'serviceTerms', enabledKey: 'serviceTermsEnabled', label: 'Service Terms' },
+      { key: 'productTerms', enabledKey: 'productTermsEnabled', label: 'Product Terms and Returns' },
+      { key: 'deliveryPolicy', enabledKey: 'deliveryPolicyEnabled', label: 'Delivery Policy' },
+      { key: 'paymentPolicy', enabledKey: 'paymentPolicyEnabled', label: 'Payment and Installment Policy' }
+    ]
+
+    const visiblePolicies = computed(() => policyDefinitions
+      .map((definition) => ({
+        ...definition,
+        text: String(clinicPolicy.value[definition.key] || '').trim()
+      }))
+      .filter((policy) => policy.text && clinicPolicy.value[policy.enabledKey] !== false)
+    )
 
     const isOwnerLikeRole = (role) => {
       const normalized = String(role || '').trim().toLowerCase()
@@ -634,12 +670,31 @@ export default {
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
     }
 
+    const listenToBranchPolicies = (branchId) => {
+      stopPolicyListener?.()
+      stopPolicyListener = null
+      clinicPolicy.value = {}
+      if (!branchId) return
+
+      stopPolicyListener = onSnapshot(
+        doc(db, 'clinicPolicies', branchId),
+        (snapshot) => {
+          clinicPolicy.value = snapshot.exists() ? snapshot.data() || {} : {}
+        },
+        (error) => {
+          console.error('Failed to load clinic policies:', error)
+          clinicPolicy.value = {}
+        }
+      )
+    }
+
     const selectBranch = async (branchId) => {
       if (!branchId || selectedBranchId.value === branchId) return
       selectedBranchId.value = branchId
       isEditing.value = false
       hydrateEditForm()
       await loadBranchPostsAndReviews(branchId)
+      listenToBranchPolicies(branchId)
     }
 
     const autoUnpublishExpiredBranches = async () => {
@@ -713,12 +768,16 @@ export default {
           selectedBranchId.value = branches.value[0].id
           hydrateEditForm()
           await loadBranchPostsAndReviews(selectedBranchId.value)
+          listenToBranchPolicies(selectedBranchId.value)
           await nextTick()
           await initBranchMap()
         } else {
           selectedBranchId.value = ''
           products.value = []
           reviews.value = []
+          clinicPolicy.value = {}
+          stopPolicyListener?.()
+          stopPolicyListener = null
           mapError.value = ''
         }
       } catch (error) {
@@ -880,6 +939,9 @@ export default {
           selectedBranchId.value = ''
           products.value = []
           reviews.value = []
+          clinicPolicy.value = {}
+          stopPolicyListener?.()
+          stopPolicyListener = null
           return
         }
         await initSubscription()
@@ -896,6 +958,7 @@ export default {
       if (profilePreviewUrl.value) URL.revokeObjectURL(profilePreviewUrl.value)
       if (bannerPreviewUrl.value) URL.revokeObjectURL(bannerPreviewUrl.value)
       if (unsubscribeAuth) unsubscribeAuth()
+      stopPolicyListener?.()
       if (branchMarker?.setMap) branchMarker.setMap(null)
       branchMap = null
       branchMarker = null
@@ -909,6 +972,7 @@ export default {
       selectedBranch,
       products,
       reviews,
+      visiblePolicies,
       ownerEmail,
       activeTab,
       tabs,

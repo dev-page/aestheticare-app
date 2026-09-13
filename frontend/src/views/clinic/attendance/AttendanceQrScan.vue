@@ -29,18 +29,24 @@
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 class="text-lg font-semibold text-white">QR Scanner</h2>
-              <p class="text-sm text-slate-400">Allow camera access and point your device at the attendance QR.</p>
+              <p class="text-sm text-slate-400">Take a current photo proof, then allow camera access and scan the attendance QR.</p>
             </div>
 
             <button
               type="button"
               class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-              :disabled="isScanning"
+              :disabled="isScanning || !proofFile"
               @click="startScanner"
             >
               {{ isScanning ? 'Scanner Active' : 'Start Scanner' }}
             </button>
           </div>
+
+          <label class="mt-4 flex cursor-pointer flex-wrap items-center gap-2 text-sm text-slate-300">
+            <span class="rounded-lg border border-slate-600 bg-slate-900 px-3 py-2">Photo proof</span>
+            <input type="file" accept="image/jpeg,image/png,image/webp" capture="user" class="sr-only" @change="selectProof" />
+            <span class="text-xs text-slate-400">{{ proofFileName || 'Required before scanning' }}</span>
+          </label>
 
           <div class="mt-5 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950">
             <div id="attendance-qr-reader" class="min-h-[320px]"></div>
@@ -90,11 +96,12 @@
 
 <script>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { doc, getDoc } from 'firebase/firestore'
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { onAuthStateChanged } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import { useRouter } from 'vue-router'
-import { auth, db } from '@/config/firebaseConfig'
+import { auth, db, storage } from '@/config/firebaseConfig'
 import { classifyAttendanceRecord } from '@/utils/attendanceStatus'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
@@ -121,6 +128,8 @@ export default {
     const lastAttendanceAction = ref('')
     const lastAttendanceTime = ref('')
     const nowRef = ref(new Date())
+    const proofFile = ref(null)
+    const proofFileName = ref('')
 
     const todayKey = computed(() => {
       const now = new Date()
@@ -181,6 +190,29 @@ export default {
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       )
     })
+
+    const selectProof = (event) => {
+      const file = event.target.files?.[0] || null
+      proofFile.value = null
+      proofFileName.value = ''
+      if (!file) return
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+        toast.error('Photo proof must be JPG, PNG, or WEBP and no larger than 5 MB.')
+        event.target.value = ''
+        return
+      }
+      proofFile.value = file
+      proofFileName.value = file.name
+    }
+
+    const uploadProof = async () => {
+      if (!proofFile.value) throw new Error('A current photo proof is required before scanning.')
+      const extension = proofFile.value.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const path = `attendanceProofs/${currentBranchId.value}/${currentUserId.value}/${todayKey.value}/${Date.now()}.${extension}`
+      const fileRef = storageRef(storage, path)
+      await uploadBytes(fileRef, proofFile.value, { contentType: proofFile.value.type })
+      return { proofStoragePath: path, proofUrl: await getDownloadURL(fileRef) }
+    }
 
     const recordAttendance = async (payload) => {
       const token = await auth.currentUser.getIdToken()
@@ -295,12 +327,14 @@ export default {
         }
 
         const coords = await getCurrentLocation()
+        const proof = await uploadProof()
         const response = await recordAttendance({
           branchId: currentBranchId.value,
           qrToken: String(payload.token || '').trim(),
           latitude: coords.latitude,
           longitude: coords.longitude,
           accuracy: coords.accuracy,
+          ...proof,
         })
         const recordedAction = response.action === 'clock_out' ? 'Clock Out' : 'Clock In'
         const record = response.record || {}
@@ -311,6 +345,7 @@ export default {
         toast.success(`${recordedAction} recorded successfully.`)
         return
 
+        /* Legacy client-side attendance write removed; the server owns timestamps and validation. */
         const now = new Date()
         const timeLabel = now.toLocaleTimeString('en-PH', {
           hour: '2-digit',
@@ -425,7 +460,6 @@ export default {
           return
         }
         await loadEmployeeProfile()
-        await startScanner()
       })
 
       clockInterval = setInterval(() => {
@@ -452,6 +486,9 @@ export default {
       statusClass,
       statusMessage,
       todayLabel,
+      proofFile,
+      proofFileName,
+      selectProof,
     }
   },
 }

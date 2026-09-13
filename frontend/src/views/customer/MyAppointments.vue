@@ -275,7 +275,7 @@
           </div>
 
           <div class="request-modal-body">
-            <div class="request-policy-card">
+            <div v-if="requestPolicyText" class="request-policy-card">
               <p class="request-policy-title">Clinic policy</p>
               <p class="mt-2 whitespace-pre-wrap">{{ requestPolicyText }}</p>
               <p class="mt-3">
@@ -394,7 +394,9 @@
 
             <div class="request-modal-actions">
               <p class="request-action-note">
-                The clinic will review this request before any refund or schedule change is finalized.
+                {{ requestModal.type === 'cancel'
+                  ? 'The clinic will review this cancellation request before it is finalized.'
+                  : 'The clinic will review this request before the schedule change is finalized.' }}
               </p>
               <div class="request-action-buttons">
                 <button
@@ -1081,9 +1083,9 @@ const getClinicPolicy = (appointment, kind) => {
   const clinic = clinicsById.value[appointment?.branchId] || {}
   if (kind === 'cancel') {
     return (
-      clinic.cancellationPolicy ||
-      clinic.refundPolicy ||
-      'Cancellation requests are reviewed by the clinic first. Approved cancellations are refunded without the system commission.'
+      (clinic.cancellationPolicyEnabled !== false && clinic.cancellationPolicy) ||
+      (clinic.refundPolicyEnabled !== false && clinic.refundPolicy) ||
+      ''
     )
   }
 
@@ -1226,8 +1228,11 @@ const startClinicsListener = () => {
       clinicMap.set(data.id, {
         name: data.clinicName || data.clinicBranch || 'Clinic',
         cancellationPolicy: String(data.cancellationPolicy || '').trim(),
+        cancellationPolicyEnabled: data.cancellationPolicyEnabled !== false,
         reschedulePolicy: String(data.reschedulePolicy || '').trim(),
+        reschedulePolicyEnabled: data.reschedulePolicyEnabled !== false,
         refundPolicy: String(data.refundPolicy || '').trim(),
+        refundPolicyEnabled: data.refundPolicyEnabled !== false,
       })
     })
     clinicsById.value = Object.fromEntries(clinicMap.entries())
