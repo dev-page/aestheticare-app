@@ -1016,6 +1016,65 @@ export default {
       })
     }
 
+    const migrateLegacyClinicOwnerRole = async (ownerId, roleSnapshot) => {
+      const legacyRoleDoc = roleSnapshot.docs.find(
+        (roleDoc) => roleDoc.data()?.builtinKey === 'clinic-owner'
+      )
+      if (!legacyRoleDoc) return roleSnapshot
+
+      const currentRoleDoc = roleSnapshot.docs.find(
+        (roleDoc) => roleDoc.data()?.builtinKey === 'clinic-admin'
+      )
+      const targetRoleId = currentRoleDoc?.id || legacyRoleDoc.id
+      const template = builtInRoleTemplates.find((entry) => entry.key === 'clinic-admin')
+
+      if (!currentRoleDoc) {
+        await updateDoc(doc(db, 'clinicRoles', legacyRoleDoc.id), {
+          name: template.name,
+          description: template.description,
+          color: template.color,
+          builtinKey: template.key,
+          isBuiltIn: true,
+          permissions: getTemplatePermissions(template.suggestion),
+          updatedAt: serverTimestamp(),
+        })
+        return getDocs(query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId)))
+      }
+
+      const [legacyUsers, multiRoleUsers] = await Promise.all([
+        getDocs(query(collection(db, 'users'), where('customRoleId', '==', legacyRoleDoc.id))),
+        getDocs(query(collection(db, 'users'), where('customRoleIds', 'array-contains', legacyRoleDoc.id))),
+      ])
+      const assignedUsers = new Map()
+      ;[...legacyUsers.docs, ...multiRoleUsers.docs].forEach((userDoc) => {
+        assignedUsers.set(userDoc.id, userDoc)
+      })
+
+      if (assignedUsers.size) {
+        const batch = writeBatch(db)
+        assignedUsers.forEach((userDoc) => {
+          const userData = userDoc.data() || {}
+          const roleIds = [
+            ...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []),
+            userData.customRoleId,
+          ]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+            .filter((value) => value !== legacyRoleDoc.id)
+          const nextRoleIds = [...new Set([targetRoleId, ...roleIds])]
+          batch.update(userDoc.ref, {
+            customRoleId: nextRoleIds[0],
+            customRoleIds: nextRoleIds,
+            customRoleName: 'Clinic Admin',
+          })
+        })
+        await batch.commit()
+      }
+
+      await deleteDoc(doc(db, 'clinicRoles', legacyRoleDoc.id))
+      return getDocs(query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId)))
+    }
+
     const loadRoles = async (ownerId = accessScopeOwnerId.value || auth.currentUser?.uid) => {
       if (ownerId && typeof ownerId !== 'string') {
         ownerId = accessScopeOwnerId.value || auth.currentUser?.uid
@@ -1034,6 +1093,8 @@ export default {
         let roleSnapshot = await getDocs(
           query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId))
         )
+
+        roleSnapshot = await migrateLegacyClinicOwnerRole(ownerId, roleSnapshot)
 
         const existingBuiltInKeys = new Set(
           roleSnapshot.docs
