@@ -20,7 +20,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
       { label: 'Client List', icon: 'profile', to: '/receptionist/clients', permission: 'clients:view' },
       { label: 'Add Client', icon: 'userplus', to: '/receptionist/clients/add', permission: 'clients:create' },
       { type: 'section', label: 'APPOINTMENTS' },
-      { label: 'Bookings', icon: 'calendar-multiple', to: '/receptionist/bookings', permission: 'appointments:view' },
+      { label: 'Bookings', icon: 'calendar-multiple', to: '/receptionist/appointments', permission: 'appointments:view' },
       { label: 'Appointments', icon: 'calendar', to: '/receptionist/appointments', permission: 'appointments:view' },
       { label: 'Appointment Requests', icon: 'calendar-check', to: '/receptionist/appointment-requests', permission: 'appointments:review' },
       { label: 'Online Consultation', icon: 'clinic', to: '/practitioner/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },

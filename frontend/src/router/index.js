@@ -122,6 +122,7 @@ const routes = [
   { path: "/receptionist/clients", name: "receptionist-clients", component: () => import("@/views/admin/owner/crm/ReceptionistClientList.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/receptionist/clients/add", name: "receptionist-clients-add", component: () => import("@/views/admin/owner/crm/ReceptionistAddClient.vue"), meta: { requiresAuth: true, requiresPermission: "clients:create" } },
   { path: "/receptionist/appointments", name: "receptionist-appointments", component: () => import("@/views/admin/owner/crm/ReceptionistAppointmentList.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:view" } },
+  { path: "/receptionist/bookings", redirect: "/receptionist/appointments" },
   { path: "/receptionist/appointment-requests", name: "receptionist-appointment-requests", component: () => import("@/views/admin/owner/crm/AppointmentRequestApprovals.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:review" } },
   { path: "/receptionist/appointments/add", name: "receptionist-appointments-add", component: () => import("@/views/admin/owner/crm/ReceptionistAddAppointment.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:create" } },
   { path: "/receptionist/pos", name: "receptionist-pos", component: () => import("@/views/admin/owner/crm/ReceptionistPOS.vue"), meta: { requiresAuth: true, requiresPermission: "payments:create" } },
