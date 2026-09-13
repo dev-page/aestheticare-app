@@ -116,7 +116,13 @@
                     </div>
                   </div>
                   <span
-                    v-if="role.permissions.length === 0"
+                    v-if="role.isBuiltIn"
+                    class="rounded-full border border-[#8d5a3b] bg-[#24160f] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#e2c7b6]"
+                  >
+                    Built-in
+                  </span>
+                  <span
+                    v-else-if="role.permissions.length === 0"
                     class="rounded-full border border-[#5a3927] bg-[#3a2417] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d2b7a6]"
                   >
                     Needs permissions
@@ -206,7 +212,9 @@
                           <span class="role-swatch h-4 w-4" :style="{ background: role.color || '#38bdf8' }"></span>
                           <div class="min-w-0">
                             <h4 class="truncate text-base font-semibold text-[#f3e7e0]">{{ role.name }}</h4>
-                            <p class="mt-1 text-xs uppercase tracking-[0.16em] text-[#d2b7a6]">Custom Clinic Role</p>
+                            <p class="mt-1 text-xs uppercase tracking-[0.16em] text-[#d2b7a6]">
+                              {{ role.isBuiltIn ? 'Built-in Clinic Role' : 'Custom Clinic Role' }}
+                            </p>
                           </div>
                         </div>
                         <span class="rounded-full border border-[#5a3927] bg-[#24160f] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]">
@@ -225,7 +233,17 @@
                       <div class="mt-5 flex flex-wrap gap-2">
                         <button type="button" class="ghost-action" @click="openDetails(role.id)">Role Details</button>
                         <button type="button" class="ghost-action" @click="openPermissions(role.id)">Set Permissions</button>
-                        <button type="button" class="danger-action" @click="removeRole(role.id)">Delete</button>
+                        <button
+                          v-if="!role.isBuiltIn"
+                          type="button"
+                          class="danger-action"
+                          @click="removeRole(role.id)"
+                        >
+                          Delete
+                        </button>
+                        <span v-else class="rounded-2xl border border-[#5a3927] px-3 py-2 text-xs text-[#d2b7a6]">
+                          Protected template
+                        </span>
                       </div>
                     </article>
                   </div>
@@ -307,7 +325,17 @@
                         <p class="mt-2 text-sm text-[#e2c7b6]">Update the role profile before assigning or managing permissions.</p>
                       </div>
                     </div>
-                    <button type="button" class="danger-action" @click="removeRole(selectedRole.id)">Delete Role</button>
+                    <button
+                      v-if="!selectedRole.isBuiltIn"
+                      type="button"
+                      class="danger-action"
+                      @click="removeRole(selectedRole.id)"
+                    >
+                      Delete Role
+                    </button>
+                    <span v-else class="rounded-2xl border border-[#5a3927] px-3 py-2 text-xs text-[#d2b7a6]">
+                      Protected built-in role
+                    </span>
                   </div>
 
                   <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px]">
@@ -324,6 +352,15 @@
 
                       <div class="flex flex-wrap justify-end gap-3">
                         <button type="button" class="ghost-action" @click="resetSelectedDraft">Discard Changes</button>
+                        <button
+                          v-if="selectedRole.isBuiltIn"
+                          type="button"
+                          class="ghost-action"
+                          :disabled="saving"
+                          @click="resetBuiltInRole"
+                        >
+                          Reset to Default
+                        </button>
                         <button
                           type="button"
                           class="inline-flex items-center gap-2 rounded-2xl bg-[#8d5a3b] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6f4329] disabled:cursor-not-allowed disabled:opacity-60"
@@ -554,6 +591,15 @@
                   <div class="mt-6 flex flex-wrap justify-end gap-3">
                     <button type="button" class="ghost-action" @click="resetSelectedDraft">Discard Changes</button>
                     <button
+                      v-if="selectedRole.isBuiltIn"
+                      type="button"
+                      class="ghost-action"
+                      :disabled="saving"
+                      @click="resetBuiltInRole"
+                    >
+                      Reset to Default
+                    </button>
+                    <button
                       type="button"
                       class="inline-flex items-center gap-2 rounded-2xl bg-[#8d5a3b] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6f4329] disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
@@ -643,6 +689,63 @@ const permissionSuggestionRules = [
   },
 ]
 
+const builtInRoleTemplates = [
+  {
+    key: 'clinic-manager',
+    name: 'Manager',
+    description: 'Oversees clinic operations, staff coordination, services, inventory, and orders.',
+    color: '#b9784f',
+    suggestion: 'manager',
+  },
+  {
+    key: 'receptionist',
+    name: 'Receptionist',
+    description: 'Handles clients, bookings, appointments, payments, inbox messages, and notifications.',
+    color: '#c58b5c',
+    suggestion: 'reception',
+  },
+  {
+    key: 'practitioner',
+    name: 'Practitioner',
+    description: 'Works with clients, appointments, consultations, and personal leave requests.',
+    color: '#9f765b',
+    suggestion: 'practitioner',
+  },
+  {
+    key: 'hr',
+    name: 'HR',
+    description: 'Manages employee records, attendance, leave, overtime, and payroll preparation.',
+    color: '#8f6a52',
+    suggestion: 'hr',
+  },
+  {
+    key: 'finance',
+    name: 'Finance',
+    description: 'Reviews sales, purchases, payables, refunds, financial reports, and payroll approval.',
+    color: '#a8895d',
+    suggestion: 'finance',
+  },
+  {
+    key: 'inventory-procurement',
+    name: 'Inventory & Procurement',
+    description: 'Maintains supplies, suppliers, purchase requests, procurement records, and orders.',
+    color: '#99704d',
+    suggestion: 'supply',
+  },
+  {
+    key: 'clinic-owner',
+    name: 'Clinic Owner',
+    description: 'Full access to the clinic workspace and all available administration tools.',
+    color: '#d09a61',
+    suggestion: 'admin',
+  },
+]
+
+const getTemplatePermissions = (suggestion) => {
+  const rule = permissionSuggestionRules.find((entry) => entry.match.includes(suggestion))
+  return rule ? [...new Set(rule.permissions)] : []
+}
+
 const chunkArray = (items, size = 10) => {
   const chunks = []
   for (let index = 0; index < items.length; index += size) {
@@ -658,6 +761,8 @@ const normalizeRole = (docId, data, memberCount = 0) => ({
   color: String(data.color || colorPresets[0]).trim() || colorPresets[0],
   permissions: Array.isArray(data.permissions) ? data.permissions.filter(Boolean) : [],
   ownerId: String(data.ownerId || '').trim(),
+  builtinKey: String(data.builtinKey || '').trim(),
+  isBuiltIn: Boolean(data.isBuiltIn || data.builtinKey),
   memberCount,
 })
 
@@ -892,14 +997,49 @@ export default {
       loading.value = true
       try {
         await loadBranchIds(ownerId)
-        const roleSnapshot = await getDocs(
+        let roleSnapshot = await getDocs(
           query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId))
         )
+
+        const existingBuiltInKeys = new Set(
+          roleSnapshot.docs
+            .map((roleDoc) => String(roleDoc.data()?.builtinKey || '').trim())
+            .filter(Boolean)
+        )
+        const missingTemplates = builtInRoleTemplates.filter(
+          (template) => !existingBuiltInKeys.has(template.key)
+        )
+
+        if (missingTemplates.length) {
+          await Promise.all(
+            missingTemplates.map((template) => {
+              const roleRef = doc(db, 'clinicRoles', `${ownerId}__builtin__${template.key}`)
+              return setDoc(roleRef, {
+                ownerId,
+                name: template.name,
+                description: template.description,
+                color: template.color,
+                builtinKey: template.key,
+                isBuiltIn: true,
+                permissions: getTemplatePermissions(template.suggestion),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              }, { merge: false })
+            })
+          )
+          roleSnapshot = await getDocs(
+            query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId))
+          )
+        }
+
         const roleCounts = await buildRoleCounts()
 
         roles.value = roleSnapshot.docs
           .map((roleDoc) => normalizeRole(roleDoc.id, roleDoc.data() || {}, roleCounts.get(roleDoc.id) || 0))
-          .sort((left, right) => left.name.localeCompare(right.name))
+          .sort((left, right) => {
+            if (left.isBuiltIn !== right.isBuiltIn) return left.isBuiltIn ? -1 : 1
+            return left.name.localeCompare(right.name)
+          })
 
         if (!roles.value.length) {
           selectedRoleId.value = ''
@@ -1153,9 +1293,61 @@ export default {
       }
     }
 
+    const resetBuiltInRole = async () => {
+      const role = selectedRole.value
+      if (!role?.isBuiltIn) return
+
+      const template = builtInRoleTemplates.find((entry) => entry.key === role.builtinKey)
+      if (!template) {
+        toast.error('This built-in role template is no longer available.')
+        return
+      }
+
+      const result = await Swal.fire({
+        title: 'Reset built-in role?',
+        text: 'This will replace the role details and permissions with the recommended defaults.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Reset role',
+        cancelButtonText: 'Cancel',
+      })
+
+      if (!result.isConfirmed) return
+
+      saving.value = true
+      try {
+        selectedRoleDraft.value = {
+          name: template.name,
+          description: template.description,
+          color: template.color,
+          permissions: allPermissionKeys.filter((permissionKey) =>
+            normalizePermissionSet(getTemplatePermissions(template.suggestion)).has(permissionKey)
+          ),
+        }
+        await updateDoc(doc(db, 'clinicRoles', role.id), {
+          name: template.name,
+          description: template.description,
+          color: template.color,
+          updatedAt: serverTimestamp(),
+        })
+        await saveRolePermissions()
+        toast.success(`${template.name} reset to its recommended defaults.`)
+      } catch (error) {
+        console.error('Failed to reset built-in role:', error)
+        toast.error('Unable to reset this built-in role right now.')
+      } finally {
+        saving.value = false
+      }
+    }
+
     const removeRole = async (roleId) => {
       const role = roles.value.find((entry) => entry.id === roleId)
       if (!role) return
+
+      if (role.isBuiltIn) {
+        toast.error('Built-in roles are protected. Use Reset to Default instead.')
+        return
+      }
 
       if (role.memberCount > 0) {
         toast.error('Remove or reassign staff from this role before deleting it.')
@@ -1255,6 +1447,7 @@ export default {
       removeRole,
       resetNewRole,
       resetSelectedDraft,
+      resetBuiltInRole,
       accessScopeLabel,
       accessPreview,
       roles,
