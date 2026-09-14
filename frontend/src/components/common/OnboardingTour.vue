@@ -8,7 +8,7 @@
       ></div>
 
       <section
-        class="pointer-events-auto fixed w-[min(92vw,23rem)] overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-[#fffaf2] via-white to-[#f8e7cf] text-[#2a170d] shadow-[0_18px_48px_rgba(20,10,4,0.28)] sm:w-[23rem]"
+        :class="['onboarding-tooltip', { 'onboarding-tooltip-module': panelKey === 'owner' || panelKey === 'employee' }]"
         ref="tooltipElement"
         :style="tooltipStyle"
         role="dialog"
@@ -61,6 +61,7 @@ const props = defineProps({
   stepIndex: { type: Number, default: 0 },
   isLastStep: { type: Boolean, default: false },
   dontShowAgain: { type: Boolean, default: false },
+  panelKey: { type: String, default: '' },
 })
 
 const emit = defineEmits(['close', 'next', 'previous', 'update:dontShowAgain'])
@@ -170,3 +171,47 @@ onBeforeUnmount(() => {
   window.removeEventListener('scroll', syncTarget, true)
 })
 </script>
+
+<style scoped>
+.onboarding-tooltip {
+  position: fixed;
+  z-index: 1;
+  pointer-events: auto;
+  width: min(92vw, 23rem);
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid rgba(245, 214, 187, .7);
+  background: linear-gradient(135deg, #fffaf2, #fff, #f8e7cf);
+  color: #2a170d;
+  box-shadow: 0 18px 48px rgba(20, 10, 4, .28);
+}
+
+.onboarding-tooltip-module {
+  border-color: rgba(141, 90, 59, .7);
+  background: linear-gradient(135deg, #2a1a14, #1b1411 68%, #302016);
+  color: #f8eee5;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .5);
+}
+
+.onboarding-tooltip-module > div:first-child {
+  background: linear-gradient(90deg, #a66a2c, #c58b5e, #8d5a3b);
+}
+
+.onboarding-tooltip-module .text-\[\#8b6a4d\],
+.onboarding-tooltip-module .text-\[\#674b37\],
+.onboarding-tooltip-module .text-\[\#2a170d\] {
+  color: #d8c0ad;
+}
+
+.onboarding-tooltip-module .text-amber-700 { color: #d8a77e; }
+.onboarding-tooltip-module .bg-white\/65 { border-color: rgba(141, 90, 59, .6); background: rgba(15, 20, 24, .58); }
+.onboarding-tooltip-module .hover\:bg-amber-100:hover { background: rgba(141, 90, 59, .25); }
+.onboarding-tooltip-module .bg-\[\#2a170d\] { background: #8d5a3b; }
+.onboarding-tooltip-module .hover\:bg-\[\#4a2818\]:hover { background: #a66a2c; }
+.onboarding-tooltip-module .bg-amber-200 { background: #8d5a3b; }
+
+@media (max-width: 360px) {
+  .onboarding-tooltip { width: calc(100vw - 24px); }
+  .onboarding-tooltip > div.p-6 { padding: 1rem; }
+}
+</style>

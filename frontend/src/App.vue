@@ -21,6 +21,7 @@
         :step-index="onboardingStepIndex"
         :is-last-step="onboardingIsLastStep"
         :dont-show-again="onboardingDontShowAgain"
+        :panel-key="sidebarPanelKey"
         @close="onboardingClose"
         @next="onboardingNext"
         @previous="onboardingPrevious"
