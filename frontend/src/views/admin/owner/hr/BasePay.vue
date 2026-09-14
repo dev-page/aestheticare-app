@@ -19,6 +19,7 @@ export default {
     const staffList = ref([])
     const loading = ref(false)
     const savingId = ref('')
+    const basePayErrors = ref({})
 
     const loadStaff = async () => {
       if (!currentBranchId.value) {
@@ -41,7 +42,7 @@ export default {
             id: staff.id,
             fullName: `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.email || 'Unnamed',
             role: String(staff.customRoleName || staff.role || 'Staff').trim(),
-            basePay: Number(staff.basePay || 0)
+            basePay: staff.basePay == null || staff.basePay === '' ? '' : Number(staff.basePay)
           }))
       } catch (error) {
         console.error('Failed to load staff for base pay:', error)
@@ -53,19 +54,32 @@ export default {
 
     const saveBasePay = async (staff) => {
       if (!staff) return
-      const basePayValue = Number(staff.basePay)
-      if (!Number.isFinite(basePayValue)) {
-        toast.error('Base pay must be a valid number.')
+      const rawValue = String(staff.basePay ?? '').trim()
+      const basePayValue = Number(rawValue)
+      let validationMessage = ''
+      if (!rawValue) {
+        validationMessage = 'Enter the employee\'s hourly base pay.'
+      } else if (!Number.isFinite(basePayValue)) {
+        validationMessage = 'Base pay must be a valid number.'
+      } else if (basePayValue <= 0) {
+        validationMessage = 'Base pay must be greater than PHP 0.00.'
+      } else if (basePayValue > 1000000) {
+        validationMessage = 'Base pay cannot exceed PHP 1,000,000.00 per hour.'
+      } else if (!/^\d+(\.\d{1,2})?$/.test(rawValue)) {
+        validationMessage = 'Base pay may contain up to two decimal places.'
+      }
+      if (validationMessage) {
+        basePayErrors.value = { ...basePayErrors.value, [staff.id]: validationMessage }
+        toast.error(validationMessage)
         return
       }
-      if (basePayValue < 0) {
-        toast.error('Base pay cannot be negative.')
-        return
-      }
+      const nextErrors = { ...basePayErrors.value }
+      delete nextErrors[staff.id]
+      basePayErrors.value = nextErrors
       savingId.value = staff.id
       try {
         await updateDoc(doc(db, 'users', staff.id), {
-          basePay: Number(basePayValue || 0)
+          basePay: Number(basePayValue.toFixed(2))
         })
 
         await logActivity(db, {
@@ -83,6 +97,13 @@ export default {
       } finally {
         savingId.value = ''
       }
+    }
+
+    const clearBasePayError = (staffId) => {
+      if (!basePayErrors.value[staffId]) return
+      const nextErrors = { ...basePayErrors.value }
+      delete nextErrors[staffId]
+      basePayErrors.value = nextErrors
     }
 
     let unsubscribeAuth = null
@@ -117,6 +138,8 @@ export default {
       staffList,
       loading,
       savingId,
+      basePayErrors,
+      clearBasePayError,
       saveBasePay
     }
   }
@@ -158,8 +181,12 @@ export default {
                   min="0"
                   step="0.01"
                   v-model.number="staff.basePay"
+                  inputmode="decimal"
+                  maxlength="12"
+                  @input="clearBasePayError(staff.id)"
                   class="w-full min-w-[140px] px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                <p v-if="basePayErrors[staff.id]" class="mt-1 text-xs text-rose-300">{{ basePayErrors[staff.id] }}</p>
               </td>
               <td class="py-2 px-3 sm:py-3 sm:px-4">
                 <button

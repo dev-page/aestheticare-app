@@ -24,6 +24,6 @@ const requestLinks = [
   { label: 'Payroll Approval', to: '/finance/payroll-approval', description: 'Review HR-prepared payroll summaries before payslips are finalized.' },
   { label: 'Expenses & Payables', to: '/finance/accounts-payable', description: 'Review purchase budgets, payment receipts, reimbursements, and settlement status.' },
   { label: 'Refund Requests', to: '/finance/refunds', description: 'Review customer refund requests and issue approved refund vouchers.' },
-  { label: 'Budget', to: '/finance/budget', description: 'Monitor requested and approved purchase budgets for the branch.' }
+  { label: 'Purchase Budget Tracking', to: '/finance/budget', description: 'Track requested, approved, committed, delivered, and settled purchase amounts.' }
 ]
 </script>

@@ -183,8 +183,6 @@ export const permissionGroups = [
           { key: 'finance:refunds:manage', label: 'Manage Refunds', description: 'Approve or reject refunds and issue vouchers.', icon: 'mdi:cash-refund' },
           { key: 'finance:sales:view', label: 'View Sales Ledger', description: 'Review sales transactions and daily reconciliation.', icon: 'mdi:cash-multiple' },
           { key: 'finance:reports:view', label: 'View Financial Reports', description: 'Access profit, cost, payroll, and sales analysis.', icon: 'mdi:chart-box-outline' },
-          { key: 'commissions:view', label: 'View Commission Agreements', description: 'View commission terms and notifications.', icon: 'mdi:handshake-outline' },
-          { key: 'commissions:manage', label: 'Manage Commission Agreements', description: 'Create and update commission agreements.', icon: 'mdi:handshake-outline' },
         ],
       },
     ],
@@ -271,7 +269,6 @@ export const permissionDependencies = {
   'procurement:create': ['procurement:view'],
   'procurement:review': ['procurement:view'],
   'policies:update': ['policies:view'],
-  'commissions:manage': ['commissions:view'],
 }
 
 export const permissionFeatureMap = {

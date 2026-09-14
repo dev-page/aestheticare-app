@@ -94,7 +94,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
       { label: 'Income & Payments', icon: 'report', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },
       { type: 'section', label: 'EXPENSES & BUDGET' },
       { label: 'Expenses & Payables', icon: 'card', to: '/finance/accounts-payable', feature: 'reports', permission: 'finance:payables:view' },
-      { label: 'Budget', icon: 'report', to: '/finance/budget', feature: 'reports', permission: 'finance:payables:view' },
+      { label: 'Purchase Budget Tracking', icon: 'report', to: '/finance/budget', feature: 'reports', permission: 'finance:payables:view' },
       { type: 'section', label: 'PAYROLL' },
       { label: 'Payroll Summary', icon: 'card', to: '/finance/payroll-summary', feature: 'payroll', permission: 'payroll:view' },
       { label: 'Payroll Approval', icon: 'shield', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },
@@ -103,15 +103,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
       { label: 'Financial Reports', icon: 'report', to: '/finance/reports', feature: 'reports', permission: 'finance:reports:view' }
     ]
   },
-  {
-    key: 'policies',
-    label: 'Policies',
-    icon: 'file',
-    children: [
-      { label: 'Policy Management', icon: 'file', to: '/owner/policies', permissionsAny: ['policies:view', 'policies:update'] },
-      { label: 'Commission Agreements', icon: 'handshake', to: '/owner/commission-contracts', permissionsAny: ['commissions:view', 'commissions:manage'] }
-    ]
-  },
+  { label: 'Policy Management', icon: 'file', to: '/owner/policies', permissionsAny: ['policies:view', 'policies:update'] },
   {
     key: 'account',
     label: 'Account Settings',

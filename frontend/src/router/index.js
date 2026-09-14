@@ -101,7 +101,6 @@ const routes = [
   { path: "/owner/account/plans", name: "owner-plan-selection", component: () => import("@/views/admin/owner/OwnerPlanSelection.vue"), meta: { requiresAuth: true } },
   { path: "/owner/clinic-page", name: "owner-clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:update" } },
   { path: "/owner/policies", name: "owner-policies", component: () => import("@/views/admin/owner/OwnerPolicyManagement.vue"), meta: { requiresAuth: true, requiresPermission: "policies:view" } },
-  { path: "/owner/commission-contracts", name: "owner-commission-contracts", component: () => import("@/views/admin/owner/finance/CommissionContracts.vue"), meta: { requiresAuth: true, requiresPermission: "commissions:view" } },
 
   // Manager routes
   { path: "/manager/dashboard", name: "manager-dashboard", component: () => import("@/views/admin/owner/operations/ManagerDashboard.vue"), meta: { requiresAuth: true } },

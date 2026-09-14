@@ -6,8 +6,8 @@
         <header class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">Finance</p>
-            <h1 class="mt-2 text-3xl font-bold text-white">Budget</h1>
-            <p class="mt-2 text-slate-400">Monitor requested, approved, and committed purchase budgets for this branch.</p>
+            <h1 class="mt-2 text-3xl font-bold text-white">Purchase Budget Tracking</h1>
+            <p class="mt-2 text-slate-400">Track purchase requests from budget review through delivery and settlement.</p>
           </div>
           <label class="text-sm text-slate-300">
             <span class="mb-2 block text-slate-400">Status filter</span>
@@ -27,7 +27,7 @@
 
         <section class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div class="border-b border-slate-700 px-5 py-4">
-            <h2 class="font-semibold text-white">Purchase Budget Requests</h2>
+            <h2 class="font-semibold text-white">Purchase Requests and Budget Status</h2>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full min-w-[850px] text-left text-sm">
@@ -55,8 +55,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { collection, getDoc, onSnapshot, query, where, doc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth, db } from '@/config/firebaseConfig'
@@ -66,6 +66,8 @@ const loading = ref(true)
 const statusFilter = ref('')
 const statuses = ['Requested', 'Approved', 'Rejected', 'Delivered', 'Settled']
 const branchId = ref('')
+let stopRequests = null
+let stopAuth = null
 const filteredRequests = computed(() => requests.value.filter((request) => !statusFilter.value || String(request.budgetStatus || request.status || '').toLowerCase() === statusFilter.value.toLowerCase()))
 const amountOf = (request) => Number(request.totalCost || request.total || request.amount || 0)
 const summaryCards = computed(() => [
@@ -77,20 +79,46 @@ const summaryCards = computed(() => [
 const formatCurrency = (value) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0))
 const formatDate = (value) => value?.toDate ? value.toDate().toLocaleDateString('en-PH') : value ? new Date(value).toLocaleDateString('en-PH') : '-'
 
-async function loadRequests() {
+function loadRequests() {
+  stopRequests?.()
+  stopRequests = null
+  requests.value = []
   if (!branchId.value) return
-  const snapshot = await getDocs(query(collection(db, 'purchaseRequests'), where('branchId', '==', branchId.value)))
-  requests.value = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+
+  loading.value = true
+  stopRequests = onSnapshot(
+    query(collection(db, 'purchaseRequests'), where('branchId', '==', branchId.value)),
+    (snapshot) => {
+      requests.value = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+      loading.value = false
+    },
+    (error) => {
+      console.error('Failed to listen for purchase budget updates:', error)
+      loading.value = false
+    }
+  )
 }
 
-onMounted(() => onAuthStateChanged(auth, async (user) => {
+onMounted(() => {
+  stopAuth = onAuthStateChanged(auth, async (user) => {
   try {
-    if (!user) return
-    const snapshot = await getDocs(query(collection(db, 'users'), where('__name__', '==', user.uid)))
-    branchId.value = snapshot.docs[0]?.data()?.branchId || ''
-    await loadRequests()
+    if (!user) {
+      branchId.value = ''
+      loadRequests()
+      loading.value = false
+      return
+    }
+    const snapshot = await getDoc(doc(db, 'users', user.uid))
+    branchId.value = snapshot.data()?.branchId || ''
+    loadRequests()
   } finally {
-    loading.value = false
+    if (!branchId.value) loading.value = false
   }
-}))
+  })
+})
+
+onUnmounted(() => {
+  stopRequests?.()
+  stopAuth?.()
+})
 </script>
