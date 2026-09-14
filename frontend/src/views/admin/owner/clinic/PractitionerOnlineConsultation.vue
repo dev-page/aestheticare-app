@@ -117,7 +117,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, serverTimestamp, addDoc } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, setDoc, serverTimestamp, addDoc, deleteField } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
@@ -204,7 +204,12 @@ export default {
     const loadAppointments = async () => {
       if (!currentBranchId.value) return
       const snapshot = await getDocs(query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)))
-      appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
+      const records = await Promise.all(snapshot.docs.map(async (snap) => {
+        const appointment = { id: snap.id, ...snap.data() }
+        const meetingSnap = await getDoc(doc(db, 'appointmentMeetings', snap.id))
+        return meetingSnap.exists() ? { ...appointment, ...meetingSnap.data() } : appointment
+      }))
+      appointments.value = sortRecordsNewestFirst(records)
     }
 
     const parseDateTime = (dateValue, timeValue) => {
@@ -241,6 +246,7 @@ export default {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
+            appointmentId: appointment.id,
             summary: `Online Consultation - ${clientName}`,
             description: `${serviceName} (${appointment.date || ''} ${appointment.time || ''})`,
             startDateTime: start.toISOString(),
@@ -261,10 +267,18 @@ export default {
 
         await updateDoc(doc(db, 'appointments', appointment.id), {
           consultationMode: 'online',
+          meetLink: deleteField(),
+          meetEventId: deleteField(),
+          meetCreatedAt: deleteField(),
+          meetCreatedBy: deleteField(),
+        })
+        await setDoc(doc(db, 'appointmentMeetings', appointment.id), {
           meetLink,
           meetEventId: payload?.data?.eventId || '',
           meetCreatedAt: serverTimestamp(),
           meetCreatedBy: currentUserId.value || '',
+          customerId: appointment.customerId || '',
+          practitionerId: appointment.practitionerId || appointment.assignedPractitionerId || '',
         })
 
         appointment.meetLink = meetLink

@@ -2734,6 +2734,7 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
   }
 
   const {
+    appointmentId,
     summary,
     description,
     startDateTime,
@@ -2742,6 +2743,22 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
     attendeeEmails,
     requestId,
   } = req.body ?? {}
+
+  const cleanAppointmentId = String(appointmentId || '').trim()
+  if (!cleanAppointmentId) return res.status(400).json({ success: false, error: 'appointmentId is required' })
+  const appointmentSnap = await admin.firestore().collection('appointments').doc(cleanAppointmentId).get()
+  if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
+  const appointment = appointmentSnap.data() || {}
+  const assignedPractitioner = [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo]
+    .map((value) => String(value || '').trim()).includes(req.user.uid)
+  req.userContext = req.userContext || await loadUserContext(req.user.uid)
+  const sameBranch = String(req.userContext.userData?.branchId || '').trim() === String(appointment.branchId || '').trim()
+  const roleKey = String(req.userContext.roleKey || '').trim()
+  const isAuthorizedPractitioner = roleKey === 'Superadmin' || roleKey === 'Owner' || (sameBranch && assignedPractitioner)
+  if (!isAuthorizedPractitioner) return res.status(403).json({ success: false, error: 'Only the assigned practitioner may create this consultation link.' })
+  if (String(appointment.consultationMode || '').trim().toLowerCase() === 'on-site') {
+    return res.status(409).json({ success: false, error: 'On-site appointments cannot have an online consultation link.' })
+  }
 
   const cleanSummary = String(summary || '').trim()
   const cleanDescription = String(description || '').trim()

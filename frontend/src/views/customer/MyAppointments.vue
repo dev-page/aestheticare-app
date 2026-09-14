@@ -1191,17 +1191,19 @@ const startAppointmentsListener = (userId) => {
   const appointmentsQuery = query(collection(db, 'appointments'), where('customerId', '==', userId))
   unsubscribeAppointments = onSnapshot(
     appointmentsQuery,
-    (snapshot) => {
+    async (snapshot) => {
       const clinicMap = new Map(Object.entries(clinicsById.value).map(([id, data]) => [id, data]))
       const now = new Date()
-      const all = snapshot.docs.map((snap) => {
+      const all = await Promise.all(snapshot.docs.map(async (snap) => {
         const data = snap.data()
+        const meetingSnap = await getDoc(doc(db, 'appointmentMeetings', snap.id))
         return {
           id: snap.id,
           ...data,
+          ...(meetingSnap.exists() ? meetingSnap.data() : {}),
           clinic: clinicMap.get(data.branchId)?.name || 'Clinic',
         }
-      })
+      }))
 
       onlineConsultations.value = sortRecordsNewestFirst(
         all.filter((appt) => isOnlineConsultationAppointment(appt))

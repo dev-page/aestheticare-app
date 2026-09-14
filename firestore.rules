@@ -332,6 +332,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Keep Google Meet links private to the appointment participants.
+    match /appointmentMeetings/{appointmentId} {
+      allow read: if isSignedIn()
+        && (get(/databases/$(database)/documents/appointments/$(appointmentId)).data.customerId == request.auth.uid
+          || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.practitionerId == request.auth.uid
+          || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.assignedPractitionerId == request.auth.uid);
+      allow create, update: if isSignedIn()
+        && (request.resource.data.customerId == get(/databases/$(database)/documents/appointments/$(appointmentId)).data.customerId
+          && (get(/databases/$(database)/documents/appointments/$(appointmentId)).data.practitionerId == request.auth.uid
+            || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.assignedPractitionerId == request.auth.uid));
+      allow delete: if false;
+    }
+
     match /attendance/{attendanceId} {
       allow read: if isSignedIn()
         && ((resource.data.employeeId == request.auth.uid)
