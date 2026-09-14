@@ -84,6 +84,16 @@
             Save Changes
           </button>
         </form>
+
+        <section id="help-guidance" class="mt-6 rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+          <h2 class="text-lg font-semibold text-white">Help & Guidance</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-400">Use the sidebar to manage clinic operations, staff access, attendance, finance, and procurement. Contact support when you need help with a platform workflow.</p>
+        </section>
+
+        <section id="privacy-data" class="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+          <h2 class="text-lg font-semibold text-white">Privacy & Data</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-400">Clinic and staff information is used to provide your authorized clinic services. Use Report Issue for privacy questions or requests involving clinic data.</p>
+        </section>
       </div>
     </main>
   </div>

@@ -703,6 +703,7 @@ export default {
         archive: 'mdi:archive-outline',
         report: 'mdi:file-chart-outline',
         reportIssue: 'mdi:bug-outline',
+        help: 'mdi:help-circle-outline',
         shield: 'mdi:shield-check-outline',
         profile: 'mdi:account-circle-outline',
         bell: 'mdi:bell-outline',

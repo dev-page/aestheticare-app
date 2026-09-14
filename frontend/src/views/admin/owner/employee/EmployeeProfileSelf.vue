@@ -116,6 +116,16 @@
               </div>
             </form>
           </section>
+
+          <section id="help-guidance" class="rounded-3xl border border-slate-800 bg-slate-800/80 p-6 shadow-lg lg:col-span-2">
+            <h2 class="text-lg font-semibold text-white">Help & Guidance</h2>
+            <p class="mt-2 text-sm leading-6 text-slate-400">Use the sidebar to open the tools assigned to your role. Contact your clinic administrator when you need access to another task or need help with a workflow.</p>
+          </section>
+
+          <section id="privacy-data" class="rounded-3xl border border-slate-800 bg-slate-800/80 p-6 shadow-lg lg:col-span-2">
+            <h2 class="text-lg font-semibold text-white">Privacy & Data</h2>
+            <p class="mt-2 text-sm leading-6 text-slate-400">Your profile and work records are used to operate the clinic system. Do not share account credentials. Submit a Report Issue request if you need help with your information or account data.</p>
+          </section>
         </div>
       </div>
     </main>
