@@ -157,6 +157,8 @@
                   v-model="newSupplier.name"
                   type="text"
                   required
+                  maxlength="120"
+                  autocomplete="organization"
                   :class="inputClass(showAddError('name'))"
                   @input="markTouched('name')"
                   @blur="markTouched('name')"
@@ -184,6 +186,7 @@
                   type="text"
                   inputmode="numeric"
                   maxlength="15"
+                  autocomplete="off"
                   placeholder="XXX-XXX-XXX-XXX"
                   :class="inputClass(showAddError('taxRegistrationNumber'))"
                   @input="handleTinInput(newSupplier, $event)"
@@ -214,6 +217,8 @@
                   v-model="newSupplier.contact"
                   type="text"
                   required
+                  maxlength="100"
+                  autocomplete="name"
                   :class="inputClass(showAddError('contact'))"
                   @input="markTouched('contact')"
                   @blur="markTouched('contact')"
@@ -226,6 +231,8 @@
                   v-model="newSupplier.email"
                   type="email"
                   required
+                  maxlength="254"
+                  autocomplete="email"
                   :class="inputClass(showAddError('email'))"
                   @input="markTouched('email')"
                   @blur="markTouched('email')"
@@ -240,6 +247,8 @@
                     v-model="newSupplier.phone"
                     type="tel"
                     required
+                    maxlength="15"
+                    autocomplete="tel"
                     :class="[inputClass(showAddError('phone')), 'pl-12']"
                     @input="markTouched('phone')"
                     @blur="markTouched('phone')"
@@ -247,21 +256,6 @@
                   />
                 </div>
                 <p v-if="showAddError('phone')" class="mt-1 text-xs text-red-400">{{ addErrors.phone }}</p>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-sm mb-2">Status</label>
-                <select
-                  v-model="newSupplier.status"
-                  required
-                  :class="inputClass(showAddError('status'))"
-                  @change="markTouched('status')"
-                  @blur="markTouched('status')"
-                >
-              <option value="Invited">Invited</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-                </select>
-                <p v-if="showAddError('status')" class="mt-1 text-xs text-red-400">{{ addErrors.status }}</p>
               </div>
             </div>
             <div>
@@ -415,7 +409,6 @@ export default {
       contact: false,
       email: false,
       phone: false,
-      status: false,
       address: false
     })
 
@@ -531,7 +524,6 @@ export default {
         contact: '',
         email: '',
         phone: '',
-        status: '',
         address: ''
       }
 
@@ -580,10 +572,6 @@ export default {
         }
       }
 
-      if (!newSupplier.value.status) {
-        errors.status = 'Status is required.'
-      }
-
       if (newSupplier.value.address.trim()) {
         if (!hasLettersOrNumbers(newSupplier.value.address) || !addressRegex.test(newSupplier.value.address.trim())) {
           errors.address = 'Use letters/numbers with basic punctuation only.'
@@ -602,7 +590,6 @@ export default {
         addErrors.value.contact ||
         addErrors.value.email ||
         addErrors.value.phone ||
-        addErrors.value.status ||
         addErrors.value.address
       )
     })
@@ -791,7 +778,6 @@ export default {
         contact: false,
         email: false,
         phone: false,
-        status: false,
         address: false
       }
     }

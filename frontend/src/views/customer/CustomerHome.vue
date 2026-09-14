@@ -41,7 +41,7 @@
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    class="inline-flex h-[3.5rem] flex-1 items-center justify-center gap-2 rounded-[1.1rem] border border-gold-300/80 bg-gold-700 px-4 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-70"
+                    class="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-gold-300/80 bg-gold-700 px-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-70"
                     :disabled="locationLoading"
                     aria-label="Toggle nearby centers"
                     @click="toggleNearbyCenters"
@@ -65,7 +65,7 @@
 
               <button
                 type="button"
-                class="filter-icon-button inline-flex h-[3.5rem] min-h-[3.5rem] items-center justify-center rounded-[1.1rem] border border-gold-300/70 bg-gold-700 text-white transition hover:-translate-y-0.5 hover:bg-gold-800"
+                class="filter-icon-button inline-flex h-12 min-h-12 items-center justify-center rounded-xl border border-gold-300/70 bg-gold-700 text-white transition hover:-translate-y-0.5 hover:bg-gold-800"
                 aria-label="Reset filters"
                 @click="clearFilters"
               >
@@ -500,13 +500,13 @@ watch(radiusKm, () => {
 
 .customer-filter-grid {
   display: grid;
-  gap: 0.9rem;
+  gap: 0.75rem;
 }
 
 .filter-shell {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.45rem;
 }
 
 .filter-label {
@@ -523,25 +523,25 @@ watch(radiusKm, () => {
 }
 
 .filter-input {
-  height: 3.5rem;
+  height: 3rem;
   width: 100%;
-  border-radius: 1.1rem;
+  border-radius: 0.85rem;
   border: 1px solid rgba(230, 193, 150, 0.9);
   background: rgba(255, 255, 255, 0.9);
-  padding: 0 1rem;
+  padding: 0 0.85rem;
   color: #342419;
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .filter-input-search {
-  padding-left: 3.25rem;
+  padding-left: 2.75rem;
 }
 
 .filter-search-icon {
   pointer-events: none;
   position: absolute;
-  left: 1.1rem;
+  left: 0.9rem;
   top: 50%;
   height: 1.1rem;
   width: 1.1rem;
@@ -555,9 +555,9 @@ watch(radiusKm, () => {
 }
 
 .filter-icon-button {
-  min-width: 3.5rem;
-  padding-left: 0.9rem;
-  padding-right: 0.9rem;
+  min-width: 3rem;
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
 }
 
 .customer-filter-panel {
@@ -616,7 +616,7 @@ watch(radiusKm, () => {
 
 .center-card-media {
   position: relative;
-  height: 17rem;
+  height: clamp(12rem, 22vw, 15rem);
   overflow: hidden;
   background: linear-gradient(135deg, #f8e5bd 0%, #bc8a65 100%);
 }

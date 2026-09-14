@@ -113,7 +113,10 @@
 
                 <div class="overflow-hidden rounded-2xl border border-[#e0c09a] bg-[#fffaf3]">
                   <div ref="branchMapEl" class="h-56 w-full"></div>
-                  <p v-if="!center.latitude || !center.longitude" class="border-t border-[#ead6b8] px-4 py-3 text-xs text-[#8b6a4d]">
+                  <p v-if="mapError" class="border-t border-[#ead6b8] px-4 py-3 text-xs text-[#8b6a4d]">
+                    {{ mapError }}
+                  </p>
+                  <p v-else-if="!hasBranchCoordinates" class="border-t border-[#ead6b8] px-4 py-3 text-xs text-[#8b6a4d]">
                     Map preview will appear once coordinates are available.
                   </p>
                 </div>
@@ -737,11 +740,17 @@ const bookingPaymentPendingKey = 'customer_booking_pending_paymongo'
 const serviceCommissionPercent = getServiceCommissionPercent()
 const activeBranchId = computed(() => String(centerId).trim() || centerId)
 const branchMapEl = ref(null)
+const mapError = ref('')
 let branchMap = null
 let branchMarker = null
 let mapsReady = false
 const philippinesBounds = { north: 21.5, south: 4.3, east: 127.5, west: 116.0 }
 const defaultCenter = { lat: 12.8797, lng: 121.774 }
+const hasBranchCoordinates = computed(() => {
+  const lat = Number(center.value?.latitude)
+  const lng = Number(center.value?.longitude)
+  return Number.isFinite(lat) && Number.isFinite(lng)
+})
 const practitioners = ref([])
 const practitionerSchedules = ref({})
 const practitionerLeaves = ref({})
@@ -887,8 +896,8 @@ const buildCenterModel = (branchId, data = {}) => ({
   locationAddress: data.clinicLocationAddress || data.clinicLocation || '',
   barangay: data.clinicBarangay || '',
   postalCode: data.clinicPostalCode || '',
-  latitude: data.clinicLocationLat ?? '',
-  longitude: data.clinicLocationLng ?? '',
+  latitude: data.clinicLocationLat ?? data.latitude ?? data.lat ?? '',
+  longitude: data.clinicLocationLng ?? data.longitude ?? data.lng ?? '',
   description: data.description || '',
   email: data.email || '',
   businessEmail: data.businessEmail || '',
@@ -906,6 +915,10 @@ const loadMapsScript = () => {
   return new Promise((resolve, reject) => {
     const existing = document.getElementById('google-maps-js')
     if (existing) {
+      if (window.google?.maps?.Map) {
+        resolve()
+        return
+      }
       existing.addEventListener('load', () => resolve(), { once: true })
       existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), { once: true })
       return
@@ -930,6 +943,7 @@ const loadMapsScript = () => {
 
 const initBranchMap = async () => {
   if (!branchMapEl.value || !center.value) return
+  mapError.value = ''
 
   try {
     if (!mapsReady) {
@@ -938,6 +952,7 @@ const initBranchMap = async () => {
     }
   } catch (error) {
     console.error('Failed to load branch map:', error)
+    mapError.value = 'Map preview is unavailable right now. Please try again later.'
     return
   }
 
@@ -958,18 +973,22 @@ const initBranchMap = async () => {
     }
   }
 
-  if (!MapCtor) return
+  if (!MapCtor) {
+    mapError.value = 'Map preview is unavailable right now. Please try again later.'
+    return
+  }
 
   if (!branchMap) {
-    branchMap = new MapCtor(branchMapEl.value, {
+    const mapOptions = {
       center: mapCenter,
       zoom: Number.isFinite(lat) && Number.isFinite(lng) ? 15 : 6,
       restriction: { latLngBounds: philippinesBounds, strictBounds: true },
       streetViewControl: false,
       fullscreenControl: false,
       mapTypeControl: false,
-      mapId: import.meta.env.VITE_GOOGLE_MAP_ID,
-    })
+    }
+    if (import.meta.env.VITE_GOOGLE_MAP_ID) mapOptions.mapId = import.meta.env.VITE_GOOGLE_MAP_ID
+    branchMap = new MapCtor(branchMapEl.value, mapOptions)
   } else {
     branchMap.setCenter(mapCenter)
   }
@@ -980,7 +999,7 @@ const initBranchMap = async () => {
   branchMarker = null
 
   if (Number.isFinite(lat) && Number.isFinite(lng)) {
-    if (AdvancedMarkerElement) {
+    if (AdvancedMarkerElement && import.meta.env.VITE_GOOGLE_MAP_ID) {
       branchMarker = new AdvancedMarkerElement({
         map: branchMap,
         position: { lat, lng },

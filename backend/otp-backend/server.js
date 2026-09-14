@@ -3985,6 +3985,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     const appointmentPayload = buildBookingAppointmentPayload({
       reservation: {
         ...reservation,
+        id: bookingRef.id,
         customerId,
         status: 'Pending Approval',
         paymentStatus: 'Pending',
