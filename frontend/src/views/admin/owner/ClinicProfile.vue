@@ -88,11 +88,19 @@
         <section id="help-guidance" class="mt-6 rounded-xl border border-slate-700 bg-slate-900/60 p-5">
           <h2 class="text-lg font-semibold text-white">Help & Guidance</h2>
           <p class="mt-2 text-sm leading-6 text-slate-400">Use the sidebar to manage clinic operations, staff access, attendance, finance, and procurement. Contact support when you need help with a platform workflow.</p>
+          <label class="mt-5 flex items-center gap-3 text-sm text-slate-300">
+            <input v-model="tutorialEnabled" type="checkbox" class="h-4 w-4 accent-yellow-500" @change="saveTutorialPreference" />
+            <span>Show the workspace tutorial when I sign in</span>
+          </label>
         </section>
 
         <section id="privacy-data" class="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-5">
           <h2 class="text-lg font-semibold text-white">Privacy & Data</h2>
           <p class="mt-2 text-sm leading-6 text-slate-400">Clinic and staff information is used to provide your authorized clinic services. Use Report Issue for privacy questions or requests involving clinic data.</p>
+          <button type="button" :disabled="exporting" class="mt-5 rounded-lg border border-yellow-500/60 px-4 py-3 text-sm font-semibold text-yellow-200 transition hover:bg-yellow-500/10 disabled:cursor-not-allowed disabled:opacity-60" @click="exportAccountData">
+            {{ exporting ? 'Preparing export...' : 'Export My Data' }}
+          </button>
+          <p class="mt-2 text-xs text-slate-500">The export excludes passwords, OTPs, tokens, and unrelated users' information.</p>
         </section>
       </div>
     </main>
@@ -146,6 +154,8 @@ export default {
     };
     const defaultCaviteCenter = { lat: 14.3294, lng: 120.9367 };
     const locationError = ref('');
+    const exporting = ref(false);
+    const tutorialEnabled = ref(true);
 
     const isOwnerLikeRole = (role) => {
       const normalized = String(role || '').trim().toLowerCase();
@@ -181,6 +191,63 @@ export default {
         const data = userSnap.data();
         clinic.value.email = data.email;
         clinic.value.contactNumber = data.contactNumber;
+        tutorialEnabled.value = data.preferences?.onboarding?.owner?.disabled !== true;
+      }
+    };
+
+    const saveTutorialPreference = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      const disabled = !tutorialEnabled.value;
+      try {
+        localStorage.setItem(`onboarding:disabled:v2:${user.uid}:owner`, disabled ? '1' : '');
+        await updateDoc(doc(db, 'users', user.uid), {
+          'preferences.onboarding.owner': { disabled, version: 2, updatedAt: new Date().toISOString() },
+        });
+        toast.success(disabled ? 'Workspace tutorial disabled.' : 'Workspace tutorial enabled.');
+      } catch (error) {
+        console.error('Failed to save tutorial preference:', error);
+        tutorialEnabled.value = !tutorialEnabled.value;
+        toast.error('Unable to update the tutorial setting right now.');
+      }
+    };
+
+    const sanitizeExportValue = (value, key = '') => {
+      const blockedKeys = new Set(['password', 'passwordHash', 'otp', 'otpCode', 'resetToken', 'verificationToken', 'token']);
+      if (blockedKeys.has(key)) return undefined;
+      if (value?.toDate) return value.toDate().toISOString();
+      if (Array.isArray(value)) return value.map((item) => sanitizeExportValue(item)).filter((item) => item !== undefined);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [entryKey, sanitizeExportValue(entryValue, entryKey)]).filter(([, entryValue]) => entryValue !== undefined));
+      }
+      return value;
+    };
+
+    const exportAccountData = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      exporting.value = true;
+      try {
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        const clinicSnap = activeClinicId.value ? await getDoc(doc(db, 'clinics', activeClinicId.value)) : null;
+        const payload = sanitizeExportValue({
+          exportedAt: new Date().toISOString(),
+          account: userSnap.exists() ? userSnap.data() : {},
+          clinic: clinicSnap?.exists() ? clinicSnap.data() : clinic.value,
+        });
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `aestheticare-clinic-data-${new Date().toISOString().slice(0, 10)}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast.success('Your clinic data export is ready.');
+      } catch (error) {
+        console.error('Failed to export clinic data:', error);
+        toast.error('Unable to export your data right now.');
+      } finally {
+        exporting.value = false;
       }
     };
 
@@ -557,6 +624,10 @@ export default {
       clinicDisplayName,
       locationSearchQuery,
       searchLocation,
+      exporting,
+      exportAccountData,
+      tutorialEnabled,
+      saveTutorialPreference,
     };
   },
 };

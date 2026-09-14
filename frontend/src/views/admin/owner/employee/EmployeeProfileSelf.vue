@@ -120,11 +120,19 @@
           <section id="help-guidance" class="rounded-3xl border border-slate-800 bg-slate-800/80 p-6 shadow-lg lg:col-span-2">
             <h2 class="text-lg font-semibold text-white">Help & Guidance</h2>
             <p class="mt-2 text-sm leading-6 text-slate-400">Use the sidebar to open the tools assigned to your role. Contact your clinic administrator when you need access to another task or need help with a workflow.</p>
+            <label class="mt-5 flex items-center gap-3 text-sm text-slate-300">
+              <input v-model="tutorialEnabled" type="checkbox" class="h-4 w-4 accent-cyan-400" @change="saveTutorialPreference" />
+              <span>Show the workspace tutorial when I sign in</span>
+            </label>
           </section>
 
           <section id="privacy-data" class="rounded-3xl border border-slate-800 bg-slate-800/80 p-6 shadow-lg lg:col-span-2">
             <h2 class="text-lg font-semibold text-white">Privacy & Data</h2>
             <p class="mt-2 text-sm leading-6 text-slate-400">Your profile and work records are used to operate the clinic system. Do not share account credentials. Submit a Report Issue request if you need help with your information or account data.</p>
+            <button type="button" :disabled="exporting" class="mt-5 rounded-xl border border-cyan-400/60 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60" @click="exportAccountData">
+              {{ exporting ? 'Preparing export...' : 'Export My Data' }}
+            </button>
+            <p class="mt-2 text-xs text-slate-500">The export excludes passwords, OTPs, tokens, and other users' information.</p>
           </section>
         </div>
       </div>
@@ -150,6 +158,8 @@ export default {
     const auth = getAuth(getApp())
     const loading = ref(true)
     const saving = ref(false)
+    const exporting = ref(false)
+    const tutorialEnabled = ref(true)
     const profilePictureFile = ref(null)
     const profilePreview = ref('')
     const currentUserId = ref('')
@@ -219,6 +229,7 @@ export default {
     }
 
     const loadProfile = async (uid, email, userData = {}) => {
+      tutorialEnabled.value = userData.preferences?.onboarding?.employee?.disabled !== true
       const branchId = String(userData.branchId || userData.clinicBranch || '').trim()
       if (branchId) {
         const branchSnap = await getDoc(doc(db, 'clinics', branchId))
@@ -297,6 +308,58 @@ export default {
       }
     }
 
+    const saveTutorialPreference = async () => {
+      const uid = currentUserId.value
+      if (!uid) return
+      const disabled = !tutorialEnabled.value
+      try {
+        localStorage.setItem(`onboarding:disabled:v2:${uid}:employee`, disabled ? '1' : '')
+        await updateDoc(doc(db, 'users', uid), {
+          'preferences.onboarding.employee': { disabled, version: 2, updatedAt: new Date().toISOString() },
+          updatedAt: serverTimestamp(),
+        })
+        toast.success(disabled ? 'Workspace tutorial disabled.' : 'Workspace tutorial enabled.')
+      } catch (error) {
+        console.error('Failed to save tutorial preference:', error)
+        tutorialEnabled.value = !tutorialEnabled.value
+        toast.error('Unable to update the tutorial setting right now.')
+      }
+    }
+
+    const sanitizeExportValue = (value, key = '') => {
+      const blockedKeys = new Set(['password', 'passwordHash', 'otp', 'otpCode', 'resetToken', 'verificationToken', 'token'])
+      if (blockedKeys.has(key)) return undefined
+      if (value?.toDate) return value.toDate().toISOString()
+      if (Array.isArray(value)) return value.map((item) => sanitizeExportValue(item)).filter((item) => item !== undefined)
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [entryKey, sanitizeExportValue(entryValue, entryKey)]).filter(([, entryValue]) => entryValue !== undefined))
+      }
+      return value
+    }
+
+    const exportAccountData = async () => {
+      const uid = currentUserId.value
+      if (!uid) return
+      exporting.value = true
+      try {
+        const snapshot = await getDoc(doc(db, 'users', uid))
+        const payload = sanitizeExportValue({ exportedAt: new Date().toISOString(), account: snapshot.exists() ? snapshot.data() : profile.value })
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `aestheticare-employee-data-${new Date().toISOString().slice(0, 10)}.json`
+        link.click()
+        URL.revokeObjectURL(url)
+        toast.success('Your account data export is ready.')
+      } catch (error) {
+        console.error('Failed to export employee data:', error)
+        toast.error('Unable to export your data right now.')
+      } finally {
+        exporting.value = false
+      }
+    }
+
     onMounted(() => {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
@@ -327,7 +390,6 @@ export default {
             loading.value = false
           }
         })
-        profile.value.profilePicture = profilePicture
         profilePictureFile.value = null
       })
     })
@@ -349,6 +411,10 @@ export default {
       saveProfile,
       saving,
       userInitial,
+      exporting,
+      exportAccountData,
+      tutorialEnabled,
+      saveTutorialPreference,
     }
   },
 }

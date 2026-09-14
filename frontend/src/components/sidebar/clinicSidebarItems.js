@@ -123,8 +123,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     children: [
       { label: 'Profile', icon: 'profile', to: isEmployee ? '/employee/profile' : '/owner/clinic-profile' },
       { label: 'Change Password', icon: 'key', to: '/change-password' },
-      { label: 'Help & Guidance', icon: 'help', to: `${isEmployee ? '/employee/profile' : '/owner/clinic-profile'}#help-guidance` },
-      { label: 'Privacy & Data', icon: 'shield', to: `${isEmployee ? '/employee/profile' : '/owner/clinic-profile'}#privacy-data` },
       ...(!isEmployee ? [
         { label: 'Subscription Plan', icon: 'card', to: '/owner/account/subscription', permission: 'subscription:view' },
         { label: 'Account Access', icon: 'account-off', to: '/owner/account/closure', permission: 'subscription:view' },
