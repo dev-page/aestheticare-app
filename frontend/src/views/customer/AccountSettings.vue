@@ -5,9 +5,9 @@
     <main class="customer-settings-main flex-1">
       <div class="customer-settings-content">
         <section class="settings-hero">
-          <p class="settings-eyebrow">Account & Settings</p>
+          <p class="settings-eyebrow">Account Settings</p>
           <h1 class="settings-title">Account Settings</h1>
-          <p class="settings-subtitle">Manage your account access and choose what should happen to your customer account.</p>
+          <p class="settings-subtitle">Manage your profile, notifications, account access, help, and privacy preferences in one place.</p>
         </section>
 
         <section class="settings-card">
@@ -20,12 +20,27 @@
         </section>
 
         <nav class="settings-tabs" aria-label="Account settings sections">
-          <button type="button" :class="['settings-tab', { 'settings-tab-active': activeTab === 'account' }]" @click="activeTab = 'account'">Account Access</button>
-          <button type="button" :class="['settings-tab', { 'settings-tab-active': activeTab === 'help' }]" @click="activeTab = 'help'">Help & Guidance</button>
-          <button type="button" :class="['settings-tab', { 'settings-tab-active': activeTab === 'privacy' }]" @click="activeTab = 'privacy'">Privacy & Data</button>
+          <button type="button" :class="['settings-tab', { 'settings-tab-active': activeTab === 'profile' }]" @click="selectTab('profile')">Profile</button>
+          <button type="button" :class="['settings-tab', { 'settings-tab-active': activeTab === 'notifications' }]" @click="selectTab('notifications')">Notifications</button>
+          <button type="button" :class="['settings-tab', { 'settings-tab-active': activeTab === 'account' }]" @click="selectTab('account')">Account Access</button>
+          <button type="button" :class="['settings-tab', { 'settings-tab-active': activeTab === 'help' }]" @click="selectTab('help')">Help & Guidance</button>
+          <button type="button" :class="['settings-tab', { 'settings-tab-active': activeTab === 'privacy' }]" @click="selectTab('privacy')">Privacy & Data</button>
         </nav>
 
-        <section v-if="activeTab === 'account'" class="settings-tab-panel">
+        <section v-if="activeTab === 'profile'" class="settings-tab-panel settings-profile-panel">
+          <MyProfile embedded />
+        </section>
+
+        <section v-else-if="activeTab === 'notifications'" class="settings-tab-panel settings-card">
+          <div>
+            <p class="settings-card-kicker">Notifications</p>
+            <h2 class="settings-card-title">Stay updated</h2>
+            <p class="settings-copy">Booking, order, payment, and clinic updates are available in your notification center. Open it to mark messages as read, view details, or remove notifications.</p>
+            <RouterLink to="/notifications" class="settings-button settings-button-primary settings-inline-button">Open Notifications</RouterLink>
+          </div>
+        </section>
+
+        <section v-else-if="activeTab === 'account'" class="settings-tab-panel">
           <div class="settings-grid">
             <article class="settings-card settings-card-warning">
               <div>
@@ -36,6 +51,18 @@
               <button type="button" class="settings-button settings-button-warning" :disabled="busy || status !== 'Active'" @click="deactivateAccount">
                 {{ busy && action === 'deactivate' ? 'Deactivating...' : 'Deactivate Account' }}
               </button>
+            </article>
+
+            <article class="settings-card">
+              <div>
+                <p class="settings-card-kicker">Credentials</p>
+                <h2 class="settings-card-title">Change or reset password</h2>
+                <p class="settings-copy">Change your current password while signed in, or use the reset flow if you can no longer sign in.</p>
+              </div>
+              <div class="settings-action-links">
+                <RouterLink to="/change-password" class="settings-button settings-button-primary">Change Password</RouterLink>
+                <RouterLink :to="{ path: '/forgot-password', query: { returnTo: '/customer/account-settings?tab=account' } }" class="settings-text-link">Forgot password?</RouterLink>
+              </div>
             </article>
 
             <article class="settings-card settings-card-danger">
@@ -125,14 +152,18 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
+import MyProfile from '@/views/customer/MyProfile.vue'
 
 const accountEmail = ref('')
-const activeTab = ref('account')
+const activeTab = ref('profile')
+const route = useRoute()
+const router = useRouter()
 const status = ref('Active')
 const deletionRequested = ref(false)
 const tutorialEnabled = ref(true)
@@ -163,6 +194,18 @@ const deletionReasons = [
 ]
 const currentReasonOptions = computed(() => accountAction.value === 'deactivate' ? deactivationReasons : deletionReasons)
 const combinedReason = computed(() => [reasonPreset.value, actionReason.value.trim()].filter(Boolean).join(': '))
+
+const allowedTabs = new Set(['profile', 'notifications', 'account', 'help', 'privacy'])
+
+const selectTab = (tab) => {
+  const nextTab = allowedTabs.has(tab) ? tab : 'profile'
+  activeTab.value = nextTab
+  router.replace({ query: { ...route.query, tab: nextTab } })
+}
+
+watch(() => route.query.tab, (tab) => {
+  activeTab.value = allowedTabs.has(String(tab || '')) ? String(tab) : 'profile'
+}, { immediate: true })
 
 watch(activeTab, () => {
   message.value = ''
@@ -369,6 +412,12 @@ onMounted(() => {
 .settings-tab:hover { background: rgba(255, 255, 255, .55); color: #3d281d; }
 .settings-tab-active { border-color: #8d5a3b; background: rgba(255, 255, 255, .72); color: #3d281d; }
 .settings-tab-panel { min-width: 0; }
+.settings-profile-panel { padding: 0; }
+.settings-profile-panel :deep(.profile-content) { padding: 0; }
+.settings-profile-panel :deep(.profile-panel) { max-width: none; }
+.settings-inline-button { display: inline-block; text-decoration: none; }
+.settings-action-links { display: flex; flex-direction: column; align-items: flex-end; gap: .65rem; min-width: 10rem; }
+.settings-text-link { color: #8d5a3b; font-size: .8rem; font-weight: 700; text-decoration: underline; }
 .settings-toggle { display: inline-flex; align-items: center; gap: .65rem; cursor: pointer; white-space: nowrap; color: #6f4329; font-size: .875rem; font-weight: 700; }
 .settings-toggle input { width: 1.15rem; height: 1.15rem; accent-color: #8d5a3b; }
 .settings-button { margin-top: 1.25rem; border-radius: .9rem; padding: .75rem 1rem; color: white; font-size: .875rem; font-weight: 700; transition: opacity .2s; }
@@ -392,4 +441,10 @@ onMounted(() => {
 .settings-message-success { background: #dcfce7; color: #166534; }
 .settings-message-error { background: #fee2e2; color: #991b1b; }
 @media (max-width: 760px) { .settings-card, .settings-grid { grid-template-columns: 1fr; display: grid; } }
+@media (max-width: 520px) {
+  .customer-settings-content { padding: 1rem .75rem 2rem; }
+  .settings-hero, .settings-card { padding: 1rem; border-radius: 1rem; }
+  .settings-action-links { align-items: stretch; min-width: 0; }
+  .settings-button { width: 100%; text-align: center; }
+}
 </style>

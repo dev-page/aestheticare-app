@@ -147,7 +147,7 @@ const routes = [
   { path: "/customer/orders", name: "customer-orders", component: () => import("@/views/customer/MyOrders.vue"), meta: { requiresAuth: true } },
   { path: "/customer/checkout", name: "customer-checkout", component: () => import("@/views/customer/Checkout.vue"), meta: { requiresAuth: true } },
   { path: "/customer/cart", name: "customer-cart", component: () => import("@/views/customer/MyCart.vue"), meta: { requiresAuth: true } },
-  { path: "/customer/profile", name: "customer-profile", component: () => import("@/views/customer/MyProfile.vue"), meta: { requiresAuth: true } },
+  { path: "/customer/profile", name: "customer-profile", redirect: { path: "/customer/account-settings", query: { tab: "profile" } }, meta: { requiresAuth: true } },
   { path: "/customer/account-settings", name: "customer-account-settings", component: () => import("@/views/customer/AccountSettings.vue"), meta: { requiresAuth: true } },
 
   // Supplier routes

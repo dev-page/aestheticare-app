@@ -2433,6 +2433,12 @@ const handleOtpInput = (index, event) => {
 }
 
 const handleOtpKeydown = (index, event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    void verifyOtp()
+    return
+  }
+
   const allowedControlKeys = ['Tab', 'Shift', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete', 'Home', 'End']
   if (allowedControlKeys.includes(event.key)) {
     if (event.key === 'Backspace') {
@@ -3071,6 +3077,20 @@ const submitDocuments = async () => {
     isSubmittingDocuments.value = false
   }
 }
+
+const handleRegistrationSubmit = () => {
+  if (currentStep.value === 1) {
+    void registerClinic()
+    return
+  }
+  if (currentStep.value === 2) {
+    void verifyOtp()
+    return
+  }
+  if (currentStep.value === 3) {
+    void submitDocuments()
+  }
+}
 </script>
 
 <template>
@@ -3088,7 +3108,7 @@ const submitDocuments = async () => {
           <span class="form-side-bubble f-bubble-2 hidden lg:block" aria-hidden="true"></span>
           <span class="form-side-bubble f-bubble-3 hidden lg:block" aria-hidden="true"></span>
 
-          <form class="space-y-4 w-full max-w-[560px] pt-3 lg:pt-5" @submit.prevent="registerClinic">
+          <form class="space-y-4 w-full max-w-[560px] pt-3 lg:pt-5" @submit.prevent="handleRegistrationSubmit">
             <div v-if="approvalRedirecting" class="fixed inset-0 z-50 flex items-center justify-center bg-charcoal-900/60 backdrop-blur">
               <div class="w-[90%] max-w-md rounded-2xl border border-gold-200/80 bg-white/90 p-6 text-center shadow-2xl">
                 <div class="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-gold-600 border-t-transparent"></div>

@@ -1,6 +1,6 @@
 <template>
-  <div class="profile-shell">
-    <CustomerSidebar />
+  <div :class="['profile-shell', { 'profile-shell-embedded': embedded }]">
+    <CustomerSidebar v-if="!embedded" />
 
     <main class="profile-main">
       <div class="profile-content">
@@ -107,6 +107,10 @@ import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import LocationPicker from '@/components/common/LocationPicker.vue'
 import { toast } from 'vue3-toastify'
+
+const { embedded = false } = defineProps({
+  embedded: { type: Boolean, default: false },
+})
 
 const customer = ref({
   firstName: '',
@@ -534,6 +538,11 @@ input[type="file"]::file-selector-button {
   border: 1px solid rgba(230, 193, 150, 0.8);
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 18px 44px rgba(87, 56, 35, 0.08);
+}
+
+.profile-shell-embedded {
+  min-height: auto;
+  background: transparent;
 }
 
 .profile-skeleton-line,
