@@ -26,7 +26,9 @@ let resendTimer = null
 const cancelReset = () => {
   const requestedReturnPath = String(route.query.returnTo || '').trim()
   const isSafeInternalPath = requestedReturnPath.startsWith('/') && !requestedReturnPath.startsWith('//') && requestedReturnPath !== '/forgot-password'
-  router.push(isSafeInternalPath ? requestedReturnPath : '/login')
+  // Replace the reset page instead of pushing another history entry. This
+  // keeps the page that opened password recovery as the chevron destination.
+  router.replace(isSafeInternalPath ? requestedReturnPath : '/login')
 }
 
 const PASSWORD_MIN_LENGTH = 8
