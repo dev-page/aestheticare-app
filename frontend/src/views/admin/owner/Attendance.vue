@@ -11,12 +11,14 @@ import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { toast } from 'vue3-toastify'
+import { usePermissions } from '@/composables/usePermissions'
 
 export default {
   name: 'AttendanceReports',
   components: { OwnerSidebar, Icon },
   setup() {
     const db = getFirestore(getApp())
+    const { hasPermission } = usePermissions()
 
     const attendanceRecords = ref([])
     const staffUsers = ref([])
@@ -29,6 +31,7 @@ export default {
     const importFile = ref(null)
     const importPreview = ref(null)
     const importLoading = ref(false)
+    const canImportAttendance = computed(() => hasPermission('attendance:import'))
     const nowRef = ref(new Date())
 
     const branchFilter = ref('')
@@ -154,6 +157,7 @@ export default {
     }
 
     const readImportFile = async (event) => {
+      if (!canImportAttendance.value) return
       const file = event.target.files?.[0]
       importFile.value = file || null
       importPreview.value = null
@@ -167,6 +171,10 @@ export default {
     }
 
     const importAttendance = async () => {
+      if (!canImportAttendance.value) {
+        toast.error('You do not have permission to import attendance.')
+        return
+      }
       if (!importPreview.value || !selectedQrBranchId.value) return
       importLoading.value = true
       try {
@@ -389,6 +397,7 @@ export default {
       importLoading,
       readImportFile,
       importAttendance,
+      canImportAttendance,
       todayDailyRecords,
       statusRows,
       todaySummary
@@ -424,7 +433,7 @@ export default {
         />
       </div>
 
-      <section class="bg-slate-800 rounded-xl shadow-lg p-6 border border-slate-700 mb-6">
+      <section v-if="canImportAttendance" class="bg-slate-800 rounded-xl shadow-lg p-6 border border-slate-700 mb-6">
         <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 class="text-lg font-semibold text-white">Import Clinic Attendance</h2>
