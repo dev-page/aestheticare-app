@@ -21,7 +21,7 @@
             to="/receptionist/appointment-requests"
             class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-500"
           >
-            Review Appointment Requests
+            Review Booking Requests
           </router-link>
         </div>
       </div>

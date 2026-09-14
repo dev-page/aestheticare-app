@@ -81,7 +81,7 @@
               :disabled="isSubmitting"
               class="px-5 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-60 text-white text-sm"
             >
-              {{ isSubmitting ? 'Saving...' : 'Save Client' }}
+              {{ isSubmitting ? 'Saving...' : 'Register Walk-in' }}
             </button>
             <router-link
               to="/receptionist/clients"

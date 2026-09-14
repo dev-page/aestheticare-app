@@ -5,7 +5,7 @@
     <main class="flex-1 p-8">
       <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 class="mb-2 text-3xl font-bold text-white">Appointment Request Approvals</h1>
+          <h1 class="mb-2 text-3xl font-bold text-white">Booking Request Approvals</h1>
           <p class="text-slate-400">Review new booking requests, cancellations, and reschedules before they affect the shop schedule.</p>
         </div>
         <button

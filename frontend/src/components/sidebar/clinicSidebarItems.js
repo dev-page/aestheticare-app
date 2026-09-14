@@ -18,11 +18,10 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     children: [
       { type: 'section', label: 'CLIENTS' },
       { label: 'Client List', icon: 'profile', to: '/receptionist/clients', permission: 'clients:view' },
-      { label: 'Add Client', icon: 'userplus', to: '/receptionist/clients/add', permission: 'clients:create' },
+      { label: 'Register Walk-in', icon: 'userplus', to: '/receptionist/clients/add', permission: 'clients:create' },
       { type: 'section', label: 'APPOINTMENTS' },
-      { label: 'Bookings', icon: 'calendar-multiple', to: '/receptionist/appointments', permission: 'appointments:view' },
       { label: 'Appointments', icon: 'calendar', to: '/receptionist/appointments', permission: 'appointments:view' },
-      { label: 'Appointment Requests', icon: 'calendar-check', to: '/receptionist/appointment-requests', permission: 'appointments:review' },
+      { label: 'Booking Requests', icon: 'calendar-check', to: '/receptionist/appointment-requests', permission: 'appointments:review' },
       { label: 'Online Consultation', icon: 'clinic', to: '/practitioner/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
       { type: 'section', label: 'PAYMENTS & MESSAGES' },
       { label: 'POS', icon: 'card', to: '/receptionist/pos', permission: 'payments:create' },

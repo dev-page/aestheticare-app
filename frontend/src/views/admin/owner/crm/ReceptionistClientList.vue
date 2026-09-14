@@ -12,7 +12,7 @@
           to="/receptionist/clients/add"
           class="px-4 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-sm"
         >
-          Add Client
+          Register Walk-in
         </router-link>
       </div>
 
