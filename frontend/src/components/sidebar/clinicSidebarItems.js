@@ -77,7 +77,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
       { type: 'section', label: 'LEAVE & OVERTIME' },
       { label: 'Leave Management', icon: 'calendar', to: '/hr/leave-management', feature: 'hr', permission: 'leave:review' },
       { label: 'Leave Request', icon: 'file', to: '/hr/leave-request', feature: 'hr', permission: 'leave:create' },
-      { label: 'Overtime', icon: 'clock', to: '/hr/overtime', feature: 'hr', permission: 'overtime:view' },
+      { label: 'Overtime Request', icon: 'clock', to: '/hr/overtime', feature: 'hr', permissionsAny: ['overtime:view', 'overtime:create'] },
       { type: 'section', label: 'PAYROLL' },
       { label: 'Base Pay', icon: 'cash', to: '/hr/base-pay', feature: 'payroll', permission: 'payroll:update' },
       { label: 'Payroll Management', icon: 'cash', to: '/hr/payroll', feature: 'payroll', permission: 'payroll:update' },
