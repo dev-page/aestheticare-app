@@ -29,7 +29,7 @@
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 class="text-lg font-semibold text-white">QR Scanner</h2>
-              <p class="text-sm text-slate-400">Take a current photo proof, then allow camera access and scan the attendance QR.</p>
+            <p class="text-sm text-slate-400">Take a current photo proof, allow camera and location access, then scan the attendance QR.</p>
             </div>
 
             <button
@@ -73,6 +73,10 @@
               <p><span class="text-slate-400">Action:</span> {{ lastAttendanceAction }}</p>
               <p><span class="text-slate-400">Time:</span> {{ lastAttendanceTime }}</p>
               <p><span class="text-slate-400">Method:</span> QR Scan</p>
+              <p><span class="text-slate-400">Location:</span> {{ attendanceRecord.locationVerified ? 'Verified' : 'Not verified' }}</p>
+              <p v-if="attendanceRecord.locationDistanceMeters !== null && attendanceRecord.locationDistanceMeters !== undefined">
+                <span class="text-slate-400">Distance from clinic:</span> {{ attendanceRecord.locationDistanceMeters }} m
+              </p>
             </div>
             <p v-else class="mt-3 text-sm text-slate-400">
               No scan recorded in this session yet.
@@ -82,10 +86,10 @@
           <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
             <p class="text-xs uppercase tracking-[0.18em] text-slate-500">How It Works</p>
             <ol class="mt-3 space-y-2 text-sm text-slate-300">
-              <li>1. Open the scanner and allow camera access.</li>
+              <li>1. Open the scanner and allow camera and location access.</li>
               <li>2. Scan the clinic admin QR for today.</li>
-              <li>3. The system validates branch and date automatically.</li>
-              <li>4. Your attendance is saved as time in or time out.</li>
+              <li>3. The system checks that you are within the clinic’s allowed area.</li>
+              <li>4. Your attendance is saved as time in or time out with the verification result.</li>
             </ol>
           </section>
         </aside>

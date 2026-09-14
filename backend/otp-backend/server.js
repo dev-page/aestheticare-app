@@ -5056,6 +5056,12 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requirePermission('attendance:crea
     const accuracyNumber = Number(accuracy)
     const hasLocation = Number.isFinite(latitudeNumber) && Number.isFinite(longitudeNumber)
     const requiresLocation = settings.requireLocation !== false
+    if (hasLocation && (latitudeNumber < -90 || latitudeNumber > 90 || longitudeNumber < -180 || longitudeNumber > 180)) {
+      return res.status(400).json({ success: false, error: 'The reported location coordinates are invalid.' })
+    }
+    if (Number.isFinite(accuracyNumber) && accuracyNumber < 0) {
+      return res.status(400).json({ success: false, error: 'The reported location accuracy is invalid.' })
+    }
     if (requiresLocation && !hasLocation) {
       return res.status(400).json({ success: false, error: 'Location permission is required to record attendance.' })
     }
