@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
 import { doc, updateDoc, getDoc } from 'firebase/firestore'
@@ -9,6 +9,7 @@ import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const router = useRouter()
+const panelTheme = ref('customer')
 
 const currentPassword = ref('')
 const newPassword = ref('')
@@ -47,6 +48,30 @@ const resolveRedirectPath = async (userData) => {
   }
 
   return '/customer/home'
+}
+
+const resolvePanelTheme = (userData = {}) => {
+  const userType = String(userData.userType || '').trim().toLowerCase()
+  const role = String(userData.role || userData.customRoleName || '').trim().toLowerCase()
+  if (userType === 'staff') return 'employee'
+  if (role.includes('superadmin') || role.includes('system admin')) return 'superadmin'
+  if (role.includes('supplier')) return 'supplier'
+  if (role.includes('owner') || role.includes('clinic admin') || role.includes('clinicadmin')) return 'clinic'
+  return 'customer'
+}
+
+const goBack = async () => {
+  if (window.history.length > 1 && window.history.state?.back) {
+    router.back()
+    return
+  }
+  const currentUser = auth.currentUser
+  if (!currentUser) {
+    router.push('/login')
+    return
+  }
+  const snapshot = await getDoc(doc(db, 'users', currentUser.uid))
+  router.push(await resolveRedirectPath(snapshot.exists() ? snapshot.data() : {}))
 }
 
 const togglePassword = () => (passwordVisible.value = !passwordVisible.value)
@@ -134,10 +159,21 @@ const handleChangePassword = async () => {
     toast.error(`Failed to change password: ${err.message}`)
   }
 }
+
+onMounted(async () => {
+  const currentUser = auth.currentUser
+  if (!currentUser) return
+  try {
+    const snapshot = await getDoc(doc(db, 'users', currentUser.uid))
+    panelTheme.value = resolvePanelTheme(snapshot.exists() ? snapshot.data() : {})
+  } catch (error) {
+    console.error('Failed to load password page theme:', error)
+  }
+})
 </script>
 
 <template>
-  <div class="min-h-[100dvh] bg-gradient-to-br from-cream-50 via-cream-100 to-gold-100 overflow-x-hidden no-scrollbar relative">
+  <div :class="['password-shell', `password-theme-${panelTheme}`]">
     <div class="pointer-events-none absolute inset-0">
       <div class="absolute -top-20 -left-20 w-72 h-72 rounded-full bg-gold-200/40 blur-3xl"></div>
       <div class="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-cream-300/40 blur-3xl"></div>
@@ -145,11 +181,11 @@ const handleChangePassword = async () => {
 
     <nav class="sticky top-0 inset-x-0 z-50 bg-gradient-to-r from-cream-50/95 via-cream-100/95 to-gold-50/95 backdrop-blur-md border-b border-gold-200/70 shadow-[0_6px_18px_rgba(54,34,22,0.08)]">
       <div class="relative max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-        <router-link to="/" class="flex items-center gap-2 text-charcoal-700 hover:text-gold-700 transition-colors rounded-md px-2 py-1 hover:bg-gold-100/70">
+        <button type="button" class="password-back-button" aria-label="Go back" @click="goBack">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
-        </router-link>
+        </button>
         <span class="nav-brand absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-lg sm:text-xl tracking-wide">
           AesthetiCare
         </span>
@@ -272,6 +308,95 @@ const handleChangePassword = async () => {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+.password-shell {
+  min-height: 100dvh;
+  overflow-x: hidden;
+  position: relative;
+  background: linear-gradient(135deg, #fbf2e4, #f1dcc0);
+}
+
+.password-shell.password-theme-clinic,
+.password-shell.password-theme-employee,
+.password-shell.password-theme-superadmin {
+  background: #0f1418;
+  color: #f8eee5;
+}
+
+.password-shell.password-theme-clinic::before,
+.password-shell.password-theme-employee::before,
+.password-shell.password-theme-superadmin::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 12% 0%, rgba(141, 90, 59, .22), transparent 32%), linear-gradient(180deg, rgba(42, 27, 19, .35), transparent 45%);
+}
+
+.password-shell.password-theme-clinic nav,
+.password-shell.password-theme-employee nav,
+.password-shell.password-theme-superadmin nav {
+  background: rgba(24, 17, 14, .96);
+  border-color: rgba(141, 90, 59, .45);
+}
+
+.password-shell.password-theme-clinic > div.relative.z-10 > div,
+.password-shell.password-theme-employee > div.relative.z-10 > div,
+.password-shell.password-theme-superadmin > div.relative.z-10 > div {
+  background: rgba(28, 20, 17, .96);
+  border-color: rgba(141, 90, 59, .65);
+}
+
+.password-shell.password-theme-clinic .form-title,
+.password-shell.password-theme-employee .form-title,
+.password-shell.password-theme-superadmin .form-title {
+  background: linear-gradient(120deg, #f1d7bd, #c58b5e);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.password-shell.password-theme-clinic .nav-brand,
+.password-shell.password-theme-employee .nav-brand,
+.password-shell.password-theme-superadmin .nav-brand {
+  background: linear-gradient(120deg, #f0d2b4, #b9784d);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.password-shell.password-theme-clinic .text-charcoal-600,
+.password-shell.password-theme-employee .text-charcoal-600,
+.password-shell.password-theme-superadmin .text-charcoal-600 {
+  color: #cbb4a5;
+}
+
+.password-shell.password-theme-clinic .input,
+.password-shell.password-theme-employee .input,
+.password-shell.password-theme-superadmin .input {
+  background: rgba(15, 20, 24, .82);
+  border-color: rgba(197, 139, 94, .5);
+  color: #fff7ef;
+}
+
+.password-shell.password-theme-clinic .floating-label,
+.password-shell.password-theme-employee .floating-label,
+.password-shell.password-theme-superadmin .floating-label {
+  color: #d2ae91;
+}
+
+.password-shell.password-theme-clinic .peer:placeholder-shown + .floating-label,
+.password-shell.password-theme-employee .peer:placeholder-shown + .floating-label,
+.password-shell.password-theme-superadmin .peer:placeholder-shown + .floating-label {
+  color: #9e887b;
+}
+
+.password-shell.password-theme-clinic .password-back-button,
+.password-shell.password-theme-employee .password-back-button,
+.password-shell.password-theme-superadmin .password-back-button {
+  color: #e6c3a7;
+}
+
+.password-back-button { border-radius: .4rem; padding: .25rem .5rem; color: #4f3527; transition: color .2s, background .2s; }
+.password-back-button:hover { color: #8d5a3b; background: rgba(141, 90, 59, .12); }
 
 .form-title {
   font-family: "Playfair Display", "Times New Roman", serif;

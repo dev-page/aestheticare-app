@@ -14,9 +14,14 @@
         <div v-else class="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
           <section class="rounded-3xl border border-slate-800 bg-slate-800/80 p-6 shadow-lg">
             <div class="flex flex-col items-center text-center">
-              <div class="flex h-24 w-24 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-3xl font-bold text-white">
-                {{ userInitial }}
+              <div class="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-900 text-3xl font-bold text-white">
+                <img v-if="profilePreview || profile.profilePicture" :src="profilePreview || profile.profilePicture" alt="Employee profile picture" class="h-full w-full object-cover" />
+                <span v-else>{{ userInitial }}</span>
               </div>
+              <label class="mt-4 cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-white">
+                Upload Profile Picture
+                <input type="file" accept="image/*" class="sr-only" @change="handleProfilePictureChange" />
+              </label>
               <h2 class="mt-4 text-xl font-semibold text-white">{{ fullName || 'Employee' }}</h2>
               <p class="mt-1 text-sm text-slate-400">{{ profile.email || '-' }}</p>
             </div>
@@ -122,6 +127,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDoc, getFirestore, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -134,6 +140,8 @@ export default {
     const auth = getAuth(getApp())
     const loading = ref(true)
     const saving = ref(false)
+    const profilePictureFile = ref(null)
+    const profilePreview = ref('')
     const currentUserId = ref('')
     let unsubscribeAuth = null
     let unsubscribeProfile = null
@@ -150,6 +158,7 @@ export default {
       branchId: '',
       branchLabel: '',
       status: '',
+      profilePicture: '',
     })
 
     const fullName = computed(() => `${profile.value.firstName || ''} ${profile.value.lastName || ''}`.trim())
@@ -220,7 +229,25 @@ export default {
         branchId,
         branchLabel: profile.value.branchLabel || '-',
         status: String(userData.status || '').trim(),
+        profilePicture: String(userData.profilePicture || '').trim(),
       }
+    }
+
+    const handleProfilePictureChange = (event) => {
+      const file = event.target.files?.[0]
+      if (!file) return
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please choose an image file.')
+        event.target.value = ''
+        return
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('Profile pictures must be 5 MB or smaller.')
+        event.target.value = ''
+        return
+      }
+      profilePictureFile.value = file
+      profilePreview.value = URL.createObjectURL(file)
     }
 
     const saveProfile = async () => {
@@ -235,12 +262,20 @@ export default {
 
       saving.value = true
       try {
+        let profilePicture = profile.value.profilePicture || ''
+        if (profilePictureFile.value) {
+          const file = profilePictureFile.value
+          const fileRef = storageRef(getStorage(getApp()), `userProfiles/${currentUserId.value}/profile-${Date.now()}`)
+          await uploadBytes(fileRef, file, { contentType: file.type })
+          profilePicture = await getDownloadURL(fileRef)
+        }
         await updateDoc(doc(db, 'users', currentUserId.value), {
           firstName: profile.value.firstName,
           lastName: profile.value.lastName,
           fullName: `${profile.value.firstName} ${profile.value.lastName}`.trim(),
           phoneNumber: profile.value.phoneNumber || '',
           address: profile.value.address || '',
+          profilePicture,
           updatedAt: serverTimestamp(),
         })
         toast.success('Profile updated successfully.')
@@ -282,6 +317,8 @@ export default {
             loading.value = false
           }
         })
+        profile.value.profilePicture = profilePicture
+        profilePictureFile.value = null
       })
     })
 

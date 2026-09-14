@@ -19,6 +19,17 @@
               <p class="mt-1 text-sm text-slate-400">This information identifies you in the system.</p>
             </div>
 
+            <div class="mb-5 flex items-center gap-4 rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+              <div class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-950 text-xl font-bold text-white">
+                <img v-if="profilePreview || profile.profilePicture" :src="profilePreview || profile.profilePicture" alt="System administrator profile picture" class="h-full w-full object-cover" />
+                <span v-else>{{ profileInitial }}</span>
+              </div>
+              <label class="cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-cyan-500 hover:text-white">
+                Upload Profile Picture
+                <input type="file" accept="image/*" class="sr-only" @change="handleProfilePictureChange" />
+              </label>
+            </div>
+
             <form class="space-y-4" @submit.prevent="saveProfile">
               <div class="grid gap-4 sm:grid-cols-2">
                 <label class="space-y-2">
@@ -87,17 +98,21 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
-import { auth, db } from '@/config/firebaseConfig'
+import { auth, db, storage } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 
 const loading = ref(true)
 const savingProfile = ref(false)
 const changingPassword = ref(false)
-const profile = reactive({ firstName: '', lastName: '', email: '', phoneNumber: '' })
+const profile = reactive({ firstName: '', lastName: '', email: '', phoneNumber: '', profilePicture: '' })
+const profilePictureFile = ref(null)
+const profilePreview = ref('')
+const profileInitial = computed(() => `${profile.firstName || ''} ${profile.lastName || ''}`.trim().charAt(0).toUpperCase() || 'A')
 const passwords = reactive({ current: '', next: '', confirm: '' })
 
 const loadProfile = async () => {
@@ -110,6 +125,7 @@ const loadProfile = async () => {
     profile.lastName = data.lastName || ''
     profile.email = data.email || user.email || ''
     profile.phoneNumber = String(data.phoneNumber || '').replace(/^\+63/, '')
+    profile.profilePicture = String(data.profilePicture || '').trim()
   } catch (error) {
     console.error('Failed to load system-admin profile:', error)
     toast.error('Unable to load account settings.')
@@ -123,13 +139,23 @@ const saveProfile = async () => {
   if (!user) return
   savingProfile.value = true
   try {
+    let profilePicture = profile.profilePicture || ''
+    if (profilePictureFile.value) {
+      const file = profilePictureFile.value
+      const fileRef = storageRef(storage, `userProfiles/${user.uid}/profile-${Date.now()}`)
+      await uploadBytes(fileRef, file, { contentType: file.type })
+      profilePicture = await getDownloadURL(fileRef)
+    }
     await updateDoc(doc(db, 'users', user.uid), {
       firstName: profile.firstName,
       lastName: profile.lastName,
       fullName: `${profile.firstName} ${profile.lastName}`.trim(),
       phoneNumber: profile.phoneNumber ? `+63${profile.phoneNumber}` : '',
+      profilePicture,
       updatedAt: new Date(),
     })
+    profile.profilePicture = profilePicture
+    profilePictureFile.value = null
     toast.success('Profile updated successfully.')
   } catch (error) {
     console.error('Failed to update system-admin profile:', error)
@@ -137,6 +163,23 @@ const saveProfile = async () => {
   } finally {
     savingProfile.value = false
   }
+}
+
+const handleProfilePictureChange = (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    toast.error('Please choose an image file.')
+    event.target.value = ''
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error('Profile pictures must be 5 MB or smaller.')
+    event.target.value = ''
+    return
+  }
+  profilePictureFile.value = file
+  profilePreview.value = URL.createObjectURL(file)
 }
 
 const changePassword = async () => {
