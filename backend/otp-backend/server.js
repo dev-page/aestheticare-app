@@ -5088,6 +5088,21 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requirePermission('attendance:crea
     }
 
     const schedule = await loadAttendanceSchedule(req.user.uid, dateKey)
+    if (schedule.onLeave) {
+      return res.status(409).json({
+        success: false,
+        code: 'APPROVED_LEAVE',
+        error: `Attendance is unavailable because you are on approved ${String(schedule.leaveType || 'leave').toLowerCase()}.`,
+        leaveId: schedule.leaveId,
+      })
+    }
+    if (!String(schedule.shiftLabel || '').trim() || String(schedule.shiftLabel).trim().toLowerCase() === 'off') {
+      return res.status(409).json({
+        success: false,
+        code: 'SCHEDULED_DAY_OFF',
+        error: 'Attendance is unavailable because today is your scheduled day off.',
+      })
+    }
     const attendanceRef = firestore.collection('attendance').doc(`${req.user.uid}_${dateKey}`)
     const result = await firestore.runTransaction(async (transaction) => {
       const existingSnap = await transaction.get(attendanceRef)

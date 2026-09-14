@@ -20,10 +20,15 @@
             <p class="mt-3 text-lg font-semibold text-[#fff0e1]">{{ roleLabel || headingTitle || 'Employee' }}</p>
             <p class="mt-1 text-sm text-[#d4bead]">Your current access level in the panel.</p>
           </div>
+              <div class="rounded-[1.5rem] border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] p-5 shadow-[0_18px_44px_rgba(11,6,4,0.16)]">
+                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Assigned Branch</p>
+                <p class="mt-3 text-lg font-semibold text-[#fff0e1]">{{ branchLabel || 'No branch assigned' }}</p>
+                <p class="mt-1 text-sm text-[#d4bead]">This updates when your branch assignment changes.</p>
+              </div>
           <div class="rounded-[1.5rem] border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] p-5 shadow-[0_18px_44px_rgba(11,6,4,0.16)]">
-            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Assigned Branch</p>
-            <p class="mt-3 text-lg font-semibold text-[#fff0e1]">{{ branchLabel || 'No branch assigned' }}</p>
-            <p class="mt-1 text-sm text-[#d4bead]">This updates when your branch assignment changes.</p>
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Today's Shift</p>
+            <p class="mt-3 text-lg font-semibold text-[#fff0e1]">{{ todayShiftLabel }}</p>
+            <p class="mt-1 text-sm text-[#d4bead]">{{ todayShiftTime }}</p>
           </div>
         </section>
 
@@ -85,7 +90,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, getDoc, getFirestore, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, where } from 'firebase/firestore'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { usePermissions } from '@/composables/usePermissions'
@@ -103,6 +108,8 @@ export default {
     const loading = ref(true)
     const roleLabel = ref('')
     const branchLabel = ref('')
+    const todayShiftLabel = ref('Loading...')
+    const todayShiftTime = ref('Checking today\'s schedule...')
     let unsubscribeAuth = null
     let unsubscribeProfile = null
     let unsubscribeBranch = null
@@ -236,6 +243,41 @@ export default {
       branchLabel.value = label || branchId || 'No branch assigned'
     }
 
+    const loadTodayShift = async (userId, userData = {}) => {
+      todayShiftLabel.value = 'No shift assigned'
+      todayShiftTime.value = 'Today is unavailable for clock-in until a schedule is assigned.'
+      const scheduleSnap = await getDoc(doc(db, 'users', userId, 'schedules', 'recurring'))
+      if (!scheduleSnap.exists()) {
+        todayShiftLabel.value = 'Day Off'
+        todayShiftTime.value = 'No recurring shift is assigned for today.'
+        return
+      }
+
+      const schedule = scheduleSnap.data() || {}
+      const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'Asia/Manila' }).format(new Date())
+      const assignment = String(schedule.assignments?.[weekday] || '').trim()
+      const assignmentLabel = String(schedule.assignmentLabels?.[weekday] || assignment).trim()
+      if (!assignment || assignment.toLowerCase() === 'off' || assignmentLabel.toLowerCase() === 'off') {
+        todayShiftLabel.value = 'Day Off'
+        todayShiftTime.value = 'Clock-in is unavailable today.'
+        return
+      }
+
+      const branchId = String(userData.branchId || userData.clinicBranch || '').trim()
+      if (!branchId) {
+        todayShiftLabel.value = assignmentLabel || 'Assigned Shift'
+        todayShiftTime.value = 'Branch schedule details are unavailable.'
+        return
+      }
+      const shiftSnapshot = await getDocs(query(collection(db, 'shifts'), where('branchId', '==', branchId)))
+      const shift = shiftSnapshot.docs.map((shiftDoc) => ({ id: shiftDoc.id, ...shiftDoc.data() })).find((entry) => {
+        const label = `${String(entry.shiftType || 'Shift').trim()} || ${String(entry.start || '').trim()} - ${String(entry.end || '').trim()}`
+        return entry.id === assignment || label === assignmentLabel || label === assignment
+      })
+      todayShiftLabel.value = shift?.shiftType || assignmentLabel || 'Assigned Shift'
+      todayShiftTime.value = shift?.start && shift?.end ? `${shift.start} - ${shift.end}` : 'Shift time is not configured.'
+    }
+
     const subscribeToBranchSource = (user, userData = {}) => {
       clearBranchSubscription()
 
@@ -289,6 +331,7 @@ export default {
           const userData = userSnap.exists() ? userSnap.data() || {} : {}
           roleLabel.value = String(userData.customRoleName || userData.role || 'Employee').trim()
           subscribeToBranchSource(user, userData)
+          await loadTodayShift(user.uid, userData)
           loading.value = false
         })
       })
@@ -309,7 +352,9 @@ export default {
       headingTitle,
       loading,
       roleLabel,
-      quickLinks
+      quickLinks,
+      todayShiftLabel,
+      todayShiftTime
     }
   }
 }
