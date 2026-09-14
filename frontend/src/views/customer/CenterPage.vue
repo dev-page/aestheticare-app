@@ -2356,6 +2356,13 @@ const releaseBookingReservation = async (reservationId) => {
   }
 }
 
+const createShortAppointmentReference = (prefix = 'APT') => {
+  const buffer = new Uint32Array(1)
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(buffer)
+  else buffer[0] = Date.now()
+  return `${String(prefix).slice(0, 4).toUpperCase()}-${String(buffer[0] % 1000000).padStart(6, '0')}`
+}
+
 const buildBookingPayMongoLineItems = ({ flowType = 'booking', consultationFeePeso = 0 } = {}) => {
   if (flowType === 'consultation') {
     const consultationMode = selectedServices.value.find((service) => service.consultationMode)?.consultationMode
@@ -2400,7 +2407,7 @@ const createBookingPayMongoCheckoutSession = async ({
     throw new Error('Please choose an available schedule.')
   }
 
-  const referenceNumber = `${referencePrefix || 'APT'}-${Date.now()}`
+  const referenceNumber = createShortAppointmentReference(referencePrefix || 'APT')
   const successQuery = buildCenterQueryString({ paymongo_status: 'success' })
   const cancelQuery = buildCenterQueryString({ paymongo_status: 'cancelled' })
   const successUrl = `${window.location.origin}${route.path}${successQuery ? `?${successQuery}` : ''}`

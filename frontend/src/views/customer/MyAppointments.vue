@@ -1359,6 +1359,13 @@ const canPayAppointment = (appointment) => {
   return status === 'payment pending' || status === 'approved' || status === 'balance due'
 }
 
+const createShortAppointmentReference = () => {
+  const buffer = new Uint32Array(1)
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(buffer)
+  else buffer[0] = Date.now()
+  return `APT-${String(buffer[0] % 1000000).padStart(6, '0')}`
+}
+
 const canConfirmCompletion = (appointment) => {
   const status = normalizeAppointmentStatus(appointment?.status)
   return Boolean(appointment?.workerCompleted) && ['ongoing', 'awaiting customer confirmation', 'balance due'].includes(status)
@@ -1451,7 +1458,7 @@ const payAppointment = async (appointment) => {
         amount: Math.round(remainingAmount * 100),
         paymentMethodTypes: ['card', 'gcash', 'grab_pay'],
         description: `Payment for ${appointment.service || 'appointment'}`,
-        referenceNumber: `APT-${appointment.id}-${Date.now()}`,
+        referenceNumber: createShortAppointmentReference(),
         billing: { name: appointment.customerName || user.displayName || 'Customer', email: user.email || appointment.customerEmail || '' },
         successUrl: `${window.location.origin}/customer/appointments?paymongo_status=success`,
         cancelUrl: `${window.location.origin}/customer/appointments?paymongo_status=cancelled`,
