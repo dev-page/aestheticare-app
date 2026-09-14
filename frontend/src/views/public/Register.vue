@@ -457,8 +457,6 @@ const isStep1FormComplete = computed(() => {
     clinicLocationLat.value &&
     clinicLocationLng.value &&
     phoneIsValid &&
-    termsAccepted.value &&
-    clinicAgreementSignatureMatches.value &&
     (emailAvailability.value === 'available' || emailChecked.value) &&
     passwordIsValid
   )
@@ -2549,21 +2547,6 @@ const registerClinic = async () => {
     if (!emailChecked.value || currentStep.value !== 1) return
   }
 
-  if (!termsAccepted.value) {
-    toast.error('You must agree to the terms and conditions and privacy policy')
-    return
-  }
-
-  if (!clinicAgreementRead.value) {
-    toast.error('Please review the Clinic Platform Agreement before continuing.')
-    return
-  }
-
-  if (!clinicAgreementSignatureMatches.value) {
-    toast.error('Please accept the Clinic Platform Agreement and draw your electronic signature.')
-    return
-  }
-
   if (requiresPasswordForStep1.value) {
     if (password.value !== confirmPassword.value) {
       toast.error('Passwords do not match')
@@ -2619,15 +2602,6 @@ const registerClinic = async () => {
     companyName: clinicName.value.trim(),
     companyType: '',
   }
-  const platformAgreementAcceptance = {
-    version: CLINIC_PLATFORM_AGREEMENT_VERSION,
-    signerName: registeredOwnerLegalName.value,
-    signerEmail: email.value.trim().toLowerCase(),
-    method: 'drawn-signature',
-    signatureImage: clinicAgreementSignatureImage.value,
-    acceptedAt: serverTimestamp(),
-  }
-
   sessionStorage.setItem('resume_email', String(email.value || '').trim().toLowerCase())
 
   isSubmitting.value = true
@@ -2688,7 +2662,6 @@ const registerClinic = async () => {
           authorizedRepPosition: companyPayload.authorizedRepPosition,
           companyName: companyPayload.companyName,
           companyType: companyPayload.companyType,
-          platformAgreementAcceptance,
           updatedAt: serverTimestamp(),
         }),
       ])
@@ -2749,7 +2722,6 @@ const registerClinic = async () => {
       isMainBranch: true,
       branchAdminId: uid,
       branchAdminName: ownerFullName || 'Owner',
-      platformAgreementAcceptance,
       approvalStatus: 'Pending OTP Verification',
       createdAt: serverTimestamp(),
     })
@@ -2949,6 +2921,22 @@ const requestAutomaticClinicVerification = async (uid) => {
 const submitDocuments = async () => {
   if (currentStep.value !== 3) return
 
+  if (!termsAccepted.value) {
+    toast.error('You must agree to the Terms & Conditions and Privacy Policy before submitting.')
+    return
+  }
+
+  if (isClinicRegistrationActive.value) {
+    if (!clinicAgreementRead.value) {
+      toast.error('Please review the Clinic Platform Agreement before submitting.')
+      return
+    }
+    if (!clinicAgreementSignatureMatches.value) {
+      toast.error('Please accept the Clinic Platform Agreement and draw your electronic signature before submitting.')
+      return
+    }
+  }
+
   if (!allDocumentsUploaded.value) {
     toast.error('Please upload all required documents.')
     return
@@ -3035,10 +3023,22 @@ const submitDocuments = async () => {
       }
     })
 
+    const platformAgreementAcceptance = isClinicRegistrationActive.value
+      ? {
+          version: CLINIC_PLATFORM_AGREEMENT_VERSION,
+          signerName: registeredOwnerLegalName.value,
+          signerEmail: email.value.trim().toLowerCase(),
+          method: 'drawn-signature',
+          signatureImage: clinicAgreementSignatureImage.value,
+          acceptedAt: serverTimestamp(),
+        }
+      : null
+
     await updateDoc(doc(db, 'clinics', userUid.value), {
       approvalStatus: 'Pending Approval',
       documentsSubmittedAt: serverTimestamp(),
       submittedDocuments: submittedDocumentsPayload,
+      ...(platformAgreementAcceptance ? { platformAgreementAcceptance } : {}),
       draftDocuments: deleteField(),
       draftDocumentsUpdatedAt: deleteField(),
     })
@@ -3466,40 +3466,6 @@ const submitDocuments = async () => {
               </div>
             </div>
 
-            <label class="terms-row flex items-center gap-2 text-charcoal-600 text-sm">
-              <input type="checkbox" v-model="termsAccepted" required class="accent-gold-700" />
-              I agree to the
-              <a href="#" @click.prevent="showTerms = true" class="text-gold-700 hover:underline">Terms &amp; Conditions</a>
-              and
-              <a href="#" @click.prevent="showPrivacy = true" class="text-gold-700 hover:underline">Privacy Policy</a>
-            </label>
-
-            <div v-if="isClinicRegistrationActive" class="space-y-3 rounded-xl border border-gold-200 bg-cream-50 p-4">
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p class="font-semibold text-charcoal-800">Clinic Platform Agreement</p>
-                  <p class="text-xs text-charcoal-600">This includes the platform commission schedule: 5% on products and 10% on completed services.</p>
-                </div>
-                <button type="button" class="text-sm font-semibold text-gold-700 hover:underline" @click="showClinicAgreement = true">
-                  Review agreement
-                </button>
-              </div>
-
-              <label class="flex items-start gap-2 text-sm text-charcoal-700">
-                <input v-model="clinicAgreementAccepted" type="checkbox" :disabled="!clinicAgreementRead" class="mt-1 accent-gold-700" />
-                <span>I agree to the Clinic Platform Agreement and confirm that I am authorized to bind this clinic.</span>
-              </label>
-
-              <div v-if="clinicAgreementRead" class="space-y-2">
-                <label class="block text-sm font-medium text-charcoal-700">Electronic signature</label>
-                <ElectronicSignaturePad v-model="clinicAgreementSignatureImage" label="Draw your electronic signature" />
-                <p class="text-xs text-charcoal-600">
-                  Draw your signature below. Your registered legal name will be stored with the signature:
-                  {{ registeredOwnerLegalName || 'your registered name' }}
-                </p>
-              </div>
-            </div>
-
             <div class="cta-row flex gap-3">
               <button
                 type="button"
@@ -3746,6 +3712,41 @@ const submitDocuments = async () => {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div class="space-y-3 rounded-xl border border-gold-200 bg-cream-50 p-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p class="font-semibold text-charcoal-800">Terms, Privacy, and Clinic Agreement</p>
+                    <p class="text-xs text-charcoal-600">Review the documents before completing registration.</p>
+                  </div>
+                  <div class="flex flex-wrap gap-3 text-sm font-semibold">
+                    <button type="button" class="text-gold-700 hover:underline" @click="showTerms = true">Terms &amp; Conditions</button>
+                    <button type="button" class="text-gold-700 hover:underline" @click="showPrivacy = true">Privacy Policy</button>
+                    <button v-if="isClinicRegistrationActive" type="button" class="text-gold-700 hover:underline" @click="showClinicAgreement = true">Clinic Agreement</button>
+                  </div>
+                </div>
+
+                <label class="flex items-start gap-2 text-sm text-charcoal-700">
+                  <input v-model="termsAccepted" type="checkbox" class="mt-1 accent-gold-700" />
+                  <span>I agree to the Terms &amp; Conditions and Privacy Policy.</span>
+                </label>
+
+                <template v-if="isClinicRegistrationActive">
+                  <label class="flex items-start gap-2 text-sm text-charcoal-700">
+                    <input v-model="clinicAgreementAccepted" type="checkbox" :disabled="!clinicAgreementRead" class="mt-1 accent-gold-700" />
+                    <span>I agree to the Clinic Platform Agreement and confirm that I am authorized to bind this clinic.</span>
+                  </label>
+
+                  <div v-if="clinicAgreementRead" class="space-y-2">
+                    <label class="block text-sm font-medium text-charcoal-700">Electronic signature</label>
+                    <ElectronicSignaturePad v-model="clinicAgreementSignatureImage" label="Draw your electronic signature" />
+                    <p class="text-xs text-charcoal-600">
+                      Draw your signature below. Your registered legal name will be stored with the signature:
+                      {{ registeredOwnerLegalName || 'your registered name' }}
+                    </p>
+                  </div>
+                </template>
               </div>
 
               <div class="flex gap-3">

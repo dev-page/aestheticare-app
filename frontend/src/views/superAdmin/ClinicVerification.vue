@@ -191,12 +191,45 @@
                 ['Province', selectedRecord.clinicProvince],
                 ['Postal Code', selectedRecord.clinicPostalCode],
                 ['Resolved Address', selectedRecord.clinicLocationAddress],
-                ['Coordinates', selectedRecord.clinicLocationLat && selectedRecord.clinicLocationLng ? `${selectedRecord.clinicLocationLat}, ${selectedRecord.clinicLocationLng}` : 'Not available'],
+              ['Coordinates', selectedRecord.clinicLocationLat && selectedRecord.clinicLocationLng ? `${selectedRecord.clinicLocationLat}, ${selectedRecord.clinicLocationLng}` : 'Not available'],
               ]" :key="item[0]" class="bg-slate-800 border border-slate-700 rounded-xl p-3">
                 <p class="text-xs text-slate-400 mb-1">{{ item[0] }}</p>
                 <p class="text-sm text-white break-words">{{ item[1] || '-' }}</p>
               </div>
             </div>
+          </section>
+
+          <section class="mb-6 bg-slate-800 border border-slate-700 rounded-xl p-4">
+            <h3 class="text-white font-semibold mb-3">Clinic Platform Agreement</h3>
+            <div v-if="selectedRecord.platformAgreementAcceptance" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div>
+                <p class="text-xs text-slate-400">Signed by</p>
+                <p class="text-white break-words">{{ selectedRecord.platformAgreementAcceptance.signerName || '-' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-slate-400">Signer email</p>
+                <p class="text-white break-words">{{ selectedRecord.platformAgreementAcceptance.signerEmail || '-' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-slate-400">Agreement version</p>
+                <p class="text-white break-words">{{ selectedRecord.platformAgreementAcceptance.version || '-' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-slate-400">Accepted at</p>
+                <p class="text-white">{{ formatDateValue(selectedRecord.platformAgreementAcceptance.acceptedAt) }}</p>
+              </div>
+              <div class="md:col-span-2">
+                <p class="text-xs text-slate-400 mb-2">Electronic signature</p>
+                <img
+                  v-if="selectedRecord.platformAgreementAcceptance.signatureImage"
+                  :src="selectedRecord.platformAgreementAcceptance.signatureImage"
+                  alt="Clinic platform agreement electronic signature"
+                  class="max-h-28 max-w-full rounded-lg border border-slate-600 bg-white object-contain p-2"
+                />
+                <p v-else class="text-slate-400">Signature image unavailable.</p>
+              </div>
+            </div>
+            <p v-else class="text-sm text-slate-400">No clinic agreement acceptance was recorded for this registration.</p>
           </section>
 
           <section class="mb-6 bg-slate-800 border border-slate-700 rounded-xl p-4">
@@ -589,6 +622,7 @@ export default {
               centerStatus: clinic.status || clinic.moderationStatus || 'Active',
               approvedAtLabel: approvedAt && approvedAt.toDate ? approvedAt.toDate().toLocaleDateString() : '-',
               approvedAt: approvedAt || null,
+              platformAgreementAcceptance: clinic.platformAgreementAcceptance || null,
               documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
               verificationStatus: clinic.verificationStatus || 'Not processed',
               verificationThreshold: clinic.verificationThreshold || null,
@@ -776,6 +810,7 @@ export default {
               planKey: String(resolvedPlan || '').trim().toLowerCase(),
               planLabel: normalizePlanLabel(resolvedPlan),
               paymentStatus: resolvedPayment,
+              platformAgreementAcceptance: clinic.platformAgreementAcceptance || null,
               documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
               verificationStatus: clinic.verificationStatus || 'Not processed',
               verificationThreshold: clinic.verificationThreshold || null,
