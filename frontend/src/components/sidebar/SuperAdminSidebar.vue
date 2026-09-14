@@ -49,6 +49,9 @@ export default {
       { label: 'User Reports', icon: 'reportIssue', to: '/superadmin/tickets' },
       { label: 'Activity Logs', icon: 'activity', to: '/superadmin/activity-logs' },
       { label: 'Account Settings', icon: 'settings', to: '/superadmin/account-settings' },
+      { label: 'Change Password', icon: 'key', to: '/change-password' },
+      { label: 'Notifications', icon: 'bell', to: '/notifications' },
+      { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' },
       { label: 'System Settings', icon: 'cog', to: '/superadmin/system-settings' }
     ]
 

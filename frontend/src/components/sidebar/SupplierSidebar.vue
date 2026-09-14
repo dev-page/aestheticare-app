@@ -26,8 +26,8 @@ export default {
         label: 'Support',
         icon: 'inbox',
         children: [
-          { label: 'Notifications', icon: 'bell', to: '/notifications', permission: 'notifications:view' },
-          { label: 'Report Issue', icon: 'reportIssue', to: '/support/report', permission: 'support:view' },
+          { label: 'Notifications', icon: 'bell', to: '/notifications' },
+          { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' },
           { label: 'Change Password', icon: 'key', to: '/change-password' },
         ],
       },

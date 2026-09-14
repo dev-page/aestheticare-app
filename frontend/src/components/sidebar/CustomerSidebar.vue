@@ -24,7 +24,8 @@ export default {
       { label: 'Profile', icon: 'profile', to: '/customer/profile', tourKey: 'customer-profile' },
       { label: 'Account Settings', icon: 'settings', to: '/customer/account-settings', tourKey: 'customer-account-settings' },
       { label: 'Notifications', icon: 'bell', to: '/notifications', tourKey: 'customer-notifications' },
-      { label: 'Report Issue', icon: 'reportIssue', to: '/support/report', tourKey: 'customer-report-issue' }
+      { label: 'Report Issue', icon: 'reportIssue', to: '/support/report', tourKey: 'customer-report-issue' },
+      { label: 'Change Password', icon: 'key', to: '/change-password', tourKey: 'customer-change-password' }
     ]
 
     return { items }

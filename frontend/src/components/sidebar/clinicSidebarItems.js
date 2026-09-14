@@ -121,13 +121,13 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
     label: 'Account & System',
     icon: 'settings',
     children: [
-      { label: 'Reset Password', icon: 'key', to: '/owner/change-password', permission: 'password:update' },
+      { label: 'Change Password', icon: 'key', to: '/change-password' },
       { label: 'Subscription Plan', icon: 'card', to: '/owner/account/subscription', permission: 'subscription:view' },
       { label: 'Account Closure', icon: 'account-off', to: '/owner/account/closure', permission: 'subscription:view' },
       { label: 'Backup Database', icon: 'file', to: '/owner/account/backup', permission: 'backup:view' },
       { label: 'Activities', icon: 'report', to: '/activities', permission: 'activities:view' },
-      { label: 'Notifications', icon: 'bell', to: '/notifications', permission: 'notifications:view' },
-      { label: 'Report Issue', icon: 'reportIssue', to: '/support/report', permission: 'support:view' }
+      { label: 'Notifications', icon: 'bell', to: '/notifications' },
+      { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' }
     ]
   }
 ]
