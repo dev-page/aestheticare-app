@@ -22,13 +22,14 @@ export default {
       { label: 'My Supplies', icon: 'box', to: '/supplier/supplies' },
       { label: 'Quote Requests', icon: 'report', to: '/supplier/quote-requests' },
       {
-        key: 'supplier-support',
-        label: 'Support',
-        icon: 'inbox',
+        key: 'supplier-account-settings',
+        label: 'Account Settings',
+        icon: 'settings',
         children: [
+          { label: 'Profile', icon: 'profile', to: '/supplier/profile' },
           { label: 'Notifications', icon: 'bell', to: '/notifications' },
-          { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' },
           { label: 'Change Password', icon: 'key', to: '/change-password' },
+          { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' },
         ],
       },
     ]

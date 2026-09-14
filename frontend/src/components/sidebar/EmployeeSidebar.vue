@@ -92,7 +92,7 @@ export default {
       )
     }
     const items = computed(() => {
-      const baseItems = buildClinicSidebarItems({ dashboardTo: '/employee/dashboard' })
+      const baseItems = buildClinicSidebarItems({ dashboardTo: '/employee/dashboard', isEmployee: true })
       const attendanceChild = {
         label: 'Scan Attendance QR',
         icon: 'qr',

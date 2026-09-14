@@ -1,4 +1,4 @@
-export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {}) => [
+export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEmployee = false } = {}) => [
   { label: 'Dashboard', icon: 'dashboard', to: dashboardTo },
   {
     key: 'clinic-setup',
@@ -118,14 +118,17 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard' } = {
   },
   {
     key: 'account',
-    label: 'Account & System',
+    label: 'Account Settings',
     icon: 'settings',
     children: [
+      { label: 'Profile', icon: 'profile', to: isEmployee ? '/employee/profile' : '/owner/clinic-profile' },
       { label: 'Change Password', icon: 'key', to: '/change-password' },
-      { label: 'Subscription Plan', icon: 'card', to: '/owner/account/subscription', permission: 'subscription:view' },
-      { label: 'Account Closure', icon: 'account-off', to: '/owner/account/closure', permission: 'subscription:view' },
-      { label: 'Backup Database', icon: 'file', to: '/owner/account/backup', permission: 'backup:view' },
-      { label: 'Activities', icon: 'report', to: '/activities', permission: 'activities:view' },
+      ...(!isEmployee ? [
+        { label: 'Subscription Plan', icon: 'card', to: '/owner/account/subscription', permission: 'subscription:view' },
+        { label: 'Account Access', icon: 'account-off', to: '/owner/account/closure', permission: 'subscription:view' },
+        { label: 'Backup Database', icon: 'file', to: '/owner/account/backup', permission: 'backup:view' },
+        { label: 'Activities', icon: 'report', to: '/activities', permission: 'activities:view' },
+      ] : []),
       { label: 'Notifications', icon: 'bell', to: '/notifications' },
       { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' }
     ]

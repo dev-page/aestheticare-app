@@ -31,12 +31,34 @@
           <MyProfile embedded />
         </section>
 
-        <section v-else-if="activeTab === 'notifications'" class="settings-tab-panel settings-card">
-          <div>
+        <section v-else-if="activeTab === 'notifications'" class="settings-tab-panel settings-card settings-notifications-card">
+          <div class="settings-notifications-content">
             <p class="settings-card-kicker">Notifications</p>
             <h2 class="settings-card-title">Stay updated</h2>
-            <p class="settings-copy">Booking, order, payment, and clinic updates are available in your notification center. Open it to mark messages as read, view details, or remove notifications.</p>
-            <RouterLink to="/notifications" class="settings-button settings-button-primary settings-inline-button">Open Notifications</RouterLink>
+            <p class="settings-copy">Your latest booking, order, payment, and clinic updates are shown here.</p>
+            <p v-if="notificationsError" class="settings-notifications-error">{{ notificationsError }}</p>
+            <p v-if="notificationsLoading" class="settings-notifications-empty">Loading notifications...</p>
+            <p v-else-if="!notifications.length" class="settings-notifications-empty">No notifications yet.</p>
+            <ul v-else class="settings-notification-list">
+              <li v-for="item in pagedNotifications" :key="item.id" :class="['settings-notification-item', { 'settings-notification-unread': !item.read }]">
+                <div class="settings-notification-copy">
+                  <strong>{{ item.title || 'Notification' }}</strong>
+                  <p>{{ item.message || '-' }}</p>
+                  <small>{{ item.createdLabel }}</small>
+                </div>
+                <div class="settings-notification-actions">
+                  <span v-if="!item.read" class="settings-new-badge">New</span>
+                  <button v-if="!item.read" type="button" class="settings-text-button" @click="markNotificationRead(item)">Mark read</button>
+                  <button type="button" class="settings-text-button settings-delete-text" @click="deleteNotification(item)">Delete</button>
+                </div>
+              </li>
+            </ul>
+            <div v-if="notifications.length > pageSize" class="settings-pagination">
+              <button type="button" class="settings-page-button" :disabled="notificationPage === 1" @click="notificationPage -= 1">Previous</button>
+              <span>Page {{ notificationPage }} of {{ notificationPageCount }}</span>
+              <button type="button" class="settings-page-button" :disabled="notificationPage === notificationPageCount" @click="notificationPage += 1">Next</button>
+            </div>
+            <RouterLink to="/notifications" class="settings-text-link settings-full-notifications-link">Open full notification center</RouterLink>
           </div>
         </section>
 
@@ -151,9 +173,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import { auth, db } from '@/config/firebaseConfig'
@@ -175,6 +197,12 @@ const accountAction = ref('')
 const actionReason = ref('')
 const reasonPreset = ref('')
 const exporting = ref(false)
+const notifications = ref([])
+const notificationsLoading = ref(false)
+const notificationsError = ref('')
+const notificationPage = ref(1)
+const pageSize = 10
+let unsubscribeNotifications = null
 
 const deactivationReasons = [
   'I am taking a break',
@@ -194,6 +222,8 @@ const deletionReasons = [
 ]
 const currentReasonOptions = computed(() => accountAction.value === 'deactivate' ? deactivationReasons : deletionReasons)
 const combinedReason = computed(() => [reasonPreset.value, actionReason.value.trim()].filter(Boolean).join(': '))
+const notificationPageCount = computed(() => Math.max(1, Math.ceil(notifications.value.length / pageSize)))
+const pagedNotifications = computed(() => notifications.value.slice((notificationPage.value - 1) * pageSize, notificationPage.value * pageSize))
 
 const allowedTabs = new Set(['profile', 'notifications', 'account', 'help', 'privacy'])
 
@@ -210,6 +240,10 @@ watch(() => route.query.tab, (tab) => {
 watch(activeTab, () => {
   message.value = ''
   errorMessage.value = ''
+})
+
+watch(notificationPageCount, (count) => {
+  if (notificationPage.value > count) notificationPage.value = count
 })
 
 const openAccountAction = (nextAction) => {
@@ -235,6 +269,53 @@ const loadAccount = async () => {
   status.value = String(data.status || 'Active')
   deletionRequested.value = data.accountDeletionRequested === true
   tutorialEnabled.value = data.preferences?.onboarding?.customer?.disabled !== true
+}
+
+const formatNotificationDate = (value) => {
+  const date = value?.toDate ? value.toDate() : new Date(value || 0)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date)
+}
+
+const startNotificationsListener = (userId) => {
+  if (unsubscribeNotifications) unsubscribeNotifications()
+  notificationsLoading.value = true
+  notificationsError.value = ''
+  unsubscribeNotifications = onSnapshot(
+    query(collection(db, 'notifications'), where('recipientUserId', '==', userId)),
+    (snapshot) => {
+      notifications.value = snapshot.docs
+        .map((item) => ({ id: item.id, ...item.data(), createdLabel: formatNotificationDate(item.data()?.createdAt), createdAtMs: item.data()?.createdAt?.toMillis?.() || 0 }))
+        .filter((item) => !item.deleted)
+        .sort((a, b) => b.createdAtMs - a.createdAtMs)
+      notificationsLoading.value = false
+    },
+    (error) => {
+      console.error('Failed to load customer notifications:', error)
+      notificationsError.value = 'Unable to load notifications right now.'
+      notificationsLoading.value = false
+    }
+  )
+}
+
+const markNotificationRead = async (item) => {
+  if (!item?.id || item.read) return
+  try {
+    await updateDoc(doc(db, 'notifications', item.id), { read: true, updatedAt: serverTimestamp() })
+  } catch (error) {
+    console.error('Failed to mark notification as read:', error)
+    toast.error('Unable to update that notification.')
+  }
+}
+
+const deleteNotification = async (item) => {
+  if (!item?.id) return
+  try {
+    await updateDoc(doc(db, 'notifications', item.id), { deleted: true, updatedAt: serverTimestamp() })
+  } catch (error) {
+    console.error('Failed to delete notification:', error)
+    toast.error('Unable to delete that notification.')
+  }
 }
 
 const saveTutorialPreference = async () => {
@@ -388,6 +469,12 @@ onMounted(() => {
     console.error(error)
     errorMessage.value = 'Unable to load account settings.'
   })
+  const currentUser = auth.currentUser
+  if (currentUser) startNotificationsListener(currentUser.uid)
+})
+
+onUnmounted(() => {
+  if (unsubscribeNotifications) unsubscribeNotifications()
 })
 </script>
 
@@ -415,6 +502,24 @@ onMounted(() => {
 .settings-profile-panel { padding: 0; }
 .settings-profile-panel :deep(.profile-content) { padding: 0; }
 .settings-profile-panel :deep(.profile-panel) { max-width: none; }
+.settings-notifications-content { width: 100%; min-width: 0; }
+.settings-notification-list { display: grid; gap: .65rem; margin-top: 1rem; max-height: 34rem; overflow-y: auto; padding-right: .25rem; }
+.settings-notification-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; border: 1px solid rgba(230, 193, 150, .55); border-radius: .9rem; padding: .85rem; background: rgba(255, 255, 255, .5); }
+.settings-notification-unread { border-color: #c18452; background: rgba(255, 245, 229, .9); }
+.settings-notification-copy { min-width: 0; }
+.settings-notification-copy strong { color: #3d281d; font-size: .9rem; }
+.settings-notification-copy p { margin-top: .25rem; color: #775743; font-size: .82rem; line-height: 1.45; overflow-wrap: anywhere; }
+.settings-notification-copy small { display: block; margin-top: .35rem; color: #9a765d; font-size: .7rem; }
+.settings-notification-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem; flex-shrink: 0; }
+.settings-new-badge { border-radius: 999px; background: #8d5a3b; padding: .2rem .45rem; color: white; font-size: .68rem; font-weight: 700; }
+.settings-text-button { color: #8d5a3b; font-size: .75rem; font-weight: 700; text-decoration: underline; }
+.settings-delete-text { color: #a6473d; }
+.settings-notifications-empty, .settings-notifications-error { margin-top: 1rem; color: #775743; font-size: .85rem; }
+.settings-notifications-error { color: #a6473d; }
+.settings-pagination { display: flex; align-items: center; justify-content: center; gap: .75rem; margin-top: 1rem; color: #775743; font-size: .78rem; }
+.settings-page-button { border: 1px solid #d2a879; border-radius: .65rem; padding: .45rem .65rem; color: #6f4329; font-weight: 700; }
+.settings-page-button:disabled { cursor: not-allowed; opacity: .45; }
+.settings-full-notifications-link { display: inline-block; margin-top: 1rem; }
 .settings-inline-button { display: inline-block; text-decoration: none; }
 .settings-action-links { display: flex; flex-direction: column; align-items: flex-end; gap: .65rem; min-width: 10rem; }
 .settings-text-link { color: #8d5a3b; font-size: .8rem; font-weight: 700; text-decoration: underline; }
@@ -446,5 +551,8 @@ onMounted(() => {
   .settings-hero, .settings-card { padding: 1rem; border-radius: 1rem; }
   .settings-action-links { align-items: stretch; min-width: 0; }
   .settings-button { width: 100%; text-align: center; }
+  .settings-notification-item { display: grid; }
+  .settings-notification-actions { justify-content: flex-start; }
+  .settings-pagination { flex-wrap: wrap; }
 }
 </style>
