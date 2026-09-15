@@ -77,7 +77,7 @@
                 </svg>
               </div>
               <span :class="['px-3 py-1 rounded-full text-xs font-medium', statusClass(supplier.status)]">
-                {{ statusLabel(supplier.status) }}
+                {{ supplier.status === 'Pending Activation' ? 'Pending' : (supplier.status || 'Inactive') }}
               </span>
             </div>
 
@@ -429,8 +429,6 @@ export default {
       if (['Invited', 'Pending Activation'].includes(status)) return 'bg-amber-500/20 text-amber-300'
       return 'bg-red-500/20 text-red-400'
     }
-
-    const statusLabel = (status) => status === 'Pending Activation' ? 'Pending' : (status || 'Inactive')
 
     const generateTemporaryPassword = () => {
       const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*?'

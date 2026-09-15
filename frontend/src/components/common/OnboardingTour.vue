@@ -8,7 +8,7 @@
       ></div>
 
       <section
-        :class="['onboarding-tooltip', { 'onboarding-tooltip-module': panelKey === 'owner' || panelKey === 'employee' }]"
+        :class="['onboarding-tooltip', { 'onboarding-tooltip-module': panelKey && panelKey !== 'customer' }]"
         ref="tooltipElement"
         :style="tooltipStyle"
         role="dialog"
@@ -209,6 +209,7 @@ onBeforeUnmount(() => {
 .onboarding-tooltip-module .bg-\[\#2a170d\] { background: #8d5a3b; }
 .onboarding-tooltip-module .hover\:bg-\[\#4a2818\]:hover { background: #a66a2c; }
 .onboarding-tooltip-module .bg-amber-200 { background: #8d5a3b; }
+.onboarding-tooltip-module input[type='checkbox'] { accent-color: #c58b5e; }
 
 @media (max-width: 360px) {
   .onboarding-tooltip { width: calc(100vw - 24px); }
