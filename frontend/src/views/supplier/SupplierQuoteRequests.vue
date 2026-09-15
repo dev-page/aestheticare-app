@@ -67,8 +67,61 @@
             </table>
           </div>
         </div>
+        <section v-if="supplierDocId" class="overflow-hidden rounded-[2rem] border border-[#e4c7a1] bg-white/90 shadow-sm">
+          <header class="border-b border-[#efdfca] px-5 py-4">
+            <h2 class="text-xl font-bold text-[#40261a]">Submitted Quotes</h2>
+            <p class="mt-1 text-sm text-[#6f503d]">Your quotation history, including accepted quotes. Five quotes per page.</p>
+          </header>
+          <p v-if="quotesLoading" class="p-5 text-sm text-[#6f503d]">Loading submitted quotes...</p>
+          <p v-else-if="quotesError" role="alert" class="p-5 text-sm text-rose-700">{{ quotesError }}</p>
+          <p v-else-if="!quotes.length" class="p-5 text-sm text-[#6f503d]">You haven't submitted any quotations yet.</p>
+          <template v-else>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[800px] text-left text-sm">
+                <thead class="bg-[#fff5e8] text-xs uppercase text-[#806047]">
+                  <tr><th scope="col" class="px-5 py-4">Reference</th><th scope="col" class="px-5 py-4">Item / Clinic</th><th scope="col" class="px-5 py-4">Quantity</th><th scope="col" class="px-5 py-4">Total</th><th scope="col" class="px-5 py-4">Fulfillment</th><th scope="col" class="px-5 py-4">Status</th><th scope="col" class="px-5 py-4">Action</th></tr>
+                </thead>
+                <tbody class="divide-y divide-[#efdfca] text-[#5a402f]">
+                  <tr v-for="quote in paginatedQuotes" :key="quote.id">
+                    <td class="px-5 py-4 whitespace-nowrap font-semibold">{{ quote.reference || 'Not assigned' }}</td>
+                    <td class="px-5 py-4"><p class="font-semibold">{{ quote.item || requestForQuote(quote)?.item || 'Item' }}</p><p class="mt-1 text-xs">{{ quote.branch || requestForQuote(quote)?.branch || 'Clinic' }}</p></td>
+                    <td class="px-5 py-4">{{ quote.quantity }}</td>
+                    <td class="px-5 py-4 whitespace-nowrap">{{ formatQuoteMoney(quote.amount) }}</td>
+                    <td class="px-5 py-4 whitespace-nowrap">{{ quote.fulfillmentDate || 'Not provided' }}</td>
+                    <td class="px-5 py-4"><span class="rounded-full bg-[#f4e5d2] px-3 py-1 text-xs font-semibold">{{ quote.status || 'Submitted' }}</span></td>
+                    <td class="px-5 py-4"><button type="button" class="rounded-xl border border-[#d9b38d] px-3 py-2 text-xs font-semibold text-[#6f4329] hover:bg-[#fff5e8]" @click="viewedQuoteId = quote.id">View Details</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <nav aria-label="Submitted quotes pagination" class="flex flex-wrap items-center justify-between gap-3 border-t border-[#efdfca] px-5 py-4 text-sm text-[#6f503d]">
+              <span aria-live="polite">Page {{ quotePage }} of {{ quotePageCount }} · {{ quotes.length }} quotes</span>
+              <div class="flex gap-3">
+                <button type="button" :disabled="quotePage === 1" class="rounded-lg border border-[#d9b38d] px-3 py-2 disabled:opacity-40" @click="quotePage--">Previous</button>
+                <button type="button" :disabled="quotePage === quotePageCount" class="rounded-lg border border-[#d9b38d] px-3 py-2 disabled:opacity-40" @click="quotePage++">Next</button>
+              </div>
+            </nav>
+          </template>
+        </section>
       </section>
     </main>
+
+    <Modal :isOpen="Boolean(viewedQuote)" :panelStyle="{ backgroundColor: '#fffaf4', color: '#40261a' }" @close="viewedQuoteId = null">
+      <template #header><h2 class="text-xl font-bold">Quotation {{ viewedQuote?.reference || 'details' }}</h2></template>
+      <template #body>
+        <dl v-if="viewedQuote" class="grid gap-4 text-sm text-[#5a402f] sm:grid-cols-2">
+          <div><dt class="font-bold">Item</dt><dd>{{ viewedQuote.item }}</dd></div>
+          <div><dt class="font-bold">Clinic</dt><dd>{{ viewedQuote.branch || requestForQuote(viewedQuote)?.branch || 'Clinic' }}</dd></div>
+          <div><dt class="font-bold">Quantity</dt><dd>{{ viewedQuote.quantity }}</dd></div>
+          <div><dt class="font-bold">Unit price</dt><dd>{{ formatQuoteMoney(viewedQuote.unitPrice ?? Number(viewedQuote.amount) / (Number(viewedQuote.quantity) || 1)) }}</dd></div>
+          <div><dt class="font-bold">Total</dt><dd>{{ formatQuoteMoney(viewedQuote.amount) }}</dd></div>
+          <div><dt class="font-bold">Fulfillment date</dt><dd>{{ viewedQuote.fulfillmentDate || 'Not provided' }}</dd></div>
+          <div><dt class="font-bold">Status</dt><dd>{{ viewedQuote.status || 'Submitted' }}</dd></div>
+          <div><dt class="font-bold">Last updated</dt><dd>{{ formatQuoteDate(viewedQuote.updatedAt || viewedQuote.createdAt) }}</dd></div>
+          <div class="sm:col-span-2"><dt class="font-bold">Notes and terms</dt><dd class="whitespace-pre-wrap break-words">{{ viewedQuote.notes || viewedQuote.details || 'No notes provided.' }}</dd></div>
+        </dl>
+      </template>
+    </Modal>
 
     <div v-if="selectedRequest" class="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4">
       <div class="mx-auto my-6 max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-[2rem] border border-[#e4c7a1] bg-[#fffaf4] p-6 shadow-2xl">
@@ -125,11 +178,12 @@ import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import axios from 'axios'
 import { purchaseRequestReference } from '@/utils/purchaseRequestReference'
 import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
+import Modal from '@/components/common/Modal.vue'
 import { db } from '@/config/firebaseConfig'
 
 const auth = getAuth()
@@ -139,6 +193,20 @@ const supplierDocId = ref('')
 const supplierName = ref('')
 const requests = ref([])
 const quotes = ref([])
+const allRequests = ref([])
+const quotesLoading = ref(true)
+const quotesError = ref('')
+const quotePage = ref(1)
+const viewedQuoteId = ref(null)
+const viewedQuote = computed(() => quotes.value.find((quote) => quote.id === viewedQuoteId.value) || null)
+const quoteTime = (value) => value?.toMillis ? value.toMillis() : value ? new Date(value).getTime() || 0 : 0
+const sortedQuotes = computed(() => [...quotes.value].sort((a, b) => quoteTime(b.updatedAt || b.createdAt) - quoteTime(a.updatedAt || a.createdAt) || a.id.localeCompare(b.id)))
+const quotePageCount = computed(() => Math.max(1, Math.ceil(quotes.value.length / 5)))
+const paginatedQuotes = computed(() => sortedQuotes.value.slice((quotePage.value - 1) * 5, quotePage.value * 5))
+watch(quotePageCount, (count) => { quotePage.value = Math.min(quotePage.value, count) })
+const requestForQuote = (quote) => allRequests.value.find((request) => request.id === quote.purchaseRequestId)
+const formatQuoteMoney = (value) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value) || 0)
+const formatQuoteDate = (value) => quoteTime(value) ? new Date(quoteTime(value)).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : 'Not available'
 const selectedRequest = ref(null)
 const minimumDate = ref(manilaDate())
 let stops = []
@@ -168,10 +236,17 @@ const loadSupplier = async (user) => {
 const subscribeToRecords = () => {
   if (!supplierDocId.value) return
   stops.push(onSnapshot(query(collection(db, 'purchaseRequests'), where('supplierId', '==', supplierDocId.value)), (snapshot) => {
-    requests.value = snapshot.docs.map((item) => ({ id: item.id, ...item.data() })).filter((item) => !['Cancelled', 'Delivered'].includes(item.status))
+    allRequests.value = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+    requests.value = allRequests.value.filter((item) => !['Cancelled', 'Delivered'].includes(item.status))
   }))
   stops.push(onSnapshot(query(collection(db, 'supplierQuotes'), where('supplierId', '==', supplierDocId.value)), (snapshot) => {
     quotes.value = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+    quotesLoading.value = false
+    quotesError.value = ''
+  }, (error) => {
+    console.error('Failed to load submitted quotes:', error)
+    quotesLoading.value = false
+    quotesError.value = 'Unable to load submitted quotes. Please refresh or check your access.'
   }))
 }
 
@@ -207,6 +282,7 @@ const submitQuote = async () => {
       notes: quoteForm.notes,
     }, { headers: { Authorization: 'Bearer ' + token } })
     quoteForm.reference = response.data.data.reference
+    quotePage.value = 1
     toast.success('Quotation ' + quoteForm.reference + ' submitted. The clinic has been notified.')
     closeQuote()
   } catch (error) {
