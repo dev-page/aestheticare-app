@@ -72,7 +72,7 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-700 text-slate-300">
               <tr>
-                <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Order ID</th>
+                <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Order Number</th>
                 <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Supplier</th>
                 <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Request</th>
                 <th class="px-4 py-3 text-left uppercase tracking-wider text-[11px]">Items</th>
@@ -92,7 +92,7 @@
                 <td colspan="7" class="px-4 py-8 text-center text-slate-400">No logistics orders found.</td>
               </tr>
               <tr v-for="order in filteredOrders" :key="order.id" class="hover:bg-slate-700/40">
-                <td class="px-4 py-3 text-slate-300">{{ order.id }}</td>
+                <td class="px-4 py-3 text-slate-300">{{ order.orderNumber || 'Not assigned' }}</td>
                 <td class="px-4 py-3">
                   <span
                     class="rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-200"
@@ -146,7 +146,7 @@
         <div class="flex items-start justify-between gap-4 mb-5">
           <div>
             <h2 class="text-2xl font-bold text-white">Order Details</h2>
-            <p class="text-slate-400 text-sm">{{ selectedOrder?.id || '-' }}</p>
+            <p class="text-slate-400 text-sm">{{ selectedOrder?.orderNumber || 'Not assigned' }}</p>
           </div>
           <button type="button" class="text-slate-400 hover:text-white" @click="closeDetails">Close</button>
         </div>
@@ -291,6 +291,7 @@ export default {
         const order = snap.data()
         return {
           id: snap.id,
+          orderNumber: order.reference || order.purchaseOrderNumber || '',
           source: 'business',
           sourceLabel: sourceLabel('business'),
           status: ['', 'Not Claimed', 'Pending'].includes(normalizeStatus(order.logisticsStatus)) && normalizeStatus(order.status) === 'Approved' && normalizeStatus(order.budgetStatus) === 'Approved'
@@ -340,7 +341,7 @@ export default {
         const matchesPriority = !selectedPriority.value || normalizeStatus(order.priority) === selectedPriority.value
         if (!matchesSource || !matchesStatus || !matchesPriority) return false
         if (!keyword) return true
-        const text = [order.id, order.partyName, order.partyMeta, order.itemSummary, order.quantitySummary, order.status, order.sourceLabel]
+        const text = [order.orderNumber, order.id, order.partyName, order.partyMeta, order.itemSummary, order.quantitySummary, order.status, order.sourceLabel]
           .map((entry) => String(entry || '').toLowerCase())
           .join(' ')
         return text.includes(keyword)
@@ -586,7 +587,7 @@ export default {
           businessOrders.value = snapshot.docs.map((snap) => {
             const order = snap.data()
             const readyForClaim = ['', 'Not Claimed', 'Pending'].includes(normalizeStatus(order.logisticsStatus)) && normalizeStatus(order.status) === 'Approved' && normalizeStatus(order.budgetStatus) === 'Approved'
-            return { id: snap.id, source: 'business', sourceLabel: sourceLabel('business'), status: readyForClaim ? 'Ready for Claim' : normalizeStatus(order.logisticsStatus) || (normalizeStatus(order.purchaseOrderStatus) === 'Received' ? 'Received' : normalizeStatus(order.status)) || 'Pending', budgetStatus: normalizeStatus(order.budgetStatus), workflowStage: normalizeStatus(order.workflowStage), priority: normalizeStatus(order.priority) || 'Medium', createdAt: order.createdAt || null, updatedAt: order.updatedAt || order.createdAt || null, customerId: '', partyName: order.supplier || 'Supplier', partyMeta: order.category || order.branch || 'Business order', itemSummary: getBusinessItemSummary(order), quantitySummary: `${Number(order.quantity || 0)} ${order.unit || 'units'}`, items: [{ key: snap.id, name: order.item || 'Item', details: `${order.supplier || 'Supplier'}${order.category ? ` - ${order.category}` : ''}`, quantityText: `Qty: ${Number(order.quantity || 0)} ${order.unit || 'units'}`, valueText: formatMoney(order.totalCost || 0) }] }
+            return { id: snap.id, orderNumber: order.reference || order.purchaseOrderNumber || '', source: 'business', sourceLabel: sourceLabel('business'), status: readyForClaim ? 'Ready for Claim' : normalizeStatus(order.logisticsStatus) || (normalizeStatus(order.purchaseOrderStatus) === 'Received' ? 'Received' : normalizeStatus(order.status)) || 'Pending', budgetStatus: normalizeStatus(order.budgetStatus), workflowStage: normalizeStatus(order.workflowStage), priority: normalizeStatus(order.priority) || 'Medium', createdAt: order.createdAt || null, updatedAt: order.updatedAt || order.createdAt || null, customerId: '', partyName: order.supplier || 'Supplier', partyMeta: order.category || order.branch || 'Business order', itemSummary: getBusinessItemSummary(order), quantitySummary: `${Number(order.quantity || 0)} ${order.unit || 'units'}`, items: [{ key: snap.id, name: order.item || 'Item', details: `${order.supplier || 'Supplier'}${order.category ? ` - ${order.category}` : ''}`, quantityText: `Qty: ${Number(order.quantity || 0)} ${order.unit || 'units'}`, valueText: formatMoney(order.totalCost || 0) }] }
           })
           loading.value = false
         }, (error) => {
