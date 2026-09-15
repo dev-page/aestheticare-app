@@ -83,11 +83,11 @@
         <form class="mt-6 space-y-4" @submit.prevent="submitQuote">
           <label class="block text-sm font-semibold text-[#5a402f]">
             Unit price (PHP)
-            <input v-model.number="quoteForm.unitPrice" required min="0" step="0.01" type="number" class="quote-field" />
+            <input :value="quoteForm.unitPrice" required type="text" inputmode="decimal" @beforeinput="blockInvalidNumberInput($event, true)" @input="quoteForm.unitPrice = readNumberInput($event, quoteForm.unitPrice, true)" class="quote-field" />
           </label>
           <label class="block text-sm font-semibold text-[#5a402f]">
             Quoted quantity
-            <input v-model.number="quoteForm.quantity" required min="1" step="1" type="number" class="quote-field" />
+            <input :value="quoteForm.quantity" required type="text" inputmode="numeric" @beforeinput="blockInvalidNumberInput($event)" @input="quoteForm.quantity = readNumberInput($event, quoteForm.quantity)" class="quote-field" />
           </label>
           <label class="block text-sm font-semibold text-[#5a402f]">
             Availability / fulfillment date
@@ -119,6 +119,7 @@
 </template>
 
 <script setup>
+import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { addDoc, collection, doc, getDocs, limit, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
@@ -183,7 +184,9 @@ const openQuote = (request) => {
 const closeQuote = () => { selectedRequest.value = null }
 
 const submitQuote = async () => {
-  if (!selectedRequest.value || !supplierDocId.value || quotedTotal.value <= 0) {
+  const quantity = Number(quoteForm.quantity)
+  const price = Number(quoteForm.unitPrice)
+  if (!selectedRequest.value || !supplierDocId.value || !Number.isSafeInteger(quantity) || quantity < 1 || !/^\d+(\.\d{1,2})?$/.test(String(quoteForm.unitPrice)) || !Number.isFinite(price) || price <= 0 || !Number.isFinite(quotedTotal.value)) {
     toast.error('Enter a valid unit price and quantity.')
     return
   }

@@ -108,7 +108,7 @@
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
                   <label class="item-label">Quantity</label>
-                  <input v-model="item.quantity" type="number" min="0" step="1" class="item-input" placeholder="0" />
+                  <input :value="item.quantity" type="text" inputmode="numeric" @beforeinput="blockInvalidNumberInput($event)" @input="item.quantity = readNumberInput($event, item.quantity)" class="item-input" placeholder="0" />
                 </div>
 
                 <div>
@@ -141,7 +141,7 @@
                   <label class="item-label">Price</label>
                   <div class="price-field">
                     <span class="price-prefix">PHP</span>
-                    <input v-model="item.price" aria-label="Price in Philippine pesos" type="text" inputmode="decimal" maxlength="12" class="item-input price-input" placeholder="0.00" @blur="formatPrice(item)" />
+                    <input :value="item.price" @beforeinput="blockInvalidNumberInput($event, true)" @input="item.price = readNumberInput($event, item.price, true)" aria-label="Price in Philippine pesos" type="text" inputmode="decimal" maxlength="12" class="item-input price-input" placeholder="0.00" @blur="formatPrice(item)" />
                   </div>
                 </div>
 
@@ -183,6 +183,7 @@
 </template>
 
 <script setup>
+import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
