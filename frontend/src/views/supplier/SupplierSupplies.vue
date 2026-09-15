@@ -44,7 +44,40 @@
           <div v-for="index in 2" :key="index" class="h-56 rounded-[2rem] border border-[#e4c7a1] bg-white/70 animate-pulse"></div>
         </div>
 
-        <form v-else class="space-y-5" @submit.prevent="saveSupplies">
+        <section v-if="!loading" class="overflow-hidden rounded-[2rem] border border-[#e4c7a1] bg-white/90 shadow-sm">
+          <div class="border-b border-[#ecd9c0] px-5 py-4">
+            <h2 class="text-xl font-bold text-[#40261a]">Saved Supplies</h2>
+            <p class="mt-1 text-sm text-[#6f503d]">{{ savedCatalog.length }} saved items · 5 items per page</p>
+          </div>
+          <p v-if="!savedCatalog.length" class="p-5 text-sm text-[#6f503d]">No saved items yet. Add your first item using the form below.</p>
+          <template v-else>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[640px] text-left text-sm">
+                <thead class="bg-[#fff5e8] text-[#806047]">
+                  <tr><th scope="col" class="px-5 py-3">Item</th><th scope="col" class="px-5 py-3">Category</th><th scope="col" class="px-5 py-3">Quantity</th><th scope="col" class="px-5 py-3">Price</th><th scope="col" class="px-5 py-3">Action</th></tr>
+                </thead>
+                <tbody class="divide-y divide-[#efdfca] text-[#5a402f]">
+                  <tr v-for="item in paginatedItems" :key="item.id">
+                    <td class="px-5 py-4 font-semibold">{{ item.name }}</td>
+                    <td class="px-5 py-4">{{ item.category === 'Others' ? item.customCategory : item.category }}</td>
+                    <td class="px-5 py-4">{{ item.quantity }}</td>
+                    <td class="px-5 py-4 whitespace-nowrap">{{ formatMoney(item.price ?? item.unitCost) }}</td>
+                    <td class="px-5 py-4"><button type="button" class="catalog-button" :aria-label="`View details for ${item.name}`" @click="selectedItem = item">View Details</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <nav aria-label="Saved supplies pagination" class="flex flex-wrap items-center justify-between gap-3 border-t border-[#ecd9c0] px-5 py-4">
+              <p class="text-sm text-[#6f503d]" aria-live="polite">Page {{ currentPage }} of {{ totalPages }}</p>
+              <div class="flex gap-2">
+                <button type="button" class="catalog-button" :disabled="currentPage === 1" @click="currentPage--">Previous</button>
+                <button type="button" class="catalog-button" :disabled="currentPage === totalPages" @click="currentPage++">Next</button>
+              </div>
+            </nav>
+          </template>
+        </section>
+
+        <form v-if="!loading" class="space-y-5" @submit.prevent="saveSupplies">
           <fieldset :disabled="saving || checkingImage" class="min-w-0 space-y-5">
           <article
             v-for="(item, index) in items"
@@ -179,6 +212,24 @@
         </form>
       </section>
     </main>
+    <Modal :isOpen="Boolean(selectedItem)" :panelStyle="{ backgroundColor: '#fffaf4', color: '#40261a' }" @close="selectedItem = null">
+      <template #header><h2 class="text-xl font-bold">{{ selectedItem?.name || 'Supply details' }}</h2></template>
+      <template #body>
+        <div v-if="selectedItem" class="space-y-5 text-sm text-[#5a402f]">
+          <img v-if="selectedItem.imageUrl || selectedItem.photoUrl || selectedItem.pictureUrl" :src="selectedItem.imageUrl || selectedItem.photoUrl || selectedItem.pictureUrl" :alt="selectedItem.name" class="max-h-64 w-full rounded-2xl bg-[#f7e9d8] object-contain" />
+          <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div><dt class="item-label">Category</dt><dd>{{ selectedItem.category === 'Others' ? selectedItem.customCategory : selectedItem.category }}</dd></div>
+            <div><dt class="item-label">Quantity</dt><dd>{{ selectedItem.quantity }}</dd></div>
+            <div><dt class="item-label">Price</dt><dd>{{ formatMoney(selectedItem.price ?? selectedItem.unitCost) }}</dd></div>
+            <div><dt class="item-label">Measurement</dt><dd>{{ selectedItem.measurementValue || selectedItem.measurement || '—' }} {{ selectedItem.measurementUnit }}</dd></div>
+            <div class="sm:col-span-2"><dt class="item-label">Description</dt><dd class="whitespace-pre-wrap break-words">{{ selectedItem.description || 'No description provided.' }}</dd></div>
+            <div class="sm:col-span-2"><dt class="item-label">Specifications / Details</dt><dd class="whitespace-pre-wrap break-words">{{ selectedItem.specifications || selectedItem.details || 'No specifications provided.' }}</dd></div>
+            <div><dt class="item-label">FDA Registration Number</dt><dd>{{ selectedItem.fdaRegistrationNumber || 'Not provided' }}</dd></div>
+            <div><dt class="item-label">FDA Document</dt><dd><a v-if="selectedItem.fdaApprovalDocument?.url" :href="selectedItem.fdaApprovalDocument.url" target="_blank" rel="noopener" class="font-semibold text-[#8d5a3b] underline">View uploaded document</a><span v-else>Not provided</span></dd></div>
+          </dl>
+        </div>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -186,11 +237,12 @@
 import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, runTransaction, where } from 'firebase/firestore'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import { db } from '@/config/firebaseConfig'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
+import Modal from '@/components/common/Modal.vue'
 
 const auth = getAuth()
 const storage = getStorage()
@@ -202,6 +254,13 @@ const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 const supplierDocId = ref('')
 const businessName = ref('')
 const items = ref([])
+const savedCatalog = ref([])
+const currentPage = ref(1)
+const selectedItem = ref(null)
+const PAGE_SIZE = 5
+const totalPages = computed(() => Math.max(1, Math.ceil(savedCatalog.value.length / PAGE_SIZE)))
+const paginatedItems = computed(() => savedCatalog.value.slice((currentPage.value - 1) * PAGE_SIZE, currentPage.value * PAGE_SIZE))
+const formatMoney = (value) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value) || 0)
 
 const categoryOptions = ['Injectables', 'Skincare', 'Equipment', 'Medical Supplies', 'Others']
 const measurementOptions = ['mL', 'L', 'mg', 'g', 'kg', 'pcs', 'box', 'pack', 'set', 'unit', 'pair', 'cm', 'mm', 'dimensions', 'custom']
@@ -226,36 +285,16 @@ const createEmptyItem = () => ({
   fdaApprovalFileName: '',
 })
 
-const activeItemCount = computed(() => items.value.filter((item) => String(item.name || '').trim()).length)
+const activeItemCount = computed(() => savedCatalog.value.length)
 const categoryCount = computed(() => {
   const categories = new Set()
-  items.value.forEach((item) => {
+  savedCatalog.value.forEach((item) => {
     const category = String(item.category || '').trim()
     const custom = String(item.customCategory || '').trim()
     const resolved = category === 'Others' ? custom : category
     if (resolved) categories.add(resolved)
   })
   return categories.size
-})
-
-const normalizeItemFromStore = (item = {}) => ({
-  id: item.id || crypto.randomUUID(),
-  name: item.name || '',
-  category: item.categoryGroup || (categoryOptions.includes(item.category) ? item.category : (item.category ? 'Others' : '')),
-  customCategory: item.category === 'Others' ? (item.customCategory || item.otherCategory || '') : (item.customCategory || ''),
-  description: item.description || '',
-  quantity: item.quantity ?? '',
-  measurementValue: item.measurementValue ?? item.measurement ?? '',
-  measurementUnit: item.measurementUnit || '',
-  specifications: item.specifications || item.details || '',
-  price: item.price ?? item.unitCost ?? '',
-  imageUrl: item.imageUrl || item.photoUrl || item.pictureUrl || '',
-  imageName: item.imageName || '',
-  imageFile: null,
-  fdaRegistrationNumber: item.fdaRegistrationNumber || '',
-  fdaApprovalDocument: item.fdaApprovalDocument || null,
-  fdaApprovalFile: null,
-  fdaApprovalFileName: '',
 })
 
 const resolveSupplierDocument = async (uid) => {
@@ -286,7 +325,9 @@ const loadSupplies = async (user) => {
       ''
 
     const currentItems = Array.isArray(supplierData.offeredItems) ? supplierData.offeredItems : []
-    items.value = currentItems.length ? currentItems.map((item) => normalizeItemFromStore(item)) : [createEmptyItem()]
+    savedCatalog.value = currentItems.map((item) => ({ ...item, id: item.id || crypto.randomUUID() }))
+    currentPage.value = 1
+    items.value = [createEmptyItem()]
   } finally {
     loading.value = false
   }
@@ -450,6 +491,10 @@ const saveSupplies = async () => {
     })
     .filter(Boolean)
 
+  if (!cleanedItems.length) {
+    toast.error('Please add an item before saving.')
+    return
+  }
   saving.value = true
   try {
     const savedItems = []
@@ -505,17 +550,27 @@ const saveSupplies = async () => {
         fdaApprovalDocument,
       })
     }
-    const categories = [...new Set(savedItems.map((item) => item.category).filter(Boolean))]
-    await setDoc(doc(db, 'suppliers', supplierDocId.value || user.uid), {
+    const supplierRef = doc(db, 'suppliers', supplierDocId.value || user.uid)
+    const combinedItems = await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(supplierRef)
+      const existing = snapshot.data()?.offeredItems || []
+      const newIds = new Set(savedItems.map((item) => item.id))
+      const combined = [...savedItems, ...existing.filter((item) => !newIds.has(item.id))]
+      const categories = [...new Set(combined.map((item) => item.category).filter(Boolean))]
+      transaction.set(supplierRef, {
       ownerId: user.uid,
       name: businessName.value || '',
       businessName: businessName.value || '',
-      offeredItems: savedItems,
+      offeredItems: combined,
       categories,
       updatedAt: serverTimestamp(),
-    }, { merge: true })
+      }, { merge: true })
+      return combined
+    })
 
-    items.value = savedItems.length ? savedItems.map(normalizeItemFromStore) : [createEmptyItem()]
+    savedCatalog.value = combinedItems.map((item) => ({ ...item, id: item.id || crypto.randomUUID() }))
+    currentPage.value = 1
+    items.value = [createEmptyItem()]
     toast.success('Supply list saved successfully.')
   } catch (error) {
     console.error('Failed to save supplies:', error)
@@ -543,6 +598,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.catalog-button { border: 1px solid #d9b38d; border-radius: 0.75rem; background: #fff8ef; padding: 0.5rem 0.85rem; color: #6f4329; font-weight: 600; }
+.catalog-button:hover:not(:disabled) { background: #f7ead8; }
+.catalog-button:disabled { cursor: not-allowed; }
 .price-field { display: flex; align-items: center; border: 1px solid rgba(224, 192, 154, 0.95); border-radius: 1rem; background: white; overflow: hidden; }
 .price-prefix { flex: none; padding-left: 1rem; color: #8f6a4d; font-size: 0.875rem; }
 .price-field .price-input { min-width: 0; border: 0; border-radius: 0; padding-left: 0.75rem; }

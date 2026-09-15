@@ -2,8 +2,8 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
     
-    <main class="flex-1 p-8">
-        <div class="mb-8 flex items-center justify-between">
+    <main class="min-w-0 flex-1 p-4 md:p-8">
+        <div class="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Purchase Requests</h1>
           <p class="text-slate-400">Manage procurement requests, budget routing, and delivery tracking</p>
@@ -111,11 +111,11 @@
       </div>
 
       <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-[13px]">
+        <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Purchase requests table">
+          <table class="w-full min-w-[1100px] text-[13px]">
             <thead class="bg-slate-700">
               <tr>
-                <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Request ID</th>
+                <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Request Number</th>
                 <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Item</th>
                 <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Branch</th>
                 <th class="px-4 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Quantity</th>
@@ -131,7 +131,7 @@
             <tbody class="divide-y divide-slate-700">
               <tr v-for="request in filteredRequests" :key="request.id" class="hover:bg-slate-700/50 transition-colors">
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <span class="text-white font-medium">{{ request.id }}</span>
+                  <span class="whitespace-nowrap text-white font-medium">{{ request.requestNumber }}</span>
                 </td>
                 <td class="px-4 py-3">
                   <div>
@@ -591,6 +591,8 @@
 </template>
 
 <script>
+import { useRoute, useRouter } from 'vue-router'
+import { createPurchaseRequestNumber, purchaseRequestReference } from '@/utils/purchaseRequestReference'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -609,6 +611,8 @@ export default {
     OwnerSidebar
   },
   setup() {
+    const route = useRoute()
+    const router = useRouter()
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const storage = getStorage(getApp())
@@ -954,7 +958,7 @@ export default {
     const filteredRequests = computed(() => {
       return requests.value.filter(request => {
         const searchText = searchQuery.value.toLowerCase()
-        const matchesSearch = request.id.toLowerCase().includes(searchText) || request.item.toLowerCase().includes(searchText)
+        const matchesSearch = String(request.requestNumber || '').toLowerCase().includes(searchText) || request.item.toLowerCase().includes(searchText)
         const matchesStatus = !selectedStatus.value || request.status === selectedStatus.value
         const matchesBranch = !selectedBranch.value || request.branch === selectedBranch.value
         const matchesPriority = !selectedPriority.value || request.priority === selectedPriority.value
@@ -989,6 +993,7 @@ export default {
         const totalCost = unitCost * quantity
 
         const createdRequestRef = await addDoc(collection(db, 'purchaseRequests'), {
+          requestNumber: createPurchaseRequestNumber(),
           branchId: currentBranchId.value,
           branch: currentBranchName.value || '-',
           supplierId: selectedSupplier.value.id,
@@ -1542,6 +1547,17 @@ export default {
     let unsubscribeInventory = null
     let unsubscribeRequests = null
 
+    const openSupplierRequest = () => {
+      const supplierId = String(route.query.supplierId || '')
+      if (!supplierId || !canCreateRequests.value || !activeSuppliers.value.some((supplier) => supplier.id === supplierId)) return
+      newRequest.value.supplierId = supplierId
+      showAddModal.value = true
+      const query = { ...route.query }
+      delete query.supplierId
+      router.replace({ path: route.path, query })
+    }
+    watch(() => route.query.supplierId, openSupplierRequest)
+
     onMounted(() => {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
@@ -1587,6 +1603,7 @@ export default {
         }
 
         await loadSuppliers()
+        openSupplierRequest()
         if (unsubscribeInventory) unsubscribeInventory()
         if (unsubscribeRequests) unsubscribeRequests()
         unsubscribeInventory = onSnapshot(
@@ -1602,6 +1619,7 @@ export default {
               const data = snap.data()
               return {
                 id: snap.id,
+                requestNumber: purchaseRequestReference(data),
                 item: data.item || '-', category: data.category || '', supplier: data.supplier || '-',
                 branch: data.branch || currentBranchName.value || '-', quantity: data.quantity || 0,
                 unit: data.unit || 'units', unitCost: Number(data.unitCost || 0), totalCost: Number(data.totalCost || 0),

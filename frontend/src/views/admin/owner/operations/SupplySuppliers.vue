@@ -124,22 +124,10 @@
                 </p>
               </div>
               <div class="mt-4 flex items-center justify-end gap-2">
-                <button
-                  v-if="canManageSuppliers"
-                  type="button"
-                  @click="openEditModal(supplier)"
-                  class="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700 text-xs"
-                >
-                  Edit
-                </button>
-                <button
-                  v-if="canManageSuppliers"
-                  type="button"
-                  @click="deleteSupplier(supplier)"
-                  class="px-3 py-1.5 rounded-lg border border-red-500/40 text-red-300 hover:bg-red-500/10 text-xs"
-                >
-                  Archive
-                </button>
+                <router-link
+                  :to="{ path: $route.path.startsWith('/manager') ? '/manager/purchase-requests' : '/supply/purchase-requests', query: { supplierId: supplier.id } }"
+                  class="px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 text-xs"
+                >Request Supply</router-link>
               </div>
             </div>
           </div>

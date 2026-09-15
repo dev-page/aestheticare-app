@@ -41,7 +41,7 @@
                 <tr v-for="request in requests" :key="request.id">
                   <td class="px-5 py-4">
                     <p class="font-semibold text-[#40261a]">{{ request.item || 'Unnamed item' }}</p>
-                    <p class="mt-1 text-xs text-[#876c55]">{{ request.id }}</p>
+                    <p class="mt-1 text-xs text-[#876c55]">{{ purchaseRequestReference(request) }}</p>
                   </td>
                   <td class="px-5 py-4">{{ request.branch || 'Clinic branch' }}</td>
                   <td class="px-5 py-4">{{ request.quantity || 0 }} {{ request.unit || 'units' }}</td>
@@ -119,6 +119,7 @@
 </template>
 
 <script setup>
+import { purchaseRequestReference } from '@/utils/purchaseRequestReference'
 import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
