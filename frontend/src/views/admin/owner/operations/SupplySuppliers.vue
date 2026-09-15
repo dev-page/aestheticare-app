@@ -247,10 +247,10 @@
                     v-model="newSupplier.phone"
                     type="tel"
                     required
-                    maxlength="15"
+                    maxlength="10"
                     autocomplete="tel"
                     :class="[inputClass(showAddError('phone')), 'pl-12']"
-                    @input="markTouched('phone')"
+                    @input="handlePhoneInput(newSupplier, $event); markTouched('phone')"
                     @blur="markTouched('phone')"
                     inputmode="numeric"
                   />
@@ -338,7 +338,9 @@
                     v-model="editSupplier.phone"
                     type="tel"
                     required
+                    maxlength="10"
                     class="w-full bg-slate-700 text-white pl-12 pr-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
+                    @input="handlePhoneInput(editSupplier, $event)"
                     inputmode="numeric"
                   />
                 </div>
@@ -441,7 +443,7 @@ export default {
       const user = auth.currentUser
       if (!user) throw new Error('User not authenticated.')
       const token = await user.getIdToken()
-      const response = await fetch(`${OTP_API_BASE}/send-staff-welcome`, {
+      const response = await fetch(`${OTP_API_BASE}/send-supplier-welcome`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ recipient: email, fullName, defaultPassword, uid }),
@@ -489,6 +491,11 @@ export default {
     const handleTinInput = (supplier, event) => {
       supplier.taxRegistrationNumber = normalizeTinDigits(event?.target?.value || '')
     }
+    const handlePhoneInput = (supplier, event) => {
+      const digits = String(event?.target?.value || '').replace(/\D/g, '').slice(0, 10)
+      supplier.phone = digits
+      if (event?.target) event.target.value = digits
+    }
 
     const loadSuppliers = async () => {
       if (!currentOwnerId.value && !currentBranchIds.value.length) {
@@ -524,7 +531,7 @@ export default {
         categories: supplier.categories,
         contact: supplier.contact,
         email: supplier.email,
-        phone: supplier.phone,
+        phone: String(supplier.phone || '').replace(/\D/g, '').slice(0, 10),
         status: supplier.status,
         address: supplier.address
       }
@@ -591,8 +598,8 @@ export default {
         errors.phone = 'Phone is required.'
       } else {
         const digits = newSupplier.value.phone.replace(/\D/g, '')
-        if (digits.length < 7 || digits.length > 15) {
-          errors.phone = 'Enter a valid phone number.'
+        if (!/^9\d{9}$/.test(digits)) {
+          errors.phone = 'Enter exactly 10 digits starting with 9.'
         }
       }
 
@@ -751,6 +758,10 @@ export default {
         toast.error('Please select at least one category.')
         return
       }
+      if (!/^9\d{9}$/.test(String(editSupplier.value.phone || '').replace(/\D/g, ''))) {
+        toast.error('Please enter exactly 10 phone digits starting with 9.')
+        return
+      }
 
       saving.value = true
       try {
@@ -877,6 +888,7 @@ export default {
       formatTinDisplay,
       formatSupplierTin,
       handleTinInput,
+      handlePhoneInput,
       newSupplier,
       editSupplier,
       markTouched,

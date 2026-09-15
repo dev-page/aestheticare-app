@@ -53,6 +53,7 @@ const ATTENDANCE_PIN_PATH = '/send-attendance-pin'
 const ATTENDANCE_RECORD_PATH = '/attendance/record'
 const ATTENDANCE_IMPORT_PATH = '/attendance/import'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
+const SUPPLIER_WELCOME_PATH = '/send-supplier-welcome'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
@@ -5459,11 +5460,12 @@ app.post(ATTENDANCE_PIN_PATH, requireAuth, requirePermission('staff:create'), as
   }
 })
 
-app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), async (req, res) => {
+const handleAccountWelcome = async (req, res) => {
   const { recipient, fullName, defaultPassword, uid } = req.body ?? {}
 
   const normalizedRecipient = String(recipient || '').trim().toLowerCase()
-  const safeName = String(fullName || 'Staff').trim() || 'Staff'
+  const accountLabel = req.path === SUPPLIER_WELCOME_PATH ? 'Supplier' : 'Staff'
+  const safeName = String(fullName || accountLabel).trim() || accountLabel
   const safePassword = String(defaultPassword || '').trim()
 
   if (!normalizedRecipient || !safePassword) {
@@ -5475,7 +5477,7 @@ app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), asy
 
   if (!postmarkClient || !senderEmail) {
     if (isDevelopment) {
-      console.warn(`[DEV STAFF EMAIL BYPASS] Welcome email not sent to ${normalizedRecipient}. Default password: ${safePassword}`)
+      console.warn(`[DEV ${accountLabel.toUpperCase()} EMAIL BYPASS] Welcome email not sent to ${normalizedRecipient}.`)
       return res.json({ success: true, devMode: true })
     }
     return res.status(500).json({
@@ -5526,12 +5528,15 @@ app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), asy
     const providerMessage = extractProviderError(error)
     console.error('Postmark staff welcome error:', providerMessage)
     if (isDevelopment) {
-      console.warn(`[DEV STAFF EMAIL BYPASS] Postmark failed for ${normalizedRecipient}. Temporary password: ${safePassword}`)
+      console.warn(`[DEV ${accountLabel.toUpperCase()} EMAIL BYPASS] Postmark failed for ${normalizedRecipient}.`)
       return res.json({ success: true, devMode: true, warning: providerMessage })
     }
     return res.status(500).json({ success: false, error: providerMessage })
   }
-})
+}
+
+app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), handleAccountWelcome)
+app.post(SUPPLIER_WELCOME_PATH, requireAuth, requirePermission('suppliers:create'), handleAccountWelcome)
 
 /*
  * Supplier self-registration was removed. These legacy endpoint bodies are
