@@ -242,6 +242,10 @@ const permissionAlternates = {
 
 // 🔧 Global guard
 router.beforeEach(async (to, from, next) => {
+  // Password recovery must remain accessible even when the current session
+  // cannot load or the account requires onboarding or a password change.
+  if (to.name === 'forgot-password') return next();
+
   const { user, isLoading, initAuth } = useAuth();
   const { hasPermission } = usePermissions();
   const { hasFeature } = useSubscription();

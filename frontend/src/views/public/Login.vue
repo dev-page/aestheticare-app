@@ -1,7 +1,7 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
 import {
   signInWithEmailAndPassword,
@@ -23,7 +23,6 @@ const password = ref('')
 const isRememberMe = ref(false)
 const isSubmitting = ref(false)
 const passwordVisible = ref(false)
-const contentVisible = ref(true)
 const loginOtpStep = ref(false)
 const loginOtpCode = ref('')
 const loginOtpEmail = ref('')
@@ -325,26 +324,12 @@ const resendLoginOtp = async () => {
   }
 }
 
-const handleForgotPassword = async () => {
-  router.push({ path: '/forgot-password', query: { returnTo: '/login' } })
-}
-
 onBeforeUnmount(() => {
   if (redirectTimeout) clearTimeout(redirectTimeout)
   if (loginOtpInterval) clearInterval(loginOtpInterval)
   setProcessLoading(false)
 })
 
-let leaveInProgress = false
-onBeforeRouteLeave((to, from, next) => {
-  if (leaveInProgress) {
-    next()
-    return
-  }
-  leaveInProgress = true
-  contentVisible.value = false
-  setTimeout(() => next(), 120)
-})
 </script>
 
 <template>
@@ -384,7 +369,6 @@ onBeforeRouteLeave((to, from, next) => {
     <div class="relative z-10 flex items-center justify-center px-4 pt-24 pb-12 text-sm">
       <transition name="step-slide" appear>
       <div
-        v-if="contentVisible"
         class="relative w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[40%_60%]
                rounded-3xl overflow-hidden
                bg-white/68 backdrop-blur-xl
@@ -506,7 +490,7 @@ onBeforeRouteLeave((to, from, next) => {
                 <input type="checkbox" v-model="isRememberMe" class="accent-gold-700" />
                 Remember me
               </label>
-              <a href="#" @click.prevent="handleForgotPassword" class="text-gold-700 hover:underline text-xs">Forgot password?</a>
+              <router-link :to="{ path: '/forgot-password', query: { returnTo: '/login' } }" class="text-gold-700 hover:underline text-xs">Forgot password?</router-link>
             </div>
             <button type="button" class="text-left text-xs text-gold-700 hover:underline" @click="resendActivationEmail">
               Resend activation email
