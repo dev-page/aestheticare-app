@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main class="min-w-0 flex-1 p-4 md:p-8">
       <div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Logistics</h1>
@@ -82,7 +82,13 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-700 text-slate-200">
-              <tr v-if="!loading && filteredOrders.length === 0">
+              <tr v-if="loading">
+                <td colspan="7" class="px-4 py-8 text-center text-slate-400">Loading logistics orders...</td>
+              </tr>
+              <tr v-else-if="loadError">
+                <td colspan="7" class="px-4 py-8 text-center text-rose-300" role="alert">{{ loadError }}</td>
+              </tr>
+              <tr v-else-if="filteredOrders.length === 0">
                 <td colspan="7" class="px-4 py-8 text-center text-slate-400">No logistics orders found.</td>
               </tr>
               <tr v-for="order in filteredOrders" :key="order.id" class="hover:bg-slate-700/40">
@@ -202,6 +208,7 @@ export default {
     const { hasPermission } = usePermissions()
 
     const loading = ref(true)
+    const loadError = ref('')
     const currentBranchId = ref('')
     const currentUserId = ref('')
     const selectedSource = ref('business')
@@ -554,25 +561,38 @@ export default {
           return
         }
 
+        loading.value = true
+        loadError.value = ''
         currentUserId.value = user.uid
-        const scope = await loadOwnerBranchScope(db, user.uid)
+        let scope
+        try {
+          scope = await loadOwnerBranchScope(db, user.uid)
+        } catch (error) {
+          console.error('Failed to load logistics branch:', error)
+          loadError.value = 'Unable to load your clinic. Please refresh and try again.'
+          loading.value = false
+          return
+        }
         currentBranchId.value = scope.branchId || ''
+        if (!currentBranchId.value) {
+          loadError.value = 'Your account has no clinic branch assigned.'
+          loading.value = false
+          return
+        }
 
         if (unsubscribeCustomerOrders) unsubscribeCustomerOrders()
         if (unsubscribeBusinessOrders) unsubscribeBusinessOrders()
-        unsubscribeCustomerOrders = onSnapshot(collection(db, 'customerOrders'), (snapshot) => {
-          const docs = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-          customerOrders.value = docs.filter((order) => (Array.isArray(order.items) ? order.items : []).some((item) => String(item.branchId || '').trim() === currentBranchId.value)).map((order) => {
-            const items = Array.isArray(order.items) ? order.items : []
-            return { id: order.id, source: 'customer', sourceLabel: sourceLabel('customer'), status: normalizeStatus(order.status) || 'Pending', priority: 'Medium', createdAt: order.createdAt || null, updatedAt: order.updatedAt || order.createdAt || null, customerId: order.customerId || '', riderName: order.riderName || '', riderPhone: order.riderPhone || '', riderVehicle: order.riderVehicle || '', partyName: order.customerName || order.delivery?.fullName || 'Customer', partyMeta: order.customerEmail || order.delivery?.email || 'No email', itemSummary: getCustomerItemSummary(order), quantitySummary: `${items.length} item(s)`, items: items.map((item, index) => ({ key: `${order.id}-${index}`, name: item.name || 'Item', details: `${item.branchName || 'Branch'}${item.category ? ` - ${item.category}` : ''}`, quantityText: `Qty: ${Number(item.quantity || 0)}`, valueText: formatMoney(item.price || 0) })) }
-          })
-        })
         unsubscribeBusinessOrders = onSnapshot(query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value)), (snapshot) => {
           businessOrders.value = snapshot.docs.map((snap) => {
             const order = snap.data()
             const readyForClaim = ['', 'Not Claimed', 'Pending'].includes(normalizeStatus(order.logisticsStatus)) && normalizeStatus(order.status) === 'Approved' && normalizeStatus(order.budgetStatus) === 'Approved'
             return { id: snap.id, source: 'business', sourceLabel: sourceLabel('business'), status: readyForClaim ? 'Ready for Claim' : normalizeStatus(order.logisticsStatus) || (normalizeStatus(order.purchaseOrderStatus) === 'Received' ? 'Received' : normalizeStatus(order.status)) || 'Pending', budgetStatus: normalizeStatus(order.budgetStatus), workflowStage: normalizeStatus(order.workflowStage), priority: normalizeStatus(order.priority) || 'Medium', createdAt: order.createdAt || null, updatedAt: order.updatedAt || order.createdAt || null, customerId: '', partyName: order.supplier || 'Supplier', partyMeta: order.category || order.branch || 'Business order', itemSummary: getBusinessItemSummary(order), quantitySummary: `${Number(order.quantity || 0)} ${order.unit || 'units'}`, items: [{ key: snap.id, name: order.item || 'Item', details: `${order.supplier || 'Supplier'}${order.category ? ` - ${order.category}` : ''}`, quantityText: `Qty: ${Number(order.quantity || 0)} ${order.unit || 'units'}`, valueText: formatMoney(order.totalCost || 0) }] }
           })
+          loading.value = false
+        }, (error) => {
+          console.error('Failed to load logistics orders:', error)
+          businessOrders.value = []
+          loadError.value = 'Unable to load logistics orders. Please check your access or try again.'
           loading.value = false
         })
       })
@@ -586,7 +606,7 @@ export default {
 
     return {
       loading,
-      selectedTab,
+      loadError,
       selectedSource,
       selectedStatus,
       selectedPriority,
