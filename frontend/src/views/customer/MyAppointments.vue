@@ -1358,7 +1358,7 @@ const reschedule = async (appt) => {
 
 const canPayAppointment = (appointment) => {
   const status = normalizeAppointmentStatus(appointment?.status)
-  return status === 'payment pending' || status === 'approved' || status === 'balance due'
+  return status === 'awaiting payment' || status === 'payment pending' || status === 'approved' || status === 'balance due'
 }
 
 const createShortAppointmentReference = () => {

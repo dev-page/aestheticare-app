@@ -1998,6 +1998,7 @@ const BOOKING_RESERVATION_TTL_MINUTES = Math.max(5, Number(process.env.BOOKING_R
 const BOOKING_BLOCKING_STATUSES = new Set([
   'pending approval',
   'payment pending',
+  'paid - awaiting approval',
   'contract pending',
   'ready to start',
   'awaiting customer confirmation',
@@ -3903,6 +3904,28 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     if (!requestedRange) return res.status(400).json({ success: false, error: 'Invalid or missing time/duration for reservation' })
 
     const selectedServices = Array.isArray(reservation.selectedServices) ? reservation.selectedServices : []
+    const policySnap = await firestore.collection('clinicPolicies').doc(branchId).get()
+    const policyData = policySnap.exists ? policySnap.data() || {} : {}
+    const policyDefinitions = [
+      ['cancellationPolicy', 'Cancellation policy'],
+      ['reschedulePolicy', 'Reschedule policy'],
+      ['refundPolicy', 'Refund policy'],
+      ['consultationPolicy', 'Consultation policy'],
+      ['serviceTerms', 'Service terms'],
+      ['paymentPolicy', 'Payment and installment policy'],
+    ]
+    const clinicPolicySnapshot = Object.fromEntries(
+      policyDefinitions
+        .filter(([key]) => policyData[`${key}Enabled`] === true && String(policyData[key] || '').trim())
+        .map(([key, label]) => [key, { label, text: String(policyData[key]).trim() }])
+    )
+    if (Object.keys(clinicPolicySnapshot).length && reservation.policyAcknowledged !== true) {
+      return res.status(422).json({
+        success: false,
+        code: 'POLICY_ACKNOWLEDGEMENT_REQUIRED',
+        error: 'Please review and acknowledge the clinic policies before submitting the booking request.',
+      })
+    }
     const consultationRequiredIds = selectedServices
       .filter((service) => service?.requiresConsultationFirst === true)
       .map((service) => String(service.id || '').trim())
@@ -3987,11 +4010,14 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         ...reservation,
         id: bookingRef.id,
         customerId,
-        status: 'Pending Approval',
+        status: 'Payment Pending',
         paymentStatus: 'Pending',
         paymentCoverage: 'pending',
         source: 'customer_booking_request',
         bookingId: bookingRef.id,
+        clinicPolicySnapshot,
+        policyAcknowledged: reservation.policyAcknowledged === true,
+        policyAcknowledgedAt: reservation.policyAcknowledged === true ? admin.firestore.FieldValue.serverTimestamp() : null,
       },
     })
 
@@ -6156,7 +6182,7 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
 
     const appointment = appointmentSnap.data() || {}
     const currentStatus = normalizeBookingStatus(appointment.status)
-    if (!['pending approval', 'requested'].includes(currentStatus)) {
+    if (!['pending approval', 'requested', 'payment pending', 'paid - awaiting approval'].includes(currentStatus)) {
       return res.status(409).json({ success: false, error: 'This booking is no longer awaiting shop approval.' })
     }
 
@@ -6173,8 +6199,38 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
     }
 
     const approved = decision === 'approve'
-    const nextStatus = approved ? 'Payment Pending' : 'Rejected'
-    const nextPaymentStatus = approved ? 'Pending' : 'Not Applicable'
+    const isPaid = String(appointment.paymentStatus || '').trim().toLowerCase() === 'paid'
+    if (approved && !isPaid) {
+      return res.status(409).json({ success: false, error: 'The customer must complete payment before this booking can be approved.' })
+    }
+    let refundId = null
+    let refundStatus = null
+    if (!approved && isPaid && String(appointment.paymongoPaymentId || '').trim()) {
+      const refundResponse = await fetch('https://api.paymongo.com/v1/refunds', {
+        method: 'POST',
+        headers: buildPayMongoHeaders(),
+        body: JSON.stringify({
+          data: {
+            attributes: {
+              amount: Math.round(Math.max(0, Number(appointment.amountPaid || appointment.totalAmount || appointment.amount || 0)) * 100),
+              payment_id: String(appointment.paymongoPaymentId).trim(),
+              reason: 'requested_by_customer',
+            },
+          },
+        }),
+      })
+      const refundData = await refundResponse.json().catch(() => null)
+      if (!refundResponse.ok) {
+        return res.status(refundResponse.status).json({
+          success: false,
+          error: refundData?.errors?.[0]?.detail || 'The paid booking could not be refunded, so the rejection was not recorded.',
+        })
+      }
+      refundId = refundData?.data?.id || null
+      refundStatus = refundData?.data?.attributes?.status || 'pending'
+    }
+    const nextStatus = approved ? 'Scheduled' : 'Rejected'
+    const nextPaymentStatus = isPaid ? 'Paid' : 'Not Applicable'
     const update = {
       status: nextStatus,
       approvalStatus: approved ? 'Approved' : 'Rejected',
@@ -6184,6 +6240,14 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       rejectedAt: approved ? null : admin.firestore.FieldValue.serverTimestamp(),
       rejectedById: approved ? null : req.user.uid,
       paymentStatus: nextPaymentStatus,
+      ...(refundId ? {
+        paymentStatus: 'Refunded',
+        refundStatus,
+        refundAmount: Number(appointment.amountPaid || appointment.totalAmount || appointment.amount || 0),
+        paymongoRefundId: refundId,
+        paymongoRefundStatus: refundStatus,
+        refundedAt: admin.firestore.FieldValue.serverTimestamp(),
+      } : {}),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
     await appointmentRef.update(update)
@@ -6204,8 +6268,8 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
         customerId: appointment.customerId || '',
         title: approved ? 'Booking Request Approved' : 'Booking Request Rejected',
         message: approved
-          ? `Your request for ${appointment.service || 'the selected service'} was approved. Please complete payment to continue.`
-          : `Your request for ${appointment.service || 'the selected service'} was rejected.${decisionNote ? ` Note: ${decisionNote}` : ''}`,
+          ? `Your request for ${appointment.service || 'the selected service'} was approved.`
+          : `Your request for ${appointment.service || 'the selected service'} was rejected.${refundId ? ' A refund has been initiated.' : ''}${decisionNote ? ` Note: ${decisionNote}` : ''}`,
         link: '/customer/appointments',
       })
     } catch (notificationError) {
@@ -6971,7 +7035,7 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
     if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
     const appointment = appointmentSnap.data() || {}
     if (String(appointment.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
-    if (!['approved', 'payment pending', 'contract pending', 'balance due', 'paid', 'partially paid'].includes(normalizeBookingStatus(appointment.status))) {
+    if (!['approved', 'awaiting payment', 'payment pending', 'contract pending', 'balance due', 'paid', 'partially paid'].includes(normalizeBookingStatus(appointment.status))) {
       return res.status(409).json({ success: false, error: 'Payment is not available for this appointment yet.' })
     }
     if (appointment.contractRequired === true && normalizeBookingStatus(appointment.contract?.status) !== 'signed') {
@@ -7021,8 +7085,9 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
       : appointment.serviceKey || null
 
     await appointmentRef.update({
-      status: paymentCoverage === 'full' ? 'Paid' : 'Partially Paid',
+      status: paymentCoverage === 'full' ? 'Paid - Awaiting Approval' : 'Partially Paid',
       paymentStatus: paymentCoverage === 'full' ? 'Paid' : 'Partially Paid',
+      source: paymentCoverage === 'full' ? 'paymongo_checkout' : appointment.source || 'customer_booking_request',
       paymentCoverage,
       amountPaid,
       paymongoCheckoutSessionId: checkoutSessionId,
@@ -7034,7 +7099,7 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     })
 
-    return res.json({ success: true, data: { appointmentId, status: paymentCoverage === 'full' ? 'Paid' : 'Partially Paid', amountPaid, paymentCoverage } })
+    return res.json({ success: true, data: { appointmentId, status: paymentCoverage === 'full' ? 'Paid - Awaiting Approval' : 'Partially Paid', amountPaid, paymentCoverage } })
   } catch (error) {
     console.error('appointments/record-payment error:', error)
     return res.status(500).json({ success: false, error: error?.message || 'Failed to record appointment payment' })

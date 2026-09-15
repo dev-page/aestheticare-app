@@ -303,7 +303,7 @@ const requestTypeLabel = (status) => {
 
 const requestReviewState = (status) => {
   const normalized = normalizeStatus(status)
-  if (normalized.includes('requested') || normalized === 'pending approval') return 'Pending'
+  if (normalized.includes('requested') || normalized === 'pending approval' || normalized === 'payment pending' || normalized === 'paid - awaiting approval') return 'Pending'
   if (normalized === 'cancelled') return 'Approved'
   return String(status || 'Pending')
 }
@@ -376,7 +376,7 @@ const loadRequests = async () => {
           ? 'cancel'
           : status.includes('reschedule requested')
             ? 'reschedule'
-            : status === 'pending approval' || status === 'requested'
+            : status === 'pending approval' || status === 'requested' || status === 'payment pending' || status === 'paid - awaiting approval'
               ? 'booking'
             : ''
         if (!requestType) return null
@@ -406,7 +406,7 @@ const loadRequests = async () => {
               ? 'Cancellation requests are reviewed by the clinic first. Approved cancellations are refunded without the system commission.'
               : requestType === 'reschedule'
                 ? 'Reschedule requests are reviewed by the clinic first. The new date and time only take effect after approval.'
-                : 'New booking requests must be approved by the shop before the customer can pay.',
+              : 'New booking requests must be paid by the customer before the clinic can approve them.',
           serviceLabel: Array.isArray(data.services) && data.services.length ? data.services.join(', ') : data.service || 'Service not set',
           clientName: data.clientName || data.customerName || data.name || 'Customer',
           requestedPractitionerName: data.requestedPractitionerName || data.assignedPractitionerName || data.practitionerName || 'Assigned Practitioner',

@@ -552,6 +552,19 @@
                   </div>
                 </div>
               </div>
+              <div v-if="activeClinicPolicies.length" class="booking-sidecard mt-4 rounded-2xl border p-4 text-[#3d281d]">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Clinic Policies</p>
+                <div class="mt-3 space-y-3">
+                  <div v-for="policy in activeClinicPolicies" :key="policy.key">
+                    <p class="text-sm font-semibold text-[#3d281d]">{{ policy.label }}</p>
+                    <p class="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#6f4a2d]">{{ policy.text }}</p>
+                  </div>
+                </div>
+                <label class="mt-4 flex items-start gap-2 text-xs leading-5 text-[#6f4a2d]">
+                  <input v-model="bookingPolicyAcknowledged" type="checkbox" class="mt-1 h-4 w-4 accent-[#8d5a3b]" />
+                  <span>I have read and agree to the active clinic policies for this booking request.</span>
+                </label>
+              </div>
               <p v-if="availabilityMessage" class="booking-notice mt-2 text-xs">{{ availabilityMessage }}</p>
               <textarea v-model="bookingForm.notes" rows="3" class="mt-4 w-full px-3 py-3 rounded-2xl bg-[#fffaf3] text-[#3d281d] border border-[#e0c09a] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20" placeholder="Notes (optional)"></textarea>
               <div class="mt-4 flex gap-3">
@@ -735,6 +748,7 @@ const bookingPaymentTypes = computed(() =>
       : ['gcash']
 )
 const bookingPaymentSaving = ref(false)
+const bookingPolicyAcknowledged = ref(false)
 const bookingPhoneError = ref('')
 const bookingPaymentPendingKey = 'customer_booking_pending_paymongo'
 const serviceCommissionPercent = getServiceCommissionPercent()
@@ -887,6 +901,18 @@ const center = ref({
   status: '',
   moderationStatus: '',
   isPublished: false,
+  cancellationPolicy: '',
+  cancellationPolicyEnabled: false,
+  reschedulePolicy: '',
+  reschedulePolicyEnabled: false,
+  refundPolicy: '',
+  refundPolicyEnabled: false,
+  consultationPolicy: '',
+  consultationPolicyEnabled: false,
+  serviceTerms: '',
+  serviceTermsEnabled: false,
+  paymentPolicy: '',
+  paymentPolicyEnabled: false,
 })
 
 const buildCenterModel = (branchId, data = {}) => ({
@@ -908,6 +934,32 @@ const buildCenterModel = (branchId, data = {}) => ({
   status: String(data.status || '').trim(),
   moderationStatus: String(data.moderationStatus || '').trim(),
   isPublished: data.isPublished === true,
+  cancellationPolicy: String(data.cancellationPolicy || '').trim(),
+  cancellationPolicyEnabled: data.cancellationPolicyEnabled === true,
+  reschedulePolicy: String(data.reschedulePolicy || '').trim(),
+  reschedulePolicyEnabled: data.reschedulePolicyEnabled === true,
+  refundPolicy: String(data.refundPolicy || '').trim(),
+  refundPolicyEnabled: data.refundPolicyEnabled === true,
+  consultationPolicy: String(data.consultationPolicy || '').trim(),
+  consultationPolicyEnabled: data.consultationPolicyEnabled === true,
+  serviceTerms: String(data.serviceTerms || '').trim(),
+  serviceTermsEnabled: data.serviceTermsEnabled === true,
+  paymentPolicy: String(data.paymentPolicy || '').trim(),
+  paymentPolicyEnabled: data.paymentPolicyEnabled === true,
+})
+
+const activeClinicPolicies = computed(() => {
+  const policyConfig = [
+    ['cancellationPolicy', 'Cancellation policy'],
+    ['reschedulePolicy', 'Reschedule policy'],
+    ['refundPolicy', 'Refund policy'],
+    ['consultationPolicy', 'Consultation policy'],
+    ['serviceTerms', 'Service terms'],
+    ['paymentPolicy', 'Payment and installment policy'],
+  ]
+  return policyConfig
+    .filter(([key]) => center.value?.[`${key}Enabled`] === true && String(center.value?.[key] || '').trim())
+    .map(([key, label]) => ({ key, label, text: String(center.value[key]).trim() }))
 })
 
 const loadMapsScript = () => {
@@ -2237,6 +2289,7 @@ const clearBookingSelection = () => {
   assignedPractitioner.value = null
   availabilityMessage.value = ''
   bookingPhoneError.value = ''
+  bookingPolicyAcknowledged.value = false
   bookingForm.value = {
     slotKey: '',
     date: '',
@@ -2749,6 +2802,10 @@ const submitBooking = async () => {
     toast.error(bookingPhoneError.value)
     return
   }
+  if (activeClinicPolicies.value.length && !bookingPolicyAcknowledged.value) {
+    toast.error('Please review and acknowledge the active clinic policies before submitting.')
+    return
+  }
 
   try {
     bookingPaymentSaving.value = true
@@ -2801,6 +2858,7 @@ const submitBooking = async () => {
           commissionAmount: selectedServiceCommission.value,
           netAmount: selectedServiceNetAmount.value,
           source: 'customer_booking_request',
+          policyAcknowledged: bookingPolicyAcknowledged.value,
         },
       }),
     })
@@ -2808,7 +2866,13 @@ const submitBooking = async () => {
     if (!response.ok || !result?.success) {
       throw new Error(result?.error || 'Failed to submit the booking request.')
     }
-    toast.success('Booking request submitted. The shop must approve it before payment.')
+    await Swal.fire({
+      title: 'Booking request created',
+      text: 'Your request was submitted. Please open your appointments and complete payment before the clinic can approve it.',
+      icon: 'success',
+      confirmButtonText: 'View Appointments',
+      confirmButtonColor: '#8d5a3b',
+    })
     clearBookingSelection()
     await router.replace({ name: 'customer-appointments' })
   } catch (error) {
