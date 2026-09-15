@@ -197,7 +197,7 @@ export default {
       return ''
     })
 
-    const isModuleView = computed(() => ['owner', 'employee', 'supplier'].includes(panelKey.value))
+    const isModuleView = computed(() => ['owner', 'employee'].includes(panelKey.value))
 
     const sidebarComponent = computed(() => {
       const roleValue = String(role.value || '').toLowerCase()

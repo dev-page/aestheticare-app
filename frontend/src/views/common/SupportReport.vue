@@ -1,5 +1,5 @@
 <template>
-  <div :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen support-shell support-shell-module' : 'support-shell'">
+  <div :data-panel="panelKey" :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen support-shell support-shell-module' : 'support-shell'">
     <EmployeeTopbar
       title=""
       :plan-label="planLabel"
@@ -235,7 +235,7 @@ export default {
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return 'owner'
       return ''
     })
-    const isModuleView = computed(() => ['owner', 'employee', 'supplier'].includes(panelKey.value))
+    const isModuleView = computed(() => ['owner', 'employee'].includes(panelKey.value))
     const showClinicSelector = computed(() => Boolean(branchId.value) || ['Clinic Complaint', 'Service Complaint', 'Employee Complaint'].includes(category.value) || panelKey.value === 'customer')
     const clinicSelectionRequired = computed(() => ['Clinic Complaint', 'Service Complaint', 'Employee Complaint'].includes(category.value))
 
@@ -814,5 +814,25 @@ export default {
   .support-panel {
     padding: 1.1rem;
   }
+}
+[data-panel="supplier"] .support-file-input,
+[data-panel="supplier"] .support-remove-file {
+  color: #7b4a2f;
+}
+
+[data-panel="supplier"] .support-file-input::file-selector-button {
+  border: 1px solid #d8b289;
+  background: #fff8ef;
+  color: #7b4a2f;
+}
+
+[data-panel="supplier"] .support-submit-button {
+  border-color: #8d5a3b;
+  background: #8d5a3b;
+  color: #fff;
+}
+
+[data-panel="supplier"] .support-submit-button:hover:not(:disabled) {
+  background: #6f4329;
 }
 </style>
