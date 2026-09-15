@@ -15,10 +15,10 @@
             </div>
 
             <div class="flex flex-wrap gap-2">
-              <button type="button" class="rounded-xl bg-[#8d5a3b] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6f4329]" @click="addItemRow">
+              <button type="button" class="rounded-xl bg-[#8d5a3b] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6f4329]" :disabled="loading || saving || checkingImage" @click="addItemRow">
                 Add Item
               </button>
-              <button type="button" class="rounded-xl border border-[#d9b38d] bg-[#fff8ef] px-4 py-2 text-sm font-semibold text-[#6f4329] transition hover:bg-[#f7ead8]" @click="saveSupplies">
+              <button type="button" class="rounded-xl border border-[#d9b38d] bg-[#fff8ef] px-4 py-2 text-sm font-semibold text-[#6f4329] transition hover:bg-[#f7ead8]" :disabled="loading || saving || checkingImage" @click="saveSupplies">
                 Save Supplies
               </button>
             </div>
@@ -45,6 +45,7 @@
         </div>
 
         <form v-else class="space-y-5" @submit.prevent="saveSupplies">
+          <fieldset :disabled="saving || checkingImage" class="min-w-0 space-y-5">
           <article
             v-for="(item, index) in items"
             :key="item.id"
@@ -74,14 +75,15 @@
                     </div>
                     <label class="cursor-pointer rounded-xl border border-[#d8b289] bg-white px-4 py-2 text-sm font-semibold text-[#7b4a2f] transition hover:bg-[#f6eadc]">
                       Upload Item Photo
-                      <input type="file" accept="image/*" class="hidden" @change="handleItemImageChange(index, $event)" />
+                      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" @change="handleItemImageChange(index, $event)" />
                     </label>
+                    <p class="text-xs text-[#7b5a43]">One JPG, PNG, WebP, or GIF image per item, under 25 MB.</p>
                   </div>
                 </div>
 
                 <div>
                   <label class="item-label">Item Name</label>
-                  <input v-model="item.name" type="text" class="item-input" placeholder="Enter item name" />
+                  <input v-model="item.name" maxlength="120" type="text" class="item-input" placeholder="Enter item name" />
                 </div>
 
                 <div>
@@ -94,24 +96,24 @@
 
                 <div v-if="item.category === 'Others'">
                   <label class="item-label">Custom Category</label>
-                  <input v-model="item.customCategory" type="text" class="item-input" placeholder="Enter custom category" />
+                  <input v-model="item.customCategory" maxlength="80" type="text" class="item-input" placeholder="Enter custom category" />
                 </div>
 
                 <div>
                   <label class="item-label">Description</label>
-                  <textarea v-model="item.description" rows="4" class="item-input item-textarea" placeholder="Describe the item"></textarea>
+                  <textarea v-model="item.description" maxlength="2000" rows="4" class="item-input item-textarea" placeholder="Describe the item"></textarea>
                 </div>
               </div>
 
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
                   <label class="item-label">Quantity</label>
-                  <input v-model.number="item.quantity" type="number" min="0" class="item-input" placeholder="0" />
+                  <input v-model="item.quantity" type="number" min="0" step="1" class="item-input" placeholder="0" />
                 </div>
 
                 <div>
                   <label class="item-label">Measurement Value</label>
-                  <input v-model="item.measurementValue" type="text" class="item-input" placeholder="e.g. 10, 500, 2x3" />
+                  <input v-model="item.measurementValue" maxlength="80" type="text" class="item-input" placeholder="e.g. 10, 500, 2x3" />
                 </div>
 
                 <div class="md:col-span-2">
@@ -125,7 +127,7 @@
                 <div class="md:col-span-2">
                   <label class="item-label">Specifications / Details</label>
                   <textarea
-                    v-model="item.specifications"
+                    v-model="item.specifications" maxlength="2000"
                     rows="4"
                     class="item-input item-textarea"
                     placeholder="Example: sterile, 10 mL per vial, 5 pcs per box, 2 kg equipment, 15x20 cm dimensions"
@@ -137,25 +139,25 @@
 
                 <div>
                   <label class="item-label">Price</label>
-                  <div class="relative">
-                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-[#8f6a4d]">PHP</span>
-                    <input v-model.number="item.price" type="number" min="0" step="0.01" class="item-input pl-14" placeholder="0.00" />
+                  <div class="price-field">
+                    <span class="price-prefix">PHP</span>
+                    <input v-model="item.price" aria-label="Price in Philippine pesos" type="text" inputmode="decimal" maxlength="12" class="item-input price-input" placeholder="0.00" @blur="formatPrice(item)" />
                   </div>
                 </div>
 
                 <div class="md:col-span-2 rounded-2xl border border-[#dfb98d] bg-[#fff8ef] p-4">
                   <p class="item-label">FDA Documentation</p>
                   <p class="mb-3 text-xs leading-5 text-[#7b5a43]">
-                    Add the FDA registration number and one supporting PDF or image when applicable. This information is shown with the product publicly.
+                    Add one supporting PDF or image under 25 MB when applicable. Once uploaded, the document cannot be replaced. This information is shown with the product publicly.
                   </p>
                   <div class="grid gap-4 md:grid-cols-2">
                     <div>
                       <label class="item-label">FDA Registration Number</label>
-                      <input v-model.trim="item.fdaRegistrationNumber" type="text" class="item-input" placeholder="Optional" />
+                      <input v-model.trim="item.fdaRegistrationNumber" maxlength="100" type="text" class="item-input" placeholder="Optional" />
                     </div>
                     <div>
                       <label class="item-label">FDA Document</label>
-                      <input type="file" accept="image/*,.pdf" class="item-input" @change="handleFdaDocumentChange(index, $event)" />
+                      <input v-if="!item.fdaApprovalDocument?.url && !item.fdaApprovalFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif" class="item-input" @change="handleFdaDocumentChange(index, $event)" />
                       <p v-if="item.fdaApprovalFileName" class="mt-2 text-xs text-[#7b5a43]">Selected: {{ item.fdaApprovalFileName }}</p>
                       <a v-else-if="item.fdaApprovalDocument?.url" :href="item.fdaApprovalDocument.url" target="_blank" rel="noopener" class="mt-2 inline-block text-xs font-semibold text-[#8d5a3b] hover:underline">View current document</a>
                     </div>
@@ -173,6 +175,7 @@
               Save Supply List
             </button>
           </div>
+          </fieldset>
         </form>
       </section>
     </main>
@@ -180,7 +183,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -191,6 +194,10 @@ import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 const auth = getAuth()
 const storage = getStorage()
 const loading = ref(true)
+const saving = ref(false)
+const checkingImage = ref(false)
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 const supplierDocId = ref('')
 const businessName = ref('')
 const items = ref([])
@@ -211,6 +218,7 @@ const createEmptyItem = () => ({
   price: '',
   imageUrl: '',
   imageName: '',
+  imageFile: null,
   fdaRegistrationNumber: '',
   fdaApprovalDocument: null,
   fdaApprovalFile: null,
@@ -230,9 +238,9 @@ const categoryCount = computed(() => {
 })
 
 const normalizeItemFromStore = (item = {}) => ({
-  id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  id: item.id || crypto.randomUUID(),
   name: item.name || '',
-  category: item.category || (item.customCategory ? 'Others' : ''),
+  category: item.categoryGroup || (categoryOptions.includes(item.category) ? item.category : (item.category ? 'Others' : '')),
   customCategory: item.category === 'Others' ? (item.customCategory || item.otherCategory || '') : (item.customCategory || ''),
   description: item.description || '',
   quantity: item.quantity ?? '',
@@ -242,6 +250,7 @@ const normalizeItemFromStore = (item = {}) => ({
   price: item.price ?? item.unitCost ?? '',
   imageUrl: item.imageUrl || item.photoUrl || item.pictureUrl || '',
   imageName: item.imageName || '',
+  imageFile: null,
   fdaRegistrationNumber: item.fdaRegistrationNumber || '',
   fdaApprovalDocument: item.fdaApprovalDocument || null,
   fdaApprovalFile: null,
@@ -287,45 +296,64 @@ const addItemRow = () => {
 }
 
 const removeItemRow = (index) => {
+  if (items.value[index].imageUrl.startsWith('blob:')) URL.revokeObjectURL(items.value[index].imageUrl)
   items.value.splice(index, 1)
   if (items.value.length === 0) {
     items.value.push(createEmptyItem())
   }
 }
 
-const handleItemImageChange = (index, event) => {
-  const file = event?.target?.files?.[0]
-  if (!file) return
-  if (!file.type?.startsWith('image/')) {
-    toast.error('Please upload an image file.')
-    return
+const uploadError = (files, document = false) => {
+  if (files.length !== 1) return 'Please select exactly one file.'
+  const file = files[0]
+  if (!IMAGE_TYPES.includes(file.type) && !(document && file.type === 'application/pdf')) {
+    return document ? 'Choose a PDF, JPG, PNG, WebP, or GIF document.' : 'Choose a JPG, PNG, WebP, or GIF image.'
   }
+  if (!file.size || file.size >= MAX_UPLOAD_BYTES) return 'The file must be nonempty and smaller than 25 MB.'
+  return ''
+}
 
-  const reader = new FileReader()
-  reader.onload = (loadEvent) => {
-    const nextValue = String(loadEvent.target?.result || '')
-    items.value[index].imageUrl = nextValue
-    items.value[index].imageName = file.name || ''
+const handleItemImageChange = async (index, event) => {
+  const item = items.value[index]
+  const files = Array.from(event.target.files || [])
+  if (!files.length) return
+  const error = uploadError(files)
+  event.target.value = ''
+  if (error) return toast.error(error)
+  checkingImage.value = true
+  const preview = URL.createObjectURL(files[0])
+  try {
+    const image = new Image()
+    image.src = preview
+    await image.decode()
+    if (item.imageUrl.startsWith('blob:')) URL.revokeObjectURL(item.imageUrl)
+    item.imageFile = files[0]
+    item.imageUrl = preview
+    item.imageName = files[0].name
+  } catch {
+    URL.revokeObjectURL(preview)
+    toast.error('This file could not be opened as an image. Choose a valid image.')
+  } finally {
+    checkingImage.value = false
   }
-  reader.readAsDataURL(file)
 }
 
 const handleFdaDocumentChange = (index, event) => {
-  const file = event?.target?.files?.[0]
-  if (!file) return
-  const isAllowed = file.type === 'application/pdf' || file.type.startsWith('image/')
-  if (!isAllowed) {
-    toast.error('FDA documentation must be a PDF or image file.')
-    event.target.value = ''
-    return
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    toast.error('FDA documentation must be 10 MB or smaller.')
-    event.target.value = ''
-    return
-  }
+  const files = Array.from(event.target.files || [])
+  event.target.value = ''
+  if (!files.length) return
+  const item = items.value[index]
+  if (item.fdaApprovalDocument?.url || item.fdaApprovalFile) return toast.error('Only one FDA document can be uploaded per item.')
+  const error = uploadError(files, true)
+  if (error) return toast.error(error)
+  const file = files[0]
   items.value[index].fdaApprovalFile = file
   items.value[index].fdaApprovalFileName = file.name || ''
+}
+
+const formatPrice = (item) => {
+  const value = String(item.price ?? '').trim()
+  if (/^\d+(\.\d{1,2})?$/.test(value)) item.price = Number(value).toFixed(2)
 }
 
 const validateItems = () => {
@@ -350,24 +378,32 @@ const validateItems = () => {
       measurementUnit ||
       String(item.specifications || '').trim() ||
       String(item.imageUrl || '').trim() ||
-      Number.isFinite(quantity) ||
-      Number.isFinite(price)
+      quantityRaw || priceRaw || item.fdaRegistrationNumber || item.fdaApprovalFile || item.fdaApprovalDocument
 
     if (!hasAnyData) continue
 
     if (!name) return 'Please enter an item name for each filled row.'
-    if (!category) return 'Please choose a category for each item.'
+    if (!categoryOptions.includes(category)) return 'Please choose a category for each item.'
     if (category === 'Others' && !customCategory) return 'Please enter the custom category for items marked as Others.'
     if (!quantityRaw) return 'Please enter a quantity for each filled item.'
-    if (!Number.isFinite(quantity) || quantity < 0) return 'Please enter a valid quantity.'
+    if (!/^\d+$/.test(quantityRaw) || !Number.isSafeInteger(quantity) || quantity < 0) return 'Quantity must be a whole number of zero or more.'
     if (!priceRaw) return 'Please enter a price for each filled item.'
-    if (!Number.isFinite(price) || price < 0) return 'Please enter a valid price.'
+    if (!/^\d+(\.\d{1,2})?$/.test(priceRaw) || !Number.isFinite(price) || price < 0 || price > 999999999.99) return 'Price must be between PHP 0.00 and PHP 999,999,999.99 with at most two decimal places.'
+    if (name.length > 120 || customCategory.length > 80 || description.length > 2000 || String(item.specifications || '').length > 2000 || measurementValue.length > 80 || String(item.fdaRegistrationNumber || '').length > 100) return 'An item field exceeds its maximum length.'
+    if (measurementValue && !measurementUnit) return 'Please select a unit for the measurement.'
+    if (measurementUnit && !measurementOptions.includes(measurementUnit)) return 'Please select a valid measurement unit.'
+    if (measurementValue && !/^\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?)*$/i.test(measurementValue)) return 'Use a positive number or dimensions such as 2x3 for measurements.'
+    if (measurementValue && measurementValue.split(/[x×]/i).some((part) => Number(part) <= 0)) return 'Measurement values must be greater than zero.'
+    if (measurementUnit === 'custom' && !String(item.specifications || '').trim()) return 'Describe the custom unit in Specifications / Details.'
+    if (item.imageFile && uploadError([item.imageFile])) return uploadError([item.imageFile])
+    if (item.fdaApprovalFile && uploadError([item.fdaApprovalFile], true)) return uploadError([item.fdaApprovalFile], true)
     if (!measurementValue && measurementUnit) return 'Please provide a measurement value when selecting a unit.'
   }
   return ''
 }
 
 const saveSupplies = async () => {
+  if (loading.value || saving.value || checkingImage.value) return
   const user = auth.currentUser
   if (!user) {
     toast.error('You are not signed in.')
@@ -390,6 +426,9 @@ const saveSupplies = async () => {
       const resolvedCategory = category === 'Others' ? customCategory : category
 
       return {
+        source: item,
+        id: item.id,
+        imageFile: item.imageFile,
         name,
         category: resolvedCategory,
         categoryGroup: category,
@@ -410,23 +449,44 @@ const saveSupplies = async () => {
     })
     .filter(Boolean)
 
+  saving.value = true
   try {
-    const savedItems = await Promise.all(cleanedItems.map(async (item) => {
+    const savedItems = []
+    for (const item of cleanedItems) {
+      let imageUrl = item.imageUrl
+      if (item.imageFile) {
+        const fileRef = storageRef(storage, `supplier-item-images/${user.uid}/${item.id}/${crypto.randomUUID()}`)
+        const snapshot = await uploadBytes(fileRef, item.imageFile)
+        imageUrl = await getDownloadURL(snapshot.ref)
+        if (item.source.imageUrl.startsWith('blob:')) URL.revokeObjectURL(item.source.imageUrl)
+        item.source.imageUrl = imageUrl
+        item.source.imageFile = null
+      }
       let fdaApprovalDocument = item.fdaApprovalDocument || null
-      if (item.fdaApprovalFile) {
-        const extension = item.fdaApprovalFile.name.split('.').pop() || 'bin'
-        const path = `supplier-fda-documents/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`
+      if (item.fdaApprovalFile && !fdaApprovalDocument?.url) {
+        const path = `supplier-fda-documents/${user.uid}/${item.id}/document`
         const fileRef = storageRef(storage, path)
-        const snapshot = await uploadBytes(fileRef, item.fdaApprovalFile)
+        let documentUrl
+        try {
+          documentUrl = await getDownloadURL(fileRef)
+        } catch (error) {
+          if (error.code !== 'storage/object-not-found') throw error
+          const snapshot = await uploadBytes(fileRef, item.fdaApprovalFile)
+          documentUrl = await getDownloadURL(snapshot.ref)
+        }
         fdaApprovalDocument = {
           name: item.fdaApprovalFile.name,
           type: item.fdaApprovalFile.type || '',
           size: item.fdaApprovalFile.size || 0,
           path,
-          url: await getDownloadURL(snapshot.ref),
+          url: documentUrl,
         }
+        item.source.fdaApprovalDocument = fdaApprovalDocument
+        item.source.fdaApprovalFile = null
+        item.source.fdaApprovalFileName = ''
       }
-      return {
+      savedItems.push({
+        id: item.id,
         name: item.name,
         category: item.category,
         categoryGroup: item.categoryGroup,
@@ -438,30 +498,37 @@ const saveSupplies = async () => {
         specifications: item.specifications,
         price: item.price,
         unitCost: item.unitCost,
-        imageUrl: item.imageUrl,
+        imageUrl,
         imageName: item.imageName,
         fdaRegistrationNumber: item.fdaRegistrationNumber,
         fdaApprovalDocument,
-      }
-    }))
+      })
+    }
     const categories = [...new Set(savedItems.map((item) => item.category).filter(Boolean))]
     await setDoc(doc(db, 'suppliers', supplierDocId.value || user.uid), {
       ownerId: user.uid,
       name: businessName.value || '',
       businessName: businessName.value || '',
-      status: 'Active',
-      approvalStatus: 'Approved',
       offeredItems: savedItems,
       categories,
       updatedAt: serverTimestamp(),
     }, { merge: true })
 
+    items.value = savedItems.length ? savedItems.map(normalizeItemFromStore) : [createEmptyItem()]
     toast.success('Supply list saved successfully.')
   } catch (error) {
     console.error('Failed to save supplies:', error)
     toast.error('Failed to save supply list.')
+  } finally {
+    saving.value = false
   }
 }
+
+onBeforeUnmount(() => {
+  items.value.forEach((item) => {
+    if (item.imageUrl.startsWith('blob:')) URL.revokeObjectURL(item.imageUrl)
+  })
+})
 
 onMounted(() => {
   onAuthStateChanged(auth, (user) => {
@@ -475,6 +542,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.price-field { display: flex; align-items: center; border: 1px solid rgba(224, 192, 154, 0.95); border-radius: 1rem; background: white; overflow: hidden; }
+.price-prefix { flex: none; padding-left: 1rem; color: #8f6a4d; font-size: 0.875rem; }
+.price-field .price-input { min-width: 0; border: 0; border-radius: 0; padding-left: 0.75rem; }
+.price-field:focus-within { box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16); }
+button:disabled { opacity: 0.6; cursor: wait; }
 .item-label {
   display: block;
   margin-bottom: 0.45rem;

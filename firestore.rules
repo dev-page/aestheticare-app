@@ -440,6 +440,16 @@ service cloud.firestore {
     }
 
     match /suppliers/{supplierId} {
+      // Supplier accounts manage only their own catalog; approval stays with admins.
+      allow read: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn()
+        && supplierId == request.auth.uid
+        && request.resource.data.ownerId == request.auth.uid
+        && userData().userType == 'supplier'
+        && request.resource.data.keys().hasOnly(['ownerId', 'name', 'businessName', 'offeredItems', 'categories', 'updatedAt']);
+      allow update: if isSignedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'businessName', 'offeredItems', 'categories', 'updatedAt']);
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
           && (hasPermission('inventory:view') || hasPermission('finance:purchases:view'))) || isSuperadmin());

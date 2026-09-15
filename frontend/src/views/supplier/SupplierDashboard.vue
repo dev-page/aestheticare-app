@@ -8,8 +8,8 @@
           <div v-if="loading" class="space-y-3">
             <div class="h-10 w-72 rounded-full bg-amber-100 animate-pulse"></div>
             <div class="h-4 w-full max-w-2xl rounded-full bg-amber-100 animate-pulse"></div>
-            <div class="grid gap-4 md:grid-cols-3">
-              <div v-for="index in 3" :key="index" class="h-28 rounded-2xl bg-amber-50 animate-pulse"></div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div v-for="index in 2" :key="index" class="h-28 rounded-2xl bg-amber-50 animate-pulse"></div>
             </div>
           </div>
 
@@ -35,13 +35,7 @@
               </div>
             </div>
 
-            <div class="mt-6 grid gap-4 md:grid-cols-3">
-              <article class="rounded-2xl border border-amber-200/80 bg-amber-50/80 p-5">
-                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Approval Status</p>
-                <p class="mt-2 text-2xl font-bold text-[#4b2f20]">{{ supplier.approvalStatus || supplier.status || 'Pending' }}</p>
-                <p class="mt-2 text-sm text-[#775743]">Your approval state controls how procurement and logistics interact with your business.</p>
-              </article>
-
+            <div class="mt-6 grid gap-4 md:grid-cols-2">
               <article class="rounded-2xl border border-[#e4c6a4] bg-white/90 p-5">
                 <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#9a6848]">Supply Items</p>
                 <p class="mt-2 text-2xl font-bold text-[#4b2f20]">{{ itemCount }}</p>
