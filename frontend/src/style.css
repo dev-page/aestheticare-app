@@ -1116,6 +1116,42 @@ table {
   }
 }
 
+/* Keep native dropdowns readable across system-admin, clinic-admin, and
+   employee screens. Utility classes on older pages should not change the
+   control to a low-contrast slate or purple variant. */
+:is(.owner-theme, .module-theme) select {
+  color: #f2e2d2 !important;
+  background-color: #2f2015 !important;
+  border-color: #6a4c33 !important;
+  color-scheme: dark;
+}
+
+:is(.owner-theme, .module-theme) select option,
+:is(.owner-theme, .module-theme) select optgroup {
+  color: #f2e2d2 !important;
+  background-color: #2f2015 !important;
+}
+
+:is(.owner-theme, .module-theme) select option:checked,
+:is(.owner-theme, .module-theme) select option:hover {
+  color: #fff8ef !important;
+  background-color: #7b4f37 !important;
+}
+
+:is(.owner-theme, .module-theme) select:focus {
+  border-color: #c6946c !important;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(198, 148, 108, 0.24) !important;
+}
+
+:is(.owner-theme, .module-theme) select:disabled {
+  color: #b79d88 !important;
+  background-color: #24180f !important;
+  border-color: #4a3322 !important;
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
 /* Keep dense system-admin screens usable on very narrow phones. Tables retain
    their columns inside a local scroller so the page itself never overflows. */
 @media (max-width: 480px) {

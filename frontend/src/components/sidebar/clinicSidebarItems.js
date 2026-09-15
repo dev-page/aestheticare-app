@@ -31,6 +31,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
       { label: 'Inbox', icon: 'bell', to: '/receptionist/inbox', permission: 'inbox:view' }
     ]
   },
+  { label: 'Product & Service Listing', icon: 'layout', to: '/manager/product-service-listing', moduleKey: 'operations', permission: 'services:view' },
   {
     key: 'inventory-module',
     label: 'Inventory Management',
@@ -38,7 +39,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     moduleKey: 'inventory',
     children: [
       { type: 'section', label: 'POSTS' },
-      { label: 'Product & Service Listing', icon: 'layout', to: '/manager/product-service-listing', permission: 'services:view' },
       { label: 'Archived Posts', icon: 'archive', to: '/manager/archived-posts', permission: 'services:view' },
       { label: 'Item Catalog', icon: 'building', to: '/manager/item-catalog', permission: 'inventory:view' }
     ]
