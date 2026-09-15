@@ -471,6 +471,8 @@ service cloud.firestore {
 
     match /purchaseRequests/{requestId} {
       allow read: if isSignedIn()
+        && get(/databases/$(database)/documents/suppliers/$(resource.data.supplierId)).data.ownerId == request.auth.uid;
+      allow read: if isSignedIn()
         && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
           && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view')
             || hasPermission('finance:purchases:view') || hasPermission('finance:payables:view')
@@ -506,6 +508,8 @@ service cloud.firestore {
     }
 
     match /supplierQuotes/{quoteId} {
+      allow read: if isSignedIn()
+        && get(/databases/$(database)/documents/suppliers/$(resource.data.supplierId)).data.ownerId == request.auth.uid;
       allow read: if isSignedIn()
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('procurement:view')));
       allow create: if isSignedIn()

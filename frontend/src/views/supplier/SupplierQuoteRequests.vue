@@ -50,6 +50,7 @@
                     <span class="rounded-full bg-[#f4e5d2] px-3 py-1 text-xs font-semibold text-[#765038]">
                       {{ quoteFor(request)?.status || 'Not submitted' }}
                     </span>
+                    <p v-if="quoteFor(request)?.reference" class="mt-2 text-xs text-[#765038]">{{ quoteFor(request).reference }}</p>
                   </td>
                   <td class="px-5 py-4">
                     <button
@@ -91,15 +92,15 @@
           </label>
           <label class="block text-sm font-semibold text-[#5a402f]">
             Availability / fulfillment date
-            <input v-model="quoteForm.fulfillmentDate" required type="date" class="quote-field" />
+            <input v-model="quoteForm.fulfillmentDate" :min="minimumDate" required type="date" class="quote-field" />
           </label>
           <label class="block text-sm font-semibold text-[#5a402f]">
             Reference number
-            <input v-model.trim="quoteForm.reference" class="quote-field" placeholder="Quote reference" />
+            <input :value="quoteForm.reference" readonly class="quote-field" placeholder="Automatically assigned when submitted" />
           </label>
           <label class="block text-sm font-semibold text-[#5a402f]">
             Notes and terms
-            <textarea v-model.trim="quoteForm.notes" rows="4" class="quote-field" placeholder="Availability, lead time, warranty, or other terms"></textarea>
+            <textarea v-model.trim="quoteForm.notes" maxlength="2000" rows="4" class="quote-field" placeholder="Availability, lead time, warranty, or other terms"></textarea>
           </label>
 
           <div class="rounded-2xl border border-[#ead1b0] bg-[#fff3e4] p-4 text-sm text-[#6f503d]">
@@ -119,11 +120,14 @@
 </template>
 
 <script setup>
+import { manilaDate, validateSupplierQuote } from '../../../../backend/otp-backend/supplierQuoteValidation.js'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import axios from 'axios'
 import { purchaseRequestReference } from '@/utils/purchaseRequestReference'
 import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { addDoc, collection, doc, getDocs, limit, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 import { db } from '@/config/firebaseConfig'
@@ -136,6 +140,7 @@ const supplierName = ref('')
 const requests = ref([])
 const quotes = ref([])
 const selectedRequest = ref(null)
+const minimumDate = ref(manilaDate())
 let stops = []
 
 const quoteForm = reactive({ unitPrice: 0, quantity: 1, fulfillmentDate: '', reference: '', notes: '' })
@@ -172,12 +177,13 @@ const subscribeToRecords = () => {
 
 const openQuote = (request) => {
   const quote = quoteFor(request)
+  minimumDate.value = manilaDate()
   selectedRequest.value = request
   Object.assign(quoteForm, {
-    unitPrice: Number(quote?.unitPrice || quote?.amount || 0),
+    unitPrice: Number(quote?.unitPrice ?? (quote?.amount ? quote.amount / (quote.quantity || request.quantity || 1) : 0)),
     quantity: Number(quote?.quantity || request.quantity || 1),
     fulfillmentDate: quote?.fulfillmentDate || '',
-    reference: quote?.reference || '',
+    reference: /^QT-\d{8}-\d+$/.test(quote?.reference || '') ? quote.reference : '',
     notes: quote?.notes || quote?.details || ''
   })
 }
@@ -185,39 +191,27 @@ const openQuote = (request) => {
 const closeQuote = () => { selectedRequest.value = null }
 
 const submitQuote = async () => {
-  const quantity = Number(quoteForm.quantity)
-  const price = Number(quoteForm.unitPrice)
-  if (!selectedRequest.value || !supplierDocId.value || !Number.isSafeInteger(quantity) || quantity < 1 || !/^\d+(\.\d{1,2})?$/.test(String(quoteForm.unitPrice)) || !Number.isFinite(price) || price <= 0 || !Number.isFinite(quotedTotal.value)) {
-    toast.error('Enter a valid unit price and quantity.')
-    return
-  }
+  if (saving.value || !selectedRequest.value || !auth.currentUser) return
+  minimumDate.value = manilaDate()
+  const validation = validateSupplierQuote(quoteForm, selectedRequest.value.quantity)
+  if (validation) return toast.error(validation)
+  if (existingQuote.value?.status === 'Accepted') return toast.error('An accepted quotation cannot be changed.')
   saving.value = true
   try {
-    const quote = existingQuote.value
-    const payload = {
-      branchId: selectedRequest.value.branchId || null,
+    const token = await auth.currentUser.getIdToken()
+    const response = await axios.post(OTP_API_BASE + '/supplier/quotes', {
       purchaseRequestId: selectedRequest.value.id,
-      supplierId: supplierDocId.value,
-      supplierName: supplierName.value,
-      item: selectedRequest.value.item || '',
-      quantity: Number(quoteForm.quantity),
-      unitPrice: Number(quoteForm.unitPrice),
-      amount: quotedTotal.value,
+      unitPrice: quoteForm.unitPrice,
+      quantity: quoteForm.quantity,
       fulfillmentDate: quoteForm.fulfillmentDate,
-      reference: quoteForm.reference || null,
-      details: quoteForm.notes || null,
-      notes: quoteForm.notes || null,
-      status: quote?.status === 'Accepted' ? 'Accepted' : 'Submitted',
-      updatedAt: serverTimestamp(),
-      updatedBy: auth.currentUser?.uid || null
-    }
-    if (quote?.id) await updateDoc(doc(db, 'supplierQuotes', quote.id), payload)
-    else await addDoc(collection(db, 'supplierQuotes'), { ...payload, createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || null })
-    toast.success('Quotation submitted to the clinic.')
+      notes: quoteForm.notes,
+    }, { headers: { Authorization: 'Bearer ' + token } })
+    quoteForm.reference = response.data.data.reference
+    toast.success('Quotation ' + quoteForm.reference + ' submitted. The clinic has been notified.')
     closeQuote()
   } catch (error) {
     console.error('Failed to submit supplier quote:', error)
-    toast.error('Failed to submit quotation.')
+    toast.error(error?.response?.data?.error || 'Failed to submit quotation.')
   } finally {
     saving.value = false
   }

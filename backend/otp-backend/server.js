@@ -1,3 +1,4 @@
+import { registerSupplierQuoteRoutes } from './supplierQuotes.js'
 import express from 'express'
 import cors from 'cors'
 import { ServerClient } from 'postmark'
@@ -1889,6 +1890,8 @@ const canAccessBranchRecord = (context, record) => {
     permissions.has('inventory:review') || permissions.has('orders:update')
   ))
 }
+
+registerSupplierQuoteRoutes(app, { admin, requireAuth })
 
 app.post('/procurement/:collection/:id/transition', requireAuth, async (req, res) => {
   const collectionName = String(req.params.collection || '').trim()

@@ -1,7 +1,7 @@
 <template>
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
-    
+
     <main class="min-w-0 flex-1 p-4 md:p-8">
         <div class="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -14,7 +14,7 @@
             You can review branch purchase requests.
           </p>
         </div>
-        <button 
+        <button
           v-if="canCreateRequests"
           @click="showAddModal = true"
           class="bg-purple-500 hover:bg-purple-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors"
@@ -64,16 +64,16 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label class="block text-slate-400 text-sm mb-2">Search</label>
-            <input 
+            <input
               v-model="searchQuery"
-              type="text" 
+              type="text"
               placeholder="Search requests..."
               class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
             />
           </div>
           <div>
             <label class="block text-slate-400 text-sm mb-2">Status</label>
-            <select 
+            <select
               v-model="selectedStatus"
               class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
             >
@@ -87,7 +87,7 @@
           </div>
           <div>
             <label class="block text-slate-400 text-sm mb-2">Branch</label>
-            <select 
+            <select
               v-model="selectedBranch"
               class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
             >
@@ -97,7 +97,7 @@
           </div>
           <div>
             <label class="block text-slate-400 text-sm mb-2">Priority</label>
-            <select 
+            <select
               v-model="selectedPriority"
               class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
             >
@@ -146,7 +146,7 @@
                   <span class="text-white">{{ request.quantity }} {{ request.unit }}</span>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <span 
+                  <span
                     :class="[
                       'px-3 py-1 rounded-full text-xs font-medium',
                       request.priority === 'High' ? 'bg-red-500/20 text-red-400' :
@@ -161,7 +161,7 @@
                   <span class="text-slate-300">{{ request.date }}</span>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <span 
+                  <span
                     :class="[
                       'px-3 py-1 rounded-full text-xs font-medium',
                       request.status === 'Pending' ? 'bg-orange-500/20 text-orange-400' :
@@ -217,63 +217,9 @@
                   <span v-else class="text-slate-400 text-xs">Read only</span>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <div v-if="canReviewRequests" class="flex items-center gap-2">
-                    <button
-                      @click="requestBudgetFromFinance(request)"
-                      :disabled="request.status !== 'Approved' || request.status === 'Cancelled' || request.budgetStatus === 'Requested' || request.budgetStatus === 'Approved'"
-                      class="text-cyan-400 hover:text-cyan-300 transition-colors"
-                      :class="{ 'opacity-40 cursor-not-allowed hover:text-cyan-400': request.status !== 'Approved' || request.status === 'Cancelled' || request.budgetStatus === 'Requested' || request.budgetStatus === 'Approved' }"
-                      title="Request budget from Finance"
-                    >
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v8m4-4H8m12 0a8 8 0 11-16 0 8 8 0 0116 0z"></path>
-                      </svg>
-                    </button>
-                    <button
-                      @click="markForLogisticsClaim(request)"
-                      :disabled="request.status === 'Cancelled' || ['Claimed', 'Ready for Claim'].includes(request.logisticsStatus) || request.budgetStatus !== 'Approved'"
-                      class="text-sky-400 hover:text-sky-300 transition-colors"
-                      :class="{ 'opacity-40 cursor-not-allowed hover:text-sky-400': request.status === 'Cancelled' || ['Claimed', 'Ready for Claim'].includes(request.logisticsStatus) || request.budgetStatus !== 'Approved' }"
-                      title="Send order to Logistics for claiming"
-                    >
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h18M12 3v18"></path>
-                      </svg>
-                    </button>
-                    <button 
-                      @click="markDelivered(request)"
-                      :disabled="request.status === 'Delivered' || request.status === 'Cancelled'"
-                      class="text-green-400 hover:text-green-300 transition-colors"
-                      :class="{ 'opacity-40 cursor-not-allowed hover:text-green-400': request.status === 'Delivered' || request.status === 'Cancelled' }"
-                      title="Mark as Delivered"
-                    >
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                      </svg>
-                    </button>
-                    <button 
-                      @click="markDelayed(request.id)"
-                      :disabled="request.status === 'Delivered' || request.status === 'Cancelled'"
-                      class="text-yellow-400 hover:text-yellow-300 transition-colors"
-                      :class="{ 'opacity-40 cursor-not-allowed hover:text-yellow-400': request.status === 'Delivered' || request.status === 'Cancelled' }"
-                      title="Mark as Delayed"
-                    >
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                      </svg>
-                    </button>
-                    <button
-                      @click="openCancelModal(request)"
-                      :disabled="request.status === 'Delivered' || request.status === 'Cancelled'"
-                      class="text-red-400 hover:text-red-300 transition-colors"
-                      :class="{ 'opacity-40 cursor-not-allowed hover:text-red-400': request.status === 'Delivered' || request.status === 'Cancelled' }"
-                      title="Cancel Request"
-                    >
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636 5.636 18.364M6.343 6.343l11.314 11.314"></path>
-                      </svg>
-                    </button>
-                  </div>
+                  <button v-if="canReviewRequests" type="button" class="request-menu-trigger" aria-haspopup="menu" :aria-expanded="actionRequest?.id === request.id" :aria-label="'Actions for ' + request.requestNumber" @click.stop="toggleActionMenu(request, $event)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+                  </button>
                   <span v-else class="text-slate-400 text-xs">No review access</span>
                 </td>
               </tr>
@@ -297,7 +243,7 @@
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label class="block text-slate-400 text-sm mb-2">Supplier</label>
-                <select 
+                <select
                   v-model="newRequest.supplierId"
                   required
                   class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
@@ -308,7 +254,7 @@
               </div>
               <div>
                 <label class="block text-slate-400 text-sm mb-2">Item</label>
-                <select 
+                <select
                   v-model="newRequest.itemId"
                   required
                   class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
@@ -337,9 +283,9 @@
               </div>
               <div>
                 <label class="block text-slate-400 text-sm mb-2">Quantity</label>
-                <input 
+                <input
                   v-model.number="newRequest.quantity"
-                  type="number" 
+                  type="number"
                   min="1"
                   required
                   class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
@@ -406,7 +352,7 @@
               </div>
               <div>
                 <label class="block text-slate-400 text-sm mb-2">Priority</label>
-                <select 
+                <select
                   v-model="newRequest.priority"
                   required
                   class="brown-native-select w-full px-4 py-2 rounded-lg border focus:outline-none"
@@ -419,21 +365,21 @@
             </div>
             <div>
               <label class="block text-slate-400 text-sm mb-2">Reason/Notes</label>
-              <textarea 
+              <textarea
                 v-model="newRequest.notes"
                 rows="3"
                 class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
               ></textarea>
             </div>
             <div class="flex justify-end gap-3 mt-6">
-              <button 
+              <button
                 type="button"
                 @click="showAddModal = false"
                 class="px-6 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 type="submit"
                 :disabled="saving || activeSuppliers.length === 0 || supplierItemOptions.length === 0"
                 class="px-6 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white transition-colors disabled:opacity-50"
@@ -586,6 +532,69 @@
           </div>
         </div>
       </div>
+      <Teleport to="body">
+        <div v-if="actionRequest" ref="actionMenu" role="menu" tabindex="-1" aria-label="Purchase request actions" class="request-action-menu" :style="actionMenuStyle" @click="closeActionMenu" @keydown="handleMenuKeydown">
+          <button type="button" role="menuitem"
+                      @click="requestBudgetFromFinance(actionRequest)"
+                      :disabled="actionRequest.status !== 'Approved' || actionRequest.status === 'Cancelled' || actionRequest.budgetStatus === 'Requested' || actionRequest.budgetStatus === 'Approved'"
+                      class="text-cyan-400 hover:text-cyan-300 transition-colors"
+                      :class="{ 'opacity-40 cursor-not-allowed hover:text-cyan-400': actionRequest.status !== 'Approved' || actionRequest.status === 'Cancelled' || actionRequest.budgetStatus === 'Requested' || actionRequest.budgetStatus === 'Approved' }"
+                      title="Request budget from Finance"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v8m4-4H8m12 0a8 8 0 11-16 0 8 8 0 0116 0z"></path>
+                      </svg><span>Request budget from Finance</span>
+                    </button>
+                    <button type="button" role="menuitem"
+                      @click="markForLogisticsClaim(actionRequest)"
+                      :disabled="actionRequest.status === 'Cancelled' || ['Claimed', 'Ready for Claim'].includes(actionRequest.logisticsStatus) || actionRequest.budgetStatus !== 'Approved'"
+                      class="text-sky-400 hover:text-sky-300 transition-colors"
+                      :class="{ 'opacity-40 cursor-not-allowed hover:text-sky-400': actionRequest.status === 'Cancelled' || ['Claimed', 'Ready for Claim'].includes(actionRequest.logisticsStatus) || actionRequest.budgetStatus !== 'Approved' }"
+                      title="Send order to Logistics for claiming"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h18M12 3v18"></path>
+                      </svg><span>Send order to Logistics for claiming</span>
+                    </button>
+                    <button type="button" role="menuitem"
+
+                      @click="markDelivered(actionRequest)"
+                      :disabled="actionRequest.status === 'Delivered' || actionRequest.status === 'Cancelled'"
+                      class="text-green-400 hover:text-green-300 transition-colors"
+                      :class="{ 'opacity-40 cursor-not-allowed hover:text-green-400': actionRequest.status === 'Delivered' || actionRequest.status === 'Cancelled' }"
+                      title="Mark as Delivered"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                      </svg><span>Mark as Delivered</span>
+                    </button>
+                    <button type="button" role="menuitem"
+
+                      @click="markDelayed(actionRequest.id)"
+                      :disabled="actionRequest.status === 'Delivered' || actionRequest.status === 'Cancelled'"
+                      class="text-yellow-400 hover:text-yellow-300 transition-colors"
+                      :class="{ 'opacity-40 cursor-not-allowed hover:text-yellow-400': actionRequest.status === 'Delivered' || actionRequest.status === 'Cancelled' }"
+                      title="Mark as Delayed"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                      </svg><span>Mark as Delayed</span>
+                    </button>
+                    <button type="button" role="menuitem"
+
+                      @click="openCancelModal(actionRequest)"
+                      :disabled="actionRequest.status === 'Delivered' || actionRequest.status === 'Cancelled'"
+                      class="text-red-400 hover:text-red-300 transition-colors"
+                      :class="{ 'opacity-40 cursor-not-allowed hover:text-red-400': actionRequest.status === 'Delivered' || actionRequest.status === 'Cancelled' }"
+                      title="Cancel Request"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636 5.636 18.364M6.343 6.343l11.314 11.314"></path>
+                      </svg><span>Cancel Request</span>
+                    </button>
+
+        </div>
+      </Teleport>
     </main>
   </div>
 </template>
@@ -593,7 +602,7 @@
 <script>
 import { useRoute, useRouter } from 'vue-router'
 import { createPurchaseRequestNumber, purchaseRequestReference } from '@/utils/purchaseRequestReference'
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -618,6 +627,63 @@ export default {
     const storage = getStorage(getApp())
     const { hasPermission } = usePermissions()
 
+    const actionRequest = ref(null)
+    const actionMenu = ref(null)
+    const actionMenuStyle = ref({})
+    let actionTrigger = null
+    const closeActionMenu = () => {
+      if (!actionRequest.value) return
+      actionRequest.value = null
+      actionTrigger?.focus()
+    }
+    const toggleActionMenu = async (request, event) => {
+      if (actionRequest.value?.id === request.id) return closeActionMenu()
+      actionTrigger = event.currentTarget
+      actionRequest.value = request
+      await nextTick()
+      const rect = actionTrigger.getBoundingClientRect()
+      const menu = actionMenu.value
+      if (!menu) return
+      const width = menu.offsetWidth
+      const height = menu.offsetHeight
+      actionMenuStyle.value = {
+        left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)) + 'px',
+        top: Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - height - 8)) + 'px',
+      }
+      const firstAction = menu.querySelector('button:not(:disabled)')
+      ;(firstAction || menu).focus()
+    }
+    const handleMenuKeydown = (event) => {
+      if (event.key === 'Escape' || event.key === 'Tab') {
+        if (event.key === 'Escape') event.preventDefault()
+        closeActionMenu()
+        return
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault()
+      const buttons = [...actionMenu.value.querySelectorAll('button:not(:disabled)')]
+      if (!buttons.length) return
+      const index = buttons.indexOf(document.activeElement)
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+      buttons[next].focus()
+    }
+    const dismissActionMenu = (event) => {
+      if (actionMenu.value?.contains(event.target) || actionTrigger?.contains(event.target)) return
+      closeActionMenu()
+    }
+    const closeOnScroll = (event) => {
+      if (!actionMenu.value?.contains(event.target)) closeActionMenu()
+    }
+    onMounted(() => {
+      document.addEventListener('pointerdown', dismissActionMenu)
+      window.addEventListener('resize', closeActionMenu)
+      window.addEventListener('scroll', closeOnScroll, true)
+    })
+    onUnmounted(() => {
+      document.removeEventListener('pointerdown', dismissActionMenu)
+      window.removeEventListener('resize', closeActionMenu)
+      window.removeEventListener('scroll', closeOnScroll, true)
+    })
     const showAddModal = ref(false)
     const showPaymentModal = ref(false)
     const saving = ref(false)
@@ -962,7 +1028,7 @@ export default {
         const matchesStatus = !selectedStatus.value || request.status === selectedStatus.value
         const matchesBranch = !selectedBranch.value || request.branch === selectedBranch.value
         const matchesPriority = !selectedPriority.value || request.priority === selectedPriority.value
-        
+
         return matchesSearch && matchesStatus && matchesBranch && matchesPriority
       })
     })
@@ -1652,6 +1718,7 @@ export default {
 
     return {
       showAddModal,
+      actionRequest, actionMenu, actionMenuStyle, toggleActionMenu, closeActionMenu, handleMenuKeydown,
       canCreateRequests,
       canReviewRequests,
       showPaymentModal,
@@ -1714,6 +1781,14 @@ export default {
 </script>
 
 <style scoped>
+.request-menu-trigger { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; border: 1px solid #8d5a3b; border-radius: 0.65rem; color: #f6e7d8; background: #4b3020; }
+.request-menu-trigger:hover, .request-menu-trigger:focus-visible { background: #6f4329; outline: 2px solid #d8b38f; outline-offset: 2px; }
+.request-action-menu { position: fixed; z-index: 100; width: min(19rem, calc(100vw - 1rem)); max-height: calc(100dvh - 1rem); overflow-y: auto; padding: 0.4rem; border: 1px solid #805538; border-radius: 0.85rem; background: #2b1b12; box-shadow: 0 12px 32px #0006; }
+.request-action-menu button { display: flex; align-items: center; gap: 0.7rem; width: 100%; padding: 0.75rem; border-radius: 0.5rem; text-align: left; font-size: 0.8rem; }
+.request-action-menu button svg { flex-shrink: 0; }
+.request-action-menu button:hover:not(:disabled), .request-action-menu button:focus-visible { background: #65422c; outline: 2px solid #d8b38f; }
+.request-action-menu button:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .purchase-modal-shell {
   scrollbar-color: #8d5a3b #24160f;
 }
