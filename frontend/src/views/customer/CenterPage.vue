@@ -176,6 +176,10 @@
                       </p>
 
                       <div class="mt-4 flex flex-wrap items-center gap-3">
+                        <button type="button" class="center-secondary-button inline-flex items-center gap-2 px-4 py-2 rounded-xl" @click="openProductDetails(item)">
+                          <Icon icon="mdi:information-outline" class="h-4 w-4" />
+                          View Details
+                        </button>
                         <div class="center-qty-stepper inline-flex items-center overflow-hidden rounded-2xl border border-[#e0c09a] bg-[#fff8ef]">
                           <button
                             type="button"
@@ -599,6 +603,37 @@
       </div>
       </div>
     </main>
+    <div v-if="selectedProductDetails" class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(31,18,11,0.6)] p-4 backdrop-blur-sm" @click.self="closeProductDetails">
+      <section class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[1.75rem] border border-[#e0c09a] bg-[#fffaf3] p-5 shadow-[0_30px_80px_rgba(60,34,18,0.26)]">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="center-kicker">Product Details</p>
+            <h2 class="mt-1 text-2xl font-semibold text-[#3d281d]">{{ selectedProductDetails.title || selectedProductDetails.name }}</h2>
+          </div>
+          <button type="button" class="text-[#8b6a4d] hover:text-[#3d281d]" aria-label="Close product details" @click="closeProductDetails">
+            <Icon icon="mdi:close" class="h-6 w-6" />
+          </button>
+        </div>
+        <img :src="selectedProductDetails.imageUrl || fallbackImage" :alt="selectedProductDetails.title || selectedProductDetails.name" class="mt-4 h-56 w-full rounded-2xl object-cover" />
+        <p class="mt-4 text-lg font-semibold text-[#8d5a3b]">PHP {{ Number(selectedProductDetails.price || 0).toFixed(2) }}</p>
+        <p v-if="selectedProductDetails.description" class="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#6f4a2d]">{{ selectedProductDetails.description }}</p>
+        <p v-if="selectedProductDetails.productVolume || selectedProductDetails.productUnit" class="mt-3 text-sm text-[#775743]">
+          Quantity / unit: {{ selectedProductDetails.productVolume || '-' }} {{ selectedProductDetails.productUnit || '' }}
+        </p>
+        <div v-if="selectedProductDetails.fdaRegistrationNumber || selectedProductDetails.fdaApprovalDocument?.url" class="mt-5 rounded-2xl border border-[#e0c09a] bg-[#fff8ef] p-4">
+          <h3 class="font-semibold text-[#3d281d]">FDA Documentation</h3>
+          <p v-if="selectedProductDetails.fdaRegistrationNumber" class="mt-2 text-sm text-[#6f4a2d]">Registration number: {{ selectedProductDetails.fdaRegistrationNumber }}</p>
+          <a v-if="selectedProductDetails.fdaApprovalDocument?.url" :href="selectedProductDetails.fdaApprovalDocument.url" target="_blank" rel="noopener" class="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-[#8d5a3b] hover:underline">
+            <Icon icon="mdi:file-document-outline" class="h-4 w-4" />
+            View supplier FDA document
+          </a>
+        </div>
+        <div v-if="selectedProductDetails.termsAndConditions" class="mt-5 rounded-2xl border border-[#e0c09a] bg-[#fff8ef] p-4">
+          <h3 class="font-semibold text-[#3d281d]">Product Terms</h3>
+          <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#6f4a2d]">{{ selectedProductDetails.termsAndConditions }}</p>
+        </div>
+      </section>
+    </div>
     <button
       type="button"
       class="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#8d5a3b] text-white shadow-lg hover:bg-[#6f4329] transition flex items-center justify-center"
@@ -713,6 +748,7 @@ const items = ref([])
 const searchQuery = ref('')
 const cartCount = ref(0)
 const showChatModal = ref(false)
+const selectedProductDetails = ref(null)
 const chatInput = ref('')
 const chatMessages = ref([])
 const currentUserId = ref('')
@@ -1502,6 +1538,8 @@ const loadBranchData = async (branchId) => {
       productVolume: String(post.productVolume || '').trim(),
       productUnit: String(post.productUnit || '').trim(),
       termsAndConditions: String(post.termsAndConditions || '').trim(),
+      fdaRegistrationNumber: String(post.fdaRegistrationNumber || '').trim(),
+      fdaApprovalDocument: post.fdaApprovalDocument || null,
       requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : [],
       packageServiceIds: Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : [],
       packageServiceNames: Array.isArray(post.packageServiceIds)
@@ -1511,6 +1549,7 @@ const loadBranchData = async (branchId) => {
         }).filter(Boolean)
         : [],
       packageName: String(post.packageName || '').trim(),
+      isPackageComponent: post.isPackageComponent === true || Boolean(post.parentPackageId),
       consultationMode: String(rawConsultationMode).trim().toLowerCase() === 'on-site' ? 'on-site' : 'online',
       imageUrl: post.imageUrl || '',
       quantity: 1,
@@ -1830,6 +1869,7 @@ const filteredProducts = computed(() => {
 const filteredServices = computed(() => {
   return items.value.filter((item) => {
     if (!['Service', 'Package'].includes(item.type)) return false
+    if (item.isPackageComponent) return false
     if (!normalizedSearchQuery.value) return true
     return (item.title || item.name || '').toLowerCase().includes(normalizedSearchQuery.value)
   })
@@ -1856,6 +1896,14 @@ const goBack = () => {
 }
 
 const goToCart = () => router.push({ name: 'customer-cart' })
+
+const openProductDetails = (item) => {
+  selectedProductDetails.value = item
+}
+
+const closeProductDetails = () => {
+  selectedProductDetails.value = null
+}
 
 const incrementItemQuantity = (item) => {
   const current = Math.max(1, Number(item.quantity || 1))
@@ -2509,6 +2557,7 @@ const createBookingPayMongoCheckoutSession = async ({
     })(),
     body: JSON.stringify({
       amount: Math.round(Number(amountPeso || 0) * 100),
+      policyAcknowledged: bookingPolicyAcknowledged.value === true,
       paymentMethodType,
       paymentMethodTypes: bookingPaymentTypes.value,
       description,
@@ -2545,6 +2594,7 @@ const createBookingPayMongoCheckoutSession = async ({
         commissionAmount: flowType === 'consultation'
           ? calculateCommissionAmount(Number(amountPeso || 0), serviceCommissionPercent)
           : selectedServiceCommission.value,
+        policyAcknowledged: bookingPolicyAcknowledged.value === true,
       },
       lineItems: buildBookingPayMongoLineItems({
         flowType,
@@ -3108,6 +3158,18 @@ const formatChatTime = (timestamp) => {
 .center-action-button {
   background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%);
   box-shadow: 0 14px 26px rgba(111, 63, 42, 0.14);
+}
+
+.center-secondary-button {
+  border: 1px solid #e0c09a;
+  background: #fff8ef;
+  color: #6f4a2d;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.center-secondary-button:hover {
+  border-color: #c99b70;
+  background: #fff2e1;
 }
 
 .center-cart-button {

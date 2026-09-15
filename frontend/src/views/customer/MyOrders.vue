@@ -43,7 +43,7 @@
                   <td colspan="7" class="orders-empty-cell">No orders found.</td>
                 </tr>
                 <tr v-for="order in filteredOrders" :key="order.id">
-                  <td class="orders-primary-cell">{{ order.id }}</td>
+                  <td class="orders-primary-cell">{{ getDisplayOrderId(order) }}</td>
                   <td>{{ order.items.length }}</td>
                   <td class="orders-total-cell">PHP {{ Number(order.total || 0).toFixed(2) }}</td>
                   <td>{{ order.paymentMethod || 'Cash' }}</td>
@@ -106,7 +106,7 @@
     <Modal :isOpen="showModal" @close="closeModal" :showConfirm="false" panelClass="bg-slate-900 border border-slate-700">
       <div v-if="selectedOrder" class="text-slate-200">
         <h2 class="text-xl font-semibold text-white mb-2">Order Details</h2>
-        <p class="text-sm text-slate-400 mb-4">Order ID: {{ selectedOrder.id }}</p>
+        <p class="text-sm text-slate-400 mb-4">Order ID: {{ getDisplayOrderId(selectedOrder) }}</p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
@@ -519,6 +519,15 @@ export default {
       if (!Number.isNaN(parsed.getTime())) return parsed.toLocaleString()
       return String(value)
     }
+
+    const createShortOrderReference = () => {
+      const buffer = new Uint32Array(1)
+      if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(buffer)
+      else buffer[0] = Date.now()
+      return `ORD-${String(buffer[0] % 10000000).padStart(7, '0')}`
+    }
+
+    const getDisplayOrderId = (order) => String(order?.orderNumber || order?.referenceNumber || order?.id || '').trim()
 
     const fetchFromBackend = async (path, options = {}) => {
       const baseUrl = String(OTP_API_BASE || '').trim()
@@ -957,6 +966,15 @@ export default {
               const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
               return bTime - aTime
             })
+          const legacyOrders = orders.value.filter((order) => !/^ORD-[A-Z0-9]{7}$/.test(String(order.orderNumber || '').trim()))
+          await Promise.all(legacyOrders.map(async (order) => {
+            const orderNumber = createShortOrderReference()
+            await updateDoc(doc(db, 'customerOrders', order.id), {
+              orderNumber,
+              updatedAt: serverTimestamp(),
+            })
+            order.orderNumber = orderNumber
+          }))
           const branchIds = Array.from(new Set(orders.value.flatMap((order) => [
             order.branchId,
             ...(Array.isArray(order.items) ? order.items.map((item) => item?.branchId) : []),
@@ -980,7 +998,7 @@ export default {
       const keyword = String(search.value || '').trim().toLowerCase()
       if (!keyword) return orders.value
       return orders.value.filter((order) => {
-        const text = [order.id, order.paymentMethod]
+        const text = [getDisplayOrderId(order), order.paymentMethod]
           .map((entry) => String(entry || '').toLowerCase())
           .join(' ')
         return text.includes(keyword)
@@ -1017,6 +1035,7 @@ export default {
       search,
       filteredOrders,
       formatDate,
+      getDisplayOrderId,
       openOrder,
       closeModal,
       showModal,

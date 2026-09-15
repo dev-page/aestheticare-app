@@ -722,7 +722,9 @@ export default {
           name: item.name.trim(),
           category: item.category || '',
           unit: item.unit || 'units',
-          unitCost: Number(item.unitCost || item.costPerUnit || item.costPrice || item.unitPrice || item.price || 0)
+          unitCost: Number(item.unitCost || item.costPerUnit || item.costPrice || item.unitPrice || item.price || 0),
+          fdaRegistrationNumber: item.fdaRegistrationNumber || '',
+          fdaApprovalDocument: item.fdaApprovalDocument || null
         }))
     }
 
@@ -1001,6 +1003,8 @@ export default {
           quantity,
           unit: selectedSupplierItem.value.unit || 'units',
           unitCost,
+          fdaRegistrationNumber: selectedSupplierItem.value.fdaRegistrationNumber || '',
+          fdaApprovalDocument: selectedSupplierItem.value.fdaApprovalDocument || null,
           totalCost,
           priority: newRequest.value.priority,
           notes: String(newRequest.value.notes || '').trim() || null,
@@ -1097,6 +1101,12 @@ export default {
         if (!existingItem.category && resolvedCategory) {
           updatePayload.category = resolvedCategory
         }
+        if (request.fdaRegistrationNumber && !existingItem.fdaRegistrationNumber) {
+          updatePayload.fdaRegistrationNumber = request.fdaRegistrationNumber
+        }
+        if (request.fdaApprovalDocument && !existingItem.fdaApprovalDocument) {
+          updatePayload.fdaApprovalDocument = request.fdaApprovalDocument
+        }
         await updateDoc(doc(db, 'inventoryItems', existingItem.id), updatePayload)
         return
       }
@@ -1114,6 +1124,8 @@ export default {
         unit: request.unit || 'units',
         costPrice: deliveredUnitCost > 0 ? deliveredUnitCost : 0,
         unitPrice: deliveredUnitCost > 0 ? deliveredUnitCost : 0,
+        fdaRegistrationNumber: request.fdaRegistrationNumber || '',
+        fdaApprovalDocument: request.fdaApprovalDocument || null,
         description: 'Auto-added from delivered purchase request',
         stockStatus: getStockStatus(quantityToAdd, initialMinStock),
         branchId: currentBranchId.value,

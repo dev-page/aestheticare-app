@@ -359,10 +359,11 @@ export default {
       services.value = snapshot.docs
         .map((snap) => {
           const data = snap.data() || {}
-          return {
+            return {
             id: snap.id,
             type: String(data.postType || '').trim().toLowerCase(),
             name: String(data.serviceName || data.title || '').trim(),
+            durationMinutes: Math.max(1, Number(data.durationMinutes || 60)),
           }
         })
         .filter((entry) => entry.type === 'service' && entry.name)
@@ -459,6 +460,23 @@ export default {
       })
     })
 
+    const isPractitionerAvailableAt = (practitionerId, date, time, durationMinutes = 60) => {
+      const weekKey = getWeekStartKey(date)
+      const dayName = getDayName(date)
+      const startMinutes = parseClockToMinutes(time)
+      if (!weekKey || !dayName || startMinutes === null) return false
+
+      const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitionerId] || {}, weekKey)
+      const shiftWindow = extractShiftWindowMinutes(String(assignments?.[dayName] || '').trim())
+      if (!shiftWindow) return false
+
+      let { start, end } = shiftWindow
+      if (end <= start) end += 24 * 60
+      let normalizedStart = startMinutes
+      if (end > 24 * 60 && normalizedStart < start) normalizedStart += 24 * 60
+      return normalizedStart >= start && normalizedStart + Math.max(1, Number(durationMinutes) || 60) <= end
+    }
+
     watch(
       availablePractitioners,
       (nextList) => {
@@ -533,6 +551,13 @@ export default {
         return
       }
 
+      const selectedService = services.value.find((item) => item.name === form.value.service)
+      const durationMinutes = Math.max(1, Number(selectedService?.durationMinutes || 60))
+      if (!isPractitionerAvailableAt(selectedPractitioner.id, form.value.date, form.value.time, durationMinutes)) {
+        toast.error('The selected time is outside this practitioner\'s assigned shift. Choose a suggested slot or another time.')
+        return
+      }
+
       isSubmitting.value = true
       try {
         // Build a reservation payload and send to the backend bookings.create endpoint.
@@ -548,6 +573,7 @@ export default {
           service: form.value.service.trim(),
           date: form.value.date,
           time: form.value.time,
+          durationMinutes,
           notes: form.value.notes.trim(),
           branchId: currentBranchId.value,
           createdBy: currentUserId.value,

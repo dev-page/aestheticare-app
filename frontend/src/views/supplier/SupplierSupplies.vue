@@ -142,6 +142,25 @@
                     <input v-model.number="item.price" type="number" min="0" step="0.01" class="item-input pl-14" placeholder="0.00" />
                   </div>
                 </div>
+
+                <div class="md:col-span-2 rounded-2xl border border-[#dfb98d] bg-[#fff8ef] p-4">
+                  <p class="item-label">FDA Documentation</p>
+                  <p class="mb-3 text-xs leading-5 text-[#7b5a43]">
+                    Add the FDA registration number and one supporting PDF or image when applicable. This information is shown with the product publicly.
+                  </p>
+                  <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label class="item-label">FDA Registration Number</label>
+                      <input v-model.trim="item.fdaRegistrationNumber" type="text" class="item-input" placeholder="Optional" />
+                    </div>
+                    <div>
+                      <label class="item-label">FDA Document</label>
+                      <input type="file" accept="image/*,.pdf" class="item-input" @change="handleFdaDocumentChange(index, $event)" />
+                      <p v-if="item.fdaApprovalFileName" class="mt-2 text-xs text-[#7b5a43]">Selected: {{ item.fdaApprovalFileName }}</p>
+                      <a v-else-if="item.fdaApprovalDocument?.url" :href="item.fdaApprovalDocument.url" target="_blank" rel="noopener" class="mt-2 inline-block text-xs font-semibold text-[#8d5a3b] hover:underline">View current document</a>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </article>
@@ -164,11 +183,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import { db } from '@/config/firebaseConfig'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 
 const auth = getAuth()
+const storage = getStorage()
 const loading = ref(true)
 const supplierDocId = ref('')
 const businessName = ref('')
@@ -190,6 +211,10 @@ const createEmptyItem = () => ({
   price: '',
   imageUrl: '',
   imageName: '',
+  fdaRegistrationNumber: '',
+  fdaApprovalDocument: null,
+  fdaApprovalFile: null,
+  fdaApprovalFileName: '',
 })
 
 const activeItemCount = computed(() => items.value.filter((item) => String(item.name || '').trim()).length)
@@ -217,6 +242,10 @@ const normalizeItemFromStore = (item = {}) => ({
   price: item.price ?? item.unitCost ?? '',
   imageUrl: item.imageUrl || item.photoUrl || item.pictureUrl || '',
   imageName: item.imageName || '',
+  fdaRegistrationNumber: item.fdaRegistrationNumber || '',
+  fdaApprovalDocument: item.fdaApprovalDocument || null,
+  fdaApprovalFile: null,
+  fdaApprovalFileName: '',
 })
 
 const resolveSupplierDocument = async (uid) => {
@@ -279,6 +308,24 @@ const handleItemImageChange = (index, event) => {
     items.value[index].imageName = file.name || ''
   }
   reader.readAsDataURL(file)
+}
+
+const handleFdaDocumentChange = (index, event) => {
+  const file = event?.target?.files?.[0]
+  if (!file) return
+  const isAllowed = file.type === 'application/pdf' || file.type.startsWith('image/')
+  if (!isAllowed) {
+    toast.error('FDA documentation must be a PDF or image file.')
+    event.target.value = ''
+    return
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    toast.error('FDA documentation must be 10 MB or smaller.')
+    event.target.value = ''
+    return
+  }
+  items.value[index].fdaApprovalFile = file
+  items.value[index].fdaApprovalFileName = file.name || ''
 }
 
 const validateItems = () => {
@@ -356,19 +403,55 @@ const saveSupplies = async () => {
         unitCost: Number(item.price || 0),
         imageUrl: String(item.imageUrl || '').trim(),
         imageName: String(item.imageName || '').trim(),
+        fdaRegistrationNumber: String(item.fdaRegistrationNumber || '').trim(),
+        fdaApprovalDocument: item.fdaApprovalDocument || null,
+        fdaApprovalFile: item.fdaApprovalFile || null,
       }
     })
     .filter(Boolean)
 
   try {
-    const categories = [...new Set(cleanedItems.map((item) => item.category).filter(Boolean))]
+    const savedItems = await Promise.all(cleanedItems.map(async (item) => {
+      let fdaApprovalDocument = item.fdaApprovalDocument || null
+      if (item.fdaApprovalFile) {
+        const extension = item.fdaApprovalFile.name.split('.').pop() || 'bin'
+        const path = `supplier-fda-documents/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`
+        const fileRef = storageRef(storage, path)
+        const snapshot = await uploadBytes(fileRef, item.fdaApprovalFile)
+        fdaApprovalDocument = {
+          name: item.fdaApprovalFile.name,
+          type: item.fdaApprovalFile.type || '',
+          size: item.fdaApprovalFile.size || 0,
+          path,
+          url: await getDownloadURL(snapshot.ref),
+        }
+      }
+      return {
+        name: item.name,
+        category: item.category,
+        categoryGroup: item.categoryGroup,
+        customCategory: item.customCategory,
+        description: item.description,
+        quantity: item.quantity,
+        measurementValue: item.measurementValue,
+        measurementUnit: item.measurementUnit,
+        specifications: item.specifications,
+        price: item.price,
+        unitCost: item.unitCost,
+        imageUrl: item.imageUrl,
+        imageName: item.imageName,
+        fdaRegistrationNumber: item.fdaRegistrationNumber,
+        fdaApprovalDocument,
+      }
+    }))
+    const categories = [...new Set(savedItems.map((item) => item.category).filter(Boolean))]
     await setDoc(doc(db, 'suppliers', supplierDocId.value || user.uid), {
       ownerId: user.uid,
       name: businessName.value || '',
       businessName: businessName.value || '',
       status: 'Active',
       approvalStatus: 'Approved',
-      offeredItems: cleanedItems,
+      offeredItems: savedItems,
       categories,
       updatedAt: serverTimestamp(),
     }, { merge: true })

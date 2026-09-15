@@ -373,6 +373,58 @@ const sendPostmarkMessage = async (message) => {
   }
 }
 
+const ACTIVATION_EXPIRY_MS = 24 * 60 * 60 * 1000
+const ACTIVATION_SEND_WINDOW_MS = 24 * 60 * 60 * 1000
+const ACTIVATION_MAX_SENDS = 5
+const activationTokenHash = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex')
+
+const createAccountActivation = async ({ firestore, uid, email, name = 'User', req, temporaryPassword = '' }) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  if (!uid || !EMAIL_ADDRESS_REGEX.test(normalizedEmail)) throw new Error('A valid account email is required.')
+  const token = crypto.randomBytes(32).toString('hex')
+  const tokenRef = firestore.collection('accountActivations').doc(activationTokenHash(token))
+  const userRef = firestore.collection('users').doc(uid)
+  const now = Date.now()
+  await firestore.runTransaction(async (transaction) => {
+    const userSnap = await transaction.get(userRef)
+    const userData = userSnap.exists ? userSnap.data() || {} : {}
+    const windowStartedAt = userData.activationSendWindowStartedAt?.toDate?.()?.getTime?.() || Date.parse(userData.activationSendWindowStartedAt || '') || 0
+    const previousCount = Number(userData.activationSendCount || 0)
+    const windowActive = windowStartedAt > 0 && now - windowStartedAt < ACTIVATION_SEND_WINDOW_MS
+    const sendCount = windowActive ? previousCount : 0
+    if (sendCount >= ACTIVATION_MAX_SENDS) {
+      const error = new Error('Activation email resend limit reached. Please try again after 24 hours.')
+      error.code = 'ACTIVATION_LIMIT'
+      error.retryAfterSeconds = Math.max(1, Math.ceil((windowStartedAt + ACTIVATION_SEND_WINDOW_MS - now) / 1000))
+      throw error
+    }
+    transaction.set(tokenRef, {
+      uid,
+      email: normalizedEmail,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromMillis(now + ACTIVATION_EXPIRY_MS),
+      used: false,
+    })
+    transaction.set(userRef, {
+      activationTokenHash: tokenRef.id,
+      activationLastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+      activationSendCount: sendCount + 1,
+      activationSendWindowStartedAt: windowActive
+        ? userData.activationSendWindowStartedAt
+        : admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true })
+  })
+  const activationUrl = `${resolveFrontendBaseUrl(req)}/activate-account?token=${encodeURIComponent(token)}`
+  const passwordLine = temporaryPassword ? `Temporary password: ${temporaryPassword}\n\n` : ''
+  const delivery = await sendPostmarkMessage({
+    to: normalizedEmail,
+    subject: 'Activate your AesthetiCare account',
+    text: `Hi ${String(name || 'User').trim() || 'User'},\n\nYour AesthetiCare account is ready. Activate it using this link:\n${activationUrl}\n\n${passwordLine}This activation link expires in 24 hours and can only be used once.`,
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(name || 'User').trim() || 'User'},</p><p>Your AesthetiCare account is ready.</p><p><a href="${activationUrl}" style="display:inline-block;padding:12px 18px;background:#8d5a3b;color:#fff;text-decoration:none;border-radius:6px;">Activate Account</a></p>${temporaryPassword ? `<p><strong>Temporary password:</strong> ${temporaryPassword}</p>` : ''}<p>This link expires in 24 hours and can only be used once.</p></div>`,
+  })
+  return { activationUrl, delivery }
+}
+
 // Vision must use the same explicit credentials as Firebase Admin. Creating a
 // Vision client without options makes google-auth-library search for ADC and
 // can crash the backend on startup when ADC is not configured locally.
@@ -1254,6 +1306,64 @@ const optionalAuth = async (req, res, next) => {
     })
   }
 }
+
+app.post('/auth/activate-account', async (req, res) => {
+  const token = String(req.body?.token || '').trim()
+  if (!token) return res.status(400).json({ success: false, error: 'Activation token is required.' })
+  try {
+    const firestore = admin.firestore()
+    const tokenRef = firestore.collection('accountActivations').doc(activationTokenHash(token))
+    const tokenSnap = await tokenRef.get()
+    if (!tokenSnap.exists) return res.status(400).json({ success: false, error: 'This activation link is invalid or expired.' })
+    const activation = tokenSnap.data() || {}
+    const expiresAt = activation.expiresAt?.toDate?.() || new Date(activation.expiresAt || 0)
+    if (activation.used === true || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+      return res.status(400).json({ success: false, error: 'This activation link is invalid or expired.' })
+    }
+    const userRef = firestore.collection('users').doc(String(activation.uid || '').trim())
+    const userSnap = await userRef.get()
+    if (!userSnap.exists) return res.status(404).json({ success: false, error: 'Account not found.' })
+    const userData = userSnap.data() || {}
+    if (String(userData.activationTokenHash || '') !== tokenRef.id) return res.status(400).json({ success: false, error: 'This activation link is invalid or expired.' })
+    const status = String(userData.status || '').trim().toLowerCase()
+    if (['inactive', 'disabled', 'closed', 'deactivated', 'rejected'].includes(status) || userData.archived === true) {
+      return res.status(409).json({ success: false, error: 'This account is no longer available.' })
+    }
+    await firestore.runTransaction(async (transaction) => {
+      const [freshToken, freshUser] = await Promise.all([transaction.get(tokenRef), transaction.get(userRef)])
+      if (!freshToken.exists || freshToken.data()?.used === true || freshUser.data()?.activationTokenHash !== tokenRef.id) throw new Error('Activation link already used.')
+      transaction.update(tokenRef, { used: true, usedAt: admin.firestore.FieldValue.serverTimestamp() })
+      transaction.set(userRef, { status: 'Active', accountActivated: true, accountActivatedAt: admin.firestore.FieldValue.serverTimestamp(), emailVerified: true }, { merge: true })
+    })
+    return res.json({ success: true, data: { uid: userRef.id } })
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error?.message || 'Unable to activate account.' })
+  }
+})
+
+app.post('/auth/resend-activation', async (req, res) => {
+  const normalizedEmail = String(req.body?.email || '').trim().toLowerCase()
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail)) return res.status(400).json({ success: false, error: 'A valid email address is required.' })
+  try {
+    const firestore = admin.firestore()
+    const snapshot = await firestore.collection('users').where('email', '==', normalizedEmail).limit(1).get()
+    if (snapshot.empty) return res.json({ success: true, data: { sent: false } })
+    const userSnap = snapshot.docs[0]
+    const userData = userSnap.data() || {}
+    const status = String(userData.status || '').trim().toLowerCase()
+    if (status !== 'pending activation') return res.json({ success: true, data: { sent: false } })
+    const lastSentAt = userData.activationLastSentAt?.toDate?.()?.getTime?.() || Date.parse(userData.activationLastSentAt || '') || 0
+    const retryAfterSeconds = Math.ceil((lastSentAt + 60 * 1000 - Date.now()) / 1000)
+    if (retryAfterSeconds > 0) return res.status(429).json({ success: false, error: `Please wait ${retryAfterSeconds} seconds before requesting another activation email.`, retryAfterSeconds })
+    await createAccountActivation({ firestore, uid: userSnap.id, email: normalizedEmail, name: userData.fullName || userData.firstName || 'User', req })
+    return res.json({ success: true, data: { sent: true } })
+  } catch (error) {
+    if (error?.code === 'ACTIVATION_LIMIT') {
+      return res.status(429).json({ success: false, error: error.message, retryAfterSeconds: error.retryAfterSeconds })
+    }
+    return res.status(500).json({ success: false, error: 'Unable to resend the activation email.' })
+  }
+})
 
 const requireRole = (roles = []) => async (req, res, next) => {
   const uid = req.user?.uid
@@ -3140,7 +3250,7 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
         subscriptionOnboardingRequired: true,
       }, { merge: true })
       await userRef.set({
-        status: 'Active',
+        status: 'Pending Activation',
         subscriptionOnboardingRequired: true,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true })
@@ -3154,6 +3264,7 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
           const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. You can now log in at ${loginUrl}.\n\nThank you for joining AesthetiCare.`
           const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>. You can now <a href="${loginUrl}">log in</a> to access your account.</p><p>Thank you for joining AesthetiCare.</p></div>`
           await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
+          await createAccountActivation({ firestore, uid, email: recipient, name: userData.fullName || userData.firstName || 'Clinic owner', req })
         } catch (emailErr) {
           console.warn('Failed to send clinic welcome email (auto-approve):', emailErr?.message || emailErr)
         }
@@ -3244,7 +3355,7 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
           subscriptionOnboardingRequired: true,
         }, { merge: true }),
         userRef.set({
-          status: 'Active',
+          status: 'Pending Activation',
           subscriptionOnboardingRequired: true,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true }),
@@ -3258,6 +3369,7 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
           const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. You can now log in at ${loginUrl}.\n\nThank you for joining AesthetiCare.`
           const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>. You can now <a href="${loginUrl}">log in</a> to access your account.</p><p>Thank you for joining AesthetiCare.</p></div>`
           await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
+          await createAccountActivation({ firestore, uid, email: recipient, name: userData.fullName || userData.firstName || 'Clinic owner', req })
         } catch (emailErr) {
           console.warn('Failed to send clinic welcome email (manual verify):', emailErr?.message || emailErr)
         }
@@ -3349,7 +3461,7 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
         subscriptionOnboardingRequired: true,
       }, { merge: true }),
       userRef.set({
-        status: 'Active',
+        status: 'Pending Activation',
         subscriptionOnboardingRequired: true,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true }),
@@ -3371,6 +3483,13 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
         const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. You can now log in at ${loginUrl}.\n\nThank you for joining AesthetiCare.`
         const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>. You can now <a href="${loginUrl}">log in</a> to access your account.</p><p>Thank you for joining AesthetiCare.</p></div>`
         await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
+        await createAccountActivation({
+          firestore,
+          uid,
+          email: recipient,
+          name: userData.fullName || userData.firstName || 'Clinic owner',
+          req,
+        })
       } catch (emailErr) {
         console.warn('Failed to send clinic welcome email (manual approve):', emailErr?.message || emailErr)
       }
@@ -4525,7 +4644,7 @@ app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
     await Promise.all([
       firestore.collection('users').doc(resolvedUid).set({
         role: 'Customer',
-        status: 'Active',
+        status: 'Pending Activation',
         emailVerified: true,
         emailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true }),
@@ -4563,6 +4682,18 @@ app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
       console.log('Sent welcome email to customer', { to: maskEmailAddress(normalizedEmail), statusCode: delivery.statusCode, messageId: delivery.messageId })
     } catch (emailErr) {
       console.error('Failed to send customer welcome email:', emailErr)
+    }
+
+    try {
+      await createAccountActivation({
+        firestore,
+        uid: resolvedUid,
+        email: normalizedEmail,
+        name: customerState.fullName || customerState.firstName || 'Customer',
+        req,
+      })
+    } catch (emailErr) {
+      console.error('Failed to send customer activation email:', emailErr)
     }
 
     return res.json({ success: true, data: { uid: resolvedUid } })
@@ -5308,7 +5439,7 @@ app.post(ATTENDANCE_PIN_PATH, requireAuth, requirePermission('staff:create'), as
 })
 
 app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), async (req, res) => {
-  const { recipient, fullName, defaultPassword } = req.body ?? {}
+  const { recipient, fullName, defaultPassword, uid } = req.body ?? {}
 
   const normalizedRecipient = String(recipient || '').trim().toLowerCase()
   const safeName = String(fullName || 'Staff').trim() || 'Staff'
@@ -5333,6 +5464,17 @@ app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), asy
   }
 
   try {
+    if (!uid) return res.status(400).json({ success: false, error: 'uid is required' })
+    const activation = await createAccountActivation({
+      firestore: admin.firestore(),
+      uid: String(uid).trim(),
+      email: normalizedRecipient,
+      name: safeName,
+      req,
+      temporaryPassword: safePassword,
+    })
+    return res.json({ success: true, ...activation.delivery })
+
     const loginUrl = `${resolveFrontendBaseUrl(req)}/login`
     const message = {
       to: normalizedRecipient,
@@ -6757,6 +6899,20 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
       })
     }
     if (isCustomerOrderCheckout || isCustomerBookingCheckout) {
+      if (isCustomerBookingCheckout && req.body?.paymentAgreementAcknowledged !== true) {
+        return res.status(422).json({
+          success: false,
+          code: 'PAYMENT_AGREEMENT_REQUIRED',
+          error: 'Please review and accept the clinic agreement before payment.',
+        })
+      }
+      if (isCustomerOrderCheckout && req.body?.policyAcknowledged !== true) {
+        return res.status(422).json({
+          success: false,
+          code: 'ORDER_POLICY_ACKNOWLEDGEMENT_REQUIRED',
+          error: 'Please review and accept the clinic policies before payment.',
+        })
+      }
       const metadataCustomerId = String(metadata?.customerId || '').trim()
       if (!metadataCustomerId || metadataCustomerId !== req.user.uid) {
         return res.status(403).json({
@@ -7027,6 +7183,13 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
   const appointmentId = String(req.params.id || '').trim()
   const checkoutSessionId = String(req.body?.checkoutSessionId || '').trim()
   if (!appointmentId || !checkoutSessionId) return res.status(400).json({ success: false, error: 'appointment id and checkoutSessionId are required' })
+  if (req.body?.paymentAgreementAcknowledged !== true) {
+    return res.status(422).json({
+      success: false,
+      code: 'PAYMENT_AGREEMENT_REQUIRED',
+      error: 'Please review and accept the clinic agreement before payment.',
+    })
+  }
 
   try {
     const firestore = admin.firestore()
@@ -7094,6 +7257,8 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
       paymongoPaymentId: paymentId,
       paymongoStatus: attributes.status || 'paid',
       paymongoPaidAt: attributes.paid_at || admin.firestore.FieldValue.serverTimestamp(),
+      paymentAgreementAcknowledged: true,
+      paymentAgreementAcknowledgedAt: admin.firestore.FieldValue.serverTimestamp(),
       serviceKey,
       serviceKeyStatus: serviceKey ? 'pending_exchange' : null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),

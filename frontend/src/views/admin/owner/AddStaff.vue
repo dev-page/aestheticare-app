@@ -404,7 +404,7 @@ export default {
       practitionerIdFile.value = file
     }
 
-    const sendStaffWelcomeEmail = async ({ email, fullName, defaultPassword }) => {
+    const sendStaffWelcomeEmail = async ({ email, fullName, defaultPassword, uid }) => {
       const user = auth.currentUser
       if (!user) {
         throw new Error('User not authenticated.')
@@ -421,6 +421,7 @@ export default {
           recipient: email,
           fullName,
           defaultPassword,
+          uid,
         }),
       })
 
@@ -513,7 +514,7 @@ export default {
             userType: 'Staff',
             branchId: currentStaff.value.clinicBranch,   // ✅ store branchId reference
             clinicLocation: currentStaff.value.clinicLocation,
-            status: 'Active',
+            status: 'Pending Activation',
             practitionerLicenseUrl: practitionerLicenseUrl || null,
             practitionerLicenseName: practitionerLicenseName || null,
             practitionerLicenseUploadedBy: practitionerLicenseUrl ? (auth.currentUser?.uid || null) : null,
@@ -526,6 +527,7 @@ export default {
               email: currentStaff.value.email,
               fullName: fullName,
               defaultPassword: temporaryPassword,
+              uid,
             })
           } catch (emailError) {
             console.error('Failed to send staff welcome email:', emailError)

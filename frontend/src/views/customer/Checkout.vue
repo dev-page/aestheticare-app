@@ -157,10 +157,30 @@
         <p class="mt-4 text-xs text-[#8b6a4d]">Payment is processed in full through PayMongo before the order is created.</p>
       </div>
 
+      <div class="checkout-panel mb-8">
+        <div class="checkout-panel-head">
+          <div>
+            <p class="checkout-panel-kicker">Agreement</p>
+            <h2 class="checkout-panel-title">Review before payment</h2>
+          </div>
+          <Icon icon="mdi:file-document-check-outline" class="h-5 w-5 text-[#8b6a4d]" />
+        </div>
+        <div class="mt-5 max-h-56 overflow-y-auto rounded-2xl border border-[#ead4b7] bg-[#fffaf3] p-4 text-sm leading-6 text-[#6f4a2d]">
+          <p v-if="checkoutPolicyEntries.length" v-for="policy in checkoutPolicyEntries" :key="policy.key" class="mb-3 last:mb-0">
+            <strong>{{ policy.label }}:</strong> {{ policy.text }}
+          </p>
+          <p v-else>No additional clinic policies have been enabled. I understand that this order is for pickup and is subject to the clinic's order and payment terms.</p>
+        </div>
+        <label class="mt-4 flex items-start gap-2 text-sm leading-6 text-[#6f4a2d]">
+          <input v-model="checkoutPolicyAcknowledged" type="checkbox" class="mt-1 h-4 w-4 accent-[#8d5a3b]" />
+          <span>I have read and agree to the applicable clinic policies and order terms.</span>
+        </label>
+      </div>
+
       <div class="flex justify-end">
         <button
           type="button"
-          :disabled="saving"
+          :disabled="saving || !checkoutPolicyAcknowledged"
           @click="startPayMongoCheckout"
           class="checkout-submit inline-flex items-center gap-2 rounded-2xl px-6 py-3 font-semibold text-white disabled:opacity-60"
         >
@@ -193,6 +213,8 @@ const selectedItems = ref([])
 const paymentMethod = ref('GCash')
 const saving = ref(false)
 const selectedPickupBranchId = ref('')
+const checkoutPoliciesByBranch = ref({})
+const checkoutPolicyAcknowledged = ref(false)
 
 const PENDING_PAYMONGO_KEY = 'customer_checkout_pending_paymongo'
 
@@ -215,6 +237,43 @@ const pickupBranches = computed(() => {
   })
   return Array.from(branches.values())
 })
+
+const checkoutPolicyEntries = computed(() => pickupBranches.value.flatMap((branch) => {
+  const policyData = checkoutPoliciesByBranch.value[branch.id] || {}
+  const definitions = [
+    ['cancellationPolicy', 'Cancellation policy'],
+    ['reschedulePolicy', 'Reschedule policy'],
+    ['refundPolicy', 'Refund policy'],
+    ['consultationPolicy', 'Consultation policy'],
+    ['serviceTerms', 'Service terms'],
+    ['paymentPolicy', 'Payment and installment policy'],
+  ]
+  return definitions
+    .filter(([key]) => policyData[`${key}Enabled`] === true && String(policyData[key] || '').trim())
+    .map(([key, label]) => ({
+      key: `${branch.id}-${key}`,
+      label: `${branch.name}: ${label}`,
+      text: String(policyData[key]).trim(),
+    }))
+}))
+
+const loadCheckoutPolicies = async () => {
+  const entries = await Promise.all(pickupBranches.value.map(async (branch) => {
+    const policySnap = await getDoc(doc(db, 'clinicPolicies', branch.id))
+    return [branch.id, policySnap.exists() ? policySnap.data() || {} : {}]
+  }))
+  checkoutPoliciesByBranch.value = Object.fromEntries(entries)
+}
+
+watch(pickupBranches, async () => {
+  checkoutPolicyAcknowledged.value = false
+  try {
+    await loadCheckoutPolicies()
+  } catch (error) {
+    console.error('Failed to load clinic policies for checkout:', error)
+    checkoutPoliciesByBranch.value = {}
+  }
+}, { immediate: true })
 
 const checkoutLocationMapEl = ref(null)
 const hasDeliveryLocationCoords = computed(() => {
@@ -441,7 +500,13 @@ const createPayMongoCheckoutSession = async () => {
   }
 
   const paymentMethodType = paymentMethod.value === 'Card' ? 'card' : 'gcash'
-  const referenceNumber = `ORD-${Date.now()}`
+  const createShortOrderReference = () => {
+    const buffer = new Uint32Array(1)
+    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(buffer)
+    else buffer[0] = Date.now()
+    return `ORD-${String(buffer[0] % 10000000).padStart(7, '0')}`
+  }
+  const referenceNumber = createShortOrderReference()
   const successUrl = `${window.location.origin}/customer/checkout?paymongo_status=success`
   const cancelUrl = `${window.location.origin}/customer/checkout?paymongo_status=cancelled`
 
@@ -450,6 +515,7 @@ const createPayMongoCheckoutSession = async () => {
     headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       amount: toCentavos(subtotal.value),
+      policyAcknowledged: checkoutPolicyAcknowledged.value === true,
       paymentMethodType,
       description: 'Customer Order Full Payment',
       referenceNumber,
@@ -505,6 +571,10 @@ const startPayMongoCheckout = async () => {
     toast.error('Mobile phone number is required for GCash payments.')
     return
   }
+  if (!checkoutPolicyAcknowledged.value) {
+    toast.error('Please review and accept the clinic policies before payment.')
+    return
+  }
 
   saving.value = true
   try {
@@ -524,6 +594,8 @@ const startPayMongoCheckout = async () => {
       total: subtotal.value,
       paymentMethod: paymentMethod.value,
       paymentCoverage: 'full',
+      policyAcknowledged: true,
+      clinicPolicySnapshot: Object.fromEntries(checkoutPolicyEntries.value.map((policy) => [policy.key, { label: policy.label, text: policy.text }])),
       commissionPercent: productCommissionPercent,
       commissionAmount: commissionAmount.value,
       referenceNumber,
@@ -572,6 +644,10 @@ const finalizeSuccessfulOrder = async (pending, payload) => {
     fulfillmentType: 'pickup',
     pickupBranchId: pending.delivery?.pickupBranchId || '',
     pickupBranchName: pending.delivery?.pickupBranchName || '',
+    policyAcknowledged: pending.policyAcknowledged === true,
+    policyAcknowledgedAt: serverTimestamp(),
+    clinicPolicySnapshot: pending.clinicPolicySnapshot || {},
+    orderNumber: pending.orderNumber || pending.referenceNumber || '',
     referenceNumber: pending.referenceNumber || '',
     source: 'paymongo_checkout',
     paymongoCheckoutSessionId: pending.checkoutSessionId,

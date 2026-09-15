@@ -92,18 +92,7 @@
 
         <div v-if="form.postType === 'Product'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
           <p class="mb-3 font-medium text-amber-200">FDA product documentation</p>
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label class="block text-slate-400 mb-1">FDA Registration Number (if applicable)</label>
-              <input v-model.trim="form.fdaRegistrationNumber" type="text" placeholder="e.g. FDA-REG-2026-543210" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
-            </div>
-            <div>
-              <label class="block text-slate-400 mb-1">FDA approval/registration document (optional)</label>
-              <input type="file" accept="image/*,.pdf" @change="handleFdaDocumentUpload" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-blue-600 file:text-white" />
-              <p v-if="fdaApprovalFileName" class="mt-1 text-xs text-slate-400">Selected: {{ fdaApprovalFileName }}</p>
-            </div>
-          </div>
-          <p class="mt-2 text-xs text-slate-400">Use this for regulated products. Clinic-level FDA documentation is no longer part of registration.</p>
+          <p class="text-xs leading-5 text-slate-400">FDA details are supplied by the selected supplier and are copied from inventory when this product is published. Update them from the supplier catalog, not here.</p>
         </div>
 
         <div v-if="form.postType === 'Service' || form.postType === 'Consultation'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -187,6 +176,14 @@
               <option value="online">Online consultation</option>
             </select>
             <p class="mt-1 text-xs text-slate-400">Choose one mode for this consultation. Packages inherit the mode of their included consultation.</p>
+          </div>
+          <div v-if="form.postType === 'Service' && form.requiresConsultationFirst" class="md:col-span-2">
+            <label class="block text-slate-400 mb-1">Required Consultation Mode</label>
+            <select v-model="form.consultationMode" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600">
+              <option value="on-site">On-site consultation</option>
+              <option value="online">Online consultation</option>
+            </select>
+            <p class="mt-1 text-xs text-slate-400">The automatically created package will use this consultation mode.</p>
           </div>
           <div v-if="form.postType === 'Service'" class="md:col-span-2">
             <label class="block text-slate-400 mb-1">Required Supplies</label>
@@ -487,17 +484,7 @@
 
             <div v-if="editForm.postType === 'Product'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
               <p class="mb-3 font-medium text-amber-200">FDA product documentation</p>
-              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label class="block text-slate-400 mb-1">FDA Registration Number (if applicable)</label>
-                  <input v-model.trim="editForm.fdaRegistrationNumber" type="text" placeholder="e.g. FDA-REG-2026-543210" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
-                </div>
-                <div>
-                  <label class="block text-slate-400 mb-1">Replace FDA document (optional)</label>
-                  <input type="file" accept="image/*,.pdf" @change="handleEditFdaDocumentUpload" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-blue-600 file:text-white" />
-                  <p v-if="editFdaApprovalFileName" class="mt-1 text-xs text-slate-400">Selected: {{ editFdaApprovalFileName }}</p>
-                </div>
-              </div>
+              <p class="text-xs leading-5 text-slate-400">FDA details come from the supplier inventory record and cannot be replaced by the clinic.</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -941,22 +928,7 @@ export default {
         await uploadBytes(imageRef, imageFile.value)
         const imageUrl = await getDownloadURL(imageRef)
 
-        let fdaApprovalDocument = null
-        if (postType === 'Product' && fdaApprovalFile.value) {
-          const fdaExt = fdaApprovalFile.value.name.split('.').pop() || 'pdf'
-          const fdaPath = `product-fda-documents/${currentBranchId.value}/${Date.now()}.${fdaExt}`
-          const fdaRef = storageRef(storage, fdaPath)
-          const fdaSnapshot = await uploadBytes(fdaRef, fdaApprovalFile.value)
-          fdaApprovalDocument = {
-            name: fdaApprovalFile.value.name,
-            type: fdaApprovalFile.value.type || '',
-            size: fdaApprovalFile.value.size || 0,
-            path: fdaPath,
-            url: await getDownloadURL(fdaSnapshot.ref),
-          }
-        }
-
-        await addDoc(collection(db, 'productServicePosts'), {
+        const postPayload = {
           postType,
           productName: postType === 'Product' ? selectedName.trim() : '',
           serviceName: postType === 'Service' ? selectedName.trim() : '',
@@ -992,8 +964,8 @@ export default {
             : Math.max(1, Number(form.value.durationMinutes || 60)),
           productVolume: postType === 'Product' ? String(form.value.productVolume || '').trim() : '',
           productUnit: postType === 'Product' ? String(form.value.productUnit || '').trim() : '',
-          fdaRegistrationNumber: postType === 'Product' ? String(form.value.fdaRegistrationNumber || '').trim().toUpperCase() : '',
-          fdaApprovalDocument: postType === 'Product' ? fdaApprovalDocument : null,
+          fdaRegistrationNumber: postType === 'Product' ? String(selectedProduct?.fdaRegistrationNumber || '').trim() : '',
+          fdaApprovalDocument: postType === 'Product' ? (selectedProduct?.fdaApprovalDocument || null) : null,
           termsAndConditions: String(form.value.termsAndConditions || '').trim(),
           requiredSupplyIds: postType === 'Service' ? [...(form.value.requiredSupplyIds || [])] : postType === 'Package'
             ? [...new Set((form.value.packageServiceIds || []).flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
@@ -1001,8 +973,69 @@ export default {
           imageUrl,
           branchId: currentBranchId.value,
           createdBy: currentUserId.value,
-          createdAt: serverTimestamp()
-        })
+          createdAt: serverTimestamp(),
+        }
+
+        if (postType === 'Service' && form.value.requiresConsultationFirst) {
+          const consultationRef = await addDoc(collection(db, 'productServicePosts'), {
+            ...postPayload,
+            postType: 'Consultation',
+            productName: '',
+            serviceName: '',
+            consultationName: `${selectedName.trim()} Consultation`,
+            packageName: '',
+            packageServiceIds: [],
+            title: `${form.value.title.trim()} Consultation`,
+            description: `Consultation required before ${selectedName.trim()}.`,
+            price: Number(form.value.consultationFee || 0),
+            consultationMode: normalizeConsultationMode(form.value.consultationMode),
+            requiresConsultationFirst: false,
+            consultationFee: Number(form.value.consultationFee || 0),
+            followUpAllowed: false,
+            followUpWindowDays: null,
+            durationMinutes: 30,
+            requiredSupplyIds: [],
+            isPackageComponent: true,
+            packageComponentType: 'Consultation',
+          })
+          const serviceRef = await addDoc(collection(db, 'productServicePosts'), {
+            ...postPayload,
+            postType: 'Service',
+            productName: '',
+            serviceName: selectedName.trim(),
+            consultationName: '',
+            packageName: '',
+            packageServiceIds: [],
+            requiresConsultationFirst: false,
+            consultationFee: null,
+            isPackageComponent: true,
+            packageComponentType: 'Service',
+          })
+          const packageRef = await addDoc(collection(db, 'productServicePosts'), {
+            ...postPayload,
+            postType: 'Package',
+            productName: '',
+            serviceName: '',
+            consultationName: '',
+            packageName: form.value.title.trim(),
+            packageServiceIds: [consultationRef.id, serviceRef.id],
+            title: form.value.title.trim(),
+            price: Number(form.value.price || 0) + Number(form.value.consultationFee || 0),
+            consultationMode: normalizeConsultationMode(form.value.consultationMode),
+            requiresConsultationFirst: false,
+            consultationFee: null,
+            durationMinutes: Math.max(1, Number(form.value.durationMinutes || 60) + 30),
+            requiredSupplyIds: [...(form.value.requiredSupplyIds || [])],
+            isPackageComponent: false,
+            autoGeneratedFromService: true,
+          })
+          await Promise.all([
+            updateDoc(consultationRef, { parentPackageId: packageRef.id, updatedAt: serverTimestamp() }),
+            updateDoc(serviceRef, { parentPackageId: packageRef.id, updatedAt: serverTimestamp() }),
+          ])
+        } else {
+          await addDoc(collection(db, 'productServicePosts'), postPayload)
+        }
         await logActivity(db, {
           module: 'Manager',
           action: 'Created product/service post',
@@ -1128,21 +1161,6 @@ export default {
           nextImageUrl = await getDownloadURL(imageRef)
         }
 
-        let nextFdaApprovalDocument = currentPost?.fdaApprovalDocument || null
-        if (editForm.value.postType === 'Product' && editFdaApprovalFile.value) {
-          const fdaExt = editFdaApprovalFile.value.name.split('.').pop() || 'pdf'
-          const fdaPath = `product-fda-documents/${currentBranchId.value}/${Date.now()}.${fdaExt}`
-          const fdaRef = storageRef(storage, fdaPath)
-          const fdaSnapshot = await uploadBytes(fdaRef, editFdaApprovalFile.value)
-          nextFdaApprovalDocument = {
-            name: editFdaApprovalFile.value.name,
-            type: editFdaApprovalFile.value.type || '',
-            size: editFdaApprovalFile.value.size || 0,
-            path: fdaPath,
-            url: await getDownloadURL(fdaSnapshot.ref),
-          }
-        }
-
         const selectedProduct = inventoryProducts.value.find((item) => item.name === editForm.value.name) || null
         const payload = {
           title: editForm.value.title.trim(),
@@ -1181,8 +1199,12 @@ export default {
               : Math.max(1, Number(editForm.value.durationMinutes || (editForm.value.postType === 'Consultation' ? 30 : 60))),
           productVolume: editForm.value.postType === 'Product' ? String(editForm.value.productVolume || '').trim() : '',
           productUnit: editForm.value.postType === 'Product' ? String(editForm.value.productUnit || '').trim() : '',
-          fdaRegistrationNumber: editForm.value.postType === 'Product' ? String(editForm.value.fdaRegistrationNumber || '').trim().toUpperCase() : '',
-          fdaApprovalDocument: editForm.value.postType === 'Product' ? nextFdaApprovalDocument : null,
+          fdaRegistrationNumber: editForm.value.postType === 'Product'
+            ? String(selectedProduct?.fdaRegistrationNumber || currentPost?.fdaRegistrationNumber || '').trim()
+            : '',
+          fdaApprovalDocument: editForm.value.postType === 'Product'
+            ? (selectedProduct?.fdaApprovalDocument || currentPost?.fdaApprovalDocument || null)
+            : null,
           termsAndConditions: String(editForm.value.termsAndConditions || '').trim(),
           requiredSupplyIds: editForm.value.postType === 'Service' ? [...(editForm.value.requiredSupplyIds || [])] : editForm.value.postType === 'Package'
             ? [...new Set(editForm.value.packageServiceIds.flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]

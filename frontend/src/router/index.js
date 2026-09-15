@@ -14,6 +14,7 @@ const routes = [
     ? [{ path: "/", redirect: "/login" }]
     : [{ path: "/", name: "home", component: () => import("@/views/public/Home.vue") }]),
   { path: "/login", name: "login", component: () => import("@/views/public/Login.vue"), meta: { guestOnly: true } },
+  { path: "/activate-account", name: "activate-account", component: () => import("@/views/public/ActivateAccount.vue") },
   { path: "/register", name: "register", component: () => import("@/views/public/Register.vue") },
   { path: "/forgot-password", name: "forgot-password", component: () => import("@/views/public/ForgotPassword.vue") },
   { path: "/clinic/register", name: "register-clinic", component: () => import("@/views/public/Register.vue") },

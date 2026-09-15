@@ -18,7 +18,7 @@
           </div>
 
           <div v-if="loading" class="state-panel">
-            <PageSectionSkeleton variant="table" :rows="4" :columns="6" />
+            <PageSectionSkeleton variant="table" :rows="4" :columns="7" />
           </div>
 
           <div v-else class="appointments-table-wrap">
@@ -31,6 +31,7 @@
                   <th>Time</th>
                   <th>Meeting Link</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -70,9 +71,23 @@
                   <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
                   </td>
+                  <td data-label="Actions">
+                    <div class="table-actions">
+                      <button
+                        v-if="canRequestCancellation(appt)"
+                        type="button"
+                        class="appointment-button appointment-button-danger"
+                        :disabled="isRequestPending(appt, 'cancel')"
+                        @click="openRequestModal('cancel', appt)"
+                      >
+                        {{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}
+                      </button>
+                      <span v-else class="table-secondary">No actions available</span>
+                    </div>
+                  </td>
                 </tr>
                 <tr v-if="!upcomingOnlineConsultations.length">
-                  <td colspan="6" class="table-empty-cell" data-label="">No online consultations yet.</td>
+                  <td colspan="7" class="table-empty-cell" data-label="">No online consultations yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -119,6 +134,27 @@
                   </td>
                   <td data-label="Actions">
                     <div class="table-actions">
+                      <div v-if="canPayAppointment(appt)" class="payment-agreement">
+                        <details class="payment-agreement-details" @toggle="markPaymentAgreementViewed(appt.id, $event)">
+                          <summary>Review clinic agreement before payment</summary>
+                          <div v-if="getAppointmentPolicyEntries(appt).length" class="payment-agreement-copy">
+                            <p v-for="policy in getAppointmentPolicyEntries(appt)" :key="policy.key">
+                              <strong>{{ policy.label }}:</strong> {{ policy.text }}
+                            </p>
+                          </div>
+                          <p v-else class="payment-agreement-copy">
+                            I understand that payment is for the selected clinic service and is subject to the clinic's booking, cancellation, rescheduling, and refund terms.
+                          </p>
+                        </details>
+                        <label class="payment-agreement-check">
+                          <input
+                            v-model="paymentAgreementAcknowledged[appt.id]"
+                            type="checkbox"
+                            :disabled="!paymentAgreementViewed[appt.id]"
+                          />
+                          <span>I have read and agree to the clinic agreement.</span>
+                        </label>
+                      </div>
                       <button
                         v-if="canPayAppointment(appt)"
                         @click="payAppointment(appt)"
@@ -429,7 +465,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
@@ -451,6 +487,8 @@ const onlineConsultations = ref([])
 const clinicsById = ref({})
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
+const paymentAgreementAcknowledged = reactive({})
+const paymentAgreementViewed = reactive({})
 const requestModal = ref({
   open: false,
   type: 'cancel',
@@ -1150,6 +1188,13 @@ const isRequestPending = (appt, kind) => {
   return status === 'cancelled' || status === 'completed'
 }
 
+const canRequestCancellation = (appointment) => {
+  const status = normalizeAppointmentStatus(appointment?.status)
+  return Boolean(appointment?.id)
+    && !['cancelled', 'completed'].includes(status)
+    && toDateTime(appointment?.date, appointment?.time) >= new Date()
+}
+
 const openRequestModal = async (type, appt) => {
   requestModal.value = {
     open: true,
@@ -1361,6 +1406,22 @@ const canPayAppointment = (appointment) => {
   return status === 'awaiting payment' || status === 'payment pending' || status === 'approved' || status === 'balance due'
 }
 
+const getAppointmentPolicyEntries = (appointment) => {
+  const snapshot = appointment?.clinicPolicySnapshot
+  if (!snapshot || typeof snapshot !== 'object') return []
+  return Object.entries(snapshot)
+    .filter(([, policy]) => policy && String(policy.text || '').trim())
+    .map(([key, policy]) => ({
+      key,
+      label: String(policy.label || key),
+      text: String(policy.text || '').trim(),
+    }))
+}
+
+const markPaymentAgreementViewed = (appointmentId, event) => {
+  if (event?.target?.open) paymentAgreementViewed[appointmentId] = true
+}
+
 const createShortAppointmentReference = () => {
   const buffer = new Uint32Array(1)
   if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(buffer)
@@ -1443,6 +1504,11 @@ const payAppointment = async (appointment) => {
   const user = auth.currentUser
   if (!user || !appointment?.id) return
 
+  if (!paymentAgreementViewed[appointment.id] || !paymentAgreementAcknowledged[appointment.id]) {
+    toast.error('Please review and accept the clinic agreement before payment.')
+    return
+  }
+
   const totalAmount = Number(appointment.totalAmount || appointment.amount || 0)
   const amountPaid = Number(appointment.amountPaid || 0)
   const remainingAmount = Math.max(0, totalAmount - amountPaid)
@@ -1474,7 +1540,9 @@ const payAppointment = async (appointment) => {
           appointmentDate: appointment.date || '',
           appointmentTime: appointment.time || '',
           totalServiceDurationMinutes: appointment.totalServiceDurationMinutes || 60,
+          paymentAgreementAcknowledged: true,
         },
+        paymentAgreementAcknowledged: true,
       }),
     })
     const payload = await response.json().catch(() => null)
@@ -1502,7 +1570,7 @@ const handlePaymentReturn = async (user) => {
     const response = await fetch(`${OTP_API_BASE}/appointments/${pending.appointmentId}/record-payment`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ checkoutSessionId: pending.checkoutSessionId }),
+      body: JSON.stringify({ checkoutSessionId: pending.checkoutSessionId, paymentAgreementAcknowledged: true }),
     })
     const payload = await response.json().catch(() => null)
     if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Payment verification failed.')
@@ -1711,6 +1779,50 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
+}
+
+.payment-agreement {
+  flex: 1 1 100%;
+  min-width: min(22rem, 100%);
+  padding: 0.8rem;
+  border: 1px solid rgba(126, 78, 53, 0.22);
+  border-radius: 0.85rem;
+  background: rgba(255, 248, 238, 0.72);
+}
+
+.payment-agreement-details summary {
+  cursor: pointer;
+  color: #7c4f34;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.payment-agreement-copy {
+  margin-top: 0.65rem;
+  max-height: 9rem;
+  overflow-y: auto;
+  color: rgba(76, 54, 40, 0.82);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.payment-agreement-copy p + p {
+  margin-top: 0.45rem;
+}
+
+.payment-agreement-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  color: #4d301f;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.payment-agreement-check input {
+  accent-color: #8d5a3b;
+  margin-top: 0.15rem;
 }
 
 .table-empty-cell {

@@ -76,6 +76,20 @@ const firebaseLoginMessages = {
   'auth/network-request-failed': 'Connection error. Please check your internet and try again.'
 }
 
+const resendActivationEmail = async () => {
+  const normalizedEmail = email.value.trim().toLowerCase()
+  if (!EMAIL_REGEX.test(normalizedEmail)) {
+    toast.error('Enter the email address for your account first.')
+    return
+  }
+  try {
+    const response = await axios.post(`${OTP_API_BASE}/auth/resend-activation`, { email: normalizedEmail })
+    toast.success(response.data?.data?.sent ? 'A new activation email was sent.' : 'If the account needs activation, an email will be sent shortly.')
+  } catch (error) {
+    toast.error(error?.response?.data?.error || 'Unable to resend the activation email.')
+  }
+}
+
 const startLoginOtpCooldown = (seconds = 60) => {
   if (loginOtpInterval) clearInterval(loginOtpInterval)
   loginOtpResendCountdown.value = Math.max(Number(seconds) || 60, 1)
@@ -195,6 +209,13 @@ const handleLogin = async () => {
         if (accountClosed) {
           await signOut(auth)
           toast.error('This account has been closed. Please contact the system administrator.')
+          setProcessLoading(false)
+          return
+        }
+
+        if (accountStatus === 'pending activation') {
+          await signOut(auth)
+          toast.info('Please activate your account using the link sent to your email.')
           setProcessLoading(false)
           return
         }
@@ -487,6 +508,9 @@ onBeforeRouteLeave((to, from, next) => {
               </label>
               <a href="#" @click.prevent="handleForgotPassword" class="text-gold-700 hover:underline text-xs">Forgot password?</a>
             </div>
+            <button type="button" class="text-left text-xs text-gold-700 hover:underline" @click="resendActivationEmail">
+              Resend activation email
+            </button>
 
             <div class="relative my-4">
               <div class="absolute inset-0 flex items-center">
