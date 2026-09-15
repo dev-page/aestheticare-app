@@ -21,7 +21,6 @@
           <p class="text-slate-300 text-sm mt-2">{{ activity.details || 'No details provided.' }}</p>
           <p class="text-slate-500 text-xs mt-3">
             {{ activity.actorName || 'Unknown user' }} - {{ formatActorRole(activity) }}
-            <span class="ml-1 text-slate-600">({{ activity.module || 'General' }})</span>
           </p>
         </div>
 

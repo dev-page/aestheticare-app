@@ -21,7 +21,6 @@
           <p class="text-slate-300 text-sm mt-2">{{ activity.details || 'No details provided.' }}</p>
           <p class="text-slate-500 text-xs mt-3">
             {{ activity.actorName || 'Unknown user' }} - {{ formatActorRole(activity) }}
-            <span class="ml-1 text-slate-600">({{ activity.module || 'General' }})</span>
           </p>
         </div>
         <div v-if="activities.length === 0" class="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center text-slate-400">
