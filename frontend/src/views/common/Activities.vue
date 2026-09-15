@@ -20,7 +20,8 @@
           </div>
           <p class="text-slate-300 text-sm mt-2">{{ activity.details || 'No details provided.' }}</p>
           <p class="text-slate-500 text-xs mt-3">
-            {{ activity.actorName || 'Unknown user' }} - {{ activity.module || 'Clinic' }}
+            {{ activity.actorName || 'Unknown user' }} - {{ formatActorRole(activity) }}
+            <span class="ml-1 text-slate-600">({{ activity.module || 'General' }})</span>
           </p>
         </div>
 
@@ -99,6 +100,13 @@ export default {
       return timestamp.toDate().toLocaleString()
     }
 
+    const formatActorRole = (activity) => {
+      const value = String(activity?.actorRole || '').trim().toLowerCase()
+      if (['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(value)) return 'Clinic Admin'
+      if (['superadmin', 'system admin', 'systemadmin'].includes(value)) return 'System Admin'
+      return String(activity?.actorRole || activity?.actorUserType || 'Unknown role').trim()
+    }
+
     const loadActivities = async () => {
       activities.value = []
       try {
@@ -174,6 +182,7 @@ export default {
     return {
       filteredActivities,
       formatDate,
+      formatActorRole,
       sidebarComponent
     }
   }

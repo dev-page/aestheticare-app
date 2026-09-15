@@ -20,7 +20,8 @@
           </div>
           <p class="text-slate-300 text-sm mt-2">{{ activity.details || 'No details provided.' }}</p>
           <p class="text-slate-500 text-xs mt-3">
-            {{ activity.actorName || 'Unknown user' }} - {{ activity.module || 'General' }}
+            {{ activity.actorName || 'Unknown user' }} - {{ formatActorRole(activity) }}
+            <span class="ml-1 text-slate-600">({{ activity.module || 'General' }})</span>
           </p>
         </div>
         <div v-if="activities.length === 0" class="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center text-slate-400">
@@ -54,6 +55,12 @@ export default {
       return timestamp.toDate().toLocaleString()
     }
 
+    const formatActorRole = (activity) => {
+      const value = String(activity?.actorRole || '').trim().toLowerCase()
+      if (['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(value)) return 'Clinic Admin'
+      return String(activity?.actorRole || activity?.actorUserType || 'Unknown role').trim()
+    }
+
     const loadActivities = async () => {
       if (!currentBranchId.value) return
       const snapshot = await getDocs(
@@ -79,7 +86,8 @@ export default {
 
     return {
       activities,
-      formatDate
+      formatDate,
+      formatActorRole
     }
   }
 }

@@ -2,11 +2,21 @@ import { auth } from '@/config/firebaseConfig'
 import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore'
 
 const buildActorName = (userData, fallbackEmail) => {
-  if (userData?.fullName) return userData.fullName
-  const firstName = userData?.firstName || ''
-  const lastName = userData?.lastName || ''
-  const joined = `${firstName} ${lastName}`.trim()
-  return joined || fallbackEmail || 'Unknown User'
+  const fullName = String(userData?.fullName || '').trim()
+  if (fullName && !/^anon(ymous)?\s+anon(ymous)?$/i.test(fullName)) return fullName
+  const joined = [userData?.firstName, userData?.middleName, userData?.lastName, userData?.suffix]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join(' ')
+  const safeJoined = !/^anon(ymous)?\s+anon(ymous)?$/i.test(joined) ? joined : ''
+  return safeJoined || String(userData?.displayName || userData?.name || '').trim() || fallbackEmail || 'Unknown User'
+}
+
+const buildActorRole = (userData) => {
+  const role = String(userData?.role || '').trim().toLowerCase()
+  if (['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(role)) return 'Clinic Admin'
+  if (role === 'superadmin' || role === 'system admin' || role === 'systemadmin') return 'System Admin'
+  return String(userData?.customRoleName || userData?.role || userData?.userType || 'Unknown').trim()
 }
 
 const lowSignalActivityPattern = /\b(viewed|opened|open|visited|accessed|loaded|entered|displayed)\b/i
@@ -48,8 +58,8 @@ export const logActivity = async (db, payload = {}) => {
       module: payload.module || 'General',
       actorId,
       actorEmail: userData.email || payload.actorEmail || currentUser.email || '',
-      actorName: buildActorName(userData, payload.actorEmail || currentUser.email),
-      actorRole: userData.role || 'Unknown',
+      actorName: buildActorName(userData, payload.actorEmail || currentUser.displayName || currentUser.email),
+      actorRole: buildActorRole(userData),
       actorUserType: userData.userType || '',
       branchId: branchId || null,
       ownerId: ownerId || null,
