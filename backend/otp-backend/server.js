@@ -1335,6 +1335,27 @@ app.post('/auth/activate-account', async (req, res) => {
       transaction.update(tokenRef, { used: true, usedAt: admin.firestore.FieldValue.serverTimestamp() })
       transaction.set(userRef, { status: 'Active', accountActivated: true, accountActivatedAt: admin.firestore.FieldValue.serverTimestamp(), emailVerified: true }, { merge: true })
     })
+
+    const userRole = String(userData.role || userData.userType || '').trim().toLowerCase()
+    if (userRole === 'supplier') {
+      const supplierSnapshots = await Promise.all([
+        firestore.collection('suppliers').where('supplierUserId', '==', userRef.id).get(),
+        firestore.collection('suppliers').where('ownerId', '==', userRef.id).get(),
+      ])
+      const supplierRefs = new Map()
+      supplierSnapshots.forEach((snapshot) => snapshot.docs.forEach((supplierDoc) => supplierRefs.set(supplierDoc.id, supplierDoc.ref)))
+      if (supplierRefs.size) {
+        const supplierBatch = firestore.batch()
+        supplierRefs.forEach((supplierRef) => supplierBatch.set(supplierRef, {
+          status: 'Active',
+          accountActivated: true,
+          accountActivatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true }))
+        await supplierBatch.commit()
+      }
+    }
+
     return res.json({ success: true, data: { uid: userRef.id } })
   } catch (error) {
     return res.status(400).json({ success: false, error: error?.message || 'Unable to activate account.' })

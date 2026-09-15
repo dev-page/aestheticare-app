@@ -118,7 +118,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, onSnapshot, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -191,9 +191,9 @@ export default {
       return 'px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400'
     }
 
-    const loadAppointments = async () => {
+    const loadAppointments = async (providedSnapshot = null) => {
       if (!currentBranchId.value) return
-      const snapshot = await getDocs(
+      const snapshot = providedSnapshot || await getDocs(
         query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
       )
       const rawAppointments = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
@@ -329,6 +329,7 @@ export default {
     }
 
     let unsubscribeAuth = null
+    let unsubscribeAppointments = null
 
     onMounted(() => {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -343,12 +344,21 @@ export default {
           toast.error('Your account has no branch assignment.', { toastId: 'missing-branch-assignment' })
           return
         }
-        await loadAppointments()
+        if (unsubscribeAppointments) unsubscribeAppointments()
+        unsubscribeAppointments = onSnapshot(
+          query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
+          (snapshot) => loadAppointments(snapshot),
+          (error) => {
+            console.error('Failed to subscribe to appointment updates:', error)
+            toast.error('Live appointment updates are temporarily unavailable.')
+          }
+        )
       })
     })
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
+      if (unsubscribeAppointments) unsubscribeAppointments()
     })
 
     const showContractModal = ref(false)

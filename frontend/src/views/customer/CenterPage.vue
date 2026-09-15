@@ -112,11 +112,20 @@
                 </div>
 
                 <div class="overflow-hidden rounded-2xl border border-[#e0c09a] bg-[#fffaf3]">
-                  <div ref="branchMapEl" class="h-56 w-full"></div>
+                  <div class="relative h-56 w-full">
+                    <div ref="branchMapEl" class="h-full w-full" :class="{ 'opacity-0': fallbackMapVisible }"></div>
+                    <iframe
+                      v-if="fallbackMapVisible && fallbackMapUrl"
+                      :src="fallbackMapUrl"
+                      title="Clinic location map"
+                      loading="lazy"
+                      class="absolute inset-0 h-full w-full border-0"
+                    ></iframe>
+                  </div>
                   <p v-if="mapError" class="border-t border-[#ead6b8] px-4 py-3 text-xs text-[#8b6a4d]">
                     {{ mapError }}
                   </p>
-                  <p v-else-if="!hasBranchCoordinates" class="border-t border-[#ead6b8] px-4 py-3 text-xs text-[#8b6a4d]">
+                  <p v-if="!hasBranchCoordinates" class="border-t border-[#ead6b8] px-4 py-3 text-xs text-[#8b6a4d]">
                     Map preview will appear once coordinates are available.
                   </p>
                 </div>
@@ -791,6 +800,7 @@ const serviceCommissionPercent = getServiceCommissionPercent()
 const activeBranchId = computed(() => String(centerId).trim() || centerId)
 const branchMapEl = ref(null)
 const mapError = ref('')
+const fallbackMapVisible = ref(false)
 let branchMap = null
 let branchMarker = null
 let mapsReady = false
@@ -800,6 +810,18 @@ const hasBranchCoordinates = computed(() => {
   const lat = Number(center.value?.latitude)
   const lng = Number(center.value?.longitude)
   return Number.isFinite(lat) && Number.isFinite(lng)
+})
+const fallbackMapUrl = computed(() => {
+  if (!hasBranchCoordinates.value) return ''
+  const lat = Number(center.value.latitude)
+  const lng = Number(center.value.longitude)
+  const delta = 0.01
+  const params = new URLSearchParams({
+    bbox: `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`,
+    layer: 'mapnik',
+    marker: `${lat},${lng}`,
+  })
+  return `https://www.openstreetmap.org/export/embed.html?${params.toString()}`
 })
 const practitioners = ref([])
 const practitionerSchedules = ref({})
@@ -958,8 +980,8 @@ const buildCenterModel = (branchId, data = {}) => ({
   locationAddress: data.clinicLocationAddress || data.clinicLocation || '',
   barangay: data.clinicBarangay || '',
   postalCode: data.clinicPostalCode || '',
-  latitude: data.clinicLocationLat ?? data.latitude ?? data.lat ?? '',
-  longitude: data.clinicLocationLng ?? data.longitude ?? data.lng ?? '',
+  latitude: data.clinicLocationLat ?? data.locationLat ?? data.addressLat ?? data.latitude ?? data.lat ?? '',
+  longitude: data.clinicLocationLng ?? data.locationLng ?? data.addressLng ?? data.longitude ?? data.lng ?? '',
   description: data.description || '',
   email: data.email || '',
   businessEmail: data.businessEmail || '',
@@ -1032,6 +1054,7 @@ const loadMapsScript = () => {
 const initBranchMap = async () => {
   if (!branchMapEl.value || !center.value) return
   mapError.value = ''
+  fallbackMapVisible.value = false
 
   try {
     if (!mapsReady) {
@@ -1040,7 +1063,8 @@ const initBranchMap = async () => {
     }
   } catch (error) {
     console.error('Failed to load branch map:', error)
-    mapError.value = 'Map preview is unavailable right now. Please try again later.'
+    fallbackMapVisible.value = true
+    mapError.value = 'Google Maps is unavailable. Showing the clinic location using OpenStreetMap.'
     return
   }
 
@@ -1062,7 +1086,8 @@ const initBranchMap = async () => {
   }
 
   if (!MapCtor) {
-    mapError.value = 'Map preview is unavailable right now. Please try again later.'
+    fallbackMapVisible.value = true
+    mapError.value = 'Google Maps is unavailable. Showing the clinic location using OpenStreetMap.'
     return
   }
 

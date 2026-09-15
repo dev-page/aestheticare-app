@@ -1,6 +1,6 @@
 <script>
-import { ref, onMounted, computed, watch } from 'vue'
-import { getFirestore, collection, getDocs, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { getFirestore, collection, getDocs, onSnapshot, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -23,6 +23,8 @@ export default {
 
     const showEditModal = ref(false)
     const searchQuery = ref('')
+    const editErrors = ref({})
+    let staffUnsubscribers = []
 
     const currentStaff = ref({
       id: null,
@@ -47,27 +49,15 @@ export default {
       return chunks
     }
 
-    const loadStaff = async () => {
-      const ownerBranchIds = branches.value.map(branch => branch.id).filter(Boolean)
-      if (ownerBranchIds.length === 0) {
-        staffList.value = []
-        return
-      }
+    const clearStaffListeners = () => {
+      staffUnsubscribers.forEach((unsubscribe) => unsubscribe?.())
+      staffUnsubscribers = []
+    }
 
-      let staffDocs = []
-      const chunks = chunkArray(ownerBranchIds)
-      for (const chunk of chunks) {
-        const staffQuery = query(
-          collection(db, "users"),
-          where("branchId", "in", chunk),
-          where("userType", "==", "Staff")
-        )
-        const snapshot = await getDocs(staffQuery)
-        staffDocs = staffDocs.concat(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })))
-      }
-
-      staffDocs = staffDocs.filter((user) => !user.archived)
-      staffList.value = sortRecordsNewestFirst(staffDocs.map(staff => {
+    const applyStaffDocs = (staffDocs) => {
+      const uniqueStaff = Array.from(new Map(staffDocs.map((staff) => [staff.id, staff])).values())
+        .filter((user) => !user.archived)
+      staffList.value = sortRecordsNewestFirst(uniqueStaff.map(staff => {
         const branch = branches.value.find(b => b.id === staff.branchId)
         return {
           ...staff,
@@ -77,6 +67,33 @@ export default {
           createdAt: staff.archivedAt || staff.createdAt || staff.updatedAt || null,
         }
       }))
+    }
+
+    const subscribeStaff = () => {
+      clearStaffListeners()
+      const ownerBranchIds = branches.value.map(branch => branch.id).filter(Boolean)
+      if (ownerBranchIds.length === 0) {
+        staffList.value = []
+        return
+      }
+
+      const chunks = chunkArray(ownerBranchIds)
+      const recordsByChunk = chunks.map(() => [])
+      chunks.forEach((chunk, chunkIndex) => {
+        const staffQuery = query(
+          collection(db, "users"),
+          where("branchId", "in", chunk),
+          where("userType", "==", "Staff")
+        )
+        const unsubscribe = onSnapshot(staffQuery, (snapshot) => {
+          recordsByChunk[chunkIndex] = snapshot.docs.map((staffDoc) => ({ id: staffDoc.id, ...staffDoc.data() }))
+          applyStaffDocs(recordsByChunk.flat())
+        }, (error) => {
+          console.error('Failed to subscribe to employee updates:', error)
+          toast.error('Live employee updates are temporarily unavailable.')
+        })
+        staffUnsubscribers.push(unsubscribe)
+      })
     }
 
     const loadBranches = async () => {
@@ -130,9 +147,11 @@ export default {
     onMounted(async() => {
       await loadBranches()
       await loadCustomRoles()
-      await loadStaff()
+      subscribeStaff()
 
     })
+
+    onUnmounted(() => clearStaffListeners())
 
     watch(
       () => currentStaff.value.customRoleIds,
@@ -147,6 +166,7 @@ export default {
     )
 
     const openEditModal = (staff) => {
+      editErrors.value = {}
       currentStaff.value = {
         ...staff,
         customRoleId: String(staff.customRoleId || '').trim(),
@@ -156,6 +176,42 @@ export default {
         customRoleName: String(staff.customRoleName || '').trim(),
       }
       showEditModal.value = true
+    }
+
+    const clearEditError = (field) => {
+      if (!editErrors.value[field]) return
+      const nextErrors = { ...editErrors.value }
+      delete nextErrors[field]
+      editErrors.value = nextErrors
+    }
+
+    const normalizePhoneNumber = (value) => {
+      const digits = String(value || '').replace(/\D/g, '')
+      if (digits.startsWith('63') && digits.length === 12) return `+${digits}`
+      if (digits.startsWith('0') && digits.length === 11) return `+63${digits.slice(1)}`
+      if (digits.startsWith('9') && digits.length === 10) return `+63${digits}`
+      return ''
+    }
+
+    const validateEditStaff = () => {
+      const staff = currentStaff.value
+      const errors = {}
+      const nameRegex = /^[A-Za-z\s]+$/
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+      if (!String(staff.firstName || '').trim()) errors.firstName = 'First name is required.'
+      else if (!nameRegex.test(String(staff.firstName).trim())) errors.firstName = 'Only letters and spaces are allowed.'
+      if (!String(staff.lastName || '').trim()) errors.lastName = 'Last name is required.'
+      else if (!nameRegex.test(String(staff.lastName).trim())) errors.lastName = 'Only letters and spaces are allowed.'
+      if (!String(staff.email || '').trim()) errors.email = 'Email is required.'
+      else if (!emailRegex.test(String(staff.email).trim())) errors.email = 'Enter a valid email address.'
+      if (!String(staff.phoneNumber || '').trim()) errors.phoneNumber = 'Phone number is required.'
+      else if (!normalizePhoneNumber(staff.phoneNumber)) errors.phoneNumber = 'Enter a valid Philippine mobile number.'
+      if (!String(staff.branchId || '').trim()) errors.branchId = 'Branch is required.'
+      if (!String(staff.clinicLocation || '').trim()) errors.clinicLocation = 'Clinic location is required.'
+
+      editErrors.value = errors
+      return Object.keys(errors).length === 0
     }
 
     const updateCurrentStaffLocation = () => {
@@ -186,7 +242,6 @@ export default {
           await updateDoc(staffRef, { status: 'Inactive', archived: true, archivedAt: serverTimestamp() })
           staff.status = 'Inactive'
           toast.success(`${fullName} has been deactivated.`)
-          await loadStaff()
         } catch (error) {
           console.error(error)
           toast.error("Failed to deactivate staff.")
@@ -197,7 +252,6 @@ export default {
           await updateDoc(staffRef, { status: 'Active', archived: false, archivedAt: null })
           staff.status = 'Active'
           toast.success(`${fullName} has been reactivated.`)
-          await loadStaff()
         } catch (error) {
           console.error(error)
           toast.error("Failed to reactivate staff.")
@@ -216,10 +270,13 @@ export default {
         .filter((entry) => selectedRoleIds.includes(entry.id))
         .map((entry) => entry.name)
 
-      if (!firstName.trim() || !lastName.trim() || !email.trim() || !phoneNumber.trim() || !clinicBranch.trim() || !clinicLocation.trim()) {
-        toast.error('All fields are required.')
+      if (!validateEditStaff()) {
+        const firstError = Object.values(editErrors.value)[0]
+        toast.error(firstError || 'Please fix the highlighted fields.')
         return
       }
+
+      const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber)
 
       try {
         if (currentStaff.value.id) {
@@ -245,7 +302,7 @@ export default {
             lastName: currentStaff.value.lastName.trim(),
             fullName: `${currentStaff.value.firstName.trim()} ${currentStaff.value.lastName.trim()}`.trim(),
             email: currentStaff.value.email.trim(),
-            phoneNumber: currentStaff.value.phoneNumber,
+            phoneNumber: normalizedPhoneNumber,
             role: selectedRoleNames.join(', ') || currentStaff.value.role || null,
             customRoleId: selectedRoleIds[0] || null,
             customRoleIds: selectedRoleIds,
@@ -260,7 +317,6 @@ export default {
             archivedAt: shouldArchive ? serverTimestamp() : null
           })
           toast.success(`${fullName}'s information updated successfully!`)
-          await loadStaff()
         }
       } catch (err) {
         console.error(err)
@@ -274,6 +330,9 @@ export default {
       if (!searchQuery.value.trim()) return staffList.value
       const query = searchQuery.value.toLowerCase()
       return staffList.value.filter(staff =>
+        [staff.firstName, staff.lastName, staff.fullName, staff.email, staff.role].some((value) =>
+          String(value || '').toLowerCase().includes(query)
+        ) ||
         (staff.clinicBranch && staff.clinicBranch.toLowerCase().includes(query)) ||
         (staff.clinicLocation && staff.clinicLocation.toLowerCase().includes(query))
       )
@@ -284,6 +343,8 @@ export default {
       branches,
       showEditModal,
       currentStaff,
+      editErrors,
+      clearEditError,
       openEditModal,
       updateCurrentStaffLocation,
       deactivateStaff,
@@ -300,12 +361,13 @@ export default {
   <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-4 md:p-8">
+    <main class="staff-management-main flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
       <!-- Header -->
-      <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+      <div class="mb-6 flex flex-col gap-2">
         <div>
+          <p class="staff-eyebrow">People & access</p>
           <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Employee Management</h1>
-          <p class="text-slate-400 text-sm md:text-base">Manage employee accounts and roles at both office and branch level</p>
+          <p class="text-slate-400 text-sm md:text-base">Manage employee accounts and roles at branch level.</p>
         </div>
       </div>
 
@@ -314,14 +376,24 @@ export default {
         <input
           type="text"
           v-model="searchQuery"
-          placeholder="Search by branch or location..."
-          class="w-full md:w-1/3 px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Search employees, roles, branches..."
+          aria-label="Search employees"
+          class="staff-search w-full max-w-xl px-4 py-3 rounded-xl bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
       <!-- Employee Table -->
-      <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 overflow-x-auto">
-        <table class="w-full text-left min-w-[500px] sm:min-w-[700px] border-collapse">
+      <div class="staff-list-shell bg-slate-800 rounded-xl p-3 sm:p-5 border border-slate-700">
+        <div class="staff-list-heading">
+          <div>
+            <h2 class="text-lg font-semibold text-white">Employee accounts</h2>
+            <p class="text-sm text-slate-400">{{ filteredStaffList.length }} employee{{ filteredStaffList.length === 1 ? '' : 's' }} shown</p>
+          </div>
+          <span class="staff-list-caption">Use Edit to update access or branch assignment</span>
+        </div>
+
+        <div class="hidden md:block overflow-x-auto">
+        <table class="w-full text-left border-collapse staff-table">
           <thead>
             <tr class="text-slate-400 uppercase text-xs sm:text-sm border-b border-slate-700">
               <th class="py-2 px-2 sm:py-3 sm:px-4">Name</th>
@@ -349,7 +421,7 @@ export default {
               <td class="py-2 px-2 sm:py-3 sm:px-4">
                 <span
                   :class="[
-                    'px-3 py-1 rounded-full text-xs font-medium',
+                    'inline-flex whitespace-nowrap px-3 py-1 rounded-full text-xs font-medium',
                     staff.status === 'Active'
                       ? 'bg-green-500/20 text-green-400'
                       : 'bg-red-500/20 text-red-400'
@@ -358,13 +430,15 @@ export default {
                   {{ staff.status }}
                 </span>
               </td>
-              <td class="py-2 px-2 sm:py-3 sm:px-4 flex flex-wrap gap-2">
-                <button @click="openEditModal(staff)" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded transition flex-1 sm:flex-none">
+              <td class="py-2 px-2 sm:py-3 sm:px-4">
+                <div class="flex flex-wrap gap-2">
+                <button @click="openEditModal(staff)" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg transition">
                   Edit
                 </button>
-                <button @click="deactivateStaff(staff)" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition flex-1 sm:flex-none">
+                <button @click="deactivateStaff(staff)" class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg transition">
                   Disable
                 </button>
+                </div>
               </td>
             </tr>
 
@@ -373,6 +447,35 @@ export default {
             </tr>
           </tbody>
         </table>
+        </div>
+
+        <div class="space-y-3 md:hidden">
+          <article v-for="staff in filteredStaffList" :key="`card-${staff.id}`" class="staff-card">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h3 class="truncate text-base font-semibold text-white">{{ staff.fullName || `${staff.firstName} ${staff.lastName}` }}</h3>
+                <p class="truncate text-sm text-slate-400">{{ staff.email || '-' }}</p>
+              </div>
+              <span
+                :class="[
+                  'shrink-0 inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium',
+                  staff.status === 'Active' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                ]"
+              >{{ staff.status }}</span>
+            </div>
+            <dl class="staff-card-details">
+              <div><dt>Role</dt><dd>{{ staff.role || '-' }}</dd></div>
+              <div><dt>Branch</dt><dd>{{ staff.clinicBranch || '-' }}</dd></div>
+              <div><dt>Location</dt><dd>{{ staff.clinicLocation || '-' }}</dd></div>
+              <div><dt>Phone</dt><dd>{{ staff.phoneNumber || '-' }}</dd></div>
+            </dl>
+            <div class="flex gap-2 border-t border-slate-700/80 pt-3">
+              <button @click="openEditModal(staff)" class="flex-1 rounded-lg bg-yellow-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-yellow-600">Edit</button>
+              <button @click="deactivateStaff(staff)" class="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-red-700">Disable</button>
+            </div>
+          </article>
+          <div v-if="filteredStaffList.length === 0" class="py-8 text-center text-slate-400">No Results Found</div>
+        </div>
       </div>
 
       <!-- Edit Modal -->
@@ -386,27 +489,32 @@ export default {
             <div class="grid grid-cols-2 gap-2">
               <div>
                 <label class="block text-slate-400 mb-1">First Name</label>
-                <input type="text" v-model="currentStaff.firstName" placeholder="First Name"
+                <input type="text" v-model="currentStaff.firstName" @input="clearEditError('firstName')" placeholder="First Name"
                   class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+                <p v-if="editErrors.firstName" class="mt-1 text-xs text-red-300">{{ editErrors.firstName }}</p>
               </div>
 
               <div>
                 <label class="block text-slate-400 mb-1">Last Name</label>
-                <input type="text" v-model="currentStaff.lastName" placeholder="Last Name"
+                <input type="text" v-model="currentStaff.lastName" @input="clearEditError('lastName')" placeholder="Last Name"
                   class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+                <p v-if="editErrors.lastName" class="mt-1 text-xs text-red-300">{{ editErrors.lastName }}</p>
               </div>
             </div>
 
             <div>
               <label class="block text-slate-400 mb-1">Email</label>
-              <input type="email" v-model="currentStaff.email" placeholder="Enter email"
+              <input type="email" v-model="currentStaff.email" @input="clearEditError('email')" placeholder="Enter email"
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+              <p v-if="editErrors.email" class="mt-1 text-xs text-red-300">{{ editErrors.email }}</p>
             </div>
 
             <div>
               <label class="block text-slate-400 mb-1">Phone Number</label>
-              <input type="text" v-model="currentStaff.phoneNumber" placeholder="Enter phone number"
+              <input type="tel" v-model="currentStaff.phoneNumber" @input="clearEditError('phoneNumber')" placeholder="09XXXXXXXXX or +639XXXXXXXXX"
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+              <p class="mt-1 text-xs text-slate-400">Use a valid Philippine mobile number.</p>
+              <p v-if="editErrors.phoneNumber" class="mt-1 text-xs text-red-300">{{ editErrors.phoneNumber }}</p>
             </div>
 
             <div>
@@ -422,19 +530,21 @@ export default {
             <div>
               <label class="block text-slate-400 mb-1">Branch</label>
               <select v-model="currentStaff.branchId"
-                @change="updateCurrentStaffLocation"
+                @change="updateCurrentStaffLocation(); clearEditError('branchId')"
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option disabled value="">Select branch</option>
                 <option v-for="branch in branches" :key="branch.id" :value="branch.id">
                   {{ branch.clinicBranch }} - {{ branch.clinicLocation }}
                 </option>
               </select>
+              <p v-if="editErrors.branchId" class="mt-1 text-xs text-red-300">{{ editErrors.branchId }}</p>
               </div>
 
             <div>
               <label class="block text-slate-400 mb-1">Clinic Location</label>
               <input type="text" readonly v-model="currentStaff.clinicLocation" placeholder="Enter clinic location"
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+              <p v-if="editErrors.clinicLocation" class="mt-1 text-xs text-red-300">{{ editErrors.clinicLocation }}</p>
             </div>
 
             <div>
@@ -443,6 +553,7 @@ export default {
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
+                <option value="Pending Activation" disabled>Pending</option>
               </select>
             </div>
           </form>
@@ -458,3 +569,103 @@ export default {
     </main>
   </div>
 </template>
+
+<style scoped>
+.staff-management-main {
+  background: radial-gradient(circle at 90% 0%, rgba(126, 78, 46, 0.14), transparent 32rem);
+}
+
+.staff-eyebrow {
+  margin-bottom: 0.35rem;
+  color: #d8b38f;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.staff-search {
+  box-shadow: 0 12px 30px rgba(25, 12, 7, 0.18);
+}
+
+.staff-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(123, 79, 55, 0.35);
+  padding: 0.35rem 0.5rem 1rem;
+}
+
+.staff-list-caption {
+  color: #cbb19c;
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.staff-table th {
+  padding: 0.9rem 0.75rem;
+  white-space: nowrap;
+}
+
+.staff-table td {
+  padding: 1rem 0.75rem;
+  vertical-align: middle;
+}
+
+.staff-table tbody tr {
+  border-bottom: 1px solid rgba(123, 79, 55, 0.2);
+}
+
+.staff-table tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.staff-card {
+  border: 1px solid rgba(123, 79, 55, 0.42);
+  border-radius: 0.9rem;
+  background: rgba(38, 23, 16, 0.76);
+  padding: 1rem;
+}
+
+.staff-card-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+  margin: 1rem 0;
+}
+
+.staff-card-details dt {
+  color: #a88d7a;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.staff-card-details dd {
+  overflow-wrap: anywhere;
+  color: #f2dfd0;
+  font-size: 0.88rem;
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 639px) {
+  .staff-list-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .staff-list-caption {
+    text-align: left;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1100px) {
+  .staff-table th,
+  .staff-table td {
+    padding-left: 0.55rem;
+    padding-right: 0.55rem;
+  }
+}
+</style>

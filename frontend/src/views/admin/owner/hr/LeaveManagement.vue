@@ -154,8 +154,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -173,6 +173,7 @@ const leaveRequests = ref([])
 const currentUserId = ref('')
 const currentUserName = ref('')
 const currentBranchId = ref('')
+let unsubscribeLeaveRequests = null
 const currentOwnerId = ref('')
 const reviewerMode = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('leave:review')))
 
@@ -279,6 +280,31 @@ const loadLeaveRequests = async () => {
     })
 }
 
+const subscribeLeaveRequests = () => {
+  unsubscribeLeaveRequests?.()
+  if (!currentUserId.value) {
+    leaveRequests.value = []
+    return
+  }
+
+  const requestsQuery = reviewerMode.value && currentOwnerId.value
+    ? query(collection(db, 'leaveRequests'), where('ownerId', '==', currentOwnerId.value))
+    : query(collection(db, 'leaveRequests'), where('requesterId', '==', currentUserId.value))
+
+  unsubscribeLeaveRequests = onSnapshot(requestsQuery, (snapshot) => {
+    leaveRequests.value = snapshot.docs
+      .map((requestDoc) => ({ id: requestDoc.id, ...requestDoc.data() }))
+      .sort((a, b) => {
+        const aTime = a.updatedAt?.seconds || a.createdAt?.seconds || 0
+        const bTime = b.updatedAt?.seconds || b.createdAt?.seconds || 0
+        return bTime - aTime
+      })
+  }, (error) => {
+    console.error('Failed to subscribe to leave updates:', error)
+    toast.error('Live leave updates are temporarily unavailable.')
+  })
+}
+
 const updateLeaveStatus = async (request, status, reviewRemarks = '') => {
   await updateDoc(doc(db, 'leaveRequests', request.id), {
     status,
@@ -295,7 +321,7 @@ const updateLeaveStatus = async (request, status, reviewRemarks = '') => {
     details: `${currentUserName.value} marked ${request.requesterName}'s ${request.leaveType} request as ${status}.`
   })
 
-  await loadLeaveRequests()
+  // The live listener reflects this update automatically.
 }
 
 const approveLeaveRequest = async (request) => {
@@ -350,18 +376,19 @@ const cancelLeaveRequest = async (request) => {
     details: `${currentUserName.value} cancelled a ${request.leaveType} request.`
   })
 
-  await loadLeaveRequests()
   toast.success('Leave request cancelled.')
 }
 
 onMounted(async () => {
   await resolveViewerContext()
-  await loadLeaveRequests()
+  subscribeLeaveRequests()
   loading.value = false
 })
 
-watch(reviewerMode, async () => {
+watch(reviewerMode, () => {
   if (!currentUserId.value || loading.value) return
-  await loadLeaveRequests()
+  subscribeLeaveRequests()
 })
+
+onUnmounted(() => unsubscribeLeaveRequests?.())
 </script>
