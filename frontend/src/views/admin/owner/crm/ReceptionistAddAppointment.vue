@@ -45,6 +45,42 @@
             </p>
           </div>
 
+          <div>
+            <label class="block text-slate-400 text-sm mb-2">Service</label>
+            <select
+              v-if="services.length"
+              v-model="form.service"
+              required
+              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
+            >
+              <option value="">Select service</option>
+              <option v-for="service in services" :key="service.id" :value="service.name">
+                {{ service.name }}
+              </option>
+            </select>
+            <p v-else class="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              No services available for this branch yet.
+            </p>
+          </div>
+
+          <div v-if="selectedServiceDetails" class="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+            <h2 class="text-sm font-semibold text-white">{{ selectedServiceDetails.name }}</h2>
+            <p class="mt-2 text-sm text-slate-300">{{ selectedServiceDetails.description || 'No service description provided.' }}</p>
+            <div class="mt-3 grid gap-3 text-xs text-slate-400 md:grid-cols-3">
+              <span>Duration: {{ selectedServiceDetails.durationMinutes }} minutes</span>
+              <span>Price: PHP {{ Number(selectedServiceDetails.price || 0).toFixed(2) }}</span>
+              <span v-if="selectedServiceDetails.requiresConsultationFirst">Consultation required first</span>
+            </div>
+            <div v-if="clinicPolicies.length" class="mt-4 border-t border-slate-700 pt-3">
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">Active clinic policies</p>
+              <div class="mt-2 space-y-2">
+                <p v-for="policy in clinicPolicies" :key="policy.key" class="text-sm leading-5 text-slate-300">
+                  <span class="font-medium text-slate-200">{{ policy.label }}:</span> {{ policy.text }}
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div class="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
             <div class="flex items-start justify-between gap-3">
               <div>
@@ -150,7 +186,22 @@
               </div>
               <div>
                 <label class="block text-slate-400 text-sm mb-2">Time</label>
+                <select
+                  v-if="availableTimeOptions.length"
+                  v-model="form.time"
+                  required
+                  class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
+                >
+                  <option value="">Select available time</option>
+                  <option v-for="option in availableTimeOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p v-else-if="form.date && form.practitionerId && form.service" class="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-400">
+                  No available time slots for the selected service, date, and practitioner.
+                </p>
                 <input
+                  v-else
                   v-model="form.time"
                   type="time"
                   required
@@ -158,24 +209,6 @@
                 />
               </div>
             </div>
-          </div>
-
-          <div>
-            <label class="block text-slate-400 text-sm mb-2">Service</label>
-            <select
-              v-if="services.length"
-              v-model="form.service"
-              required
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
-            >
-              <option value="">Select service</option>
-              <option v-for="service in services" :key="service.id" :value="service.name">
-                {{ service.name }}
-              </option>
-            </select>
-            <p v-else class="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
-              No services available for this branch yet.
-            </p>
           </div>
 
           <div>
@@ -220,6 +253,8 @@ import {
   getDayName,
   getWeekStartKey,
   parseClockToMinutes,
+  minutesToTime,
+  minutesToTime12,
 } from '@/utils/appointmentDss'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
 
@@ -268,6 +303,7 @@ export default {
     const practitioners = ref([])
     const practitionerSchedules = ref({})
     const branchAppointments = ref([])
+    const clinicPolicies = ref([])
     const isSubmitting = ref(false)
     const currentCalendarMonth = ref(new Date())
     const calendarWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -376,6 +412,23 @@ export default {
       branchAppointments.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
     }
 
+    const loadClinicPolicies = async () => {
+      if (!currentBranchId.value) return
+      const snapshot = await getDoc(doc(db, 'clinicPolicies', currentBranchId.value))
+      const data = snapshot.exists() ? snapshot.data() || {} : {}
+      const definitions = [
+        ['cancellationPolicy', 'Cancellation policy'],
+        ['reschedulePolicy', 'Reschedule policy'],
+        ['refundPolicy', 'Refund policy'],
+        ['consultationPolicy', 'Consultation policy'],
+        ['serviceTerms', 'Service terms'],
+        ['paymentPolicy', 'Payment policy'],
+      ]
+      clinicPolicies.value = definitions
+        .filter(([key]) => data[`${key}Enabled`] === true && String(data[key] || '').trim())
+        .map(([key, label]) => ({ key, label, text: String(data[key]).trim() }))
+    }
+
     const recommendations = computed(() =>
       buildAppointmentRecommendations({
         practitioners: practitioners.value,
@@ -478,6 +531,48 @@ export default {
       if (end > 24 * 60 && normalizedStart < start) normalizedStart += 24 * 60
       return normalizedStart >= start && normalizedStart + Math.max(1, Number(durationMinutes) || 60) <= end
     }
+
+    const selectedServiceDetails = computed(() =>
+      services.value.find((service) => service.name === form.value.service) || null
+    )
+
+    const availableTimeOptions = computed(() => {
+      const date = String(form.value.date || '').trim()
+      const practitionerId = String(form.value.practitionerId || '').trim()
+      const duration = Math.max(1, Number(selectedServiceDetails.value?.durationMinutes || 60))
+      if (!date || !practitionerId || !form.value.service) return []
+
+      const weekKey = getWeekStartKey(date)
+      const dayName = getDayName(date)
+      const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitionerId] || {}, weekKey)
+      const shiftWindow = extractShiftWindowMinutes(String(assignments?.[dayName] || '').trim())
+      if (!shiftWindow) return []
+
+      let { start, end } = shiftWindow
+      if (end <= start) end += 24 * 60
+      const blocked = branchAppointments.value
+        .filter((appointment) => String(appointment.date || '') === date)
+        .filter((appointment) => String(appointment.practitionerId || appointment.assignedPractitionerId || '') === practitionerId)
+        .filter((appointment) => !['cancelled', 'rejected', 'no-show'].includes(String(appointment.status || '').trim().toLowerCase()))
+        .map((appointment) => {
+          const appointmentStart = parseClockToMinutes(appointment.time)
+          const appointmentEnd = parseClockToMinutes(appointment.endTime)
+          return appointmentStart === null ? null : { start: appointmentStart, end: appointmentEnd === null ? appointmentStart + 60 : appointmentEnd }
+        })
+        .filter(Boolean)
+
+      const options = []
+      for (let minutes = start; minutes + duration <= end; minutes += 30) {
+        if (blocked.some((range) => minutes < range.end && minutes + duration > range.start)) continue
+        const value = minutesToTime(minutes)
+        options.push({ value, label: `${minutesToTime12(minutes)} - ${minutesToTime12(minutes + duration)}` })
+      }
+      return options
+    })
+
+    watch(availableTimeOptions, (options) => {
+      if (form.value.time && !options.some((option) => option.value === form.value.time)) form.value.time = ''
+    }, { immediate: true })
 
     watch(
       availablePractitioners,
@@ -622,7 +717,7 @@ export default {
         currentUserId.value = user.uid
         const userSnap = await getDoc(doc(db, 'users', user.uid))
         currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
-        await Promise.all([loadClients(), loadServices(), loadPractitioners(), loadAppointments()])
+        await Promise.all([loadClients(), loadServices(), loadPractitioners(), loadAppointments(), loadClinicPolicies()])
         if (!form.value.date) {
           form.value.date = todayDateString()
         }
@@ -633,6 +728,9 @@ export default {
       form,
       clients,
       services,
+      selectedServiceDetails,
+      clinicPolicies,
+      availableTimeOptions,
       practitioners,
       availablePractitioners,
       calendarWeekdays,
