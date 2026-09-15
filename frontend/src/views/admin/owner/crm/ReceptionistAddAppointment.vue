@@ -410,8 +410,10 @@ export default {
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .filter((user) => {
           const role = String(user.role || '').trim().toLowerCase()
+          const customRoleName = String(user.customRoleName || '').trim().toLowerCase()
           const userType = String(user.userType || '').trim().toLowerCase()
-          return role === 'practitioner' && userType === 'staff' && !user.archived
+          const isPractitioner = role === 'practitioner' || customRoleName.includes('practitioner')
+          return isPractitioner && userType === 'staff' && !user.archived && user.status !== 'Inactive'
         })
         .map((user) => ({
           ...user,
