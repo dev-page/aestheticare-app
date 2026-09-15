@@ -405,6 +405,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { logActivity } from '@/utils/activityLogger'
 import { hasAnyAssignedShift } from '@/utils/employeeSchedules'
+import { calculatePhilippineOvertimePay } from '@/utils/philippineOvertime'
 
 export default {
   name: 'PayrollAndPayslipManagement',
@@ -1018,8 +1019,8 @@ export default {
       return roundToQuarterHour(totalMinutes / 60)
     }
 
-    const computeApprovedOvertimeMinutes = async (employeeId, monthKey = '') => {
-      if (!employeeId || !currentBranchId.value) return 0
+    const computeApprovedOvertime = async (employee, monthKey = '') => {
+      if (!employee?.id || !currentBranchId.value) return { minutes: 0, pay: 0, nightDifferential: 0 }
 
       const snapshot = await getDocs(query(
         collection(db, 'overtimeRequests'),
@@ -1028,10 +1029,23 @@ export default {
 
       return snapshot.docs.reduce((total, overtimeDoc) => {
         const data = overtimeDoc.data() || {}
-        if (data.requesterId !== employeeId || data.status !== 'Approved') return total
+        if (data.requesterId !== employee.id || data.status !== 'Approved') return total
         if (monthKey && !isDateInMonth(data.date || data.createdAt || data.updatedAt, monthKey)) return total
-        return total + Math.max(0, Number(data.calculatedOvertimeMinutes || 0))
-      }, 0)
+        const calculation = calculatePhilippineOvertimePay({
+          timeIn: data.actualTimeIn,
+          timeOut: data.actualTimeOut,
+          shiftStart: data.scheduledStart,
+          shiftEnd: data.scheduledEnd,
+          dayClassification: data.dayClassification,
+        }, employee, employee.basePay)
+        const minutes = Math.max(0, Number(data.calculatedOvertimeMinutes || calculation.overtimeMinutes))
+        const multiplier = Number(data.overtimeRateMultiplier || calculation.multiplier || 1.25)
+        const nightMinutes = Math.max(0, Number(data.nightDifferentialMinutes ?? calculation.nightMinutes ?? 0))
+        total.minutes += minutes
+        total.pay += (minutes / 60) * Number(employee.basePay || 0) * multiplier
+        total.nightDifferential += (nightMinutes / 60) * Number(employee.basePay || 0) * 0.10
+        return total
+      }, { minutes: 0, pay: 0, nightDifferential: 0 })
     }
 
     const resetForm = () => {
@@ -1147,8 +1161,8 @@ export default {
           const employeeHours = await computeWorkedHoursFromAttendance(employee.id, monthKey)
           if (!employeeHours || employeeHours <= 0) continue
 
-          const overtimeMinutes = await computeApprovedOvertimeMinutes(employee.id, monthKey)
-          const overtimeHours = roundToQuarterHour(overtimeMinutes / 60)
+          const overtime = await computeApprovedOvertime(employee, monthKey)
+          const overtimeHours = roundToQuarterHour(overtime.minutes / 60)
 
           const basePay = Number(employee.basePay || 0)
           if (basePay <= 0) continue
@@ -1159,7 +1173,7 @@ export default {
             commissionAmount = Number(commissionResult.total || 0)
           }
 
-          const overtimePay = Number(overtimeHours || 0) * basePay * 1.25
+          const overtimePay = roundCurrency(overtime.pay + overtime.nightDifferential)
           const totalPay = Number(employeeHours || 0) * basePay + overtimePay + commissionAmount
           const deductions = computeDeductions(totalPay)
           const totalDeductions = roundCurrency(
@@ -1176,7 +1190,8 @@ export default {
             salaryType,
             hoursWorked: Number(employeeHours || 0),
             overtimeHours: Number(overtimeHours || 0),
-            overtimeRateMultiplier: 1.25,
+            overtimeRateMultiplier: overtimeHours ? Number((overtime.pay / (overtimeHours * basePay)).toFixed(4)) : 1.25,
+            nightDifferential: Number(overtime.nightDifferential.toFixed(2)),
             overtimePay: Number(overtimePay.toFixed(2)),
             hourlyRate: Number(basePay || 0),
             commission: commissionAmount,
@@ -1503,9 +1518,12 @@ export default {
         }
       }
 
+      const overtime = await computeApprovedOvertime(employee)
+      const overtimeHours = roundToQuarterHour(overtime.minutes / 60)
+      const overtimePay = roundCurrency(overtime.pay + overtime.nightDifferential)
       const basePayTotal = Number(hoursWorked.value || 0) * Number(hourlyRate.value || 0)
       const commissionAmount = employee.isCommissionBased ? Number(commissionTotal.value || 0) : 0
-      totalPay = basePayTotal + commissionAmount
+      totalPay = basePayTotal + overtimePay + commissionAmount
       const deductions = computeDeductions(totalPay)
       const totalDeductions = roundCurrency(
         Object.values(deductions).reduce((sum, entry) => sum + Number(entry?.amount || 0), 0)
@@ -1521,7 +1539,10 @@ export default {
           employmentType: employee.employmentType || null,
           salaryType,
           hoursWorked: Number(hoursWorked.value || 0),
+          overtimeHours: Number(overtimeHours || 0),
           hourlyRate: Number(hourlyRate.value || 0),
+          overtimePay,
+          nightDifferential: Number(overtime.nightDifferential.toFixed(2)),
           commission: commissionAmount,
           totalPay,
           deductions,
@@ -1542,6 +1563,9 @@ export default {
           earnings: {
             hoursWorked: Number(hoursWorked.value || 0),
             hourlyRate: Number(hourlyRate.value || 0),
+            overtimeHours: Number(overtimeHours || 0),
+            overtimePay,
+            nightDifferential: Number(overtime.nightDifferential.toFixed(2)),
             commission: commissionAmount,
             total: totalPay
           },

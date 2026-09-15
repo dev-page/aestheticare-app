@@ -28,6 +28,8 @@ export const classifyAttendanceRecord = ({
   timeOut,
   shiftStart,
   shiftEnd,
+  dayClassification,
+  unpaidMealBreakMinutes,
 }) => {
   const hasShiftAssignment = Boolean(String(shiftStart || '').trim() && String(shiftEnd || '').trim())
 
@@ -70,7 +72,15 @@ export const classifyAttendanceRecord = ({
   }
 
   if (timeIn && timeOut && outMinutes !== null && shiftEndMinutes !== null) {
-    result.overtimeMinutes = Math.max(0, outMinutes - shiftEndMinutes)
+    // Philippine overtime is measured after eight net hours in the workday.
+    const rawMinutes = result.totalWorkedMinutes
+    const scheduledMinutes = shiftStartMinutes !== null
+      ? (shiftEndMinutes >= shiftStartMinutes ? shiftEndMinutes - shiftStartMinutes : shiftEndMinutes + 1440 - shiftStartMinutes)
+      : 0
+    const mealBreak = Number.isFinite(Number(unpaidMealBreakMinutes))
+      ? Math.max(0, Number(unpaidMealBreakMinutes))
+      : scheduledMinutes > 480 ? 60 : 0
+    result.overtimeMinutes = Math.max(0, rawMinutes - mealBreak - 480)
     result.undertimeMinutes = Math.max(0, shiftEndMinutes - outMinutes)
 
     if (result.overtimeMinutes > 0) result.workHoursStatus = 'Overtime'

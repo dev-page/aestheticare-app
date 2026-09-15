@@ -28,7 +28,7 @@
                 <div><span class="block text-xs text-slate-500">Actual time-out</span><strong>{{ attendanceEvidence.timeOut || '-' }}</strong></div>
                 <div><span class="block text-xs text-slate-500">Calculated overtime</span><strong class="text-amber-300">{{ calculatedHours }} hour(s)</strong></div>
               </div>
-              <p class="mt-3 text-xs text-slate-400">Attendance status: {{ attendanceEvidence.attendanceStatus || 'No record' }}</p>
+              <p class="mt-3 text-xs text-slate-400">Attendance status: {{ attendanceEvidence.attendanceStatus || 'No record' }} · {{ overtimeCalculation.dayClassification }} · {{ overtimeCalculation.multiplier }}x OT rate{{ overtimeCalculation.nightMinutes ? ` · ${overtimeCalculation.nightMinutes} night-differential minute(s)` : '' }}</p>
             </div>
           </div>
 
@@ -91,6 +91,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { logActivity } from '@/utils/activityLogger'
+import { calculatePhilippineOvertime } from '@/utils/philippineOvertime'
 
 const auth = getAuth()
 const { hasPermission, isClinicAdminOwner } = usePermissions()
@@ -110,18 +111,15 @@ const currentUserId = ref('')
 const currentUserName = ref('')
 const currentBranchId = ref('')
 const currentOwnerId = ref('')
+const currentEmployeeProfile = ref({})
 const formError = ref('')
 const attendanceEvidence = ref({})
 const form = ref({ date: todayKey, reason: '' })
 
 const reviewerMode = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('overtime:review')))
 const canSubmit = computed(() => hasPermission('overtime:create'))
-const calculatedOvertimeMinutes = computed(() => {
-  const scheduled = toMinutes(attendanceEvidence.value.shiftEnd)
-  const actual = toMinutes(attendanceEvidence.value.timeOut)
-  if (scheduled === null || actual === null || actual <= scheduled) return 0
-  return actual - scheduled
-})
+const overtimeCalculation = computed(() => calculatePhilippineOvertime(attendanceEvidence.value, currentEmployeeProfile.value))
+const calculatedOvertimeMinutes = computed(() => overtimeCalculation.value.overtimeMinutes)
 const calculatedHours = computed(() => formatHours(calculatedOvertimeMinutes.value))
 const filteredRequests = computed(() => requests.value.filter((request) => !selectedStatus.value || request.status === selectedStatus.value))
 
@@ -159,6 +157,7 @@ async function resolveContext() {
   currentUserId.value = user.uid
   const snapshot = await getDoc(doc(db, 'users', user.uid))
   const profile = snapshot.exists() ? snapshot.data() || {} : {}
+  currentEmployeeProfile.value = profile
   currentUserName.value = nameFromProfile(profile)
   currentBranchId.value = String(profile.branchId || '').trim()
   if (currentBranchId.value) {
@@ -214,6 +213,9 @@ async function submitRequest() {
       attendanceStatus: attendanceEvidence.value.attendanceStatus || attendanceEvidence.value.status || 'Recorded',
       attendanceRecordId: `${currentUserId.value}_${form.value.date}`,
       calculatedOvertimeMinutes: calculatedOvertimeMinutes.value,
+      nightDifferentialMinutes: overtimeCalculation.value.nightMinutes,
+      dayClassification: overtimeCalculation.value.dayClassification,
+      overtimeRateMultiplier: overtimeCalculation.value.multiplier,
       reason: String(form.value.reason).trim(),
       status: 'Pending',
       createdAt: serverTimestamp(),

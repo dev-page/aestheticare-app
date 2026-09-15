@@ -190,6 +190,7 @@ import EmployeeTopbar from '@/components/common/EmployeeTopbar.vue'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 
 export default {
   name: 'SupportReport',
@@ -197,7 +198,8 @@ export default {
     EmployeeTopbar,
     CustomerSidebar,
     EmployeeSidebar,
-    OwnerSidebar
+    OwnerSidebar,
+    SupplierSidebar
   },
   setup() {
     const db = getFirestore(getApp())
@@ -228,11 +230,12 @@ export default {
       const typeValue = String(userType.value || '').toLowerCase()
 
       if (typeValue === 'customer' || roleValue === 'customer') return 'customer'
+      if (typeValue === 'supplier' || roleValue.includes('supplier')) return 'supplier'
       if (typeValue === 'staff') return 'employee'
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return 'owner'
       return ''
     })
-    const isModuleView = computed(() => panelKey.value === 'owner' || panelKey.value === 'employee')
+    const isModuleView = computed(() => ['owner', 'employee', 'supplier'].includes(panelKey.value))
     const showClinicSelector = computed(() => Boolean(branchId.value) || ['Clinic Complaint', 'Service Complaint', 'Employee Complaint'].includes(category.value) || panelKey.value === 'customer')
     const clinicSelectionRequired = computed(() => ['Clinic Complaint', 'Service Complaint', 'Employee Complaint'].includes(category.value))
 
@@ -272,6 +275,7 @@ export default {
       if (!roleValue && !typeValue) return null
       if (roleValue.includes('superadmin')) return null
       if (typeValue === 'customer' || roleValue === 'customer') return CustomerSidebar
+      if (typeValue === 'supplier' || roleValue.includes('supplier')) return SupplierSidebar
       if (typeValue === 'staff') return EmployeeSidebar
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return OwnerSidebar
       return CustomerSidebar

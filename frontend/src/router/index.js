@@ -277,14 +277,16 @@ router.beforeEach(async (to, from, next) => {
         || String(userData.mustChangePassword || '').trim().toLowerCase() === 'true'
 
       if (
-        userType === 'staff' &&
+        (userType === 'staff' || userType === 'supplier') &&
         mustChangePassword &&
         to.path !== '/employee/change-password' &&
+        to.path !== '/change-password' &&
         to.path !== '/forgot-password'
       ) {
-        return next('/employee/change-password');
+        return next(userType === 'staff' ? '/employee/change-password' : '/change-password');
       }
-      forcedEmployeePasswordChange = userType === 'staff' && mustChangePassword && to.path === '/employee/change-password';
+      forcedEmployeePasswordChange = (userType === 'staff' || userType === 'supplier') && mustChangePassword
+        && (to.path === '/employee/change-password' || to.path === '/change-password');
     } catch (error) {
       console.error("Error verifying password change requirement in route guard:", error);
     }

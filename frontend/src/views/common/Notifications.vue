@@ -153,6 +153,7 @@ import Modal from '@/components/common/Modal.vue'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 
 export default {
   name: 'NotificationsPage',
@@ -163,7 +164,8 @@ export default {
     Modal,
     CustomerSidebar,
     EmployeeSidebar,
-    OwnerSidebar
+    OwnerSidebar,
+    SupplierSidebar
   },
   setup() {
     const router = useRouter()
@@ -189,12 +191,13 @@ export default {
       const typeValue = String(userType.value || '').toLowerCase()
 
       if (typeValue === 'customer' || roleValue === 'customer') return 'customer'
+      if (typeValue === 'supplier' || roleValue.includes('supplier')) return 'supplier'
       if (typeValue === 'staff') return 'employee'
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return 'owner'
       return ''
     })
 
-    const isModuleView = computed(() => panelKey.value === 'owner' || panelKey.value === 'employee')
+    const isModuleView = computed(() => ['owner', 'employee', 'supplier'].includes(panelKey.value))
 
     const sidebarComponent = computed(() => {
       const roleValue = String(role.value || '').toLowerCase()
@@ -203,6 +206,7 @@ export default {
       if (!roleValue && !typeValue) return null
       if (roleValue.includes('superadmin')) return null
       if (typeValue === 'customer' || roleValue === 'customer') return CustomerSidebar
+      if (typeValue === 'supplier' || roleValue.includes('supplier')) return SupplierSidebar
       if (typeValue === 'staff') return EmployeeSidebar
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return OwnerSidebar
       return CustomerSidebar
@@ -452,6 +456,7 @@ export default {
         let roleKey = ''
         if (rawRole.includes('superadmin')) roleKey = 'Superadmin'
         else if (rawRole.includes('clinic admin') || rawRole === 'clinicadmin' || rawRole === 'owner') roleKey = 'Owner'
+        else if (rawRole.includes('supplier')) roleKey = 'Supplier'
         else roleKey = String(data.role || '').trim()
         startNotificationsListener(user.uid, roleKey)
       })
