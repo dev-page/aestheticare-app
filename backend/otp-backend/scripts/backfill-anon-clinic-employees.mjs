@@ -5,6 +5,7 @@ import path from 'node:path'
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'node:url'
 import { ServerClient } from 'postmark'
+import { EMAIL_WEBSITE_URL } from '../emailLinks.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -82,7 +83,7 @@ const resolveExistingShift = async (branchId) => {
 const createActivation = async ({ uid, email, name, temporaryPassword, apply }) => {
   const token = crypto.randomBytes(32).toString('hex')
   const tokenId = activationTokenHash(token)
-  const activationUrl = `${process.env.FRONTEND_BASE_URL || 'http://localhost:5173'}/activate-account?token=${encodeURIComponent(token)}`
+  const activationUrl = `${EMAIL_WEBSITE_URL}/activate-account?token=${encodeURIComponent(token)}`
   if (!apply) return { activationUrl, sent: false }
 
   await db.collection('accountActivations').doc(tokenId).set({

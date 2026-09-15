@@ -11,6 +11,7 @@ import archiver from 'archiver'
 import { PassThrough } from 'node:stream'
 import { google } from 'googleapis'
 import vision from '@google-cloud/vision'
+import { EMAIL_WEBSITE_URL } from './emailLinks.js'
 
 // firebase-admin v13 can hit a Google auth compatibility edge in some Node/runtime combinations.
 // Keep the same fallback used by the backend maintenance scripts so OTP requests do not fail.
@@ -415,7 +416,7 @@ const createAccountActivation = async ({ firestore, uid, email, name = 'User', r
         : admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true })
   })
-  const activationUrl = `${resolveFrontendBaseUrl(req)}/activate-account?token=${encodeURIComponent(token)}`
+  const activationUrl = `${EMAIL_WEBSITE_URL}/activate-account?token=${encodeURIComponent(token)}`
   const passwordLine = temporaryPassword ? `Temporary password: ${temporaryPassword}\n\n` : ''
   const delivery = await sendPostmarkMessage({
     to: normalizedEmail,
@@ -3089,7 +3090,7 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
     let emailSent = false
     if (recipient && postmarkClient && senderEmail) {
       try {
-        const registrationUrl = `${resolveFrontendBaseUrl(req)}/clinic/register`
+        const registrationUrl = `${EMAIL_WEBSITE_URL}/clinic/register`
         const subject = 'AesthetiCare - Clinic Registration Update'
         const textBody = `Hi ${applicantName},
 
@@ -3281,7 +3282,7 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
       const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
       if (recipient && postmarkClient && senderEmail) {
         try {
-          const loginUrl = `${frontendBaseUrl}/login`
+          const loginUrl = `${EMAIL_WEBSITE_URL}/login`
           const subject = 'Welcome to AesthetiCare — Your Clinic is Approved'
           const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. You can now log in at ${loginUrl}.\n\nThank you for joining AesthetiCare.`
           const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>. You can now <a href="${loginUrl}">log in</a> to access your account.</p><p>Thank you for joining AesthetiCare.</p></div>`
@@ -3386,7 +3387,7 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
       const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
       if (recipient && postmarkClient && senderEmail) {
         try {
-          const loginUrl = `${frontendBaseUrl}/login`
+          const loginUrl = `${EMAIL_WEBSITE_URL}/login`
           const subject = 'Welcome to AesthetiCare — Your Clinic is Approved'
           const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. You can now log in at ${loginUrl}.\n\nThank you for joining AesthetiCare.`
           const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>. You can now <a href="${loginUrl}">log in</a> to access your account.</p><p>Thank you for joining AesthetiCare.</p></div>`
@@ -3500,7 +3501,7 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
     const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
     if (recipient && postmarkClient && senderEmail) {
       try {
-        const loginUrl = `${frontendBaseUrl}/login`
+        const loginUrl = `${EMAIL_WEBSITE_URL}/login`
         const subject = 'Welcome to AesthetiCare — Your Clinic is Approved'
         const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. You can now log in at ${loginUrl}.\n\nThank you for joining AesthetiCare.`
         const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>. You can now <a href="${loginUrl}">log in</a> to access your account.</p><p>Thank you for joining AesthetiCare.</p></div>`
@@ -4687,7 +4688,7 @@ app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
 
     // Send welcome email to customer (transactional)
     try {
-      const loginUrl = `${resolveFrontendBaseUrl(req)}/login`
+      const loginUrl = `${EMAIL_WEBSITE_URL}/login`
       const subject = 'Welcome to AestheticCare — Your account is ready'
       const textBody = `Hi,\n\nWelcome to AestheticCare! Your account has been verified and is ready to use.\n\nYou can sign in here: ${loginUrl}\n\nIf you need help, reply to this email or contact us at ${senderEmail}.\n\nWarm regards,\nThe AestheticCare Team`
       const htmlBody = `
@@ -5498,7 +5499,7 @@ const handleAccountWelcome = async (req, res) => {
     })
     return res.json({ success: true, ...activation.delivery })
 
-    const loginUrl = `${resolveFrontendBaseUrl(req)}/login`
+    const loginUrl = `${EMAIL_WEBSITE_URL}/login`
     const message = {
       to: normalizedRecipient,
       from: senderEmail,
