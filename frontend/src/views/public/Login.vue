@@ -62,7 +62,11 @@ const normalizeRoleKey = (value) => {
   return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
 }
 
+// Temporarily disabled. Set to true to restore login OTP for administrator roles.
+const LOGIN_OTP_ENABLED = false
+
 const requiresLoginOtp = (userData) => {
+  if (!LOGIN_OTP_ENABLED) return false
   const role = normalizeRoleKey(userData?.role || userData?.userType)
   return role === 'Superadmin' || role === 'Owner' || role === 'Clinic Admin'
 }
