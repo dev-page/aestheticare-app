@@ -494,6 +494,13 @@
       @close="closeContract"
       @updated="contractUpdated"
     />
+    <ServiceKeyVerificationModal
+      :visible="showServiceKeyModal"
+      :loading="serviceKeyVerifying"
+      description="Enter the service key you shared with the practitioner."
+      @close="closeServiceKeyModal"
+      @submit="submitServiceKey"
+    />
   </div>
 </template>
 
@@ -511,6 +518,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import BookingContractModal from '@/components/BookingContractModal.vue'
+import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
 
 const loading = ref(true)
 const router = useRouter()
@@ -523,6 +531,9 @@ const openActionMenuId = ref(null)
 const clinicsById = ref({})
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
+const showServiceKeyModal = ref(false)
+const selectedServiceKeyAppointment = ref(null)
+const serviceKeyVerifying = ref(false)
 const paymentAgreementAcknowledged = reactive({})
 const paymentAgreementViewed = reactive({})
 const requestModal = ref({
@@ -1495,15 +1506,29 @@ const canConfirmCompletion = (appointment) => {
   return Boolean(appointment?.workerCompleted) && ['ongoing', 'awaiting customer confirmation', 'balance due'].includes(status)
 }
 
-const verifyServiceKey = async (appointment) => {
-  const serviceKey = String(window.prompt('Enter the service key exchanged with the worker:', '') || '').trim()
-  if (!serviceKey) return
+const verifyServiceKey = (appointment) => {
+  selectedServiceKeyAppointment.value = appointment
+  showServiceKeyModal.value = true
+}
+
+const closeServiceKeyModal = () => {
+  showServiceKeyModal.value = false
+  selectedServiceKeyAppointment.value = null
+}
+
+const submitServiceKey = async (serviceKey) => {
+  const appointment = selectedServiceKeyAppointment.value
+  if (!appointment?.id) return
+  serviceKeyVerifying.value = true
   try {
     await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/verify-service-key`, { serviceKey })
     toast.success('Service key verified.')
+    closeServiceKeyModal()
   } catch (error) {
     console.error(error)
     toast.error(error?.message || 'Unable to verify the service key.')
+  } finally {
+    serviceKeyVerifying.value = false
   }
 }
 

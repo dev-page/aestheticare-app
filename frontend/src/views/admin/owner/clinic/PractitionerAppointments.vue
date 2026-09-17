@@ -60,7 +60,7 @@
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap items-center gap-3">
                     <p v-if="appointment.serviceKey" class="w-full text-sm text-amber-200">Service key: {{ appointment.serviceKey }}</p>
-                    <button v-if="appointment.serviceKey && !appointment.workerKeyVerified && ['Paid', 'Ready to Start', 'Scheduled'].includes(appointment.status)" :disabled="actionBusy" @click="bookingAction(appointment, 'key')" class="rounded bg-amber-700 px-3 py-2 text-white">Verify Customer Key</button>
+                    <button v-if="appointment.serviceKey && !appointment.workerKeyVerified && ['Paid', 'Ready to Start', 'Scheduled'].includes(appointment.status)" :disabled="actionBusy" @click="openServiceKeyModal(appointment)" class="rounded bg-amber-700 px-3 py-2 text-white">Verify Customer Key</button>
                     <button v-if="appointment.status === 'Ready to Start'" :disabled="actionBusy" @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white">Start Service</button>
                     <button v-if="appointment.status === 'Ongoing'" :disabled="actionBusy" @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white">Mark My Work Done</button>
                     <button
@@ -89,6 +89,13 @@
         </div>
       </div>
     </main>
+    <ServiceKeyVerificationModal
+      :visible="showServiceKeyModal"
+      :loading="actionBusy"
+      description="Enter the service key provided by the customer."
+      @close="closeServiceKeyModal"
+      @submit="submitServiceKey"
+    />
   </div>
 </template>
 
@@ -101,10 +108,11 @@ import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
 
 export default {
   name: 'PractitionerAppointments',
-  components: { OwnerSidebar },
+  components: { OwnerSidebar, ServiceKeyVerificationModal },
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -116,10 +124,11 @@ export default {
     const dateFilter = ref('')
     const appointments = ref([])
     const actionBusy = ref(false)
-    const bookingAction = async (appointment, action) => {
+    const showServiceKeyModal = ref(false)
+    const selectedServiceKeyAppointment = ref(null)
+    const bookingAction = async (appointment, action, serviceKey = '') => {
       if (actionBusy.value) return
-      const serviceKey = action === 'key' ? String(window.prompt('Enter the service key exchanged with the customer:', '') || '').trim() : ''
-      if (action === 'key' && !serviceKey) return
+      if (action === 'key' && !serviceKey) return false
       actionBusy.value = true
       try {
         const token = await auth.currentUser.getIdToken()
@@ -129,7 +138,21 @@ export default {
         if (!response.ok) throw new Error(payload.error || 'Unable to update booking.')
         toast.success('Booking updated: ' + payload.data.status)
         await loadAppointments()
-      } catch (error) { toast.error(error.message) } finally { actionBusy.value = false }
+        return true
+      } catch (error) { toast.error(error.message); return false } finally { actionBusy.value = false }
+    }
+
+    const openServiceKeyModal = (appointment) => {
+      selectedServiceKeyAppointment.value = appointment
+      showServiceKeyModal.value = true
+    }
+    const closeServiceKeyModal = () => {
+      showServiceKeyModal.value = false
+      selectedServiceKeyAppointment.value = null
+    }
+    const submitServiceKey = async (serviceKey) => {
+      const verified = await bookingAction(selectedServiceKeyAppointment.value, 'key', serviceKey)
+      if (verified) closeServiceKeyModal()
     }
 
     const isAssignedToPractitioner = (appointment) => {
@@ -291,7 +314,7 @@ export default {
     })
 
     return {
-      actionBusy, bookingAction,
+      actionBusy, bookingAction, showServiceKeyModal, openServiceKeyModal, closeServiceKeyModal, submitServiceKey,
       searchQuery,
       statusFilter,
       dateFilter,

@@ -104,6 +104,13 @@
   </div>
 
           <BookingContractModal :visible="showContractModal" :appointment="selectedAppointment" @close="closeContractModal" @updated="contractUpdated" />
+          <ServiceKeyVerificationModal
+            :visible="showServiceKeyModal"
+            :loading="serviceKeyVerifying"
+            description="Enter the service key provided by the customer."
+            @close="closeServiceKeyModal"
+            @submit="submitServiceKey"
+          />
 </template>
 
 <script>
@@ -116,11 +123,12 @@ import { toast } from 'vue3-toastify'
 import { usePermissions } from '@/composables/usePermissions'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import BookingContractModal from '@/components/BookingContractModal.vue'
+import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 export default {
   name: 'ReceptionistAppointmentList',
-  components: { OwnerSidebar, BookingContractModal },
+  components: { OwnerSidebar, BookingContractModal, ServiceKeyVerificationModal },
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -133,6 +141,9 @@ export default {
     const statusFilter = ref('')
     const dateFilter = ref('')
     const appointments = ref([])
+    const showServiceKeyModal = ref(false)
+    const selectedServiceKeyAppointment = ref(null)
+    const serviceKeyVerifying = ref(false)
 
     const pageTitle = computed(() => (currentRole.value === 'practitioner' ? 'Appointments' : 'Appointment Hub'))
     const pageSubtitle = computed(() =>
@@ -248,9 +259,20 @@ export default {
       })))
     }
 
-    const verifyServiceKey = async (appointment) => {
-      const serviceKey = String(window.prompt('Enter the service key provided by the customer:', '') || '').trim()
-      if (!serviceKey) return
+    const verifyServiceKey = (appointment) => {
+      selectedServiceKeyAppointment.value = appointment
+      showServiceKeyModal.value = true
+    }
+
+    const closeServiceKeyModal = () => {
+      showServiceKeyModal.value = false
+      selectedServiceKeyAppointment.value = null
+    }
+
+    const submitServiceKey = async (serviceKey) => {
+      const appointment = selectedServiceKeyAppointment.value
+      if (!appointment?.id) return
+      serviceKeyVerifying.value = true
       try {
         const user = auth.currentUser
         const token = user ? await user.getIdToken() : ''
@@ -268,9 +290,12 @@ export default {
         appointment.status = payload.data.status
         appointment.workerKeyVerified = true
         toast.success('Service key verified.')
+        closeServiceKeyModal()
       } catch (error) {
         console.error(error)
         toast.error(error?.message || 'Unable to verify service key.')
+      } finally {
+        serviceKeyVerifying.value = false
       }
     }
 
@@ -333,6 +358,10 @@ export default {
       filteredAppointments,
       statusClass,
       verifyServiceKey,
+      showServiceKeyModal,
+      serviceKeyVerifying,
+      closeServiceKeyModal,
+      submitServiceKey,
       canManageStatus,
       canCreateAppointments,
       canReviewRequests,
