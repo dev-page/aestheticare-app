@@ -822,6 +822,7 @@ export default {
 
       try {
         saving.value = true
+        if (pending.snapshot.saleMode !== 'appointment') {
         const response = await fetchFromBackend(`/paymongo/checkout-session/${pending.checkoutSessionId}`)
         const raw = await response.text()
         let payload = null
@@ -835,6 +836,8 @@ export default {
         }
         if (!payload?.data?.isPaid) {
           throw new Error('Payment is not yet marked as paid in PayMongo.')
+        }
+
         }
 
         await commitSale(pending.snapshot, {

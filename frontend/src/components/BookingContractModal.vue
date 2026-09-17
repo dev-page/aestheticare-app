@@ -5,6 +5,7 @@
       <p v-if="canSign" class="mb-4 text-sm text-slate-300">Review the agreement, draw your signature, and confirm. {{ isWalkIn ? 'The client must sign before treatment can start.' : 'Payment becomes available after signing.' }}</p>
 
       <div class="space-y-3">
+        <p v-if="isWalkIn && appointment.paymentStatus !== 'Paid'" class="rounded bg-amber-900/30 p-3 text-sm text-amber-200">Collect payment at POS first. The client can then sign here before treatment.</p>
         <p v-if="contract?.terms" class="max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-white p-4 text-sm text-slate-800">{{ contract.terms }}</p>
         <div>
           <label class="text-sm text-slate-300">Contract Title</label>

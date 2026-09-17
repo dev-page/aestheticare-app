@@ -41,6 +41,9 @@
             <label class="block text-slate-400 text-sm mb-2">Status</label>
             <select v-model="statusFilter" class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none">
               <option value="">All</option>
+              <option value="Unpaid">Unpaid</option>
+              <option value="Paid">Paid</option>
+              <option value="Completed">Completed</option>
               <option value="Scheduled">Scheduled</option>
               <option value="Ongoing">Ongoing</option>
               <option value="Awaiting Customer Confirmation">Awaiting Customer Confirmation</option>
@@ -78,7 +81,7 @@
                 </td>
                 <td v-if="canManageStatus" class="px-6 py-4">
                                   <div class="flex items-center gap-2">
-                                    <button @click="openContractModal(appointment)" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-500">Manage Contract</button>
+                                    <button @click="openContractModal(appointment)" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-500">{{ appointment.source === 'walk_in' ? (appointment.contract?.status === 'signed' ? 'View signed contract' : 'Client review & e-sign') : 'Manage Contract' }}</button>
                                     <button
                                       v-if="appointment.serviceKey && !appointment.workerKeyVerified"
                                       @click="verifyServiceKey(appointment)"
