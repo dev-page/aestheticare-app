@@ -1,6 +1,18 @@
 import crypto from 'node:crypto'
 import { normalized, initialPaymentReceived, balanceSettled, afterPaymentStatus, assertWorkflow as check } from './bookingWorkflow.js'
 
+const getServiceKeyWindow = (appointment) => {
+  const date = String(appointment.date || '').trim()
+  const time = String(appointment.time || '').trim()
+  if (!date || !time) return null
+  const start = new Date(`${date}T${time}`)
+  if (Number.isNaN(start.getTime())) return null
+  const endTime = String(appointment.endTime || '').trim()
+  const end = endTime ? new Date(`${date}T${endTime}`) : new Date(start.getTime() + Math.max(30, Number(appointment.totalServiceDurationMinutes || 60)) * 60 * 1000)
+  if (Number.isNaN(end.getTime()) || end <= start) return null
+  return { opensAt: new Date(start.getTime() - 30 * 60 * 1000), closesAt: end }
+}
+
 export const registerBookingMilestones = (app, { admin, requireAuth }) => {
   const run = (path, action) => app.post(path, requireAuth, async (req, res) => {
     try {
@@ -27,17 +39,24 @@ export const registerBookingMilestones = (app, { admin, requireAuth }) => {
           update.serviceKey = appointment.serviceKey || String(crypto.randomInt(100000, 1000000))
           update.status = afterPaymentStatus({ ...appointment, ...update })
         } else if (action === 'key') {
+          check(worker, 'Only the assigned practitioner can verify the service key.', 403)
           check(appointment.approvalStatus === 'Approved' && initialPaymentReceived(appointment) && normalized(appointment.contract?.status) === 'signed', 'Approval, initial payment, and a signed contract are required.')
           check(['paid', 'ready to start', 'scheduled'].includes(status), 'The service key cannot be verified at this stage.')
+          const keyWindow = getServiceKeyWindow(appointment)
+          if (keyWindow) {
+            const now = new Date()
+            check(now >= keyWindow.opensAt, 'The service key can be verified only within 30 minutes of the appointment start time.')
+            check(now <= keyWindow.closesAt, 'The service key has expired for this appointment.')
+          }
           check(appointment.serviceKey && String(req.body?.serviceKey || '').trim() === String(appointment.serviceKey), 'Invalid service key.', 403)
-          update[customer ? 'customerKeyVerified' : 'workerKeyVerified'] = true
-          update[customer ? 'customerKeyVerifiedAt' : 'workerKeyVerifiedAt'] = timestamp
+          update.workerKeyVerified = true
+          update.workerKeyVerifiedAt = timestamp
           update.status = afterPaymentStatus({ ...appointment, ...update })
         } else {
           const transition = req.body?.action
           if (transition === 'start') {
             check(worker, 'Only the assigned worker can start the service.', 403)
-            check(status === 'ready to start' && appointment.customerKeyVerified && appointment.workerKeyVerified && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment), 'Both parties must verify the key after payment and signing.')
+            check(status === 'ready to start' && appointment.workerKeyVerified && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment), 'The practitioner must verify the customer service key after payment and signing.')
             const resourceRefs = (appointment.resources || []).filter((r) => r.kind === 'material').map((r) => ({ ...r, ref: db.collection('inventoryItems').doc(r.id) }))
             const stocks = []
             for (const resource of resourceRefs) stocks.push({ resource, snapshot: await tx.get(resource.ref) })
