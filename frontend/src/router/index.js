@@ -146,6 +146,7 @@ const routes = [
   { path: "/customer/home", name: "customer-home", component: () => import("@/views/customer/CustomerHome.vue"), meta: { requiresAuth: true } },
   { path: "/customer/center/:id", name: "customer-center", component: () => import("@/views/customer/CenterPage.vue"), meta: { requiresAuth: true } },
   { path: "/customer/appointments", name: "customer-appointments", component: () => import("@/views/customer/MyAppointments.vue"), meta: { requiresAuth: true } },
+  { path: "/customer/unpaid-appointments", name: "customer-unpaid-appointments", component: () => import("@/views/customer/MyAppointments.vue"), meta: { requiresAuth: true } },
   { path: "/customer/orders", name: "customer-orders", component: () => import("@/views/customer/MyOrders.vue"), meta: { requiresAuth: true } },
   { path: "/customer/checkout", name: "customer-checkout", component: () => import("@/views/customer/Checkout.vue"), meta: { requiresAuth: true } },
   { path: "/customer/cart", name: "customer-cart", component: () => import("@/views/customer/MyCart.vue"), meta: { requiresAuth: true } },

@@ -19,6 +19,7 @@ export default {
     const items = [
       { label: 'Home', icon: 'home', to: '/customer/home', tourKey: 'customer-home' },
       { label: 'Appointments', icon: 'calendar', to: '/customer/appointments', tourKey: 'customer-appointments' },
+      { label: 'Unpaid Appointments', icon: 'card', to: '/customer/unpaid-appointments', tourKey: 'customer-unpaid-appointments' },
       { label: 'Orders', icon: 'clipboard', to: '/customer/orders', tourKey: 'customer-orders' },
       { label: 'Cart', icon: 'cart', to: '/customer/cart', tourKey: 'customer-cart' },
       {

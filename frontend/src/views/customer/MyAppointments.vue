@@ -5,9 +5,67 @@
     <main class="appointments-main">
       <div class="appointments-content">
         <section class="appointments-header">
-          <h1 class="appointments-title">My Appointments</h1>
+          <h1 class="appointments-title">{{ isUnpaidAppointmentsPage ? 'Unpaid Appointments' : 'My Appointments' }}</h1>
+          <p v-if="isUnpaidAppointmentsPage" class="appointments-subtitle">Review approved bookings, update the schedule, cancel, or complete payment.</p>
         </section>
 
+        <section v-if="isUnpaidAppointmentsPage" class="appointments-panel unpaid-appointments-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Payment Required</p>
+              <h2 class="panel-title">Appointments with a payment due</h2>
+            </div>
+            <p class="panel-note">{{ loading ? 'Loading appointments...' : `${unpaidAppointments.length} appointment${unpaidAppointments.length === 1 ? '' : 's'}` }}</p>
+          </div>
+
+          <div v-if="loading" class="state-panel">
+            <PageSectionSkeleton variant="cards" :rows="3" :columns="1" />
+          </div>
+
+          <div v-else-if="unpaidAppointments.length" class="unpaid-appointments-grid">
+            <article v-for="appt in unpaidAppointments" :key="appt.id" class="unpaid-appointment-card">
+              <div class="unpaid-appointment-card-head">
+                <div>
+                  <p class="panel-kicker">{{ appt.clinic }}</p>
+                  <h3 class="unpaid-appointment-title">{{ formatAppointmentServices(appt) }}</h3>
+                </div>
+                <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
+              </div>
+
+              <dl class="unpaid-appointment-details">
+                <div><dt>Date</dt><dd>{{ appt.date }}</dd></div>
+                <div><dt>Time</dt><dd>{{ appt.time }}</dd></div>
+                <div><dt>Amount due</dt><dd>{{ formatBookingDue(appt) }}</dd></div>
+              </dl>
+
+              <div class="payment-agreement">
+                <p v-if="appt.installmentsAllowed && !initialPaymentReceived(appt)">Initial payment: {{ appt.depositPercent }}% of the total. The balance is due after you confirm the service is done.</p>
+                <p v-if="appt.installmentsAllowed">Total: PHP {{ Number(appt.totalAmount || appt.amount || 0).toFixed(2) }} · Paid: PHP {{ Number(appt.amountPaid || 0).toFixed(2) }} · Remaining: PHP {{ Math.max(0, Number(appt.totalAmount || appt.amount || 0) - Number(appt.amountPaid || 0)).toFixed(2) }}</p>
+                <details class="payment-agreement-details" @toggle="markPaymentAgreementViewed(appt.id, $event)">
+                  <summary>Review clinic agreement before payment</summary>
+                  <div v-if="getAppointmentPolicyEntries(appt).length" class="payment-agreement-copy">
+                    <p v-for="policy in getAppointmentPolicyEntries(appt)" :key="policy.key"><strong>{{ policy.label }}:</strong> {{ policy.text }}</p>
+                  </div>
+                  <p v-else class="payment-agreement-copy">I understand that payment is for the selected clinic service and is subject to the clinic's booking, cancellation, rescheduling, and refund terms.</p>
+                </details>
+                <label class="payment-agreement-check">
+                  <input v-model="paymentAgreementAcknowledged[appt.id]" type="checkbox" :disabled="!paymentAgreementViewed[appt.id]" />
+                  <span>I have read and agree to the clinic agreement.</span>
+                </label>
+              </div>
+
+              <div class="unpaid-appointment-actions">
+                <button type="button" class="appointment-button appointment-button-primary" @click="payAppointment(appt)">Pay {{ formatBookingDue(appt) }}</button>
+                <button v-if="canModifyUnpaidAppointment(appt)" type="button" class="appointment-button appointment-button-secondary" :disabled="isRequestPending(appt, 'reschedule')" @click="openRequestModal('reschedule', appt)">{{ isRequestPending(appt, 'reschedule') ? 'Pending Approval' : 'Reschedule' }}</button>
+                <button v-if="canModifyUnpaidAppointment(appt)" type="button" class="appointment-button appointment-button-danger" :disabled="isRequestPending(appt, 'cancel')" @click="openRequestModal('cancel', appt)">{{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}</button>
+              </div>
+            </article>
+          </div>
+
+          <div v-else class="state-panel">No approved appointments are waiting for payment.</div>
+        </section>
+
+        <template v-if="!isUnpaidAppointmentsPage">
         <section class="appointments-panel">
           <div class="panel-head">
             <div>
@@ -100,7 +158,7 @@
               <p class="panel-kicker">Active Bookings</p>
               <h2 class="panel-title">Upcoming Appointments</h2>
             </div>
-            <p class="panel-note">{{ loading ? 'Loading appointments...' : `${upcomingAppointments.length} appointment${upcomingAppointments.length === 1 ? '' : 's'}` }}</p>
+            <p class="panel-note">{{ loading ? 'Loading appointments...' : `${activeUpcomingAppointments.length} appointment${activeUpcomingAppointments.length === 1 ? '' : 's'}` }}</p>
           </div>
 
           <div v-if="loading" class="state-panel">
@@ -120,7 +178,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="appt in upcomingAppointments" :key="appt.id">
+                <tr v-for="appt in activeUpcomingAppointments" :key="appt.id">
                   <td class="appointment-service-cell" data-label="Service">
                     <div class="table-primary">{{ formatAppointmentServices(appt) }}</div>
                   </td>
@@ -206,7 +264,7 @@
                     </div>
                   </td>
                 </tr>
-                <tr v-if="!upcomingAppointments.length">
+                <tr v-if="!activeUpcomingAppointments.length">
                   <td colspan="6" class="table-empty-cell" data-label="">No upcoming appointments.</td>
                 </tr>
               </tbody>
@@ -292,6 +350,7 @@
             </table>
           </div>
         </section>
+        </template>
       </div>
 
       <div v-if="requestModal.open" class="request-modal-overlay">
@@ -485,6 +544,7 @@ import BookingContractModal from '@/components/BookingContractModal.vue'
 const loading = ref(true)
 const router = useRouter()
 const route = useRoute()
+const isUnpaidAppointmentsPage = computed(() => route.name === 'customer-unpaid-appointments')
 const upcomingAppointments = ref([])
 const pastAppointments = ref([])
 const onlineConsultations = ref([])
@@ -1178,6 +1238,14 @@ const pastRecords = computed(() =>
   ])
 )
 
+const unpaidAppointments = computed(() =>
+  upcomingAppointments.value.filter((appointment) => canPayAppointment(appointment))
+)
+
+const activeUpcomingAppointments = computed(() =>
+  upcomingAppointments.value.filter((appointment) => !canPayAppointment(appointment))
+)
+
 const requestPolicyText = computed(() => {
   if (!requestModal.value.appointment) return ''
   return getClinicPolicy(requestModal.value.appointment, requestModal.value.type)
@@ -1412,6 +1480,12 @@ const canPayAppointment = (appointment) => {
   return status === 'awaiting payment' || status === 'payment pending' || status === 'approved' || status === 'balance due'
 }
 
+const canModifyUnpaidAppointment = (appointment) => {
+  const status = normalizeAppointmentStatus(appointment?.status)
+  return ['awaiting payment', 'payment pending', 'approved'].includes(status)
+    && canRequestCancellation(appointment)
+}
+
 const getAppointmentPolicyEntries = (appointment) => {
   const snapshot = appointment?.clinicPolicySnapshot
   if (!snapshot || typeof snapshot !== 'object') return []
@@ -1534,8 +1608,8 @@ const payAppointment = async (appointment) => {
         description: `Payment for ${appointment.service || 'appointment'}`,
         referenceNumber: createShortAppointmentReference(),
         billing: { name: appointment.customerName || user.displayName || 'Customer', email: user.email || appointment.customerEmail || '' },
-        successUrl: `${window.location.origin}/customer/appointments?paymongo_status=success`,
-        cancelUrl: `${window.location.origin}/customer/appointments?paymongo_status=cancelled`,
+        successUrl: `${window.location.origin}${isUnpaidAppointmentsPage.value ? '/customer/unpaid-appointments' : '/customer/appointments'}?paymongo_status=success`,
+        cancelUrl: `${window.location.origin}${isUnpaidAppointmentsPage.value ? '/customer/unpaid-appointments' : '/customer/appointments'}?paymongo_status=cancelled`,
         metadata: {
           module: 'customer_appointment',
           source: 'appointment_payment',
@@ -1654,6 +1728,13 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.appointments-subtitle {
+  margin: 0.65rem 0 0;
+  max-width: 42rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
 .appointments-kicker,
 .panel-kicker,
 .appointment-card-kicker,
@@ -1726,6 +1807,75 @@ onUnmounted(() => {
   margin: 0;
   align-self: center;
   font-size: 0.88rem;
+}
+
+.unpaid-appointments-panel {
+  border-color: rgba(181, 127, 92, 0.5);
+}
+
+.unpaid-appointments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.unpaid-appointment-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border: 1px solid rgba(230, 193, 150, 0.8);
+  border-radius: 1.35rem;
+  background: rgba(255, 251, 244, 0.94);
+}
+
+.unpaid-appointment-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.unpaid-appointment-title {
+  margin: 0.45rem 0 0;
+  color: #3d281d;
+  font-family: "Playfair Display", "Times New Roman", serif;
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
+.unpaid-appointment-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.unpaid-appointment-details div {
+  padding: 0.7rem;
+  border-radius: 0.85rem;
+  background: rgba(248, 236, 217, 0.65);
+}
+
+.unpaid-appointment-details dt {
+  color: #8c6d55;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.unpaid-appointment-details dd {
+  margin: 0.3rem 0 0;
+  color: #3d281d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.unpaid-appointment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 
 .appointments-table-wrap {
@@ -2263,6 +2413,14 @@ onUnmounted(() => {
 }
 
 @media (max-width: 767px) {
+  .unpaid-appointment-details {
+    grid-template-columns: 1fr;
+  }
+
+  .unpaid-appointment-actions .appointment-button {
+    width: 100%;
+  }
+
   .appointments-content {
     padding: 1rem 1rem 1.5rem;
   }
