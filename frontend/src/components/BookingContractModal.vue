@@ -11,19 +11,14 @@
         </div>
 
         <div v-if="!isCustomer">
-          <label class="text-sm text-slate-300">Template URL (PDF)</label>
+          <label class="text-sm text-slate-300">Contract PDF link (optional)</label>
           <input :readonly="isCustomer" v-model="templateUrl" type="text" placeholder="https://... or gs://..." class="w-full bg-slate-700 text-white px-3 py-2 rounded mt-1" />
-          <p class="text-xs text-slate-400 mt-1">Provide a URL to the contract template or a generated PDF. You can upload to Firebase Storage and paste the public URL.</p>
-        </div>
-
-        <div v-if="!isCustomer">
-          <label class="text-sm text-slate-300">Required Signers (comma-separated emails)</label>
-          <input :readonly="isCustomer" v-model="requiredSignersStr" type="text" class="w-full bg-slate-700 text-white px-3 py-2 rounded mt-1" />
+          <p class="text-xs text-slate-400 mt-1">Attach a public link only when the clinic has a PDF agreement. The booking customer is the contract signer.</p>
         </div>
 
         <div class="flex gap-2">
           <button v-if="!isCustomer" @click="createContract" :disabled="isProcessing" class="px-4 py-2 bg-sky-600 text-white rounded">Create / Update</button>
-          <button @click="signContract" :disabled="isProcessing || !canSign" class="px-4 py-2 bg-emerald-600 text-white rounded">Sign Contract</button>
+          <button v-if="canSign" @click="signContract" :disabled="isProcessing" class="px-4 py-2 bg-emerald-600 text-white rounded">Sign Contract</button>
           <button @click="close" class="px-4 py-2 bg-slate-600 text-white rounded">Close</button>
         </div>
 
@@ -62,7 +57,6 @@ export default {
     const auth = getAuth()
     const title = ref('Contract')
     const templateUrl = ref('')
-    const requiredSignersStr = ref('')
     const contract = ref(null)
     const isProcessing = ref(false)
     const error = ref('')
@@ -73,7 +67,6 @@ export default {
         contract.value = next.contract
         title.value = next.contract.title || 'Contract'
         templateUrl.value = next.contract.templateUrl || ''
-        requiredSignersStr.value = Array.isArray(next.contract.requiredSigners) ? next.contract.requiredSigners.map(s => s.email).join(', ') : ''
       } else {
         contract.value = null
       }
@@ -105,10 +98,9 @@ export default {
       error.value = ''
       message.value = ''
       try {
-        const signers = requiredSignersStr.value.split(',').map(s => s.trim()).filter(Boolean).map(email => ({ email }))
         const resp = await fetchFromBackend(`/appointments/${props.appointment.id}/contract`, {
           method: 'POST',
-          body: JSON.stringify({ title: title.value, templateUrl: templateUrl.value, requiredSigners: signers }),
+          body: JSON.stringify({ title: title.value, templateUrl: templateUrl.value }),
           headers: { 'Content-Type': 'application/json' }
         })
         const payload = await resp.json()
@@ -163,7 +155,7 @@ export default {
 
     const close = () => emit('close')
 
-    return { isCustomer, title, templateUrl, requiredSignersStr, contract, createContract, signContract, isProcessing, error, message, close, canSign }
+    return { isCustomer, title, templateUrl, contract, createContract, signContract, isProcessing, error, message, close, canSign }
   }
 }
 </script>

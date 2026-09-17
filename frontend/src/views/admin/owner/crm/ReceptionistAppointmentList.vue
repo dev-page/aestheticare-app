@@ -78,16 +78,6 @@
                 </td>
                 <td v-if="canManageStatus" class="px-6 py-4">
                                   <div class="flex items-center gap-2">
-                                    <select
-                                      :value="appointment.status || 'Scheduled'"
-                                      @change="updateStatus(appointment, $event.target.value)"
-                                      class="bg-slate-700 text-white px-3 py-1 rounded border border-slate-600 focus:border-purple-500 focus:outline-none"
-                                    >
-                                      <option value="Scheduled">Scheduled</option>
-                                      <option value="Ongoing">Ongoing</option>
-                                      <option value="Awaiting Customer Confirmation">Awaiting Customer Confirmation</option>
-                                      <option value="Cancelled">Cancelled</option>
-                                    </select>
                                     <button @click="openContractModal(appointment)" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-500">Manage Contract</button>
                                     <button
                                       v-if="appointment.serviceKey && !appointment.workerKeyVerified"
@@ -123,7 +113,6 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
-import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import BookingContractModal from '@/components/BookingContractModal.vue'
@@ -259,49 +248,6 @@ export default {
       })))
     }
 
-    const updateStatus = async (appointment, nextStatus) => {
-      try {
-        const currentStatus = String(appointment.status || '').trim().toLowerCase()
-        const action = nextStatus === 'Ongoing'
-          ? 'start'
-          : nextStatus === 'Awaiting Customer Confirmation'
-            ? 'worker_complete'
-            : ''
-
-        if (action) {
-          const user = auth.currentUser
-          const token = user ? await user.getIdToken() : ''
-          let response = null
-          for (const baseUrl of OTP_BACKEND_CANDIDATES) {
-            response = await fetch(`${baseUrl}/appointments/${appointment.id}/transition`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ action }),
-            })
-            if (response.status !== 404) break
-          }
-          const payload = await response?.json().catch(() => null)
-          if (!response?.ok || !payload?.success) throw new Error(payload?.error || 'Failed to update appointment milestone.')
-          nextStatus = payload.data.status
-        } else {
-          throw new Error('This status must be changed through the appointment request workflow.')
-        }
-        appointment.status = nextStatus
-
-        await logActivity(db, {
-          actorId: currentUserId.value,
-          action: 'Updated appointment status',
-          details: `${appointment.clientName || 'Unknown client'} set to ${nextStatus}`,
-          module: 'Appointments'
-        })
-
-        toast.success('Appointment status updated.')
-      } catch (error) {
-        console.error(error)
-        toast.error('Failed to update appointment.')
-      }
-    }
-
     const verifyServiceKey = async (appointment) => {
       const serviceKey = String(window.prompt('Enter the service key provided by the customer:', '') || '').trim()
       if (!serviceKey) return
@@ -386,7 +332,6 @@ export default {
       visibleAppointments,
       filteredAppointments,
       statusClass,
-      updateStatus,
       verifyServiceKey,
       canManageStatus,
       canCreateAppointments,

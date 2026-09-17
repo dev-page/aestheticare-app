@@ -1392,7 +1392,6 @@ const submitRequest = async () => {
       })
       toast.success('Cancellation request submitted for review.')
       closeRequestModal()
-      await loadAppointments()
     } catch (error) {
       console.error(error)
       toast.error('Failed to submit cancellation request.')
@@ -1431,7 +1430,6 @@ const submitRequest = async () => {
     })
     toast.success('Reschedule request submitted for review.')
     closeRequestModal()
-    await loadAppointments()
   } catch (error) {
     console.error(error)
     toast.error('Failed to submit reschedule request.')
