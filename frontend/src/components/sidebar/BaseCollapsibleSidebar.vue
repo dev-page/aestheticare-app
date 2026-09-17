@@ -161,7 +161,7 @@
                   >
                     <Icon :icon="child.locked ? 'mdi:lock-outline' : iconName(child.icon)" class="w-3.5 h-3.5" />
                   </span>
-                  <span class="text-sm truncate">{{ child.label }}</span>
+                  <span class="text-xs leading-5 truncate">{{ child.label }}</span>
                   <span v-if="child.locked" class="ml-auto text-[10px] uppercase tracking-[0.18em] text-amber-300">
                     Locked
                   </span>
@@ -677,7 +677,16 @@ export default {
 
     const iconName = (name) => {
       const key = String(name || '').toLowerCase()
+      if (key.startsWith('mdi:')) return key
       const map = {
+        card: 'mdi:credit-card-outline',
+        'credit-card': 'mdi:credit-card-outline',
+        'calendar-check': 'mdi:calendar-check-outline',
+        'shield-account': 'mdi:shield-account-outline',
+        lock: 'mdi:lock-outline',
+        'chart-line': 'mdi:chart-line',
+        receipt: 'mdi:receipt-text-outline',
+        cog: 'mdi:cog-outline',
         home: 'mdi:home-outline',
         dashboard: 'mdi:view-dashboard-outline',
         building: 'mdi:office-building-outline',
@@ -702,7 +711,7 @@ export default {
         activity: 'mdi:pulse',
         archive: 'mdi:archive-outline',
         report: 'mdi:file-chart-outline',
-        reportIssue: 'mdi:bug-outline',
+        reportissue: 'mdi:bug-outline',
         help: 'mdi:help-circle-outline',
         shield: 'mdi:shield-check-outline',
         profile: 'mdi:account-circle-outline',

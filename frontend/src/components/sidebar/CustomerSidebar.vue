@@ -28,7 +28,7 @@ export default {
         children: [
           { label: 'Profile', icon: 'profile', to: '/customer/account-settings?tab=profile', tourKey: 'customer-profile' },
           { label: 'Notifications', icon: 'bell', to: '/customer/account-settings?tab=notifications', tourKey: 'customer-notifications' },
-          { label: 'Account Access', icon: 'key', to: '/customer/account-settings?tab=account', tourKey: 'customer-account-settings' },
+          { label: 'Account Access', icon: 'account-off', to: '/customer/account-settings?tab=account', tourKey: 'customer-account-settings' },
           { label: 'Help & Guidance', icon: 'help', to: '/customer/account-settings?tab=help', tourKey: 'customer-help' },
           { label: 'Privacy & Data', icon: 'shield', to: '/customer/account-settings?tab=privacy', tourKey: 'customer-privacy' },
           { label: 'Change Password', icon: 'key', to: '/change-password', tourKey: 'customer-change-password' },
