@@ -7,6 +7,9 @@
         <section class="appointments-header">
           <h1 class="appointments-title">{{ isUnpaidAppointmentsPage ? 'Unpaid Appointments' : 'My Appointments' }}</h1>
           <p v-if="isUnpaidAppointmentsPage" class="appointments-subtitle">Review approved bookings, update the schedule, cancel, or complete payment.</p>
+          <button v-else-if="unpaidAppointments.length" type="button" class="appointments-pay-link" @click="router.push({ name: 'customer-unpaid-appointments' })">
+            Pay {{ unpaidAppointments.length }} unpaid appointment{{ unpaidAppointments.length === 1 ? '' : 's' }}
+          </button>
         </section>
 
         <section v-if="isUnpaidAppointmentsPage" class="appointments-panel unpaid-appointments-panel">
@@ -140,7 +143,15 @@
                       >
                         {{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}
                       </button>
-                      <span v-else class="table-secondary">No actions available</span>
+                      <button
+                        v-if="appt.contract && initialPaymentReceived(appt)"
+                        type="button"
+                        class="appointment-button appointment-button-secondary"
+                        @click="openContract(appt)"
+                      >
+                        {{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View Contract' : 'Sign Contract' }}
+                      </button>
+                      <span v-if="!canRequestCancellation(appt) && !(appt.contract && initialPaymentReceived(appt))" class="table-secondary">No actions available</span>
                     </div>
                   </td>
                 </tr>
@@ -1222,8 +1233,10 @@ const statusToneClass = (status) => {
 }
 
 const upcomingOnlineConsultations = computed(() => {
-  const now = new Date()
-  return onlineConsultations.value.filter((appt) => !['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status)))
+  return onlineConsultations.value.filter((appt) =>
+    !['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status))
+    && !canPayAppointment(appt)
+  )
 })
 
 const pastOnlineConsultations = computed(() => {
@@ -1726,6 +1739,8 @@ onUnmounted(() => {
 .appointments-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
 .appointments-subtitle {
@@ -1733,6 +1748,17 @@ onUnmounted(() => {
   max-width: 42rem;
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+.appointments-pay-link {
+  flex: 0 0 auto;
+  border: 1px solid rgba(126, 78, 53, 0.24);
+  border-radius: 1rem;
+  padding: 0.8rem 1rem;
+  background: linear-gradient(120deg, #b57f5c 0%, #8d5a3b 48%, #6e4330 100%);
+  color: #fff8eb;
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .appointments-kicker,
@@ -2432,6 +2458,10 @@ onUnmounted(() => {
   .request-modal-actions {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .appointments-pay-link {
+    width: 100%;
   }
 
   .request-action-buttons {
