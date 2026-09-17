@@ -58,14 +58,14 @@
                     </button>
                     <button
                       class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-500/60 text-amber-200 hover:bg-amber-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
-                      :disabled="processingId === summary.id || ['approved', 'rejected'].includes(summary.status)"
+                      :disabled="processingId === summary.id || summary.status === 'rejected' || (summary.status === 'approved' && !!summary.approvedEntries)"
                       @click="approveSummary(summary)"
                     >
-                      {{ summary.status === 'approved' ? 'Approved' : 'Approve' }}
+                      {{ summary.status === 'approved' ? (summary.approvedEntries ? 'Approved' : 'Confirm Legacy Approval') : 'Approve' }}
                     </button>
                     <button
                       class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-rose-500/60 text-rose-200 hover:bg-rose-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
-                      :disabled="processingId === summary.id || ['approved', 'rejected'].includes(summary.status)"
+                      :disabled="processingId === summary.id || summary.status === 'rejected' || (summary.status === 'approved' && !!summary.approvedEntries)"
                       @click="rejectSummary(summary)"
                     >
                       {{ summary.status === 'rejected' ? 'Rejected' : 'Reject' }}
@@ -265,7 +265,7 @@ export default {
     }
 
     const rejectSummary = async (summary) => {
-      if (!summary?.id || summary.status === 'approved') return
+      if (!summary?.id || (summary.status === 'approved' && summary.approvedEntries)) return
       const result = await Swal.fire({
         title: 'Reject Payroll Summary',
         input: 'textarea',
@@ -282,14 +282,7 @@ export default {
 
       processingId.value = summary.id
       try {
-        await updateDoc(doc(db, 'payrollSummaries', summary.id), {
-          status: 'rejected',
-          rejectionReason: String(result.value || '').trim(),
-          approvedBy: currentUserId.value,
-          approvedByName: currentUserName.value || 'Finance',
-          approvedAt: null,
-          updatedAt: serverTimestamp()
-        })
+        await workflowApi('/finance/payroll/' + summary.id + '/reject', { reason: String(result.value || '').trim() })
         toast.success('Payroll summary rejected and returned to HR.')
       } catch (error) {
         console.error('Failed to reject summary:', error)

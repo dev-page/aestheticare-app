@@ -3,11 +3,17 @@ export const stockPlan = async (tx, db, items) => {
   const quantities = new Map()
   for (const item of items) quantities.set(item.inventoryItemId, (quantities.get(item.inventoryItemId) || 0) + item.quantity)
   const plan = []
+  const appointments = []
+  for (const branchId of new Set(items.map((item) => item.branchId))) {
+    const snapshot = await tx.get(db.collection('appointments').where('branchId', '==', branchId))
+    appointments.push(...snapshot.docs.map((s) => s.data()).filter((a) => !a.materialsConsumed && !['cancelled', 'rejected', 'expired', 'completed'].includes(String(a.status || '').toLowerCase())))
+  }
   for (const [id, quantity] of quantities) {
     const ref = db.collection('inventoryItems').doc(id), snap = await tx.get(ref)
     const current = Number(snap.data()?.currentStock || 0)
     check(snap.exists && items.filter((i) => i.inventoryItemId === id).every((i) => i.branchId === snap.data().branchId), 'Product inventory is unavailable.')
-    plan.push({ ref, quantity, current })
+    const reserved = appointments.reduce((sum, a) => sum + (a.resources || []).filter((r) => r.kind === 'material' && r.id === id).reduce((count, r) => count + Number(r.quantity || 0), 0), 0)
+    plan.push({ ref, quantity, current, available: current - reserved })
   }
   return plan
 }
@@ -30,7 +36,7 @@ export const prepareOrderSnapshot = async (db, items, customerId, delivery, refe
   check(delivery.pickupBranchId === normalized[0].branchId, 'Choose the clinic supplying these products for pickup.')
   await db.runTransaction(async (tx) => {
     const plan = await stockPlan(tx, db, normalized)
-    check(plan.every((p) => Number.isFinite(p.current) && p.current >= p.quantity), 'Some products are out of stock. Refresh your cart.')
+    check(plan.every((p) => Number.isFinite(p.available) && p.available >= p.quantity), 'Some products are out of stock or reserved for services. Refresh your cart.')
   })
   return { customerId, branchId: normalized[0].branchId, items: normalized, total: normalized.reduce((sum, item) => sum + Math.round(item.price * 100) * item.quantity, 0) / 100, delivery: { fullName: String(delivery.fullName), phone: String(delivery.phone), pickupBranchId: normalized[0].branchId, fulfillmentType: 'pickup' }, referenceNumber, createdAt: new Date() }
 }
@@ -44,7 +50,7 @@ export const recordVerifiedOrder = async ({ db, timestamp, sessionId, customerId
     if (existing.exists) return { orderId: orderRef.id, alreadyRecorded: true }
     check(Math.round(snapshot.total * 100) === Number(payment.attributes.amount), 'Verified payment does not match the checkout total.')
     const plan = await stockPlan(tx, db, snapshot.items)
-    const available = plan.every((p) => Number.isFinite(p.current) && p.current >= p.quantity)
+    const available = plan.every((p) => Number.isFinite(p.available) && p.available >= p.quantity)
     const clinic = (await tx.get(db.collection('clinics').doc(snapshot.branchId))).data() || {}
     const now = timestamp()
     if (available) for (const p of plan) tx.update(p.ref, { currentStock: p.current - p.quantity, updatedAt: now })
@@ -55,6 +61,25 @@ export const recordVerifiedOrder = async ({ db, timestamp, sessionId, customerId
     return { orderId: orderRef.id, status: available ? 'Preparing' : 'Awaiting Stock' }
   })
 }
+export const lockOrderCancellation = async (db, orderId, customerId) => db.runTransaction(async (tx) => {
+  const ref = db.collection('customerOrders').doc(orderId), order = (await tx.get(ref)).data()
+  check(order?.customerId === customerId, 'Order belongs to another customer.', 403)
+  check(!order.cancellationInProgress, 'Cancellation is already being processed.')
+  check(['Pending', 'Confirmed', 'Preparing', 'Packed', 'Awaiting Stock'].includes(order.status), 'This order can no longer be cancelled.')
+  tx.update(ref, { cancellationInProgress: true })
+})
+export const finalizeCancelledOrder = async ({ db, timestamp, orderId, update }) => db.runTransaction(async (tx) => {
+  const ref = db.collection('customerOrders').doc(orderId), order = (await tx.get(ref)).data()
+  check(order, 'Order not found.', 404)
+  if (order.status === 'Cancelled') return { alreadyRecorded: true }
+  const plan = order.inventoryDeducted && !order.inventoryRestored ? await stockPlan(tx, db, order.items) : []
+  const now = timestamp()
+  for (const p of plan) tx.update(p.ref, { currentStock: p.current + p.quantity, updatedAt: now })
+  if (plan.length) tx.set(db.collection('inventoryMovements').doc(`cancel-${orderId}`), { branchId: order.branchId, orderId, type: 'cancelled_sale_return', items: order.items, createdAt: now })
+  tx.update(ref, { ...update, inventoryRestored: Boolean(order.inventoryDeducted), cancellationInProgress: false, updatedAt: now })
+  if (update.refundAmount) tx.set(db.collection('transactions').doc(`refund-${orderId}`), { branchId: order.branchId, customerId: order.customerId, orderId, amount: -Math.abs(update.refundAmount), type: 'customer_order_refund', method: 'PayMongo', status: 'Refunded', paymongoRefundId: update.paymongoRefundId || null, createdAt: now })
+  return { status: 'Cancelled' }
+})
 export const registerOrderWorkflow = (app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders }) => {
   const db = admin.firestore(), timestamp = () => admin.firestore.FieldValue.serverTimestamp()
   app.post('/customer/orders/record-payment', requireAuth, async (req, res) => {
@@ -75,12 +100,13 @@ export const registerOrderWorkflow = (app, { admin, requireAuth, loadUserContext
       await db.runTransaction(async (tx) => {
         const ref = db.collection('customerOrders').doc(req.params.id), order = (await tx.get(ref)).data()
         check(order && context.userData.branchId === order.branchId, 'Order belongs to another clinic.', 403)
+        check(!order.cancellationInProgress, 'A cancellation is being processed. Wait for its result.')
         check(({ 'Awaiting Stock': ['Preparing'], Preparing: ['Packed', 'Ready for Pickup'], Packed: ['Shipped', 'Ready for Pickup'], Shipped: ['Out for Delivery', 'Delivered'], 'Out for Delivery': ['Delivered'], 'Ready for Pickup': ['Delivered', 'Received'] })[order.status]?.includes(next), 'Invalid order transition.')
         check(order.paymentStatus === 'Paid', 'Confirm payment before fulfilling this order.')
         let plan = []
         if (order.inventoryDeducted !== true) {
           plan = await stockPlan(tx, db, order.items)
-          check(plan.every((p) => Number.isFinite(p.current) && p.current >= p.quantity), 'Replenish inventory before preparing this order.')
+          check(plan.every((p) => Number.isFinite(p.available) && p.available >= p.quantity), 'Replenish unreserved inventory before preparing this order.')
         }
         const now = timestamp()
         for (const p of plan) tx.update(p.ref, { currentStock: p.current - p.quantity, updatedAt: now })

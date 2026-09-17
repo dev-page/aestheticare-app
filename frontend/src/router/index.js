@@ -33,6 +33,7 @@ const routes = [
   { path: "/change-password", name: "change-password", component: () => import("@/views/auth/ChangePassword.vue"), meta: { requiresAuth: true } },
   { path: "/owner/change-password", name: "owner-change-password", component: () => import("@/views/admin/owner/employee/EmployeeChangePassword.vue"), meta: { requiresAuth: true, requiresPermission: "password:update" } },
   { path: "/employee/dashboard", name: "employee-dashboard", component: () => import("@/views/admin/owner/employee/EmployeeDashboard.vue"), meta: { requiresAuth: true } },
+  { path: "/employee/payslips", name: "employee-payslips", component: () => import("@/views/admin/owner/employee/EmployeePayslips.vue"), meta: { requiresAuth: true, requiresPermission: "profile:view" } },
   { path: "/employee/profile", name: "employee-profile-self", component: () => import("@/views/admin/owner/employee/EmployeeProfileSelf.vue"), meta: { requiresAuth: true, requiresPermission: "profile:view" } },
   { path: "/employee/change-password", name: "employee-change-password", component: () => import("@/views/admin/owner/employee/EmployeeChangePassword.vue"), meta: { requiresAuth: true, requiresPermission: "password:update" } },
   { path: "/face-reg", name: "face-registration", component: () => import("@/views/clinic/attendance/FaceRegistration.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:create" } },

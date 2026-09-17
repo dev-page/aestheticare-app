@@ -1,5 +1,7 @@
 # Module integration audit
 
+This is the original audit. See [implemented fixes and validation](module-integration-fixes.md) for the subsequent changes.
+
 Scope: local source and local automated tests. No live data or deployment was changed. This is an audit, not a completed remediation.
 
 ## Connected in code

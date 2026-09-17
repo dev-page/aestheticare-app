@@ -101,8 +101,9 @@ test('Payment endpoint records deposit once and completes after final payment', 
   let providerPaid = true
   const appointment = fixture(true)
   let updates = 0
+  const ledger = new Map()
   const ref = { get: async () => ({ exists: true, data: () => ({ ...appointment }) }) }
-  const db = { collection: (name) => ({ doc: () => name === 'appointments' ? ref : {} }), runTransaction: async (callback) => callback({ get: ref.get, update: (_, update) => { Object.assign(appointment, update); updates++ }, set() {} }) }
+  const db = { collection: (name) => ({ doc: (id) => name === 'appointments' ? ref : { path: name + '/' + id } }), runTransaction: async (callback) => callback({ get: ref.get, update: (_, update) => { Object.assign(appointment, update); updates++ }, set(ref, value) { if (ref.path.startsWith('transactions/')) ledger.set(ref.path, value) } }) }
   const firestore = () => db
   firestore.FieldValue = { serverTimestamp: () => new Date() }
   vm.runInNewContext(source.slice(start, end), {
@@ -134,6 +135,8 @@ test('Payment endpoint records deposit once and completes after final payment', 
   assert.ok(appointment.completedAt)
   await call('balance'); await call('deposit')
   assert.equal(updates, 2)
+  assert.equal(ledger.size, 2)
+  assert.equal([...ledger.values()].reduce((sum, row) => sum + row.amount, 0), 1000)
 })
 
 

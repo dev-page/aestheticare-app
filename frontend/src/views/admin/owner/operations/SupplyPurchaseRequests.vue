@@ -144,6 +144,7 @@
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
                   <span class="text-white">{{ request.quantity }} {{ request.unit }}</span>
+                  <p v-if="request.originalRequestedQuantity > request.quantity" class="text-xs text-amber-300">{{ request.originalRequestedQuantity }} originally requested; {{ request.originalRequestedQuantity - request.quantity }} still unfulfilled.</p>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
                   <span
@@ -393,7 +394,7 @@
 
       <div v-if="showPaymentModal" class="fixed inset-0 bg-black/50 z-50 overflow-y-auto p-4">
         <div class="bg-slate-800 rounded-xl p-6 max-w-xl w-full mx-auto my-8 border border-slate-700">
-          <h2 class="text-xl font-bold text-white mb-4">Mark Payment as Paid</h2>
+          <h2 class="text-xl font-bold text-white mb-4">Submit Payment Evidence</h2>
           <p class="text-slate-400 text-sm mb-5">
             Upload receipt before confirming payment for this delivered request.
           </p>
@@ -434,7 +435,7 @@
               @click="submitPaymentWithReceipt"
               class="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
             >
-              {{ paymentSaving ? 'Saving...' : 'Confirm Paid' }}
+              {{ paymentSaving ? 'Saving...' : 'Submit for Finance Review' }}
             </button>
           </div>
         </div>
@@ -987,7 +988,7 @@ export default {
           category: data.category || '',
           supplier: data.supplier || '-',
           branch: data.branch || currentBranchName.value || '-',
-          quantity: data.quantity || 0,
+          quantity: data.quantity || 0, originalRequestedQuantity: Number(data.originalRequestedQuantity || data.quantity || 0),
           unit: data.unit || 'units',
           unitCost: Number(data.unitCost || 0),
           totalCost: Number(data.totalCost || 0),
@@ -1137,75 +1138,6 @@ export default {
       }
     }
 
-    const upsertDeliveredItem = async (request) => {
-      const quantityToAdd = Number(request.quantity) || 0
-      const deliveredUnitCost = Number(request.unitCost || 0)
-      if (quantityToAdd <= 0) return
-      const resolvedCategory = resolveRequestCategory(request)
-
-      const existingQuery = query(collection(db, 'inventoryItems'), where('branchId', '==', currentBranchId.value))
-      const existingSnapshot = await getDocs(existingQuery)
-      const existingItem = existingSnapshot.docs
-        .map((snap) => ({ id: snap.id, ...snap.data() }))
-        .find((item) =>
-          (item.name || '').toLowerCase() === (request.item || '').toLowerCase() &&
-          (item.supplier || '').toLowerCase() === (request.supplier || '').toLowerCase()
-        )
-
-      if (existingItem) {
-        const nextStock = Number(existingItem.currentStock || 0) + quantityToAdd
-      const nextMinStock = getAdaptiveMinStock(nextStock)
-      const baseMaxStock = Number(existingItem.maxStock || existingItem.currentStock || 0)
-      const nextMaxStock = baseMaxStock + quantityToAdd
-      const updatePayload = {
-        currentStock: nextStock,
-        minStock: nextMinStock,
-        maxStock: nextMaxStock,
-        stockStatus: getStockStatus(nextStock, nextMinStock),
-        updatedAt: serverTimestamp()
-      }
-        if (deliveredUnitCost > 0 && Number(existingItem.unitPrice || 0) <= 0) {
-          updatePayload.unitPrice = deliveredUnitCost
-        }
-        if (deliveredUnitCost > 0 && Number(existingItem.costPrice || 0) <= 0) {
-          updatePayload.costPrice = deliveredUnitCost
-        }
-        if (!existingItem.category && resolvedCategory) {
-          updatePayload.category = resolvedCategory
-        }
-        if (request.fdaRegistrationNumber && !existingItem.fdaRegistrationNumber) {
-          updatePayload.fdaRegistrationNumber = request.fdaRegistrationNumber
-        }
-        if (request.fdaApprovalDocument && !existingItem.fdaApprovalDocument) {
-          updatePayload.fdaApprovalDocument = request.fdaApprovalDocument
-        }
-        await updateDoc(doc(db, 'inventoryItems', existingItem.id), updatePayload)
-        return
-      }
-
-      const fallbackSku = `AUTO-${Date.now()}`
-      const initialMinStock = getAdaptiveMinStock(quantityToAdd)
-      await addDoc(collection(db, 'inventoryItems'), {
-        name: request.item || 'Unnamed Item',
-        sku: fallbackSku,
-        category: resolvedCategory,
-        supplier: request.supplier || '',
-        currentStock: quantityToAdd,
-        minStock: initialMinStock,
-        maxStock: quantityToAdd,
-        unit: request.unit || 'units',
-        costPrice: deliveredUnitCost > 0 ? deliveredUnitCost : 0,
-        unitPrice: deliveredUnitCost > 0 ? deliveredUnitCost : 0,
-        fdaRegistrationNumber: request.fdaRegistrationNumber || '',
-        fdaApprovalDocument: request.fdaApprovalDocument || null,
-        description: 'Auto-added from delivered purchase request',
-        stockStatus: getStockStatus(quantityToAdd, initialMinStock),
-        branchId: currentBranchId.value,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      })
-    }
-
     const markDelivered = async (request) => {
       try {
         if (!request?.id) return
@@ -1257,13 +1189,7 @@ export default {
         }
 
         const budgetAmount = getBudgetRequestedAmount(request)
-        await updateDoc(doc(db, 'purchaseRequests', request.id), {
-          budgetStatus: 'Requested',
-          budgetRequestedAmount: budgetAmount,
-          workflowStage: 'Budget Requested from Finance',
-          budgetRequestedAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        })
+        await workflowApi('/procurement/purchase-requests/' + request.id + '/request-budget')
 
         request.budgetStatus = 'Requested'
         request.budgetRequestedAmount = budgetAmount
@@ -1658,7 +1584,7 @@ export default {
                 id: snap.id,
                 requestNumber: purchaseRequestReference(data),
                 item: data.item || '-', category: data.category || '', supplier: data.supplier || '-',
-                branch: data.branch || currentBranchName.value || '-', quantity: data.quantity || 0,
+                branch: data.branch || currentBranchName.value || '-', quantity: data.quantity || 0, originalRequestedQuantity: Number(data.originalRequestedQuantity || data.quantity || 0),
                 unit: data.unit || 'units', unitCost: Number(data.unitCost || 0), totalCost: Number(data.totalCost || 0),
                 priority: data.priority || 'Low', date: formatDate(data.createdAt), status: data.status || 'Pending',
                 paymentStatus: data.paymentStatus || 'Unpaid', amountPaid: Number(data.amountPaid || 0), balance: Number(data.balance || 0),

@@ -110,7 +110,7 @@
             <button
               type="button"
               class="bg-amber-500/90 hover:bg-amber-500 text-slate-900 px-4 py-2 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="summaryLoading"
+              :disabled="summaryLoading || isPayrollApproved"
               @click="generateMonthlySummary"
             >
               {{ summaryLoading ? 'Generating...' : 'Generate Summary (All Employees)' }}
@@ -1097,6 +1097,7 @@ export default {
     }
 
     const generateMonthlySummary = async () => {
+      if (isPayrollApproved.value) { toast.info('Approved payroll is locked. Finance must review any adjustment separately.'); return }
       if (!currentBranchId.value) return
       summaryLoading.value = true
       try {
@@ -1191,6 +1192,7 @@ export default {
         }
 
         const monthPayrolls = payrolls.value.filter((entry) => {
+          if (!generatedIds.includes(entry.id)) return false
           const dateValue = extractDate(entry.createdAt || entry.date)
           if (!dateValue) return false
           return getMonthKeyFromDate(dateValue) === monthKey
@@ -1214,26 +1216,7 @@ export default {
         })
 
         const summaryDocId = `${currentBranchId.value}_${monthKey}`
-        await setDoc(
-          doc(db, 'payrollSummaries', summaryDocId),
-          {
-            branchId: currentBranchId.value,
-            monthKey,
-            monthLabel,
-            totalEmployees: employeeIds.size,
-            totalEntries: monthPayrolls.length,
-            totalPayroll: Number(totalPayroll.toFixed(2)),
-            totalNetPay: Number(totalNetPay.toFixed(2)),
-            totalDeductions: Number(totalDeductions.toFixed(2)),
-            status: 'pending',
-            approvedBy: null,
-            approvedByName: null,
-            approvedAt: null,
-            updatedBy: currentUserId.value,
-            updatedAt: serverTimestamp()
-          },
-          { merge: true }
-        )
+        await workflowApi('/payroll/summaries/' + summaryDocId + '/submit', { branchId: currentBranchId.value, monthKey, payrollEntryIds: generatedIds })
 
         const autoCreatedMessage = generatedIds.length
           ? `Prepared ${generatedIds.length} payroll entr${generatedIds.length === 1 ? 'y' : 'ies'}. `

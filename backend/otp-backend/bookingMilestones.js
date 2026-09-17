@@ -43,6 +43,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth }) => {
             for (const resource of resourceRefs) stocks.push({ resource, snapshot: await tx.get(resource.ref) })
             for (const { resource, snapshot: stock } of stocks) check(stock.exists && Number(stock.data().currentStock) >= resource.quantity, 'A required material is no longer available. Contact the clinic.')
             for (const { resource, snapshot: stock } of stocks) tx.update(resource.ref, { currentStock: Number(stock.data().currentStock) - resource.quantity, updatedAt: timestamp })
+            tx.set(db.collection('inventoryMovements').doc('service-' + ref.id), { branchId: appointment.branchId, appointmentId: ref.id, type: 'service_consumption', items: (appointment.resources || []).filter((r) => r.kind === 'material'), createdBy: req.user.uid, createdAt: timestamp })
             update.materialsConsumed = true
             update.status = 'Ongoing'; update.startedAt = timestamp; update.startedById = req.user.uid
           } else if (transition === 'worker_complete') {

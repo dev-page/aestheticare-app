@@ -1,4 +1,4 @@
-import { registerOrderWorkflow, prepareOrderSnapshot } from './orderWorkflow.js'
+import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { registerProcurementWorkflow } from './procurementWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
@@ -6897,6 +6897,7 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
     })
   }
 
+  let cancellationOrderRef = null
   try {
     const firestore = admin.firestore()
     const orderRef = firestore.collection('customerOrders').doc(orderId)
@@ -6969,10 +6970,12 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'This clinic has not enabled a refund policy for paid cancellations.' })
     }
 
-    let refundId = null
-    let refundStatus = null
+    await lockOrderCancellation(firestore, orderId, req.user.uid)
+    cancellationOrderRef = orderRef
+    let refundId = orderData.pendingCancellationRefund?.id || null
+    let refundStatus = orderData.pendingCancellationRefund?.status || null
 
-    if (isPayMongoPaid) {
+    if (isPayMongoPaid && !refundId) {
       const refundResponse = await fetch('https://api.paymongo.com/v1/refunds', {
         method: 'POST',
         headers: buildPayMongoHeaders(),
@@ -6989,6 +6992,8 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
 
       const refundData = await refundResponse.json()
       if (!refundResponse.ok) {
+        await orderRef.update({ cancellationInProgress: false })
+        cancellationOrderRef = null
         return res.status(refundResponse.status).json({
           success: false,
           error: refundData?.errors?.[0]?.detail || 'Failed to refund payment via PayMongo',
@@ -6998,6 +7003,7 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
 
       refundId = refundData?.data?.id || null
       refundStatus = refundData?.data?.attributes?.status || 'pending'
+      await orderRef.update({ pendingCancellationRefund: { id: refundId, status: refundStatus } })
     }
 
     const updatePayload = {
@@ -7019,24 +7025,7 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
       updatePayload.refundedAt = admin.firestore.FieldValue.serverTimestamp()
     }
 
-    await orderRef.update(updatePayload)
-
-    if (isPayMongoPaid) {
-      await firestore.collection('transactions').add({
-        branchId,
-        amount: -Math.abs(totalAmount),
-        method: orderData.paymentMethod || 'PayMongo',
-        status: 'Refunded',
-        type: 'customer_order_refund',
-        orderId,
-        clientName: orderData.customerName || orderData.delivery?.fullName || 'Customer',
-        service: 'Customer Order Cancellation Refund',
-        paymongoPaymentId: paymentId,
-        paymongoRefundId: refundId,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      })
-    }
+    await finalizeCancelledOrder({ db: firestore, timestamp: () => admin.firestore.FieldValue.serverTimestamp(), orderId, update: updatePayload })
 
     return res.json({
       success: true,
@@ -7053,7 +7042,8 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
       },
     })
   } catch (error) {
-    return res.status(500).json({
+    if (cancellationOrderRef) await cancellationOrderRef.update({ cancellationInProgress: false }).catch(() => {})
+    return res.status(error.status || 500).json({
       success: false,
       error: error?.message || 'Failed to cancel order',
     })

@@ -274,13 +274,14 @@ export default {
         const [payslipSnap, userSnap] = await Promise.all([
           getDocs(query(
             collection(db, 'users', row.employeeId, 'payslips'),
-            orderBy('dateGenerated', 'desc'),
+            where('payPeriodMonthKey', '==', selectedMonth.value),
             limit(1)
           )),
           getDoc(doc(db, 'users', row.employeeId))
         ])
 
         const latestPayslip = payslipSnap.empty ? null : payslipSnap.docs[0].data() || {}
+        if (!latestPayslip) { toast.info('HR must release the approved payslip for this month before printing.'); return }
         const userData = userSnap.exists() ? (userSnap.data() || {}) : {}
         const payload = {
           employeeName: latestPayslip?.employeeName || row.employeeName || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || 'Employee',

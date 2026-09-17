@@ -754,7 +754,7 @@ export default {
       } else {
         notificationsRoleKey.value = String(data.role || '').trim()
       }
-      startNotificationBadgeListener(user.uid, notificationsRoleKey.value)
+      startNotificationBadgeListener(user.uid, notificationsRoleKey.value, data.branchId || ((notificationsRoleKey.value) === 'Owner' ? user.uid : ''))
       persistUserDetails()
     }
 
@@ -769,7 +769,7 @@ export default {
       notificationsUnread.value = Array.from(map.values()).filter((item) => !item.read && !item.deleted).length
     }
 
-    const startNotificationBadgeListener = (userId, roleKey) => {
+    const startNotificationBadgeListener = (userId, roleKey, branchId) => {
       if (!userId) return
       if (unsubscribeNotificationsUser) {
         unsubscribeNotificationsUser()
@@ -791,9 +791,9 @@ export default {
         }
       )
 
-      if (roleKey) {
+      if (roleKey && (branchId || roleKey === 'Superadmin')) {
         unsubscribeNotificationsRole = onSnapshot(
-          query(collection(db, 'notifications'), where('recipientRole', '==', roleKey)),
+          query(collection(db, 'notifications'), where('recipientRole', '==', roleKey), ...(roleKey === 'Superadmin' ? [] : [where('branchId', '==', branchId)])),
           (snapshot) => {
             notificationsRoleCache.value = snapshot.docs.map((docSnap) => ({
               id: docSnap.id,

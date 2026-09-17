@@ -210,7 +210,7 @@ const unreadCount = computed(() => {
   return Array.from(map.values()).filter((item) => !item.read && !item.deleted).length
 })
 
-const startListeners = (userId, roleKey) => {
+const startListeners = (userId, roleKey, branchId) => {
   loading.value = true
   const baseQuery = (filters) =>
     query(collection(db, 'notifications'), ...filters)
@@ -236,9 +236,9 @@ const startListeners = (userId, roleKey) => {
     }
   )
 
-  if (roleKey) {
+  if (roleKey && (branchId || roleKey === 'Superadmin')) {
     unsubscribeRole = onSnapshot(
-      baseQuery([where('recipientRole', '==', roleKey)]),
+      baseQuery([where('recipientRole', '==', roleKey), ...(roleKey === 'Superadmin' ? [] : [where('branchId', '==', branchId)])]),
       (snapshot) => {
         roleDocsCache.value = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() || {}
@@ -331,7 +331,7 @@ onMounted(() => {
     } else {
       welcomeNotification.value = null
     }
-    startListeners(user.uid, roleValue.value)
+    startListeners(user.uid, roleValue.value, data.branchId || ((roleValue.value) === 'Owner' ? user.uid : ''))
     mergeNotifications(userDocsCache.value, roleDocsCache.value)
   })
 })

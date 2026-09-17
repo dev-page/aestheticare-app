@@ -268,7 +268,7 @@ export default {
         .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))
     }
 
-    const startNotificationsListener = (userId, roleValue) => {
+    const startNotificationsListener = (userId, roleValue, branchId) => {
       loading.value = true
       error.value = ''
       const baseQuery = (filters) =>
@@ -297,9 +297,9 @@ export default {
         }
       )
 
-      if (roleValue) {
+      if (roleValue && (branchId || roleValue === 'Superadmin')) {
         unsubscribeRole = onSnapshot(
-        baseQuery([where('recipientRole', '==', roleValue)]),
+        baseQuery([where('recipientRole', '==', roleValue), ...(roleValue === 'Superadmin' ? [] : [where('branchId', '==', branchId)])]),
         (snapshot) => {
           roleDocsCache.value = snapshot.docs.map((docSnap) => {
             const data = docSnap.data() || {}
@@ -458,7 +458,7 @@ export default {
         else if (rawRole.includes('clinic admin') || rawRole === 'clinicadmin' || rawRole === 'owner') roleKey = 'Owner'
         else if (rawRole.includes('supplier')) roleKey = 'Supplier'
         else roleKey = String(data.role || '').trim()
-        startNotificationsListener(user.uid, roleKey)
+        startNotificationsListener(user.uid, roleKey, data.branchId || ((roleKey) === 'Owner' ? user.uid : ''))
       })
     })
 

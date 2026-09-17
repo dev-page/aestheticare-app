@@ -581,7 +581,7 @@ export default {
       const policy = getPolicyForOrder(order)
       if (!policy.cancellationPolicyEnabled || !policy.cancellationPolicy) return false
       const status = String(order?.status || 'Pending').trim().toLowerCase()
-      if (['cancelled', 'completed', 'refunded', 'shipped', 'out for delivery', 'delivered'].includes(status)) return false
+      if (!['pending', 'confirmed', 'preparing', 'packed', 'awaiting stock'].includes(status) || order.cancellationInProgress) return false
       const createdAtMillis = getCreatedAtMillis(order)
       if (!createdAtMillis) return false
       const diffHours = (Date.now() - createdAtMillis) / (1000 * 60 * 60)
@@ -590,7 +590,7 @@ export default {
 
     const canMarkReceived = (order) => {
       const status = String(order?.status || '').trim().toLowerCase()
-      return ['ready for pickup', 'picked up'].includes(status)
+      return ['ready for pickup', 'picked up', 'delivered', 'received'].includes(status)
     }
 
     const canRequestRefund = (order) => {
@@ -879,7 +879,7 @@ export default {
           String(order.paymentStatus || '').trim().toLowerCase() === 'paid' &&
           Boolean(String(order.paymongoPaymentId || '').trim())
 
-        if (isPayMongoPaid) {
+        {
           const response = await fetchFromBackend(`/customer/orders/${order.id}/cancel`, {
             method: 'POST',
             headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
@@ -900,7 +900,7 @@ export default {
           }
 
           order.status = 'Cancelled'
-          order.paymentStatus = payload?.data?.paymentStatus || 'Refunded'
+          order.paymentStatus = payload?.data?.paymentStatus || order.paymentStatus
           order.refundType = payload?.data?.refundType || 'PayMongo'
           order.refundAmount = Number(payload?.data?.refundAmount || order.total || 0)
           order.paymongoRefundId = payload?.data?.paymongoRefundId || null
@@ -909,17 +909,6 @@ export default {
           order.cancelReasonDetails = reasonType === 'Other' ? reasonDetails : ''
           order.cancelledAt = new Date()
           order.refundedAt = new Date()
-        } else {
-          await updateDoc(doc(db, 'customerOrders', order.id), {
-            status: 'Cancelled',
-            cancelReasonType: reasonType,
-            cancelReasonDetails: reasonType === 'Other' ? reasonDetails : '',
-            cancelledAt: serverTimestamp(),
-          })
-          order.status = 'Cancelled'
-          order.cancelReasonType = reasonType
-          order.cancelReasonDetails = reasonType === 'Other' ? reasonDetails : ''
-          order.cancelledAt = new Date()
         }
 
         if (selectedOrder.value?.id === order.id) {

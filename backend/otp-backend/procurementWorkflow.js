@@ -20,11 +20,13 @@ export const registerProcurementWorkflow = (app, { admin, requireAuth, loadUserC
   const scope = async (tx, context, branchId) => {
     const clinic = (await tx.get(db.collection('clinics').doc(branchId))).data() || {}
     check(context.userData?.branchId === branchId || (context.roleKey === 'Owner' && (clinic.ownerId === context.uid || branchId === context.uid)), 'This record belongs to another clinic.', 403)
-    return clinic
+    const staff = await tx.get(db.collection('users').where('branchId', '==', branchId))
+    return { ...clinic, financeIds: staff.docs.filter((d) => String(d.data().role || '').toLowerCase() === 'finance').map((d) => d.id) }
   }
-  const receive = async (tx, ref, record, uid) => {
+  const receive = async (tx, ref, record, uid, recipients = []) => {
     // All receipt entry points share this marker and transaction.
     if (record.inventoryReceiptId) return { id: ref.id, status: 'Received', alreadyRecorded: true }
+    check(record.status !== 'Delivered', 'This legacy delivery is already recorded. Reconcile inventory instead of receiving it twice.')
     check(record.budgetStatus === 'Approved' && Number(record.approvedBudgetAmount) >= Number(record.totalCost), 'Finance must approve enough budget before receipt.')
     check(['Approved', 'Delivered'].includes(record.status) && ['Shipped', 'In Transit', 'Received', 'Delivered'].includes(record.logisticsStatus || record.purchaseOrderStatus), 'Mark the approved order shipped or in transit before receiving it.')
     const quantity = Number(record.quantity)
@@ -45,6 +47,7 @@ export const registerProcurementWorkflow = (app, { admin, requireAuth, loadUserC
     tx.set(inventoryRef, { ...(!stockSnap.exists ? { name: record.item, supplier: record.supplier || '', supplierId: record.supplierId || null, supplierItemId: record.itemId || null, branchId: record.branchId, category: record.category || '', unit: record.unit || 'units', sku: record.reference || receiptId, minStock: 1, maxStock: quantity, costPrice: Number(record.unitCost || 0), unitPrice: Number(record.unitCost || 0), createdAt: now } : {}), currentStock: currentStock + quantity, stockStatus: 'In Stock', updatedAt: now }, { merge: true })
     tx.set(db.collection('inventoryMovements').doc(receiptId), { branchId: record.branchId, inventoryItemId: inventoryRef.id, purchaseRequestId: ref.id, quantity, type: 'purchase_receipt', createdBy: uid, createdAt: now })
     tx.update(ref, { inventoryReceiptId: receiptId, inventoryItemId: inventoryRef.id, status: 'Delivered', logisticsStatus: 'Received', purchaseOrderStatus: 'Received', procurementStatus: 'Received', workflowStage: 'Delivered - Awaiting Finance Settlement', deliveredAt: now, receivedAt: now, updatedAt: now })
+    for (const recipientUserId of new Set(recipients.filter(Boolean))) tx.set(db.collection('notifications').doc(), { recipientUserId, branchId: record.branchId, title: 'Purchase received', message: `${record.requestNumber || record.reference || 'Purchase'}: stock received; ready for Finance settlement.`, link: '/finance/accounts-payable', read: false, deleted: false, createdAt: now })
     return { id: ref.id, status: 'Received' }
   }
   const route = (path, handler) => app.post(path, requireAuth, async (req, res) => {
@@ -69,6 +72,7 @@ export const registerProcurementWorkflow = (app, { admin, requireAuth, loadUserC
       const terms = acceptedQuoteFields(request, record), now = timestamp()
       tx.update(requestRef, { ...terms, status: 'Approved', supplierQuoteId: ref.id, supplierQuoteStatus: 'Accepted', supplierQuoteReference: record.reference, quotedSupplier: record.supplierName || '', budgetStatus: 'Requested', budgetRequestedAmount: terms.totalCost, approvedBudgetAmount: 0, purchaseOrderStatus: 'Pending Finance', procurementStatus: 'Pending Finance', workflowStage: 'Pending Finance Approval', updatedAt: now })
       tx.update(ref, { status: 'Accepted', updatedAt: now, updatedBy: req.user.uid })
+      for (const recipientUserId of clinic.financeIds) tx.set(db.collection('notifications').doc(), { recipientUserId, branchId: record.branchId, title: 'Purchase budget review', message: (request.requestNumber || request.reference || 'Purchase request') + ': supplier quote accepted; Finance review required.', link: '/finance/accounts-payable', read: false, deleted: false, createdAt: now })
       return { id: ref.id, status: 'Accepted' }
     }
     check(name === 'purchaseRequests', 'Legacy purchase orders must be linked to a purchase request before progressing.')
@@ -77,7 +81,7 @@ export const registerProcurementWorkflow = (app, { admin, requireAuth, loadUserC
     if (record.inventoryReceiptId) return { id: ref.id, status: 'Received', alreadyRecorded: true }
     check(next, 'This purchase order cannot advance.')
     check(procurementPermission(context, next === 'Approved' ? 'approve' : 'advance'), 'You do not have permission for this purchase stage.', 403)
-    if (next === 'Received') return receive(tx, ref, record, req.user.uid)
+    if (next === 'Received') return receive(tx, ref, record, req.user.uid, [...clinic.financeIds, clinic.ownerId])
     const now = timestamp()
     check(!['Cancelled', 'Rejected', 'Delivered'].includes(record.status), 'This purchase request is closed.')
     if (next !== 'Approved') check(record.budgetStatus === 'Approved' && Number(record.approvedBudgetAmount) >= Number(record.totalCost), 'Finance must approve the purchase budget first.')
@@ -91,7 +95,7 @@ export const registerProcurementWorkflow = (app, { admin, requireAuth, loadUserC
     const clinic = await scope(tx, context, record.branchId)
     check(procurementPermission(context, 'advance'), 'Logistics update permission required.', 403)
     const next = req.body?.nextStatus
-    if (next === 'Received') return receive(tx, ref, record, req.user.uid)
+    if (next === 'Received') return receive(tx, ref, record, req.user.uid, [...clinic.financeIds, clinic.ownerId])
     check(record.status === 'Approved' && record.budgetStatus === 'Approved', 'An approved purchase and Finance budget are required.')
     const current = normalizedLogisticsStatus(record)
     check(({ 'Ready for Claim': ['Claimed'], Claimed: ['Shipped', 'In Transit'], Shipped: ['In Transit'] })[current]?.includes(next), 'Invalid logistics transition.')
@@ -99,6 +103,18 @@ export const registerProcurementWorkflow = (app, { admin, requireAuth, loadUserC
     tx.update(ref, { logisticsStatus: next, ...(next === 'Claimed' ? { logisticsClaimedBy: req.user.uid, logisticsClaimedAt: now } : { purchaseOrderStatus: 'Shipped' }), workflowStage: `Logistics: ${next}`, updatedAt: now })
     if (clinic.ownerId) tx.set(db.collection('notifications').doc(), { recipientUserId: clinic.ownerId, branchId: record.branchId, title: 'Delivery updated', message: `${record.reference || 'Purchase'}: ${next}`, link: '/manager/logistics', read: false, deleted: false, createdAt: now })
     return { id: ref.id, status: next }
+  })
+  route('/procurement/purchase-requests/:id/request-budget', async (tx, req, context) => {
+    const ref = db.collection('purchaseRequests').doc(req.params.id), record = (await tx.get(ref)).data()
+    check(record, 'Purchase request not found.', 404)
+    const clinic = await scope(tx, context, record.branchId)
+    check(procurementPermission(context, 'advance'), 'Procurement permission required.', 403)
+    check(record.status === 'Approved' && record.budgetStatus === 'Not Requested', 'Approve this purchase request before requesting its budget.')
+    const amount = Number(record.totalCost || Number(record.quantity) * Number(record.unitCost)), now = timestamp()
+    check(Number.isFinite(amount) && amount > 0, 'Set a valid purchase total.')
+    tx.update(ref, { budgetStatus: 'Requested', budgetRequestedAmount: amount, budgetRequestedAt: now, workflowStage: 'Budget Requested from Finance', updatedAt: now })
+    for (const recipientUserId of clinic.financeIds) tx.set(db.collection('notifications').doc(), { recipientUserId, branchId: record.branchId, title: 'Purchase budget requested', message: `${record.requestNumber || 'Purchase'} needs Finance review.`, link: '/finance/accounts-payable', read: false, deleted: false, createdAt: now })
+    return { budgetStatus: 'Requested' }
   })
   route('/finance/purchase-requests/:id/approve-budget', async (tx, req, context) => {
     const ref = db.collection('purchaseRequests').doc(req.params.id), record = (await tx.get(ref)).data()
