@@ -1,3 +1,10 @@
+import { registerOrderWorkflow, prepareOrderSnapshot } from './orderWorkflow.js'
+import { registerPayrollWorkflow } from './payrollWorkflow.js'
+import { registerProcurementWorkflow } from './procurementWorkflow.js'
+import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
+import { registerBookingMilestones } from './bookingMilestones.js'
+import { prepareBooking } from './bookingResources.js'
+import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow } from './bookingWorkflow.js'
 import { registerSupplierQuoteRoutes } from './supplierQuotes.js'
 import express from 'express'
 import cors from 'cors'
@@ -1873,239 +1880,10 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
   }
 })
 
-const procurementTransitionMap = {
-  supplierQuotes: { Submitted: 'Accepted' },
-  purchaseOrders: { 'Pending Finance': 'Approved', Approved: 'Issued', Issued: 'Shipped', Shipped: 'Received' },
-  purchaseRequests: { 'Pending Finance': 'Approved', Approved: 'Issued', Issued: 'Shipped', Shipped: 'Received' },
-}
-
-const canAccessBranchRecord = (context, record) => {
-  const permissions = context?.permissions || new Set()
-  const role = String(context?.roleKey || '').toLowerCase()
-  if (role === 'superadmin' || permissions.has('administrator:full_access')) return true
-  const branchId = String(context?.userData?.branchId || context?.userData?.clinicId || '').trim()
-  return Boolean(branchId && String(record?.branchId || '').trim() === branchId && (
-    role === 'owner' ||
-    permissions.has('procurement:create') || permissions.has('procurement:review') ||
-    permissions.has('inventory:review') || permissions.has('orders:update')
-  ))
-}
-
 registerSupplierQuoteRoutes(app, { admin, requireAuth })
-
-app.post('/procurement/:collection/:id/transition', requireAuth, async (req, res) => {
-  const collectionName = String(req.params.collection || '').trim()
-  const recordId = String(req.params.id || '').trim()
-  const transitions = procurementTransitionMap[collectionName]
-  if (!transitions || !recordId) return res.status(400).json({ success: false, error: 'Invalid procurement transition.' })
-
-  try {
-    const context = await loadUserContext(req.user.uid)
-    const recordRef = admin.firestore().collection(collectionName).doc(recordId)
-    const recordSnap = await recordRef.get()
-    if (!recordSnap.exists) return res.status(404).json({ success: false, error: 'Procurement record not found.' })
-    const record = recordSnap.data() || {}
-    if (!canAccessBranchRecord(context, record)) return res.status(403).json({ success: false, error: 'Forbidden' })
-
-    const rawPurchaseOrderStatus = String(record.purchaseOrderStatus || '').trim()
-    const currentStatus = collectionName === 'purchaseRequests'
-      ? (rawPurchaseOrderStatus === 'Draft' || !rawPurchaseOrderStatus ? 'Pending Finance' : rawPurchaseOrderStatus)
-      : String(record.status || '').trim()
-    const nextStatus = transitions[currentStatus]
-    if (!nextStatus) return res.status(409).json({ success: false, error: `Record cannot move forward from ${currentStatus || 'its current status'}.` })
-
-    const payload = {
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedBy: req.user.uid,
-    }
-    if (collectionName === 'purchaseRequests') {
-      payload.purchaseOrderStatus = nextStatus
-      payload.procurementStatus = nextStatus === 'Received' ? 'Received' : `Purchase Order ${nextStatus}`
-      payload.workflowStage = nextStatus === 'Received' ? 'Delivered - Awaiting Finance Settlement' : `${nextStatus} Purchase Order`
-    } else {
-      payload.status = nextStatus
-    }
-    if (nextStatus === 'Approved') payload.financeApprovedAt = admin.firestore.FieldValue.serverTimestamp()
-    if (nextStatus === 'Issued') payload.purchaseOrderIssuedAt = admin.firestore.FieldValue.serverTimestamp()
-    if (nextStatus === 'Shipped') payload.shippedAt = admin.firestore.FieldValue.serverTimestamp()
-    if (nextStatus === 'Received') payload.receivedAt = admin.firestore.FieldValue.serverTimestamp()
-    if (collectionName === 'supplierQuotes' && record.purchaseRequestId && nextStatus === 'Accepted') {
-      const requestRef = admin.firestore().collection('purchaseRequests').doc(String(record.purchaseRequestId))
-      const requestSnap = await requestRef.get()
-      if (requestSnap.exists) {
-        await requestRef.update({
-          supplierQuoteId: recordSnap.id,
-          supplierQuoteStatus: 'Accepted',
-          supplierQuoteReference: record.reference || record.id || recordSnap.id,
-          supplierQuoteAmount: Number(record.amount || record.totalAmount || record.totalCost || 0),
-          quotedSupplier: record.supplierName || record.supplier || '',
-          purchaseOrderStatus: 'Pending Finance',
-          procurementStatus: 'Pending Finance',
-          workflowStage: 'Pending Finance Approval',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        })
-      }
-    }
-    if (collectionName === 'purchaseRequests' && nextStatus === 'Received') {
-      payload.status = 'Delivered'
-      payload.logisticsStatus = 'Delivered'
-      payload.deliveredAt = admin.firestore.FieldValue.serverTimestamp()
-    }
-    await recordRef.update(payload)
-    if (collectionName === 'purchaseRequests' && nextStatus === 'Received') {
-      const branchId = String(record.branchId || '').trim()
-      const itemName = String(record.item || '').trim()
-      const supplierName = String(record.supplier || '').trim()
-      const quantity = Number(record.quantity || 0)
-      const unitCost = Number(record.unitCost || 0)
-      if (branchId && itemName && quantity > 0) {
-        const inventorySnap = await admin.firestore().collection('inventoryItems').where('branchId', '==', branchId).get()
-        const existing = inventorySnap.docs
-          .map((itemSnap) => ({ id: itemSnap.id, data: itemSnap.data() || {} }))
-          .find(({ data }) => String(data.name || '').trim().toLowerCase() === itemName.toLowerCase()
-            && String(data.supplier || '').trim().toLowerCase() === supplierName.toLowerCase())
-        if (existing) {
-          const currentStock = Number(existing.data.currentStock || 0)
-          await admin.firestore().collection('inventoryItems').doc(existing.id).update({
-            currentStock: currentStock + quantity,
-            maxStock: Number(existing.data.maxStock || currentStock) + quantity,
-            ...(unitCost > 0 && Number(existing.data.costPrice || 0) <= 0 ? { costPrice: unitCost, unitPrice: unitCost } : {}),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          })
-        } else {
-          await admin.firestore().collection('inventoryItems').add({
-            name: itemName,
-            sku: `AUTO-${recordSnap.id.slice(-8).toUpperCase()}`,
-            category: record.category || '',
-            supplier: supplierName,
-            currentStock: quantity,
-            minStock: 1,
-            maxStock: quantity,
-            unit: record.unit || 'units',
-            costPrice: unitCost,
-            unitPrice: unitCost,
-            description: 'Auto-added from received purchase order',
-            stockStatus: 'In Stock',
-            branchId,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          })
-        }
-      }
-    }
-    return res.json({ success: true, data: { id: recordId, status: nextStatus } })
-  } catch (error) {
-    console.error('Procurement transition failed:', error)
-    return res.status(500).json({ success: false, error: 'Could not update procurement status.' })
-  }
-})
-
-const logisticsTransitionMap = {
-  'Ready for Claim': ['Claimed'],
-  Claimed: ['Shipped', 'In Transit'],
-  Shipped: ['In Transit', 'Received'],
-  'In Transit': ['Received'],
-}
-
-app.post('/logistics/purchase-requests/:id/transition', requireAuth, async (req, res) => {
-  const recordId = String(req.params.id || '').trim()
-  const nextStatus = String(req.body?.nextStatus || '').trim()
-  if (!recordId || !nextStatus) return res.status(400).json({ success: false, error: 'A purchase request and next logistics status are required.' })
-  try {
-    const context = await loadUserContext(req.user.uid)
-    const recordRef = admin.firestore().collection('purchaseRequests').doc(recordId)
-    const recordSnap = await recordRef.get()
-    if (!recordSnap.exists) return res.status(404).json({ success: false, error: 'Business order not found.' })
-    const record = recordSnap.data() || {}
-    if (!canAccessBranchRecord(context, record)) return res.status(403).json({ success: false, error: 'Forbidden' })
-    if (String(record.budgetStatus || '').trim() !== 'Approved') return res.status(409).json({ success: false, error: 'Finance must approve the budget before Logistics can claim this order.' })
-
-    let currentStatus = String(record.logisticsStatus || '').trim()
-    if (!currentStatus && String(record.status || '').trim() === 'Approved') currentStatus = 'Ready for Claim'
-    if (!logisticsTransitionMap[currentStatus]?.includes(nextStatus)) {
-      return res.status(409).json({ success: false, error: `The order cannot move from ${currentStatus || 'its current status'} to ${nextStatus}.` })
-    }
-    const payload = {
-      logisticsStatus: nextStatus,
-      logisticsUpdatedBy: req.user.uid,
-      logisticsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      workflowStage: nextStatus === 'Claimed' ? 'Claimed by Logistics' : nextStatus === 'Received' ? 'Delivered - Awaiting Finance Settlement' : `Logistics: ${nextStatus}`,
-    }
-    if (nextStatus === 'Claimed') {
-      payload.logisticsClaimedBy = req.user.uid
-      payload.logisticsClaimedAt = admin.firestore.FieldValue.serverTimestamp()
-    }
-    if (nextStatus === 'Received') {
-      payload.status = 'Delivered'
-      payload.deliveredAt = admin.firestore.FieldValue.serverTimestamp()
-    }
-    await recordRef.update(payload)
-
-    if (nextStatus === 'Received') {
-      const branchId = String(record.branchId || '').trim()
-      const itemName = String(record.item || '').trim()
-      const supplierName = String(record.supplier || '').trim()
-      const quantity = Number(record.quantity || 0)
-      const unitCost = Number(record.unitCost || 0)
-      if (branchId && itemName && quantity > 0) {
-        const inventorySnap = await admin.firestore().collection('inventoryItems').where('branchId', '==', branchId).get()
-        const existing = inventorySnap.docs.map((itemSnap) => ({ id: itemSnap.id, data: itemSnap.data() || {} })).find(({ data }) => String(data.name || '').trim().toLowerCase() === itemName.toLowerCase() && String(data.supplier || '').trim().toLowerCase() === supplierName.toLowerCase())
-        if (existing) {
-          const currentStock = Number(existing.data.currentStock || 0)
-          await admin.firestore().collection('inventoryItems').doc(existing.id).update({ currentStock: currentStock + quantity, maxStock: Number(existing.data.maxStock || currentStock) + quantity, ...(unitCost > 0 && Number(existing.data.costPrice || 0) <= 0 ? { costPrice: unitCost, unitPrice: unitCost } : {}), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-        } else {
-          await admin.firestore().collection('inventoryItems').add({ name: itemName, sku: `AUTO-${recordSnap.id.slice(-8).toUpperCase()}`, category: record.category || '', supplier: supplierName, currentStock: quantity, minStock: 1, maxStock: quantity, unit: record.unit || 'units', costPrice: unitCost, unitPrice: unitCost, description: 'Auto-added from received logistics order', stockStatus: 'In Stock', branchId, createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-        }
-      }
-    }
-
-    await Promise.all(['Owner', 'Manager'].map((recipientRole) => admin.firestore().collection('notifications').add({ recipientRole, title: `Business Order ${nextStatus}`, message: `Business order ${recordId} has been updated to ${nextStatus}.`, link: '/manager/logistics', read: false, deleted: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })))
-    return res.json({ success: true, data: { id: recordId, status: nextStatus } })
-  } catch (error) {
-    console.error('Logistics transition failed:', error)
-    return res.status(500).json({ success: false, error: 'Could not update logistics status.' })
-  }
-})
-
-app.post('/finance/purchase-requests/:id/settle', requireAuth, async (req, res) => {
-  const recordId = String(req.params.id || '').trim()
-  if (!recordId) return res.status(400).json({ success: false, error: 'Purchase request id is required.' })
-  try {
-    const context = await loadUserContext(req.user.uid)
-    const recordRef = admin.firestore().collection('purchaseRequests').doc(recordId)
-    const recordSnap = await recordRef.get()
-    if (!recordSnap.exists) return res.status(404).json({ success: false, error: 'Purchase request not found.' })
-    const record = recordSnap.data() || {}
-    const permissions = context.permissions || new Set()
-    const role = String(context.roleKey || '').toLowerCase()
-    const branchId = String(context.userData?.branchId || context.userData?.clinicId || '').trim()
-    const authorized = role === 'superadmin' || permissions.has('administrator:full_access') || (
-      branchId && String(record.branchId || '').trim() === branchId && (
-        role === 'owner' || permissions.has('finance:payables:settle')
-      )
-    )
-    if (!authorized) return res.status(403).json({ success: false, error: 'Forbidden' })
-    if (String(record.status || '').trim() !== 'Delivered') {
-      return res.status(409).json({ success: false, error: 'Only delivered purchase requests can be settled.' })
-    }
-
-    const total = Math.max(0, Number(record.totalCost || record.total || 0) || (Number(record.quantity || 0) * Number(record.unitCost || 0)))
-    const paid = req.body?.paid === true
-    await recordRef.update({
-      paymentStatus: paid ? 'Paid' : 'Unpaid',
-      amountPaid: paid ? total : 0,
-      balance: paid ? 0 : total,
-      paidAt: paid ? admin.firestore.FieldValue.serverTimestamp() : null,
-      paidBy: paid ? req.user.uid : null,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
-    return res.json({ success: true, data: { id: recordId, paymentStatus: paid ? 'Paid' : 'Unpaid', amountPaid: paid ? total : 0, balance: paid ? 0 : total } })
-  } catch (error) {
-    console.error('Purchase settlement failed:', error)
-    return res.status(500).json({ success: false, error: 'Could not update payment status.' })
-  }
-})
+registerProcurementWorkflow(app, { admin, requireAuth, loadUserContext })
+registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders })
+registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext })
 
 app.post('/admin/trigger-clinic-registration-verification', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const uid = String(req.body?.uid || '').trim()
@@ -2134,6 +1912,7 @@ const BOOKING_RESERVATION_TTL_MINUTES = Math.max(5, Number(process.env.BOOKING_R
 const BOOKING_BLOCKING_STATUSES = new Set([
   'pending approval',
   'payment pending',
+  'awaiting payment',
   'paid - awaiting approval',
   'contract pending',
   'ready to start',
@@ -2686,6 +2465,9 @@ const generateOwnerBackup = async ({ ownerId, kind = 'manual', triggeredBy = 'sy
 }
 
 // Appointment contract endpoints
+registerBookingMilestones(app, { admin, requireAuth })
+registerListingApproval(app, { admin, requireAuth, loadUserContext })
+
 app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
   const id = String(req.params?.id || '').trim()
   const { title, templateUrl, requiredSigners } = req.body ?? {}
@@ -2696,6 +2478,7 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
     const apptSnap = await apptRef.get()
     if (!apptSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
     const appointment = apptSnap.data() || {}
+    if (appointment.contract?.status === 'signed' || appointment.startedAt) return res.status(409).json({ success: false, error: 'A signed or started booking contract cannot be replaced.' })
     req.userContext = req.userContext || await loadUserContext(req.user.uid)
     const roleKey = String(req.userContext.roleKey || '').trim()
     const canManage =
@@ -2704,6 +2487,11 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
       (String(req.userContext.userData?.branchId || '').trim() === String(appointment.branchId || '').trim() &&
         (req.userContext.permissions.has('appointments:update') || req.userContext.permissions.has('appointments:review')))
     if (!canManage) return res.status(403).json({ success: false, error: 'Forbidden' })
+
+    if (roleKey === 'Owner') {
+      const clinic = (await firestore.collection('clinics').doc(appointment.branchId).get()).data() || {}
+      if (clinic.ownerId !== req.user.uid && appointment.branchId !== req.user.uid) return res.status(403).json({ success: false, error: 'This booking belongs to another clinic.' })
+    }
 
     const customerEmail = String(appointment.customerEmail || '').trim().toLowerCase()
     const normalizedSigners = Array.isArray(requiredSigners)
@@ -2715,6 +2503,7 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
     const contract = {
       contractId,
       title: String(title || 'Contract').trim(),
+      terms: appointment.contract?.terms || '',
       templateUrl: String(templateUrl || '').trim() || null,
       requiredSigners: signers,
       signatures: {},
@@ -2725,7 +2514,7 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
     }
 
     const currentStatus = normalizeBookingStatus(appointment.status)
-    await apptRef.set({ contract, contractRequired: true, status: ['approved', 'payment pending'].includes(currentStatus) ? 'Contract Pending' : appointment.status, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+    await apptRef.set({ contract, contractRequired: true, status: initialPaymentReceived(appointment) && appointment.approvalStatus === 'Approved' ? 'Contract Pending' : appointment.status, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
     return res.json({ success: true, data: { contract } })
   } catch (error) {
     console.error('appointments/:id/contract error:', error)
@@ -2733,100 +2522,8 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
   }
 })
 
-app.post('/appointments/:id/contract/sign', requireAuth, async (req, res) => {
-  const id = String(req.params?.id || '').trim()
-  const { name, email } = req.body ?? {}
-  if (!id) return res.status(400).json({ success: false, error: 'appointment id is required' })
-  try {
-    const firestore = admin.firestore()
-    const apptRef = firestore.collection('appointments').doc(id)
-    const apptSnap = await apptRef.get()
-    if (!apptSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
-    const appt = apptSnap.data() || {}
-    const contract = appt.contract || {}
-
-    const signerUid = req.user?.uid || null
-    if (!signerUid) return res.status(401).json({ success: false, error: 'Unauthorized' })
-
-    // Basic permission: if requiredSigners defined, ensure email matches one of them or allow owner/staff
-    const userEmail = String(req.user?.email || '').trim().toLowerCase()
-    const required = Array.isArray(contract.requiredSigners) ? contract.requiredSigners : []
-    if (required.length > 0) {
-      const matched = required.some(s => String((s.email||'').toLowerCase()) === userEmail)
-      if (!matched) {
-        return res.status(403).json({ success: false, error: 'You are not a listed signer for this contract' })
-      }
-    }
-
-    const signature = {
-      uid: signerUid,
-      name: String(name || req.user?.displayName || ''),
-      email: userEmail || req.user?.email || null,
-      signedAt: new Date().toISOString(),
-    }
-
-    // write signature and evaluate status
-    const signatures = contract.signatures || {}
-    signatures[signerUid] = signature
-
-    // check if all required signers signed
-    let newStatus = contract.status || 'pending'
-    if (required.length > 0) {
-      const requiredEmails = required.map(s => String(s.email || '').toLowerCase())
-      const signedEmails = Object.values(signatures).map(s => String(s.email||'').toLowerCase())
-      const allSigned = requiredEmails.every(e => signedEmails.includes(e))
-      if (allSigned) newStatus = 'signed'
-    } else {
-      // no required signers declared — single signer completes contract
-      newStatus = 'signed'
-    }
-
-    const contractUpdate = { ...contract, signatures, status: newStatus, updatedAt: admin.firestore.FieldValue.serverTimestamp() }
-    await apptRef.set({
-      contract: contractUpdate,
-      ...(newStatus === 'signed' ? {
-        contractSignedAt: admin.firestore.FieldValue.serverTimestamp(),
-        status: normalizeBookingStatus(appt.status) === 'contract pending' ? 'Payment Pending' : appt.status,
-      } : {}),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true })
-
-    const updated = (await apptRef.get()).data().contract
-    return res.json({ success: true, data: { contract: updated } })
-  } catch (error) {
-    console.error('appointments/:id/contract/sign error:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to sign contract' })
-  }
-})
-
 app.post('/appointments/:id/contract/upload-signed', requireAuth, async (req, res) => {
-  const id = String(req.params?.id || '').trim()
-  const { signedUrl } = req.body ?? {}
-  if (!id) return res.status(400).json({ success: false, error: 'appointment id is required' })
-  if (!signedUrl) return res.status(400).json({ success: false, error: 'signedUrl is required' })
-  try {
-    const firestore = admin.firestore()
-    const apptRef = firestore.collection('appointments').doc(id)
-    const apptSnap = await apptRef.get()
-    if (!apptSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
-    const appt = apptSnap.data() || {}
-    req.userContext = req.userContext || await loadUserContext(req.user.uid)
-    const roleKey = String(req.userContext.roleKey || '').trim()
-    const canManage = roleKey === 'Superadmin' || roleKey === 'Owner' ||
-      (String(req.userContext.userData?.branchId || '').trim() === String(appt.branchId || '').trim() && req.userContext.permissions.has('appointments:update'))
-    if (!canManage) return res.status(403).json({ success: false, error: 'Forbidden' })
-    const contract = appt.contract || {}
-    contract.signedUrl = String(signedUrl)
-    contract.status = 'signed'
-    contract.updatedAt = admin.firestore.FieldValue.serverTimestamp()
-    contract.signedByUploadAt = admin.firestore.FieldValue.serverTimestamp()
-
-    await apptRef.set({ contract }, { merge: true })
-    return res.json({ success: true, data: { contract } })
-  } catch (error) {
-    console.error('appointments/:id/contract/upload-signed error:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to set signed URL' })
-  }
+  return res.status(409).json({ success: false, error: 'The customer must sign the contract from their account after the initial payment.' })
 })
 
 app.get('/health', (_req, res) => {
@@ -4155,7 +3852,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         ...reservation,
         id: bookingRef.id,
         customerId,
-        status: 'Payment Pending',
+        status: 'Pending Approval',
         paymentStatus: 'Pending',
         paymentCoverage: 'pending',
         source: 'customer_booking_request',
@@ -4167,7 +3864,13 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     })
 
     await firestore.runTransaction(async (tx) => {
-      tx.set(bookingRef, bookingPayload)
+      const prepared = await prepareBooking({ tx, db: firestore, reservation, getBookingRange, rangesOverlap })
+      Object.assign(appointmentPayload, prepared.data, {
+        approvalStatus: 'Pending', status: 'Pending Approval', paymentStatus: 'Pending', amountPaid: 0,
+        serviceKey: null, customerKeyVerified: false, workerKeyVerified: false, workerCompleted: false, customerCompleted: false,
+      })
+      tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(bookingRef, { ...bookingPayload, ...prepared.data, status: 'Pending Approval' })
       tx.set(appointmentRef, appointmentPayload)
       tx.update(bookingRef, { appointmentId: appointmentRef.id, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
     })
@@ -4175,7 +3878,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     return res.json({ success: true, data: { bookingId: bookingRef.id, appointmentId: appointmentRef.id } })
   } catch (error) {
     console.error('bookings/create error:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to create booking' })
+    return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to create booking' })
   }
 })
 
@@ -6163,176 +5866,7 @@ app.delete('/appointments/reservations/:id', requireAuth, async (req, res) => {
 })
 
 app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
-  if (!adminReady) {
-    return res.status(500).json({
-      success: false,
-      error: adminInitError || 'firebase-admin is not ready',
-    })
-  }
-
-  const body = req.body || {}
-  const reservationId = String(body.reservationId || '').trim()
-  const paymongoCheckoutSessionId = String(body.paymongoCheckoutSessionId || '').trim() || null
-  const paymongoStatus = String(body.paymongoStatus || '').trim() || null
-  const paymongoPaidAt = body.paymongoPaidAt || null
-  const paymongoPaymentId = String(body.paymongoPaymentId || '').trim() || null
-  const paymongoPaymentMethodType = String(body.paymongoPaymentMethodType || '').trim() || null
-  const paymentMethod = String(body.paymentMethod || '').trim() || null
-
-  logPayMongoEvent('Finalize booking request received', {
-    reservationId,
-    paymongoCheckoutSessionId,
-    paymongoStatus,
-    paymongoPaidAt,
-    paymongoPaymentId: maskLogValue(paymongoPaymentId),
-    paymongoPaymentMethodType,
-    paymentMethod,
-    source: String(body.source || body.paymentSource || '').trim(),
-  })
-
-  if (!reservationId) {
-    return res.status(400).json({ success: false, error: 'reservation id is required' })
-  }
-
-  const firestore = admin.firestore()
-  const reservationRef = firestore.collection(BOOKING_RESERVATIONS_COLLECTION).doc(reservationId)
-  let appointmentId = ''
-  let appointmentPayload = null
-
-  try {
-    await firestore.runTransaction(async (transaction) => {
-      const snap = await transaction.get(reservationRef)
-      if (!snap.exists) {
-        throw new Error('Reservation not found.')
-      }
-
-      const reservation = snap.data() || {}
-      if (String(reservation.customerId || '').trim() !== String(req.user?.uid || '').trim()) {
-        throw new Error('Forbidden')
-      }
-      if (normalizeBookingStatus(reservation.status) === 'consumed') {
-        appointmentId = String(reservation.appointmentId || '').trim()
-        return
-      }
-      if (normalizeBookingStatus(reservation.status) !== 'held') {
-        throw new Error('This reservation is no longer active.')
-      }
-      if (toMillis(reservation.expiresAt) <= Date.now()) {
-        throw new Error('This reservation has expired. Please book again.')
-      }
-
-      const approvedLeave = await getApprovedLeaveForDate(
-        reservation.practitionerId,
-        reservation.date
-      )
-      if (approvedLeave) {
-        throw new Error('The selected practitioner is on approved leave for this date. Please choose another schedule.')
-      }
-
-      const range = getBookingRange(reservation)
-      if (!range) {
-        throw new Error('Invalid reservation time.')
-      }
-
-      const appointmentsSnap = await transaction.get(
-        firestore.collection('appointments')
-          .where('branchId', '==', String(reservation.branchId || '').trim())
-          .where('date', '==', String(reservation.date || '').trim())
-          .where('assignedPractitionerId', '==', String(reservation.practitionerId || '').trim())
-      )
-
-      appointmentsSnap.docs.forEach((docSnap) => {
-        const data = docSnap.data() || {}
-        const status = normalizeBookingStatus(data.status)
-        if (!BOOKING_BLOCKING_STATUSES.has(status)) return
-        const existingRange = getBookingRange(data)
-        if (existingRange && rangesOverlap(range.start, range.end, existingRange.start, existingRange.end)) {
-          throw new Error('That schedule was just taken. Please choose another available time.')
-        }
-      })
-
-      const finalAppointmentRef = firestore.collection('appointments').doc()
-      appointmentPayload = buildBookingAppointmentPayload({
-        reservation: {
-          ...reservation,
-          id: reservationId,
-          checkoutSessionId: paymongoCheckoutSessionId,
-          paymentMethod: paymentMethod || reservation.paymentMethod || 'GCash',
-        },
-        paymongo: {
-          status: paymongoStatus,
-          paid_at: paymongoPaidAt,
-          paymentId: paymongoPaymentId,
-        },
-        paymentMethodType: paymongoPaymentMethodType,
-        paymentMethod,
-      })
-
-      const computedPaymentId = String(appointmentPayload.paymongoPaymentId || '').trim()
-      const computedPaymentStatus = String(appointmentPayload.paymentStatus || '').trim()
-      const computedSource = String(appointmentPayload.source || 'paymongo_checkout').trim().toLowerCase()
-      const isPaidAppointment =
-        Boolean(computedPaymentId) &&
-        computedPaymentStatus.toLowerCase() === 'paid' &&
-        computedSource === 'paymongo_checkout'
-
-      logPayMongoEvent('Booking payload prepared', {
-        reservationId,
-        appointmentId: finalAppointmentRef.id,
-        paymongoCheckoutSessionId: appointmentPayload.paymongoCheckoutSessionId || null,
-        paymongoStatus: appointmentPayload.paymongoStatus || null,
-        paymongoPaidAt: appointmentPayload.paymongoPaidAt || null,
-        paymongoPaymentId: maskLogValue(computedPaymentId),
-        paymentStatus: computedPaymentStatus,
-        source: computedSource,
-        isPaidAppointment,
-      })
-
-      transaction.set(finalAppointmentRef, appointmentPayload)
-      transaction.update(reservationRef, {
-        status: 'consumed',
-        appointmentId: finalAppointmentRef.id,
-        paymongoCheckoutSessionId,
-        paymongoStatus,
-        paymongoPaidAt,
-        paymongoPaymentId,
-        paymongoPaymentMethodType,
-        consumedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      })
-      appointmentId = finalAppointmentRef.id
-    })
-
-    logPayMongoEvent('Finalize booking completed', {
-      reservationId,
-      appointmentId,
-    })
-
-    if (appointmentPayload) {
-      try {
-        const customerProfile = await getAppointmentCustomerProfile(firestore, appointmentPayload)
-        await upsertBranchClientFromAppointment(firestore, {
-          branchId: appointmentPayload.branchId || '',
-          appointmentData: {
-            ...appointmentPayload,
-            id: appointmentId,
-            createdBy: req.user?.uid || '',
-          },
-          customerProfile,
-          createdBy: req.user?.uid || '',
-        })
-      } catch (clientError) {
-        console.error('Failed to sync client record from appointment:', clientError)
-      }
-    }
-
-    return res.json({ success: true, data: { appointmentId } })
-  } catch (error) {
-    if (String(error?.message || '') === 'Forbidden') {
-      return res.status(403).json({ success: false, error: 'Forbidden' })
-    }
-    return res.status(400).json({ success: false, error: error?.message || 'Failed to finalize booking' })
-  }
+  return res.status(409).json({ success: false, error: 'Submit a booking request for clinic approval, then pay from My Appointments. Contact the clinic about any earlier checkout.' })
 })
 
 app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
@@ -6366,14 +5900,20 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
 
     const userBranchId = String(userData.branchId || '').trim()
     const appointmentBranchId = String(appointment.branchId || '').trim()
-    if (roleKey !== 'Owner' && roleKey !== 'Superadmin' && userBranchId && appointmentBranchId && userBranchId !== appointmentBranchId) {
+    if (roleKey !== 'Owner' && roleKey !== 'Superadmin' && (!userBranchId || userBranchId !== appointmentBranchId)) {
       return res.status(403).json({ success: false, error: 'Forbidden' })
     }
 
+    if (roleKey === 'Owner') {
+      const clinic = (await firestore.collection('clinics').doc(appointmentBranchId).get()).data() || {}
+      if (clinic.ownerId !== req.user.uid && appointmentBranchId !== req.user.uid) return res.status(403).json({ success: false, error: 'This booking belongs to another clinic.' })
+    }
     const approved = decision === 'approve'
     const isPaid = String(appointment.paymentStatus || '').trim().toLowerCase() === 'paid'
-    if (approved && !isPaid) {
-      return res.status(409).json({ success: false, error: 'The customer must complete payment before this booking can be approved.' })
+    if (approved) {
+      const leave = await getApprovedLeaveForDate(appointment.practitionerId || appointment.assignedPractitionerId, appointment.date)
+      if (leave) return res.status(409).json({ success: false, error: 'The assigned worker is on leave. Choose another booking schedule.' })
+
     }
     let refundId = null
     let refundStatus = null
@@ -6401,8 +5941,8 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       refundId = refundData?.data?.id || null
       refundStatus = refundData?.data?.attributes?.status || 'pending'
     }
-    const nextStatus = approved ? 'Scheduled' : 'Rejected'
-    const nextPaymentStatus = isPaid ? 'Paid' : 'Not Applicable'
+    const nextStatus = approved ? (initialPaymentReceived(appointment) ? afterPaymentStatus(appointment) : 'Awaiting Payment') : 'Rejected'
+    const nextPaymentStatus = isPaid ? 'Paid' : approved ? 'Pending' : 'Not Applicable'
     const update = {
       status: nextStatus,
       approvalStatus: approved ? 'Approved' : 'Rejected',
@@ -6422,7 +5962,14 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       } : {}),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
-    await appointmentRef.update(update)
+    await firestore.runTransaction(async (tx) => {
+      const latest = (await tx.get(appointmentRef)).data()
+      assertWorkflow(latest && latest.status === appointment.status, 'This booking was already updated. Refresh and try again.')
+      let prepared
+      if (approved) prepared = await prepareBooking({ tx, db: firestore, reservation: latest, getBookingRange, rangesOverlap, appointmentId })
+      if (prepared) tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.update(appointmentRef, { ...(prepared && !Number(latest.amountPaid) ? prepared.data : {}), ...update })
+    })
 
     if (appointment.bookingId) {
       await firestore.collection('bookings').doc(String(appointment.bookingId)).set({
@@ -6451,100 +5998,7 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
     return res.json({ success: true, data: { appointmentId, status: nextStatus, approvalStatus: update.approvalStatus } })
   } catch (error) {
     console.error('appointments/approve-booking error:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to decide booking request' })
-  }
-})
-
-app.post('/appointments/:id/transition', requireAuth, async (req, res) => {
-  const appointmentId = String(req.params.id || '').trim()
-  const action = String(req.body?.action || '').trim().toLowerCase()
-  if (!appointmentId || !['start', 'worker_complete', 'customer_complete'].includes(action)) {
-    return res.status(400).json({ success: false, error: 'A valid transition action is required.' })
-  }
-
-  try {
-    const firestore = admin.firestore()
-    const appointmentRef = firestore.collection('appointments').doc(appointmentId)
-    const appointmentSnap = await appointmentRef.get()
-    if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
-    const appointment = appointmentSnap.data() || {}
-    const status = normalizeBookingStatus(appointment.status)
-    const isCustomer = String(appointment.customerId || '').trim() === req.user.uid
-    req.userContext = req.userContext || await loadUserContext(req.user.uid)
-    const roleKey = String(req.userContext.roleKey || '').trim()
-    const sameBranch = String(req.userContext.userData?.branchId || '').trim() === String(appointment.branchId || '').trim()
-    const assignedPractitioner = [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo]
-      .map((value) => String(value || '').trim()).includes(req.user.uid)
-    const canStaffUpdate = roleKey === 'Superadmin' || roleKey === 'Owner' || (sameBranch && (assignedPractitioner || req.userContext.permissions.has('appointments:update')))
-    const totalAmount = Number(appointment.totalAmount || appointment.amount || 0)
-    const amountPaid = Number(appointment.amountPaid || 0)
-    const balancePaid = totalAmount <= 0 || amountPaid + 0.01 >= totalAmount
-
-    if (action === 'customer_complete' && !isCustomer) return res.status(403).json({ success: false, error: 'Only the customer can confirm completion.' })
-    if (action !== 'customer_complete' && !canStaffUpdate) return res.status(403).json({ success: false, error: 'Forbidden' })
-
-    const update = { updatedAt: admin.firestore.FieldValue.serverTimestamp() }
-    if (action === 'start') {
-      if (status !== 'ready to start' || appointment.customerKeyVerified !== true || appointment.workerKeyVerified !== true) {
-        return res.status(409).json({ success: false, error: 'Both customer and worker must verify the service key before starting.' })
-      }
-      update.status = 'Ongoing'
-      update.startedAt = admin.firestore.FieldValue.serverTimestamp()
-      update.startedById = req.user.uid
-    } else if (action === 'worker_complete') {
-      if (status !== 'ongoing' || appointment.startedAt == null) return res.status(409).json({ success: false, error: 'The appointment is not in progress.' })
-      update.workerCompleted = true
-      update.workerCompletedAt = admin.firestore.FieldValue.serverTimestamp()
-      update.workerCompletedById = req.user.uid
-      update.status = appointment.customerCompleted && balancePaid ? 'Completed' : 'Awaiting Customer Confirmation'
-    } else {
-      if (!['ongoing', 'awaiting customer confirmation', 'balance due'].includes(status)) return res.status(409).json({ success: false, error: 'The appointment cannot be confirmed yet.' })
-      update.customerCompleted = true
-      update.customerCompletedAt = admin.firestore.FieldValue.serverTimestamp()
-      update.status = appointment.workerCompleted && balancePaid ? 'Completed' : (appointment.workerCompleted ? 'Balance Due' : 'Ongoing')
-    }
-    await appointmentRef.update(update)
-    return res.json({ success: true, data: { appointmentId, status: update.status } })
-  } catch (error) {
-    console.error('appointment transition error:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to update appointment milestone.' })
-  }
-})
-
-app.post('/appointments/:id/verify-service-key', requireAuth, async (req, res) => {
-  const appointmentId = String(req.params.id || '').trim()
-  const submittedKey = String(req.body?.serviceKey || '').trim()
-  if (!appointmentId || !submittedKey) return res.status(400).json({ success: false, error: 'serviceKey is required.' })
-
-  try {
-    const firestore = admin.firestore()
-    const appointmentRef = firestore.collection('appointments').doc(appointmentId)
-    const appointmentSnap = await appointmentRef.get()
-    if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
-    const appointment = appointmentSnap.data() || {}
-    if (String(appointment.serviceKey || '') !== submittedKey) return res.status(403).json({ success: false, error: 'Invalid service key.' })
-
-    const isCustomer = String(appointment.customerId || '').trim() === req.user.uid
-    req.userContext = req.userContext || await loadUserContext(req.user.uid)
-    const roleKey = String(req.userContext.roleKey || '').trim()
-    const sameBranch = String(req.userContext.userData?.branchId || '').trim() === String(appointment.branchId || '').trim()
-    const assigned = [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo]
-      .map((value) => String(value || '').trim()).includes(req.user.uid)
-    const isStaff = roleKey === 'Superadmin' || roleKey === 'Owner' || (sameBranch && (assigned || req.userContext.permissions.has('appointments:update')))
-    if (!isCustomer && !isStaff) return res.status(403).json({ success: false, error: 'Forbidden' })
-
-    const update = isCustomer
-      ? { customerKeyVerified: true, customerKeyVerifiedAt: admin.firestore.FieldValue.serverTimestamp() }
-      : { workerKeyVerified: true, workerKeyVerifiedAt: admin.firestore.FieldValue.serverTimestamp() }
-    const bothVerified = Boolean(isCustomer ? update.customerKeyVerified : appointment.customerKeyVerified) &&
-      Boolean(isCustomer ? appointment.workerKeyVerified : update.workerKeyVerified)
-    if (bothVerified) update.status = 'Ready to Start'
-    update.updatedAt = admin.firestore.FieldValue.serverTimestamp()
-    await appointmentRef.update(update)
-    return res.json({ success: true, data: { appointmentId, status: update.status || appointment.status, bothVerified } })
-  } catch (error) {
-    console.error('service key verification error:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to verify service key.' })
+    return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to decide booking request' })
   }
 })
 
@@ -6921,6 +6375,22 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
     Number(metadata?.totalServiceDurationMinutes || metadata?.durationMinutes || 0)
   )
 
+  let orderSnapshot = null
+  let approvedProductLines = null
+  if (isCustomerOrderCheckout) {
+    try {
+      const items = req.body?.items
+      if (!Array.isArray(items) || !items.length || items.length > 50) throw Object.assign(new Error('Select between 1 and 50 products.'), { status: 400 })
+      const listings = await Promise.all(items.map(async (item) => {
+        const id = String(item.id || '')
+        if (!id || id.includes('/')) throw Object.assign(new Error('Invalid product.'), { status: 400 })
+        return (await admin.firestore().collection('productServicePosts').doc(id).get()).data()
+      }))
+      approvedProductLines = approvedOrderLines(items, listings, amount)
+      orderSnapshot = await prepareOrderSnapshot(admin.firestore(), items, req.user.uid, req.body.delivery, String(referenceNumber || ''))
+    } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message }) }
+  }
+
   if (!isSubscriptionCheckout) {
     if (!req.user?.uid) {
       return res.status(401).json({
@@ -6958,87 +6428,18 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
           if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
           const appointmentData = appointmentSnap.data() || {}
           if (String(appointmentData.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
-          if (!['approved', 'payment pending', 'contract pending', 'balance due'].includes(normalizeBookingStatus(appointmentData.status))) {
+          if (!['approved', 'awaiting payment', 'payment pending', 'balance due'].includes(normalizeBookingStatus(appointmentData.status))) {
             return res.status(409).json({ success: false, error: 'This appointment is not ready for payment.' })
           }
-          if (appointmentData.contractRequired === true && normalizeBookingStatus(appointmentData.contract?.status) !== 'signed') {
-            return res.status(409).json({ success: false, error: 'The customer must sign the contract before payment.' })
-          }
-          const remainingAmount = Math.max(0, Number(appointmentData.totalAmount || appointmentData.amount || 0) - Number(appointmentData.amountPaid || 0))
+          if (appointmentData.approvalStatus !== 'Approved') return res.status(409).json({ success: false, error: 'The clinic must approve this booking before payment.' })
+          const remainingAmount = paymentDue(appointmentData) / 100
           if (remainingAmount <= 0) return res.status(409).json({ success: false, error: 'This appointment has no remaining balance.' })
           if (Math.abs(Number(amount || 0) - Math.round(remainingAmount * 100)) > 1) {
             return res.status(409).json({ success: false, error: 'Payment amount does not match the appointment balance.' })
           }
-        } else if (reservationId) {
-          const reservationSnap = await firestore.collection(BOOKING_RESERVATIONS_COLLECTION).doc(reservationId).get()
-          if (!reservationSnap.exists) {
-            return res.status(404).json({
-              success: false,
-              error: 'Reservation not found',
-            })
-          }
-          const reservationData = reservationSnap.data() || {}
-          if (String(reservationData.customerId || '').trim() !== req.user.uid) {
-            return res.status(403).json({
-              success: false,
-              error: 'Forbidden',
-            })
-          }
-          if (normalizeBookingStatus(reservationData.status) !== 'held' || toMillis(reservationData.expiresAt) <= Date.now()) {
-            return res.status(409).json({
-              success: false,
-              error: 'Reservation is no longer active',
-            })
-          }
         } else {
-          const branchId = String(metadata?.branchId || '').trim()
-          const practitionerId = String(metadata?.practitionerId || '').trim()
-          const appointmentDate = String(metadata?.appointmentDate || '').trim()
-          const appointmentTime = String(metadata?.appointmentTime || '').trim()
-          const appointmentStart = parseClockToMinutes(appointmentTime)
-          if (!branchId || !practitionerId || !appointmentDate || appointmentStart === null) {
-            return res.status(400).json({
-              success: false,
-              error: 'branchId, practitionerId, appointmentDate, and appointmentTime are required for customer bookings',
-            })
-          }
-          const existingAppointments = await firestore.collection('appointments')
-            .where('branchId', '==', branchId)
-            .where('date', '==', appointmentDate)
-            .where('assignedPractitionerId', '==', practitionerId)
-            .get()
-          const appointmentEnd = appointmentStart + totalServiceDurationMinutes
-          const conflicting = existingAppointments.docs.some((docSnap) => {
-            const data = docSnap.data() || {}
-            const status = normalizeBookingStatus(data.status)
-            if (!BOOKING_BLOCKING_STATUSES.has(status)) return false
-            const range = getBookingRange(data)
-            return range && rangesOverlap(appointmentStart, appointmentEnd, range.start, range.end)
-          })
-          if (conflicting) {
-            return res.status(409).json({
-              success: false,
-              error: 'That schedule was just taken. Please choose another available time.',
-            })
-          }
+          return res.status(409).json({ success: false, error: 'Submit the booking for clinic approval first, then pay from My Appointments.' })
         }
-      }
-    } else {
-      try {
-        if (!req.userContext || req.userContext.uid !== req.user.uid) {
-          req.userContext = await loadUserContext(req.user.uid)
-        }
-        if (!req.userContext.permissions.has('payments:create')) {
-          return res.status(403).json({
-            success: false,
-            error: 'Forbidden',
-          })
-        }
-      } catch (error) {
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to verify permission',
-        })
       }
     }
   }
@@ -7142,7 +6543,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
         show_description: true,
         show_line_items: true,
         description: String(description || 'POS Payment'),
-        line_items: Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : fallbackLineItem,
+        line_items: approvedProductLines || (!isCustomerBookingCheckout && Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : fallbackLineItem),
         ...(selectedMethods.length > 0 ? { payment_method_types: selectedMethods } : {}),
         reference_number: String(referenceNumber || ''),
         metadata: {
@@ -7182,6 +6583,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
       })
     }
 
+    if (orderSnapshot) await admin.firestore().collection('orderCheckouts').doc(data.data.id).set(orderSnapshot)
     logPayMongoEvent('Checkout session created', {
       checkoutSessionId: data?.data?.id || null,
       moduleKey,
@@ -7228,14 +6630,12 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
     if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
     const appointment = appointmentSnap.data() || {}
     if (String(appointment.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
-    if (!['approved', 'awaiting payment', 'payment pending', 'contract pending', 'balance due', 'paid', 'partially paid'].includes(normalizeBookingStatus(appointment.status))) {
+    if (!(appointment.recordedPaymentSessions || []).includes(checkoutSessionId) && !['approved', 'awaiting payment', 'payment pending', 'contract pending', 'balance due', 'paid', 'partially paid'].includes(normalizeBookingStatus(appointment.status))) {
       return res.status(409).json({ success: false, error: 'Payment is not available for this appointment yet.' })
     }
-    if (appointment.contractRequired === true && normalizeBookingStatus(appointment.contract?.status) !== 'signed') {
-      return res.status(409).json({ success: false, error: 'The customer must sign the contract before payment.' })
-    }
+    if (appointment.approvalStatus !== 'Approved') return res.status(409).json({ success: false, error: 'The clinic must approve this booking before payment.' })
 
-    if (String(appointment.paymongoCheckoutSessionId || '').trim() === checkoutSessionId) {
+    if ((appointment.recordedPaymentSessions || []).includes(checkoutSessionId) || String(appointment.paymongoCheckoutSessionId || '').trim() === checkoutSessionId) {
       return res.json({
         success: true,
         data: {
@@ -7257,47 +6657,44 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
 
     const attributes = providerData?.data?.attributes || {}
     const metadata = attributes.metadata || {}
-    const paid = Boolean(attributes.paid_at) || (Array.isArray(attributes.payments) && attributes.payments.length > 0)
+    const paid = Boolean(attributes.paid_at) || (Array.isArray(attributes.payments) && attributes.payments.some((payment) => payment.attributes?.status === 'paid'))
     if (String(metadata.appointmentId || '').trim() !== appointmentId || String(metadata.customerId || '').trim() !== req.user.uid) {
       return res.status(403).json({ success: false, error: 'Payment session does not belong to this appointment.' })
     }
     if (!paid) return res.status(409).json({ success: false, error: 'Payment has not been completed.' })
 
-    const payment = Array.isArray(attributes.payments) ? attributes.payments[0] || {} : {}
+    const payment = Array.isArray(attributes.payments) ? attributes.payments.find((entry) => entry.attributes?.status === 'paid') || (attributes.paid_at ? attributes.payments[0] : null) || {} : {}
     const paymentId = payment.id || null
     const paymentAmount = Number(payment.attributes?.amount || 0) / 100
-    const totalAmount = Number(appointment.totalAmount || appointment.amount || 0)
-    const previousAmountPaid = Number(appointment.amountPaid || 0)
-    const amountPaid = previousAmountPaid + (paymentAmount || Math.max(0, totalAmount - previousAmountPaid))
-    const paymentCoverage = amountPaid + 0.01 >= totalAmount ? 'full' : 'installment'
-    if (paymentCoverage === 'installment' && appointment.installmentsAllowed !== true) {
-      return res.status(409).json({ success: false, error: 'This appointment requires full payment before the service starts.' })
-    }
-    const serviceKey = paymentCoverage === 'full'
-      ? String(appointment.serviceKey || crypto.randomInt(100000, 1000000))
-      : appointment.serviceKey || null
-
-    await appointmentRef.update({
-      status: paymentCoverage === 'full' ? 'Paid - Awaiting Approval' : 'Partially Paid',
-      paymentStatus: paymentCoverage === 'full' ? 'Paid' : 'Partially Paid',
-      source: paymentCoverage === 'full' ? 'paymongo_checkout' : appointment.source || 'customer_booking_request',
-      paymentCoverage,
-      amountPaid,
-      paymongoCheckoutSessionId: checkoutSessionId,
-      paymongoPaymentId: paymentId,
-      paymongoStatus: attributes.status || 'paid',
-      paymongoPaidAt: attributes.paid_at || admin.firestore.FieldValue.serverTimestamp(),
-      paymentAgreementAcknowledged: true,
-      paymentAgreementAcknowledgedAt: admin.firestore.FieldValue.serverTimestamp(),
-      serviceKey,
-      serviceKeyStatus: serviceKey ? 'pending_exchange' : null,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) return res.status(409).json({ success: false, error: 'The provider has not confirmed a valid payment amount.' })
+    const result = await firestore.runTransaction(async (tx) => {
+      const fresh = (await tx.get(appointmentRef)).data()
+      const sessions = fresh.recordedPaymentSessions || []
+      if (sessions.includes(checkoutSessionId) || fresh.paymongoCheckoutSessionId === checkoutSessionId) return { status: fresh.status, amountPaid: fresh.amountPaid, alreadyRecorded: true }
+      assertWorkflow(fresh.approvalStatus === 'Approved' && ['awaiting payment', 'approved', 'payment pending', 'balance due'].includes(normalized(fresh.status)), 'This booking cannot receive payment at this stage.')
+      assertWorkflow(Math.round(paymentAmount * 100) === paymentDue(fresh), 'Verified payment does not match the amount due.')
+      const amountPaid = Math.round((Number(fresh.amountPaid || 0) + paymentAmount) * 100) / 100
+      const totalAmount = Number(fresh.totalAmount || fresh.amount || 0)
+      const fullyPaid = amountPaid >= totalAmount
+      const next = { ...fresh, amountPaid }
+      const status = afterPaymentStatus(next)
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      tx.set(firestore.collection('transactions').doc('booking-' + checkoutSessionId), { branchId: fresh.branchId, customerId: fresh.customerId, appointmentId, checkoutSessionId, type: 'service_payment', service: fresh.service || 'Service booking', amount: paymentAmount, total: paymentAmount, method: payment.attributes?.source?.type || payment.attributes?.payment_method?.type || 'Online', status: 'Paid', createdAt: timestamp })
+      tx.update(appointmentRef, {
+        status, amountPaid, balance: Math.max(0, totalAmount - amountPaid),
+        paymentStatus: fullyPaid ? 'Paid' : 'Partially Paid', paymentCoverage: fullyPaid ? 'full' : 'installment',
+        recordedPaymentSessions: [...sessions, checkoutSessionId], paymongoCheckoutSessionId: checkoutSessionId,
+        paymongoPaymentId: paymentId, paymongoPaidAt: timestamp, updatedAt: timestamp,
+        ...(status === 'Completed' ? { completedAt: timestamp } : {}),
+      })
+      if (fresh.bookingId) tx.set(firestore.collection('bookings').doc(fresh.bookingId), { status, amountPaid, updatedAt: timestamp }, { merge: true })
+      tx.set(firestore.collection('notifications').doc(), { recipientUserId: fresh.customerId, title: status === 'Completed' ? 'Booking completed' : 'Booking payment received', message: status === 'Completed' ? 'Your service and final payment are complete. The booking is now in your history.' : 'Payment received. Sign your clinic contract to continue.', link: '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
+      return { appointmentId, status, amountPaid, paymentCoverage: fullyPaid ? 'full' : 'installment' }
     })
-
-    return res.json({ success: true, data: { appointmentId, status: paymentCoverage === 'full' ? 'Paid - Awaiting Approval' : 'Partially Paid', amountPaid, paymentCoverage } })
+    return res.json({ success: true, data: result })
   } catch (error) {
     console.error('appointments/record-payment error:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to record appointment payment' })
+    return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to record appointment payment' })
   }
 })
 

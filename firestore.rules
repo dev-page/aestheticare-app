@@ -299,12 +299,19 @@ service cloud.firestore {
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
             && (hasPermission('appointments:view') || hasPermission('finance:refunds:view')))
           || isSuperadmin());
+      // Customer bookings are created by the API after availability and policy checks.
       allow create: if isSignedIn()
-        && ((request.resource.data.customerId == request.auth.uid)
-          || (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('appointments:create')));
+        && request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('appointments:create');
       allow update: if isSignedIn()
         && ((resource.data.customerId == request.auth.uid && customerCanRequestAppointmentChange())
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')));
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')
+            && (resource.data.get('bookingWorkflowVersion', 0) != 2
+              || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                'bookingWorkflowVersion', 'status', 'approvalStatus', 'amount', 'totalAmount', 'amountPaid', 'balance',
+                'paymentStatus', 'installmentsAllowed', 'depositPercent', 'contract', 'contractRequired',
+                'serviceKey', 'customerKeyVerified', 'workerKeyVerified', 'workerCompleted', 'customerCompleted',
+                'resources', 'materialsConsumed', 'startedAt', 'completedAt', 'recordedPaymentSessions'
+              ]))));
       allow delete: if isSignedIn()
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')));
     }
@@ -470,33 +477,54 @@ service cloud.firestore {
     }
 
     match /purchaseRequests/{requestId} {
-      allow read: if isSignedIn()
-        && get(/databases/$(database)/documents/suppliers/$(resource.data.supplierId)).data.ownerId == request.auth.uid;
-      allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view')
-            || hasPermission('finance:purchases:view') || hasPermission('finance:payables:view')
-            || hasPermission('finance:reports:view'))) || isSuperadmin());
-      allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
-      allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (hasPermission('inventory:update') || hasPermission('orders:update') || hasPermission('inventory:review')
-            || hasPermission('procurement:create') || hasPermission('procurement:review')
-            || financeCanApprovePurchaseBudget() || financeCanSettlePurchase()));
-      allow delete: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
+      allow read: if isSignedIn() && (get(/databases/$(database)/documents/suppliers/$(resource.data.supplierId)).data.ownerId == request.auth.uid
+        || (canAccessBranch(resource.data.branchId) && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view') || hasPermission('finance:payables:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
+      allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create')
+        && request.resource.data.status in ['Pending', 'Approved'] && request.resource.data.budgetStatus == 'Not Requested'
+        && request.resource.data.paymentStatus == 'Unpaid' && request.resource.data.amountPaid == 0
+        && request.resource.data.get('approvedBudgetAmount', 0) == 0 && request.resource.data.get('inventoryReceiptId', null) == null
+        && request.resource.data.get('supplierQuoteId', null) == null && request.resource.data.logisticsStatus == 'Not Claimed';
+      allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && request.resource.data.branchId == resource.data.branchId
+        && ((hasPermission('finance:payables:settle') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['budgetVariance', 'budgetSettledAt', 'budgetSettlementStatus', 'reimbursementAmount', 'returnedFundsAmount', 'workflowStage', 'updatedAt']))
+        || ((hasPermission('inventory:update') || hasPermission('inventory:review') || hasPermission('procurement:create') || hasPermission('procurement:review'))
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['inventoryReceiptId', 'inventoryItemId', 'receivedAt', 'deliveredAt', 'supplierQuoteId', 'supplierQuoteStatus', 'supplierQuoteReference', 'supplierQuoteAmount', 'supplierQuoteQuantity', 'supplierQuoteUnitPrice', 'originalRequestedQuantity', 'financeApprovedAt', 'financeApprovedBy', 'approvedBudgetAmount', 'budgetApprovedAt', 'paymentStatus', 'amountPaid', 'balance', 'paidAt', 'paidBy'])
+          && (resource.data.get('supplierQuoteId', null) == null && resource.data.budgetStatus != 'Approved' || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['quantity', 'unitCost', 'totalCost', 'supplierId', 'itemId', 'supplier', 'item']))
+          && (request.resource.data.status == resource.data.status || (resource.data.status == 'Pending' && request.resource.data.status in ['Approved', 'Rejected']) || (request.resource.data.status == 'Cancelled' && !(resource.data.logisticsStatus in ['Shipped', 'In Transit', 'Received', 'Delivered']) && resource.data.status != 'Delivered'))
+          && (request.resource.data.budgetStatus == resource.data.budgetStatus || (request.resource.data.budgetStatus == 'Requested' && resource.data.budgetStatus == 'Not Requested'))
+          && (request.resource.data.get('purchaseOrderStatus', '') == resource.data.get('purchaseOrderStatus', '') || (resource.data.get('purchaseOrderStatus', '') in ['', 'Draft'] && request.resource.data.get('purchaseOrderStatus', '') in ['Draft', 'Pending Finance']))
+          && (request.resource.data.logisticsStatus == resource.data.logisticsStatus || (request.resource.data.logisticsStatus == 'Ready for Claim' && resource.data.budgetStatus == 'Approved' && resource.data.logisticsStatus in ['', 'Not Claimed', 'Pending']))));
+      allow delete: if false;
     }
 
     match /productServicePosts/{postId} {
-      allow read: if isPublicClinic(resource.data.branchId)
+      function draft() {
+        return request.resource.data.get('financeStatus', '') == 'draft'
+          && request.resource.data.get('isPublished', true) == false
+          && request.resource.data.get('financeReview', null) == null
+          && request.resource.data.get('publishedBy', null) == null
+          && request.resource.data.get('publishedAt', null) == null;
+      }
+      function financialChange() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount'
+        ]);
+      }
+      allow read: if (isPublicClinic(resource.data.branchId)
+          && resource.data.get('financeStatus', '') == 'approved' && resource.data.get('isPublished', false) == true)
         || (isSignedIn() && canAccessBranch(resource.data.branchId));
-      allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('services:create'));
-      allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('services:update'));
-      allow delete: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('services:disable'));
+      allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId)
+        && hasPermission('services:create') && draft();
+      allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('services:update')
+        && request.resource.data.branchId == resource.data.branchId
+        && ((financialChange() && draft()) || (!financialChange()
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'financeStatus', 'financeReview', 'isPublished', 'publishedBy', 'publishedAt', 'submittedBy'
+          ])));
+      allow delete: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('services:disable');
+      match /approvalHistory/{entryId} {
+        allow read: if isSignedIn() && canAccessBranch(get(/databases/$(database)/documents/productServicePosts/$(postId)).data.branchId);
+        allow write: if false;
+      }
     }
 
     match /clinicPolicies/{branchId} {
@@ -638,90 +666,42 @@ service cloud.firestore {
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:update'));
     }
 
+    function editablePayrollMonth(branchId, month) {
+      return !exists(/databases/$(database)/documents/payrollSummaries/$(branchId + '_' + month))
+        || get(/databases/$(database)/documents/payrollSummaries/$(branchId + '_' + month)).data.status != 'approved';
+    }
     match /payrolls/{payrollId} {
-      allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
-      allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update'));
-      allow update: if isSignedIn()
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('payroll:update')
-        && ('payPeriodMonthKey' in request.resource.data)
-        && exists(/databases/$(database)/documents/payrollSummaries/$(request.resource.data.branchId + '_' + request.resource.data.payPeriodMonthKey))
-        && get(/databases/$(database)/documents/payrollSummaries/$(request.resource.data.branchId + '_' + request.resource.data.payPeriodMonthKey)).data.status == 'pending';
+      allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
+      allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update')
+        && request.resource.data.payPeriodMonthKey.matches('^[0-9]{4}-[0-9]{2}$')
+        && editablePayrollMonth(request.resource.data.branchId, request.resource.data.payPeriodMonthKey);
+      allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('payroll:update')
+        && request.resource.data.branchId == resource.data.branchId && request.resource.data.employeeId == resource.data.employeeId
+        && request.resource.data.payPeriodMonthKey == resource.data.get('payPeriodMonthKey', request.resource.data.payPeriodMonthKey)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['payslipReleasedAt', 'paymentStatus', 'paidAt'])
+        && editablePayrollMonth(resource.data.branchId, request.resource.data.payPeriodMonthKey);
       allow delete: if false;
     }
-
     match /payrollSummaries/{summaryId} {
-      allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (hasPermission('payroll:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
-      allow create: if isSignedIn()
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('payroll:update')
-        && request.resource.data.status == 'pending';
-      allow update: if isSignedIn()
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && ((hasPermission('payroll:approve')
-          && resource.data.status == 'pending'
-          && (request.resource.data.status == 'approved' || request.resource.data.status == 'rejected')
-          && (request.resource.data.status == 'approved' || ('rejectionReason' in request.resource.data))
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'approvedBy', 'approvedByName', 'approvedAt', 'rejectionReason', 'updatedAt'
-          ]))
-          || (hasPermission('payroll:update')
-            && request.resource.data.status == 'pending'));
+      allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && (hasPermission('payroll:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
+      allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update')
+        && request.resource.data.status == 'pending' && request.resource.data.get('approvedEntries', {}) == {} && request.resource.data.get('releasedCount', 0) == 0;
+      allow update: if isSignedIn() && canAccessBranch(resource.data.branchId)
+        && request.resource.data.branchId == resource.data.branchId && request.resource.data.monthKey == resource.data.monthKey
+        && ((hasPermission('payroll:approve') && resource.data.status == 'pending' && request.resource.data.status == 'rejected'
+          && request.resource.data.rejectionReason.size() > 0
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'approvedBy', 'approvedByName', 'approvedAt', 'rejectionReason', 'updatedAt']))
+        || (hasPermission('payroll:update') && request.resource.data.status == 'pending' && resource.data.get('releasedCount', 0) == 0
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedEntries', 'releasedCount'])));
       allow delete: if false;
     }
-
-    function approvedPayrollForPayslip() {
-      return ('payrollEntryId' in request.resource.data)
-        && ('payPeriodMonthKey' in request.resource.data)
-        && exists(/databases/$(database)/documents/payrolls/$(request.resource.data.payrollEntryId))
-        && get(/databases/$(database)/documents/payrolls/$(request.resource.data.payrollEntryId)).data.branchId == request.resource.data.branchId
-        && exists(/databases/$(database)/documents/payrollSummaries/$(request.resource.data.branchId + '_' + request.resource.data.payPeriodMonthKey))
-        && get(/databases/$(database)/documents/payrollSummaries/$(request.resource.data.branchId + '_' + request.resource.data.payPeriodMonthKey)).data.status == 'approved';
-    }
-
     match /payslips/{payslipId} {
-      allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
-      allow create: if isSignedIn()
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('payroll:update')
-        && approvedPayrollForPayslip();
-      allow update: if isSignedIn()
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('payroll:update')
-        && approvedPayrollForPayslip()
-        && request.resource.data.payrollEntryId == resource.data.payrollEntryId;
-      allow delete: if false;
+      allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
+      allow write: if false;
     }
-
     match /users/{employeeId}/payslips/{payslipId} {
-      allow read: if isSignedIn()
-        && (request.auth.uid == employeeId
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payroll:view'))
-          || isSuperadmin());
-      allow create: if isSignedIn()
-        && request.resource.data.employeeId == employeeId
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('payroll:update')
-        && approvedPayrollForPayslip();
-      allow update: if isSignedIn()
-        && request.resource.data.employeeId == employeeId
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('payroll:update')
-        && approvedPayrollForPayslip()
-        && request.resource.data.payrollEntryId == resource.data.payrollEntryId;
-      allow delete: if false;
+      allow read: if isSignedIn() && (request.auth.uid == employeeId || (canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
+      allow write: if false;
     }
 
     match /payrollSettings/{branchId} {
@@ -765,16 +745,22 @@ service cloud.firestore {
     }
 
     match /customerOrders/{orderId} {
-      allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid
-        || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('finance:refunds:view'))
-        || isSuperadmin());
-      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
-      allow update: if isSignedIn()
-        && (request.auth.uid == resource.data.customerId
-          || (resource.data.branchId != null
-            && canAccessBranch(resource.data.branchId)
-            && ((hasPermission('orders:update') && staffCanUpdateCustomerOrderLogistics()) || financeCanUpdateRefund())));
+      allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid || (canAccessBranch(resource.data.branchId) && (hasPermission('orders:view') || hasPermission('orders:update') || hasPermission('finance:refunds:view') || hasPermission('finance:sales:view'))) || isSuperadmin());
+      allow create: if false;
+      allow update: if isSignedIn() && ((resource.data.customerId == request.auth.uid
+        && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'receivedAt', 'deliveryProofUrl', 'deliveryProofPath', 'deliveryRating', 'deliveryReview', 'updatedAt']) && resource.data.status in ['Delivered', 'Received'] && request.resource.data.status == 'Completed')
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'refundRequestId', 'refundRequestStatus', 'refundIssueType', 'refundReason', 'refundProofUrl', 'refundProofPath', 'refundRequestedAt', 'updatedAt']) && resource.data.status in ['Delivered', 'Received', 'Completed', 'Preparing', 'Awaiting Stock'] && request.resource.data.status == 'Refund Requested')
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orderNumber', 'updatedAt'])))
+        || (canAccessBranch(resource.data.branchId) && ((hasPermission('orders:update') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['riderName', 'riderPhone', 'riderVehicle', 'riderAssignedAt', 'riderAssignedBy', 'updatedAt'])) || financeCanUpdateRefund())));
       allow delete: if false;
+    }
+    match /inventoryMovements/{id} {
+      allow read: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view');
+      allow write: if false;
+    }
+    match /purchasePayments/{id} {
+      allow read: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('finance:payables:view');
+      allow write: if false;
     }
 
     match /refundRequests/{requestId} {

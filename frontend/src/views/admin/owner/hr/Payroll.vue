@@ -395,6 +395,7 @@
 </template>
 
 <script>
+import { workflowApi } from '@/utils/workflowApi'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -751,47 +752,12 @@ export default {
       if (!entry?.employeeId || !isPayrollApproved.value) return
       payslipLoading.value = { ...payslipLoading.value, [entry.id]: true }
       try {
-        const payload = {
-          employeeId: entry.employeeId,
-          employeeName: entry.employeeName || '',
-          jobTitle: entry.role || entry.jobTitle || entry.salaryType || 'Staff',
-          employmentType: entry.employmentType || null,
-          salaryType: entry.salaryType || 'Hourly',
-          branchId: currentBranchId.value,
-          payPeriod: approvalMonthLabel.value,
-          payPeriodMonthKey: approvalMonthKey.value,
-          earnings: {
-            hoursWorked: Number(entry.hoursWorked || 0),
-            hourlyRate: Number(entry.hourlyRate || 0),
-            commission: Number(entry.commission || 0),
-            total: Number(entry.totalPay || 0)
-          },
-          deductions: entry.deductions || {},
-          totalEarnings: Number(entry.totalPay || 0),
-          totalDeductions: Number(entry.totalDeductions || 0),
-          netPay: Number(entry.netPay || 0),
-          dateGenerated: serverTimestamp(),
-          createdBy: currentUserId.value,
-          payrollEntryId: entry.id
-        }
-
-        const payslipId = `${currentBranchId.value}_${entry.employeeId}_${approvalMonthKey.value}`
-        await setDoc(doc(db, 'users', entry.employeeId, 'payslips', payslipId), payload, { merge: true })
-        await setDoc(doc(db, 'payslips', payslipId), payload, { merge: true })
-
-        await logActivity(db, {
-          module: 'HR',
-          action: 'Generated payslip',
-          details: `Generated payslip for ${entry.employeeName || 'staff'} (${approvalMonthLabel.value}).`,
-          targetUserId: entry.employeeId,
-          targetUserName: entry.employeeName || ''
-        })
-
+        await workflowApi('/payroll/' + entry.id + '/release')
         toast.success('Payslip generated successfully.')
         await loadPayslips()
       } catch (error) {
         console.error('Failed to generate payslip:', error)
-        toast.error('Failed to generate payslip.')
+        toast.error(error.message || 'Failed to generate payslip.')
       } finally {
         payslipLoading.value = { ...payslipLoading.value, [entry.id]: false }
       }
@@ -1533,6 +1499,7 @@ export default {
       loading.value = true
       try {
         await addDoc(collection(db, 'payrolls'), {
+          payPeriodMonthKey: getMonthKeyFromDate(new Date()),
           employeeId: employee.id,
           employeeName: employee.fullName,
           branchId: currentBranchId.value,
@@ -1552,31 +1519,6 @@ export default {
           createdAt: serverTimestamp()
         })
 
-        await addDoc(collection(db, 'users', employee.id, 'payslips'), {
-          employeeId: employee.id,
-          employeeName: employee.fullName,
-          jobTitle: employee.role,
-          employmentType: employee.employmentType || null,
-          salaryType,
-          branchId: currentBranchId.value,
-          payPeriod: new Date().toLocaleDateString('en-PH'),
-          earnings: {
-            hoursWorked: Number(hoursWorked.value || 0),
-            hourlyRate: Number(hourlyRate.value || 0),
-            overtimeHours: Number(overtimeHours || 0),
-            overtimePay,
-            nightDifferential: Number(overtime.nightDifferential.toFixed(2)),
-            commission: commissionAmount,
-            total: totalPay
-          },
-          deductions,
-          totalEarnings: totalPay,
-          totalDeductions,
-          netPay,
-          dateGenerated: serverTimestamp(),
-          createdBy: currentUserId.value
-        })
-
         await logActivity(db, {
           module: 'HR',
           action: 'Generated payroll',
@@ -1585,7 +1527,7 @@ export default {
           targetUserName: employee.fullName
         })
 
-        toast.success('Payroll and payslip saved successfully.')
+        toast.success('Payroll draft saved. Generate the summary for Finance approval before releasing payslips.')
         resetForm()
         await loadPayrolls()
       } catch (error) {

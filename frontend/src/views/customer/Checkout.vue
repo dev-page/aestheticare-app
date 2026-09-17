@@ -194,6 +194,7 @@
 </template>
 
 <script setup>
+import { workflowApi } from '@/utils/workflowApi'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -535,6 +536,8 @@ const createPayMongoCheckoutSession = async () => {
         commissionPercent: productCommissionPercent,
         commissionAmount: commissionAmount.value,
       },
+      delivery: delivery.value,
+      items: selectedItems.value.map((item) => ({ id: item.id, quantity: Number(item.quantity || 1), price: Number(item.price) })),
       lineItems: buildPayMongoLineItems(),
       successUrl,
       cancelUrl,
@@ -618,59 +621,8 @@ watch(
   }
 )
 
-const finalizeSuccessfulOrder = async (pending, payload) => {
-  const payments = Array.isArray(payload?.data?.payments) ? payload.data.payments : []
-  const firstPayment = payments[0] || {}
-  const paymentAttrs = firstPayment?.attributes || {}
-  const paymentMethodType =
-    paymentAttrs?.payment_method?.type ||
-    paymentAttrs?.source?.type ||
-    paymentAttrs?.type ||
-    pending.paymentMethod
-
-  const branchIds = [...new Set((pending.selectedItems || []).map((item) => String(item.branchId || '').trim()).filter(Boolean))]
-  const branchNames = [...new Set((pending.selectedItems || []).map((item) => String(item.branchName || '').trim()).filter(Boolean))]
-
-  const orderRef = await addDoc(collection(db, 'customerOrders'), {
-    customerId: auth.currentUser?.uid || '',
-    customerEmail: auth.currentUser?.email || '',
-    customerName: pending.delivery?.fullName || '',
-    items: pending.selectedItems || [],
-    delivery: pending.delivery || {},
-    paymentMethod: pending.paymentMethod,
-    paymentStatus: 'Paid',
-    total: Number(pending.total || 0),
-    status: 'Preparing',
-    fulfillmentType: 'pickup',
-    pickupBranchId: pending.delivery?.pickupBranchId || '',
-    pickupBranchName: pending.delivery?.pickupBranchName || '',
-    policyAcknowledged: pending.policyAcknowledged === true,
-    policyAcknowledgedAt: serverTimestamp(),
-    clinicPolicySnapshot: pending.clinicPolicySnapshot || {},
-    orderNumber: pending.orderNumber || pending.referenceNumber || '',
-    referenceNumber: pending.referenceNumber || '',
-    source: 'paymongo_checkout',
-    paymongoCheckoutSessionId: pending.checkoutSessionId,
-    paymongoStatus: payload?.data?.status || null,
-    paymongoPaidAt: payload?.data?.paid_at || null,
-    paymongoPaymentId: firstPayment?.id || null,
-    paymongoPaymentMethodType: paymentMethodType || null,
-    branchId: branchIds.length === 1 ? branchIds[0] : '',
-    branchName: branchNames.length === 1 ? branchNames[0] : '',
-    paymentCoverage: 'full',
-    commissionPercent: productCommissionPercent,
-    commissionAmount: commissionAmount.value,
-    merchantNetAmount: merchantNetAmount.value,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  })
-
-  await createCustomerNotification({
-    title: 'Payment Received',
-    message: `Your payment for order ${orderRef.id} was received successfully. Your purchase is now being processed.`,
-    link: '/customer/orders',
-  })
-
+const finalizeSuccessfulOrder = async (pending) => {
+  await workflowApi('/customer/orders/record-payment', { checkoutSessionId: pending.checkoutSessionId })
   removePurchasedFromCart()
   clearCheckoutItems()
 }

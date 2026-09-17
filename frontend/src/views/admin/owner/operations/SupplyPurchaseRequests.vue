@@ -600,6 +600,7 @@
 </template>
 
 <script>
+import { workflowApi } from '@/utils/workflowApi'
 import { useRoute, useRouter } from 'vue-router'
 import { createPurchaseRequestNumber, purchaseRequestReference } from '@/utils/purchaseRequestReference'
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
@@ -1217,14 +1218,7 @@ export default {
           return
         }
 
-        await upsertDeliveredItem(request)
-        await updateDoc(doc(db, 'purchaseRequests', request.id), {
-          status: 'Delivered',
-          workflowStage: 'Delivered - Awaiting Finance Settlement',
-          logisticsStatus: 'Delivered',
-          deliveredAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        })
+        await workflowApi('/logistics/purchase-requests/' + request.id + '/transition', { nextStatus: 'Received' })
         await logManagerActivity(`Marked request as delivered: ${request.item || 'item'}.`, {
           type: 'purchase_request_delivered',
           requestId: request.id,
@@ -1238,7 +1232,7 @@ export default {
         toast.success('Request marked delivered and catalog updated.')
       } catch (error) {
         console.error(error)
-        toast.error('Failed to mark request as delivered.')
+        toast.error(error.message || 'Failed to mark request as delivered.')
       }
     }
 
@@ -1501,35 +1495,12 @@ export default {
         await uploadBytes(receiptRef, paymentReceiptFile.value)
         const receiptUrl = await getDownloadURL(receiptRef)
 
-        const updatePayload = {
-          paymentStatus: 'Paid',
-          amountPaid: totalCost,
-          balance: 0,
-          paidAt: serverTimestamp(),
-          paidBy: currentUserId.value || null,
-          receiptUrl,
-          receiptFileName: paymentReceiptFile.value.name || '',
-          receiptMimeType: paymentReceiptFile.value.type || '',
-          receiptUploadedAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        }
-
-        await updateDoc(doc(db, 'purchaseRequests', request.id), updatePayload)
-        request.paymentStatus = 'Paid'
-        request.amountPaid = updatePayload.amountPaid
-        request.balance = updatePayload.balance
+        await updateDoc(doc(db, 'purchaseRequests', request.id), {
+          receiptUrl, receiptFileName: paymentReceiptFile.value.name || '', receiptMimeType: paymentReceiptFile.value.type || '', receiptUploadedAt: serverTimestamp(), updatedAt: serverTimestamp()
+        })
         request.receiptUrl = receiptUrl
         request.receiptFileName = paymentReceiptFile.value.name || ''
-
-        await logManagerActivity(`Payment marked as Paid: ${request.item || 'purchase request'}.`, {
-          type: 'purchase_request_paid',
-          requestId: request.id,
-          item: request.item || '',
-          supplier: request.supplier || '',
-          amount: totalCost,
-          details: `Supplier: ${request.supplier || '-'}, Amount: P${totalCost.toLocaleString('en-PH')}`
-        })
-        toast.success('Payment marked as Paid with receipt.')
+        toast.success('Payment evidence uploaded. Finance must confirm settlement.')
         closePaymentModal()
       } catch (error) {
         console.error(error)

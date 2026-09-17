@@ -135,6 +135,8 @@
                   <td data-label="Actions">
                     <div class="table-actions">
                       <div v-if="canPayAppointment(appt)" class="payment-agreement">
+                        <p v-if="appt.installmentsAllowed && !initialPaymentReceived(appt)">Initial payment: {{ appt.depositPercent }}% of the total. The balance is due after you confirm the service is done.</p>
+                        <p v-if="appt.installmentsAllowed">Total: PHP {{ Number(appt.totalAmount || appt.amount || 0).toFixed(2) }} ? Paid: PHP {{ Number(appt.amountPaid || 0).toFixed(2) }} ? Remaining: PHP {{ Math.max(0, Number(appt.totalAmount || appt.amount || 0) - Number(appt.amountPaid || 0)).toFixed(2) }}</p>
                         <details class="payment-agreement-details" @toggle="markPaymentAgreementViewed(appt.id, $event)">
                           <summary>Review clinic agreement before payment</summary>
                           <div v-if="getAppointmentPolicyEntries(appt).length" class="payment-agreement-copy">
@@ -160,10 +162,10 @@
                         @click="payAppointment(appt)"
                         class="appointment-button appointment-button-primary"
                       >
-                        Pay Now
+                        Pay {{ formatBookingDue(appt) }}
                       </button>
                       <button
-                        v-if="appt.contract"
+                        v-if="appt.contract && initialPaymentReceived(appt)"
                         type="button"
                         class="appointment-button appointment-button-secondary"
                         @click="openContract(appt)"
@@ -178,6 +180,7 @@
                       >
                         Confirm Done
                       </button>
+                      <p v-if="appt.serviceKey" class="text-sm font-semibold">Service key: {{ appt.serviceKey }} - exchange this with your assigned worker.</p>
                       <button
                         v-if="appt.serviceKey && !appt.customerKeyVerified"
                         type="button"
@@ -215,7 +218,7 @@
           <div class="panel-head">
             <div>
               <p class="panel-kicker">History</p>
-              <h2 class="panel-title">Past Appointments &amp; Online Consultations</h2>
+              <h2 class="panel-title">Booking History</h2>
             </div>
             <p class="panel-note">{{ loading ? 'Loading appointments...' : `${pastRecords.length} record${pastRecords.length === 1 ? '' : 's'}` }}</p>
           </div>
@@ -465,6 +468,7 @@
 </template>
 
 <script setup>
+import { paymentDue, initialPaymentReceived } from '../../../../backend/otp-backend/bookingWorkflow.js'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
@@ -1159,12 +1163,12 @@ const statusToneClass = (status) => {
 
 const upcomingOnlineConsultations = computed(() => {
   const now = new Date()
-  return onlineConsultations.value.filter((appt) => !isCancelledAppointment(appt) && toDateTime(appt.date, appt.time) >= now)
+  return onlineConsultations.value.filter((appt) => !['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status)))
 })
 
 const pastOnlineConsultations = computed(() => {
   const now = new Date()
-  return onlineConsultations.value.filter((appt) => isCancelledAppointment(appt) || toDateTime(appt.date, appt.time) < now)
+  return onlineConsultations.value.filter((appt) => ['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status)))
 })
 
 const pastRecords = computed(() =>
@@ -1255,7 +1259,7 @@ const startAppointmentsListener = (userId) => {
       )
 
       upcomingAppointments.value = all
-        .filter((appt) => appt.status !== 'Cancelled' && !isOnlineConsultationAppointment(appt) && toDateTime(appt.date, appt.time) >= now)
+        .filter((appt) => !['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status)))
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
           const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
@@ -1263,7 +1267,7 @@ const startAppointmentsListener = (userId) => {
         })
 
       pastAppointments.value = all
-        .filter((appt) => !isOnlineConsultationAppointment(appt) && (appt.status === 'Cancelled' || toDateTime(appt.date, appt.time) < now))
+        .filter((appt) => !isOnlineConsultationAppointment(appt) && ['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status)))
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
           const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
@@ -1401,6 +1405,8 @@ const reschedule = async (appt) => {
   }
 }
 
+const formatBookingDue = (appointment) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(paymentDue(appointment) / 100)
+
 const canPayAppointment = (appointment) => {
   const status = normalizeAppointmentStatus(appointment?.status)
   return status === 'awaiting payment' || status === 'payment pending' || status === 'approved' || status === 'balance due'
@@ -1511,7 +1517,7 @@ const payAppointment = async (appointment) => {
 
   const totalAmount = Number(appointment.totalAmount || appointment.amount || 0)
   const amountPaid = Number(appointment.amountPaid || 0)
-  const remainingAmount = Math.max(0, totalAmount - amountPaid)
+  const remainingAmount = paymentDue(appointment) / 100
   if (remainingAmount <= 0) {
     toast.info('This appointment has no remaining balance.')
     return

@@ -89,6 +89,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     icon: 'card',
     moduleKey: 'finance',
     children: [
+      { label: 'Listing Approvals', icon: 'calendar-check', to: '/finance/listing-approvals', permission: 'finance:reports:view' },
       { label: 'Finance Dashboard', icon: 'dashboard', to: '/finance/dashboard', feature: 'reports', permission: 'finance:reports:view' },
       { type: 'section', label: 'INCOME & PAYMENTS' },
       { label: 'Income & Payments', icon: 'report', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },

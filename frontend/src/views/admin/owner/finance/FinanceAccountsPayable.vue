@@ -135,6 +135,7 @@
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex items-center gap-2 flex-wrap">
+                    <button v-if="canSettlePayables" :disabled="!row.receiptUrl || row.status !== 'Delivered' || row.paymentStatus === 'Paid'" @click="confirmPayment(row)" class="rounded-lg bg-green-700 px-3 py-1.5 text-xs disabled:opacity-50">Confirm Payment</button>
                     <button
                       v-if="canApproveBudget"
                       type="button"
@@ -217,6 +218,8 @@
 </template>
 
 <script>
+import Swal from 'sweetalert2'
+import { workflowApi } from '@/utils/workflowApi'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -369,6 +372,15 @@ export default {
       rows.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
     }
 
+    const confirmPayment = async (row) => {
+      try {
+        const confirmed = await Swal.fire({ title: 'Confirm supplier payment?', text: 'Confirm that the uploaded receipt proves payment of the full purchase amount.', icon: 'question', showCancelButton: true })
+        if (!confirmed.isConfirmed) return
+        await workflowApi('/finance/purchase-requests/' + row.id + '/settle', { paid: true })
+        await loadRows()
+        toast.success('Payment confirmed by Finance.')
+      } catch (error) { toast.error(error.message) }
+    }
     const approveBudget = async (row) => {
       if (!canApproveBudget.value) {
         toast.error('You do not have permission to approve budgets.')
@@ -378,14 +390,7 @@ export default {
 
       const approvedBudgetAmount = getRequestedBudget(row)
       try {
-        await updateDoc(doc(db, 'purchaseRequests', row.id), {
-          budgetStatus: 'Approved',
-          approvedBudgetAmount,
-          budgetApprovedAt: new Date(),
-          budgetSettlementStatus: row.status === 'Delivered' ? 'Pending Settlement' : (row.budgetSettlementStatus || ''),
-          workflowStage: 'Budget Approved',
-          updatedAt: new Date()
-        })
+        await workflowApi('/finance/purchase-requests/' + row.id + '/approve-budget')
         row.budgetStatus = 'Approved'
         row.approvedBudgetAmount = approvedBudgetAmount
         row.workflowStage = 'Budget Approved'
@@ -491,6 +496,7 @@ export default {
     })
 
     return {
+      confirmPayment,
       rows,
       showReceiptModal,
       selectedReceiptRow,

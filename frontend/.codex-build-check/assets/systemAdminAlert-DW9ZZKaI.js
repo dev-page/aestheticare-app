@@ -1,0 +1,1 @@
+import{S as n}from"./ui-D6OJfzeu.js";const t=n.mixin({customClass:{popup:"swal-admin-popup",title:"swal-admin-title",htmlContainer:"swal-admin-text",icon:"swal-admin-icon",confirmButton:"swal-admin-confirm",cancelButton:"swal-admin-cancel",denyButton:"swal-admin-cancel"},buttonsStyling:!1});export{t as s};

@@ -202,6 +202,7 @@ export default {
         const { id, originalPostId, archivedAt, archivedBy, ...payload } = post
         await setDoc(doc(db, 'productServicePosts', post.id), {
           ...payload,
+          financeStatus: 'draft', isPublished: false, financeReview: null, publishedBy: null, publishedAt: null,
           updatedAt: serverTimestamp()
         })
         await deleteDoc(doc(db, 'archivedProductServicePosts', post.id))

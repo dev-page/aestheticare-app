@@ -23,7 +23,7 @@
             <label class="block text-slate-400 text-sm mb-2">Status</label>
             <select v-model="statusFilter" class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none">
               <option value="">All</option>
-              <option value="Scheduled">Scheduled</option>
+              <option v-for="status in ['Pending Approval', 'Awaiting Payment', 'Contract Pending', 'Paid', 'Ready to Start', 'Ongoing', 'Awaiting Customer Confirmation', 'Balance Due', 'Scheduled']" :key="status" :value="status">{{ status }}</option>
               <option value="Completed">Completed</option>
               <option value="Cancelled">Cancelled</option>
             </select>
@@ -44,7 +44,7 @@
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Service</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Schedule</th>
                 <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Status</th>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Follow-up</th>
+                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Service Actions / Follow-up</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-700">
@@ -58,7 +58,11 @@
                   </span>
                 </td>
                 <td class="px-6 py-4">
-                  <div class="flex items-center gap-3">
+                  <div class="flex flex-wrap items-center gap-3">
+                    <p v-if="appointment.serviceKey" class="w-full text-sm text-amber-200">Service key: {{ appointment.serviceKey }}</p>
+                    <button v-if="appointment.serviceKey && !appointment.workerKeyVerified && ['Paid', 'Ready to Start', 'Scheduled'].includes(appointment.status)" :disabled="actionBusy" @click="bookingAction(appointment, 'key')" class="rounded bg-amber-700 px-3 py-2 text-white">Verify Customer Key</button>
+                    <button v-if="appointment.status === 'Ready to Start'" :disabled="actionBusy" @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white">Start Service</button>
+                    <button v-if="appointment.status === 'Ongoing'" :disabled="actionBusy" @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white">Mark My Work Done</button>
                     <button
                       v-if="canRecommendFollowUp(appointment)"
                       type="button"
@@ -89,8 +93,9 @@
 </template>
 
 <script>
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -110,6 +115,22 @@ export default {
     const statusFilter = ref('')
     const dateFilter = ref('')
     const appointments = ref([])
+    const actionBusy = ref(false)
+    const bookingAction = async (appointment, action) => {
+      if (actionBusy.value) return
+      const serviceKey = action === 'key' ? String(window.prompt('Enter the service key exchanged with the customer:', '') || '').trim() : ''
+      if (action === 'key' && !serviceKey) return
+      actionBusy.value = true
+      try {
+        const token = await auth.currentUser.getIdToken()
+        const path = action === 'key' ? 'verify-service-key' : 'transition'
+        const response = await fetch(OTP_API_BASE + '/appointments/' + appointment.id + '/' + path, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(action === 'key' ? { serviceKey } : { action }) })
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.error || 'Unable to update booking.')
+        toast.success('Booking updated: ' + payload.data.status)
+        await loadAppointments()
+      } catch (error) { toast.error(error.message) } finally { actionBusy.value = false }
+    }
 
     const isAssignedToPractitioner = (appointment) => {
       const assignedIds = [
@@ -172,9 +193,9 @@ export default {
       }
     }
 
-    const loadAppointments = async () => {
+    const loadAppointments = async (liveSnapshot = null) => {
       if (!currentBranchId.value) return
-      const snapshot = await getDocs(
+      const snapshot = liveSnapshot || await getDocs(
         query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
       )
       const rawAppointments = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
@@ -241,10 +262,12 @@ export default {
     }
 
     let unsubscribeAuth = null
+    let unsubscribeAppointments = null
 
     onMounted(() => {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-        if (!user) return
+        unsubscribeAppointments?.()
+        if (!user) { appointments.value = []; return }
 
         currentUserId.value = user.uid
         const userSnap = await getDoc(doc(db, 'users', user.uid))
@@ -254,15 +277,21 @@ export default {
           return
         }
 
-        await loadAppointments()
+        unsubscribeAppointments = onSnapshot(
+          query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
+          (snapshot) => loadAppointments(snapshot),
+          () => toast.error('Unable to refresh bookings.')
+        )
       })
     })
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
+      unsubscribeAppointments?.()
     })
 
     return {
+      actionBusy, bookingAction,
       searchQuery,
       statusFilter,
       dateFilter,

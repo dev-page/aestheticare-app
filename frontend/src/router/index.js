@@ -52,7 +52,7 @@ const routes = [
   { path: "/patients", name: "patients", component: () => import("@/views/admin/owner/clinic/Patients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/practitioner/dashboard", name: "practitioner-dashboard", component: () => import("@/views/admin/owner/clinic/PractitionerDashboard.vue"), meta: { requiresAuth: true } },
   { path: "/practitioner/clients", name: "practitioner-clients", component: () => import("@/views/admin/owner/clinic/PractitionerClients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
-  { path: "/practitioner/appointments", name: "practitioner-appointments", component: () => import("@/views/admin/owner/crm/ReceptionistAppointmentList.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:view" } },
+  { path: "/practitioner/appointments", name: "practitioner-appointments", component: () => import("@/views/admin/owner/clinic/PractitionerAppointments.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:view" } },
   { path: "/practitioner/consultations/online", name: "practitioner-online-consultation", component: () => import("@/views/admin/owner/clinic/PractitionerOnlineConsultation.vue"), meta: { requiresAuth: true, requiresPermission: "consultations:view", requiresFeature: "online_consultations" } },
   { path: "/activities", name: "activities", component: () => import("@/views/common/Activities.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
   { path: "/practitioner/activities", redirect: "/activities" },
@@ -129,6 +129,7 @@ const routes = [
   { path: "/receptionist/inbox", name: "receptionist-inbox", component: () => import("@/views/admin/owner/crm/ReceptionistInbox.vue"), meta: { requiresAuth: true, requiresPermission: "inbox:view" } },
   { path: "/receptionist/activity-logs", name: "receptionist-activity-logs", component: () => import("@/views/admin/owner/crm/ReceptionistActivityLogs.vue"), meta: { requiresAuth: true } },
   // Finance routes
+  { path: "/finance/listing-approvals", name: "finance-listing-approvals", component: () => import("@/views/admin/owner/finance/ListingApprovals.vue"), meta: { requiresAuth: true, requiresPermission: "finance:reports:view" } },
   { path: "/finance/dashboard", name: "finance-dashboard", component: () => import("@/views/admin/owner/OwnerFinance.vue"), meta: { requiresAuth: true, requiresPermission: "finance:reports:view", requiresFeature: "reports" } },
   { path: "/finance/sales", name: "finance-sales", component: () => import("@/views/admin/owner/finance/FinanceSales.vue"), meta: { requiresAuth: true, requiresPermission: "finance:sales:view", requiresFeature: "reports" } },
   { path: "/finance/refunds", name: "finance-refunds", component: () => import("@/views/admin/owner/finance/FinanceRefunds.vue"), meta: { requiresAuth: true, requiresPermission: "finance:refunds:view", requiresFeature: "reports" } },

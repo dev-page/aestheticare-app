@@ -75,7 +75,7 @@ const buildServiceMap = async (clinicIds) => {
   const chunks = chunkArray(clinicIds, 10)
   for (const chunk of chunks) {
     const postsSnapshot = await getDocs(
-      query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk))
+      query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk), where('financeStatus', '==', 'approved'), where('isPublished', '==', true))
     )
     postsSnapshot.forEach((snap) => {
       const post = snap.data() || {}
@@ -154,7 +154,7 @@ export const subscribeCustomerCenters = (onChange, onError) => {
       chunks.forEach((chunk) => {
         const sourceKey = chunk.join('|')
         const unsubscribe = onSnapshot(
-          query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk)),
+          query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk), where('financeStatus', '==', 'approved'), where('isPublished', '==', true)),
           (postsSnapshot) => {
             serviceSnapshots.set(
               sourceKey,

@@ -898,7 +898,7 @@ const getAppointmentDurationMinutes = (appointment) => {
 
 const buildBlockedRanges = (appointmentList = []) => {
   const blocked = new Map()
-  const blockingStatuses = new Set(['scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
+  const blockingStatuses = new Set(['pending approval', 'payment pending', 'awaiting payment', 'contract pending', 'ready to start', 'awaiting customer confirmation', 'balance due', 'scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
 
   appointmentList.forEach((appointment) => {
     const date = String(appointment?.date || '').trim()
@@ -1537,7 +1537,7 @@ const loadBranchData = async (branchId) => {
   await initBranchMap()
 
   const [postSnap] = await Promise.all([
-    getDocs(query(collection(db, 'productServicePosts'), where('branchId', '==', branchId))),
+    getDocs(query(collection(db, 'productServicePosts'), where('branchId', '==', branchId), where('financeStatus', '==', 'approved'), where('isPublished', '==', true))),
   ])
 
   items.value = postSnap.docs.map((snap) => {
@@ -2943,7 +2943,7 @@ const submitBooking = async () => {
     }
     await Swal.fire({
       title: 'Booking request created',
-      text: 'Your request was submitted. Please open your appointments and complete payment before the clinic can approve it.',
+      text: 'Your request was submitted for clinic approval. Once approved, open My Appointments to pay the required amount, sign the contract, and receive your service key.',
       icon: 'success',
       confirmButtonText: 'View Appointments',
       confirmButtonColor: '#8d5a3b',

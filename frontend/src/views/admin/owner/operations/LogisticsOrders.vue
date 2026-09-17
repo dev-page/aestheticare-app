@@ -189,6 +189,7 @@
 </template>
 
 <script>
+import { workflowApi } from '@/utils/workflowApi'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -248,8 +249,8 @@ export default {
 
     const sourceLabel = (source) => (source === 'customer' ? 'Customer' : 'Business')
 
-    const loadCustomerOrders = async () => {
-      const snapshot = await getDocs(collection(db, 'customerOrders'))
+    const loadCustomerOrders = async (liveSnapshot = null) => {
+      const snapshot = liveSnapshot || await getDocs(query(collection(db, 'customerOrders'), where('branchId', '==', currentBranchId.value)))
       const docs = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
       customerOrders.value = docs
         .filter((order) => {
@@ -358,7 +359,10 @@ export default {
     const nextStatusOptions = (order) => {
       const current = normalizeStatus(order.status)
       if (order.source === 'customer') {
-        if (current === 'Cancelled' || current === 'Delivered') return []
+        if (current === 'Awaiting Stock') return ['Preparing']
+        if (current === 'Preparing') return ['Packed', 'Ready for Pickup']
+        if (current === 'Ready for Pickup') return ['Received']
+        if (current === 'Cancelled' || current === 'Delivered' || current === 'Received') return []
         if (current === 'Pending') return ['Confirmed', 'Packed']
         if (current === 'Confirmed') return ['Packed', 'Shipped']
         if (current === 'Packed') return ['Shipped']
@@ -443,60 +447,8 @@ export default {
           toast.success(`Order updated to ${payload.data?.status || nextStatus}.`)
           return
         }
-        const updatePayload = {
-          logisticsStatus: nextStatus,
-          logisticsUpdatedBy: currentUserId.value || null,
-          logisticsUpdatedAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        }
-
-        if (order.source === 'business') {
-          updatePayload.workflowStage = nextStatus === 'Claimed'
-            ? 'Claimed by Logistics'
-            : nextStatus === 'Received'
-              ? 'Delivered - Awaiting Finance Settlement'
-              : `Logistics: ${nextStatus}`
-          if (nextStatus === 'Claimed') {
-            updatePayload.logisticsClaimedBy = currentUserId.value || null
-            updatePayload.logisticsClaimedAt = serverTimestamp()
-          }
-          if (nextStatus === 'Received') updatePayload.status = 'Delivered'
-        } else {
-          updatePayload.status = nextStatus
-        }
-
-        if (order.source === 'customer') {
-          await updateDoc(doc(db, 'customerOrders', order.id), updatePayload)
-          await createNotification({
-            recipientUserId: order.customerId || null,
-            title: `Order ${nextStatus}`,
-            message: `Your order ${order.id} is now ${nextStatus}.`,
-            link: '/customer/orders'
-          })
-        } else {
-          await updateDoc(doc(db, 'purchaseRequests', order.id), updatePayload)
-          await Promise.all([
-            createNotification({
-              recipientRole: 'Owner',
-              title: `Business Order ${nextStatus}`,
-              message: `Business order ${order.id} has been updated to ${nextStatus}.`,
-              link: '/manager/logistics'
-            }),
-            createNotification({
-              recipientRole: 'Manager',
-              title: `Business Order ${nextStatus}`,
-              message: `Business order ${order.id} has been updated to ${nextStatus}.`,
-              link: '/manager/logistics'
-            })
-          ])
-        }
-
-        order.status = nextStatus
-        order.logisticsStatus = nextStatus
-        order.updatedAt = new Date()
-        selectedOrder.value = selectedOrder.value?.id === order.id ? { ...order } : selectedOrder.value
-        toast.success(`Order updated to ${nextStatus}.`)
-        await loadData()
+        await workflowApi('/logistics/customer-orders/' + order.id + '/transition', { nextStatus })
+        toast.success('Order updated.')
       } catch (error) {
         console.error(error)
         toast.error('Failed to update order status.')
@@ -583,6 +535,7 @@ export default {
 
         if (unsubscribeCustomerOrders) unsubscribeCustomerOrders()
         if (unsubscribeBusinessOrders) unsubscribeBusinessOrders()
+        unsubscribeCustomerOrders = onSnapshot(query(collection(db, 'customerOrders'), where('branchId', '==', currentBranchId.value)), (snapshot) => loadCustomerOrders(snapshot), (error) => { loadError.value = error.message })
         unsubscribeBusinessOrders = onSnapshot(query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value)), (snapshot) => {
           businessOrders.value = snapshot.docs.map((snap) => {
             const order = snap.data()

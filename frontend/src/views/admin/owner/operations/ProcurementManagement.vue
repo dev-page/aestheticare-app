@@ -21,6 +21,7 @@
             <label v-if="activeTab !== 'Manual Purchases'"><span class="label">Purchase request</span><select v-model="form.purchaseRequestId" required class="field"><option value="">Select a request</option><option v-for="request in requestOptions" :key="request.id" :value="request.id">{{ request.item }} - {{ request.supplier }} ({{ request.id.slice(0, 8) }})</option></select></label>
             <label><span class="label">Supplier/vendor</span><input v-model="form.supplierName" required class="field" /></label><label><span class="label">Amount</span><input v-model.number="form.amount" required min="0" type="number" step="0.01" class="field" /></label><label><span class="label">Reference</span><input v-model="form.reference" class="field" placeholder="RFQ-2026-001" /></label><label><span class="label">Date</span><input v-model="form.date" required type="date" class="field" /></label>
           </div>
+          <label v-if="activeTab === 'Supplier Quotes'" class="mt-4 block"><span class="label">Quoted quantity</span><input v-model.number="form.quantity" type="number" min="1" step="1" required class="field" /></label>
           <label class="mt-4 block"><span class="label">Details / line items</span><textarea v-model="form.details" required rows="4" class="field" placeholder="Item, quantity, unit, and quoted price" /></label>
           <div class="mt-5 flex justify-end gap-3"><button type="button" class="rounded-xl border border-slate-600 px-4 py-2" @click="showForm = false">Cancel</button><button class="rounded-xl bg-amber-600 px-4 py-2 font-semibold">Create Record</button></div>
         </form>
@@ -39,7 +40,7 @@ import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 const tabs = ['Supplier Quotes', 'Purchase Orders', 'Manual Purchases']
 const activeTab = ref(tabs[0]); const records = reactive({ 'Supplier Quotes': [], 'Purchase Orders': [], 'Manual Purchases': [] }); const purchaseRequests = ref([]); const branchId = ref(''); const showForm = ref(false); let stops = []
-const form = reactive({ purchaseRequestId: '', supplierName: '', amount: 0, reference: '', date: new Date().toISOString().slice(0, 10), details: '' })
+const form = reactive({ purchaseRequestId: '', supplierName: '', amount: 0, reference: '', date: new Date().toISOString().slice(0, 10), details: '', quantity: 1 })
 const visibleItems = computed(() => records[activeTab.value] || [])
 const requestOptions = computed(() => purchaseRequests.value.filter((request) => request.status !== 'Cancelled' && request.purchaseOrderStatus !== 'Received'))
 const formatMoney = (value) => `PHP ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
@@ -57,7 +58,11 @@ const createRecord = async () => {
       const collectionName = activeTab.value === 'Supplier Quotes' ? 'supplierQuotes' : 'manualPurchases'
       if (activeTab.value === 'Supplier Quotes' && !form.purchaseRequestId) throw new Error('Select a purchase request first.')
       const base = { ...form, branchId: branchId.value, createdBy: auth.currentUser?.uid || null, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }
-      if (activeTab.value === 'Supplier Quotes') base.status = 'Submitted'
+      if (activeTab.value === 'Supplier Quotes') {
+        const request = purchaseRequests.value.find((r) => r.id === form.purchaseRequestId)
+        if (!request || !Number.isInteger(form.quantity) || form.quantity < 1 || form.quantity > Number(request.quantity) || Number(form.amount) <= 0) throw new Error('Enter a valid quote amount and quantity.')
+        Object.assign(base, { status: 'Submitted', supplierId: request.supplierId, quantity: form.quantity, unitPrice: Math.round(Number(form.amount) / form.quantity * 100) / 100 })
+      }
       if (activeTab.value === 'Manual Purchases') base.status = 'Recorded'
       await addDoc(collection(db, collectionName), base)
     }

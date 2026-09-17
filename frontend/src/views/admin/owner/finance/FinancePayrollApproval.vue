@@ -164,6 +164,7 @@
 </template>
 
 <script>
+import { workflowApi } from '@/utils/workflowApi'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -253,17 +254,11 @@ export default {
       if (!summary?.id) return
       processingId.value = summary.id
       try {
-        await updateDoc(doc(db, 'payrollSummaries', summary.id), {
-          status: 'approved',
-          approvedBy: currentUserId.value,
-          approvedByName: currentUserName.value || 'Finance',
-          approvedAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        })
+        await workflowApi('/finance/payroll/' + summary.id + '/approve')
         toast.success('Payroll summary approved.')
       } catch (error) {
         console.error('Failed to approve summary:', error)
-        toast.error('Unable to approve payroll summary.')
+        toast.error(error.message || 'Unable to approve payroll summary.')
       } finally {
         processingId.value = ''
       }

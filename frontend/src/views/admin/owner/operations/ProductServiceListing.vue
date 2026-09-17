@@ -5,11 +5,11 @@
     <main class="flex-1 p-4 md:p-8 text-white">
       <div class="mb-6">
         <h1 class="text-2xl md:text-3xl font-bold mb-1">Product & Service Listing</h1>
-        <p class="text-slate-400">Create posts for products from inventory, branch services, or standalone consultations.</p>
+        <p class="text-slate-400">Save drafts, submit financial terms to Finance, then publish approved listings. Existing listings also need approval.</p>
       </div>
 
       <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
-        <h2 class="text-lg font-semibold mb-4">Create Post</h2>
+        <h2 class="text-lg font-semibold mb-4">Create Draft</h2>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
@@ -187,9 +187,19 @@
           </div>
           <div v-if="form.postType === 'Service'" class="md:col-span-2">
             <label class="block text-slate-400 mb-1">Required Supplies</label>
-            <select v-model="form.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <div class="mb-4 space-y-2">
+              <label class="flex items-center gap-2"><input type="checkbox" v-model="form.allowInstallments" /> Allow installment payment</label>
+              <label v-if="form.allowInstallments" class="block">Initial payment (%)<input v-model.number="form.depositPercent" type="number" min="1" max="99" step="1" required class="w-full rounded-lg bg-slate-700 px-3 py-2" /></label>
+              <p class="text-xs text-slate-400">The remaining balance is due after the worker and customer confirm completion.</p>
+            </div><select v-model="form.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit || 'unit' }})</option>
             </select>
+            <p class="mt-1 text-xs text-slate-400">One unit of each selected material is reserved per booking and deducted when the service starts.</p>
+            <label class="block text-slate-400 mt-3 mb-1">Required equipment (reusable)</label>
+            <select v-model="form.requiredEquipmentIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
+              <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }}</option>
+            </select>
+            <p class="text-xs text-slate-400">One unit of each is reserved for the appointment time, then becomes available again.</p>
             <p class="mt-1 text-xs text-slate-400">Select every material or supply needed to perform this service.</p>
           </div>
         </div>
@@ -243,7 +253,7 @@
         </div>
 
         <div class="mb-4">
-          <label class="block text-slate-400 mb-1">Product Terms and Conditions</label>
+          <label class="block text-slate-400 mb-1">Product / Service Terms and Conditions</label>
           <textarea
             v-model="form.termsAndConditions"
             rows="3"
@@ -269,7 +279,7 @@
             :disabled="loading"
             class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {{ loading ? 'Posting...' : 'Create Post' }}
+            {{ loading ? 'Posting...' : 'Save Draft' }}
           </button>
           <button
             @click="resetForm"
@@ -295,6 +305,13 @@
                 <span class="text-xs text-slate-400">{{ formatDate(post.createdAt) }}</span>
               </div>
               <h3 class="font-semibold mb-1">{{ post.title }}</h3>
+              <p class="mb-2 text-sm font-semibold">{{ post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft' }}</p>
+              <p v-if="post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
+              <div class="mb-3 flex flex-wrap gap-2">
+                <button v-if="!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus)" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">Submit to Finance</button>
+                <button v-if="post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">Publish</button>
+                <button v-if="post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">Unpublish</button>
+              </div>
               <p class="text-sm text-slate-300 mb-1">{{ post.productName || post.serviceName || post.consultationName || post.packageName }}</p>
               <p v-if="post.postType === 'Package'" class="mb-2 text-xs text-amber-200">
                 Includes {{ (post.packageServiceIds || []).length }} consultation/service component(s).
@@ -365,6 +382,7 @@
         <div class="w-full max-w-2xl rounded-xl bg-slate-800 border border-slate-700 max-h-[calc(100vh-2rem)] overflow-hidden flex flex-col">
           <div class="px-6 pt-6 pb-4 border-b border-slate-700">
             <h3 class="text-lg font-semibold">Edit Post</h3>
+            <p class="text-sm text-amber-300">Changing prices or installment terms unpublishes this listing and requires a new Finance review. Photo and description edits keep the current approval.</p>
           </div>
 
           <div class="flex-1 overflow-y-auto px-6 py-5">
@@ -465,9 +483,19 @@
               </div>
               <div v-if="editForm.postType === 'Service'" class="md:col-span-2">
                 <label class="block text-slate-400 mb-1">Required Supplies</label>
-                <select v-model="editForm.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <div class="mb-4 space-y-2">
+              <label class="flex items-center gap-2"><input type="checkbox" v-model="editForm.allowInstallments" /> Allow installment payment</label>
+              <label v-if="editForm.allowInstallments" class="block">Initial payment (%)<input v-model.number="editForm.depositPercent" type="number" min="1" max="99" step="1" required class="w-full rounded-lg bg-slate-700 px-3 py-2" /></label>
+              <p class="text-xs text-slate-400">The remaining balance is due after the worker and customer confirm completion.</p>
+            </div><select v-model="editForm.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit || 'unit' }})</option>
                 </select>
+            <p class="mt-1 text-xs text-slate-400">One unit of each selected material is reserved per booking and deducted when the service starts.</p>
+            <label class="block text-slate-400 mt-3 mb-1">Required equipment (reusable)</label>
+            <select v-model="editForm.requiredEquipmentIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
+              <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }}</option>
+            </select>
+            <p class="text-xs text-slate-400">One unit of each is reserved for the appointment time, then becomes available again.</p>
               </div>
             </div>
 
@@ -558,6 +586,7 @@
 
 <script>
 import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { draftListing, financialTermsChanged, updateListingApproval } from '@/utils/listingApproval'
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -606,7 +635,7 @@ export default {
       productUnit: '',
       fdaRegistrationNumber: '',
       termsAndConditions: '',
-      requiredSupplyIds: [],
+      requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50,
       packageServiceIds: []
     })
     const editImageFile = ref(null)
@@ -634,7 +663,7 @@ export default {
       productUnit: '',
       fdaRegistrationNumber: '',
       termsAndConditions: ''
-      , requiredSupplyIds: []
+      , requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50
     })
 
     const formatCurrency = (value) => {
@@ -713,7 +742,7 @@ export default {
         productUnit: '',
         fdaRegistrationNumber: '',
         termsAndConditions: '',
-        requiredSupplyIds: [],
+        requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50,
         packageServiceIds: []
       }
       imageFile.value = null
@@ -740,7 +769,7 @@ export default {
         productUnit: '',
         fdaRegistrationNumber: '',
         termsAndConditions: '',
-        requiredSupplyIds: [],
+        requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50,
         packageServiceIds: []
       }
       editImageFile.value = null
@@ -749,6 +778,12 @@ export default {
       editFdaApprovalFileName.value = ''
     }
 
+    const listingAction = async (post, action) => {
+      actionLoadingId.value = post.id
+      try { await updateListingApproval(post.id, action); await loadPosts(); toast.success('Listing updated.') }
+      catch (error) { toast.error(error.message) }
+      finally { actionLoadingId.value = '' }
+    }
     const loadPosts = async () => {
       if (!currentBranchId.value) {
         posts.value = []
@@ -929,6 +964,8 @@ export default {
         const imageUrl = await getDownloadURL(imageRef)
 
         const postPayload = {
+          ...draftListing(),
+          inventoryItemId: selectedProduct?.id || null,
           postType,
           productName: postType === 'Product' ? selectedName.trim() : '',
           serviceName: postType === 'Service' ? selectedName.trim() : '',
@@ -967,6 +1004,9 @@ export default {
           fdaRegistrationNumber: postType === 'Product' ? String(selectedProduct?.fdaRegistrationNumber || '').trim() : '',
           fdaApprovalDocument: postType === 'Product' ? (selectedProduct?.fdaApprovalDocument || null) : null,
           termsAndConditions: String(form.value.termsAndConditions || '').trim(),
+          allowInstallments: form.value.allowInstallments === true,
+          depositPercent: form.value.allowInstallments ? Math.min(99, Math.max(1, Number(form.value.depositPercent || 50))) : 100,
+          requiredEquipmentIds: [...(form.value.requiredEquipmentIds || [])],
           requiredSupplyIds: postType === 'Service' ? [...(form.value.requiredSupplyIds || [])] : postType === 'Package'
             ? [...new Set((form.value.packageServiceIds || []).flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
             : [],
@@ -994,7 +1034,7 @@ export default {
             followUpAllowed: false,
             followUpWindowDays: null,
             durationMinutes: 30,
-            requiredSupplyIds: [],
+            requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50,
             isPackageComponent: true,
             packageComponentType: 'Consultation',
           })
@@ -1042,7 +1082,7 @@ export default {
           details: `Created ${postType.toLowerCase()} post: ${form.value.title.trim()}.`
         })
 
-        toast.success('Post created successfully.')
+        toast.success('Draft saved. Submit it for Finance review when ready.')
         resetForm()
         await loadPosts()
       } catch (error) {
@@ -1071,7 +1111,7 @@ export default {
         , productUnit: String(post.productUnit || '').trim()
         , fdaRegistrationNumber: String(post.fdaRegistrationNumber || '').trim()
         , termsAndConditions: String(post.termsAndConditions || '').trim()
-        , requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : []
+        , requiredEquipmentIds: post.requiredEquipmentIds || [], allowInstallments: post.allowInstallments === true, depositPercent: Number(post.depositPercent || 50), requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : []
         , packageServiceIds: Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : []
       }
       editImageFile.value = null
@@ -1206,13 +1246,19 @@ export default {
             ? (selectedProduct?.fdaApprovalDocument || currentPost?.fdaApprovalDocument || null)
             : null,
           termsAndConditions: String(editForm.value.termsAndConditions || '').trim(),
+          allowInstallments: editForm.value.allowInstallments === true,
+          depositPercent: editForm.value.allowInstallments ? Math.min(99, Math.max(1, Number(editForm.value.depositPercent || 50))) : 100,
+          requiredEquipmentIds: [...(editForm.value.requiredEquipmentIds || [])],
           requiredSupplyIds: editForm.value.postType === 'Service' ? [...(editForm.value.requiredSupplyIds || [])] : editForm.value.postType === 'Package'
             ? [...new Set(editForm.value.packageServiceIds.flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
             : [],
           updatedAt: serverTimestamp()
         }
+        if (editForm.value.postType === 'Product') payload.inventoryItemId = selectedProduct?.id || currentPost?.inventoryItemId || null
         if (nextImageUrl) payload.imageUrl = nextImageUrl
 
+        const existing = posts.value.find((post) => post.id === editTargetId.value) || {}
+        if (financialTermsChanged(existing, { ...existing, ...payload })) Object.assign(payload, draftListing())
         await updateDoc(doc(db, 'productServicePosts', editTargetId.value), payload)
         await logActivity(db, {
           module: 'Manager',
@@ -1327,6 +1373,7 @@ export default {
     })
 
     return {
+      listingAction,
       loading,
       form,
       posts,

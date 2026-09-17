@@ -1,0 +1,1 @@
+const r=(n,t)=>{const e=Number(n);return!Number.isFinite(e)||e<0?t:Math.min(e,100)},s=()=>5,m=()=>10,c=(n,t=10)=>{const e=Number(n||0),o=r(t,10);return Number((e*o/100).toFixed(2))},C=(n,t=0)=>{const e=Number(n||0),o=Number(t||0);return Number((e-o).toFixed(2))};export{C as a,s as b,c,m as g};

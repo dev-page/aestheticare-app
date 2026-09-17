@@ -1,0 +1,1 @@
+const r=["Sole Proprietorship","Corporation","Partnership","Other"],s=i=>String(i||"").replace(/\D/g,"").slice(0,12),n=i=>{const t=s(i);return t?t.match(/.{1,3}/g)?.join("-")||t:""},o=i=>{const t=s(i);return/^\d{12}$/.test(t)&&!/^0+$/.test(t)};export{r as S,n as f,o as i,s as n};
