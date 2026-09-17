@@ -26,7 +26,7 @@ export const listingTransition = (post, action, role, uid, note = '') => {
     return { ...draftListing(), financeStatus: 'pending', submittedBy: uid }
   }
   if (['approve', 'reject'].includes(action)) {
-    if (role !== 'Finance') fail('Only Finance can review financial terms.', 403)
+    if (!['Finance', 'Owner'].includes(role)) fail('Only Finance or the clinic owner can review financial terms.', 403)
     if (post.financeStatus !== 'pending') fail('This listing is no longer awaiting Finance review.')
     if (action === 'reject' && !note.trim()) fail('Explain which financial terms need changing.', 400)
     return { financeStatus: action === 'approve' ? 'approved' : 'rejected', isPublished: false, financeReview: { reviewedBy: uid, note: note.trim(), terms: Object.fromEntries(financialFields.map((key) => [key, post[key] ?? null])) } }

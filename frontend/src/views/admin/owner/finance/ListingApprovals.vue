@@ -3,7 +3,7 @@
     <OwnerSidebar />
     <main class="min-w-0 flex-1 p-6 text-white">
       <h1 class="text-2xl font-bold">Listing Financial Review</h1>
-      <p class="mt-2 text-slate-400">Review prices and payment terms. The owner or manager publishes the listing after your approval.</p>
+      <p class="mt-2 text-slate-400">Review prices and payment terms. Finance or the clinic owner may approve or request changes; the owner or manager publishes the listing afterward.</p>
       <p v-if="error" role="alert" class="my-4 text-red-400">{{ error }}</p>
       <label class="block my-5">Status
         <select v-model="filter" class="ml-3 rounded bg-slate-700 p-2"><option value="pending">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>

@@ -3,14 +3,13 @@ import assert from 'node:assert/strict'
 import { listingTransition, financialTermsChanged, draftListing, approvedOrderLines, registerListingApproval } from './listingApproval.js'
 
 const listing = () => ({ ...draftListing(), title: 'Treatment', price: 1000, allowInstallments: true, depositPercent: 30 })
-test('Draft requires Finance approval before owner or manager publication', () => {
+test('Draft requires Finance or clinic-owner approval before publication', () => {
   let post = listing()
   assert.throws(() => listingTransition(post, 'publish', 'Owner', 'owner'), /Finance must approve/)
   post = { ...post, ...listingTransition(post, 'submit', 'Manager', 'manager') }
   assert.equal(post.financeStatus, 'pending')
-  assert.throws(() => listingTransition(post, 'approve', 'Manager', 'manager'), /Only Finance/)
-  assert.throws(() => listingTransition(post, 'approve', 'Owner', 'owner'), /Only Finance/)
-  post = { ...post, ...listingTransition(post, 'approve', 'Finance', 'finance') }
+  assert.throws(() => listingTransition(post, 'approve', 'Manager', 'manager'), /Only Finance or the clinic owner/)
+  post = { ...post, ...listingTransition(post, 'approve', 'Owner', 'owner') }
   assert.equal(post.isPublished, false)
   assert.equal(post.financeReview.terms.price, 1000)
   assert.throws(() => listingTransition(post, 'publish', 'Finance', 'finance'), /owner or manager/)
@@ -20,8 +19,8 @@ test('Draft requires Finance approval before owner or manager publication', () =
 })
 test('Rejected financial terms require a reason and can be resubmitted', () => {
   let post = { ...listing(), financeStatus: 'pending' }
-  assert.throws(() => listingTransition(post, 'reject', 'Finance', 'f'), /Explain/)
-  post = { ...post, ...listingTransition(post, 'reject', 'Finance', 'f', 'Reduce the deposit.') }
+  assert.throws(() => listingTransition(post, 'reject', 'Owner', 'owner'), /Explain/)
+  post = { ...post, ...listingTransition(post, 'reject', 'Owner', 'owner', 'Reduce the deposit.') }
   assert.equal(post.financeStatus, 'rejected')
   assert.equal(listingTransition(post, 'submit', 'Manager', 'm').financeStatus, 'pending')
   assert.throws(() => listingTransition({ ...listing(), price: -1 }, 'submit', 'Manager', 'm'), /valid positive price/)
