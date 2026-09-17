@@ -2224,7 +2224,10 @@ const buildBookingAppointmentPayload = ({
   const serviceDurations = Array.isArray(reservation.serviceDurations) ? reservation.serviceDurations.map((value) => Number(value || 0)).filter((value) => value > 0) : []
   const totalServiceDurationMinutes = Number(reservation.totalServiceDurationMinutes || serviceDurations.reduce((sum, value) => sum + value, 0) || 0)
   const totalAmount = Number(reservation.amount || reservation.consultationFee || 0)
-  const consultationMode = String(reservation.consultationMode || '').trim().toLowerCase() === 'on-site' ? 'on-site' : 'online'
+  const isConsultation = flowType === 'consultation'
+  const consultationMode = isConsultation
+    ? (String(reservation.consultationMode || '').trim().toLowerCase() === 'on-site' ? 'on-site' : 'online')
+    : null
   const installmentsAllowed = reservation.allowInstallments === true || selectedServices.some((service) => service?.allowInstallments === true)
   // A payment cannot make a booking active until the shop has approved it.
   // This protects the legacy finalize endpoint from bypassing approval.
@@ -2269,7 +2272,7 @@ const buildBookingAppointmentPayload = ({
     commissionAmount,
     merchantNetAmount: netAmount,
     requiresConsultationFirst: Boolean(reservation.requiresConsultationFirst),
-    consultationMode,
+    ...(isConsultation ? { consultationMode } : {}),
     followUpAllowed: Boolean(reservation.followUpAllowed),
     followUpWindowDays: reservation.followUpWindowDays != null ? Number(reservation.followUpWindowDays) : null,
     bookingType: reservation.bookingType || 'standard',
@@ -2291,7 +2294,7 @@ const buildBookingAppointmentPayload = ({
     reservationId: reservation.id,
   }
 
-  return flowType === 'consultation'
+  return isConsultation
     ? {
         ...basePayload,
         type: 'Consultation',
@@ -2590,8 +2593,8 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
   const roleKey = String(req.userContext.roleKey || '').trim()
   const isAuthorizedPractitioner = roleKey === 'Superadmin' || roleKey === 'Owner' || (sameBranch && assignedPractitioner)
   if (!isAuthorizedPractitioner) return res.status(403).json({ success: false, error: 'Only the assigned practitioner may create this consultation link.' })
-  if (String(appointment.consultationMode || '').trim().toLowerCase() === 'on-site') {
-    return res.status(409).json({ success: false, error: 'On-site appointments cannot have an online consultation link.' })
+  if (String(appointment.type || '').trim().toLowerCase() !== 'consultation' || String(appointment.consultationMode || '').trim().toLowerCase() !== 'online') {
+    return res.status(409).json({ success: false, error: 'Only online consultation appointments can have an online consultation link.' })
   }
 
   const cleanSummary = String(summary || '').trim()

@@ -107,51 +107,36 @@
                   <td data-label="Date">{{ appt.date }}</td>
                   <td data-label="Time">{{ appt.time }}</td>
                   <td data-label="Meeting Link">
-                    <div class="table-actions">
-                      <button
-                        v-if="appt.meetLink"
-                        type="button"
-                        class="appointment-button appointment-button-secondary"
-                        :disabled="isCancelledAppointment(appt)"
-                        @click="openMeetLink(appt.meetLink)"
-                      >
-                        Join Call
-                      </button>
-                      <button
-                        v-if="appt.meetLink"
-                        type="button"
-                        class="appointment-button appointment-button-secondary"
-                        :disabled="isCancelledAppointment(appt)"
-                        @click="copyMeetLink(appt.meetLink)"
-                      >
-                        Copy Link
-                      </button>
-                      <span v-else class="table-secondary">No meeting link yet</span>
-                    </div>
+                    <span class="table-secondary">{{ appt.meetLink ? 'Meeting link available' : 'No meeting link yet' }}</span>
                   </td>
                   <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
                   </td>
                   <td data-label="Actions">
-                    <div class="table-actions">
+                    <div class="appointment-menu">
+                      <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id)">•••</button>
+                      <div v-if="openActionMenuId === appt.id" class="appointment-menu-popover">
+                      <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => openMeetLink(appt.meetLink))">Join Call</button>
+                      <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => copyMeetLink(appt.meetLink))">Copy Link</button>
                       <button
                         v-if="canRequestCancellation(appt)"
                         type="button"
-                        class="appointment-button appointment-button-danger"
+                        class="appointment-menu-item appointment-menu-item-danger"
                         :disabled="isRequestPending(appt, 'cancel')"
-                        @click="openRequestModal('cancel', appt)"
+                        @click="runAction(() => openRequestModal('cancel', appt))"
                       >
                         {{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}
                       </button>
                       <button
                         v-if="appt.contract && initialPaymentReceived(appt)"
                         type="button"
-                        class="appointment-button appointment-button-secondary"
-                        @click="openContract(appt)"
+                        class="appointment-menu-item"
+                        @click="runAction(() => openContract(appt))"
                       >
                         {{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View Contract' : 'Sign Contract' }}
                       </button>
-                      <span v-if="!canRequestCancellation(appt) && !(appt.contract && initialPaymentReceived(appt))" class="table-secondary">No actions available</span>
+                      <span v-if="!appt.meetLink && !canRequestCancellation(appt) && !(appt.contract && initialPaymentReceived(appt))" class="appointment-menu-empty">No actions available</span>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -203,75 +188,50 @@
                   </td>
                   <td data-label="Actions">
                     <div class="table-actions">
-                      <div v-if="canPayAppointment(appt)" class="payment-agreement">
-                        <p v-if="appt.installmentsAllowed && !initialPaymentReceived(appt)">Initial payment: {{ appt.depositPercent }}% of the total. The balance is due after you confirm the service is done.</p>
-                        <p v-if="appt.installmentsAllowed">Total: PHP {{ Number(appt.totalAmount || appt.amount || 0).toFixed(2) }} ? Paid: PHP {{ Number(appt.amountPaid || 0).toFixed(2) }} ? Remaining: PHP {{ Math.max(0, Number(appt.totalAmount || appt.amount || 0) - Number(appt.amountPaid || 0)).toFixed(2) }}</p>
-                        <details class="payment-agreement-details" @toggle="markPaymentAgreementViewed(appt.id, $event)">
-                          <summary>Review clinic agreement before payment</summary>
-                          <div v-if="getAppointmentPolicyEntries(appt).length" class="payment-agreement-copy">
-                            <p v-for="policy in getAppointmentPolicyEntries(appt)" :key="policy.key">
-                              <strong>{{ policy.label }}:</strong> {{ policy.text }}
-                            </p>
-                          </div>
-                          <p v-else class="payment-agreement-copy">
-                            I understand that payment is for the selected clinic service and is subject to the clinic's booking, cancellation, rescheduling, and refund terms.
-                          </p>
-                        </details>
-                        <label class="payment-agreement-check">
-                          <input
-                            v-model="paymentAgreementAcknowledged[appt.id]"
-                            type="checkbox"
-                            :disabled="!paymentAgreementViewed[appt.id]"
-                          />
-                          <span>I have read and agree to the clinic agreement.</span>
-                        </label>
-                      </div>
-                      <button
-                        v-if="canPayAppointment(appt)"
-                        @click="payAppointment(appt)"
-                        class="appointment-button appointment-button-primary"
-                      >
-                        Pay {{ formatBookingDue(appt) }}
-                      </button>
+                      <div class="appointment-menu">
+                        <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id)">•••</button>
+                        <div v-if="openActionMenuId === appt.id" class="appointment-menu-popover">
                       <button
                         v-if="appt.contract && initialPaymentReceived(appt)"
                         type="button"
-                        class="appointment-button appointment-button-secondary"
-                        @click="openContract(appt)"
+                        class="appointment-menu-item"
+                        @click="runAction(() => openContract(appt))"
                       >
                         {{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View Contract' : 'Sign Contract' }}
                       </button>
                       <button
                         v-if="canConfirmCompletion(appt)"
                         type="button"
-                        class="appointment-button appointment-button-primary"
-                        @click="confirmCompletion(appt)"
+                        class="appointment-menu-item appointment-menu-item-primary"
+                        @click="runAction(() => confirmCompletion(appt))"
                       >
                         Confirm Done
                       </button>
-                      <p v-if="appt.serviceKey" class="text-sm font-semibold">Service key: {{ appt.serviceKey }} - exchange this with your assigned worker.</p>
+                      <p v-if="appt.serviceKey" class="appointment-menu-key">Service key: {{ appt.serviceKey }} — exchange this with your assigned worker.</p>
                       <button
                         v-if="appt.serviceKey && !appt.customerKeyVerified"
                         type="button"
-                        class="appointment-button appointment-button-secondary"
-                        @click="verifyServiceKey(appt)"
+                        class="appointment-menu-item"
+                        @click="runAction(() => verifyServiceKey(appt))"
                       >
                         Confirm Service Key
                       </button>
                       <button
-                        @click="openRequestModal('reschedule', appt)"
-                        class="appointment-button appointment-button-secondary"
+                        @click="runAction(() => openRequestModal('reschedule', appt))"
+                        class="appointment-menu-item"
                         :disabled="isRequestPending(appt, 'reschedule')"
                       >
                         {{ isRequestPending(appt, 'reschedule') ? 'Pending Approval' : 'Reschedule' }}
                       </button>
                       <button
-                        @click="openRequestModal('cancel', appt)"
-                        class="appointment-button appointment-button-danger"
+                        @click="runAction(() => openRequestModal('cancel', appt))"
+                        class="appointment-menu-item appointment-menu-item-danger"
                         :disabled="isRequestPending(appt, 'cancel')"
                       >
                         {{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}
                       </button>
+                        </div>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -559,6 +519,7 @@ const isUnpaidAppointmentsPage = computed(() => route.name === 'customer-unpaid-
 const upcomingAppointments = ref([])
 const pastAppointments = ref([])
 const onlineConsultations = ref([])
+const openActionMenuId = ref(null)
 const clinicsById = ref({})
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
@@ -598,6 +559,7 @@ const isCancelledAppointment = (appointment) => normalizeAppointmentStatus(appoi
 
 const isOnlineConsultationAppointment = (appointment) => {
   const mode = normalizeAppointmentStatus(appointment?.consultationMode)
+  const type = normalizeAppointmentStatus(appointment?.type)
   const serviceText = [
     appointment?.service,
     appointment?.type,
@@ -607,11 +569,16 @@ const isOnlineConsultationAppointment = (appointment) => {
     .map((value) => String(value || '').toLowerCase())
     .join(' ')
 
-  return (
-    mode === 'online' ||
-    Boolean(appointment?.meetLink) ||
-    serviceText.includes('online consultation')
-  )
+  return (type === 'consultation' && mode === 'online') || serviceText.includes('online consultation')
+}
+
+const toggleActionMenu = (appointmentId) => {
+  openActionMenuId.value = openActionMenuId.value === appointmentId ? null : appointmentId
+}
+
+const runAction = async (action) => {
+  openActionMenuId.value = null
+  await action()
 }
 
 const parseClockToMinutes = (value) => {
@@ -1340,7 +1307,10 @@ const startAppointmentsListener = (userId) => {
       )
 
       upcomingAppointments.value = all
-        .filter((appt) => !['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status)))
+        .filter((appt) =>
+          !isOnlineConsultationAppointment(appt) &&
+          !['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status))
+        )
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
           const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
@@ -1961,6 +1931,78 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
+}
+
+.appointment-menu {
+  position: relative;
+  display: inline-flex;
+  justify-content: flex-end;
+}
+
+.appointment-menu-trigger {
+  min-width: 2.65rem;
+  min-height: 2.65rem;
+  border: 1px solid rgba(126, 78, 53, 0.24);
+  border-radius: 0.8rem;
+  background: #fff8ee;
+  color: #6e4330;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.appointment-menu-trigger:hover {
+  background: #f3dfc8;
+}
+
+.appointment-menu-popover {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  display: grid;
+  min-width: 11.5rem;
+  padding: 0.4rem;
+  border: 1px solid rgba(126, 78, 53, 0.22);
+  border-radius: 0.8rem;
+  background: #fffaf2;
+  box-shadow: 0 12px 28px rgba(87, 56, 35, 0.18);
+}
+
+.appointment-menu-item {
+  padding: 0.68rem 0.8rem;
+  border-radius: 0.55rem;
+  color: #4d301f;
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.appointment-menu-item:hover:not(:disabled) {
+  background: #f3e2ce;
+}
+
+.appointment-menu-item-primary {
+  color: #7c4f34;
+}
+
+.appointment-menu-item-danger {
+  color: #a04646;
+}
+
+.appointment-menu-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.appointment-menu-empty,
+.appointment-menu-key {
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  color: #7f6655;
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 
 .payment-agreement {
