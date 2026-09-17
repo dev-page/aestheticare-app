@@ -1,6 +1,7 @@
-import { resolveWeekAssignments } from '@/utils/employeeSchedules'
+import { resolveWeekAssignments } from './employeeSchedules.js'
 
 const BLOCKING_STATUSES = new Set([
+  'unpaid',
   'scheduled',
   'approved',
   'paid',

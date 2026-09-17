@@ -3,6 +3,7 @@ import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { registerProcurementWorkflow } from './procurementWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
+import { registerWalkInPayments } from './walkInWorkflow.js'
 import { prepareBooking } from './bookingResources.js'
 import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow } from './bookingWorkflow.js'
 import { registerSupplierQuoteRoutes } from './supplierQuotes.js'
@@ -1910,6 +1911,7 @@ app.post('/admin/trigger-clinic-registration-verification', requireAuth, require
 const BOOKING_RESERVATIONS_COLLECTION = 'bookingReservations'
 const BOOKING_RESERVATION_TTL_MINUTES = Math.max(5, Number(process.env.BOOKING_RESERVATION_TTL_MINUTES || 15))
 const BOOKING_BLOCKING_STATUSES = new Set([
+  'unpaid',
   'pending approval',
   'payment pending',
   'awaiting payment',
@@ -2468,7 +2470,30 @@ const generateOwnerBackup = async ({ ownerId, kind = 'manual', triggeredBy = 'sy
 }
 
 // Appointment contract endpoints
-registerBookingMilestones(app, { admin, requireAuth })
+const authorizeClinicAction = async (uid, branchId, permission) => {
+  const context = await loadUserContext(uid)
+  assertWorkflow(await resolveBranchAccess(uid, branchId), 'You cannot manage appointments for this branch.', 403)
+  assertWorkflow(context.permissions.has(permission) || context.permissions.has('administrator:full_access'), 'You do not have permission for this action.', 403)
+}
+registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction })
+registerWalkInPayments(app, {
+  admin, requireAuth, authorizeClinicAction,
+  verifyCheckout: async (sessionId, appointmentId, branchId) => {
+    assertWorkflow(/^cs_[A-Za-z0-9_-]+$/.test(sessionId), 'A valid checkout session is required.', 400)
+    const response = await fetch('https://api.paymongo.com/v1/checkout_sessions/' + sessionId, { headers: buildPayMongoHeaders() })
+    const body = await response.json()
+    const data = body?.data?.attributes || {}
+    const payment = (data.payments || []).find(p => p.attributes?.status === 'paid')
+    assertWorkflow(response.ok && payment, 'Payment has not been confirmed.')
+    assertWorkflow(data.metadata?.appointmentId === appointmentId && data.metadata?.branchId === branchId && data.metadata?.saleMode === 'appointment', 'This payment belongs to a different appointment.')
+    return { amount: Number(payment.attributes.amount) }
+  },
+  sendReceipt: async (email, receipt) => {
+    if (!postmarkClient || !senderEmail) return false
+    await sendPostmarkMessage({ to: email, from: senderEmail, subject: 'Your appointment payment and service key', text: 'Hi ' + receipt.clientName + ',\n\nPayment received: PHP ' + receipt.total.toFixed(2) + '\nService: ' + receipt.service + '\nAppointment: ' + receipt.date + ' ' + receipt.time + '\nService key: ' + receipt.serviceKey + '\n\nPlease present this key to your assigned practitioner at your appointment. You will review and sign your contract at the clinic before treatment.' })
+    return true
+  },
+})
 registerListingApproval(app, { admin, requireAuth, loadUserContext })
 
 app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
@@ -2517,7 +2542,7 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
     }
 
     const currentStatus = normalizeBookingStatus(appointment.status)
-    await apptRef.set({ contract, contractRequired: true, status: initialPaymentReceived(appointment) && appointment.approvalStatus === 'Approved' ? 'Contract Pending' : appointment.status, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+    await apptRef.set({ contract, contractRequired: true, status: appointment.approvalStatus === 'Approved' ? 'Contract Pending' : appointment.status, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
     return res.json({ success: true, data: { contract } })
   } catch (error) {
     console.error('appointments/:id/contract error:', error)
@@ -3721,7 +3746,19 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
   try {
     const firestore = admin.firestore()
     const customerId = String(reservation.customerId || '').trim()
-    if (!customerId || customerId !== String(req.user?.uid || '').trim()) {
+    const walkIn = reservation.source === 'walk_in'
+    if (walkIn) {
+      await authorizeClinicAction(req.user.uid, String(reservation.branchId || ''), 'appointments:create')
+      const client = await firestore.collection('clients').doc(String(reservation.clientId || customerId)).get()
+      assertWorkflow(client.exists && client.data().branchId === reservation.branchId, 'Select a walk-in client from this branch.', 403)
+      const clientData = client.data()
+      reservation.clientId = client.id
+      reservation.customerId = client.id
+      reservation.customerName = clientData.fullName || [clientData.firstName, clientData.lastName].filter(Boolean).join(' ') || 'Walk-in client'
+      reservation.customerEmail = clientData.email || ''
+      reservation.customerPhone = clientData.phone || clientData.contactNumber || ''
+    }
+    if (!walkIn && (!customerId || customerId !== String(req.user?.uid || '').trim())) {
       return res.status(403).json({ success: false, error: 'Forbidden' })
     }
 
@@ -3858,7 +3895,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         status: 'Pending Approval',
         paymentStatus: 'Pending',
         paymentCoverage: 'pending',
-        source: 'customer_booking_request',
+        source: walkIn ? 'walk_in' : 'customer_booking_request',
         bookingId: bookingRef.id,
         clinicPolicySnapshot,
         policyAcknowledged: reservation.policyAcknowledged === true,
@@ -3869,11 +3906,12 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     await firestore.runTransaction(async (tx) => {
       const prepared = await prepareBooking({ tx, db: firestore, reservation, getBookingRange, rangesOverlap })
       Object.assign(appointmentPayload, prepared.data, {
-        approvalStatus: 'Pending', status: 'Pending Approval', paymentStatus: 'Pending', amountPaid: 0,
+        approvalStatus: walkIn ? 'Approved' : 'Pending', status: walkIn ? 'Unpaid' : 'Pending Approval', paymentStatus: walkIn ? 'Unpaid' : 'Pending', amountPaid: 0,
+        ...(walkIn ? { source: 'walk_in', clientId: reservation.clientId, clientName: reservation.customerName, installmentsAllowed: false, depositPercent: 100, approvedBy: req.user.uid, approvedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
         serviceKey: null, customerKeyVerified: false, workerKeyVerified: false, workerCompleted: false, customerCompleted: false,
       })
       tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-      tx.set(bookingRef, { ...bookingPayload, ...prepared.data, status: 'Pending Approval' })
+      tx.set(bookingRef, { ...bookingPayload, ...prepared.data, source: walkIn ? 'walk_in' : 'customer_booking_request', status: walkIn ? 'Unpaid' : 'Pending Approval' })
       tx.set(appointmentRef, appointmentPayload)
       tx.update(bookingRef, { appointmentId: appointmentRef.id, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
     })
@@ -5944,7 +5982,7 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       refundId = refundData?.data?.id || null
       refundStatus = refundData?.data?.attributes?.status || 'pending'
     }
-    const nextStatus = approved ? (initialPaymentReceived(appointment) ? afterPaymentStatus(appointment) : 'Awaiting Payment') : 'Rejected'
+    const nextStatus = approved ? afterPaymentStatus(appointment) : 'Rejected'
     const nextPaymentStatus = isPaid ? 'Paid' : approved ? 'Pending' : 'Not Applicable'
     const update = {
       status: nextStatus,
@@ -6435,6 +6473,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
             return res.status(409).json({ success: false, error: 'This appointment is not ready for payment.' })
           }
           if (appointmentData.approvalStatus !== 'Approved') return res.status(409).json({ success: false, error: 'The clinic must approve this booking before payment.' })
+          if (normalized(appointmentData.contract?.status) !== 'signed') return res.status(409).json({ success: false, error: 'Please review and sign your contract before payment.' })
           const remainingAmount = paymentDue(appointmentData) / 100
           if (remainingAmount <= 0) return res.status(409).json({ success: false, error: 'This appointment has no remaining balance.' })
           if (Math.abs(Number(amount || 0) - Math.round(remainingAmount * 100)) > 1) {
@@ -6497,6 +6536,15 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
     }
   }
 
+  if (metadata?.saleMode === 'appointment') {
+    try {
+      const appointment = (await admin.firestore().collection('appointments').doc(String(metadata.appointmentId || '')).get()).data()
+      assertWorkflow(appointment?.source === 'walk_in', 'Select a walk-in appointment.')
+      await authorizeClinicAction(req.user.uid, appointment.branchId, 'payments:create')
+      assertWorkflow(appointment.branchId === metadata.branchId && appointment.status === 'Unpaid', 'This appointment is not ready for payment.')
+      assertWorkflow(Math.round(Number(appointment.totalAmount ?? appointment.amount) * 100) === Number(amount), 'Payment amount does not match the appointment.')
+    } catch (error) { return res.status(error.status || 400).json({ success: false, error: error.message }) }
+  }
   const normalizedAmount = Number(amount || 0)
   if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
     return res.status(400).json({
@@ -6691,7 +6739,7 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
         ...(status === 'Completed' ? { completedAt: timestamp } : {}),
       })
       if (fresh.bookingId) tx.set(firestore.collection('bookings').doc(fresh.bookingId), { status, amountPaid, updatedAt: timestamp }, { merge: true })
-      tx.set(firestore.collection('notifications').doc(), { recipientUserId: fresh.customerId, title: status === 'Completed' ? 'Booking completed' : 'Booking payment received', message: status === 'Completed' ? 'Your service and final payment are complete. The booking is now in your history.' : 'Payment received. Sign your clinic contract to continue.', link: '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
+      tx.set(firestore.collection('notifications').doc(), { recipientUserId: fresh.customerId, title: status === 'Completed' ? 'Booking completed' : 'Booking payment received', message: status === 'Completed' ? 'Your service and final payment are complete. The booking is now in your history.' : (normalized(fresh.contract?.status) === 'signed' ? 'Payment received. Your service key is available in My Appointments.' : 'Payment received. Review and sign your clinic contract to continue.'), link: '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
       return { appointmentId, status, amountPaid, paymentCoverage: fullyPaid ? 'full' : 'installment' }
     })
     return res.json({ success: true, data: result })

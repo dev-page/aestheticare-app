@@ -31,12 +31,12 @@
           <div>
             <label class="block text-slate-400 text-sm mb-2">Practitioner</label>
             <select
-              v-if="availablePractitioners.length"
+              v-if="practitioners.length"
               v-model="form.practitionerId"
               class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
             >
-              <option value="">Let DSS recommend</option>
-              <option v-for="practitioner in availablePractitioners" :key="practitioner.id" :value="practitioner.id">
+              <option value="">Select practitioner</option>
+              <option v-for="practitioner in practitioners" :key="practitioner.id" :value="practitioner.id">
                 {{ practitioner.fullName }} - {{ practitioner.email || practitioner.phoneNumber || 'No contact' }}
               </option>
             </select>
@@ -54,7 +54,7 @@
               class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
             >
               <option value="">Select service</option>
-              <option v-for="service in services" :key="service.id" :value="service.name">
+              <option v-for="service in services" :key="service.id" :value="service.id">
                 {{ service.name }}
               </option>
             </select>
@@ -68,7 +68,7 @@
             <p class="mt-2 text-sm text-slate-300">{{ selectedServiceDetails.description || 'No service description provided.' }}</p>
             <div class="mt-3 grid gap-3 text-xs text-slate-400 md:grid-cols-3">
               <span>Duration: {{ selectedServiceDetails.durationMinutes }} minutes</span>
-              <span>Price: PHP {{ Number(selectedServiceDetails.price || 0).toFixed(2) }}</span>
+              <span>Price: PHP {{ selectedServiceDetails.price > 0 ? selectedServiceDetails.price.toFixed(2) : 'Not configured' }}</span>
               <span v-if="selectedServiceDetails.requiresConsultationFirst">Consultation required first</span>
             </div>
             <div v-if="clinicPolicies.length" class="mt-4 border-t border-slate-700 pt-3">
@@ -122,7 +122,7 @@
                 <div>
                   <label class="block text-slate-400 text-sm">Appointment Calendar</label>
                   <p class="mt-1 text-xs text-slate-500">
-                    {{ form.date ? `Selected: ${selectedDateLabel}` : 'Pick a date from the calendar.' }}
+                    {{ form.date ? `Selected: ${selectedDateLabel}` : 'Select a practitioner and service, then choose an available date.' }}
                   </p>
                 </div>
                 <div class="flex items-center gap-2">
@@ -155,7 +155,8 @@
                   v-for="day in calendarDays"
                   :key="day.key"
                   type="button"
-                  :disabled="!day.isCurrentMonth || day.isPast"
+                  :disabled="!day.isCurrentMonth || !day.isAvailable"
+                  :title="day.isAvailable ? 'Available appointments' : 'No available times'"
                   :class="[
                     'min-h-[46px] rounded-xl border text-sm transition',
                     day.isSelected
@@ -165,21 +166,24 @@
                         : day.isCurrentMonth
                           ? 'border-slate-700 bg-slate-800 text-slate-200 hover:border-purple-400 hover:bg-slate-700'
                           : 'border-slate-800 bg-slate-900 text-slate-600',
-                    day.isPast ? 'cursor-not-allowed opacity-50' : ''
+                    !day.isAvailable ? 'cursor-not-allowed opacity-40' : ''
                   ]"
                   @click="selectCalendarDate(day)"
                 >
                   {{ day.dayNumber }}
                 </button>
               </div>
+              <p class="mt-3 text-xs text-slate-400">Unavailable days are disabled. Only times that fit the full treatment within the assigned shift can be booked.</p>
             </div>
 
             <div class="space-y-4">
               <div>
                 <label class="block text-slate-400 text-sm mb-2">Date</label>
                 <input
-                  v-model="form.date"
-                  type="date"
+                  :value="selectedDateLabel"
+                  type="text"
+                  readonly
+                  placeholder="Choose an available calendar date"
                   required
                   class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
                 />
@@ -187,30 +191,25 @@
               <div>
                 <label class="block text-slate-400 text-sm mb-2">Time</label>
                 <select
-                  v-if="availableTimeOptions.length"
+                  :disabled="!availableTimeOptions.length"
                   v-model="form.time"
                   required
                   class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
                 >
-                  <option value="">Select available time</option>
+                  <option value="">{{ availableTimeOptions.length ? 'Select available time' : 'No available times' }}</option>
                   <option v-for="option in availableTimeOptions" :key="option.value" :value="option.value">
                     {{ option.label }}
                   </option>
                 </select>
-                <p v-else-if="form.date && form.practitionerId && form.service" class="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-400">
-                  No available time slots for the selected service, date, and practitioner.
-                </p>
-                <input
-                  v-else
-                  v-model="form.time"
-                  type="time"
-                  required
-                  class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
-                />
+                <p class="mt-2 text-xs text-slate-400">{{ !form.practitionerId || !form.service ? 'Select a practitioner and service to see available dates and times.' : availableTimeOptions.length ? 'Times include the full treatment duration.' : 'No times available. Choose another enabled date or practitioner.' }}</p>
               </div>
             </div>
           </div>
 
+          <label v-if="clinicPolicies.length" class="flex items-start gap-2 text-sm text-slate-300">
+            <input v-model="policyAcknowledged" type="checkbox" class="mt-1" />
+            <span>I have reviewed the clinic policies above with the client, and the client acknowledges them.</span>
+          </label>
           <div>
             <label class="block text-slate-400 text-sm mb-2">Notes</label>
             <textarea v-model="form.notes" rows="3" class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"></textarea>
@@ -219,7 +218,7 @@
           <div class="flex items-center gap-3">
             <button
               type="submit"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !form.time || !selectedServiceDetails || !(selectedServiceDetails.price > 0)"
               class="px-5 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-60 text-white text-sm"
             >
               {{ isSubmitting ? 'Saving...' : 'Save Appointment' }}
@@ -238,25 +237,17 @@
 </template>
 
 <script>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getFirestore, collection, addDoc, getDocs, query, where, doc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { logActivity } from '@/utils/activityLogger'
-import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
-import {
-  buildAppointmentRecommendations,
-  extractShiftWindowMinutes,
-  getDayName,
-  getWeekStartKey,
-  parseClockToMinutes,
-  minutesToTime,
-  minutesToTime12,
-} from '@/utils/appointmentDss'
-import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
+import { buildWeekScheduleMap } from '@/utils/employeeSchedules'
+import { getAppointmentSlots } from '@/utils/appointmentSlots'
 
 export default {
   name: 'ReceptionistAddAppointment',
@@ -305,6 +296,9 @@ export default {
     const branchAppointments = ref([])
     const clinicPolicies = ref([])
     const isSubmitting = ref(false)
+    const loadingSchedules = ref(true)
+    const availabilityNow = ref(Date.now())
+    const policyAcknowledged = ref(false)
     const currentCalendarMonth = ref(new Date())
     const calendarWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -317,13 +311,7 @@ export default {
       notes: ''
     })
 
-    const todayDateString = () => {
-      const now = new Date()
-      const yyyy = now.getFullYear()
-      const mm = String(now.getMonth() + 1).padStart(2, '0')
-      const dd = String(now.getDate()).padStart(2, '0')
-      return `${yyyy}-${mm}-${dd}`
-    }
+    const todayDateString = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(availabilityNow.value))
 
     const toDateInput = (date) => {
       const yyyy = date.getFullYear()
@@ -373,7 +361,8 @@ export default {
           isCurrentMonth,
           isSelected: form.value.date === iso,
           isToday: iso === today,
-          isPast: iso < today
+          isPast: iso < today,
+          isAvailable: iso >= today && slotsForDate(iso).length > 0
         })
       }
 
@@ -396,13 +385,16 @@ export default {
         .map((snap) => {
           const data = snap.data() || {}
             return {
+            ...data,
+            price: Number(data.price),
+            description: String(data.description || ''),
             id: snap.id,
             type: String(data.postType || '').trim().toLowerCase(),
             name: String(data.serviceName || data.title || '').trim(),
             durationMinutes: Math.max(1, Number(data.durationMinutes || 60)),
           }
         })
-        .filter((entry) => entry.type === 'service' && entry.name)
+        .filter((entry) => entry.type === 'service' && entry.name && entry.isPublished === true && entry.financeStatus === 'approved' && !entry.archived && entry.status !== 'Archived')
         .sort((a, b) => a.name.localeCompare(b.name))
     }
 
@@ -429,25 +421,38 @@ export default {
         .map(([key, label]) => ({ key, label, text: String(data[key]).trim() }))
     }
 
-    const recommendations = computed(() =>
-      buildAppointmentRecommendations({
-        practitioners: practitioners.value,
-        practitionerSchedules: practitionerSchedules.value,
-        appointments: branchAppointments.value,
-        preferredPractitionerId: form.value.practitionerId,
-        selectedDate: form.value.date,
-        selectedTime: form.value.time,
-        daysAhead: 21,
-        slotIntervalMinutes: 60,
-        defaultDurationMinutes: 60,
-      })
-    )
+    const recommendations = computed(() => {
+      if (!selectedServiceDetails.value || loadingSchedules.value) return []
+      const list = form.value.practitionerId ? practitioners.value.filter(p => p.id === form.value.practitionerId) : practitioners.value
+      const results = []
+      for (let offset = 0; offset < 21 && results.length < 3; offset++) {
+        const date = new Date(todayDateString() + 'T12:00:00')
+        date.setDate(date.getDate() + offset)
+        const dateKey = toDateInput(date)
+        for (const practitioner of list) {
+          const slot = slotsForDate(dateKey, practitioner.id)[0]
+          if (slot) results.push({ key: dateKey + practitioner.id, date: dateKey, time: slot.value, practitionerId: practitioner.id, title: 'Available appointment', label: dateKey + ' ? ' + slot.label + ' ? ' + practitioner.fullName, description: 'Fits the treatment duration and assigned shift.' })
+          if (results.length === 3) break
+        }
+      }
+      return results
+    })
 
     const loadPractitionerSchedules = async (list) => {
+      const shiftSnapshot = await getDocs(query(collection(db, 'shifts'), where('branchId', '==', currentBranchId.value)))
+      const shifts = new Map(shiftSnapshot.docs.map(snap => [snap.id, snap.data()]))
       const pairs = await Promise.all(
         list.map(async (practitioner) => {
           const scheduleSnap = await getDocs(collection(db, 'users', practitioner.id, 'schedules'))
-          const weekMap = buildWeekScheduleMap(scheduleSnap.docs.map((snap) => ({ id: snap.id, data: snap.data() || {} })))
+          const weekMap = buildWeekScheduleMap(scheduleSnap.docs.map((snap) => {
+            const data = snap.data() || {}
+            const labels = { ...(data.assignmentLabels || {}) }
+            for (const [day, assignment] of Object.entries(data.assignments || {})) {
+              const shift = shifts.get(assignment)
+              labels[day] = !assignment || String(assignment).toLowerCase() === 'off' ? '' : shift ? shift.start + ' - ' + shift.end : labels[day] || assignment
+            }
+            return { id: snap.id, data: { ...data, assignmentLabels: labels } }
+          }))
 
           return [practitioner.id, weekMap]
         })
@@ -480,109 +485,27 @@ export default {
       await loadPractitionerSchedules(list)
     }
 
-    const availablePractitioners = computed(() => {
-      const hasDate = Boolean(String(form.value.date || '').trim())
-      const hasTime = Boolean(String(form.value.time || '').trim())
-      if (!hasDate) return practitioners.value
-
-      const weekKey = getWeekStartKey(form.value.date)
-      const dayName = getDayName(form.value.date)
-      if (!weekKey || !dayName) return practitioners.value
-
-      const appointmentMinutes = hasTime ? parseClockToMinutes(form.value.time) : null
-
-      return practitioners.value.filter((practitioner) => {
-        const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitioner.id] || {}, weekKey)
-        const shiftLabel = String(assignments?.[dayName] || '').trim()
-        if (!shiftLabel) return false
-
-        if (!hasTime || appointmentMinutes === null) {
-          // Day-based availability only; time is optional refinement.
-          return true
-        }
-
-        const shiftWindow = extractShiftWindowMinutes(shiftLabel)
-        if (!shiftWindow) return true
-
-        let { start, end } = shiftWindow
-        let time = appointmentMinutes
-        if (end < start) {
-          end += 24 * 60
-          if (time < start) time += 24 * 60
-        }
-
-        return time >= start && time <= end
-      })
+    watch(() => form.value.clientId, () => { policyAcknowledged.value = false })
+    const selectedServiceDetails = computed(() => services.value.find(service => service.id === form.value.service) || null)
+    const slotsForDate = (date, practitionerId = form.value.practitionerId) => loadingSchedules.value ? [] : getAppointmentSlots({
+      date, practitionerId, schedules: practitionerSchedules.value, appointments: branchAppointments.value,
+      durationMinutes: selectedServiceDetails.value?.durationMinutes, now: availabilityNow.value,
     })
-
-    const isPractitionerAvailableAt = (practitionerId, date, time, durationMinutes = 60) => {
-      const weekKey = getWeekStartKey(date)
-      const dayName = getDayName(date)
-      const startMinutes = parseClockToMinutes(time)
-      if (!weekKey || !dayName || startMinutes === null) return false
-
-      const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitionerId] || {}, weekKey)
-      const shiftWindow = extractShiftWindowMinutes(String(assignments?.[dayName] || '').trim())
-      if (!shiftWindow) return false
-
-      let { start, end } = shiftWindow
-      if (end <= start) end += 24 * 60
-      let normalizedStart = startMinutes
-      if (end > 24 * 60 && normalizedStart < start) normalizedStart += 24 * 60
-      return normalizedStart >= start && normalizedStart + Math.max(1, Number(durationMinutes) || 60) <= end
-    }
-
-    const selectedServiceDetails = computed(() =>
-      services.value.find((service) => service.name === form.value.service) || null
-    )
-
-    const availableTimeOptions = computed(() => {
-      const date = String(form.value.date || '').trim()
-      const practitionerId = String(form.value.practitionerId || '').trim()
-      const duration = Math.max(1, Number(selectedServiceDetails.value?.durationMinutes || 60))
-      if (!date || !practitionerId || !form.value.service) return []
-
-      const weekKey = getWeekStartKey(date)
-      const dayName = getDayName(date)
-      const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitionerId] || {}, weekKey)
-      const shiftWindow = extractShiftWindowMinutes(String(assignments?.[dayName] || '').trim())
-      if (!shiftWindow) return []
-
-      let { start, end } = shiftWindow
-      if (end <= start) end += 24 * 60
-      const blocked = branchAppointments.value
-        .filter((appointment) => String(appointment.date || '') === date)
-        .filter((appointment) => String(appointment.practitionerId || appointment.assignedPractitionerId || '') === practitionerId)
-        .filter((appointment) => !['cancelled', 'rejected', 'no-show'].includes(String(appointment.status || '').trim().toLowerCase()))
-        .map((appointment) => {
-          const appointmentStart = parseClockToMinutes(appointment.time)
-          const appointmentEnd = parseClockToMinutes(appointment.endTime)
-          return appointmentStart === null ? null : { start: appointmentStart, end: appointmentEnd === null ? appointmentStart + 60 : appointmentEnd }
-        })
-        .filter(Boolean)
-
-      const options = []
-      for (let minutes = start; minutes + duration <= end; minutes += 30) {
-        if (blocked.some((range) => minutes < range.end && minutes + duration > range.start)) continue
-        const value = minutesToTime(minutes)
-        options.push({ value, label: `${minutesToTime12(minutes)} - ${minutesToTime12(minutes + duration)}` })
+    const availableTimeOptions = computed(() => slotsForDate(form.value.date))
+    watch(availableTimeOptions, options => {
+      if (!options.some(option => option.value === form.value.time)) form.value.time = options[0]?.value || ''
+    })
+    watch([() => form.value.practitionerId, () => form.value.service, loadingSchedules], () => {
+      if (loadingSchedules.value || !form.value.practitionerId || !form.value.service) return
+      if (slotsForDate(form.value.date).length) return
+      form.value.date = ''
+      for (let offset = 0; offset < 90; offset++) {
+        const date = new Date(todayDateString() + 'T12:00:00')
+        date.setDate(date.getDate() + offset)
+        const key = toDateInput(date)
+        if (slotsForDate(key).length) { form.value.date = key; break }
       }
-      return options
     })
-
-    watch(availableTimeOptions, (options) => {
-      if (form.value.time && !options.some((option) => option.value === form.value.time)) form.value.time = ''
-    }, { immediate: true })
-
-    watch(
-      availablePractitioners,
-      (nextList) => {
-        if (!form.value.practitionerId) return
-        const stillValid = nextList.some((entry) => entry.id === form.value.practitionerId)
-        if (!stillValid) form.value.practitionerId = ''
-      },
-      { immediate: true }
-    )
 
     watch(
       () => form.value.date,
@@ -607,7 +530,7 @@ export default {
     }
 
     const selectCalendarDate = (day) => {
-      if (!day?.isCurrentMonth || day.isPast) return
+      if (!day?.isCurrentMonth || !day.isAvailable) return
       form.value.date = day.iso
     }
 
@@ -623,12 +546,14 @@ export default {
       toast.success(`Recommended slot applied: ${recommendation.label}`)
     }
 
-    const refreshRecommendations = () => {
-      if (!recommendations.value.length) {
-        toast.info('No schedule recommendations are available yet.')
-        return
-      }
-      toast.success('Schedule recommendations refreshed.')
+    const refreshRecommendations = async () => {
+      loadingSchedules.value = true
+      try {
+        await Promise.all([loadPractitioners(), loadAppointments(), loadServices()])
+        availabilityNow.value = Date.now()
+        toast.success('Availability updated.')
+      } catch (error) { toast.error('Could not refresh availability. Please try again.') }
+      finally { loadingSchedules.value = false }
     }
 
     const submitAppointment = async () => {
@@ -648,9 +573,12 @@ export default {
         return
       }
 
-      const selectedService = services.value.find((item) => item.name === form.value.service)
+      const selectedService = services.value.find((item) => item.id === form.value.service)
       const durationMinutes = Math.max(1, Number(selectedService?.durationMinutes || 60))
-      if (!isPractitionerAvailableAt(selectedPractitioner.id, form.value.date, form.value.time, durationMinutes)) {
+      availabilityNow.value = Date.now()
+      if (!selectedService || !(selectedService.price > 0)) { toast.error('Select a service with a configured price.'); return }
+      if (clinicPolicies.value.length && !policyAcknowledged.value) { toast.error('Please review the clinic policies with the client first.'); return }
+      if (!slotsForDate(form.value.date).some(slot => slot.value === form.value.time)) {
         toast.error('The selected time is outside this practitioner\'s assigned shift. Choose a suggested slot or another time.')
         return
       }
@@ -660,14 +588,17 @@ export default {
         // Build a reservation payload and send to the backend bookings.create endpoint.
         const reservation = {
           customerId: selectedClient.id,
+          clientId: selectedClient.id,
+          source: 'walk_in',
           customerName: selectedClient.fullName || `${selectedClient.firstName || ''} ${selectedClient.lastName || ''}`.trim(),
           customerEmail: selectedClient.email || '',
           customerPhone: selectedClient.phone || '',
           practitionerId: selectedPractitioner.id,
           practitionerName: selectedPractitioner.fullName,
-          selectedServices: [],
-          selectedServiceIds: [],
-          service: form.value.service.trim(),
+          selectedServices: [selectedService],
+          selectedServiceIds: [selectedService.id],
+          service: selectedService.name,
+          policyAcknowledged: policyAcknowledged.value,
           date: form.value.date,
           time: form.value.time,
           durationMinutes,
@@ -700,24 +631,31 @@ export default {
           console.warn('Failed to log activity after booking creation:', logErr)
         }
 
-        toast.success('Appointment created successfully.')
+        toast.success('Walk-in appointment approved. Collect payment at POS.')
         router.push('/receptionist/appointments')
       } catch (error) {
         console.error(error)
-        toast.error('Failed to create appointment.')
+        toast.error(error?.message || 'Failed to create appointment.')
       } finally {
         isSubmitting.value = false
       }
     }
 
+    let clockTimer
+    let stopAuth
+    onUnmounted(() => { clearInterval(clockTimer); stopAuth?.() })
     onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+      clockTimer = setInterval(() => { availabilityNow.value = Date.now() }, 30000)
+      stopAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) return
 
         currentUserId.value = user.uid
         const userSnap = await getDoc(doc(db, 'users', user.uid))
         currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
-        await Promise.all([loadClients(), loadServices(), loadPractitioners(), loadAppointments(), loadClinicPolicies()])
+        try {
+          await Promise.all([loadClients(), loadServices(), loadPractitioners(), loadAppointments(), loadClinicPolicies()])
+        } catch (error) { toast.error('Could not load appointment details. Please refresh the page.'); return }
+        loadingSchedules.value = false
         if (!form.value.date) {
           form.value.date = todayDateString()
         }
@@ -732,7 +670,7 @@ export default {
       clinicPolicies,
       availableTimeOptions,
       practitioners,
-      availablePractitioners,
+      policyAcknowledged,
       calendarWeekdays,
       calendarMonthLabel,
       calendarDays,

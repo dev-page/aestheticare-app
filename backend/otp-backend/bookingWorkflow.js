@@ -13,9 +13,15 @@ export const paymentDue = (appointment) => {
 export const initialPaymentReceived = (appointment) => cents(appointment.amountPaid) >= initialPayment(appointment)
 export const balanceSettled = (appointment) => cents(appointment.amountPaid) >= cents(appointment.totalAmount ?? appointment.amount)
 export const afterPaymentStatus = (appointment) => {
+  if (appointment.source === 'walk_in') {
+    if (!balanceSettled(appointment)) return 'Unpaid'
+    if (appointment.workerCompleted) return 'Completed'
+    if (appointment.startedAt) return 'Ongoing'
+    return 'Paid'
+  }
   if (appointment.workerCompleted && appointment.customerCompleted) return balanceSettled(appointment) ? 'Completed' : 'Balance Due'
-  if (!initialPaymentReceived(appointment)) return 'Awaiting Payment'
   if (normalized(appointment.contract?.status) !== 'signed') return 'Contract Pending'
+  if (!initialPaymentReceived(appointment)) return 'Awaiting Payment'
   if (appointment.startedAt) return appointment.workerCompleted ? 'Awaiting Customer Confirmation' : 'Ongoing'
   return appointment.workerKeyVerified ? 'Ready to Start' : 'Paid'
 }

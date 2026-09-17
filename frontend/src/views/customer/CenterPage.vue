@@ -2943,7 +2943,7 @@ const submitBooking = async () => {
     }
     await Swal.fire({
       title: 'Booking request created',
-      text: 'Your request was submitted for clinic approval. Once approved, open My Appointments to pay the required amount, sign the contract, and receive your service key.',
+      text: 'Your request was submitted for clinic approval. Once approved, open My Appointments to review and e-sign the contract, then pay the required amount and receive your service key.',
       icon: 'success',
       confirmButtonText: 'View Appointments',
       confirmButtonColor: '#8d5a3b',

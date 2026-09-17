@@ -6,10 +6,21 @@
       <div class="appointments-content">
         <section class="appointments-header">
           <h1 class="appointments-title">{{ isUnpaidAppointmentsPage ? 'Unpaid Appointments' : 'My Appointments' }}</h1>
-          <p v-if="isUnpaidAppointmentsPage" class="appointments-subtitle">Review approved bookings, update the schedule, cancel, or complete payment.</p>
+          <p v-if="isUnpaidAppointmentsPage" class="appointments-subtitle">Sign your clinic contract first, then complete payment for your approved booking.</p>
           <button v-else-if="unpaidAppointments.length" type="button" class="appointments-pay-link" @click="router.push({ name: 'customer-unpaid-appointments' })">
             Pay {{ unpaidAppointments.length }} unpaid appointment{{ unpaidAppointments.length === 1 ? '' : 's' }}
           </button>
+        </section>
+
+        <section v-if="contractsToSign.length" class="appointments-panel">
+          <div class="panel-head"><div><p class="panel-kicker">Next step: sign your contract</p><h2 class="panel-title">Review and sign before payment</h2></div></div>
+          <p class="p-4 text-sm">1. Clinic approval ? 2. Review and e-sign ? 3. Payment ? 4. Your appointment</p>
+          <article v-for="appt in contractsToSign" :key="appt.id" class="unpaid-appointment-card">
+            <h3 class="unpaid-appointment-title">{{ formatAppointmentServices(appt) }}</h3>
+            <p>{{ appt.clinic }} ? {{ appt.date }} ? {{ appt.time }}</p>
+            <button v-if="appt.contract?.terms || appt.contract?.templateUrl" type="button" class="appointment-button appointment-button-primary" @click="openContract(appt)">Review &amp; e-sign contract</button>
+            <p v-else class="text-sm">Your clinic is preparing the contract. Payment will be available after you sign.</p>
+          </article>
         </section>
 
         <section v-if="isUnpaidAppointmentsPage" class="appointments-panel unpaid-appointments-panel">
@@ -45,16 +56,13 @@
                 <p v-if="appt.installmentsAllowed && !initialPaymentReceived(appt)">Initial payment: {{ appt.depositPercent }}% of the total. The balance is due after you confirm the service is done.</p>
                 <p v-if="appt.installmentsAllowed">Total: PHP {{ Number(appt.totalAmount || appt.amount || 0).toFixed(2) }} · Paid: PHP {{ Number(appt.amountPaid || 0).toFixed(2) }} · Remaining: PHP {{ Math.max(0, Number(appt.totalAmount || appt.amount || 0) - Number(appt.amountPaid || 0)).toFixed(2) }}</p>
                 <details class="payment-agreement-details" @toggle="markPaymentAgreementViewed(appt.id, $event)">
-                  <summary>Review clinic agreement before payment</summary>
+                  <summary>View clinic policies</summary>
                   <div v-if="getAppointmentPolicyEntries(appt).length" class="payment-agreement-copy">
                     <p v-for="policy in getAppointmentPolicyEntries(appt)" :key="policy.key"><strong>{{ policy.label }}:</strong> {{ policy.text }}</p>
                   </div>
                   <p v-else class="payment-agreement-copy">I understand that payment is for the selected clinic service and is subject to the clinic's booking, cancellation, rescheduling, and refund terms.</p>
                 </details>
-                <label class="payment-agreement-check">
-                  <input v-model="paymentAgreementAcknowledged[appt.id]" type="checkbox" :disabled="!paymentAgreementViewed[appt.id]" />
-                  <span>I have read and agree to the clinic agreement.</span>
-                </label>
+                <p class="text-sm">Contract signed. You can now proceed to payment.</p>
               </div>
 
               <div class="unpaid-appointment-actions">
@@ -128,14 +136,14 @@
                         {{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}
                       </button>
                       <button
-                        v-if="appt.contract && initialPaymentReceived(appt)"
+                        v-if="appt.contract && appt.approvalStatus === 'Approved'"
                         type="button"
                         class="appointment-menu-item"
                         @click="runAction(() => openContract(appt))"
                       >
                         {{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View Contract' : 'Sign Contract' }}
                       </button>
-                      <span v-if="!appt.meetLink && !canRequestCancellation(appt) && !(appt.contract && initialPaymentReceived(appt))" class="appointment-menu-empty">No actions available</span>
+                      <span v-if="!appt.meetLink && !canRequestCancellation(appt) && !(appt.contract && appt.approvalStatus === 'Approved')" class="appointment-menu-empty">No actions available</span>
                       </div>
                     </div>
                   </td>
@@ -192,7 +200,7 @@
                         <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id)">•••</button>
                         <div v-if="openActionMenuId === appt.id" class="appointment-menu-popover">
                       <button
-                        v-if="appt.contract && initialPaymentReceived(appt)"
+                        v-if="appt.contract && appt.approvalStatus === 'Approved'"
                         type="button"
                         class="appointment-menu-item"
                         @click="runAction(() => openContract(appt))"
@@ -207,9 +215,9 @@
                       >
                         Confirm Done
                       </button>
-                      <p v-if="appt.serviceKey" class="appointment-menu-key">Service key: {{ appt.serviceKey }} — exchange this with your assigned worker.</p>
+                      <p v-if="appt.serviceKey && initialPaymentReceived(appt)" class="appointment-menu-key">Service key: {{ appt.serviceKey }} — exchange this with your assigned worker.</p>
                       <button
-                        v-if="appt.serviceKey && !appt.customerKeyVerified"
+                        v-if="appt.serviceKey && initialPaymentReceived(appt) && !appt.customerKeyVerified"
                         type="button"
                         class="appointment-menu-item"
                         @click="runAction(() => verifyServiceKey(appt))"
@@ -1467,8 +1475,15 @@ const reschedule = async (appt) => {
 
 const formatBookingDue = (appointment) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(paymentDue(appointment) / 100)
 
+const contractsToSign = computed(() => upcomingAppointments.value.filter(appointment =>
+  appointment.approvalStatus === 'Approved'
+  && normalizeAppointmentStatus(appointment.contract?.status) !== 'signed'
+  && ['approved', 'awaiting payment', 'payment pending', 'contract pending', 'paid', 'scheduled', 'ready to start'].includes(normalizeAppointmentStatus(appointment.status))
+))
+
 const canPayAppointment = (appointment) => {
   const status = normalizeAppointmentStatus(appointment?.status)
+  if (normalizeAppointmentStatus(appointment?.contract?.status) !== 'signed') return false
   return status === 'awaiting payment' || status === 'payment pending' || status === 'approved' || status === 'balance due'
 }
 
@@ -1583,15 +1598,18 @@ const closeContract = () => {
 }
 
 const contractUpdated = () => {
+  const needsPayment = selectedContractAppointment.value && paymentDue(selectedContractAppointment.value) > 0
   closeContract()
+  toast.success(needsPayment ? 'Contract signed. You can now complete payment.' : 'Contract signed successfully.')
+  if (needsPayment) router.push({ name: 'customer-unpaid-appointments' })
 }
 
 const payAppointment = async (appointment) => {
   const user = auth.currentUser
   if (!user || !appointment?.id) return
 
-  if (!paymentAgreementViewed[appointment.id] || !paymentAgreementAcknowledged[appointment.id]) {
-    toast.error('Please review and accept the clinic agreement before payment.')
+  if (!canPayAppointment(appointment)) {
+    toast.error('Please sign the contract before proceeding to payment.')
     return
   }
 

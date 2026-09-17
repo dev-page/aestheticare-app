@@ -5,15 +5,15 @@ const getServiceKeyWindow = (appointment) => {
   const date = String(appointment.date || '').trim()
   const time = String(appointment.time || '').trim()
   if (!date || !time) return null
-  const start = new Date(`${date}T${time}`)
+  const start = new Date(`${date}T${time}+08:00`)
   if (Number.isNaN(start.getTime())) return null
   const endTime = String(appointment.endTime || '').trim()
-  const end = endTime ? new Date(`${date}T${endTime}`) : new Date(start.getTime() + Math.max(30, Number(appointment.totalServiceDurationMinutes || 60)) * 60 * 1000)
+  const end = endTime ? new Date(`${date}T${endTime}+08:00`) : new Date(start.getTime() + Math.max(30, Number(appointment.totalServiceDurationMinutes || 60)) * 60 * 1000)
   if (Number.isNaN(end.getTime()) || end <= start) return null
   return { opensAt: new Date(start.getTime() - 30 * 60 * 1000), closesAt: end }
 }
 
-export const registerBookingMilestones = (app, { admin, requireAuth }) => {
+export const registerBookingMilestones = (app, { admin, requireAuth, authorizeClinicAction }) => {
   const run = (path, action) => app.post(path, requireAuth, async (req, res) => {
     try {
       const db = admin.firestore()
@@ -22,19 +22,32 @@ export const registerBookingMilestones = (app, { admin, requireAuth }) => {
         const snapshot = await tx.get(ref)
         check(snapshot.exists, 'Appointment not found.', 404)
         const appointment = snapshot.data()
-        const customer = appointment.customerId === req.user.uid
+        const walkIn = appointment.source === 'walk_in'
+        const customer = !walkIn && appointment.customerId === req.user.uid
         const worker = [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo].includes(req.user.uid)
-        check(customer || worker, 'Only the booking customer or assigned worker can perform this action.', 403)
+        let assistedSigning = false
+        if (walkIn && action === 'sign') {
+          if (!worker) await authorizeClinicAction(req.user.uid, appointment.branchId, 'appointments:create')
+          assistedSigning = true
+        }
+        check(customer || worker || assistedSigning, 'Only the booking customer or assigned worker can perform this action.', 403)
         check(!['cancelled', 'rejected'].includes(normalized(appointment.status)), 'This booking is closed.')
         const timestamp = admin.firestore.FieldValue.serverTimestamp()
         const update = { updatedAt: timestamp }
         const status = normalized(appointment.status)
         if (action === 'sign') {
-          check(customer, 'Only the booking customer can sign this contract.', 403)
-          check(appointment.approvalStatus === 'Approved' && initialPaymentReceived(appointment), 'Pay the required initial amount after clinic approval before signing.')
+          check(customer || assistedSigning, 'Only the customer or authorized walk-in assistant can submit the signature.', 403)
+          if (walkIn) check(balanceSettled(appointment), 'Collect payment at POS before signing.')
+          check(appointment.approvalStatus === 'Approved', 'The clinic must approve this booking before signing.')
+          check(normalized(appointment.contract?.status) !== 'signed', 'This contract has already been signed.')
+          const signatureImage = String(req.body?.signatureImage || '')
+          check(req.body?.accepted === true, 'Please accept the contract before signing.', 400)
+          check(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(signatureImage) && signatureImage.length <= 200000, 'Draw your electronic signature (PNG, up to 150 KB).', 400)
+          const signatureBytes = Buffer.from(signatureImage.split(',')[1], 'base64')
+          check(signatureBytes.length > 32 && signatureBytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])), 'Invalid signature image.', 400)
           check(appointment.contract?.terms || appointment.contract?.templateUrl, 'The clinic must provide a contract first.')
-          check(['contract pending', 'paid', 'ready to start', 'scheduled'].includes(status), 'The contract cannot be signed at this stage.')
-          update.contract = { ...appointment.contract, status: 'signed', signatures: { ...(appointment.contract.signatures || {}), [req.user.uid]: { uid: req.user.uid, name: String(req.body?.name || req.user.name || req.user.email || 'Customer'), email: req.user.email || '', signedAt: new Date().toISOString() } } }
+          check(['contract pending', 'awaiting payment', 'payment pending', 'approved', 'paid', 'ready to start', 'scheduled'].includes(status), 'The contract cannot be signed at this stage.')
+          update.contract = { ...appointment.contract, status: 'signed', signatures: { ...(appointment.contract.signatures || {}), [walkIn ? appointment.clientId : req.user.uid]: { uid: walkIn ? null : req.user.uid, clientId: walkIn ? appointment.clientId : null, witnessedBy: walkIn ? req.user.uid : null, signatureImage, method: 'drawn-signature', accepted: true, name: String(walkIn ? appointment.clientName || appointment.customerName || 'Walk-in client' : req.body?.name || req.user.name || req.user.email || 'Customer'), email: walkIn ? appointment.customerEmail || '' : req.user.email || '', signedAt: new Date().toISOString() } } }
           update.contractSignedAt = timestamp
           update.serviceKey = appointment.serviceKey || String(crypto.randomInt(100000, 1000000))
           update.status = afterPaymentStatus({ ...appointment, ...update })
@@ -56,7 +69,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth }) => {
           const transition = req.body?.action
           if (transition === 'start') {
             check(worker, 'Only the assigned worker can start the service.', 403)
-            check(status === 'ready to start' && appointment.workerKeyVerified && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment), 'The practitioner must verify the customer service key after payment and signing.')
+            check((status === 'ready to start' || (walkIn && status === 'paid')) && appointment.workerKeyVerified && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment), 'The practitioner must verify the customer service key after payment and signing.')
             const resourceRefs = (appointment.resources || []).filter((r) => r.kind === 'material').map((r) => ({ ...r, ref: db.collection('inventoryItems').doc(r.id) }))
             const stocks = []
             for (const resource of resourceRefs) stocks.push({ resource, snapshot: await tx.get(resource.ref) })
@@ -69,7 +82,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth }) => {
             check(worker, 'Only the assigned worker can finish the service.', 403)
             check(status === 'ongoing' && appointment.startedAt, 'Start the service before marking it done.')
             update.workerCompleted = true; update.workerCompletedAt = timestamp; update.workerCompletedById = req.user.uid
-            update.status = 'Awaiting Customer Confirmation'
+            update.status = walkIn ? 'Completed' : 'Awaiting Customer Confirmation'
           } else if (transition === 'customer_complete') {
             check(customer, 'Only the customer can confirm completion.', 403)
             check(appointment.workerCompleted && ['awaiting customer confirmation', 'balance due'].includes(status), 'The worker must finish the service first.')
@@ -81,7 +94,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth }) => {
         tx.update(ref, update)
         if (appointment.bookingId) tx.set(db.collection('bookings').doc(appointment.bookingId), { status: update.status, updatedAt: timestamp }, { merge: true })
         const recipientUserId = customer ? appointment.practitionerId || appointment.assignedPractitionerId : appointment.customerId
-        if (recipientUserId) tx.set(db.collection('notifications').doc(), { recipientUserId, title: 'Booking updated', message: `${appointment.service || 'Your booking'}: ${update.status}.`, link: customer ? '/practitioner/appointments' : '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
+        if (recipientUserId && !walkIn) tx.set(db.collection('notifications').doc(), { recipientUserId, title: 'Booking updated', message: `${appointment.service || 'Your booking'}: ${update.status}.`, link: customer ? '/practitioner/appointments' : '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
         return { appointmentId: ref.id, status: update.status, contract: update.contract || appointment.contract }
       })
       res.json({ success: true, data: result })

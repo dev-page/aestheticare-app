@@ -115,6 +115,7 @@
                   <label class="block text-slate-400 text-sm mb-2">Appointment Amount (PHP)</label>
                   <input
                     v-model.number="appointmentAmount"
+                    readonly
                     type="number"
                     min="0"
                     step="0.01"
@@ -195,6 +196,7 @@
               <label class="block text-slate-400 text-xs mb-1">Discount (%)</label>
               <input
                 v-model.number="discountPercent"
+                :disabled="saleMode === 'appointment'"
                 type="number"
                 min="0"
                 max="100"
@@ -246,6 +248,12 @@
           </div>
         </aside>
       </div>
+      <WalkInReceipt v-if="paymentReceipt" :receipt="paymentReceipt" @close="paymentReceipt = null" />
+      <section v-if="paidWalkIns.length" class="mt-6 rounded-xl border border-slate-700 bg-slate-800 p-5">
+        <h2 class="text-lg font-semibold text-white">Paid walk-in receipts</h2>
+        <p class="mb-3 text-sm text-slate-300">Use the client search above to find and reprint their service key.</p>
+        <button v-for="appointment in paidWalkIns.slice(0, 20)" :key="appointment.id" class="m-1 rounded bg-slate-700 px-3 py-2 text-sm text-white" @click="showReceipt(appointment)">{{ appointment.clientName }} ? {{ appointment.date }} ? View receipt</button>
+      </section>
     </main>
   </div>
 </template>
@@ -266,6 +274,7 @@ import {
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { useRoute, useRouter } from 'vue-router'
+import WalkInReceipt from '@/components/WalkInReceipt.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { logActivity } from '@/utils/activityLogger'
@@ -274,7 +283,7 @@ import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 
 export default {
   name: 'ReceptionistPOS',
-  components: { OwnerSidebar },
+  components: { OwnerSidebar, WalkInReceipt },
   setup() {
     const route = useRoute()
     const router = useRouter()
@@ -285,7 +294,14 @@ export default {
 
     const currentUserId = ref('')
     const currentBranchId = ref('')
-    const saleMode = ref('product')
+    const saleMode = ref('appointment')
+    const paymentReceipt = ref(null)
+    const showReceipt = async (appointment) => {
+      const receipt = await getDoc(doc(db, 'transactions', 'walk-in-' + appointment.id))
+      if (receipt.exists()) paymentReceipt.value = receipt.data()
+      else toast.info('No POS receipt found for this appointment.')
+    }
+    const paidWalkIns = computed(() => appointments.value.filter(a => a.source === 'walk_in' && Number(a.amountPaid) > 0).filter(a => !appointmentSearchQuery.value || String(a.clientName || a.customerName || '').toLowerCase().includes(appointmentSearchQuery.value.toLowerCase())))
     const searchQuery = ref('')
     const items = ref([])
     const appointments = ref([])
@@ -317,7 +333,7 @@ export default {
 
     const unpaidAppointments = computed(() =>
       appointments.value.filter((item) => {
-        if (String(item.status || '').toLowerCase() === 'cancelled') return false
+        if (item.source !== 'walk_in' || item.status !== 'Unpaid' || item.approvalStatus !== 'Approved') return false
         const paymentStatus = String(item.paymentStatus || '').toLowerCase()
         return paymentStatus !== 'paid'
       })
@@ -359,7 +375,7 @@ export default {
 
     const inferredAppointmentAmount = (appointment) => {
       if (!appointment) return 0
-      const candidates = [appointment.amount, appointment.price, appointment.fee, appointment.serviceFee]
+      const candidates = [appointment.totalAmount, appointment.amount, appointment.price, appointment.fee, appointment.serviceFee]
       const found = candidates.find((value) => value !== undefined && value !== null && value !== '')
       return Number(found || 0)
     }
@@ -370,6 +386,7 @@ export default {
     })
 
     const effectiveDiscount = computed(() => {
+      if (saleMode.value === 'appointment') return 0
       const rawPercent = Number(discountPercent.value || 0)
       const safePercent = Math.min(100, Math.max(0, rawPercent))
       return subtotal.value * (safePercent / 100)
@@ -579,6 +596,7 @@ export default {
           referenceNumber,
           metadata: {
             saleMode: snapshot.saleMode,
+            appointmentId: snapshot.appointment?.id || '',
             source: 'paymongo_checkout',
             branchId: currentBranchId.value,
             receptionistId: currentUserId.value
@@ -604,6 +622,16 @@ export default {
     }
 
     const commitSale = async (snapshot, paymentMeta = {}) => {
+      if (snapshot.saleMode === 'appointment') {
+        const response = await fetchFromBackend('/appointments/' + snapshot.appointment.id + '/walk-in-payment', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ amount: snapshot.amount, tendered: snapshot.amountTendered, method: snapshot.paymentMethod, checkoutSessionId: paymentMeta.paymongoCheckoutSessionId || '' }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload.success) throw new Error(payload.error || 'Unable to record appointment payment.')
+        paymentReceipt.value = payload.data
+        return
+      }
       const batch = writeBatch(db)
       const transactionRef = doc(collection(db, 'transactions'))
 
@@ -709,7 +737,7 @@ export default {
       const snapshot = await getDocs(
         query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
       )
-      appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
+      appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data(), clientName: snap.data().clientName || snap.data().customerName || 'Walk-in client' })))
     }
 
     const syncAppointmentFieldsFromSelection = () => {
@@ -855,6 +883,7 @@ export default {
     })
 
     return {
+      paymentReceipt, paidWalkIns, showReceipt,
       saleMode,
       searchQuery,
       items,

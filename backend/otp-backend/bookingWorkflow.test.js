@@ -39,15 +39,20 @@ const harness = (appointment) => {
 for (const installmentsAllowed of [false, true]) {
   test(`${installmentsAllowed ? 'Installment' : 'Full payment'} booking lifecycle`, async () => {
     const h = harness(fixture(installmentsAllowed))
-    assert.equal((await h.call('contract/sign', 'customer')).code, 409)
+    assert.equal((await h.call('contract/sign', 'customer')).code, 400)
+    const signature = { accepted: true, signatureImage: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRZkAAAAASUVORK5CYII=' }
+    assert.equal((await h.call('contract/sign', 'stranger', signature)).code, 403)
+    assert.equal((await h.call('contract/sign', 'customer', { ...signature, accepted: false })).code, 400)
+    assert.equal((await h.call('contract/sign', 'customer', { ...signature, signatureImage: 'invalid' })).code, 400)
+    assert.equal((await h.call('contract/sign', 'customer', signature)).code, 200)
+    assert.equal(h.current().status, 'Awaiting Payment')
+    assert.equal(h.current().contract.signatures.customer.signatureImage, signature.signatureImage)
+    assert.equal((await h.call('contract/sign', 'customer', signature)).code, 409)
     assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 409)
     const due = paymentDue(h.current())
     assert.equal(due, installmentsAllowed ? 30000 : 100000)
     h.current().amountPaid = due / 100
     h.current().status = afterPaymentStatus(h.current())
-    assert.equal(h.current().status, 'Contract Pending')
-    assert.equal((await h.call('contract/sign', 'stranger')).code, 403)
-    assert.equal((await h.call('contract/sign', 'customer')).code, 200)
     assert.equal(h.current().status, 'Paid')
     assert.match(h.current().serviceKey, /^\d{6}$/)
     assert.equal((await h.call('verify-service-key', 'customer', { serviceKey: 'wrong' })).code, 403)

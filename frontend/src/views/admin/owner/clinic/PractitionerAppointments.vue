@@ -23,7 +23,7 @@
             <label class="block text-slate-400 text-sm mb-2">Status</label>
             <select v-model="statusFilter" class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none">
               <option value="">All</option>
-              <option v-for="status in ['Pending Approval', 'Awaiting Payment', 'Contract Pending', 'Paid', 'Ready to Start', 'Ongoing', 'Awaiting Customer Confirmation', 'Balance Due', 'Scheduled']" :key="status" :value="status">{{ status }}</option>
+              <option v-for="status in ['Unpaid', 'Pending Approval', 'Awaiting Payment', 'Contract Pending', 'Paid', 'Ready to Start', 'Ongoing', 'Awaiting Customer Confirmation', 'Balance Due', 'Scheduled']" :key="status" :value="status">{{ status }}</option>
               <option value="Completed">Completed</option>
               <option value="Cancelled">Cancelled</option>
             </select>
@@ -59,10 +59,10 @@
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap items-center gap-3">
-                    <p v-if="appointment.serviceKey" class="w-full text-sm text-amber-200">Service key: {{ appointment.serviceKey }}</p>
+                    <button v-if="appointment.source === 'walk_in' && appointment.paymentStatus === 'Paid'" @click="contractAppointment = appointment" class="rounded bg-indigo-700 px-3 py-2 text-white">{{ appointment.contract?.status === 'signed' ? 'View contract' : 'Client review & e-sign' }}</button>
                     <button v-if="appointment.serviceKey && !appointment.workerKeyVerified && ['Paid', 'Ready to Start', 'Scheduled'].includes(appointment.status)" :disabled="actionBusy" @click="openServiceKeyModal(appointment)" class="rounded bg-amber-700 px-3 py-2 text-white">Verify Customer Key</button>
-                    <button v-if="appointment.status === 'Ready to Start'" :disabled="actionBusy" @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white">Start Service</button>
-                    <button v-if="appointment.status === 'Ongoing'" :disabled="actionBusy" @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white">Mark My Work Done</button>
+                    <button v-if="appointment.status === 'Ready to Start' || (appointment.source === 'walk_in' && appointment.status === 'Paid' && appointment.workerKeyVerified && appointment.contract?.status === 'signed')" :disabled="actionBusy" @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white">Start Service</button>
+                    <button v-if="appointment.status === 'Ongoing'" :disabled="actionBusy" @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
                     <button
                       v-if="canRecommendFollowUp(appointment)"
                       type="button"
@@ -89,6 +89,7 @@
         </div>
       </div>
     </main>
+    <BookingContractModal :visible="Boolean(contractAppointment)" :appointment="contractAppointment" @close="contractAppointment = null" @updated="contractSaved" />
     <ServiceKeyVerificationModal
       :visible="showServiceKeyModal"
       :loading="actionBusy"
@@ -108,11 +109,12 @@ import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import BookingContractModal from '@/components/BookingContractModal.vue'
 import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
 
 export default {
   name: 'PractitionerAppointments',
-  components: { OwnerSidebar, ServiceKeyVerificationModal },
+  components: { OwnerSidebar, ServiceKeyVerificationModal, BookingContractModal },
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -124,6 +126,8 @@ export default {
     const dateFilter = ref('')
     const appointments = ref([])
     const actionBusy = ref(false)
+    const contractAppointment = ref(null)
+    const contractSaved = async () => { contractAppointment.value = null; await loadAppointments() }
     const showServiceKeyModal = ref(false)
     const selectedServiceKeyAppointment = ref(null)
     const bookingAction = async (appointment, action, serviceKey = '') => {
@@ -314,6 +318,7 @@ export default {
     })
 
     return {
+      contractAppointment, contractSaved,
       actionBusy, bookingAction, showServiceKeyModal, openServiceKeyModal, closeServiceKeyModal, submitServiceKey,
       searchQuery,
       statusFilter,
