@@ -1,6 +1,5 @@
 const supplyLinks = (department, permission, entries) => entries.map(([page, label, icon]) => ({ label, icon, to: `/supply-management/${department}/${page}`, permission }))
 export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEmployee = false } = {}) => [
-  { label: 'Supply Management Overview', icon: 'mdi:chart-timeline-variant', to: '/supply-management/management/dashboard', permission: 'reports:view' },
   { label: 'Dashboard', icon: 'dashboard', to: dashboardTo },
   {
     key: 'clinic-setup',
@@ -9,7 +8,8 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     children: [
       { label: 'Branch Info', icon: 'mdi:map-marker-outline', to: '/owner/branch/branch-info', permission: 'branches:view' },
       { label: 'Add Branch', icon: 'mdi:office-building-plus-outline', to: '/owner/branch/add-branch', feature: 'multi_branch', permission: 'branches:create' },
-      { label: 'Clinic Page', icon: 'mdi:web', to: '/owner/clinic-page', permission: 'clinic_profile:update' }
+      { label: 'Clinic Page', icon: 'mdi:web', to: '/owner/clinic-page', permission: 'clinic_profile:update' },
+      { label: 'Policy Management', icon: 'mdi:file-document-outline', to: '/owner/policies', permissionsAny: ['policies:view', 'policies:update'] }
     ]
   },
   {
@@ -33,29 +33,75 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
       { label: 'Inbox', icon: 'mdi:email-outline', to: '/receptionist/inbox', permission: 'inbox:view' }
     ]
   },
-  { label: 'Product & Service Listing', icon: 'mdi:format-list-bulleted', to: '/manager/product-service-listing', moduleKey: 'operations', permission: 'services:view' },
+  {
+    key: 'products-services-module',
+    label: 'Products & Services',
+    icon: 'mdi:format-list-bulleted',
+    moduleKey: 'operations',
+    children: [
+      { label: 'Product & Service Listing', icon: 'mdi:format-list-bulleted', to: '/manager/product-service-listing', permission: 'services:view' },
+      { label: 'Archived Posts', icon: 'mdi:archive-outline', to: '/manager/archived-posts', permission: 'services:view' }
+    ]
+  },
   {
     key: 'inventory-module',
     label: 'Inventory Management',
     icon: 'mdi:warehouse',
     moduleKey: 'inventory',
-    children: [
-      ...supplyLinks('inventory', 'inventory:view', [['dashboard', 'Inventory Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Inventory List & DSS', 'mdi:package-variant-closed'], ['requests', 'Inventory Requests', 'mdi:clipboard-plus-outline'], ['reports', 'Inventory Reports', 'mdi:chart-box-outline']]),
-      { type: 'section', label: 'POSTS' },
-      { label: 'Archived Posts', icon: 'mdi:archive-outline', to: '/manager/archived-posts', permission: 'services:view' }
-    ]
+    children: supplyLinks('inventory', 'inventory:view', [['dashboard', 'Inventory Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Inventory List & DSS', 'mdi:package-variant-closed'], ['requests', 'Inventory Requests', 'mdi:clipboard-plus-outline'], ['reports', 'Inventory Reports', 'mdi:chart-box-outline']])
   },
-  { label: 'Suppliers', icon: 'mdi:truck-delivery-outline', to: '/manager/suppliers', permission: 'inventory:view' },
   {
     key: 'procurement-module',
     label: 'Procurement',
     icon: 'mdi:cart-outline',
     moduleKey: 'procurement',
     children: [
-      ...supplyLinks('procurement', 'procurement:view', [['dashboard', 'Procurement Dashboard', 'mdi:view-dashboard-outline'], ['requests', 'Procurement Requests', 'mdi:clipboard-text-outline'], ['rfqs', 'RFQs & Quotations', 'mdi:file-compare'], ['orders', 'Purchase Orders', 'mdi:cart-check'], ['suppliers', 'Supplier Products', 'mdi:store-outline'], ['reports', 'Procurement Reports', 'mdi:file-chart-outline']]),
+      { type: 'section', label: 'PROCUREMENT WORKFLOW' },
+      ...supplyLinks('procurement', 'procurement:view', [['dashboard', 'Procurement Dashboard', 'mdi:view-dashboard-outline'], ['requests', 'Procurement Requests', 'mdi:clipboard-text-outline'], ['rfqs', 'RFQs & Quotations', 'mdi:file-compare'], ['orders', 'Purchase Orders', 'mdi:cart-check']]),
+      { type: 'section', label: 'SUPPLIER MANAGEMENT' },
+      { label: 'Supplier Directory', icon: 'mdi:truck-delivery-outline', to: '/manager/suppliers', permission: 'inventory:view' },
+      ...supplyLinks('procurement', 'procurement:view', [['suppliers', 'Supplier Products', 'mdi:store-outline']]),
+      { type: 'section', label: 'REPORTING' },
+      ...supplyLinks('procurement', 'procurement:view', [['reports', 'Procurement Reports', 'mdi:file-chart-outline']])
     ]
   },
-  { key: 'logistics-module', label: 'Logistics Management', icon: 'mdi:truck-delivery-outline', children: supplyLinks('logistics', 'orders:view', [['dashboard', 'Logistics Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Receiving & Inspection', 'mdi:clipboard-check-outline'], ['onboarding', 'Inventory Onboarding', 'mdi:package-down'], ['requests', 'Requests & Discrepancies', 'mdi:alert-box-outline'], ['reports', 'Logistics Reports', 'mdi:file-chart-outline']]) },
+  {
+    key: 'finance-module',
+    label: 'Finance',
+    icon: 'mdi:finance',
+    moduleKey: 'finance',
+    children: [
+      { type: 'section', label: 'PROCUREMENT FINANCE' },
+      ...supplyLinks('finance', 'finance:payables:view', [['dashboard', 'Procurement Finance', 'mdi:finance'], ['budgets', 'Budget Allocations', 'mdi:bank-outline'], ['requests', 'Funding Requests', 'mdi:cash-check'], ['invoices', 'Supplier Invoices & Payments', 'mdi:receipt-text-check-outline'], ['reports', 'Procurement Finance Reports', 'mdi:chart-donut']]),
+      { type: 'section', label: 'CLINIC FINANCE' },
+      { label: 'Listing Approvals', icon: 'mdi:clipboard-check-outline', to: '/finance/listing-approvals', permission: 'finance:reports:view' },
+      { label: 'Finance Dashboard', icon: 'mdi:chart-pie', to: '/finance/dashboard', feature: 'reports', permission: 'finance:reports:view' },
+      { type: 'section', label: 'INCOME & PAYMENTS' },
+      { label: 'Income & Payments', icon: 'mdi:cash-plus', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },
+      { type: 'section', label: 'PAYROLL' },
+      { label: 'Payroll Summary', icon: 'mdi:file-table-outline', to: '/finance/payroll-summary', feature: 'payroll', permission: 'payroll:view' },
+      { label: 'Payroll Approval', icon: 'mdi:file-check-outline', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },
+      { type: 'section', label: 'FINANCE OPERATIONS' },
+      { label: 'Refunds', icon: 'mdi:cash-refund', to: '/finance/refunds', feature: 'reports', permission: 'finance:refunds:view' },
+      { label: 'Financial Reports', icon: 'mdi:file-chart-outline', to: '/finance/reports', feature: 'reports', permission: 'finance:reports:view' }
+    ]
+  },
+  {
+    key: 'logistics-module',
+    label: 'Logistics Management',
+    icon: 'mdi:truck-delivery-outline',
+    moduleKey: 'inventory',
+    children: supplyLinks('logistics', 'orders:view', [['dashboard', 'Logistics Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Receiving & Inspection', 'mdi:clipboard-check-outline'], ['onboarding', 'Inventory Onboarding', 'mdi:package-down'], ['requests', 'Requests & Discrepancies', 'mdi:alert-box-outline'], ['reports', 'Logistics Reports', 'mdi:file-chart-outline']])
+  },
+  {
+    key: 'supply-management-module',
+    label: 'Management & Reports',
+    icon: 'mdi:chart-timeline-variant',
+    moduleKey: 'reports',
+    children: [
+      ...supplyLinks('management', 'reports:view', [['dashboard', 'Supply Chain Overview', 'mdi:view-dashboard-outline'], ['reports', 'End-to-End Reports', 'mdi:chart-box-outline']])
+    ]
+  },
   {
     key: 'hr-module',
     label: 'Human Resources',
@@ -79,30 +125,9 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
       { label: 'Overtime Request', icon: 'mdi:timer-plus-outline', to: '/hr/overtime', feature: 'hr', permissionsAny: ['overtime:view', 'overtime:create'] },
       { type: 'section', label: 'PAYROLL' },
       { label: 'Base Pay', icon: 'mdi:cash', to: '/hr/base-pay', feature: 'payroll', permission: 'payroll:update' },
-      { label: 'Payroll Management', icon: 'mdi:calculator', to: '/hr/payroll', feature: 'payroll', permission: 'payroll:update' },
+      { label: 'Payroll Management', icon: 'mdi:calculator', to: '/hr/payroll', feature: 'payroll', permission: 'payroll:update' }
     ]
   },
-  {
-    key: 'finance-module',
-    label: 'Finance',
-    icon: 'mdi:finance',
-    moduleKey: 'finance',
-    children: [
-      ...supplyLinks('finance', 'finance:payables:view', [['dashboard', 'Procurement Finance', 'mdi:finance'], ['budgets', 'Budget Allocations', 'mdi:bank-outline'], ['requests', 'Funding Requests', 'mdi:cash-check'], ['invoices', 'Supplier Invoices & Payments', 'mdi:receipt-text-check-outline'], ['reports', 'Procurement Finance Reports', 'mdi:chart-donut']]),
-      { label: 'Listing Approvals', icon: 'mdi:clipboard-check-outline', to: '/finance/listing-approvals', permission: 'finance:reports:view' },
-      { label: 'Finance Dashboard', icon: 'mdi:chart-pie', to: '/finance/dashboard', feature: 'reports', permission: 'finance:reports:view' },
-      { type: 'section', label: 'INCOME & PAYMENTS' },
-      { label: 'Income & Payments', icon: 'mdi:cash-plus', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },
-      { type: 'section', label: 'EXPENSES & BUDGET' },
-      { type: 'section', label: 'PAYROLL' },
-      { label: 'Payroll Summary', icon: 'mdi:file-table-outline', to: '/finance/payroll-summary', feature: 'payroll', permission: 'payroll:view' },
-      { label: 'Payroll Approval', icon: 'mdi:file-check-outline', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },
-      { type: 'section', label: 'FINANCE OPERATIONS' },
-      { label: 'Refunds', icon: 'mdi:cash-refund', to: '/finance/refunds', feature: 'reports', permission: 'finance:refunds:view' },
-      { label: 'Financial Reports', icon: 'mdi:file-chart-outline', to: '/finance/reports', feature: 'reports', permission: 'finance:reports:view' }
-    ]
-  },
-  { label: 'Policy Management', icon: 'mdi:file-document-outline', to: '/owner/policies', permissionsAny: ['policies:view', 'policies:update'] },
   {
     key: 'account',
     label: 'Account Settings',
