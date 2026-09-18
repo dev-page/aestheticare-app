@@ -1,13 +1,11 @@
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
-import { registerProcurementWorkflow } from './procurementWorkflow.js'
 import { registerSupplyWorkflow } from './supplyWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import { registerWalkInPayments } from './walkInWorkflow.js'
 import { prepareBooking } from './bookingResources.js'
 import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow } from './bookingWorkflow.js'
-import { registerSupplierQuoteRoutes } from './supplierQuotes.js'
 import express from 'express'
 import cors from 'cors'
 import { ServerClient } from 'postmark'
@@ -1883,9 +1881,7 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
   }
 })
 
-registerSupplierQuoteRoutes(app, { admin, requireAuth })
 registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
-registerProcurementWorkflow(app, { admin, requireAuth, loadUserContext })
 registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders })
 registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext })
 

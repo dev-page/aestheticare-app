@@ -104,6 +104,7 @@
               <p class="text-slate-300">Phone: {{ supplier.phone || '-' }}</p>
               <p class="text-slate-300">Business Type: {{ supplier.businessType || '-' }}</p>
               <p class="text-slate-300">TIN: {{ formatSupplierTin(supplier) || '-' }}</p>
+              <p class="text-slate-300">Accreditation: {{ supplier.accreditationStatus || 'Pending Accreditation' }}</p>
             </div>
 
             <div class="pt-4 border-t border-slate-700">
@@ -125,7 +126,7 @@
               </div>
               <div class="mt-4 flex items-center justify-end gap-2">
                 <router-link
-                  :to="{ path: $route.path.startsWith('/manager') ? '/manager/purchase-requests' : '/supply/purchase-requests', query: { supplierId: supplier.id } }"
+                  :to="{ path: '/supply-management/procurement/reports', query: { supplierId: supplier.id } }"
                   class="px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 text-xs"
                 >Request Supply</router-link>
               </div>
@@ -338,6 +339,18 @@
                 <select v-model="editSupplier.status" required class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none">
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
+                  <option value="Suspended">Suspended</option>
+                  <option value="Pending Accreditation">Pending Accreditation</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-slate-400 text-sm mb-2">Accreditation Status</label>
+                <select v-model="editSupplier.accreditationStatus" required class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none">
+                  <option value="Pending Accreditation">Pending Accreditation</option>
+                  <option value="Accredited">Accredited</option>
+                  <option value="Expired">Expired</option>
+                  <option value="Rejected">Rejected</option>
+                  <option value="Suspended">Suspended</option>
                 </select>
               </div>
             </div>
@@ -448,6 +461,7 @@ export default {
       email: '',
       phone: '',
       status: 'Active',
+      accreditationStatus: 'Pending Accreditation',
       address: ''
     })
 
@@ -519,6 +533,7 @@ export default {
         email: supplier.email,
         phone: String(supplier.phone || '').replace(/\D/g, '').slice(0, 10),
         status: supplier.status,
+        accreditationStatus: supplier.accreditationStatus || 'Pending Accreditation',
         address: supplier.address
       }
     }
@@ -717,6 +732,7 @@ export default {
         email: supplier.email || '',
         phone: supplier.phone || '',
         status: supplier.status || 'Active',
+        accreditationStatus: supplier.accreditationStatus || 'Pending Accreditation',
         address: supplier.address || ''
       }
       showEditModal.value = true

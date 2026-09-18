@@ -45,17 +45,24 @@ Run this checklist against staging, not the production database. Use separate te
 - [ ] Confirm approved payroll cannot be edited by HR.
 - [ ] Confirm Financial Reports include approved payroll only.
 
-## Procurement, Finance, and Logistics
+## Integrated Inventory, Procurement, Finance, and Logistics
 
-- [ ] Create a purchase request with supplier, quantity, unit cost, and branch.
-- [ ] Create or attach supplier quotation and purchase order records.
-- [ ] Finance approves the requested budget.
-- [ ] Confirm Logistics cannot claim the request before budget approval.
-- [ ] Logistics moves the request through shipment to delivery.
-- [ ] Confirm received goods update inventory once, not more than once.
-- [ ] Finance records payment or settles the delivered variance.
-- [ ] Confirm Purchase History is read-only and Accounts Payable owns settlement.
-- [ ] Test cancelled, delayed, over-budget, under-budget, and duplicate-submit cases.
+- [ ] Complete both Manual and Online lifecycles with separate Inventory, Procurement, Finance, Logistics, and Supplier accounts.
+- [ ] Confirm an approved Inventory Request creates its Procurement Request without re-entry.
+- [ ] Exercise RFQ Draft, Sent, Open, Quotation Received, Closed, Under Evaluation, and Awarded states.
+- [ ] Confirm suppliers see only addressed RFQs, their own quotation, their own PO, explicitly shared documents, invoice status, and payment status.
+- [ ] Confirm Manual procurement requires RFQ, quotation, and PO evidence.
+- [ ] Finance reviews the linked chain and atomically creates Finance Approval and Budget Allocation records.
+- [ ] Confirm duplicate budget approvals cannot reserve funds twice.
+- [ ] Exercise PO approval, issue, rejection/clarification, supplier confirmation, and ongoing states.
+- [ ] Record partial, accepted, rejected, damaged, expired, serialized, and batch-tracked deliveries.
+- [ ] Confirm only accepted quantities enter inventory and retrying onboarding is idempotent.
+- [ ] Resolve rejected-goods discrepancies and verify their photos/documents remain linked.
+- [ ] Submit an invoice, run three-way matching, correct a disputed invoice, and approve it for payment.
+- [ ] Prepare, review, approve with another Finance account, process, and record an external payment with evidence.
+- [ ] Confirm payment does not call a fake gateway, actual spending remains separate, and unused commitment is released.
+- [ ] Trace the completed transaction in both directions and export every departmental report.
+- [ ] Test cancellation, deadlines, insufficient budget, expired quotation, cross-branch access, retries, and concurrent submissions.
 
 ## Sales, Refunds, and Payments
 

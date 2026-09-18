@@ -466,21 +466,9 @@ service cloud.firestore {
     match /purchaseRequests/{requestId} {
       allow read: if isSignedIn() && (get(/databases/$(database)/documents/suppliers/$(resource.data.supplierId)).data.ownerId == request.auth.uid
         || (canAccessBranch(resource.data.branchId) && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view') || hasPermission('finance:payables:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
-      allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create')
-        && request.resource.data.status in ['Pending', 'Approved'] && request.resource.data.budgetStatus == 'Not Requested'
-        && request.resource.data.paymentStatus == 'Unpaid' && request.resource.data.amountPaid == 0
-        && request.resource.data.get('approvedBudgetAmount', 0) == 0 && request.resource.data.get('inventoryReceiptId', null) == null
-        && request.resource.data.get('supplierQuoteId', null) == null && request.resource.data.logisticsStatus == 'Not Claimed';
-      allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && request.resource.data.branchId == resource.data.branchId
-        && ((hasPermission('finance:payables:settle') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['budgetVariance', 'budgetSettledAt', 'budgetSettlementStatus', 'reimbursementAmount', 'returnedFundsAmount', 'workflowStage', 'updatedAt']))
-        || ((hasPermission('inventory:update') || hasPermission('inventory:review') || hasPermission('procurement:create') || hasPermission('procurement:review'))
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['inventoryReceiptId', 'inventoryItemId', 'receivedAt', 'deliveredAt', 'supplierQuoteId', 'supplierQuoteStatus', 'supplierQuoteReference', 'supplierQuoteAmount', 'supplierQuoteQuantity', 'supplierQuoteUnitPrice', 'originalRequestedQuantity', 'financeApprovedAt', 'financeApprovedBy', 'approvedBudgetAmount', 'budgetApprovedAt', 'paymentStatus', 'amountPaid', 'balance', 'paidAt', 'paidBy'])
-          && (resource.data.get('supplierQuoteId', null) == null && resource.data.budgetStatus != 'Approved' || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['quantity', 'unitCost', 'totalCost', 'supplierId', 'itemId', 'supplier', 'item']))
-          && (request.resource.data.status == resource.data.status || (resource.data.status == 'Pending' && request.resource.data.status in ['Approved', 'Rejected']) || (request.resource.data.status == 'Cancelled' && !(resource.data.logisticsStatus in ['Shipped', 'In Transit', 'Received', 'Delivered']) && resource.data.status != 'Delivered'))
-          && (request.resource.data.budgetStatus == resource.data.budgetStatus || (request.resource.data.budgetStatus == 'Requested' && resource.data.budgetStatus == 'Not Requested'))
-          && (request.resource.data.get('purchaseOrderStatus', '') == resource.data.get('purchaseOrderStatus', '') || (resource.data.get('purchaseOrderStatus', '') in ['', 'Draft'] && request.resource.data.get('purchaseOrderStatus', '') in ['Draft', 'Pending Finance']))
-          && (request.resource.data.logisticsStatus == resource.data.logisticsStatus || (request.resource.data.logisticsStatus == 'Ready for Claim' && resource.data.budgetStatus == 'Approved' && resource.data.logisticsStatus in ['', 'Not Claimed', 'Pending']))));
-      allow delete: if false;
+      // Historical records remain readable for reports. All new procurement writes
+      // use the server-authoritative supplyRecords workflow.
+      allow create, update, delete: if false;
     }
 
     match /productServicePosts/{postId} {
@@ -527,37 +515,19 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/suppliers/$(resource.data.supplierId)).data.ownerId == request.auth.uid;
       allow read: if isSignedIn()
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('procurement:view')));
-      allow create: if isSignedIn()
-        && request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)
-        && (hasPermission('procurement:create') || isOwnerOfBranch(request.resource.data.branchId));
-      allow update: if isSignedIn()
-        && resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-        && (hasPermission('procurement:review') || hasPermission('procurement:create') || isOwnerOfBranch(resource.data.branchId));
-      allow delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /purchaseOrders/{orderId} {
       allow read: if isSignedIn()
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('procurement:view')));
-      allow create: if isSignedIn()
-        && request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)
-        && (hasPermission('procurement:create') || isOwnerOfBranch(request.resource.data.branchId));
-      allow update: if isSignedIn()
-        && resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-        && (hasPermission('procurement:review') || isOwnerOfBranch(resource.data.branchId));
-      allow delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /manualPurchases/{purchaseId} {
       allow read: if isSignedIn()
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('procurement:view')));
-      allow create: if isSignedIn()
-        && request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)
-        && (hasPermission('procurement:create') || isOwnerOfBranch(request.resource.data.branchId));
-      allow update: if isSignedIn()
-        && resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-        && (hasPermission('procurement:review') || isOwnerOfBranch(resource.data.branchId));
-      allow delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /commissionContracts/{contractId} {

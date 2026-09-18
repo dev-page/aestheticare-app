@@ -8,7 +8,7 @@ module.exports = ({ admin, functions }) => {
     if (stock <= Number(item.minStock || 0)) flags.push('For Restocking')
     if (maximum && stock > maximum) flags.push('Overstocked')
     if (item.expiryDate) { const remaining = (Date.parse(item.expiryDate) - Date.parse(date)) / 86400000; if (remaining < 0) flags.push('Expired'); else if (remaining <= 30) flags.push('Expiring Soon') }
-    if (['damaged', 'defective', 'under repair', 'bad'].includes(String(item.condition || '').toLowerCase())) flags.push('Needs Attention')
+    if (item.itemType === 'Equipment' && ['damaged', 'defective', 'under repair', 'bad'].includes(String(item.condition || '').toLowerCase())) flags.push('Needs Attention')
     return flags
   }
   const staffFor = async (branchId, permission, cache) => {

@@ -1,6 +1,5 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { registerProcurementWorkflow } from './procurementWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { recordVerifiedOrder, registerOrderWorkflow, lockOrderCancellation, finalizeCancelledOrder } from './orderWorkflow.js'
 
@@ -40,7 +39,7 @@ const harness = (seed) => {
   }
   const app = { post(path, auth, handler) { routes.set(path, handler) } }
   const deps = { admin: { firestore }, requireAuth() {}, loadUserContext: async (uid) => contexts[uid], buildPayMongoHeaders() {} }
-  registerProcurementWorkflow(app, deps); registerPayrollWorkflow(app, deps); registerOrderWorkflow(app, deps)
+  registerPayrollWorkflow(app, deps); registerOrderWorkflow(app, deps)
   const call = async (path, uid, params, body = {}) => {
     const result = { code: 200 }
     await routes.get(path)({ user: { uid }, params, body }, { status(code) { result.code = code; return this }, json(data) { result.body = data } })
@@ -49,42 +48,6 @@ const harness = (seed) => {
   return { records, db, timestamp, call }
 }
 const base = () => ({ 'clinics/clinic': { ownerId: 'owner' }, 'users/finance': { branchId: 'clinic', role: 'Finance' } })
-
-test('Partial quote -> Finance budget -> Logistics -> one receipt -> Finance settlement', async () => {
-  const h = harness({ ...base(), 'purchaseRequests/p': { branchId: 'clinic', supplierId: 'supplier', item: 'Oil', supplier: 'Supplier', quantity: 20, unitCost: 500, totalCost: 10000, status: 'Pending', budgetStatus: 'Not Requested', logisticsStatus: 'Not Claimed', paymentStatus: 'Unpaid', amountPaid: 0, receiptUrl: 'receipt' }, 'supplierQuotes/q': { branchId: 'clinic', supplierId: 'supplier', purchaseRequestId: 'p', reference: 'QT-20260917-000001', status: 'Submitted', quantity: 10, unitPrice: 350 } })
-  const transition = (uid, collection, id) => h.call('/procurement/:collection/:id/transition', uid, { collection, id })
-  assert.equal((await transition('outsider', 'supplierQuotes', 'q')).code, 403)
-  assert.equal((await transition('procurement', 'supplierQuotes', 'q')).code, 200)
-  let purchase = h.records.get('purchaseRequests/p')
-  assert.equal(purchase.quantity, 10); assert.equal(purchase.originalRequestedQuantity, 20); assert.equal(purchase.totalCost, 3500)
-  assert.equal((await transition('procurement', 'purchaseRequests', 'p')).code, 403)
-  assert.equal((await transition('finance', 'purchaseRequests', 'p')).code, 200)
-  assert.equal((await h.call('/logistics/purchase-requests/:id/transition', 'procurement', { id: 'p' }, { nextStatus: 'Received' })).code, 409)
-  await h.call('/logistics/purchase-requests/:id/transition', 'procurement', { id: 'p' }, { nextStatus: 'Claimed' })
-  await h.call('/logistics/purchase-requests/:id/transition', 'procurement', { id: 'p' }, { nextStatus: 'Shipped' })
-  const receipts = await Promise.all([transition('procurement', 'purchaseRequests', 'p'), h.call('/logistics/purchase-requests/:id/transition', 'procurement', { id: 'p' }, { nextStatus: 'Received' })])
-  assert.ok(receipts.every((r) => r.code === 200), JSON.stringify(receipts))
-  assert.equal(h.records.get('inventoryItems/purchase-p').currentStock, 10)
-  assert.equal([...h.records.keys()].filter((p) => p.startsWith('inventoryMovements/')).length, 1)
-  assert.equal((await h.call('/finance/purchase-requests/:id/settle', 'procurement', { id: 'p' }, { paid: true })).code, 403)
-  assert.equal((await h.call('/finance/purchase-requests/:id/settle', 'finance', { id: 'p' }, { paid: true })).code, 200)
-  assert.equal(h.records.get('purchasePayments/p').amount, 3500)
-  assert.equal(h.records.get('purchaseRequests/p').balance, 0)
-  assert.ok([...h.records].filter(([path]) => path.startsWith('notifications/')).every(([, n]) => n.recipientUserId && n.branchId === 'clinic' && !n.recipientRole))
-})
-
-test('Logistics accepts legacy Not Claimed as ready after budget approval', async () => {
-  const h = harness({ ...base(), 'purchaseRequests/p': { branchId: 'clinic', status: 'Approved', budgetStatus: 'Approved', approvedBudgetAmount: 100, logisticsStatus: 'Not Claimed' } })
-  const result = await h.call('/logistics/purchase-requests/:id/transition', 'procurement', { id: 'p' }, { nextStatus: 'Claimed' })
-  assert.equal(result.code, 200)
-})
-
-test('Failed stock receipt rolls back the purchase status and inventory', async () => {
-  const h = harness({ ...base(), 'purchaseRequests/p': { branchId: 'clinic', status: 'Approved', budgetStatus: 'Approved', approvedBudgetAmount: 100, totalCost: 100, logisticsStatus: 'Shipped', quantity: 2, inventoryItemId: 'wrong' }, 'inventoryItems/wrong': { branchId: 'other', currentStock: 10 } })
-  assert.equal((await h.call('/logistics/purchase-requests/:id/transition', 'procurement', { id: 'p' }, { nextStatus: 'Received' })).code, 403)
-  assert.equal(h.records.get('purchaseRequests/p').status, 'Approved')
-  assert.equal(h.records.get('inventoryItems/wrong').currentStock, 10)
-})
 
 const orderSeed = (stock) => ({ ...base(), 'inventoryItems/i': { branchId: 'clinic', currentStock: stock }, 'orderCheckouts/cs_test': { branchId: 'clinic', customerId: 'customer', total: 100, items: [{ id: 'product', inventoryItemId: 'i', branchId: 'clinic', name: 'Oil', price: 50, quantity: 2 }], delivery: { fullName: 'Customer' }, referenceNumber: 'ORD-12345' } })
 const paidAttributes = () => ({ metadata: { customerId: 'customer', module: 'customer_order' }, payments: [{ id: 'pay_test', attributes: { status: 'paid', amount: 10000 } }] })

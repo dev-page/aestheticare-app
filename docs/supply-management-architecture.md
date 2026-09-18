@@ -19,10 +19,15 @@ Every workflow record has `id`, `kind`, `number`, `branchId`, `status`, `created
 | evaluation | procurementId, rfqId, quotationId, supplierId, justification, evaluator; never visible to suppliers |
 | budgetRequest | evaluationId, quotationId, procurementId, budgetId, department, category, requested/approved amount, decision/remarks/decider/time |
 | budget | department, category, total, committed, spent; available = total - committed - spent |
+| financeApproval | budgetRequestId, budgetId, approvedAmount, decision, remarks, financeOfficerId, decidedAt |
+| budgetAllocation | budgetRequestId, financeApprovalId, budgetId, amount, spentAmount, releasedAmount, status |
 | po | budgetRequestId, budgetId, quotationId, supplierId, lines, total, deliveryDate/location, terms, confirmation, accepted quantities, invoiced quantities, paid amount |
+| supplierConfirmation | poId, supplierId, response, reason, confirmedDeliveryDate, respondedBy/respondedAt |
 | receiving | poId, supplierId, reference, date, lines(ordered/delivered/accepted/rejected, condition, lot, expiry, serial/model/warranty), inspection, notes, onboarded |
+| inspection | receivingId, poId, quantityResult, qualityResult, inspected lines, inspector and timestamp |
 | discrepancy | receivingId, poId, supplierId, lines, reason, resolution, responsible user |
 | invoice | poId, supplierId, receivingIds, invoiceNumber, invoiceDate/dueDate, lines, charges, total, match result, approvedBy |
+| threeWayMatch | invoiceId, poId, receivingIds, status, discrepancy issues, checker and timestamp |
 | payment | invoiceId, poId, budgetId, supplierId, amount, method(Manual/External or Electronic), reference, paymentDate, proof document; recorded payment, not money transfer |
 
 `supplyAudit`: recordId, branchId, actor UID/name/role, action, previous/new status, input snapshot, timestamp. Immutable server-written history.
@@ -38,26 +43,25 @@ flowchart LR
   Item --> Request --> Procurement --> RFQ --> Quote --> Evaluation
   Supplier --> RFQ
   Supplier --> Quote
-  Evaluation --> BudgetRequest --> Budget
-  BudgetRequest --> PO --> Receiving --> Movement --> Item
+  Evaluation --> BudgetRequest --> FinanceApproval --> BudgetAllocation --> Budget
+  BudgetAllocation --> PO --> SupplierConfirmation --> Receiving --> Inspection --> Movement --> Item
   Receiving --> Discrepancy
-  PO --> Invoice
+  PO --> Invoice --> ThreeWayMatch --> Payment
   Receiving --> Invoice
-  Invoice --> Payment
   Budget --> Payment
   PO --> Payment
 ```
 
 ## State machines and approval workflow
 
-- Request: Draft → Submitted → Under Review → Approved / Rejected / Returned. Approval creates Procurement automatically, with a deterministic ID and Sent to Procurement status. Returned requests can be revised and resubmitted. Request creators cannot approve their own requests.
-- Procurement: Received → RFQ Preparation → RFQ Sent → Evaluation → For Finance Approval → Ordered → Completed/Cancelled.
-- RFQ: Draft → Open → Closed → Under Evaluation → Awarded/Cancelled. Quotes accepted only before the deadline. Evaluation requires closure. Procurement records justification; cheapest quotation is never automatically selected.
-- Budget request: Submitted → Finance Review → Approved/Rejected/Returned. Finance cannot approve a request it originated. Approved funding is committed atomically. Retry cannot double reserve. Returned/rejected requests may be resubmitted after revision.
-- PO: Draft → Sent to Supplier → Ongoing / Rejected / Clarification Requested → Partially Received → Delivered → Completed. Official issue requires committed funding. PO rejection/clarification returns responsibility to Procurement. Cancellation releases unspent commitment; receiving or payment prevents unsafe cancellation.
-- Receiving: Inspected → Onboarded. Each receipt is a separate delivery. Accepted + rejected must equal delivered. Cumulative accepted may not exceed ordered. Onboarding is idempotent. Rejected stock never enters inventory. Rejection creates a discrepancy record requiring explicit resolution.
-- Invoice: Submitted → Under Verification → Matched/Disputed → Approved for Payment → Paid. Three-way match checks PO lines, accepted/onboarded quantities, prior invoices, prices and charges. Mismatches block payment.
-- Payment is an immutable record of a real external payment with evidence and reference. It moves committed funds to actual spending atomically. PO completes only when all goods are accepted and its invoiced amount is paid. Unused commitments are released on completion or safe cancellation.
+- Request: Draft -> Submitted -> Under Review -> Approved / Rejected / Returned. Approval creates Procurement automatically, with a deterministic ID and Sent to Procurement status. Returned requests can be revised and resubmitted. Request creators cannot approve their own requests.
+- Procurement: Received -> Under Review -> RFQ Preparation -> RFQ Sent -> Quotations Received -> Evaluation -> For Finance Approval -> Ordered -> Completed/Cancelled.
+- RFQ: Draft -> Sent -> Open -> Quotation Received -> Closed -> Under Evaluation -> Awarded/Cancelled. Invited suppliers may quote until the deadline or closure. Procurement records a recommendation and justification; price alone never selects a supplier.
+- Budget request: Submitted -> Finance Review -> Approved/Rejected/Returned. Approved funding creates explicit Finance Approval and Budget Allocation records and commits funds atomically. A retry cannot reserve twice.
+- PO: Draft -> Pending Approval -> Approved -> Sent to Supplier -> Supplier Confirmed / Rejected / Clarification Requested -> Ongoing -> Partially Received -> Delivered -> Completed. Official issue requires committed funding. Cancellation releases unused commitment.
+- Receiving: Inspected -> Onboarded. A separate Inspection record captures quantity and quality results. Accepted + rejected equals delivered; cumulative accepted cannot exceed ordered. Onboarding is idempotent and rejected stock never enters inventory.
+- Invoice: Submitted -> Under Verification -> Matched/Disputed -> Approved for Payment -> Paid. A separate Three-Way Match record compares PO, onboarded receiving, prior invoices, prices, and charges. Mismatches block payment.
+- Payment: Pending -> Under Verification -> Approved/Rejected -> Processing -> Paid. Preparation, approval by another Finance user, processing, and settlement are separate actions. Settlement records a real external transaction; it never pretends to transfer money.
 
 ## Manual and online workflows
 
@@ -99,6 +103,82 @@ Department dashboards derive counters and chart series from the same authorized 
 ## Validation plan
 
 Pure model tests cover money, DSS thresholds, quotation arithmetic, invoice matching and transitions. Transactional workflow tests cover both sourcing modes, self-approval rejection, cross-branch and supplier privacy, budget contention/idempotency, repeated/partial/rejected receiving, invoice mismatch, payment retries and budget release. Vue compilation and production build check routes/templates/imports. No live supplier communications, payments, database migration or production deployment are required for local implementation checks.
+
+## Canonical workflow and compatibility routes
+
+`SupplyWorkspace.vue` is the sole Inventory, Procurement, Logistics, and procurement-Finance transaction interface. Older URLs redirect to the matching workspace page so saved bookmarks keep working, but the duplicate components and write endpoints have been removed. Historical `purchaseRequests`, `supplierQuotes`, `purchaseOrders`, `manualPurchases`, and `purchasePayments` records remain read-only for prior reports; all new transactions use `supplyRecords`.
+
+```mermaid
+flowchart TD
+  DSS[Inventory DSS recommendation] --> IR[Inventory Request]
+  IR -->|different reviewer approves| PR[Procurement Request]
+  PR --> Mode{Manual or Online}
+  Mode --> RFQ[RFQ]
+  RFQ --> Quotes[Supplier Quotations]
+  Quotes --> Eval[Evaluation and justified selection]
+  Eval --> BR[Budget Request]
+  BR -->|Finance approves| FA[Finance Approval]
+  FA --> BA[Atomic Budget Allocation]
+  BA --> PO[Purchase Order]
+  PO --> PC[Supplier Confirmation]
+  PC --> RC[Receiving]
+  RC --> INSP[Inspection]
+  INSP -->|accepted only| Stock[Inventory Movement and Lot]
+  INSP -->|rejected| DISC[Discrepancy Resolution]
+  Stock --> Invoice[Supplier Invoice]
+  Invoice --> Match[Three-Way Match]
+  Match --> Pay[Payment Approval and External Settlement Record]
+  Pay --> Done[Completed Transaction]
+```
+
+```mermaid
+stateDiagram-v2
+  state RFQ {
+    [*] --> Draft
+    Draft --> Sent
+    Sent --> Open
+    Open --> QuotationReceived
+    QuotationReceived --> Closed
+    Closed --> UnderEvaluation
+    UnderEvaluation --> Awarded
+  }
+  state PO {
+    [*] --> Draft
+    Draft --> PendingApproval
+    PendingApproval --> Approved
+    Approved --> SentToSupplier
+    SentToSupplier --> SupplierConfirmed
+    SupplierConfirmed --> Ongoing
+    Ongoing --> PartiallyReceived
+    PartiallyReceived --> Delivered
+    Delivered --> Completed
+  }
+  state Payment {
+    [*] --> Pending
+    Pending --> UnderVerification
+    UnderVerification --> Approved
+    UnderVerification --> Rejected
+    Rejected --> Pending
+    Approved --> Processing
+    Processing --> Paid
+  }
+```
+
+## Deployment architecture
+
+```mermaid
+flowchart LR
+  Staff[Staff browser] --> API[Authenticated Express API]
+  SupplierPortal[Supplier portal] --> API
+  API --> Auth[Firebase Authentication]
+  API --> DB[(Firestore)]
+  API --> Storage[(Private Cloud Storage)]
+  Monitor[Scheduled and inventory-write monitors] --> DB
+  DB --> Notify[In-app notifications]
+  DB --> Reports[Authorized dashboards and CSV reports]
+```
+
+The API is the only workflow writer. Transactions enforce state preconditions, branch ownership, supplier identity, idempotency, budget availability, accepted quantities, invoice matching, and settlement. Suppliers receive a strict projection and explicitly shared documents only.
 
 ## Completion design
 

@@ -172,13 +172,13 @@ export default {
         label: 'Operations',
         entries: [
           { label: 'Suppliers', to: '/manager/suppliers', permission: 'inventory:view', feature: 'inventory', description: 'Manage supplier records.' },
-          { label: 'Purchase Requests', to: '/manager/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'], feature: 'inventory', description: 'Create and review purchase requests.' },
+          { label: 'Inventory Requests', to: '/supply-management/inventory/requests', permissionsAny: ['inventory:create', 'inventory:review'], feature: 'inventory', description: 'Create and review inventory requests.' },
           { label: 'Item Catalog', to: '/manager/item-catalog', permission: 'inventory:view', feature: 'inventory', description: 'Browse the item catalog.' },
           { label: 'Supply Dashboard', to: '/supply/dashboard', permission: 'inventory:view', feature: 'inventory', description: 'Open the supply dashboard.' },
           { label: 'Supply Catalog', to: '/supply/catalog', permission: 'inventory:view', feature: 'inventory', description: 'Access supply catalog pages.' },
           { label: 'Supply Requests', to: '/supply/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'], feature: 'inventory', description: 'Manage supply requests.' },
-          { label: 'Purchase History', to: '/manager/purchase-history', permission: 'finance:purchases:view', feature: 'inventory', description: 'Review inventory purchase costs.' },
-          { label: 'Accounts Payable', to: '/finance/accounts-payable', permission: 'finance:payables:view', feature: 'reports', description: 'Open accounts payable.' },
+          { label: 'Procurement Spending & History', to: '/supply-management/procurement/reports', permission: 'finance:purchases:view', feature: 'inventory', description: 'Review linked procurement records and spending.' },
+          { label: 'Supplier Invoices & Payments', to: '/supply-management/finance/invoices', permission: 'finance:payables:view', feature: 'reports', description: 'Review invoices and payment records.' },
           { label: 'Product Service Listing', to: '/manager/product-service-listing', permission: 'services:view', feature: 'services', description: 'View products and services.' },
           { label: 'Orders', to: '/manager/orders', permissionsAny: ['orders:view', 'inventory:view'], feature: 'inventory', description: 'Track branch orders.' }
         ]

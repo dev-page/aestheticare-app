@@ -21,7 +21,7 @@ export const supplierPerformance = data => (data.suppliers || []).map(s => {
 })
 export const traceRows = data => kind(data, 'request').map(request => {
   const related = (data.records || []).filter(r => r.id === request.id || r.links?.includes(request.id)), select = k => related.filter(r => r.kind === k).map(r => r.number).join('; ')
-  return { ...request, kind: 'trace', inventoryRequest: request.number, procurement: select('procurement'), rfq: select('rfq'), quotation: select('quotation'), evaluation: select('evaluation'), budgetApproval: select('budgetRequest'), purchaseOrder: select('po'), receiving: select('receiving'), invoice: select('invoice'), payment: select('payment'), links: related.map(r => r.id), total: sum(related.filter(r => r.kind === 'payment' && r.status === 'Paid'), 'total') }
+  return { ...request, kind: 'trace', inventoryRequest: request.number, procurement: select('procurement'), rfq: select('rfq'), quotation: select('quotation'), evaluation: select('evaluation'), budgetRequest: select('budgetRequest'), financeApproval: select('financeApproval'), budgetAllocation: select('budgetAllocation'), purchaseOrder: select('po'), supplierConfirmation: select('supplierConfirmation'), receiving: select('receiving'), inspection: select('inspection'), invoice: select('invoice'), threeWayMatch: select('threeWayMatch'), payment: select('payment'), links: related.map(r => r.id), total: sum(related.filter(r => r.kind === 'payment' && r.status === 'Paid'), 'total') }
 })
 export const reportDefinitions = {
   inventory: [

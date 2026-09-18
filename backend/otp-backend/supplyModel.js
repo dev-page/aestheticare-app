@@ -23,7 +23,7 @@ export const stockSignals = (item, today = day()) => {
     if (days < 0) flags.push('Expired')
     else if (days <= 30) flags.push('Expiring Soon')
   }
-  if (['damaged', 'defective', 'under repair', 'bad'].includes(String(item.condition || '').toLowerCase())) flags.push('Needs Attention')
+  if (item.itemType === 'Equipment' && ['damaged', 'defective', 'under repair', 'bad'].includes(String(item.condition || '').toLowerCase())) flags.push('Needs Attention')
   return flags
 }
 export const quoteTotals = input => {
@@ -63,12 +63,17 @@ export const permissionsByKind = {
   rfq: ['procurement:view', 'procurement:create', 'procurement:review', 'finance:payables:view'],
   quotation: ['procurement:view', 'procurement:create', 'procurement:review', 'finance:payables:view'],
   evaluation: ['procurement:view', 'procurement:review', 'finance:payables:view'],
+  financeApproval: ['procurement:view', 'procurement:review', 'finance:payables:view', 'finance:payables:approve'],
+  budgetAllocation: ['procurement:view', 'finance:payables:view', 'finance:payables:approve'],
   budget: ['finance:payables:view', 'finance:payables:approve', 'finance:payables:settle'],
   budgetRequest: ['procurement:view', 'procurement:review', 'finance:payables:view', 'finance:payables:approve'],
   po: ['procurement:view', 'procurement:review', 'orders:view', 'orders:update', 'finance:payables:view', 'finance:payables:settle'],
+  supplierConfirmation: ['procurement:view', 'procurement:review', 'orders:view'],
   receiving: ['orders:view', 'orders:update', 'inventory:view', 'finance:payables:view', 'procurement:view'],
+  inspection: ['orders:view', 'orders:update', 'inventory:view', 'finance:payables:view', 'procurement:view'],
   discrepancy: ['orders:view', 'orders:update', 'procurement:view'],
   invoice: ['finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'procurement:view'],
+  threeWayMatch: ['finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'procurement:view'],
   payment: ['finance:payables:view', 'finance:payables:settle', 'procurement:view'],
 }
 export const hasPermission = (context, permission) => context.permissions.has(permission) || context.permissions.has('administrator:full_access')
@@ -77,6 +82,6 @@ export const supplierCanRead = (record, supplierIds) => record.mode === 'Online'
   || (['quotation', 'po', 'invoice', 'payment'].includes(record.kind) && supplierIds.includes(record.supplierId) && !(record.kind === 'po' && record.status === 'Draft'))
 )
 export const supplierProjection = record => {
-  const allowed = ['id', 'kind', 'number', 'status', 'branchId', 'mode', 'supplierId', 'rfqId', 'poId', 'invoiceId', 'lines', 'subtotal', 'total', 'tax', 'discount', 'delivery', 'otherCharges', 'deadline', 'deliveryDate', 'deliveryLocation', 'terms', 'contact', 'validUntil', 'leadDays', 'paymentTerms', 'warranty', 'notes', 'invoiceNumber', 'invoiceDate', 'dueDate', 'accepted', 'paidAmount', 'createdAt', 'updatedAt', 'confirmationReason']
+  const allowed = ['id', 'kind', 'number', 'status', 'branchId', 'mode', 'supplierId', 'rfqId', 'poId', 'invoiceId', 'lines', 'subtotal', 'total', 'tax', 'discount', 'delivery', 'otherCharges', 'deadline', 'deliveryDate', 'deliveryLocation', 'terms', 'conditions', 'contact', 'validUntil', 'leadDays', 'paymentTerms', 'warranty', 'notes', 'invoiceNumber', 'invoiceDate', 'dueDate', 'accepted', 'paidAmount', 'createdAt', 'updatedAt', 'confirmationReason']
   return Object.fromEntries(allowed.filter(key => record[key] !== undefined).map(key => [key, record[key]]))
 }

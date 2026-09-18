@@ -8,7 +8,7 @@
 - Finance: `/supply-management/finance/dashboard`
 - Supplier: `/supplier/supply/dashboard`
 
-The new sidebar links use these workspaces. Existing purchase records remain accessible through the explicitly labelled legacy pages. Existing inventory items and supplier catalogs are shared; old purchase requests are not silently converted into funded purchase orders.
+The sidebar uses these canonical workspaces. Older URLs redirect to the corresponding integrated page and no parallel procurement UI remains. Existing inventory items and supplier catalogs are shared; historical purchase records remain read-only and are not silently converted into funded purchase orders.
 
 ## Implemented workflow
 
@@ -22,20 +22,18 @@ Invoices are matched against PO prices, accepted quantities, previous invoices a
 
 ## Local checks
 
-`npm.cmd test` includes static configuration checks, backend syntax, and five isolated workflow tests. The workflow adapter exercises the actual HTTP handlers with a transactional in-memory store, not a production Firebase project.
+`npm.cmd test` includes static configuration checks, backend syntax, and the complete local backend test set. The supply workflow adapter exercises the actual HTTP handlers with a transactional in-memory store, not a production Firebase project.
 
 Coverage includes both sourcing modes through payment, partial/rejected receipts, duplicate allocation/onboarding/payment attempts, invoice overbilling, invoice corrections, self approval, cross-branch writes, read-only upload restrictions, and supplier isolation. `npm.cmd run build` compiles the frontend routes and templates.
 
-## Remaining production and specification work
+## Release verification boundary
 
-These checks do not establish production readiness or completion of every item in the master specification:
+The local suite verifies Manual and Online procurement from Inventory Request through payment, including explicit approval, allocation, supplier-confirmation, inspection, three-way-match, and payment records; complete controlled state transitions; partial/rejected receipts; supplier isolation; self-approval rejection; duplicate-action protection; budget release; document authorization; and linked inventory movements.
 
-- Run the same workflows against Firebase emulators/staging with simultaneous approvals and receipts, real staff roles, supplier accounts, and signed Storage downloads. No live records were changed during local tests.
-- Workspaces currently load authorized branch records for client-side pagination and reporting. Large datasets require bounded server-side pagination, indexed reporting queries and narrower transaction reads.
-- DSS recalculates on workspace refresh. Daily reminders are deduplicated per recipient and capped at 100 alerts per refresh. An unattended scheduler and historical stock snapshots are still needed for continuous background monitoring and low-stock trend charts.
-- Dashboard charts and CSV reports cover the implemented records; the full catalog of specialized management reports and financial spending charts in the master specification is not yet complete.
-- Receipts preserve batch and equipment metadata, but available stock is still an item-level balance. Full batch allocation, serial-level tracking, and historical expiration depletion need a dedicated lot ledger.
-- Workflow statuses implement the core lifecycle, but configurable approval policies, every intermediate draft/revision state, and supplier re-sourcing after an expired award need further work.
-- The Firestore data model uses application-enforced references and server transactions, not relational database foreign-key constraints. The architecture document describes the intended model and deployment responsibilities.
+Release still requires the staging checklist: exercise concurrent users against Firebase, validate real custom-role assignments and signed Storage downloads, deploy rules/functions/indexes, confirm scheduled monitors run, rotate the development service-account credential, and obtain organizational acceptance. Local tests cannot certify infrastructure that has not been deployed.
+
+The workspace uses client-side filtering and pagination over the branch-authorized working set so reports and relationship tracing operate on one consistent snapshot. Very large production branches should introduce cursor-backed list endpoints without changing the canonical workflow.
+
+Firestore is a document database, so relationships are application-enforced IDs rather than SQL constraints. The authenticated API validates referenced records in the same branch and executes financial, receiving, and workflow mutations transactionally.
 
 Keep new supply records and private supply-document storage inaccessible to direct client writes. The authenticated backend performs permissions, branch isolation, supplier projection, validation, and audit logging.

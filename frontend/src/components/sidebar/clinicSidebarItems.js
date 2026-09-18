@@ -42,8 +42,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     children: [
       ...supplyLinks('inventory', 'inventory:view', [['dashboard', 'Inventory Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Inventory List & DSS', 'mdi:package-variant-closed'], ['requests', 'Inventory Requests', 'mdi:clipboard-plus-outline'], ['reports', 'Inventory Reports', 'mdi:chart-box-outline']]),
       { type: 'section', label: 'POSTS' },
-      { label: 'Archived Posts', icon: 'mdi:archive-outline', to: '/manager/archived-posts', permission: 'services:view' },
-      { label: 'Legacy Item Catalog', icon: 'mdi:package-variant-closed', to: '/manager/item-catalog', permission: 'inventory:view' }
+      { label: 'Archived Posts', icon: 'mdi:archive-outline', to: '/manager/archived-posts', permission: 'services:view' }
     ]
   },
   { label: 'Suppliers', icon: 'mdi:truck-delivery-outline', to: '/manager/suppliers', permission: 'inventory:view' },
@@ -54,10 +53,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     moduleKey: 'procurement',
     children: [
       ...supplyLinks('procurement', 'procurement:view', [['dashboard', 'Procurement Dashboard', 'mdi:view-dashboard-outline'], ['requests', 'Procurement Requests', 'mdi:clipboard-text-outline'], ['rfqs', 'RFQs & Quotations', 'mdi:file-compare'], ['orders', 'Purchase Orders', 'mdi:cart-check'], ['suppliers', 'Supplier Products', 'mdi:store-outline'], ['reports', 'Procurement Reports', 'mdi:file-chart-outline']]),
-      { type: 'section', label: 'PURCHASING' },
-      { label: 'Legacy Procurement', icon: 'mdi:cart-outline', to: '/manager/procurement', permissionsAny: ['procurement:view', 'procurement:create', 'procurement:review'] },
-      { label: 'Legacy Purchase Requests', icon: 'mdi:cart-plus', to: '/manager/purchase-requests', permission: 'inventory:view' },
-      { label: 'Purchase History', icon: 'mdi:history', to: '/manager/purchase-history', permission: 'finance:purchases:view' },
     ]
   },
   { key: 'logistics-module', label: 'Logistics Management', icon: 'mdi:truck-delivery-outline', children: supplyLinks('logistics', 'orders:view', [['dashboard', 'Logistics Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Receiving & Inspection', 'mdi:clipboard-check-outline'], ['onboarding', 'Inventory Onboarding', 'mdi:package-down'], ['requests', 'Requests & Discrepancies', 'mdi:alert-box-outline'], ['reports', 'Logistics Reports', 'mdi:file-chart-outline']]) },
@@ -99,8 +94,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
       { type: 'section', label: 'INCOME & PAYMENTS' },
       { label: 'Income & Payments', icon: 'mdi:cash-plus', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },
       { type: 'section', label: 'EXPENSES & BUDGET' },
-      { label: 'Expenses & Payables', icon: 'mdi:cash-minus', to: '/finance/accounts-payable', feature: 'reports', permission: 'finance:payables:view' },
-      { label: 'Purchase Budget Tracking', icon: 'mdi:chart-donut', to: '/finance/budget', feature: 'reports', permission: 'finance:payables:view' },
       { type: 'section', label: 'PAYROLL' },
       { label: 'Payroll Summary', icon: 'mdi:file-table-outline', to: '/finance/payroll-summary', feature: 'payroll', permission: 'payroll:view' },
       { label: 'Payroll Approval', icon: 'mdi:file-check-outline', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },

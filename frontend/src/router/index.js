@@ -79,11 +79,11 @@ const routes = [
   //{ path: "/hr/calendar", name: "hr-calendar", component: () => import("@/views/clinic/hr/Calendar.vue"), meta: { requiresAuth: true } },
 
   // Supply routes
-  { path: "/supply/dashboard", name: "supply-dashboard", component: () => import("@/views/admin/owner/operations/SupplyCatalog.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
+  { path: "/supply/dashboard", redirect: "/supply-management/inventory/dashboard" },
   { path: "/supply/suppliers", name: "supply-suppliers", component: () => import("@/views/admin/owner/operations/SupplySuppliers.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
-  { path: "/supply/catalog", name: "supply-catalog", component: () => import("@/views/admin/owner/operations/SupplyCatalog.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
-  { path: "/supply/purchase-requests", name: "supply-purchase-requests", component: () => import("@/views/admin/owner/operations/SupplyPurchaseRequests.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
-  { path: "/supply/logistics", name: "supply-logistics", component: () => import("@/views/admin/owner/operations/LogisticsOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
+  { path: "/supply/catalog", redirect: "/supply-management/inventory/items" },
+  { path: "/supply/purchase-requests", redirect: "/supply-management/inventory/requests" },
+  { path: "/supply/logistics", redirect: "/supply-management/logistics/dashboard" },
 
   // Owner routes
   { path: "/owner/onboarding", name: "owner-onboarding", component: () => import("@/views/admin/owner/OwnerSubscriptionOnboarding.vue"), meta: { requiresAuth: true } },
@@ -111,11 +111,11 @@ const routes = [
   { path: "/manager/staffs", name: "manager-staffs", component: () => import("@/views/admin/owner/operations/ManagerStaffs.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view" } },
   { path: "/manager/attendance", name: "manager-attendance", component: () => import("@/views/admin/owner/operations/ManagerAttendance.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:view" } },
   { path: "/manager/archived-posts", name: "manager-archived-posts", component: () => import("@/views/admin/owner/operations/ArchivedPosts.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },
-  { path: "/manager/item-catalog", name: "manager-item-catalog", component: () => import("@/views/admin/owner/operations/SupplyCatalog.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
+  { path: "/manager/item-catalog", redirect: "/supply-management/inventory/items" },
   { path: "/manager/suppliers", name: "manager-suppliers", component: () => import("@/views/admin/owner/operations/SupplySuppliers.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
-  { path: "/manager/purchase-requests", name: "manager-purchase-requests", component: () => import("@/views/admin/owner/operations/SupplyPurchaseRequests.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
-  { path: "/manager/procurement", name: "manager-procurement", component: () => import("@/views/admin/owner/operations/ProcurementManagement.vue"), meta: { requiresAuth: true, requiresPermission: "procurement:view" } },
-  { path: "/manager/logistics", name: "manager-logistics", component: () => import("@/views/admin/owner/operations/LogisticsOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
+  { path: "/manager/purchase-requests", redirect: "/supply-management/inventory/requests" },
+  { path: "/manager/procurement", redirect: "/supply-management/procurement/dashboard" },
+  { path: "/manager/logistics", redirect: "/supply-management/logistics/dashboard" },
   { path: "/manager/product-service-listing", name: "manager-product-service-listing", component: () => import("@/views/admin/owner/operations/ProductServiceListing.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },
   { path: "/manager/orders", name: "manager-orders", component: () => import("@/views/admin/owner/operations/ManagerOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
 
@@ -137,10 +137,10 @@ const routes = [
   { path: "/finance/sales", name: "finance-sales", component: () => import("@/views/admin/owner/finance/FinanceSales.vue"), meta: { requiresAuth: true, requiresPermission: "finance:sales:view", requiresFeature: "reports" } },
   { path: "/finance/refunds", name: "finance-refunds", component: () => import("@/views/admin/owner/finance/FinanceRefunds.vue"), meta: { requiresAuth: true, requiresPermission: "finance:refunds:view", requiresFeature: "reports" } },
   { path: "/finance/reports", name: "finance-reports", component: () => import("@/views/admin/owner/finance/FinanceReports.vue"), meta: { requiresAuth: true, requiresPermission: "finance:reports:view", requiresFeature: "reports" } },
-  { path: "/manager/purchase-history", name: "manager-purchase-history", component: () => import("@/views/admin/owner/finance/FinanceInventoryPurchases.vue"), meta: { requiresAuth: true, requiresPermission: "finance:purchases:view", requiresFeature: "inventory" } },
+  { path: "/manager/purchase-history", redirect: "/supply-management/procurement/reports" },
   { path: "/finance/inventory-purchases", redirect: "/manager/purchase-history" },
-  { path: "/finance/accounts-payable", name: "finance-accounts-payable", component: () => import("@/views/admin/owner/finance/FinanceAccountsPayable.vue"), meta: { requiresAuth: true, requiresPermission: "finance:payables:view", requiresFeature: "reports" } },
-  { path: "/finance/budget", name: "finance-budget", component: () => import("@/views/admin/owner/finance/FinanceBudget.vue"), meta: { requiresAuth: true, requiresPermission: "finance:payables:view", requiresFeature: "reports" } },
+  { path: "/finance/accounts-payable", redirect: "/supply-management/finance/invoices" },
+  { path: "/finance/budget", redirect: "/supply-management/finance/budgets" },
   { path: "/finance/requests", name: "finance-requests", component: () => import("@/views/admin/owner/finance/FinanceRequests.vue"), meta: { requiresAuth: true, requiresPermission: "finance:payables:view", requiresFeature: "reports" } },
   { path: "/finance/payroll-summary", name: "finance-payroll-summary", component: () => import("@/views/admin/owner/finance/FinancePayrollSummary.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:view", requiresFeature: "payroll" } },
   { path: "/finance/payroll-approval", name: "finance-payroll-approval", component: () => import("@/views/admin/owner/finance/FinancePayrollApproval.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:approve", requiresFeature: "payroll" } },
@@ -157,10 +157,10 @@ const routes = [
 
   // Supplier routes
   { path: "/supplier", redirect: "/supplier/dashboard" },
-  { path: "/supplier/dashboard", name: "supplier-dashboard", component: () => import("@/views/supplier/SupplierDashboard.vue"), meta: { requiresAuth: true } },
+  { path: "/supplier/dashboard", redirect: "/supplier/supply/dashboard" },
   { path: "/supplier/profile", name: "supplier-profile", component: () => import("@/views/supplier/SupplierProfile.vue"), meta: { requiresAuth: true } },
   { path: "/supplier/supplies", name: "supplier-supplies", component: () => import("@/views/supplier/SupplierSupplies.vue"), meta: { requiresAuth: true } },
-  { path: "/supplier/quote-requests", name: "supplier-quote-requests", component: () => import("@/views/supplier/SupplierQuoteRequests.vue"), meta: { requiresAuth: true } },
+  { path: "/supplier/quote-requests", redirect: "/supplier/supply/rfqs" },
 
   // Superadmin routes
   { path: "/superadmin/dashboard", name: "superadmin-dashboard", component: () => import("@/views/superAdmin/Dashboard.vue"), meta: { requiresAuth: true, requiresPermission: "system:dashboard:view" } },
