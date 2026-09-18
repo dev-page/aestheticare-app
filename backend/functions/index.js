@@ -3,6 +3,7 @@ const admin = require('firebase-admin')
 const { ServerClient } = require('postmark')
 
 admin.initializeApp()
+Object.assign(exports, require('./supplyMonitoring')({ admin, functions }))
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const GRACE_DAYS = 7

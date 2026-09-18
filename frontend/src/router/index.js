@@ -9,6 +9,8 @@ import { auth, db } from "@/config/firebaseConfig";
 const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 
 const routes = [
+  { path: '/supply-management/:department(inventory|procurement|logistics|finance|management)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true } },
+  { path: '/supplier/supply/:page?', name: 'supplier-supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true } },
 
   ...(isMobileApp
     ? [{ path: "/", redirect: "/login" }]

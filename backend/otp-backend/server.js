@@ -1,6 +1,7 @@
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { registerProcurementWorkflow } from './procurementWorkflow.js'
+import { registerSupplyWorkflow } from './supplyWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import { registerWalkInPayments } from './walkInWorkflow.js'
@@ -146,6 +147,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions))
 app.options(/.*/, cors(corsOptions))
+app.use('/supply', express.json({ limit: '8mb' }))
 app.use(express.json())
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && Object.prototype.hasOwnProperty.call(error, 'body')) {
@@ -1882,6 +1884,7 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
 })
 
 registerSupplierQuoteRoutes(app, { admin, requireAuth })
+registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
 registerProcurementWorkflow(app, { admin, requireAuth, loadUserContext })
 registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders })
 registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext })

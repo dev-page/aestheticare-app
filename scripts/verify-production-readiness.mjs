@@ -12,6 +12,8 @@ const requiredFiles = [
   'frontend/src/config/clinicPermissionRegistry.js',
   'frontend/src/components/sidebar/clinicSidebarItems.js',
   'backend/otp-backend/server.js',
+  'backend/otp-backend/procurementWorkflow.js',
+  'backend/otp-backend/supplyWorkflow.js',
 ]
 
 const requiredSnippets = [
@@ -22,8 +24,10 @@ const requiredSnippets = [
   ['frontend/src/config/clinicPermissionRegistry.js', 'finance:payables:settle'],
   ['firestore.rules', 'match /refundRequests/{requestId}'],
   ['firestore.rules', 'match /refundVouchers/{voucherId}'],
-  ['firestore.rules', "hasPermission('finance:payables:approve')"],
-  ['backend/otp-backend/server.js', '/finance/purchase-requests/:id/settle'],
+  ['backend/otp-backend/procurementWorkflow.js', "permissions.has('finance:payables:approve')"],
+  ['backend/otp-backend/procurementWorkflow.js', '/finance/purchase-requests/:id/settle'],
+  ['backend/otp-backend/server.js', 'registerSupplyWorkflow(app'],
+  ['backend/otp-backend/supplyWorkflow.js', "allow(ctx, 'finance:payables:approve')"],
 ]
 
 const failures = []

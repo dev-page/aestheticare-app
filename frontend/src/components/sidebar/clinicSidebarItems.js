@@ -1,4 +1,6 @@
+const supplyLinks = (department, permission, entries) => entries.map(([page, label, icon]) => ({ label, icon, to: `/supply-management/${department}/${page}`, permission }))
 export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEmployee = false } = {}) => [
+  { label: 'Supply Management Overview', icon: 'mdi:chart-timeline-variant', to: '/supply-management/management/dashboard', permission: 'reports:view' },
   { label: 'Dashboard', icon: 'dashboard', to: dashboardTo },
   {
     key: 'clinic-setup',
@@ -38,9 +40,10 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     icon: 'mdi:warehouse',
     moduleKey: 'inventory',
     children: [
+      ...supplyLinks('inventory', 'inventory:view', [['dashboard', 'Inventory Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Inventory List & DSS', 'mdi:package-variant-closed'], ['requests', 'Inventory Requests', 'mdi:clipboard-plus-outline'], ['reports', 'Inventory Reports', 'mdi:chart-box-outline']]),
       { type: 'section', label: 'POSTS' },
       { label: 'Archived Posts', icon: 'mdi:archive-outline', to: '/manager/archived-posts', permission: 'services:view' },
-      { label: 'Item Catalog', icon: 'mdi:package-variant-closed', to: '/manager/item-catalog', permission: 'inventory:view' }
+      { label: 'Legacy Item Catalog', icon: 'mdi:package-variant-closed', to: '/manager/item-catalog', permission: 'inventory:view' }
     ]
   },
   { label: 'Suppliers', icon: 'mdi:truck-delivery-outline', to: '/manager/suppliers', permission: 'inventory:view' },
@@ -50,13 +53,14 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     icon: 'mdi:cart-outline',
     moduleKey: 'procurement',
     children: [
+      ...supplyLinks('procurement', 'procurement:view', [['dashboard', 'Procurement Dashboard', 'mdi:view-dashboard-outline'], ['requests', 'Procurement Requests', 'mdi:clipboard-text-outline'], ['rfqs', 'RFQs & Quotations', 'mdi:file-compare'], ['orders', 'Purchase Orders', 'mdi:cart-check'], ['suppliers', 'Supplier Products', 'mdi:store-outline'], ['reports', 'Procurement Reports', 'mdi:file-chart-outline']]),
       { type: 'section', label: 'PURCHASING' },
-      { label: 'Procurement', icon: 'mdi:cart-outline', to: '/manager/procurement', permissionsAny: ['procurement:view', 'procurement:create', 'procurement:review'] },
-      { label: 'Purchase Requests', icon: 'mdi:cart-plus', to: '/manager/purchase-requests', permission: 'inventory:view' },
+      { label: 'Legacy Procurement', icon: 'mdi:cart-outline', to: '/manager/procurement', permissionsAny: ['procurement:view', 'procurement:create', 'procurement:review'] },
+      { label: 'Legacy Purchase Requests', icon: 'mdi:cart-plus', to: '/manager/purchase-requests', permission: 'inventory:view' },
       { label: 'Purchase History', icon: 'mdi:history', to: '/manager/purchase-history', permission: 'finance:purchases:view' },
     ]
   },
-  { label: 'Logistics', icon: 'truck', to: '/manager/logistics', permissionsAny: ['orders:view', 'inventory:view'] },
+  { key: 'logistics-module', label: 'Logistics Management', icon: 'mdi:truck-delivery-outline', children: supplyLinks('logistics', 'orders:view', [['dashboard', 'Logistics Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Receiving & Inspection', 'mdi:clipboard-check-outline'], ['onboarding', 'Inventory Onboarding', 'mdi:package-down'], ['requests', 'Requests & Discrepancies', 'mdi:alert-box-outline'], ['reports', 'Logistics Reports', 'mdi:file-chart-outline']]) },
   {
     key: 'hr-module',
     label: 'Human Resources',
@@ -89,6 +93,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     icon: 'mdi:finance',
     moduleKey: 'finance',
     children: [
+      ...supplyLinks('finance', 'finance:payables:view', [['dashboard', 'Procurement Finance', 'mdi:finance'], ['budgets', 'Budget Allocations', 'mdi:bank-outline'], ['requests', 'Funding Requests', 'mdi:cash-check'], ['invoices', 'Supplier Invoices & Payments', 'mdi:receipt-text-check-outline'], ['reports', 'Procurement Finance Reports', 'mdi:chart-donut']]),
       { label: 'Listing Approvals', icon: 'mdi:clipboard-check-outline', to: '/finance/listing-approvals', permission: 'finance:reports:view' },
       { label: 'Finance Dashboard', icon: 'mdi:chart-pie', to: '/finance/dashboard', feature: 'reports', permission: 'finance:reports:view' },
       { type: 'section', label: 'INCOME & PAYMENTS' },
