@@ -108,6 +108,8 @@ Pure model tests cover money, DSS thresholds, quotation arithmetic, invoice matc
 
 `SupplyWorkspace.vue` is the sole Inventory, Procurement, Logistics, and procurement-Finance transaction interface. Older URLs redirect to the matching workspace page so saved bookmarks keep working, but the duplicate components and write endpoints have been removed. Historical `purchaseRequests`, `supplierQuotes`, `purchaseOrders`, `manualPurchases`, and `purchasePayments` records remain read-only for prior reports; all new transactions use `supplyRecords`.
 
+Clinic users enter through module-owned namespaces: `/inventory`, `/procurement`, `/logistics`, `/finance/procurement`, and `/management/supply`. Suppliers are external identities with their own account lifecycle and isolated `/supplier/...` portal. Router guards, backend projections, and record permissions prevent supplier identities from opening clinic module routes or seeing internal requests, evaluations, budgets, approvals, and competing quotations.
+
 ```mermaid
 flowchart TD
   DSS[Inventory DSS recommendation] --> IR[Inventory Request]

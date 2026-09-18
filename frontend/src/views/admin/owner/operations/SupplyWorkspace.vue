@@ -16,7 +16,7 @@
         <template v-else>
           <div class="mb-4 flex flex-wrap gap-2">
             <button v-if="page === 'items' && can('inventory:create')" @click="openItem()">Add inventory item</button>
-            <button v-if="page === 'suppliers' &amp;&amp; can('suppliers:create')" @click="openForm('supplier')">Add manual supplier</button><router-link v-if="page === 'suppliers'" to="/manager/suppliers" class="rounded border px-3 py-2">Manage / invite suppliers</router-link><button v-if="page === 'requests' && department === 'inventory' && can('inventory:create')" @click="openForm('request')">New inventory request</button>
+            <button v-if="page === 'suppliers' &amp;&amp; can('suppliers:create')" @click="openForm('supplier')">Add manual supplier</button><router-link v-if="page === 'suppliers'" to="/procurement/suppliers/directory" class="rounded border px-3 py-2">Manage / invite suppliers</router-link><button v-if="page === 'requests' && department === 'inventory' && can('inventory:create')" @click="openForm('request')">New inventory request</button>
             <button v-if="page === 'budgets' && can('finance:payables:approve')" @click="openForm('budget')">Create budget</button>
             <select v-if="page === 'reports'" v-model="reportKey" aria-label="Report type"><option v-for="(r,index) in availableReports" :key="r.key" :value="index === 0 ? '' : r.key">{{ r.label }}</option></select><button @click="exportCsv">Export filtered report</button>
           </div>
@@ -70,13 +70,14 @@ import { dashboardCharts, reportDefinitions, exportReportCsv } from '@/utils/sup
 
 const route = useRoute()
 const supplierView = computed(() => route.path.startsWith('/supplier/'))
-const department = computed(() => supplierView.value ? 'supplier' : route.params.department || 'inventory')
+const department = computed(() => supplierView.value ? 'supplier' : route.meta.supplyDepartment || route.params.department || 'inventory')
 const page = computed(() => route.params.page || 'dashboard')
 const departmentLabel = computed(() => ({ inventory: 'Inventory Management', procurement: 'Procurement Management', logistics: 'Logistics Management', finance: 'Procurement Finance', management: 'Management Overview', supplier: 'Supplier Portal' })[department.value])
 const pageTitle = computed(() => ({ dashboard: 'Dashboard', items: department.value === 'logistics' ? 'Receiving & inspection' : 'Inventory List · DSS', requests: 'Requests', orders: 'Purchase Orders', suppliers: 'Supplier List', reports: 'Reports & Traceability', onboarding: 'Inventory Onboarding', budgets: 'Budget Allocations', invoices: 'Invoices & Payments', rfqs: 'RFQs & Quotations' })[page.value] || 'Supply Management')
 const intro = computed(() => ({ inventory: 'Monitor stock, review DSS recommendations, and request replenishment.', procurement: 'Source quotations, record your evaluation, and issue funded purchase orders.', logistics: 'Inspect deliveries and onboard only accepted quantities into inventory.', finance: 'Reserve budgets, match invoices to accepted deliveries, and record supplier payments.', supplier: 'Respond to your RFQs, confirm orders, and track invoice and payment status.' })[department.value])
 const tabMap = { management: ['dashboard','reports'], inventory: ['dashboard','items','requests','reports'], procurement: ['dashboard','requests','rfqs','orders','suppliers','reports'], logistics: ['dashboard','items','onboarding','requests','reports'], finance: ['dashboard','budgets','requests','invoices','reports'], supplier: ['dashboard','rfqs','orders','invoices','reports'] }
-const tabs = computed(() => (tabMap[department.value] || []).map(key => ({ key, label: ({ items: department.value === 'logistics' ? 'Inspection' : 'Inventory List', rfqs: 'RFQs & Quotes', onboarding: 'Onboarding', invoices: 'Invoices & Payments' })[key] || label(key), to: supplierView.value ? `/supplier/supply/${key}` : `/supply-management/${department.value}/${key}` })))
+const clinicSupplyPath = (module, targetPage) => ({ finance: `/finance/procurement/${targetPage}`, management: `/management/supply/${targetPage}` })[module] || `/${module}/${targetPage}`
+const tabs = computed(() => (tabMap[department.value] || []).map(key => ({ key, label: ({ items: department.value === 'logistics' ? 'Inspection' : 'Inventory List', rfqs: 'RFQs & Quotes', onboarding: 'Onboarding', invoices: 'Invoices & Payments' })[key] || label(key), to: supplierView.value ? `/supplier/supply/${key}` : clinicSupplyPath(department.value, key) })))
 const data = ref({ records: [], items: [], suppliers: [], branches: [], movements: [], permissions: [] }), branchId = ref(''), loading = ref(true), busy = ref(false), error = ref(''), notice = ref('')
 const selected = ref(null), history = ref({ history: [], documents: [] }), shareDocument = ref(false)
 const search = ref(''), status = ref(''), type = ref(''), departmentFilter = ref(''), supplierFilter = ref(''), categoryFilter = ref(''), fromDate = ref(''), toDate = ref(''), sort = ref('newest'), currentPage = ref(1)

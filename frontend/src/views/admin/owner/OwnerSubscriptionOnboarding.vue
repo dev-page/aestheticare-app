@@ -168,7 +168,7 @@ const continueWithoutPlan = async () => {
   savingDismissal.value = true
   try {
     await saveDismissalPreference()
-    if (dontShowAgain.value) await router.push('/owner/dashboard')
+    if (dontShowAgain.value) await router.push('/clinic/dashboard')
   } finally {
     savingDismissal.value = false
   }

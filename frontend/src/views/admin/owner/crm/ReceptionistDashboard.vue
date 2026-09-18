@@ -11,7 +11,7 @@
           <p class="text-slate-400">Daily overview of clients, appointments, messages, and transactions.</p>
         </div>
         <router-link
-          to="/receptionist/appointment-requests"
+          to="/crm/appointments/requests"
           class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-cyan-500"
         >
           Review Appointment Requests

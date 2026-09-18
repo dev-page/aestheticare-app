@@ -40,8 +40,8 @@ const EMAIL_REGEX = /^[A-Za-z0-9._]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
 
 const roleRoutes = {
   Superadmin: "/superadmin/dashboard",
-  Owner: "/owner/dashboard",
-  "Clinic Admin": "/owner/dashboard",
+  Owner: "/clinic/dashboard",
+  "Clinic Admin": "/clinic/dashboard",
   Supplier: "/supplier/dashboard",
   Customer: "/customer/home"
 }
@@ -129,11 +129,11 @@ const requestLoginOtp = async (uid, emailAddress, credentials = null) => {
 const resolveRedirectPath = async (userData) => {
   const userType = String(userData?.userType || '').trim().toLowerCase()
   if (userType === 'staff' && userData?.mustChangePassword === true) {
-    return '/employee/change-password'
+    return '/account/change-password'
   }
 
   if (userType === 'staff') {
-    return '/employee/dashboard'
+    return '/workspace/dashboard'
   }
 
   const role = normalizeRoleKey(userData?.role || userData?.customRoleName || userData?.userType)

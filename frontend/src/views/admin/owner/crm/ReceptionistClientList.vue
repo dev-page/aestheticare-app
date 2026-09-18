@@ -9,7 +9,7 @@
           <p class="text-slate-400">View and search all clients registered in your branch.</p>
         </div>
         <router-link
-          to="/receptionist/clients/add"
+          to="/crm/clients/new"
           class="px-4 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-sm"
         >
           Walk-In

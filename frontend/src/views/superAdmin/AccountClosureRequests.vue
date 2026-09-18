@@ -421,7 +421,7 @@ export default {
               type: 'account_closure_review',
               title: 'Account Closure Request Reviewed',
               message: 'Your account closure request was rejected. Please check the review note for details.',
-              link: '/owner/account/closure',
+              link: '/account/closure',
               read: false,
               createdAt: serverTimestamp(),
             })
@@ -503,7 +503,7 @@ export default {
             type: 'account_closure_review',
             title: 'Account Closure Request Approved',
             message: `Your clinic ownership was transferred to ${selectedRequest.value.transferEmail}.`,
-            link: '/owner/account/closure',
+            link: '/account/closure',
             read: false,
             createdAt: serverTimestamp(),
           })
@@ -514,7 +514,7 @@ export default {
             type: 'ownership_transfer',
             title: 'Clinic Ownership Assigned',
             message: 'You have been assigned as the owner for transferred clinic branches.',
-            link: '/owner/dashboard',
+            link: '/clinic/dashboard',
             read: false,
             createdAt: serverTimestamp(),
           })
@@ -530,7 +530,7 @@ export default {
               type: 'account_closure_review',
               title: 'Account Closure Request Approved',
               message: 'Your clinic closure request was approved. Connected branches are now inactive.',
-              link: '/owner/account/closure',
+              link: '/account/closure',
               read: false,
               createdAt: serverTimestamp(),
             })
@@ -546,7 +546,7 @@ export default {
               type: 'account_closure_review',
               title: 'Account Closure Request Approved',
               message: 'Your owner account has been closed. Clinic branches remain active.',
-              link: '/owner/account/closure',
+              link: '/account/closure',
               read: false,
               createdAt: serverTimestamp(),
             })

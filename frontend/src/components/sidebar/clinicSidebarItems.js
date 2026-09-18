@@ -1,15 +1,16 @@
-const supplyLinks = (department, permission, entries) => entries.map(([page, label, icon]) => ({ label, icon, to: `/supply-management/${department}/${page}`, permission }))
-export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEmployee = false } = {}) => [
+const supplyPath = (department, page) => ({ finance: `/finance/procurement/${page}`, management: `/management/supply/${page}` })[department] || `/${department}/${page}`
+const supplyLinks = (department, permission, entries) => entries.map(([page, label, icon]) => ({ label, icon, to: supplyPath(department, page), permission }))
+export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isEmployee = false } = {}) => [
   { label: 'Dashboard', icon: 'dashboard', to: dashboardTo },
   {
     key: 'clinic-setup',
     label: 'Clinic Setup',
     icon: 'mdi:hospital-building',
     children: [
-      { label: 'Branch Info', icon: 'mdi:map-marker-outline', to: '/owner/branch/branch-info', permission: 'branches:view' },
-      { label: 'Add Branch', icon: 'mdi:office-building-plus-outline', to: '/owner/branch/add-branch', feature: 'multi_branch', permission: 'branches:create' },
-      { label: 'Clinic Page', icon: 'mdi:web', to: '/owner/clinic-page', permission: 'clinic_profile:update' },
-      { label: 'Policy Management', icon: 'mdi:file-document-outline', to: '/owner/policies', permissionsAny: ['policies:view', 'policies:update'] }
+      { label: 'Branch Info', icon: 'mdi:map-marker-outline', to: '/clinic/branches', permission: 'branches:view' },
+      { label: 'Add Branch', icon: 'mdi:office-building-plus-outline', to: '/clinic/branches/new', feature: 'multi_branch', permission: 'branches:create' },
+      { label: 'Clinic Page', icon: 'mdi:web', to: '/clinic/page', permission: 'clinic_profile:update' },
+      { label: 'Policy Management', icon: 'mdi:file-document-outline', to: '/clinic/policies', permissionsAny: ['policies:view', 'policies:update'] }
     ]
   },
   {
@@ -19,18 +20,18 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     moduleKey: 'crm',
     children: [
       { type: 'section', label: 'CLIENTS' },
-      { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/receptionist/clients', permission: 'clients:view' },
-      { label: 'Walk-In', icon: 'mdi:walk', to: '/receptionist/clients/add', permission: 'clients:create' },
+      { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/crm/clients', permission: 'clients:view' },
+      { label: 'Walk-In', icon: 'mdi:walk', to: '/crm/clients/new', permission: 'clients:create' },
       { type: 'section', label: 'APPOINTMENTS' },
-      { label: 'Appointments', icon: 'mdi:calendar-month-outline', to: '/receptionist/appointments', permission: 'appointments:view' },
-      { label: 'Booking Requests', icon: 'mdi:calendar-question', to: '/receptionist/appointment-requests', permission: 'appointments:review' },
-      { label: 'Online Consultation', icon: 'mdi:video-outline', to: '/practitioner/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
+      { label: 'Appointments', icon: 'mdi:calendar-month-outline', to: '/crm/appointments', permission: 'appointments:view' },
+      { label: 'Booking Requests', icon: 'mdi:calendar-question', to: '/crm/appointments/requests', permission: 'appointments:review' },
+      { label: 'Online Consultation', icon: 'mdi:video-outline', to: '/clinical/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
       { type: 'section', label: 'PAYMENTS & MESSAGES' },
-      { label: 'POS', icon: 'mdi:cash-register', to: '/receptionist/pos', permission: 'payments:create' },
-      { label: 'Transactions', icon: 'mdi:receipt-text-outline', to: '/receptionist/transactions/history', permission: 'payments:view' },
+      { label: 'POS', icon: 'mdi:cash-register', to: '/crm/pos', permission: 'payments:create' },
+      { label: 'Transactions', icon: 'mdi:receipt-text-outline', to: '/crm/transactions', permission: 'payments:view' },
       { type: 'section', label: 'ORDERS' },
-      { label: 'Customer Orders', icon: 'mdi:shopping-outline', to: '/manager/orders', permissionsAny: ['orders:view', 'inventory:view'] },
-      { label: 'Inbox', icon: 'mdi:email-outline', to: '/receptionist/inbox', permission: 'inbox:view' }
+      { label: 'Customer Orders', icon: 'mdi:shopping-outline', to: '/operations/orders', permissionsAny: ['orders:view', 'inventory:view'] },
+      { label: 'Inbox', icon: 'mdi:email-outline', to: '/crm/inbox', permission: 'inbox:view' }
     ]
   },
   {
@@ -39,8 +40,8 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     icon: 'mdi:format-list-bulleted',
     moduleKey: 'operations',
     children: [
-      { label: 'Product & Service Listing', icon: 'mdi:format-list-bulleted', to: '/manager/product-service-listing', permission: 'services:view' },
-      { label: 'Archived Posts', icon: 'mdi:archive-outline', to: '/manager/archived-posts', permission: 'services:view' }
+      { label: 'Product & Service Listing', icon: 'mdi:format-list-bulleted', to: '/catalog/products-services', permission: 'services:view' },
+      { label: 'Archived Posts', icon: 'mdi:archive-outline', to: '/catalog/archived', permission: 'services:view' }
     ]
   },
   {
@@ -59,7 +60,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
       { type: 'section', label: 'PROCUREMENT WORKFLOW' },
       ...supplyLinks('procurement', 'procurement:view', [['dashboard', 'Procurement Dashboard', 'mdi:view-dashboard-outline'], ['requests', 'Procurement Requests', 'mdi:clipboard-text-outline'], ['rfqs', 'RFQs & Quotations', 'mdi:file-compare'], ['orders', 'Purchase Orders', 'mdi:cart-check']]),
       { type: 'section', label: 'SUPPLIER MANAGEMENT' },
-      { label: 'Supplier Directory', icon: 'mdi:truck-delivery-outline', to: '/manager/suppliers', permission: 'inventory:view' },
+      { label: 'Supplier Directory', icon: 'mdi:truck-delivery-outline', to: '/procurement/suppliers/directory', permission: 'inventory:view' },
       ...supplyLinks('procurement', 'procurement:view', [['suppliers', 'Supplier Products', 'mdi:store-outline']]),
       { type: 'section', label: 'REPORTING' },
       ...supplyLinks('procurement', 'procurement:view', [['reports', 'Procurement Reports', 'mdi:file-chart-outline']])
@@ -109,13 +110,13 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     moduleKey: 'hr',
     children: [
       { type: 'section', label: 'EMPLOYEES' },
-      { label: 'Employee Profiles', icon: 'mdi:card-account-details-outline', to: '/owner/staff/profiles', feature: 'staff_management', permission: 'staff:view' },
-      { label: 'Create Account', icon: 'mdi:account-plus-outline', to: '/owner/staff/add-staff', feature: 'staff_management', permission: 'staff:create' },
-      { label: 'Archived Employees', icon: 'mdi:account-off-outline', to: '/owner/staff/archived', feature: 'staff_management', permission: 'staff:view' },
-      { label: 'Attendance', icon: 'mdi:calendar-check-outline', to: '/owner/staff/attendance', feature: 'attendance', permission: 'attendance:view' },
+      { label: 'Employee Profiles', icon: 'mdi:card-account-details-outline', to: '/hr/employees', feature: 'staff_management', permission: 'staff:view' },
+      { label: 'Create Account', icon: 'mdi:account-plus-outline', to: '/hr/employees/new', feature: 'staff_management', permission: 'staff:create' },
+      { label: 'Archived Employees', icon: 'mdi:account-off-outline', to: '/hr/employees/archived', feature: 'staff_management', permission: 'staff:view' },
+      { label: 'Attendance', icon: 'mdi:calendar-check-outline', to: '/hr/attendance', feature: 'attendance', permission: 'attendance:view' },
       { type: 'section', label: 'ROLES & REPORTING' },
-      { label: 'Roles', icon: 'mdi:shield-account-outline', to: '/owner/staff/roles', feature: 'staff_management', permission: 'roles:manage', ownerOnly: true },
-      { label: 'HR Reports', icon: 'mdi:chart-box-outline', to: '/owner/reports', feature: 'reports', permission: 'reports:view' },
+      { label: 'Roles', icon: 'mdi:shield-account-outline', to: '/hr/roles', feature: 'staff_management', permission: 'roles:manage', ownerOnly: true },
+      { label: 'HR Reports', icon: 'mdi:chart-box-outline', to: '/hr/reports', feature: 'reports', permission: 'reports:view' },
       { type: 'section', label: 'SHIFTS' },
       { label: 'Add Shift', icon: 'mdi:clock-plus-outline', to: '/hr/add-shift', feature: 'hr', permission: 'hr:create' },
       { label: 'Shift Assignment', icon: 'mdi:calendar-account-outline', to: '/hr/schedule-assignment', feature: 'hr', permission: 'hr:update' },
@@ -133,12 +134,12 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/owner/dashboard', isEm
     label: 'Account Settings',
     icon: 'settings',
     children: [
-      { label: 'Profile', icon: 'profile', to: isEmployee ? '/employee/profile' : '/owner/clinic-profile' },
-      { label: 'Change Password', icon: 'key', to: '/change-password' },
+      { label: 'Profile', icon: 'profile', to: isEmployee ? '/account/profile' : '/clinic/profile' },
+      { label: 'Change Password', icon: 'key', to: '/account/change-password' },
       ...(!isEmployee ? [
-        { label: 'Subscription Plan', icon: 'mdi:card-account-details-star-outline', to: '/owner/account/subscription', permission: 'subscription:view' },
-        { label: 'Account Access', icon: 'account-off', to: '/owner/account/closure', permission: 'subscription:view' },
-        { label: 'Backup Database', icon: 'mdi:database-export-outline', to: '/owner/account/backup', permission: 'backup:view' },
+        { label: 'Subscription Plan', icon: 'mdi:card-account-details-star-outline', to: '/account/subscription', permission: 'subscription:view' },
+        { label: 'Account Access', icon: 'account-off', to: '/account/closure', permission: 'subscription:view' },
+        { label: 'Backup Database', icon: 'mdi:database-export-outline', to: '/account/backup', permission: 'backup:view' },
         { label: 'Activities', icon: 'mdi:clipboard-text-clock-outline', to: '/activities', permission: 'activities:view' },
       ] : []),
       { label: 'Notifications', icon: 'bell', to: '/notifications' },

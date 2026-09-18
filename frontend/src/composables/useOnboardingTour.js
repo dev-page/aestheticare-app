@@ -49,10 +49,10 @@ const tourCatalog = {
 const getTourKey = (path) => {
   const normalized = String(path || '').toLowerCase()
   if (normalized.startsWith('/customer')) return 'customer'
-  if (normalized.startsWith('/owner')) return 'owner'
+  if (normalized.startsWith('/supplier')) return 'supplier'
+  if (normalized.startsWith('/clinic')) return 'owner'
   if (normalized.startsWith('/superadmin')) return 'superadmin'
-  if (normalized.startsWith('/supply')) return 'supplier'
-  if (normalized.startsWith('/employee') || normalized.startsWith('/manager') || normalized.startsWith('/hr') || normalized.startsWith('/finance') || normalized.startsWith('/receptionist') || normalized.startsWith('/practitioner') || normalized.startsWith('/cashier')) return 'employee'
+  if (['/workspace', '/clinical', '/crm', '/operations', '/catalog', '/inventory', '/procurement', '/logistics', '/management', '/hr', '/finance'].some((prefix) => normalized.startsWith(prefix))) return 'employee'
   return ''
 }
 
@@ -197,7 +197,7 @@ export const useOnboardingTour = ({ route, user }) => {
       }
       // The clinic owner tutorial belongs on the dashboard, not on the
       // subscription onboarding or checkout screens.
-      if (routeTourKey.value === 'owner' && String(nextPath || '').toLowerCase() !== '/owner/dashboard') {
+      if (routeTourKey.value === 'owner' && String(nextPath || '').toLowerCase() !== '/clinic/dashboard') {
         activeTourKey.value = ''
         isOpen.value = false
         return

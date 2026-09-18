@@ -19,12 +19,27 @@ const requiredSnippets = [
   ['frontend/src/router/index.js', 'finance:payables:view'],
   ['frontend/src/router/index.js', 'finance:refunds:view'],
   ['frontend/src/router/index.js', 'manager/purchase-history'],
+  ['frontend/src/router/index.js', "'/:department(inventory|procurement|logistics)/:page?'"],
+  ['frontend/src/router/index.js', "'/supplier/supply/:page?'"],
+  ['frontend/src/router/index.js', "routePath.startsWith('/supplier')"],
+  ['frontend/src/components/sidebar/clinicSidebarItems.js', "to: '/crm/clients'"],
+  ['frontend/src/components/sidebar/clinicSidebarItems.js', "to: '/hr/employees'"],
+  ['frontend/src/components/sidebar/clinicSidebarItems.js', "to: '/procurement/suppliers/directory'"],
   ['frontend/src/config/clinicPermissionRegistry.js', 'finance:refunds:manage'],
   ['frontend/src/config/clinicPermissionRegistry.js', 'finance:payables:settle'],
   ['firestore.rules', 'match /refundRequests/{requestId}'],
   ['firestore.rules', 'match /refundVouchers/{voucherId}'],
   ['backend/otp-backend/server.js', 'registerSupplyWorkflow(app'],
   ['backend/otp-backend/supplyWorkflow.js', "allow(ctx, 'finance:payables:approve')"],
+]
+
+const forbiddenSnippets = [
+  ['frontend/src/components/sidebar/clinicSidebarItems.js', '/receptionist/'],
+  ['frontend/src/components/sidebar/clinicSidebarItems.js', '/manager/'],
+  ['frontend/src/components/sidebar/clinicSidebarItems.js', '/practitioner/'],
+  ['frontend/src/components/sidebar/clinicSidebarItems.js', '/owner/'],
+  ['frontend/src/components/sidebar/clinicSidebarItems.js', '/employee/'],
+  ['frontend/src/components/sidebar/clinicSidebarItems.js', '/supply-management/'],
 ]
 
 const failures = []
@@ -41,6 +56,15 @@ for (const [relativePath, snippet] of requiredSnippets) {
   const content = fs.readFileSync(absolutePath, 'utf8')
   if (!content.includes(snippet)) {
     failures.push(`Missing required configuration in ${relativePath}: ${snippet}`)
+  }
+}
+
+for (const [relativePath, snippet] of forbiddenSnippets) {
+  const absolutePath = path.join(root, relativePath)
+  if (!fs.existsSync(absolutePath)) continue
+  const content = fs.readFileSync(absolutePath, 'utf8')
+  if (content.includes(snippet)) {
+    failures.push(`Deprecated role-owned route found in ${relativePath}: ${snippet}`)
   }
 }
 

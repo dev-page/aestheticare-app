@@ -80,7 +80,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     tx.set(db.collection('users').doc(approved.employeeId).collection('payslips').doc(entryRef.id), payload)
     tx.update(entryRef, { payslipReleasedAt: now })
     tx.update(summaryRef, { releasedCount: Number(summary.releasedCount || 0) + 1 })
-    tx.set(db.collection('notifications').doc(), { recipientUserId: approved.employeeId, branchId: approved.branchId, title: 'Payslip available', message: `Your approved payslip for ${month} is available.`, link: '/employee/payslips', read: false, deleted: false, createdAt: now })
+    tx.set(db.collection('notifications').doc(), { recipientUserId: approved.employeeId, branchId: approved.branchId, title: 'Payslip available', message: `Your approved payslip for ${month} is available.`, link: '/hr/my-payslips', read: false, deleted: false, createdAt: now })
     return { id: entryRef.id }
   })
 }

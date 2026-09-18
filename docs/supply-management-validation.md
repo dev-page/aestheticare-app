@@ -2,13 +2,14 @@
 
 ## Entry points
 
-- Inventory: `/supply-management/inventory/dashboard`
-- Procurement: `/supply-management/procurement/dashboard`
-- Logistics: `/supply-management/logistics/dashboard`
-- Finance: `/supply-management/finance/dashboard`
+- Inventory: `/inventory/dashboard`
+- Procurement: `/procurement/dashboard`
+- Logistics: `/logistics/dashboard`
+- Finance: `/finance/procurement/dashboard`
+- Management: `/management/supply/dashboard`
 - Supplier: `/supplier/supply/dashboard`
 
-The sidebar uses these canonical workspaces. Older URLs redirect to the corresponding integrated page and no parallel procurement UI remains. Existing inventory items and supplier catalogs are shared; historical purchase records remain read-only and are not silently converted into funded purchase orders.
+The clinic sidebar uses module-owned routes, while the external supplier portal remains under the isolated `/supplier/...` namespace. Older role-prefixed and `supply-management` URLs redirect to the corresponding canonical page, and no parallel procurement UI remains. Existing inventory items and supplier catalogs are shared; historical purchase records remain read-only and are not silently converted into funded purchase orders.
 
 ## Implemented workflow
 

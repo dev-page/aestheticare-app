@@ -438,7 +438,7 @@ const goToManagement = () => {
     router.push('/hr/leave-management')
     return
   }
-  router.push('/employee/dashboard')
+  router.push('/workspace/dashboard')
 }
 
 const submitLeaveRequest = async () => {

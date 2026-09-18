@@ -629,7 +629,7 @@ const handlePayMongoReturn = async () => {
         showConfirmButton: false,
       })
 
-      await router.replace({ path: '/owner/account/subscription' })
+      await router.replace({ path: '/account/subscription' })
       return
     }
 
@@ -680,11 +680,11 @@ const handlePayMongoReturn = async () => {
 
 const goBack = () => {
   if (String(route.query.onboarding || '').trim() === '1') {
-    router.push({ path: '/owner/onboarding', query: { plan: selectedPlanId.value || 'basic' } })
+    router.push({ path: '/clinic/onboarding', query: { plan: selectedPlanId.value || 'basic' } })
     return
   }
   if (shouldPrefill.value) {
-    router.push({ path: '/owner/account/plans', query: { plan: selectedPlanId.value || 'basic' } })
+    router.push({ path: '/account/plans', query: { plan: selectedPlanId.value || 'basic' } })
     return
   }
   router.push({ name: 'subscription-features', query: { plan: selectedPlanId.value || 'basic' } })

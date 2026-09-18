@@ -119,27 +119,27 @@ export default {
         key: 'employees',
         label: 'Employees',
         entries: [
-          { label: 'Employee Directory', to: '/hr/employee-profile', permission: 'staff:view', feature: 'staff_management', description: 'View employee profiles and role assignments.' },
-          { label: 'Create Employee Account', to: '/owner/staff/add-staff', permission: 'staff:create', feature: 'staff_management', description: 'Create employee accounts under the clinic.' },
-          { label: 'Employee Archives', to: '/owner/staff/archived', permission: 'staff:view', feature: 'staff_management', description: 'Review archived employee records.' }
+          { label: 'Employee Directory', to: '/hr/employees', permission: 'staff:view', feature: 'staff_management', description: 'View employee profiles and role assignments.' },
+          { label: 'Create Employee Account', to: '/hr/employees/new', permission: 'staff:create', feature: 'staff_management', description: 'Create employee accounts under the clinic.' },
+          { label: 'Employee Archives', to: '/hr/employees/archived', permission: 'staff:view', feature: 'staff_management', description: 'Review archived employee records.' }
         ]
       },
       {
         key: 'clients',
         label: 'Clients',
         entries: [
-          { label: 'Client List', to: '/receptionist/clients', permission: 'clients:view', feature: 'appointments', description: 'Review and search clinic clients.' },
-          { label: 'Add Client', to: '/receptionist/clients/add', permission: 'clients:create', feature: 'appointments', description: 'Create a new client record.' },
-          { label: 'Practitioner Clients', to: '/practitioner/clients', permission: 'clients:view', feature: 'appointments', description: 'Open practitioner client access.' }
+          { label: 'Client List', to: '/crm/clients', permission: 'clients:view', feature: 'appointments', description: 'Review and search clinic clients.' },
+          { label: 'Add Client', to: '/crm/clients/new', permission: 'clients:create', feature: 'appointments', description: 'Create a new client record.' },
+          { label: 'Practitioner Clients', to: '/clinical/clients', permission: 'clients:view', feature: 'appointments', description: 'Open clinical client access.' }
         ]
       },
       {
         key: 'appointments',
         label: 'Appointments',
         entries: [
-          { label: 'Appointments', to: '/receptionist/appointments', permission: 'appointments:view', feature: 'appointments', description: 'See and manage appointment listings.' },
-          { label: 'Appointment Requests', to: '/receptionist/appointment-requests', permission: 'appointments:review', feature: 'appointments', description: 'Review cancellation and reschedule requests.' },
-          { label: 'Online Consultation', to: '/practitioner/consultations/online', permission: 'consultations:view', feature: 'online_consultations', description: 'Join and manage online consultations.' }
+          { label: 'Appointments', to: '/crm/appointments', permission: 'appointments:view', feature: 'appointments', description: 'See and manage appointment listings.' },
+          { label: 'Appointment Requests', to: '/crm/appointments/requests', permission: 'appointments:review', feature: 'appointments', description: 'Review cancellation and reschedule requests.' },
+          { label: 'Online Consultation', to: '/clinical/consultations/online', permission: 'consultations:view', feature: 'online_consultations', description: 'Join and manage online consultations.' }
         ]
       },
       {
@@ -160,8 +160,8 @@ export default {
         key: 'finance',
         label: 'Finance',
         entries: [
-          { label: 'POS', to: '/receptionist/pos', permission: 'payments:create', feature: 'pos_payments', description: 'Process in-clinic payments.' },
-          { label: 'Transactions', to: '/receptionist/transactions/history', permission: 'payments:view', feature: 'reports', description: 'Review payment history.' },
+          { label: 'POS', to: '/crm/pos', permission: 'payments:create', feature: 'pos_payments', description: 'Process in-clinic payments.' },
+          { label: 'Transactions', to: '/crm/transactions', permission: 'payments:view', feature: 'reports', description: 'Review payment history.' },
           { label: 'Sales Ledger', to: '/finance/sales', permission: 'finance:sales:view', feature: 'reports', description: 'Open the sales ledger and reconciliation view.' },
           { label: 'Refunds', to: '/finance/refunds', permission: 'finance:refunds:view', feature: 'reports', description: 'Review refund workflows.' },
           { label: 'Financial Reports', to: '/finance/reports', permission: 'finance:reports:view', feature: 'reports', description: 'See finance reports and summaries.' }
@@ -171,16 +171,16 @@ export default {
         key: 'operations',
         label: 'Operations',
         entries: [
-          { label: 'Suppliers', to: '/manager/suppliers', permission: 'inventory:view', feature: 'inventory', description: 'Manage supplier records.' },
-          { label: 'Inventory Requests', to: '/supply-management/inventory/requests', permissionsAny: ['inventory:create', 'inventory:review'], feature: 'inventory', description: 'Create and review inventory requests.' },
-          { label: 'Item Catalog', to: '/manager/item-catalog', permission: 'inventory:view', feature: 'inventory', description: 'Browse the item catalog.' },
+          { label: 'Suppliers', to: '/procurement/suppliers/directory', permission: 'inventory:view', feature: 'inventory', description: 'Manage supplier records.' },
+          { label: 'Inventory Requests', to: '/inventory/requests', permissionsAny: ['inventory:create', 'inventory:review'], feature: 'inventory', description: 'Create and review inventory requests.' },
+          { label: 'Item Catalog', to: '/inventory/items', permission: 'inventory:view', feature: 'inventory', description: 'Browse the item catalog.' },
           { label: 'Supply Dashboard', to: '/supply/dashboard', permission: 'inventory:view', feature: 'inventory', description: 'Open the supply dashboard.' },
           { label: 'Supply Catalog', to: '/supply/catalog', permission: 'inventory:view', feature: 'inventory', description: 'Access supply catalog pages.' },
           { label: 'Supply Requests', to: '/supply/purchase-requests', permissionsAny: ['inventory:create', 'inventory:review'], feature: 'inventory', description: 'Manage supply requests.' },
-          { label: 'Procurement Spending & History', to: '/supply-management/procurement/reports', permission: 'finance:purchases:view', feature: 'inventory', description: 'Review linked procurement records and spending.' },
-          { label: 'Supplier Invoices & Payments', to: '/supply-management/finance/invoices', permission: 'finance:payables:view', feature: 'reports', description: 'Review invoices and payment records.' },
-          { label: 'Product Service Listing', to: '/manager/product-service-listing', permission: 'services:view', feature: 'services', description: 'View products and services.' },
-          { label: 'Orders', to: '/manager/orders', permissionsAny: ['orders:view', 'inventory:view'], feature: 'inventory', description: 'Track branch orders.' }
+          { label: 'Procurement Spending & History', to: '/procurement/reports', permission: 'finance:purchases:view', feature: 'inventory', description: 'Review linked procurement records and spending.' },
+          { label: 'Supplier Invoices & Payments', to: '/finance/procurement/invoices', permission: 'finance:payables:view', feature: 'reports', description: 'Review invoices and payment records.' },
+          { label: 'Product Service Listing', to: '/catalog/products-services', permission: 'services:view', feature: 'services', description: 'View products and services.' },
+          { label: 'Orders', to: '/operations/orders', permissionsAny: ['orders:view', 'inventory:view'], feature: 'inventory', description: 'Track branch orders.' }
         ]
       },
       {

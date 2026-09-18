@@ -92,12 +92,12 @@ export default {
       )
     }
     const items = computed(() => {
-      const baseItems = buildClinicSidebarItems({ dashboardTo: '/employee/dashboard', isEmployee: true })
-      baseItems.push({ label: 'My Payslips', icon: 'report', to: '/employee/payslips', permission: 'profile:view' })
+      const baseItems = buildClinicSidebarItems({ dashboardTo: '/workspace/dashboard', isEmployee: true })
+      baseItems.push({ label: 'My Payslips', icon: 'report', to: '/hr/my-payslips', permission: 'profile:view' })
       const attendanceChild = {
         label: 'Scan Attendance QR',
         icon: 'qr',
-        to: '/attendance/scan',
+        to: '/hr/attendance/scan',
         feature: 'attendance',
         permission: 'attendance:create'
       }

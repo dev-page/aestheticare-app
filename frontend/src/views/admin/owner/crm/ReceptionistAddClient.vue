@@ -84,7 +84,7 @@
               {{ isSubmitting ? 'Saving...' : 'Walk-In' }}
             </button>
             <router-link
-              to="/receptionist/clients"
+              to="/crm/clients"
               class="px-5 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 text-sm"
             >
               Cancel
@@ -214,7 +214,7 @@ export default {
         })
 
         toast.success('Client added successfully.')
-        router.push('/receptionist/clients')
+        router.push('/crm/clients')
       } catch (error) {
         console.error(error)
         toast.error('Failed to save client.')

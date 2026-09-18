@@ -41,12 +41,12 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       records = docs(await db.collection('supplyRecords').where('branchId', '==', branchId).get()).filter(r => canRead(ctx, r))
       if (hasPermission(ctx, 'inventory:view')) for (const item of docs(await db.collection('inventoryItems').where('branchId', '==', branchId).get())) {
         const signals = stockSignals(item, today)
-        if (signals.length) alerts.push({ id: item.id, branchId, message: `${item.name}: ${signals.join(', ')}`, link: '/supply-management/inventory/items' })
+        if (signals.length) alerts.push({ id: item.id, branchId, message: `${item.name}: ${signals.join(', ')}`, link: '/inventory/items' })
       }
     }
     for (const r of records) {
       const due = r.kind === 'rfq' && ['Sent', 'Open', 'Quotation Received'].includes(r.status) ? r.deadline : r.kind === 'po' && ['Supplier Confirmed', 'Ongoing', 'Partially Received'].includes(r.status) ? r.deliveryDate : r.kind === 'invoice' && !['Paid'].includes(r.status) ? r.dueDate : null
-      if (due && Date.parse(due) - Date.parse(today) <= 3 * 86400000) alerts.push({ id: r.id, branchId: r.branchId, message: `${r.number}: ${r.status}; due ${due}`, link: ctx.supplier ? '/supplier/supply/dashboard' : '/supply-management/' + (r.kind === 'rfq' ? 'procurement/rfqs' : r.kind === 'po' ? 'logistics/items' : 'finance/invoices') })
+      if (due && Date.parse(due) - Date.parse(today) <= 3 * 86400000) alerts.push({ id: r.id, branchId: r.branchId, message: `${r.number}: ${r.status}; due ${due}`, link: ctx.supplier ? '/supplier/supply/dashboard' : (r.kind === 'rfq' ? '/procurement/rfqs' : r.kind === 'po' ? '/logistics/items' : '/finance/procurement/invoices') })
     }
     await db.runTransaction(async tx => {
       const entries = alerts.slice(0, 100).map(a => ({ ...a, ref: db.collection('notifications').doc(`supply-${ctx.uid}-${a.id}-${today}`) }))
@@ -341,7 +341,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       const recipients = staffContexts.filter(u => (permissionsByKind[changed.kind] || []).some(p => hasPermission(u, p))).map(u => u.uid)
       for (const s of suppliers.filter(s => s.id === changed.supplierId || changed.supplierIds?.includes(s.id))) if (changed.mode === 'Online' && ['rfq', 'po', 'invoice', 'payment', 'quotation'].includes(changed.kind) && changed.status !== 'Draft') recipients.push(s.ownerId || s.supplierUserId)
       const department = ['budget', 'budgetRequest', 'invoice', 'payment'].includes(changed.kind) ? 'finance' : ['receiving', 'discrepancy'].includes(changed.kind) || changed.kind === 'po' && changed.status === 'Ongoing' ? 'logistics' : changed.kind === 'request' ? 'inventory' : 'procurement'
-      for (const uid of new Set(recipients.filter(Boolean))) tx.set(db.collection('notifications').doc(), { recipientUserId: uid, branchId, title: `${names[changed.kind]} updated`, message: `${changed.number}: ${changed.status}`, link: suppliers.some(s => s.ownerId === uid || s.supplierUserId === uid) ? '/supplier/supply' : `/supply-management/${department}/dashboard`, read: false, deleted: false, createdAt: now })
+      const clinicLink = department === 'finance' ? '/finance/procurement/dashboard' : `/${department}/dashboard`
+      for (const uid of new Set(recipients.filter(Boolean))) tx.set(db.collection('notifications').doc(), { recipientUserId: uid, branchId, title: `${names[changed.kind]} updated`, message: `${changed.number}: ${changed.status}`, link: suppliers.some(s => s.ownerId === uid || s.supplierUserId === uid) ? '/supplier/supply' : clinicLink, read: false, deleted: false, createdAt: now })
     }
     return { id: result.id, status: result.status }
   })
@@ -369,7 +370,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       tx.set(ref, { recordId: id, branchId: record.branchId, supplierId, message, channel: record.mode === 'Manual' ? required(req.body.channel, 'External communication channel') : 'Portal', from: ctx.supplier ? 'Supplier' : 'Procurement', actorId: ctx.uid, createdAt: now })
       tx.set(db.collection('supplyAudit').doc(), { recordId: id, branchId: record.branchId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: record.kind, action: 'supplier-communication', messageId: ref.id, supplierId, ...ctx.auditContext, createdAt: now })
       const recipient = ctx.supplier ? record.createdBy : supplier.ownerId || supplier.supplierUserId
-      if (record.mode === 'Online' && recipient && recipient !== ctx.uid) tx.set(db.collection('notifications').doc(), { recipientUserId: recipient, branchId: record.branchId, title: 'Supplier communication', message: `New message on ${record.number}`, link: ctx.supplier ? '/supply-management/procurement/rfqs' : '/supplier/supply/rfqs', read: false, deleted: false, createdAt: now })
+      if (record.mode === 'Online' && recipient && recipient !== ctx.uid) tx.set(db.collection('notifications').doc(), { recipientUserId: recipient, branchId: record.branchId, title: 'Supplier communication', message: `New message on ${record.number}`, link: ctx.supplier ? '/procurement/rfqs' : '/supplier/supply/rfqs', read: false, deleted: false, createdAt: now })
     })
     res.json({ success: true, data: { id: ref.id } })
   }))

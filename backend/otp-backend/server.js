@@ -6602,10 +6602,10 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
         },
         success_url:
           successUrl ||
-          `${resolveFrontendBaseUrl(req)}/receptionist/pos?paymongo_status=success`,
+          `${resolveFrontendBaseUrl(req)}/crm/pos?paymongo_status=success`,
         cancel_url:
           cancelUrl ||
-          `${resolveFrontendBaseUrl(req)}/receptionist/pos?paymongo_status=cancelled`,
+          `${resolveFrontendBaseUrl(req)}/crm/pos?paymongo_status=cancelled`,
       },
     },
   }

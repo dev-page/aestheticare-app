@@ -316,8 +316,8 @@ const processLabel = ref('Processing...')
 // Determine if current route is subscription-related (so read-only is exempted)
 const isSubscriptionRoute = computed(() => {
   const path = String(route.path || '').toLowerCase()
-  return path.startsWith('/owner/account/subscription') ||
-         path.startsWith('/owner/account/plans') ||
+  return path.startsWith('/account/subscription') ||
+         path.startsWith('/account/plans') ||
          path.startsWith('/subscription')
 })
 

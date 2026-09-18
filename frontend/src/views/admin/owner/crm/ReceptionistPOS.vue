@@ -583,8 +583,8 @@ export default {
     const createPayMongoCheckoutSession = async (snapshot) => {
       const paymentMethodType = snapshot.paymentMethod === 'Card' ? 'card' : 'gcash'
       const referenceNumber = `POS-${Date.now()}`
-      const successUrl = `${window.location.origin}/receptionist/pos?paymongo_status=success`
-      const cancelUrl = `${window.location.origin}/receptionist/pos?paymongo_status=cancelled`
+      const successUrl = `${window.location.origin}/crm/pos?paymongo_status=success`
+      const cancelUrl = `${window.location.origin}/crm/pos?paymongo_status=cancelled`
 
       const response = await fetchFromBackend('/paymongo/create-checkout-session', {
         method: 'POST',
@@ -804,19 +804,19 @@ export default {
       const pending = loadPendingPayMongoState()
       if (!pending?.checkoutSessionId || !pending?.snapshot) {
         toast.error('No pending PayMongo payment found.')
-        await router.replace('/receptionist/pos')
+        await router.replace('/crm/pos')
         return
       }
 
       if (status === 'cancelled') {
         clearPendingPayMongoState()
         toast.info('PayMongo payment was cancelled.')
-        await router.replace('/receptionist/pos')
+        await router.replace('/crm/pos')
         return
       }
 
       if (status !== 'success') {
-        await router.replace('/receptionist/pos')
+        await router.replace('/crm/pos')
         return
       }
 
@@ -856,7 +856,7 @@ export default {
         toast.error(error?.message || 'Failed to finalize PayMongo payment.')
       } finally {
         saving.value = false
-        await router.replace('/receptionist/pos')
+        await router.replace('/crm/pos')
       }
     }
 

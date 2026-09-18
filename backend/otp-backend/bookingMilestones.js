@@ -94,7 +94,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
         tx.update(ref, update)
         if (appointment.bookingId) tx.set(db.collection('bookings').doc(appointment.bookingId), { status: update.status, updatedAt: timestamp }, { merge: true })
         const recipientUserId = customer ? appointment.practitionerId || appointment.assignedPractitionerId : appointment.customerId
-        if (recipientUserId && !walkIn) tx.set(db.collection('notifications').doc(), { recipientUserId, title: 'Booking updated', message: `${appointment.service || 'Your booking'}: ${update.status}.`, link: customer ? '/practitioner/appointments' : '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
+        if (recipientUserId && !walkIn) tx.set(db.collection('notifications').doc(), { recipientUserId, title: 'Booking updated', message: `${appointment.service || 'Your booking'}: ${update.status}.`, link: customer ? '/clinical/appointments' : '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
         return { appointmentId: ref.id, status: update.status, contract: update.contract || appointment.contract }
       })
       res.json({ success: true, data: result })

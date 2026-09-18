@@ -224,7 +224,7 @@
               {{ isSubmitting ? 'Saving...' : 'Save Appointment' }}
             </button>
             <router-link
-              to="/receptionist/appointments"
+              to="/crm/appointments"
               class="px-5 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 text-sm"
             >
               Cancel
@@ -632,7 +632,7 @@ export default {
         }
 
         toast.success('Walk-in appointment approved. Collect payment at POS.')
-        router.push('/receptionist/appointments')
+        router.push('/crm/appointments')
       } catch (error) {
         console.error(error)
         toast.error(error?.message || 'Failed to create appointment.')

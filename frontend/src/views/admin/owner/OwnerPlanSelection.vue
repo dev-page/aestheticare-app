@@ -356,7 +356,7 @@ const continueWithPlan = async () => {
           targetPlan: selectedPlan.value,
         }),
       })
-      router.push('/owner/account/subscription')
+      router.push('/account/subscription')
       return
     }
 
@@ -370,7 +370,7 @@ const continueWithPlan = async () => {
 }
 
 const goBack = () => {
-  router.push('/owner/account/subscription')
+  router.push('/account/subscription')
 }
 
 onMounted(loadPlans)

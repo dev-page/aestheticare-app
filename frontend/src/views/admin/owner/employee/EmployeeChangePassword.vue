@@ -107,7 +107,7 @@
 
             <div class="rounded-2xl border border-[rgba(123,79,55,0.24)] bg-[rgba(255,255,255,0.04)] p-4 text-center">
               <router-link
-                :to="{ path: '/forgot-password', query: { returnTo: '/employee/change-password' } }"
+                :to="{ path: '/forgot-password', query: { returnTo: '/account/change-password' } }"
                 class="text-sm font-semibold text-[#d8b38f] transition hover:text-[#fff0e1]"
               >
                 Forgot your current password? Recover your account
@@ -220,9 +220,9 @@ export default {
         const rawRole = String(userData.role || userData.customRoleName || userData.userType || '').trim().toLowerCase()
         const isClinicAdmin = rawRole === 'clinic admin' || rawRole === 'clinicadmin' || rawRole === 'clinic administrator' || rawRole === 'owner'
         const redirectPath = userType === 'staff'
-          ? '/employee/dashboard'
+          ? '/workspace/dashboard'
           : isClinicAdmin
-            ? '/owner/dashboard'
+            ? '/clinic/dashboard'
             : '/change-password'
 
         toast.success('Password changed successfully.')

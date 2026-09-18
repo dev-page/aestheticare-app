@@ -41,7 +41,7 @@ const saveContract = async () => {
   try {
     const now = { ...form, branchId: branchId.value, ownerId: ownerId.value, status: 'Active', createdBy: auth.currentUser.uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }
     await addDoc(collection(db, 'commissionContracts'), now)
-    await addDoc(collection(db, 'notifications'), { senderId: auth.currentUser.uid, recipientUserId: ownerId.value, recipientRole: 'Owner', type: 'commission_agreement', title: 'Commission agreement updated', message: `${form.title} is now active for your clinic.`, link: '/owner/commission-contracts', read: false, createdAt: serverTimestamp() })
+    await addDoc(collection(db, 'notifications'), { senderId: auth.currentUser.uid, recipientUserId: ownerId.value, recipientRole: 'Owner', type: 'commission_agreement', title: 'Commission agreement updated', message: `${form.title} is now active for your clinic.`, link: '/finance/reports', read: false, createdAt: serverTimestamp() })
     showForm.value = false; toast.success('Agreement saved and owner notification created.')
   } catch (error) { console.error(error); toast.error(error?.message || 'Could not save agreement.') }
 }

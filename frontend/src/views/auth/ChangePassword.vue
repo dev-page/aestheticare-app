@@ -23,8 +23,8 @@ const confirmPasswordVisible = ref(false)
 const currentPasswordVisible = ref(false)
 
 const roleRoutes = {
-  Owner: '/owner/dashboard',
-  'Clinic Admin': '/owner/dashboard',
+  Owner: '/clinic/dashboard',
+  'Clinic Admin': '/clinic/dashboard',
   Supplier: '/supplier/dashboard',
   Customer: '/customer/home'
 }
@@ -40,7 +40,7 @@ const normalizeRoleKey = (value) => {
 const resolveRedirectPath = async (userData) => {
   const userType = String(userData?.userType || '').trim().toLowerCase()
   if (userType === 'staff') {
-    return '/employee/dashboard'
+    return '/workspace/dashboard'
   }
 
   if (userType === 'supplier' || String(userData?.role || '').toLowerCase().includes('supplier')) {

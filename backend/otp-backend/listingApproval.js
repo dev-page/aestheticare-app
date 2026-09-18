@@ -70,7 +70,7 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         tx.set(ref.collection('approvalHistory').doc(), { action, actorId: req.user.uid, note: String(req.body?.note || '').slice(0, 2000), terms: Object.fromEntries(financialFields.map((key) => [key, post[key] ?? null])), createdAt: timestamp })
         for (const uid of new Set(recipients)) {
           if (uid === req.user.uid) continue
-          tx.set(db.collection('notifications').doc(), { recipientUserId: uid, title: 'Listing review updated', message: `${post.title || 'Product/service'}: ${action === 'submit' ? 'Awaiting Finance review' : action}.`, link: action === 'submit' ? '/finance/listing-approvals' : '/manager/product-service-listing', read: false, deleted: false, createdAt: timestamp })
+          tx.set(db.collection('notifications').doc(), { recipientUserId: uid, title: 'Listing review updated', message: `${post.title || 'Product/service'}: ${action === 'submit' ? 'Awaiting Finance review' : action}.`, link: action === 'submit' ? '/finance/listing-approvals' : '/catalog/products-services', read: false, deleted: false, createdAt: timestamp })
         }
         return { financeStatus: update.financeStatus || post.financeStatus, isPublished: update.isPublished }
       })

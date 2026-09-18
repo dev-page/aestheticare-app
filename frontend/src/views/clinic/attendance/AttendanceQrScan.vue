@@ -168,9 +168,9 @@ export default {
 
     const getFallbackPath = () => {
       const role = String(employeeRole.value || '').toLowerCase()
-      if (role === 'manager') return '/manager/dashboard'
-      if (role === 'receptionist') return '/receptionist/dashboard'
-      if (role === 'practitioner') return '/practitioner/dashboard'
+      if (role === 'manager') return '/operations/dashboard'
+      if (role === 'receptionist') return '/crm/dashboard'
+      if (role === 'practitioner') return '/clinical/dashboard'
       if (role === 'finance') return '/finance/dashboard'
       if (role === 'hr') return '/hr/dashboard'
       return '/login'

@@ -370,7 +370,7 @@ const goToPlans = () => {
 
 const goToUpgrade = () => {
   const targetPlan = planKey.value === 'basic' ? 'premium' : planKey.value
-  router.push({ path: '/owner/account/plans', query: { plan: targetPlan } })
+  router.push({ path: '/account/plans', query: { plan: targetPlan } })
 }
 
 onMounted(async () => {
