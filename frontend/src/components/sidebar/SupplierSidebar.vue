@@ -1,7 +1,7 @@
 <template>
   <BaseCollapsibleSidebar
-    title="Supplier Panel"
-    subtitle="Business Operations"
+    title="Supplier Portal"
+    subtitle="External Supplier Account"
     panel-key="supplier"
     default-name="Supplier"
     default-email="supplier@aestheticare.com"
@@ -17,30 +17,15 @@ export default {
   components: { BaseCollapsibleSidebar },
   setup() {
     const items = [
-      { label: 'Dashboard', icon: 'home', to: '/supplier/supply/dashboard' },
+      { label: 'My Supply Catalog', icon: 'box', to: '/supplier/supplies' },
       {
-        key: 'supplier-procurement-module',
-        label: 'Procurement',
+        key: 'supplier-clinic-transactions',
+        label: 'Clinic Requests & Orders',
         icon: 'mdi:file-document-multiple-outline',
         children: [
           { label: 'RFQs & Quotations', icon: 'mdi:file-document-outline', to: '/supplier/supply/rfqs' },
-          { label: 'Purchase Orders', icon: 'mdi:cart-check', to: '/supplier/supply/orders' }
-        ]
-      },
-      {
-        key: 'supplier-finance-module',
-        label: 'Finance',
-        icon: 'mdi:finance',
-        children: [
+          { label: 'Purchase Orders', icon: 'mdi:cart-check', to: '/supplier/supply/orders' },
           { label: 'Invoices & Payments', icon: 'mdi:receipt-text-outline', to: '/supplier/supply/invoices' }
-        ]
-      },
-      {
-        key: 'supplier-catalog-module',
-        label: 'Product Catalog',
-        icon: 'box',
-        children: [
-          { label: 'My Supplies', icon: 'box', to: '/supplier/supplies' }
         ]
       },
       {

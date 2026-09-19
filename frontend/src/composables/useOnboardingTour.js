@@ -4,7 +4,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 
 const STORAGE_PREFIX = 'onboarding:disabled:'
-const TOUR_VERSION = 2
+const TOUR_VERSION = 3
 
 const tourCatalog = {
   customer: {
@@ -37,23 +37,36 @@ const tourCatalog = {
     ],
   },
   supplier: {
-    title: 'Your supplier workspace',
+    title: 'Your external supplier portal',
     steps: [
-      { title: 'Manage your catalog', text: 'Use the supplier workspace to maintain products, supplies, requests, and orders.', selector: 'main' },
-      { title: 'Navigate by module', text: 'Your sidebar groups related supplier tools together so common tasks are easier to find.', selector: 'aside' },
-      { title: 'Keep information current', text: 'Updated product and fulfillment information helps clinics make better decisions.', selector: 'main' },
+      { title: 'Publish your supply catalog', text: 'List the supplies your business offers so clinics can consider them during procurement.', selector: 'main' },
+      { title: 'Respond to clinic requests', text: 'RFQs, purchase orders, invoices, and payment updates are available only for your supplier account.', selector: 'aside' },
+      { title: 'Keep information current', text: 'Accurate availability, specifications, and prices help clinics make informed purchasing decisions.', selector: 'main' },
     ],
   },
 }
 
-const getTourKey = (path) => {
-  const normalized = String(path || '').toLowerCase()
-  if (normalized.startsWith('/customer')) return 'customer'
-  if (normalized.startsWith('/supplier')) return 'supplier'
-  if (normalized.startsWith('/clinic')) return 'owner'
-  if (normalized.startsWith('/superadmin')) return 'superadmin'
-  if (['/workspace', '/clinical', '/crm', '/operations', '/catalog', '/inventory', '/procurement', '/logistics', '/management', '/hr', '/finance'].some((prefix) => normalized.startsWith(prefix))) return 'employee'
+const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+
+// Tours describe the signed-in account, so their identity must come from the
+// account record and never from the URL currently being viewed.
+const getAccountTourKey = (userData = {}) => {
+  const roles = [normalizeRole(userData.role), normalizeRole(userData.userType), normalizeRole(userData.customRoleName)]
+  if (roles.some((role) => ['supplier', 'supplieradmin'].includes(role))) return 'supplier'
+  if (roles.includes('customer')) return 'customer'
+  if (roles.some((role) => ['superadmin', 'systemadmin', 'sysadmin'].includes(role))) return 'superadmin'
+  if (roles.some((role) => ['owner', 'clinicadmin', 'clinicadministrator'].includes(role))) return 'owner'
+  if (roles.some((role) => ['staff', 'employee'].includes(role))) return 'employee'
   return ''
+}
+
+const isTourLandingPath = (tourKey, path) => {
+  const normalized = String(path || '').toLowerCase()
+  if (tourKey === 'customer') return normalized.startsWith('/customer')
+  if (tourKey === 'supplier') return normalized === '/supplier/supplies'
+  if (tourKey === 'owner') return normalized === '/clinic/dashboard'
+  if (tourKey === 'employee') return normalized === '/workspace/dashboard'
+  return false
 }
 
 const getStorageKey = (tourKey, uid = '') => `${STORAGE_PREFIX}v${TOUR_VERSION}:${uid || 'anonymous'}:${tourKey}`
@@ -85,12 +98,11 @@ export const useOnboardingTour = ({ route, user }) => {
   const loading = ref(false)
   const triggeredForUid = ref('')
 
-  // useRoute() returns a reactive object, while some callers may provide a
-  // ref. Support both shapes so the tour key is resolved reliably.
+  // useRoute() returns a reactive object, while some callers may provide a ref.
   const getCurrentPath = () => route?.value?.path || route?.path || ''
-  const routeTourKey = computed(() => getTourKey(getCurrentPath()))
   const activeTourKey = ref('')
-  const tourKey = computed(() => routeTourKey.value || activeTourKey.value)
+  const resolvedForUid = ref('')
+  const tourKey = computed(() => activeTourKey.value)
   const tour = computed(() => tourCatalog[tourKey.value] || null)
   const step = computed(() => tour.value?.steps?.[stepIndex.value] || null)
   const isLastStep = computed(() => Boolean(tour.value && stepIndex.value >= tour.value.steps.length - 1))
@@ -186,24 +198,25 @@ export const useOnboardingTour = ({ route, user }) => {
     async ([nextUid, nextPath], [previousUid, previousPath] = []) => {
       if (!nextUid) {
         triggeredForUid.value = ''
+        resolvedForUid.value = ''
         activeTourKey.value = ''
         isOpen.value = false
         return
       }
-      if (routeTourKey.value === 'superadmin') {
-        activeTourKey.value = ''
+      if (resolvedForUid.value !== nextUid) {
+        try {
+          const snapshot = await getDoc(doc(db, 'users', nextUid))
+          activeTourKey.value = getAccountTourKey(snapshot.data() || {})
+        } catch (_error) {
+          activeTourKey.value = ''
+        }
+        resolvedForUid.value = nextUid
+      }
+      if (!isTourLandingPath(tourKey.value, nextPath)) {
         isOpen.value = false
         return
       }
-      // The clinic owner tutorial belongs on the dashboard, not on the
-      // subscription onboarding or checkout screens.
-      if (routeTourKey.value === 'owner' && String(nextPath || '').toLowerCase() !== '/clinic/dashboard') {
-        activeTourKey.value = ''
-        isOpen.value = false
-        return
-      }
-      if (routeTourKey.value) activeTourKey.value = routeTourKey.value
-      if (!nextPath || !tourKey.value || triggeredForUid.value === nextUid || loading.value) return
+      if (!nextPath || !tour.value || triggeredForUid.value === nextUid || loading.value) return
       loading.value = true
       try {
         // Login redirects can finish before the customer workspace has

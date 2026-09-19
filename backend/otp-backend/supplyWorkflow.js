@@ -46,7 +46,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     }
     for (const r of records) {
       const due = r.kind === 'rfq' && ['Sent', 'Open', 'Quotation Received'].includes(r.status) ? r.deadline : r.kind === 'po' && ['Supplier Confirmed', 'Ongoing', 'Partially Received'].includes(r.status) ? r.deliveryDate : r.kind === 'invoice' && !['Paid'].includes(r.status) ? r.dueDate : null
-      if (due && Date.parse(due) - Date.parse(today) <= 3 * 86400000) alerts.push({ id: r.id, branchId: r.branchId, message: `${r.number}: ${r.status}; due ${due}`, link: ctx.supplier ? '/supplier/supply/dashboard' : (r.kind === 'rfq' ? '/procurement/rfqs' : r.kind === 'po' ? '/logistics/items' : '/finance/procurement/invoices') })
+      if (due && Date.parse(due) - Date.parse(today) <= 3 * 86400000) alerts.push({ id: r.id, branchId: r.branchId, message: `${r.number}: ${r.status}; due ${due}`, link: ctx.supplier ? (r.kind === 'rfq' ? '/supplier/supply/rfqs' : r.kind === 'po' ? '/supplier/supply/orders' : '/supplier/supply/invoices') : (r.kind === 'rfq' ? '/procurement/rfqs' : r.kind === 'po' ? '/logistics/items' : '/finance/procurement/invoices') })
     }
     await db.runTransaction(async tx => {
       const entries = alerts.slice(0, 100).map(a => ({ ...a, ref: db.collection('notifications').doc(`supply-${ctx.uid}-${a.id}-${today}`) }))

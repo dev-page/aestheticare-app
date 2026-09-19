@@ -203,8 +203,8 @@ const routes = [
   { path: "/customer/account-settings", name: "customer-account-settings", component: () => import("@/views/customer/AccountSettings.vue"), meta: { requiresAuth: true } },
 
   // Supplier routes
-  { path: "/supplier", redirect: "/supplier/dashboard" },
-  { path: "/supplier/dashboard", redirect: "/supplier/supply/dashboard" },
+  { path: "/supplier", redirect: "/supplier/supplies" },
+  { path: "/supplier/dashboard", redirect: "/supplier/supplies" },
   { path: "/supplier/profile", name: "supplier-profile", component: () => import("@/views/supplier/SupplierProfile.vue"), meta: { requiresAuth: true } },
   { path: "/supplier/supplies", name: "supplier-supplies", component: () => import("@/views/supplier/SupplierSupplies.vue"), meta: { requiresAuth: true } },
   { path: "/supplier/quote-requests", redirect: "/supplier/supply/rfqs" },
@@ -285,7 +285,7 @@ const isAuthReady = (isLoading) => {
 
 const safeUnauthorizedRedirect = (user, userData = {}) => {
   if (!user?.uid) return '/login'
-  if (isSupplierRole(userData)) return '/supplier/supply/dashboard'
+  if (isSupplierRole(userData)) return '/supplier/supplies'
   if (isCustomerRole(userData)) return '/customer/home'
   if (isSuperadminRole(userData)) return '/superadmin/dashboard'
   if (isOwnerLikeRole(userData.role || userData.userType)) return '/clinic/dashboard'
@@ -425,7 +425,6 @@ router.beforeEach(async (to, from, next) => {
     currentUser
     && routePath.startsWith('/supplier')
     && userStatus !== 'active'
-    && !clinicApprovalStatus.includes('approved')
   ) {
     await signOut(auth).catch(() => {})
     return next('/login')

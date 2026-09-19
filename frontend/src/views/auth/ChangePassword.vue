@@ -25,7 +25,7 @@ const currentPasswordVisible = ref(false)
 const roleRoutes = {
   Owner: '/clinic/dashboard',
   'Clinic Admin': '/clinic/dashboard',
-  Supplier: '/supplier/dashboard',
+  Supplier: '/supplier/supplies',
   Customer: '/customer/home'
 }
 
@@ -44,7 +44,7 @@ const resolveRedirectPath = async (userData) => {
   }
 
   if (userType === 'supplier' || String(userData?.role || '').toLowerCase().includes('supplier')) {
-    return '/supplier/dashboard'
+    return '/supplier/supplies'
   }
 
   const role = normalizeRoleKey(userData?.role || userData?.customRoleName || userData?.userType)

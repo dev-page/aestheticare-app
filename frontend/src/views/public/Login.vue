@@ -42,7 +42,7 @@ const roleRoutes = {
   Superadmin: "/superadmin/dashboard",
   Owner: "/clinic/dashboard",
   "Clinic Admin": "/clinic/dashboard",
-  Supplier: "/supplier/dashboard",
+  Supplier: "/supplier/supplies",
   Customer: "/customer/home"
 }
 

@@ -60,7 +60,10 @@ module.exports = ({ admin, functions }) => {
       for (const uid of await staffFor(r.branchId, permission, cache)) await notify(uid, r, date, 'deadline', `${r.number}: ${r.status}; due ${due}.`, `/supply-management/${department}/dashboard`)
       if (r.mode === 'Online') for (const id of [...new Set([...(r.supplierIds || []), r.supplierId].filter(Boolean))]) {
         const supplier = (await db.collection('suppliers').doc(id).get()).data()
-        if (supplier?.status === 'Active' && (supplier.ownerId || supplier.supplierUserId)) await notify(supplier.ownerId || supplier.supplierUserId, r, date, 'deadline', `${r.number}: ${r.status}; due ${due}.`, '/supplier/supply/dashboard')
+        if (supplier?.status === 'Active' && (supplier.ownerId || supplier.supplierUserId)) {
+          const supplierLink = r.kind === 'rfq' ? '/supplier/supply/rfqs' : r.kind === 'po' ? '/supplier/supply/orders' : '/supplier/supply/invoices'
+          await notify(supplier.ownerId || supplier.supplierUserId, r, date, 'deadline', `${r.number}: ${r.status}; due ${due}.`, supplierLink)
+        }
       }
     })
   }
