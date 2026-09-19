@@ -211,7 +211,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         }
         case 'budget': allow(ctx, 'finance:payables:approve'); result = create('budget', { status: 'Active', department: required(input.department, 'Department'), category: required(input.category, 'Category'), total: money(input.total), committed: 0, spent: 0 }); break
         case 'rfq': {
-          allow(ctx, 'procurement:create'); const p = get(input.procurementId, 'procurement'); demand(p.status === 'Received' && !p.rfqId, 'This procurement already has an active sourcing process.')
+          allow(ctx, 'procurement:create'); const p = get(input.procurementId, 'procurement'); demand(['Received', 'Verified'].includes(p.status) && !p.rfqId, 'This procurement already has an active sourcing process.')
           demand(['Manual', 'Online'].includes(input.mode), 'Choose a procurement mode.', 400)
           const supplierIds = [...new Set(input.supplierIds || [])]; demand(supplierIds.length > 0 && supplierIds.length <= 20, 'Select 1–20 suppliers.'); supplierIds.forEach(id => { const selectedSupplier = supplier(id); demand(p.lines.every(line => supplierCanProvideLine(selectedSupplier, line)), 'Each invited supplier must offer every requested supply in its catalog.', 400) })
           if (input.mode === 'Online') demand(supplierIds.every(id => { const s = supplier(id); return s.ownerId || s.supplierUserId }), 'Online procurement requires suppliers with activated portal accounts.')
@@ -263,10 +263,25 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       demand(record, 'Record not found.', 404); demand(canRead(ctx, record), 'Access denied.', 403)
       const r = record
       if (r.kind === 'request') {
-        demand(false, 'Inventory requests are sent directly to Procurement when created.')
+        if (action === 'resubmit') {
+          allow(ctx, 'inventory:create'); demand(r.createdBy === ctx.uid && r.status === 'Returned', 'Only the original requester can resubmit a returned request.', 403)
+          const procurement = get(r.procurementId, 'procurement')
+          result = set(r, { status: 'Sent to Procurement', resubmittedAt: now, resubmissionResponse: required(input.remarks, 'Response to Procurement') })
+          set(procurement, { status: 'Received', returnedAt: '', returnReason: '', returnInstructions: '', returnedItemId: '', resubmittedAt: now })
+        } else demand(false, 'Inventory requests are sent directly to Procurement when created.')
       } else if (r.kind === 'procurement') {
         allow(ctx, 'procurement:review')
-        if (action === 'resource') {
+        if (['confirm', 'verifyRequest'].includes(action)) {
+          demand(r.status === 'Received', 'Only newly received requests can be confirmed.')
+          demand(input.productsCorrect && input.quantitiesVerified && input.availabilityConfirmed && input.pricesVerified, 'Complete every procurement checklist item before confirming.', 400)
+          result = set(r, { status: 'Verified', verifiedBy: ctx.uid, verifiedAt: now, checklist: { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true } })
+        } else if (action === 'return') {
+          demand(r.status === 'Received', 'Only newly received requests can be returned.')
+          const reason = required(input.returnReason, 'Reason for return'), instructions = required(input.instructions, 'Revision instructions')
+          const request = get(r.requestId, 'request')
+          result = set(r, { status: 'Returned to Inventory', returnReason: reason, returnInstructions: instructions, returnedItemId: String(input.itemId || ''), returnedBy: ctx.uid, returnedAt: now })
+          set(request, { status: 'Returned', returnReason: reason, returnInstructions: instructions, returnedItemId: String(input.itemId || ''), returnedBy: ctx.uid, returnedAt: now })
+        } else if (action === 'resource') {
           demand(!records.some(p => p.kind === 'po' && p.procurementId === r.id && p.status !== 'Cancelled'), 'Cancel the funded purchase order before re-sourcing.')
           demand(r.status !== 'Completed', 'Completed procurement cannot be re-sourced.')
           const reason = required(input.remarks, 'Re-sourcing reason')
