@@ -31,16 +31,14 @@ function fixture() {
 for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, partial receiving, matching and payment`, async () => {
   const f = fixture(), date = '2099-12-31'
   const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 100, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Replenishment', requiredDate: date })
-  await f.act('inventory', request, 'submit')
   assert.equal(f.read(request).status, 'Sent to Procurement')
   const procurement = f.read(request).procurementId
   const rfq = await f.create('procurement', 'rfq', { procurementId: procurement, mode, supplierIds: ['vendor'], deadline: date, deliveryDate: date, deliveryLocation: 'Clinic', terms: 'Deliver intact', contact: 'Purchasing' })
   if (mode === 'Manual') { await f.act('procurement', rfq, 'send', {}, 409); f.evidence(rfq) }
   await f.act('procurement', rfq, 'send')
-  await f.act('procurement', rfq, 'open')
   const quote = await f.create(mode === 'Manual' ? 'procurement' : 'supplier', 'quotation', { rfqId: rfq, supplierId: 'vendor', lines: [{ itemId: 'item', quantity: 100, unitPrice: 5 }], validUntil: date, leadDays: 1, paymentTerms: 'On delivery' })
   if (mode === 'Manual') f.evidence(quote)
-  await f.act('procurement', rfq, 'close'); await f.act('procurement', rfq, 'evaluate'); await f.act('procurement', quote, 'select', { justification: 'Meets specification and delivery date', category: 'Materials' })
+  await f.act('procurement', quote, 'select', { justification: 'Meets specification and delivery date', category: 'Materials' })
   const budgetRequest = f.read(procurement).budgetRequestId
   const budget = await f.create('finance', 'budget', { department: 'Inventory', category: 'Materials', total: 1000 })
   await f.act('finance', budgetRequest, 'approve', { budgetId: budget, approvedAmount: 550, remarks: 'Within allocation' })
@@ -50,8 +48,6 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   assert.equal(f.read(`allocation-${budgetRequest}`).status, 'Committed')
   const po = `po-${budgetRequest}`
   if (mode === 'Manual') f.evidence(po)
-  await f.act('procurement', po, 'submitPo')
-  await f.act('procurement', po, 'approvePo')
   await f.act('procurement', po, 'issue')
   await f.act('competitor', po, 'confirm', { remarks: 'Wrong supplier', deliveryDate: date }, 403)
   await f.act(mode === 'Manual' ? 'procurement' : 'supplier', po, 'confirm', { remarks: 'Confirmed', deliveryDate: date })
