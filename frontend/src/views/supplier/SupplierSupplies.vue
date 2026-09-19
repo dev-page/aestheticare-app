@@ -2,7 +2,7 @@
   <div class="flex min-h-screen bg-gradient-to-br from-[#f9f1e5] via-[#f5e4cf] to-[#eed6bc]">
     <SupplierSidebar />
 
-    <main class="flex-1 p-6 md:p-8">
+    <main data-onboarding-key="supplier-catalog" class="flex-1 p-6 md:p-8">
       <section class="mx-auto max-w-7xl space-y-6">
         <div class="rounded-[2rem] border border-[#e4c7a1] bg-white/85 p-6 shadow-[0_18px_44px_rgba(77,52,31,0.08)] backdrop-blur">
           <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -10,7 +10,7 @@
               <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#9a6848]">Supplier Supplies</p>
               <h1 class="mt-2 text-3xl font-bold text-[#40261a]">Manage your item catalog</h1>
               <p class="mt-2 max-w-3xl text-sm leading-6 text-[#6f503d]">
-                Add the products, equipment, and medical supplies that your business offers. For equipment, you can use units like set, unit, pair, box, dimensions, or weight depending on the item.
+                Add the products, equipment, and medical supplies that your business offers. Package or measurement details are optional and only needed when they help identify the supply.
               </p>
             </div>
 
@@ -144,17 +144,23 @@
                   <input :value="item.quantity" type="text" inputmode="numeric" @beforeinput="blockInvalidNumberInput($event)" @input="item.quantity = readNumberInput($event, item.quantity)" class="item-input" placeholder="0" />
                 </div>
 
-                <div>
-                  <label class="item-label">Measurement Value</label>
-                  <input v-model="item.measurementValue" maxlength="80" type="text" class="item-input" placeholder="e.g. 10, 500, 2x3" />
-                </div>
+                <template v-if="shouldShowMeasurement(item)">
+                  <div>
+                    <label class="item-label">Package / Measurement Value <span class="normal-case font-normal">(optional)</span></label>
+                    <input v-model="item.measurementValue" maxlength="80" type="text" class="item-input" placeholder="e.g. 10, 500, 2x3" />
+                  </div>
 
-                <div class="md:col-span-2">
-                  <label class="item-label">Measurement Unit</label>
-                  <select v-model="item.measurementUnit" class="item-input">
-                    <option value="">Select unit</option>
-                    <option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option>
-                  </select>
+                  <div class="md:col-span-2">
+                    <label class="item-label">Package / Measurement Unit <span class="normal-case font-normal">(optional)</span></label>
+                    <select v-model="item.measurementUnit" class="item-input">
+                      <option value="">Select unit</option>
+                      <option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option>
+                    </select>
+                  </div>
+                </template>
+                <div v-else class="md:col-span-2 rounded-xl border border-dashed border-[#dfb98d] bg-[#fff8ef] p-3">
+                  <p class="text-sm text-[#6f503d]">Package, dosage, dimensions, or weight are optional for {{ item.category || 'this item' }}.</p>
+                  <button type="button" class="mt-2 text-sm font-semibold text-[#7b4a2f] underline" @click="item.showMeasurement = true">Add optional measurement details</button>
                 </div>
 
                 <div class="md:col-span-2">
@@ -274,6 +280,7 @@ const createEmptyItem = () => ({
   quantity: '',
   measurementValue: '',
   measurementUnit: '',
+  showMeasurement: false,
   specifications: '',
   price: '',
   imageUrl: '',
@@ -286,6 +293,7 @@ const createEmptyItem = () => ({
 })
 
 const activeItemCount = computed(() => savedCatalog.value.length)
+const shouldShowMeasurement = (item) => ['Injectables', 'Skincare'].includes(item.category) || Boolean(item.showMeasurement || item.measurementValue || item.measurementUnit)
 const categoryCount = computed(() => {
   const categories = new Set()
   savedCatalog.value.forEach((item) => {

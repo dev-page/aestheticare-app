@@ -39,9 +39,9 @@ const tourCatalog = {
   supplier: {
     title: 'Your external supplier portal',
     steps: [
-      { title: 'Publish your supply catalog', text: 'List the supplies your business offers so clinics can consider them during procurement.', selector: 'main' },
+      { title: 'Publish your supply catalog', text: 'List the supplies your business offers so clinics can consider them during procurement.', selector: '[data-onboarding-key="supplier-catalog"]' },
       { title: 'Respond to clinic requests', text: 'RFQs, purchase orders, invoices, and payment updates are available only for your supplier account.', selector: 'aside' },
-      { title: 'Keep information current', text: 'Accurate availability, specifications, and prices help clinics make informed purchasing decisions.', selector: 'main' },
+      { title: 'Keep information current', text: 'Accurate availability, specifications, and prices help clinics make informed purchasing decisions.', selector: '[data-onboarding-key="supplier-catalog"]' },
     ],
   },
 }
@@ -87,6 +87,14 @@ const writeLocalDisabled = (tourKey, disabled, uid = '') => {
   } catch (_error) {
     // A storage failure should never block the application.
   }
+}
+
+const waitForTourTarget = async (selector, attempts = 20) => {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (document.querySelector(selector)) return true
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return false
 }
 
 export const useOnboardingTour = ({ route, user }) => {
@@ -224,6 +232,8 @@ export const useOnboardingTour = ({ route, user }) => {
         // not during the transition from /login.
         await new Promise((resolve) => setTimeout(resolve, 150))
         if (!user.value?.uid || !tourKey.value) return
+        const firstTarget = tour.value?.steps?.[0]?.selector
+        if (firstTarget && !(await waitForTourTarget(firstTarget))) return
         const disabled = await loadPreference()
         if (!disabled) {
           triggeredForUid.value = nextUid
