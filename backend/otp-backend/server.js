@@ -1501,7 +1501,10 @@ const loadUserContext = async (uid) => {
   // A Clinic Admin is an employee administrator, never an owner. Legacy
   // role records could contain the global full-access flag, so discard it;
   // branch checks remain mandatory in every workflow.
-  const permissions = roleKey === 'Clinic Admin'
+  // Clinic owners are the accountable administrators for their own branch.
+  // Give them the same operational permissions as a Clinic Admin; supply
+  // workflow endpoints still verify clinic ownership/branch access separately.
+  const permissions = roleKey === 'Clinic Admin' || roleKey === 'Owner'
     ? [...new Set([
       ...CLINIC_ADMIN_PERMISSIONS,
       ...userPermissions,
