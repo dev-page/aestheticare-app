@@ -176,6 +176,17 @@
                   </p>
                 </div>
 
+                <template v-if="shouldShowShelfLife(item)">
+                  <div>
+                    <label class="item-label">Manufacturing Date <span class="normal-case font-normal">(if applicable)</span></label>
+                    <input v-model="item.manufacturingDate" type="date" class="item-input" />
+                  </div>
+                  <div>
+                    <label class="item-label">Expiry Date <span class="normal-case font-normal">(if applicable)</span></label>
+                    <input v-model="item.expiryDate" type="date" class="item-input" :min="item.manufacturingDate || undefined" />
+                  </div>
+                </template>
+
                 <div>
                   <label class="item-label">Price</label>
                   <div class="price-field">
@@ -229,6 +240,8 @@
             <div><dt class="item-label">Reserved for confirmed orders</dt><dd>{{ selectedItem.reservedQuantity || 0 }}</dd></div>
             <div><dt class="item-label">Price</dt><dd>{{ formatMoney(selectedItem.price ?? selectedItem.unitCost) }}</dd></div>
             <div><dt class="item-label">Measurement</dt><dd>{{ selectedItem.measurementValue || selectedItem.measurement || '—' }} {{ selectedItem.measurementUnit }}</dd></div>
+            <div v-if="selectedItem.manufacturingDate"><dt class="item-label">Manufacturing Date</dt><dd>{{ selectedItem.manufacturingDate }}</dd></div>
+            <div v-if="selectedItem.expiryDate"><dt class="item-label">Expiry Date</dt><dd>{{ selectedItem.expiryDate }}</dd></div>
             <div class="sm:col-span-2"><dt class="item-label">Description</dt><dd class="whitespace-pre-wrap break-words">{{ selectedItem.description || 'No description provided.' }}</dd></div>
             <div class="sm:col-span-2"><dt class="item-label">Specifications / Details</dt><dd class="whitespace-pre-wrap break-words">{{ selectedItem.specifications || selectedItem.details || 'No specifications provided.' }}</dd></div>
             <div><dt class="item-label">FDA Registration Number</dt><dd>{{ selectedItem.fdaRegistrationNumber || 'Not provided' }}</dd></div>
@@ -285,6 +298,8 @@ const createEmptyItem = () => ({
   measurementUnit: '',
   showMeasurement: false,
   specifications: '',
+  manufacturingDate: '',
+  expiryDate: '',
   price: '',
   imageUrl: '',
   imageName: '',
@@ -297,6 +312,7 @@ const createEmptyItem = () => ({
 
 const activeItemCount = computed(() => savedCatalog.value.length)
 const shouldShowMeasurement = (item) => ['Injectables', 'Skincare'].includes(item.category) || Boolean(item.showMeasurement || item.measurementValue || item.measurementUnit)
+const shouldShowShelfLife = (item) => ['Injectables', 'Skincare', 'Medical Supplies'].includes(item.category) || Boolean(item.manufacturingDate || item.expiryDate)
 const categoryCount = computed(() => {
   const categories = new Set()
   savedCatalog.value.forEach((item) => {
@@ -356,7 +372,7 @@ const addItemRow = () => {
 
 const hasDraftData = (item) => Boolean(
   item.name || item.category || item.customCategory || item.description || item.quantity ||
-  item.measurementValue || item.measurementUnit || item.specifications || item.price ||
+  item.measurementValue || item.measurementUnit || item.specifications || item.manufacturingDate || item.expiryDate || item.price ||
   item.imageUrl || item.fdaRegistrationNumber || item.fdaApprovalDocument || item.fdaApprovalFile
 )
 
@@ -481,6 +497,7 @@ const validateItems = () => {
     if (measurementValue && !/^\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?)*$/i.test(measurementValue)) return 'Use a positive number or dimensions such as 2x3 for measurements.'
     if (measurementValue && measurementValue.split(/[x×]/i).some((part) => Number(part) <= 0)) return 'Measurement values must be greater than zero.'
     if (measurementUnit === 'custom' && !String(item.specifications || '').trim()) return 'Describe the custom unit in Specifications / Details.'
+    if (item.manufacturingDate && item.expiryDate && item.expiryDate < item.manufacturingDate) return 'Expiry date cannot be earlier than the manufacturing date.'
     if (item.imageFile && uploadError([item.imageFile])) return uploadError([item.imageFile])
     if (item.fdaApprovalFile && uploadError([item.fdaApprovalFile], true)) return uploadError([item.fdaApprovalFile], true)
     if (!measurementValue && measurementUnit) return 'Please provide a measurement value when selecting a unit.'
@@ -524,6 +541,8 @@ const saveSupplies = async () => {
         measurementValue: String(item.measurementValue || '').trim(),
         measurementUnit: String(item.measurementUnit || '').trim(),
         specifications: String(item.specifications || '').trim(),
+        manufacturingDate: String(item.manufacturingDate || '').trim(),
+        expiryDate: String(item.expiryDate || '').trim(),
         price: Number(item.price || 0),
         unitCost: Number(item.price || 0),
         imageUrl: String(item.imageUrl || '').trim(),
@@ -586,6 +605,8 @@ const saveSupplies = async () => {
         measurementValue: item.measurementValue,
         measurementUnit: item.measurementUnit,
         specifications: item.specifications,
+        manufacturingDate: item.manufacturingDate,
+        expiryDate: item.expiryDate,
         price: item.price,
         unitCost: item.unitCost,
         imageUrl,

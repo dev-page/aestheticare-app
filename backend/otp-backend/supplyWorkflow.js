@@ -118,6 +118,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       demand(!data.imageUrl || /^https:\/\//.test(data.imageUrl), 'Images must use an HTTPS URL.', 400)
       demand(['Material', 'Equipment'].includes(input.itemType), 'Choose Material or Equipment.', 400)
       data.itemType = input.itemType; data.consumability = input.consumability === 'Non-consumable' ? 'Non-consumable' : 'Consumable'
+      data.manufacturingDate = input.manufacturingDate ? dateKey(input.manufacturingDate) : ''
       data.expiryDate = input.expiryDate ? dateKey(input.expiryDate) : ''
       tx.set(ref, data, { merge: true })
       tx.set(db.collection('inventoryMovements').doc(), { branchId, inventoryItemId: ref.id, type: existing.exists ? 'adjustment' : 'opening_stock', quantity: currentStock - Number(old.currentStock || 0), reason, createdBy: ctx.uid, createdAt: stamp() })
@@ -187,15 +188,25 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     if (!targetId) {
       switch (input.kind) {
         case 'request': {
-          allow(ctx, 'inventory:create'); const supplierId = cleanId(input.supplierId), sourceSupplier = supplier(supplierId), catalogItemId = String(input.supplierCatalogItemId || ''), product = (sourceSupplier.offeredItems || []).find(entry => String(entry.id) === catalogItemId)
-          demand(product, 'Select a supply from the chosen supplier catalog.', 400)
-          const quantityRequested = quantity(input.quantity), minStock = quantity(input.minStock, true), targetStock = quantity(input.targetStock, true), maxStock = quantity(input.maxStock, true)
-          demand(targetStock >= minStock && maxStock >= targetStock, 'Maximum stock must be at least target stock, and target stock must be at least the restocking threshold.', 400)
-          const existingItem = items.find(item => item.supplierId === supplierId && String(item.supplierCatalogItemId || '') === catalogItemId)
-          const itemId = existingItem?.id || crypto.randomUUID(), requestLine = { itemId, initialInventory: !existingItem, name: required(product.name || product.itemName || product.productName, 'Catalog item name'), category: String(product.category || product.categoryGroup || product.customCategory || ''), supplierId, supplierCatalogItemId: catalogItemId, quantity: quantityRequested, unit: String(product.measurementUnit || product.unit || 'units'), specifications: String(product.description || product.specifications || ''), minStock, targetStock, maxStock, location: String(input.location || '') }
-          result = create('request', { status: 'Sent to Procurement', itemId, supplierId, lines: [requestLine], currentStock: Number(existingItem?.currentStock || 0), minStock, department: required(input.department, 'Department'), reason: required(input.reason, 'Reason'), priority: input.priority || 'Normal', requiredDate: dateKey(input.requiredDate), estimatedCost: money(input.estimatedCost || product.price || product.unitCost || 0), submittedBy: ctx.uid, submittedAt: now })
-          const procurement = create('procurement', { status: 'Received', requestId: result.id, requesterId: ctx.uid, lines: result.lines, department: result.department, requiredDate: result.requiredDate, reason: result.reason, priority: result.priority, estimatedProcurementValue: result.estimatedCost, links: [result.id] }, `proc-${result.id}`)
-          set(result, { procurementId: procurement.id }); break
+          allow(ctx, 'inventory:create')
+          const suppliedLines = Array.isArray(input.lines) && input.lines.length ? input.lines : [input]
+          demand(suppliedLines.length <= 50, 'A request can include up to 50 items.', 400)
+          const seenProducts = new Set()
+          const lines = suppliedLines.map(raw => {
+            const supplierId = cleanId(raw.supplierId), sourceSupplier = supplier(supplierId), catalogItemId = String(raw.supplierCatalogItemId || ''), product = (sourceSupplier.offeredItems || []).find(entry => String(entry.id) === catalogItemId)
+            demand(product, 'Select a supply from an active supplier catalog.', 400)
+            demand(!seenProducts.has(`${supplierId}:${catalogItemId}`), 'Duplicate supplier catalog items are not allowed.', 400); seenProducts.add(`${supplierId}:${catalogItemId}`)
+            const minStock = quantity(raw.minStock || 0, true), targetStock = quantity(raw.targetStock || minStock, true), maxStock = quantity(raw.maxStock || targetStock, true)
+            demand(targetStock >= minStock && maxStock >= targetStock, 'Maximum stock must be at least target stock, and target stock must be at least the restocking threshold.', 400)
+            const existingItem = items.find(item => item.supplierId === supplierId && String(item.supplierCatalogItemId || '') === catalogItemId)
+            const unitPrice = money(product.price || product.unitCost || 0), requestedQuantity = quantity(raw.quantity)
+            return { itemId: existingItem?.id || crypto.randomUUID(), initialInventory: !existingItem, name: required(product.name || product.itemName || product.productName, 'Catalog item name'), category: String(product.category || product.categoryGroup || product.customCategory || ''), supplierId, preferredSupplierId: supplierId, supplierCatalogItemId: catalogItemId, quantity: requestedQuantity, unit: String(product.measurementUnit || product.unit || 'units'), specifications: String(product.description || product.specifications || ''), packaging: String(product.measurementValue || ''), manufacturingDate: product.manufacturingDate ? dateKey(product.manufacturingDate) : '', expiryDate: product.expiryDate ? dateKey(product.expiryDate) : '', unitPrice, subtotal: requestedQuantity * unitPrice, currentStock: Number(existingItem?.currentStock || 0), minStock, targetStock, maxStock, location: String(raw.location || input.location || '') }
+          })
+          const estimatedCost = lines.reduce((sum, line) => sum + line.subtotal, 0)
+          result = create('request', { status: 'Sent to Procurement', supplierId: lines.length === 1 ? lines[0].supplierId : '', itemId: lines.length === 1 ? lines[0].itemId : '', lines, department: required(input.department, 'Department'), reason: required(input.reason, 'Reason'), notes: String(input.notes || ''), priority: input.priority || 'Normal', requiredDate: dateKey(input.requiredDate), estimatedCost, submittedBy: ctx.uid, submittedAt: now })
+          const procurement = create('procurement', { status: 'Received', requestId: result.id, requesterId: ctx.uid, lines, department: result.department, requiredDate: result.requiredDate, reason: result.reason, priority: result.priority, estimatedProcurementValue: estimatedCost, links: [result.id] }, `proc-${result.id}`)
+          set(result, { procurementId: procurement.id })
+          break
         }
         case 'budget': allow(ctx, 'finance:payables:approve'); result = create('budget', { status: 'Active', department: required(input.department, 'Department'), category: required(input.category, 'Category'), total: money(input.total), committed: 0, spent: 0 }); break
         case 'rfq': {
@@ -228,7 +239,9 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             const expiryDate = line.expiryDate ? dateKey(line.expiryDate) : ''
             demand(!accepted || ((!expiryDate || expiryDate >= day()) && (line.condition || 'Good') === 'Good'), 'Only goods inspected as Good can be accepted into inventory.')
             if (rejected) required(line.reason, 'Rejection reason')
-            return { itemId: ordered.itemId, name: ordered.name, category: ordered.category || '', supplierCatalogItemId: ordered.supplierCatalogItemId || '', ordered: ordered.quantity, delivered, accepted, rejected, condition: String(line.condition || 'Good'), reason: String(line.reason || ''), expiryDate, lot: String(line.lot || ''), serialNumber: String(line.serialNumber || ''), modelNumber: String(line.modelNumber || ''), warranty: String(line.warranty || ''), packaging: String(line.packaging || '') }
+            const manufacturingDate = line.manufacturingDate ? dateKey(line.manufacturingDate) : ''
+            demand(!manufacturingDate || !expiryDate || manufacturingDate <= expiryDate, 'Expiry date cannot be earlier than the manufacturing date.')
+            return { itemId: ordered.itemId, name: ordered.name, category: ordered.category || '', supplierCatalogItemId: ordered.supplierCatalogItemId || '', ordered: ordered.quantity, delivered, accepted, rejected, condition: String(line.condition || 'Good'), reason: String(line.reason || ''), manufacturingDate, expiryDate, lot: String(line.lot || ''), serialNumber: String(line.serialNumber || ''), modelNumber: String(line.modelNumber || ''), warranty: String(line.warranty || ''), packaging: String(line.packaging || '') }
           })
           demand(lines.length && new Set(lines.map(l => l.itemId)).size === lines.length && lines.some(l => l.delivered > 0), 'Enter unique delivered items.')
           result = create('receiving', { status: 'Inspected', poId: po.id, supplierId: po.supplierId, links: [...po.links, po.id], lines, reference: required(input.reference, 'Delivery reference'), deliveryDate: dateKey(input.deliveryDate), receivedBy: ctx.uid, notes: String(input.notes || '') })
@@ -249,15 +262,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       demand(record, 'Record not found.', 404); demand(canRead(ctx, record), 'Access denied.', 403)
       const r = record
       if (r.kind === 'request') {
-        if (action === 'editRequest') { allow(ctx, 'inventory:create'); demand(['Draft', 'Returned'].includes(r.status), 'Only draft or returned requests can be edited.'); result = set(r, { reason: required(input.reason, 'Reason'), department: required(input.department, 'Department'), requiredDate: dateKey(input.requiredDate), priority: required(input.priority, 'Priority'), estimatedCost: money(input.estimatedCost || 0), lines: r.lines.map(l => ({ ...l, quantity: quantity(input.quantity) })) }) }
-        else if (action === 'submit') {
-          allow(ctx, 'inventory:create'); demand(['Draft', 'Returned'].includes(r.status), 'Request cannot be submitted.')
-          const lines = r.status === 'Returned' ? r.lines.map(l => ({ ...l, quantity: quantity(input.quantity) })) : r.lines
-          const reason = r.status === 'Returned' ? required(input.reason, 'Revised reason') : r.reason
-          const p = create('procurement', { status: 'Received', requestId: r.id, requesterId: r.createdBy, lines, department: r.department, requiredDate: r.requiredDate, reason, priority: r.priority, estimatedProcurementValue: r.estimatedCost, links: [r.id] }, `proc-${r.id}`)
-          result = set(r, { status: 'Sent to Procurement', reason, lines, submittedBy: ctx.uid, submittedAt: now, procurementId: p.id })
-        }
-        else demand(false, 'Inventory requests are sent directly to Procurement when submitted.')
+        demand(false, 'Inventory requests are sent directly to Procurement when created.')
       } else if (r.kind === 'procurement') {
         allow(ctx, 'procurement:review')
         if (action === 'resource') {
@@ -344,8 +349,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           demand(onHand >= line.accepted && reserved >= line.accepted, `Supplier stock is insufficient to complete receipt for ${ordered.name}.`)
           catalog[catalogIndex] = { ...catalogItem, quantity: onHand - line.accepted, reservedQuantity: reserved - line.accepted, lastFulfilledAt: now, lastFulfilledPoId: po.id }
           if (line.serialNumber) { demand(line.accepted === 1, 'Receive serialized equipment one unit per receiving record.'); demand(!docs(lotSnap).some(l => l.serialNumber === line.serialNumber && l.itemId === item.id), 'This equipment serial number has already been received.') }
-          writes.push([db.collection('supplyLots').doc(`${r.id}-${item.id}`), { branchId, itemId: item.id, receivingId: r.id, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', receivedQuantity: line.accepted, remainingQuantity: line.accepted, lot: line.lot || '', expiryDate: line.expiryDate || '', serialNumber: line.serialNumber || '', modelNumber: line.modelNumber || '', warranty: line.warranty || '', condition: line.condition, location: po.deliveryLocation, unitCost: ordered.unitPrice, receivedAt: now }, false])
-          writes.push([db.collection('inventoryItems').doc(item.id), { ...item, currentStock: Number(item.currentStock || 0) + line.accepted, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || item.supplierCatalogItemId || '', receivedAt: now, updatedAt: now, createdAt: isFirstReceipt ? now : item.createdAt || now, expiryDate: Number(item.currentStock || 0) > 0 && item.expiryDate ? [item.expiryDate, line.expiryDate].filter(Boolean).sort()[0] : line.expiryDate || '', serialNumber: line.serialNumber || item.serialNumber || '', modelNumber: line.modelNumber || item.modelNumber || '', warranty: line.warranty || item.warranty || '', condition: line.condition, location: ordered.location || po.deliveryLocation, costPrice: ordered.unitPrice / 100 }, true])
+          writes.push([db.collection('supplyLots').doc(`${r.id}-${item.id}`), { branchId, itemId: item.id, receivingId: r.id, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', receivedQuantity: line.accepted, remainingQuantity: line.accepted, lot: line.lot || '', manufacturingDate: line.manufacturingDate || '', expiryDate: line.expiryDate || '', serialNumber: line.serialNumber || '', modelNumber: line.modelNumber || '', warranty: line.warranty || '', condition: line.condition, location: po.deliveryLocation, unitCost: ordered.unitPrice, receivedAt: now }, false])
+          writes.push([db.collection('inventoryItems').doc(item.id), { ...item, currentStock: Number(item.currentStock || 0) + line.accepted, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || item.supplierCatalogItemId || '', receivedAt: now, updatedAt: now, createdAt: isFirstReceipt ? now : item.createdAt || now, manufacturingDate: line.manufacturingDate || item.manufacturingDate || '', expiryDate: Number(item.currentStock || 0) > 0 && item.expiryDate ? [item.expiryDate, line.expiryDate].filter(Boolean).sort()[0] : line.expiryDate || '', serialNumber: line.serialNumber || item.serialNumber || '', modelNumber: line.modelNumber || item.modelNumber || '', warranty: line.warranty || item.warranty || '', condition: line.condition, location: ordered.location || po.deliveryLocation, costPrice: ordered.unitPrice / 100 }, true])
           writes.push([db.collection('inventoryMovements').doc(`${r.id}-${item.id}`), { branchId, inventoryItemId: item.id, receivingId: r.id, inspectionId: r.inspectionId, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', quantity: line.accepted, type: 'purchase_receipt', createdBy: ctx.uid, createdAt: now, lot: line.lot, expiryDate: line.expiryDate }, false])
         }
         writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
@@ -443,7 +448,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const id = cleanId(req.params.id), record = (await db.collection('supplyRecords').doc(id).get()).data(); await ensureRead(ctx, record)
     demand(!ctx.supplier || (supplierOwns(ctx, record) && ['quotation', 'po', 'invoice'].includes(record.kind)), 'Supplier cannot upload to this record.', 403)
     if (!ctx.supplier) {
-      const writers = { request: ['inventory:create', 'inventory:review'], procurement: ['procurement:create', 'procurement:review'], rfq: ['procurement:create', 'procurement:review'], quotation: ['procurement:create', 'procurement:review'], evaluation: ['procurement:review'], financeApproval: ['finance:payables:approve'], budgetAllocation: ['finance:payables:approve'], po: ['procurement:review', 'orders:update'], supplierConfirmation: ['procurement:review'], receiving: ['orders:update'], inspection: ['orders:update'], discrepancy: ['orders:update'], budget: ['finance:payables:approve'], budgetRequest: ['procurement:review', 'finance:payables:approve'], invoice: ['finance:payables:approve', 'finance:payables:settle'], threeWayMatch: ['finance:payables:approve'], payment: ['finance:payables:settle'] }
+      const writers = { request: ['inventory:create'], procurement: ['procurement:create', 'procurement:review'], rfq: ['procurement:create', 'procurement:review'], quotation: ['procurement:create', 'procurement:review'], evaluation: ['procurement:review'], financeApproval: ['finance:payables:approve'], budgetAllocation: ['finance:payables:approve'], po: ['procurement:review', 'orders:update'], supplierConfirmation: ['procurement:review'], receiving: ['orders:update'], inspection: ['orders:update'], discrepancy: ['orders:update'], budget: ['finance:payables:approve'], budgetRequest: ['procurement:review', 'finance:payables:approve'], invoice: ['finance:payables:approve', 'finance:payables:settle'], threeWayMatch: ['finance:payables:approve'], payment: ['finance:payables:settle'] }
       demand((writers[record.kind] || []).some(p => hasPermission(ctx, p)), 'Document upload requires write permission.', 403)
     }
     const { contentType, data, name } = req.body
