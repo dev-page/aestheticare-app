@@ -10,7 +10,7 @@ function fixture() {
   const seed = (collection, id, data) => store.set(`${collection}/${id}`, structuredClone(data))
   const collection = name => {
     const query = filters => ({ where: (field, op, value) => query([...filters, [field, op, value]]), get: async () => ({ docs: [...store.entries()].filter(([key, value]) => key.startsWith(name + '/') && filters.every(([f, op, v]) => op === 'array-contains' ? value[f]?.includes(v) : value[f] === v)).map(([key, value]) => ({ id: key.split('/')[1], data: () => structuredClone(value) })) }) })
-    return { ...query([]), doc: (id = `generated-${++seq}`) => ({ id, key: `${name}/${id}`, get: async () => ({ id, exists: store.has(`${name}/${id}`), data: () => structuredClone(store.get(`${name}/${id}`)) }), set: async value => seed(name, id, value) }), add: async value => seed(name, `generated-${++seq}`, value) }
+    return { ...query([]), doc: (id = `generated-${++seq}`) => ({ id, key: `${name}/${id}`, parent: { id: name }, get: async () => ({ id, exists: store.has(`${name}/${id}`), data: () => structuredClone(store.get(`${name}/${id}`)) }), set: async value => seed(name, id, value) }), add: async value => seed(name, `generated-${++seq}`, value) }
   }
   const db = { collection, runTransaction: async fn => { const writes = []; const result = await fn({ get: ref => ref.get(), set: (ref, value, options) => writes.push([ref.key, value, options]) }); for (const [key, value, options] of writes) store.set(key, options?.merge ? { ...store.get(key), ...structuredClone(value) } : structuredClone(value)); return result } }
   const permissions = {
@@ -18,8 +18,8 @@ function fixture() {
   }
   const firestore = () => db; firestore.FieldValue = { serverTimestamp: () => ({ _seconds: 1800000000 }) }
   registerSupplyWorkflow({ get: (path, ...handlers) => routes.set(`GET ${path}`, handlers.at(-1)), post: (path, ...handlers) => routes.set(`POST ${path}`, handlers.at(-1)) }, { admin: { firestore }, requireAuth: () => {}, loadUserContext: async uid => ({ uid, roleKey: ['supplier', 'competitor'].includes(uid) ? 'supplier' : uid, permissions: new Set(permissions[uid]), userData: { branchId: 'clinic', fullName: uid } }), storageBucket: () => 'unused' })
-  seed('clinics', 'clinic', { ownerId: 'owner' }); seed('inventoryItems', 'item', { branchId: 'clinic', name: 'Gloves', currentStock: 20, minStock: 25, targetStock: 120, unit: 'boxes' })
-  seed('suppliers', 'vendor', { branchId: 'clinic', status: 'Active', ownerId: 'supplier' }); seed('suppliers', 'rival', { branchId: 'clinic', status: 'Active', ownerId: 'competitor' })
+  seed('clinics', 'clinic', { ownerId: 'owner' }); seed('inventoryItems', 'item', { branchId: 'clinic', name: 'Gloves', currentStock: 20, minStock: 25, targetStock: 120, unit: 'boxes', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves' })
+  seed('suppliers', 'vendor', { branchId: 'clinic', status: 'Active', ownerId: 'supplier', offeredItems: [{ id: 'catalog-gloves', name: 'Gloves', category: 'Materials', unit: 'boxes', price: 5, quantity: 1000 }] }); seed('suppliers', 'rival', { branchId: 'clinic', status: 'Active', ownerId: 'competitor', offeredItems: [] })
   const call = async (uid, path, body = {}, id, method = 'POST') => { let status = 200, payload; await routes.get(`${method} ${path}`)({ user: { uid }, body, params: { id }, query: {} }, { status: code => { status = code; return { json: data => { payload = data } } }, json: data => { payload = data } }); return { status, ...payload } }
   const create = async (uid, kind, data) => { const r = await call(uid, '/supply/records', { branchId: 'clinic', kind, ...data }); assert.equal(r.status, 200, JSON.stringify(r)); return r.data.id }
   const act = async (uid, id, action, data = {}, expected = 200) => { const r = await call(uid, '/supply/records/:id/actions', { action, ...data }, id); assert.equal(r.status, expected, JSON.stringify(r)); return r }
@@ -30,10 +30,9 @@ function fixture() {
 
 for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, partial receiving, matching and payment`, async () => {
   const f = fixture(), date = '2099-12-31'
-  const request = await f.create('inventory', 'request', { itemId: 'item', quantity: 100, department: 'Inventory', reason: 'Replenishment', requiredDate: date })
+  const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 100, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Replenishment', requiredDate: date })
   await f.act('inventory', request, 'submit')
-  await f.act('inventory', request, 'approve', {}, 403)
-  await f.act('reviewer', request, 'approve')
+  assert.equal(f.read(request).status, 'Sent to Procurement')
   const procurement = f.read(request).procurementId
   const rfq = await f.create('procurement', 'rfq', { procurementId: procurement, mode, supplierIds: ['vendor'], deadline: date, deliveryDate: date, deliveryLocation: 'Clinic', terms: 'Deliver intact', contact: 'Purchasing' })
   if (mode === 'Manual') { await f.act('procurement', rfq, 'send', {}, 409); f.evidence(rfq) }
@@ -57,7 +56,8 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   await f.act('competitor', po, 'confirm', { remarks: 'Wrong supplier', deliveryDate: date }, 403)
   await f.act(mode === 'Manual' ? 'procurement' : 'supplier', po, 'confirm', { remarks: 'Confirmed', deliveryDate: date })
   assert.equal(f.read(`confirmation-${po}`).status, 'Accepted')
-  await f.act('procurement', po, 'startOrder')
+  await f.act('logistics', po, 'claimOrder')
+  assert.equal(f.read(po).status, 'Claimed by Logistics')
   const first = await f.create('logistics', 'receiving', { poId: po, reference: 'DR1', deliveryDate: date, lines: [{ itemId: 'item', delivered: 65, accepted: 60, rejected: 5, condition: 'Good', reason: 'Five damaged boxes' }] })
   assert.equal(f.read(`inspection-${first}`).status, 'Completed')
   await f.act('logistics', first, 'onboard'); await f.act('logistics', first, 'onboard')
