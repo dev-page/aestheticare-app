@@ -14,9 +14,11 @@
           <section class="rounded-xl border border-slate-700 p-5"><h2 class="font-semibold">Alerts and next actions</h2><p v-for="alert in alerts" :key="alert" class="mt-2 text-sm text-amber-200">{{ alert }}</p><p v-if="!alerts.length" class="mt-2 text-sm text-slate-400">No outstanding alerts.</p></section>
         </div>
         <template v-else>
+          <SupplierDirectory v-if="page === 'suppliers' && department === 'procurement'" embedded />
+          <div v-if="!(page === 'suppliers' && department === 'procurement')">
           <div class="module-actions mb-4">
             <button v-if="page === 'items' && can('inventory:create')" class="module-action" title="Register item from supplier catalog" @click="openItem()"><span aria-hidden="true">＋</span> Register item</button>
-            <button v-if="page === 'suppliers' &amp;&amp; can('suppliers:create')" class="module-action" title="Add manual supplier" @click="openForm('supplier')"><span aria-hidden="true">＋</span> Add supplier</button><router-link v-if="page === 'suppliers'" to="/procurement/suppliers/directory" class="module-action" title="Manage or invite suppliers"><span aria-hidden="true">↗</span> Supplier directory</router-link><button v-if="page === 'requests' && department === 'inventory' && can('inventory:create')" class="module-action" title="Create inventory request" @click="openForm('request')"><span aria-hidden="true">＋</span> New request</button>
+            <button v-if="page === 'requests' && department === 'inventory' && can('inventory:create')" class="module-action" title="Create inventory request" @click="openForm('request')"><span aria-hidden="true">＋</span> New request</button>
             <button v-if="page === 'budgets' && can('finance:payables:approve')" class="module-action" title="Create budget" @click="openForm('budget')"><span aria-hidden="true">＋</span> Create budget</button>
             <select v-if="page === 'reports'" v-model="reportKey" aria-label="Report type"><option v-for="(r,index) in availableReports" :key="r.key" :value="index === 0 ? '' : r.key">{{ r.label }}</option></select><button class="module-action" title="Export filtered report" @click="exportCsv"><span aria-hidden="true">⇩</span> Export report</button>
           </div>
@@ -32,6 +34,7 @@
           </div>
           <div class="overflow-x-auto rounded-xl border border-slate-700"><table class="w-full text-left text-sm"><thead class="bg-slate-800"><tr><th>Reference / Item</th><th>Type</th><th>Status / DSS</th><th>Quantity / Amount</th><th>Next action</th><th></th></tr></thead><tbody><tr v-for="row in pagedRows" :key="row.id" class="border-t border-slate-700"><td><img v-if="row.imageUrl" :src="row.imageUrl" alt="" class="mr-2 inline-block h-10 w-10 rounded object-cover" />{{ row.number || row.name || row.businessName || row.id }}<small class="block text-slate-400">{{ row.brand || row.department || supplierName(row.supplierId) }}</small></td><td>{{ row.kind || row.itemType || 'Supplier' }}</td><td><span class="rounded bg-slate-700 px-2 py-1">{{ row.signals?.join(', ') || row.status || 'In Stock' }}</span></td><td>{{ row.currentStock !== undefined ? row.currentStock + ' ' + (row.unit || 'units') : row.total !== undefined ? currency(row.total) : row.requestedAmount !== undefined ? currency(row.requestedAmount) : row.lines?.map(l => l.quantity ?? l.accepted).join(', ') || '—' }}</td><td>{{ nextAction(row) }}</td><td><button @click="view(row)">Details</button></td></tr><tr v-if="!pagedRows.length"><td colspan="6" class="text-center text-slate-400">No matching records. Create a request or adjust your filters.</td></tr></tbody></table></div>
           <div class="mt-4 flex items-center justify-between"><span class="text-sm text-slate-400">{{ filteredRows.length }} records · Page {{ currentPage }} / {{ pages }}</span><div class="flex gap-2"><button :disabled="currentPage === 1" @click="currentPage--">Previous</button><button :disabled="currentPage >= pages" @click="currentPage++">Next</button></div></div>
+          </div>
         </template>
       </template>
 
@@ -65,6 +68,7 @@ import { auth } from '@/config/firebaseConfig'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
+import SupplierDirectory from '@/views/admin/owner/operations/SupplySuppliers.vue'
 import Swal from 'sweetalert2'
 import { dashboardCharts, reportDefinitions, exportReportCsv } from '@/utils/supplyReporting'
 
@@ -73,7 +77,7 @@ const supplierView = computed(() => route.path.startsWith('/supplier/'))
 const department = computed(() => supplierView.value ? 'supplier' : route.meta.supplyDepartment || route.params.department || 'inventory')
 const page = computed(() => route.params.page || 'dashboard')
 const departmentLabel = computed(() => ({ inventory: 'Inventory Management', procurement: 'Procurement Management', logistics: 'Logistics Management', finance: 'Procurement Finance', management: 'Management Overview', supplier: 'Supplier Portal' })[department.value])
-const pageTitle = computed(() => ({ dashboard: 'Dashboard', items: department.value === 'logistics' ? 'Receiving & inspection' : 'Inventory List · DSS', requests: 'Requests', orders: 'Purchase Orders', suppliers: 'Supplier List', reports: 'Reports & Traceability', onboarding: 'Inventory Onboarding', budgets: 'Budget Allocations', invoices: 'Invoices & Payments', rfqs: 'RFQs & Quotations' })[page.value] || 'Supply Management')
+const pageTitle = computed(() => ({ dashboard: 'Dashboard', items: department.value === 'logistics' ? 'Receiving & inspection' : 'Inventory List · DSS', requests: 'Requests', orders: 'Purchase Orders', suppliers: 'Supplier Directory', reports: 'Reports & Traceability', onboarding: 'Inventory Onboarding', budgets: 'Budget Allocations', invoices: 'Invoices & Payments', rfqs: 'RFQs & Quotations' })[page.value] || 'Supply Management')
 const intro = computed(() => ({ inventory: 'Monitor stock, review DSS recommendations, and request replenishment.', procurement: 'Source quotations, record your evaluation, and issue funded purchase orders.', logistics: 'Inspect deliveries and onboard only accepted quantities into inventory.', finance: 'Reserve budgets, match invoices to accepted deliveries, and record supplier payments.', supplier: 'Respond to your RFQs, confirm orders, and track invoice and payment status.' })[department.value])
 const tabMap = { management: ['dashboard','reports'], inventory: ['dashboard','items','requests','reports'], procurement: ['dashboard','requests','rfqs','orders','suppliers','reports'], logistics: ['dashboard','items','onboarding','requests','reports'], finance: ['dashboard','budgets','requests','invoices','reports'], supplier: ['dashboard','rfqs','orders','invoices','reports'] }
 const clinicSupplyPath = (module, targetPage) => ({ finance: `/finance/procurement/${targetPage}`, management: `/management/supply/${targetPage}` })[module] || `/${module}/${targetPage}`

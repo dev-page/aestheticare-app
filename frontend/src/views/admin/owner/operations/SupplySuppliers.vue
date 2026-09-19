@@ -1,8 +1,8 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div :class="embedded ? 'module-theme' : 'flex module-theme bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="flex-1 p-8">
+    <div :class="embedded ? '' : 'flex-1 p-8'">
       <div class="mb-8 flex items-center justify-between">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Supplier Directory</h1>
@@ -367,7 +367,7 @@
           </form>
         </div>
       </div>
-    </main>
+    </div>
   </div>
 </template>
 
@@ -392,6 +392,7 @@ import {
 export default {
   name: 'ManagerSuppliers',
   components: { OwnerSidebar },
+  props: { embedded: { type: Boolean, default: false } },
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
