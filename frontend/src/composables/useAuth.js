@@ -12,7 +12,8 @@ export function useAuth() {
 
   // ── Inactivity auto-logout ───────────────────────────────────────────────
   const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000 // 15 minutes
-  const WARNING_BEFORE_MS = 30 * 1000           // warn 30 seconds before expiry
+  const WARNING_BEFORE_MS = 30 * 1000 // warn 30 seconds before expiry
+  const LAST_ACTIVITY_KEY = 'auth:last-activity-at'
 
   let inactivityTimer = null
   let warningTimer = null
@@ -33,20 +34,46 @@ export function useAuth() {
     inactivityWarning.value = false
   }
 
+  const lastActivityAt = () => {
+    try {
+      return Number(window.localStorage.getItem(LAST_ACTIVITY_KEY) || 0)
+    } catch (_error) {
+      return 0
+    }
+  }
+
+  const recordActivity = () => {
+    if (!user.value || document.visibilityState === 'hidden') return
+    try {
+      window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
+    } catch (_error) {
+      // The in-memory timer still protects the session if storage is unavailable.
+    }
+    resetInactivityTimer()
+  }
+
   const resetInactivityTimer = () => {
     clearInactivityTimers()
     if (!user.value) return
 
-    // Set warning timer
+    const lastActive = lastActivityAt() || Date.now()
+    const elapsed = Math.max(0, Date.now() - lastActive)
+    const remaining = INACTIVITY_TIMEOUT_MS - elapsed
+
+    if (remaining <= 0) {
+      performInactivityLogout()
+      return
+    }
+
+    // Warn 30 seconds before expiry, unless the warning period already began.
     warningTimer = setTimeout(() => {
       inactivityWarning.value = true
-    }, INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_MS)
+    }, Math.max(0, remaining - WARNING_BEFORE_MS))
 
-    // Set logout timer
     inactivityTimer = setTimeout(async () => {
       inactivityWarning.value = false
       await performInactivityLogout()
-    }, INACTIVITY_TIMEOUT_MS)
+    }, remaining)
   }
 
   const performInactivityLogout = async () => {
@@ -56,7 +83,8 @@ export function useAuth() {
     try {
       await signOut(auth)
       clearCache()
-      await router.push('/login?expired=inactivity')
+      try { window.localStorage.removeItem(LAST_ACTIVITY_KEY) } catch (_error) {}
+      await router.replace('/login?expired=inactivity')
       window.dispatchEvent(new CustomEvent('toast', {
         detail: { message: 'Session has expired due to inactivity. Please log in again.', type: 'info' }
       }))
@@ -71,17 +99,28 @@ export function useAuth() {
   const startInactivityTracking = () => {
     stopInactivityTracking()
     if (!user.value) return
-    ACTIVITY_EVENTS.forEach((event) => {
-      window.addEventListener(event, resetInactivityTimer, { passive: true })
-    })
-    resetInactivityTimer()
+    ACTIVITY_EVENTS.forEach((event) => window.addEventListener(event, recordActivity, { passive: true }))
+    window.addEventListener('focus', resetInactivityTimer)
+    window.addEventListener('storage', handleStorageActivity)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    if (!lastActivityAt()) recordActivity()
+    else resetInactivityTimer()
   }
 
   const stopInactivityTracking = () => {
     clearInactivityTimers()
-    ACTIVITY_EVENTS.forEach((event) => {
-      window.removeEventListener(event, resetInactivityTimer)
-    })
+    ACTIVITY_EVENTS.forEach((event) => window.removeEventListener(event, recordActivity))
+    window.removeEventListener('focus', resetInactivityTimer)
+    window.removeEventListener('storage', handleStorageActivity)
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }
+
+  const handleStorageActivity = (event) => {
+    if (event.key === LAST_ACTIVITY_KEY) resetInactivityTimer()
+  }
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') resetInactivityTimer()
   }
 
   // ── Process loading helper ──────────────────────────────────────────────
@@ -116,6 +155,7 @@ export function useAuth() {
       await new Promise((resolve) => setTimeout(resolve, 600))
       await signOut(auth)
       clearCache()
+      try { window.localStorage.removeItem(LAST_ACTIVITY_KEY) } catch (_error) {}
       await router.push('/login')
     } catch (error) {
       console.error('Logout error:', error)
@@ -133,6 +173,7 @@ export function useAuth() {
     logout,
     initAuth,
     startInactivityTracking,
-    stopInactivityTracking
+    stopInactivityTracking,
+    continueSession: recordActivity
   }
 }

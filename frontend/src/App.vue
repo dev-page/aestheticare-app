@@ -93,6 +93,15 @@
       <p class="loader-label">{{ processLabel }}</p>
     </div>
 
+    <div v-if="inactivityWarning" class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 p-4" role="alertdialog" aria-modal="true" aria-labelledby="inactivity-title">
+      <section class="w-full max-w-md rounded-2xl border border-amber-500/50 bg-[#21130c] p-6 text-slate-100 shadow-2xl">
+        <p class="text-xs font-semibold uppercase tracking-widest text-amber-300">Session timeout</p>
+        <h2 id="inactivity-title" class="mt-2 text-xl font-semibold">You will be signed out soon</h2>
+        <p class="mt-2 text-sm text-slate-300">There has been no activity for almost 15 minutes. Select Continue session to remain signed in.</p>
+        <div class="mt-5 flex justify-end"><button class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500" @click="continueSession">Continue session</button></div>
+      </section>
+    </div>
+
     <div
       v-if="showConnectionModal"
       class="fixed inset-0 z-[9999] flex items-center justify-center bg-[#140b06]/70 p-4 backdrop-blur-[6px]"
@@ -153,7 +162,7 @@ import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import OnboardingTour from '@/components/common/OnboardingTour.vue'
 
 // Initialize auth state globally
-const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking } = useAuth()
+const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking, continueSession } = useAuth()
 
 const route = useRoute()
 const isSystemAdminRoute = computed(() => String(route.path || '').toLowerCase().startsWith('/superadmin/'))
