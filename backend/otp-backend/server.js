@@ -8,7 +8,6 @@ import { prepareBooking } from './bookingResources.js'
 import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow } from './bookingWorkflow.js'
 import express from 'express'
 import cors from 'cors'
-import { ServerClient } from 'postmark'
 import dotenv from 'dotenv'
 import admin from 'firebase-admin'
 import fs from 'node:fs'
@@ -103,8 +102,9 @@ dotenv.config({ path: path.resolve(__dirname, '.env') })
 
 console.log("Loaded ENV:", {
   PORT: process.env.PORT,
-  POSTMARK_API_TOKEN: process.env.POSTMARK_API_TOKEN ? "present" : (process.env.SENDGRID_API_KEY ? "present (from SENDGRID_API_KEY)" : "missing"),
-  POSTMARK_SENDER: process.env.POSTMARK_SENDER || process.env.SENDGRID_SENDER,
+  MAILJET_API_KEY: process.env.MAILJET_API_KEY ? "present" : "missing",
+  MAILJET_SECRET_KEY: process.env.MAILJET_SECRET_KEY ? "present" : "missing",
+  MAILJET_SENDER: process.env.MAILJET_SENDER,
   PAYMONGO_SECRET_KEY: process.env.PAYMONGO_SECRET_KEY ? "present" : "missing",
   PAYMONGO_PUBLIC_KEY: process.env.PAYMONGO_PUBLIC_KEY ? "present" : "missing",
   FRONTEND_BASE_URL: process.env.FRONTEND_BASE_URL,
@@ -158,8 +158,9 @@ app.use((error, _req, res, next) => {
   return next(error)
 })
 
-const postmarkApiToken = process.env.POSTMARK_API_TOKEN || process.env.SENDGRID_API_KEY || ''
-const senderEmail = process.env.POSTMARK_SENDER || process.env.SENDGRID_SENDER || ''
+const mailjetApiKey = process.env.MAILJET_API_KEY || ''
+const mailjetSecretKey = process.env.MAILJET_SECRET_KEY || ''
+const senderEmail = process.env.MAILJET_SENDER || ''
 const payMongoSecretKey = process.env.PAYMONGO_SECRET_KEY || ''
 const frontendBaseUrl = process.env.FRONTEND_BASE_URL || 'http://localhost:5173'
 const configuredServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim()
@@ -180,7 +181,16 @@ let caviteBoundaryCache = null
 let caviteBoundaryCacheAt = 0
 const CAVITE_BOUNDARY_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
-const postmarkClient = postmarkApiToken ? new ServerClient(postmarkApiToken) : null
+const postmarkClient = mailjetApiKey && mailjetSecretKey ? {
+  async sendEmail({ From, To, Subject, TextBody, HtmlBody }) {
+    const auth = Buffer.from(`${mailjetApiKey}:${mailjetSecretKey}`).toString('base64')
+    const response = await fetch('https://api.mailjet.com/v3.1/send', { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ Messages: [{ From: { Email: From || senderEmail }, To: String(To).split(',').map((Email) => ({ Email: Email.trim() })).filter(({ Email }) => Email), Subject, TextPart: TextBody || '', HTMLPart: HtmlBody || '' }] }) })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(payload?.ErrorMessage || 'Mailjet delivery failed.')
+    const result = payload?.Messages?.[0]
+    return { ErrorCode: result?.Status === 'success' ? 0 : 1, MessageID: result?.To?.[0]?.MessageID || null }
+  }
+} : null
 
 const fetchCaviteBoundary = async () => {
   if (caviteBoundaryCache && Date.now() - caviteBoundaryCacheAt < CAVITE_BOUNDARY_CACHE_TTL_MS) {
@@ -1649,7 +1659,9 @@ const resolveBranchAccess = async (uid, branchId) => {
   const branch = branchSnap.data() || {}
   if (String(branch.ownerId || '') === uid) return true
   const userSnap = await firestore.collection('users').doc(uid).get()
-  return String(userSnap.data()?.branchId || '') === branchId
+  const user = userSnap.data() || {}
+  const assignedBranches = new Set([user.branchId, ...(Array.isArray(user.branchIds) ? user.branchIds : [])].map((id) => String(id || '').trim()).filter(Boolean))
+  return assignedBranches.has(String(branchId || '').trim())
 }
 
 const getApprovedLeaveForDate = async (employeeId, dateKey) => {
@@ -2660,7 +2672,8 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
   const assignedPractitioner = [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo]
     .map((value) => String(value || '').trim()).includes(req.user.uid)
   req.userContext = req.userContext || await loadUserContext(req.user.uid)
-  const sameBranch = String(req.userContext.userData?.branchId || '').trim() === String(appointment.branchId || '').trim()
+  const assignedBranches = new Set([req.userContext.userData?.branchId, ...(Array.isArray(req.userContext.userData?.branchIds) ? req.userContext.userData.branchIds : [])].map((id) => String(id || '').trim()).filter(Boolean))
+  const sameBranch = assignedBranches.has(String(appointment.branchId || '').trim())
   const roleKey = String(req.userContext.roleKey || '').trim()
   const isAuthorizedPractitioner = roleKey === 'Superadmin' || roleKey === 'Owner' || (sameBranch && assignedPractitioner)
   if (!isAuthorizedPractitioner) return res.status(403).json({ success: false, error: 'Only the assigned practitioner may create this consultation link.' })
@@ -5022,7 +5035,8 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requirePermission('attendance:crea
     if (!branchSnap.exists || !await resolveBranchAccess(req.user.uid, normalizedBranchId)) {
       return res.status(403).json({ success: false, error: 'You are not assigned to this branch.' })
     }
-    if (String(userData.branchId || '') !== normalizedBranchId) {
+    const assignedBranches = new Set([userData.branchId, ...(Array.isArray(userData.branchIds) ? userData.branchIds : [])].map((id) => String(id || '').trim()).filter(Boolean))
+    if (!assignedBranches.has(normalizedBranchId)) {
       return res.status(403).json({ success: false, error: 'Your employee profile is not assigned to this branch.' })
     }
 
@@ -5330,6 +5344,28 @@ const handleAccountWelcome = async (req, res) => {
 }
 
 app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), handleAccountWelcome)
+
+// Trusted multi-branch assignment: the browser never decides organizational scope.
+app.post('/staff/:userId/branch-assignments', requireAuth, requirePermission('staff:update'), async (req, res) => {
+  try {
+    const targetId = String(req.params.userId || '').trim()
+    const branchIds = [...new Set((Array.isArray(req.body?.branchIds) ? req.body.branchIds : []).map((id) => String(id || '').trim()).filter(Boolean))]
+    if (!targetId || !branchIds.length || branchIds.length > 100) return res.status(400).json({ success: false, error: 'Select between 1 and 100 assigned branches.' })
+    const firestore = admin.firestore()
+    const targetRef = firestore.collection('users').doc(targetId)
+    const [targetSnap, branchSnaps] = await Promise.all([targetRef.get(), Promise.all(branchIds.map((id) => firestore.collection('clinics').doc(id).get()))])
+    if (!targetSnap.exists || String(targetSnap.data()?.userType || '').toLowerCase() !== 'staff') return res.status(404).json({ success: false, error: 'Staff account not found.' })
+    if (branchSnaps.some((snap) => !snap.exists)) return res.status(400).json({ success: false, error: 'One or more selected branches do not exist.' })
+    const branches = branchSnaps.map((snap) => ({ id: snap.id, ...(snap.data() || {}) }))
+    const ownerId = String(branches[0].ownerId || '').trim()
+    if (!ownerId || branches.some((branch) => String(branch.ownerId || '') !== ownerId)) return res.status(403).json({ success: false, error: 'Employees may only be assigned to branches in one clinic organization.' })
+    const actor = await loadUserContext(req.user.uid)
+    const actorIsOwner = String(actor.roleKey || '') === 'Owner' && req.user.uid === ownerId
+    if (!actorIsOwner && !(await Promise.all(branchIds.map((id) => resolveBranchAccess(req.user.uid, id)))).every(Boolean)) return res.status(403).json({ success: false, error: 'You are not authorized for every selected branch.' })
+    await targetRef.update({ branchId: branchIds[0], branchIds, clinicLocation: branches[0].clinicLocation || '', updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+    res.json({ success: true, data: { branchId: branchIds[0], branchIds } })
+  } catch (error) { res.status(error.status || 500).json({ success: false, error: 'Unable to update employee branch assignments.' }) }
+})
 app.post(SUPPLIER_WELCOME_PATH, requireAuth, requirePermission('suppliers:create'), handleAccountWelcome)
 
 // Supplier accounts are external accounts. Creating one requires Firebase Auth
@@ -6110,9 +6146,9 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
     const canReviewRequests = req.userContext.permissions.has('appointments:review') || roleKey === 'Owner' || roleKey === 'Superadmin'
     if (!canReviewRequests) return res.status(403).json({ success: false, error: 'Forbidden' })
 
-    const userBranchId = String(userData.branchId || '').trim()
+    const userBranchIds = new Set([userData.branchId, ...(Array.isArray(userData.branchIds) ? userData.branchIds : [])].map((id) => String(id || '').trim()).filter(Boolean))
     const appointmentBranchId = String(appointment.branchId || '').trim()
-    if (roleKey !== 'Owner' && roleKey !== 'Superadmin' && (!userBranchId || userBranchId !== appointmentBranchId)) {
+    if (roleKey !== 'Owner' && roleKey !== 'Superadmin' && !userBranchIds.has(appointmentBranchId)) {
       return res.status(403).json({ success: false, error: 'Forbidden' })
     }
 
@@ -6300,7 +6336,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
     req.userContext = req.userContext || await loadUserContext(req.user.uid)
     const userSnap = await firestore.collection('users').doc(req.user.uid).get()
     const userData = userSnap.exists ? userSnap.data() || {} : {}
-    const userBranchId = String(userData.branchId || '').trim()
+    const userBranchIds = new Set([userData.branchId, ...(Array.isArray(userData.branchIds) ? userData.branchIds : [])].map((id) => String(id || '').trim()).filter(Boolean))
     const appointmentBranchId = String(appointmentData.branchId || '').trim()
     const staffDisplayName = getStaffDisplayName(userData)
     const roleKey = String(req.userContext?.roleKey || '').trim()
@@ -6319,9 +6355,8 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
     if (
       roleKey !== 'Owner' &&
       roleKey !== 'Superadmin' &&
-      userBranchId &&
       appointmentBranchId &&
-      userBranchId !== appointmentBranchId
+      !userBranchIds.has(appointmentBranchId)
     ) {
       return res.status(403).json({
         success: false,

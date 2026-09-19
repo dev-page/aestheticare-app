@@ -2,7 +2,7 @@
   <div class="module-theme min-h-screen bg-slate-900 text-slate-100 flex">
     <SupplierSidebar v-if="supplierView" /><OwnerSidebar v-else />
     <main class="min-w-0 flex-1 p-4 md:p-8">
-      <header class="flex flex-wrap justify-between gap-4 mb-6"><div><p class="text-xs uppercase tracking-widest text-amber-300">{{ departmentLabel }}</p><h1 class="text-2xl font-bold">{{ pageTitle }}</h1><p class="mt-2 text-sm text-slate-400">{{ intro }}</p></div><div class="flex gap-2 items-start"><select v-if="!supplierView" v-model="branchId" @change="load"><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select><button @click="load" :disabled="busy">Refresh</button></div></header>
+      <header class="flex flex-wrap justify-between gap-4 mb-6"><div><p class="text-xs uppercase tracking-widest text-amber-300">{{ departmentLabel }}</p><h1 class="text-2xl font-bold">{{ pageTitle }}</h1><p class="mt-2 text-sm text-slate-400">{{ intro }}</p></div><div class="flex gap-2 items-start"><select v-if="!supplierView" v-model="branchId" @change="load"><option v-if="data.branches.length > 1" value="all">All Assigned Branches</option><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select><button @click="load" :disabled="busy">Refresh</button></div></header>
       <p v-if="error" role="alert" class="mb-4 rounded border border-red-500 bg-red-900/30 p-4">{{ error }}</p>
       <p v-if="notice" role="status" class="mb-4 rounded border border-emerald-600 p-4">{{ notice }}</p>
       <p v-if="loading">Loading department records…</p>
@@ -17,9 +17,9 @@
           <SupplierDirectory v-if="page === 'suppliers' && department === 'procurement'" embedded />
           <div v-if="!(page === 'suppliers' && department === 'procurement')">
           <div class="module-actions mb-4">
-            <button v-if="page === 'items' && can('inventory:create')" class="module-action" title="Register item from supplier catalog" @click="openItem()"><span aria-hidden="true">＋</span> Register item</button>
-            <button v-if="page === 'requests' && department === 'inventory' && can('inventory:create')" class="module-action" title="Create inventory request" @click="openForm('request')"><span aria-hidden="true">＋</span> New request</button>
-            <button v-if="page === 'budgets' && can('finance:payables:approve')" class="module-action" title="Create budget" @click="openForm('budget')"><span aria-hidden="true">＋</span> Create budget</button>
+            <button v-if="page === 'items' && branchId !== 'all' && can('inventory:create')" class="module-action" title="Register item from supplier catalog" @click="openItem()"><span aria-hidden="true">＋</span> Register item</button>
+            <button v-if="page === 'requests' && department === 'inventory' && branchId !== 'all' && can('inventory:create')" class="module-action" title="Create inventory request" @click="openForm('request')"><span aria-hidden="true">＋</span> New request</button>
+            <button v-if="page === 'budgets' && branchId !== 'all' && can('finance:payables:approve')" class="module-action" title="Create budget" @click="openForm('budget')"><span aria-hidden="true">＋</span> Create budget</button>
             <select v-if="page === 'reports'" v-model="reportKey" aria-label="Report type"><option v-for="(r,index) in availableReports" :key="r.key" :value="index === 0 ? '' : r.key">{{ r.label }}</option></select><button class="module-action" title="Export filtered report" @click="exportCsv"><span aria-hidden="true">⇩</span> Export report</button>
           </div>
           <div class="mb-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">

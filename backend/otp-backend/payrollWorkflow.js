@@ -6,6 +6,10 @@ export const payrollMonth = (entry) => {
 }
 export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserContext }) => {
   const db = admin.firestore(), timestamp = () => admin.firestore.FieldValue.serverTimestamp()
+  const assignedToBranch = (context, branchId) => {
+    const assigned = new Set([context.userData?.branchId, ...(Array.isArray(context.userData?.branchIds) ? context.userData.branchIds : [])].filter(Boolean))
+    return assigned.has(branchId)
+  }
   const route = (path, fn) => app.post(path, requireAuth, async (req, res) => {
     try {
       const context = await loadUserContext(req.user.uid)
@@ -15,7 +19,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   })
   route('/payroll/summaries/:id/submit', async (tx, req, context) => {
     const { branchId, monthKey, payrollEntryIds } = req.body || {}
-    check(context.userData.branchId === branchId && context.permissions.has('payroll:update'), 'HR payroll permission required for this branch.', 403)
+    check(assignedToBranch(context, branchId) && context.permissions.has('payroll:update'), 'HR payroll permission required for this branch.', 403)
     check(/^\d{4}-\d{2}$/.test(monthKey || '') && req.params.id === `${branchId}_${monthKey}`, 'Invalid payroll month.', 400)
     const ref = db.collection('payrollSummaries').doc(req.params.id), previous = (await tx.get(ref)).data()
     check(previous?.status !== 'approved' && !previous?.releasedCount, 'Approved or released payroll is locked.')
@@ -38,7 +42,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   })
   route('/finance/payroll/:id/reject', async (tx, req, context) => {
     const ref = db.collection('payrollSummaries').doc(req.params.id), summary = (await tx.get(ref)).data()
-    check(summary && context.userData.branchId === summary.branchId && context.permissions.has('payroll:approve'), 'Finance payroll approval permission required for this branch.', 403)
+    check(summary && assignedToBranch(context, summary.branchId) && context.permissions.has('payroll:approve'), 'Finance payroll approval permission required for this branch.', 403)
     check(summary.status === 'pending' || (summary.status === 'approved' && !summary.approvedEntries && !summary.releasedCount), 'Only pending or unconfirmed legacy payroll can be returned to HR.')
     const reason = String(req.body?.reason || '').trim()
     check(reason.length > 0 && reason.length <= 2000, 'Provide a rejection reason.', 400)
@@ -49,7 +53,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   })
   route('/finance/payroll/:id/approve', async (tx, req, context) => {
     const ref = db.collection('payrollSummaries').doc(req.params.id), summary = (await tx.get(ref)).data()
-    check(summary && context.userData.branchId === summary.branchId && context.permissions.has('payroll:approve'), 'Finance payroll approval permission required for this branch.', 403)
+    check(summary && assignedToBranch(context, summary.branchId) && context.permissions.has('payroll:approve'), 'Finance payroll approval permission required for this branch.', 403)
     check(summary.status === 'pending' || (summary.status === 'approved' && !summary.approvedEntries), 'This payroll summary is no longer awaiting approval.')
     const records = await tx.get(db.collection('payrolls').where('branchId', '==', summary.branchId))
     const entries = records.docs.filter((d) => payrollMonth(d.data()) === summary.monthKey && (!Array.isArray(summary.payrollEntryIds) || summary.payrollEntryIds.includes(d.id)))
@@ -67,7 +71,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   })
   route('/payroll/:id/release', async (tx, req, context) => {
     const entryRef = db.collection('payrolls').doc(req.params.id), entry = (await tx.get(entryRef)).data()
-    check(entry && context.userData.branchId === entry.branchId && context.permissions.has('payroll:update'), 'HR payroll permission required for this branch.', 403)
+    check(entry && assignedToBranch(context, entry.branchId) && context.permissions.has('payroll:update'), 'HR payroll permission required for this branch.', 403)
     const month = payrollMonth(entry), summaryRef = db.collection('payrollSummaries').doc(`${entry.branchId}_${month}`)
     const summary = (await tx.get(summaryRef)).data()
     check(summary?.status === 'approved' && summary.approvedEntries?.[entryRef.id], 'Finance must approve this exact payroll entry before release. Regenerate and review older summaries.')

@@ -16,7 +16,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     cleanId(branchId)
     demand(!ctx.supplier, 'Staff access required.', 403)
     const clinic = (await db.collection('clinics').doc(branchId).get()).data()
-    demand(clinic && (ctx.userData.branchId === branchId || clinic.ownerId === ctx.uid || clinic.branchAdminId === ctx.uid || branchId === ctx.uid), 'This branch is not assigned to your account.', 403)
+    const assignedBranches = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
+    demand(clinic && (assignedBranches.has(branchId) || clinic.ownerId === ctx.uid || clinic.branchAdminId === ctx.uid || branchId === ctx.uid), 'This branch is not assigned to your account.', 403)
   }
   const canRead = (ctx, r) => ctx.supplier ? supplierCanRead(r, ctx.supplierIds) : hasPermission(ctx, 'reports:view') || (permissionsByKind[r.kind] || []).some(p => hasPermission(ctx, p))
   const ensureRead = async (ctx, r) => { demand(r && canRead(ctx, r), 'Record not available to this account.', 403); if (!ctx.supplier) await branchAccess(ctx, r.branchId) }
@@ -59,14 +60,17 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   app.get('/supply/workspace', requireAuth, wrap(async (req, res, ctx) => {
     let branches = []
     if (!ctx.supplier) {
-      const branchIds = new Set([ctx.userData.branchId].filter(Boolean))
+      const branchIds = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
       for (const field of ['ownerId', 'branchAdminId']) for (const clinic of docs(await db.collection('clinics').where(field, '==', ctx.uid).get())) branchIds.add(clinic.id)
       const own = await db.collection('clinics').doc(ctx.uid).get(); if (own.exists) branchIds.add(own.id)
       branches = await Promise.all([...branchIds].map(async id => { const c = (await db.collection('clinics').doc(id).get()).data() || {}; return { id, name: c.clinicBranch || c.clinicName || id } }))
     }
-    const branchId = String(req.query.branchId || branches[0]?.id || '')
+    const requestedScope = String(req.query.branchId || branches[0]?.id || '')
+    const allBranches = !ctx.supplier && requestedScope === 'all'
+    const branchId = allBranches ? 'all' : requestedScope
     if (!ctx.supplier && !branchId) return res.json({ success: true, data: { branches, records: [], items: [], suppliers: [], movements: [], permissions: [...ctx.permissions], supplier: false } })
-    if (!ctx.supplier) await branchAccess(ctx, branchId)
+    if (!ctx.supplier && !allBranches) await branchAccess(ctx, branchId)
+    const scopedDocs = async (collection) => (await Promise.all((allBranches ? branches.map(b => b.id) : [branchId]).map(id => db.collection(collection).where('branchId', '==', id).get()))).flatMap(docs)
     let records
     if (ctx.supplier) {
       const found = new Map()
@@ -75,13 +79,13 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         for (const r of docs(await db.collection('supplyRecords').where('supplierIds', 'array-contains', id).get())) found.set(r.id, r)
       }
       records = [...found.values()].filter(r => canRead(ctx, r)).map(supplierProjection)
-    } else records = docs(await db.collection('supplyRecords').where('branchId', '==', branchId).get()).filter(r => canRead(ctx, r))
+    } else records = (await scopedDocs('supplyRecords')).filter(r => canRead(ctx, r))
     const internal = !ctx.supplier
     const broadRead = internal && ['inventory:view', 'procurement:view', 'orders:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
-    const items = broadRead ? docs(await db.collection('inventoryItems').where('branchId', '==', branchId).get()).map(i => ({ ...i, signals: stockSignals(i), availableStock: Math.max(0, Number(i.currentStock || 0) - Number(i.reservedStock || 0)) })) : []
-    const suppliers = broadRead ? docs(await db.collection('suppliers').where('branchId', '==', branchId).get()) : []
-    const movements = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? docs(await db.collection('inventoryMovements').where('branchId', '==', branchId).get()) : []
-    const snapshots = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? docs(await db.collection('supplySnapshots').where('branchId', '==', branchId).get()) : []
+    const items = broadRead ? (await scopedDocs('inventoryItems')).map(i => ({ ...i, signals: stockSignals(i), availableStock: Math.max(0, Number(i.currentStock || 0) - Number(i.reservedStock || 0)) })) : []
+    const suppliers = broadRead ? await scopedDocs('suppliers') : []
+    const movements = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('inventoryMovements') : []
+    const snapshots = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('supplySnapshots') : []
     res.json({ success: true, data: { branchId, branches, records, items, suppliers, movements, snapshots, permissions: [...ctx.permissions], supplier: ctx.supplier, supplierIds: ctx.supplierIds, uid: ctx.uid } })
   }))
 

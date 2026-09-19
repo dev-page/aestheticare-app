@@ -1,6 +1,5 @@
 const functions = require('firebase-functions')
 const admin = require('firebase-admin')
-const { ServerClient } = require('postmark')
 
 admin.initializeApp()
 Object.assign(exports, require('./supplyMonitoring')({ admin, functions }))
@@ -59,10 +58,17 @@ const toDate = (value) => {
 const getPostmarkConfig = () => {
   try {
     const config = functions.config?.() || {}
-    const token = String(config?.postmark?.token || '').trim()
-    const sender = String(config?.postmark?.sender || '').trim()
-    if (token && sender) {
-      const client = new ServerClient(token)
+    const apiKey = String(config?.mailjet?.api_key || process.env.MAILJET_API_KEY || '').trim()
+    const secretKey = String(config?.mailjet?.secret_key || process.env.MAILJET_SECRET_KEY || '').trim()
+    const sender = String(config?.mailjet?.sender || process.env.MAILJET_SENDER || '').trim()
+    if (apiKey && secretKey && sender) {
+      const client = { sendEmail: async ({ From, To, Subject, TextBody, HtmlBody }) => {
+        const auth = Buffer.from(`${apiKey}:${secretKey}`).toString('base64')
+        const response = await fetch('https://api.mailjet.com/v3.1/send', { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ Messages: [{ From: { Email: From || sender }, To: String(To).split(',').map((Email) => ({ Email: Email.trim() })).filter(({ Email }) => Email), Subject, TextPart: TextBody || '', HTMLPart: HtmlBody || '' }] }) })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(payload?.ErrorMessage || 'Mailjet delivery failed.')
+        return { ErrorCode: payload?.Messages?.[0]?.Status === 'success' ? 0 : 1, MessageID: payload?.Messages?.[0]?.To?.[0]?.MessageID || null }
+      }}
       return { client, sender }
     }
   } catch (_error) {

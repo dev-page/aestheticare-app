@@ -9,6 +9,7 @@ import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 export default {
   name: 'OwnerStaff',
@@ -37,6 +38,7 @@ export default {
       customRoleIds: [],
       customRoleName: '',
       branchId: '',
+      branchIds: [],
       userType: 'Staff',
       status: 'Active'
     })
@@ -58,11 +60,13 @@ export default {
       const uniqueStaff = Array.from(new Map(staffDocs.map((staff) => [staff.id, staff])).values())
         .filter((user) => !user.archived)
       staffList.value = sortRecordsNewestFirst(uniqueStaff.map(staff => {
+        const assignedBranchIds = Array.isArray(staff.branchIds) && staff.branchIds.length ? staff.branchIds : [staff.branchId].filter(Boolean)
         const branch = branches.value.find(b => b.id === staff.branchId)
         return {
           ...staff,
           clinicBranch: branch ? branch.clinicBranch : '',
           clinicLocation: branch ? branch.clinicLocation : '',
+          assignedBranchNames: assignedBranchIds.map(id => branches.value.find(b => b.id === id)?.clinicBranch || id),
           customRoleName: String(staff.customRoleName || '').trim(),
           createdAt: staff.archivedAt || staff.createdAt || staff.updatedAt || null,
         }
@@ -174,6 +178,7 @@ export default {
           ? staff.customRoleIds
           : [String(staff.customRoleId || '').trim()].filter(Boolean),
         customRoleName: String(staff.customRoleName || '').trim(),
+        branchIds: Array.isArray(staff.branchIds) && staff.branchIds.length ? staff.branchIds : [staff.branchId].filter(Boolean),
       }
       showEditModal.value = true
     }
@@ -207,7 +212,7 @@ export default {
       else if (!emailRegex.test(String(staff.email).trim())) errors.email = 'Enter a valid email address.'
       if (!String(staff.phoneNumber || '').trim()) errors.phoneNumber = 'Phone number is required.'
       else if (!normalizePhoneNumber(staff.phoneNumber)) errors.phoneNumber = 'Enter a valid Philippine mobile number.'
-      if (!String(staff.branchId || '').trim()) errors.branchId = 'Branch is required.'
+      if (!Array.isArray(staff.branchIds) || !staff.branchIds.length) errors.branchId = 'Select at least one branch.'
       if (!String(staff.clinicLocation || '').trim()) errors.clinicLocation = 'Clinic location is required.'
 
       editErrors.value = errors
@@ -215,6 +220,7 @@ export default {
     }
 
     const updateCurrentStaffLocation = () => {
+      currentStaff.value.branchId = currentStaff.value.branchIds?.[0] || ''
       const branch = branches.value.find((entry) => entry.id === currentStaff.value.branchId)
       currentStaff.value.clinicBranch = branch?.clinicBranch || ''
       currentStaff.value.clinicLocation = branch?.clinicLocation || ''
@@ -295,6 +301,10 @@ export default {
           }
 
           const staffRef = doc(db, "users", currentStaff.value.id)
+          const token = await auth.currentUser?.getIdToken()
+          const branchResponse = await fetch(`${OTP_API_BASE}/staff/${currentStaff.value.id}/branch-assignments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ branchIds: currentStaff.value.branchIds }) })
+          const branchPayload = await branchResponse.json()
+          if (!branchResponse.ok) throw new Error(branchPayload.error || 'Unable to update assigned branches.')
           const nextStatus = currentStaff.value.status
           const shouldArchive = String(nextStatus || '').trim().toLowerCase() === 'inactive'
           await updateDoc(staffRef, { 
@@ -311,6 +321,7 @@ export default {
               .filter((entry) => selectedRoleIds.includes(entry.id))
               .flatMap((entry) => entry.permissions || []))],
             branchId: currentStaff.value.branchId,
+            branchIds: [...new Set(currentStaff.value.branchIds || [])],
             clinicLocation: currentStaff.value.clinicLocation,
             status: nextStatus,
             archived: shouldArchive,
@@ -416,7 +427,7 @@ export default {
                 <div>{{ staff.role || '-' }}</div>
                 <div v-if="staff.customRoleName" class="text-xs text-cyan-300">{{ staff.customRoleName }}</div>
               </td>
-              <td class="py-2 px-2 sm:py-3 sm:px-4">{{ staff.clinicBranch }}</td>
+              <td class="py-2 px-2 sm:py-3 sm:px-4">{{ staff.assignedBranchNames?.join(', ') || staff.clinicBranch }}</td>
               <td class="py-2 px-2 sm:py-3 sm:px-4">{{ staff.clinicLocation || '-' }}</td>
               <td class="py-2 px-2 sm:py-3 sm:px-4">
                 <span
@@ -465,7 +476,7 @@ export default {
             </div>
             <dl class="staff-card-details">
               <div><dt>Role</dt><dd>{{ staff.role || '-' }}</dd></div>
-              <div><dt>Branch</dt><dd>{{ staff.clinicBranch || '-' }}</dd></div>
+              <div><dt>Assigned branches</dt><dd>{{ staff.assignedBranchNames?.join(', ') || staff.clinicBranch || '-' }}</dd></div>
               <div><dt>Location</dt><dd>{{ staff.clinicLocation || '-' }}</dd></div>
               <div><dt>Phone</dt><dd>{{ staff.phoneNumber || '-' }}</dd></div>
             </dl>
@@ -528,15 +539,15 @@ export default {
             </div>
 
             <div>
-              <label class="block text-slate-400 mb-1">Branch</label>
-              <select v-model="currentStaff.branchId"
+              <label class="block text-slate-400 mb-1">Assigned Branches</label>
+              <select v-model="currentStaff.branchIds" multiple
                 @change="updateCurrentStaffLocation(); clearEditError('branchId')"
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option disabled value="">Select branch</option>
                 <option v-for="branch in branches" :key="branch.id" :value="branch.id">
                   {{ branch.clinicBranch }} - {{ branch.clinicLocation }}
                 </option>
               </select>
+              <p class="mt-1 text-xs text-slate-400">Select one or more branches. The first branch is the primary branch.</p>
               <p v-if="editErrors.branchId" class="mt-1 text-xs text-red-300">{{ editErrors.branchId }}</p>
               </div>
 

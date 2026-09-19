@@ -24,6 +24,6 @@
     "express": "^5.2.1",
     "firebase-admin": "^13.8.0",
     "googleapis": "^148.0.0",
-    "postmark": "^3.0.0"
+    "node-mailjet": "^6.0.11"
   }
 }

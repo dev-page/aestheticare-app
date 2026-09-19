@@ -81,7 +81,8 @@ export default {
       customRoleIds: [],
       employmentType: '',
       userType: 'Staff',
-      clinicBranch: '',   // will hold branchId
+      clinicBranch: '',   // primary branchId, retained for backwards compatibility
+      branchIds: [],
       clinicLocation: '',
       status: 'Active'
     })
@@ -115,6 +116,7 @@ export default {
 
       if (isBasicPlan.value && branches.value.length > 0) {
         currentStaff.value.clinicBranch = branches.value[0].id
+        currentStaff.value.branchIds = [branches.value[0].id]
         updateLocation()
       }
       loading.value = false
@@ -173,6 +175,7 @@ export default {
         role: '',
         customRoleId: '',
         customRoleIds: [],
+        branchIds: [],
         employmentType: '',
         userType: 'Staff',
         clinicBranch: '',
@@ -182,12 +185,14 @@ export default {
       practitionerIdFile.value = null
       if (isBasicPlan.value && branches.value.length > 0) {
         currentStaff.value.clinicBranch = branches.value[0].id
+        currentStaff.value.branchIds = [branches.value[0].id]
         updateLocation()
       }
     }
 
     // Auto-populate clinicLocation when branch is selected
     const updateLocation = () => {
+      currentStaff.value.clinicBranch = currentStaff.value.branchIds?.[0] || ''
       const selected = branches.value.find(b => b.id === currentStaff.value.clinicBranch)
       currentStaff.value.clinicLocation = selected ? selected.location : ""
     }
@@ -293,7 +298,7 @@ export default {
         errors.phoneNumber = 'Enter a 10-digit mobile number.'
       }
 
-      if (!currentStaff.value.clinicBranch.trim()) {
+      if (!currentStaff.value.branchIds?.length) {
         errors.clinicBranch = 'Branch is required.'
       }
 
@@ -512,7 +517,8 @@ export default {
             effectivePermissions: [...new Set(selectedCustomRoles.value.flatMap((role) => role.permissions || []))],
             employmentType: currentStaff.value.employmentType,
             userType: 'Staff',
-            branchId: currentStaff.value.clinicBranch,   // ✅ store branchId reference
+            branchId: currentStaff.value.clinicBranch,
+            branchIds: [...new Set(currentStaff.value.branchIds || [currentStaff.value.clinicBranch])],   // ✅ store branchId reference
             clinicLocation: currentStaff.value.clinicLocation,
             status: 'Pending Activation',
             practitionerLicenseUrl: practitionerLicenseUrl || null,
@@ -800,9 +806,9 @@ export default {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <!-- Branch -->
               <div>
-                <label class="mb-1 block text-slate-400">Branch <span class="text-red-400">*</span></label>
+                <label class="mb-1 block text-slate-400">Assigned Branches <span class="text-red-400">*</span></label>
                 <select
-                  v-model="currentStaff.clinicBranch"
+                  v-model="currentStaff.branchIds" multiple
                   @change="updateLocation"
                   :class="[
                     'add-staff-select w-full rounded-lg border bg-slate-800 px-3 py-2 text-white appearance-none focus:outline-none focus:ring-2',

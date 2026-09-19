@@ -102,7 +102,9 @@ service cloud.firestore {
     }
 
     function isStaffOfBranch(branchId) {
-      return isSignedIn() && userData().branchId == branchId;
+      return isSignedIn()
+        && (userData().branchId == branchId
+          || (userData().branchIds != null && userData().branchIds.hasAny([branchId])));
     }
 
     function canAccessBranch(branchId) {
@@ -141,7 +143,9 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && (request.auth.uid == userId
           || isSuperadmin()
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)));
+          || ((resource.data.branchId != null && canAccessBranch(resource.data.branchId))
+            || (resource.data.branchIds != null && userData().branchIds != null
+              && userData().branchIds.hasAny(resource.data.branchIds))));
       allow create: if isSignedIn()
         && ((request.auth.uid == userId
             && request.resource.data.get('role', '') in ['Customer', 'Supplier', 'Clinic Admin', 'Owner']
