@@ -63,6 +63,16 @@
   </div>
 </template>
 
+<style scoped>
+section.mt-2 > div.rounded-lg dl > div:last-child dt {
+  font-size: 0;
+}
+section.mt-2 > div.rounded-lg dl > div:last-child dt::after {
+  content: 'Available units';
+  font-size: 0.75rem;
+}
+</style>
+
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
@@ -229,7 +239,7 @@ const requestDraftSuppliers=computed(()=>catalogSuppliers())
 const requestDraftCategories=computed(()=>{const supplier=data.value.suppliers.find(s=>s.id===requestDraft.value.supplierId);return [...new Set(supplierProducts(supplier||{}).map(catalogCategory))].sort()})
 const requestDraftProducts=computed(()=>{const supplier=data.value.suppliers.find(s=>s.id===requestDraft.value.supplierId);return supplierProducts(supplier||{}).filter(product=>catalogCategory(product)===requestDraft.value.category)})
 const requestDraftProduct=computed(()=>requestDraftProducts.value.find(product=>product.id===requestDraft.value.catalogItemId))
-const requestExistingItem=computed(()=>{const product=requestDraftProduct.value;return product?data.value.items.find(item=>item.supplierId===requestDraft.value.supplierId&&String(item.supplierCatalogItemId||'')===String(product.id)):null})
+const requestExistingItem=computed(()=>{const product=requestDraftProduct.value;const item=product?data.value.items.find(item=>item.supplierId===requestDraft.value.supplierId&&String(item.supplierCatalogItemId||'')===String(product.id)):null;if(!item)return null;const available=Math.max(0,Number(item.availableQuantity??item.availableStock??(Number(item.currentStock||0)-Number(item.reservedQuantity||0))));return {...item,minStock:available,targetStock:Math.max(available,Number(item.targetStock||0)),maxStock:Math.max(available,Number(item.targetStock||0),Number(item.maxStock||0))}})
 const requestGrandTotal=computed(()=>form.value.lines.reduce((sum,line)=>sum+Number(line.quantity||0)*Number(line.unitPrice||0),0))
 const addRequestLine=()=>{const product=requestDraftProduct.value,supplierId=requestDraft.value.supplierId,quantity=Number(requestDraft.value.quantity);if(!product||!supplierId||!Number.isInteger(quantity)||quantity<1){formError.value='Choose a supplier, category, supply, and whole-number quantity.';return}if(form.value.lines.length&&form.value.lines[0].supplierId!==supplierId){formError.value='All supplies in one request must be from the same supplier.';return}if(form.value.lines.some(line=>line.supplierCatalogItemId===product.id)){return}const existing=requestExistingItem.value;form.value.lines.push({supplierId,supplierCatalogItemId:product.id,name:product.name||product.itemName||product.productName,unit:product.measurementUnit||product.unit||'units',unitPrice:Math.round(Number(product.price||product.unitCost||0)*100),quantity,minStock:Number(existing?.minStock||0),targetStock:Number(existing?.targetStock||0),maxStock:Number(existing?.maxStock||0),currentStock:Number(existing?.currentStock||0)});formError.value=''}
 const catalogRequired=()=>!formTarget.value||Boolean(formTarget.value.supplierCatalogItemId)
