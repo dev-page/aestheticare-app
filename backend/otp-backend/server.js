@@ -1421,17 +1421,49 @@ const normalizeRoleKey = (value) => {
   const raw = String(value || '').trim()
   if (!raw) return ''
   const compact = raw.toLowerCase().replace(/[\s_-]+/g, '')
-  if (compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Owner'
+  if (compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Clinic Admin'
   if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') return 'Superadmin'
   if (compact === 'hr') return 'HR'
   return raw.charAt(0).toUpperCase() + raw.slice(1)
 }
 
+// Built-in branch administrator permissions. These cover every operational
+// module while deliberately excluding organization ownership, billing,
+// backups, role administration, and creating additional branches.
+const CLINIC_ADMIN_PERMISSIONS = new Set([
+  'branches:view', 'clinic_profile:view',
+  'staff:view', 'staff:create', 'staff:update',
+  'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import',
+  'clients:view', 'clients:create',
+  'appointments:view', 'appointments:create', 'appointments:review', 'consultations:view',
+  'payments:view', 'payments:create', 'inbox:view', 'reports:view',
+  'services:view', 'services:create', 'services:update',
+  'inventory:view', 'inventory:create', 'inventory:review',
+  'suppliers:create', 'suppliers:update', 'orders:view', 'orders:update',
+  'procurement:view', 'procurement:create', 'procurement:review',
+  'hr:view', 'hr:create', 'hr:update',
+  'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review',
+  'payroll:view', 'payroll:update', 'payroll:approve',
+  'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle',
+  'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view',
+  'policies:view', 'policies:update', 'activities:view', 'notifications:view', 'support:view',
+  'profile:view', 'password:update',
+])
+
 const loadUserContext = async (uid) => {
   const firestore = admin.firestore()
   const userSnap = await firestore.collection('users').doc(uid).get()
   const userData = userSnap.exists ? userSnap.data() || {} : {}
-  const roleKey = normalizeRoleKey(userData.role || userData.userType || '')
+  const rawRole = String(userData.role || '').trim()
+  const rawUserType = String(userData.userType || '').trim()
+  const compactRole = rawRole.toLowerCase().replace(/[\s_-]+/g, '')
+  const compactUserType = rawUserType.toLowerCase().replace(/[\s_-]+/g, '')
+  const legacyClinicAdmin = ['clinicadmin', 'clinicadministrator'].includes(compactRole)
+  const ownerByType = compactUserType === 'owner' || compactRole === 'owner' || compactRole === 'clinicowner'
+  const ownerByClinic = legacyClinicAdmin
+    ? (await firestore.collection('clinics').where('ownerId', '==', uid).limit(1).get()).size > 0
+    : false
+  const roleKey = (ownerByType || ownerByClinic) ? 'Owner' : normalizeRoleKey(rawRole || rawUserType)
   let rolePermissions = []
   if (roleKey) {
     const roleSnap = await firestore.collection('rolePermissions').doc(roleKey).get()
@@ -1466,11 +1498,22 @@ const loadUserContext = async (uid) => {
   if (roleKey === 'Superadmin' && !userData.adminRole && !userPermissions.length && !rolePermissions.length) {
     userPermissions.push('administrator:full_access')
   }
+  // A Clinic Admin is an employee administrator, never an owner. Legacy
+  // role records could contain the global full-access flag, so discard it;
+  // branch checks remain mandatory in every workflow.
+  const permissions = roleKey === 'Clinic Admin'
+    ? [...new Set([
+      ...CLINIC_ADMIN_PERMISSIONS,
+      ...userPermissions,
+      ...rolePermissions,
+      ...customRolePermissions,
+    ])].filter((permission) => permission !== 'administrator:full_access')
+    : [...userPermissions, ...rolePermissions, ...customRolePermissions]
   return {
     uid,
     roleKey,
     userData,
-    permissions: new Set([...userPermissions, ...rolePermissions, ...customRolePermissions]),
+    permissions: new Set(permissions),
   }
 }
 

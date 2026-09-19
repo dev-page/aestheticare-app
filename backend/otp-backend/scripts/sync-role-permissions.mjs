@@ -18,7 +18,8 @@ const serviceAccountPath = serviceAccountPathFromEnv
   : path.join(__dirname, '..', 'serviceAccountKey.json')
 
 const defaultRoles = [
-  { key: 'Owner', label: 'Clinic Admin' },
+  { key: 'Owner', label: 'Clinic Owner' },
+  { key: 'Clinic Admin', label: 'Clinic Admin' },
   { key: 'Manager', label: 'Manager' },
   { key: 'HR', label: 'HR' },
   { key: 'Finance', label: 'Finance' },
@@ -60,6 +61,7 @@ const customerResourceCatalog = [
 
 const roleResourceMap = {
   Owner: ['backups', 'branches', 'clinic_profile', 'staff', 'attendance', 'clients', 'appointments', 'payments', 'inventory', 'services', 'consultations', 'reports', 'hr'],
+  'Clinic Admin': ['staff', 'attendance', 'clients', 'appointments', 'payments', 'inventory', 'services', 'consultations', 'reports', 'hr'],
   Manager: ['attendance', 'staff', 'inventory', 'services', 'appointments', 'reports'],
   HR: ['staff', 'attendance', 'hr', 'reports'],
   Finance: ['payments', 'reports', 'inventory'],

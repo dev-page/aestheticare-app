@@ -7,7 +7,7 @@
         <section class="rounded-[2rem] border border-[#5a3927] bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.08),_transparent_42%),linear-gradient(180deg,_rgba(58,36,23,0.98),_rgba(42,24,15,0.98))] p-6 shadow-[0_24px_60px_rgba(20,12,8,0.45)]">
           <div class="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.28em] text-[#d2b7a6]">Clinic Admin</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.28em] text-[#d2b7a6]">Clinic Owner</p>
               <h1 class="mt-2 text-3xl font-bold tracking-tight text-[#f3e7e0]">Role Management</h1>
               <p class="mt-3 max-w-3xl text-sm leading-6 text-[#e2c7b6]">
                 Start with protected built-in roles, customize their permissions, or create clinic-owned roles for your staff.
@@ -735,7 +735,7 @@ const builtInRoleTemplates = [
   {
     key: 'clinic-admin',
     name: 'Clinic Admin',
-    description: 'Full access to the clinic workspace and all available administration tools.',
+    description: 'Full operational access to one assigned branch. Clinic Owner settings and other branches remain restricted.',
     color: '#d09a61',
     suggestion: 'admin',
   },
@@ -743,7 +743,18 @@ const builtInRoleTemplates = [
 
 const getTemplatePermissions = (suggestion) => {
   const rule = permissionSuggestionRules.find((entry) => entry.match.includes(suggestion))
-  return rule ? [...new Set(rule.permissions)] : []
+  if (!rule) return []
+  const branchAdminRestricted = new Set([
+    fullAccessPermissionKey,
+    'roles:manage',
+    'branches:create',
+    'clinic_profile:update',
+    'subscription:view',
+    'backup:view',
+  ])
+  return [...new Set(rule.permissions)].filter((permission) =>
+    suggestion === 'admin' ? !branchAdminRestricted.has(permission) : true
+  )
 }
 
 const chunkArray = (items, size = 10) => {

@@ -2,8 +2,8 @@
   <EmployeeSidebar v-if="isEmployeeView" />
   <BaseCollapsibleSidebar
     v-else
-    title="Clinic Admin"
-    subtitle="Clinic Admin Sidebar"
+    title="Clinic Owner"
+    subtitle="Clinic Owner Workspace"
     panel-key="owner"
     default-name="Owner"
     default-email="owner@aestheticare.com"

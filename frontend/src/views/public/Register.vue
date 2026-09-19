@@ -2703,7 +2703,8 @@ const registerClinic = async () => {
       companyType: companyPayload.companyType,
       branchId: uid,
       clinicBranch: 'Main Branch',
-      role: 'Clinic Admin',
+      role: 'Clinic Owner',
+      userType: 'Owner',
       status: 'Pending OTP Verification',
       createdAt: serverTimestamp(),
     })

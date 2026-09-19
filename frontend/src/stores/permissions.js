@@ -4,12 +4,17 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import { useAuthStore } from '@/stores/auth'
 import { useSubscriptionStore } from '@/stores/subscription'
+import { allPermissionKeys } from '@/config/clinicPermissionRegistry'
 
 export const usePermissionsStore = defineStore('permissions', () => {
   const authStore = useAuthStore()
   const subscriptionStore = useSubscriptionStore()
   const defaultPermissionKeys = new Set(['activities:view', 'notifications:view', 'support:view'])
   const fullAccessPermissionKey = 'administrator:full_access'
+  const clinicAdminRestrictedPermissions = new Set([
+    'roles:manage', 'branches:create', 'clinic_profile:update', 'subscription:view', 'backup:view',
+  ])
+  const clinicAdminPermissions = allPermissionKeys.filter((permission) => !clinicAdminRestrictedPermissions.has(permission))
 
   const userPermissions = ref([])
   const rolePermissions = ref([])
@@ -72,16 +77,24 @@ export const usePermissionsStore = defineStore('permissions', () => {
     manage_appointments: ['appointments:view', 'appointments:create'],
   }
 
-  const isOwnerLikeRole = (value) => {
-    const compact = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
-    return compact === 'owner' || compact === 'clinicadmin' || compact === 'clinicadministrator'
+  const isClinicOwnerAccount = (data = {}, uid = '') => {
+    const userType = String(data.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+    const role = String(data.role || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+    // Legacy clinic registrants used the "Clinic Admin" label. Their main
+    // branch was created with their UID, which keeps them owners after the
+    // role split without elevating branch-admin employees.
+    return userType === 'owner' || role === 'owner' || (
+      ['clinicadmin', 'clinicadministrator'].includes(role) &&
+      Boolean(uid) && String(data.branchId || '').trim() === uid
+    )
   }
 
-  const normalizeRoleKey = (value) => {
-    const compact = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+  const normalizeRoleKey = (value, userType = '', data = {}, uid = '') => {
+    if (isClinicOwnerAccount({ ...data, role: value, userType }, uid)) return 'Owner'
+    const compact = String(value || userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
     if (!compact) return ''
     if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') return 'Superadmin'
-    if (isOwnerLikeRole(compact)) return 'Owner'
+    if (compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Clinic Admin'
     return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
   }
 
@@ -187,7 +200,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
           const nextCustomRoleIds = normalizeCustomRoleIds(data)
           const nextUserType = String(data.userType || '').trim().toLowerCase()
           const isStaffUser = nextUserType === 'staff'
-          const nextRole = normalizeRoleKey(data.role || data.userType || '')
+          const nextRole = normalizeRoleKey(data.role || data.userType || '', data.userType, data, newUser.uid)
           if (nextRole !== roleKey.value) {
             roleKey.value = nextRole
             loadCachedPermissions(newUser.uid, roleKey.value, !isStaffUser)
@@ -230,7 +243,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
           loading.value = false
         }
       )
-      const initialRole = normalizeRoleKey(newUser?.role || newUser?.userType || '')
+      const initialRole = normalizeRoleKey(newUser?.role || newUser?.userType || '', newUser?.userType, {}, newUser?.uid)
       roleKey.value = initialRole
       loadCachedPermissions(newUser.uid, initialRole, String(newUser?.userType || '').trim().toLowerCase() !== 'staff')
     },
@@ -241,9 +254,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     return roleKey.value || authStore.user?.role || authStore.user?.userType || 'guest'
   })
 
-  const isClinicAdminOwner = computed(() => {
-    return isOwnerLikeRole(userRole.value) || normalizeRoleKey(userRole.value) === 'Owner'
-  })
+  const isClinicAdminOwner = computed(() => userRole.value === 'Owner')
 
   const effectivePermissions = computed(() => {
     const set = new Set([
@@ -252,6 +263,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
       ...(Array.isArray(customRolePermissions.value) ? customRolePermissions.value : [])
     ])
     defaultPermissionKeys.forEach((permissionKey) => set.add(permissionKey))
+    if (userRole.value === 'Clinic Admin') {
+      clinicAdminPermissions.forEach((permissionKey) => set.add(permissionKey))
+      set.delete(fullAccessPermissionKey)
+    }
     Object.entries(permissionAliases).forEach(([legacyKey, sourceKeys]) => {
       if (sourceKeys.some((sourceKey) => set.has(sourceKey))) {
         set.add(legacyKey)

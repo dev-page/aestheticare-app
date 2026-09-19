@@ -1,6 +1,6 @@
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 
-const OWNER_ROLE_KEYS = ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator']
+const OWNER_ROLE_KEYS = ['owner', 'clinic owner', 'clinicowner']
 
 const normalizeText = (value) => String(value || '').trim()
 
@@ -46,7 +46,7 @@ export const loadOwnerBranchScope = async (db, userId) => {
     }
   }
 
-  if (!ownerId && isOwnerLikeRole(userProfile.role || userProfile.customRoleName)) {
+  if (!ownerId && (String(userProfile.userType || '').trim().toLowerCase() === 'owner' || isOwnerLikeRole(userProfile.role || userProfile.customRoleName))) {
     ownerId = userId
   }
 

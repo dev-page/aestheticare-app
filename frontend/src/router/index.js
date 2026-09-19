@@ -234,9 +234,12 @@ const router = createRouter({
   routes,
 });
 
-const isOwnerLikeRole = (value) => {
-  const compact = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
-  return compact === "owner" || compact === "clinicadmin" || compact === "clinicadministrator";
+const isOwnerLikeRole = (userData = {}, uid = '') => {
+  const role = String(userData.role || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+  const userType = String(userData.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+  return userType === 'owner' || role === 'owner' || role === 'clinicowner' || (
+    ['clinicadmin', 'clinicadministrator'].includes(role) && Boolean(uid) && String(userData.branchId || '').trim() === uid
+  )
 };
 
 const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
@@ -259,7 +262,8 @@ const isClinicAccount = (userData = {}) => {
   const role = normalizeRole(userData.role)
   const userType = normalizeRole(userData.userType)
   return isSuperadminRole(userData)
-    || isOwnerLikeRole(role)
+    || isOwnerLikeRole(userData)
+    || ['clinicadmin', 'clinicadministrator'].includes(role)
     || userType === 'staff'
     || userType === 'employee'
 }
@@ -288,7 +292,7 @@ const safeUnauthorizedRedirect = (user, userData = {}) => {
   if (isSupplierRole(userData)) return '/supplier/supplies'
   if (isCustomerRole(userData)) return '/customer/home'
   if (isSuperadminRole(userData)) return '/superadmin/dashboard'
-  if (isOwnerLikeRole(userData.role || userData.userType)) return '/clinic/dashboard'
+  if (isOwnerLikeRole(userData, user?.uid)) return '/clinic/dashboard'
   if (['staff', 'employee'].includes(normalizeRole(userData.userType))) return '/workspace/dashboard'
   return '/'
 }
@@ -363,7 +367,7 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const routePath = String(to.path || '').toLowerCase()
-  const isOwnerRoute = isOwnerLikeRole(currentUserData.role || currentUserData.userType)
+  const isOwnerRoute = isOwnerLikeRole(currentUserData, currentUser?.uid)
   const isRegistrationRoute = routePath === '/register' || routePath.startsWith('/clinic/register')
   const isSubscriptionOnboardingRoute = routePath === '/clinic/onboarding'
   const isSubscriptionCheckoutRoute = routePath === '/subscription/checkout'
@@ -441,7 +445,7 @@ router.beforeEach(async (to, from, next) => {
     return next(safeUnauthorizedRedirect(currentUser, currentUserData))
   }
 
-  if (to.meta.requiresOwner && !isOwnerLikeRole(currentUserData.role || currentUserData.userType || "")) {
+  if (to.meta.requiresOwner && !isOwnerLikeRole(currentUserData, currentUser?.uid)) {
     return next(safeUnauthorizedRedirect(currentUser, currentUserData));
   }
 
@@ -455,7 +459,7 @@ router.beforeEach(async (to, from, next) => {
         if (alternates.some((permission) => hasPermission(permission))) {
           return next();
         }
-        if (isOwnerLikeRole(userData.role || userData.userType || "")) {
+        if (isOwnerLikeRole(userData, currentUser?.uid)) {
           return next();
         }
       } catch (error) {

@@ -21,11 +21,11 @@ const tourCatalog = {
     ],
   },
   owner: {
-    title: 'Your clinic workspace',
+    title: 'Your Clinic Owner workspace',
     steps: [
-      { title: 'Start with the dashboard', text: 'This area summarizes your clinic activity and provides shortcuts to your most important modules.', selector: 'main' },
-      { title: 'Manage modules from the sidebar', text: 'Finance, inventory, staff, appointments, and other modules appear according to your enabled permissions.', selector: 'aside' },
-      { title: 'Review access carefully', text: 'Role permissions control what employees can see and do. You can revisit this guide anytime.', selector: 'aside' },
+      { title: 'Start with the dashboard', text: 'This area summarizes your organization and gives you access to every branch you own.', selector: 'main' },
+      { title: 'Manage your branches and modules', text: 'Use the sidebar to manage branches, finance, inventory, staff, appointments, and other clinic operations.', selector: 'aside' },
+      { title: 'Assign branch administrators carefully', text: 'Clinic Admin employees can fully manage only their assigned branch. You retain organization-wide control.', selector: 'aside' },
     ],
   },
   employee: {
