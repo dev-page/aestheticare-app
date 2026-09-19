@@ -1,6 +1,7 @@
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { registerSupplyWorkflow } from './supplyWorkflow.js'
+import { registerFinanceWorkflow } from './financeWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import { registerWalkInPayments } from './walkInWorkflow.js'
@@ -1941,6 +1942,7 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
 })
 
 registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
+registerFinanceWorkflow(app, { admin, requireAuth, loadUserContext })
 registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders })
 registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext })
 

@@ -71,18 +71,11 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     icon: 'mdi:finance',
     moduleKey: 'finance',
     children: [
-      { type: 'section', label: 'PROCUREMENT FINANCE' },
-      ...supplyLinks('finance', 'finance:payables:view', [['dashboard', 'Procurement Finance', 'mdi:finance'], ['budgets', 'Budget Allocations', 'mdi:bank-outline'], ['requests', 'Funding Requests', 'mdi:cash-check'], ['invoices', 'Supplier Invoices & Payments', 'mdi:receipt-text-check-outline'], ['reports', 'Procurement Finance Reports', 'mdi:chart-donut']]),
-      { type: 'section', label: 'CLINIC FINANCE' },
-      { label: 'Listing Approvals', icon: 'mdi:clipboard-check-outline', to: '/finance/listing-approvals', permission: 'finance:reports:view' },
-      { label: 'Finance Dashboard', icon: 'mdi:chart-pie', to: '/finance/dashboard', feature: 'reports', permission: 'finance:reports:view' },
-      { type: 'section', label: 'INCOME & PAYMENTS' },
-      { label: 'Income & Payments', icon: 'mdi:cash-plus', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },
-      { type: 'section', label: 'PAYROLL' },
-      { label: 'Payroll Summary', icon: 'mdi:file-table-outline', to: '/finance/payroll-summary', feature: 'payroll', permission: 'payroll:view' },
-      { label: 'Payroll Approval', icon: 'mdi:file-check-outline', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },
-      { type: 'section', label: 'FINANCE OPERATIONS' },
-      { label: 'Refunds', icon: 'mdi:cash-refund', to: '/finance/refunds', feature: 'reports', permission: 'finance:refunds:view' },
+      { label: 'Dashboard', icon: 'mdi:chart-pie', to: '/finance/dashboard', feature: 'reports', permission: 'finance:reports:view' },
+      { label: 'Budget Allocations', icon: 'mdi:bank-outline', to: '/finance/procurement/budgets', permission: 'finance:payables:view' },
+      { label: 'Approvals', icon: 'mdi:clipboard-check-outline', to: '/finance/approvals', permission: 'finance:payables:view' },
+      { label: 'Income', icon: 'mdi:cash-plus', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },
+      { label: 'Expenses & Payments', icon: 'mdi:receipt-text-check-outline', to: '/finance/expenses-payments', permission: 'finance:payables:view' },
       { label: 'Financial Reports', icon: 'mdi:file-chart-outline', to: '/finance/reports', feature: 'reports', permission: 'finance:reports:view' }
     ]
   },

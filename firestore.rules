@@ -473,6 +473,29 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Financial records are created and settled through the trusted backend.
+    // Clients can only read records for branches they are authorized to view.
+    match /financialRecords/{recordId} {
+      allow read: if isSignedIn() && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId)
+        && (hasPermission('finance:payables:view') || hasPermission('finance:reports:view'));
+      allow create, update, delete: if false;
+    }
+
+    match /financeAudit/{auditId} {
+      allow read: if isSignedIn() && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId)
+        && (hasPermission('finance:payables:view') || hasPermission('finance:reports:view'));
+      allow create, update, delete: if false;
+    }
+
+    match /financialPayments/{paymentId} {
+      allow read: if isSignedIn() && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId)
+        && (hasPermission('finance:payables:view') || hasPermission('finance:reports:view'));
+      allow create, update, delete: if false;
+    }
+
     match /productServicePosts/{postId} {
       function draft() {
         return request.resource.data.get('financeStatus', '') == 'draft'

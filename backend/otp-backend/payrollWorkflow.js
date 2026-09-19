@@ -65,7 +65,13 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     check(entries.every((d) => Number.isFinite(Number(d.data().totalPay)) && Number.isFinite(Number(d.data().totalDeductions)) && Math.abs(Number(d.data().totalPay) - Number(d.data().totalDeductions) - Number(d.data().netPay)) < 0.011), 'Payroll earnings, deductions and net pay do not agree.')
     check(Number.isFinite(totalNetPay) && entries.every((d) => Number(d.data().netPay) >= 0), 'Payroll amounts are invalid.')
     check(Math.round(totalNetPay * 100) === Math.round(Number(summary.totalNetPay) * 100), 'Payroll changed. HR must regenerate the summary before approval.')
-    tx.update(ref, { status: 'approved', approvedEntries, approvedBy: req.user.uid, approvedByName: context.userData.fullName || 'Finance', approvedAt: timestamp(), updatedAt: timestamp() })
+    const approvedAt = timestamp()
+    // A deterministic source reference makes payroll expense synchronization
+    // idempotent even if the approval request is retried.
+    const expenseRef = db.collection('financialRecords').doc(`payroll-${ref.id}`)
+    const existingExpense = await tx.get(expenseRef)
+    tx.update(ref, { status: 'approved', approvedEntries, approvedBy: req.user.uid, approvedByName: context.userData.fullName || 'Finance', approvedAt, updatedAt: timestamp() })
+    if (!existingExpense.exists) tx.set(expenseRef, { branchId: summary.branchId, kind: 'payrollExpense', sourceId: ref.id, category: 'Payroll', description: `Payroll ${summary.monthKey}`, amount: Math.round(totalNetPay * 100), paidAmount: 0, outstandingAmount: Math.round(totalNetPay * 100), status: 'Unpaid', payrollPeriod: summary.monthKey, createdBy: req.user.uid, createdAt: approvedAt, updatedAt: timestamp() })
     if (summary.updatedBy) tx.set(db.collection('notifications').doc(), { recipientUserId: summary.updatedBy, branchId: summary.branchId, title: 'Payroll approved', message: `Payroll for ${summary.monthKey} is ready for payslip release.`, link: '/hr/payroll', read: false, deleted: false, createdAt: timestamp() })
     return { status: 'approved' }
   })
