@@ -54,13 +54,13 @@
             <div class="overflow-x-auto">
               <table class="w-full min-w-[640px] text-left text-sm">
                 <thead class="bg-[#fff5e8] text-[#806047]">
-                  <tr><th scope="col" class="px-5 py-3">Item</th><th scope="col" class="px-5 py-3">Category</th><th scope="col" class="px-5 py-3">Quantity</th><th scope="col" class="px-5 py-3">Price</th><th scope="col" class="px-5 py-3">Action</th></tr>
+                  <tr><th scope="col" class="px-5 py-3">Item</th><th scope="col" class="px-5 py-3">Category</th><th scope="col" class="px-5 py-3">Stock</th><th scope="col" class="px-5 py-3">Price</th><th scope="col" class="px-5 py-3">Action</th></tr>
                 </thead>
                 <tbody class="divide-y divide-[#efdfca] text-[#5a402f]">
                   <tr v-for="item in paginatedItems" :key="item.id">
                     <td class="px-5 py-4 font-semibold">{{ item.name }}</td>
                     <td class="px-5 py-4">{{ item.category === 'Others' ? item.customCategory : item.category }}</td>
-                    <td class="px-5 py-4">{{ item.quantity }}</td>
+                    <td class="px-5 py-4"><span class="font-semibold">{{ availableQuantity(item) }}</span> available <span class="text-xs text-[#806047]">of {{ item.quantity }} on hand</span></td>
                     <td class="px-5 py-4 whitespace-nowrap">{{ formatMoney(item.price ?? item.unitCost) }}</td>
                     <td class="px-5 py-4"><div class="flex gap-2"><button type="button" class="catalog-button" :aria-label="`View details for ${item.name}`" @click="selectedItem = item">View</button><button type="button" class="catalog-button" :aria-label="`Edit ${item.name}`" @click="editCatalogItem(item)">Edit</button></div></td>
                   </tr>
@@ -225,7 +225,8 @@
           <img v-if="selectedItem.imageUrl || selectedItem.photoUrl || selectedItem.pictureUrl" :src="selectedItem.imageUrl || selectedItem.photoUrl || selectedItem.pictureUrl" :alt="selectedItem.name" class="max-h-64 w-full rounded-2xl bg-[#f7e9d8] object-contain" />
           <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div><dt class="item-label">Category</dt><dd>{{ selectedItem.category === 'Others' ? selectedItem.customCategory : selectedItem.category }}</dd></div>
-            <div><dt class="item-label">Quantity</dt><dd>{{ selectedItem.quantity }}</dd></div>
+            <div><dt class="item-label">Available / On-hand</dt><dd>{{ availableQuantity(selectedItem) }} available / {{ selectedItem.quantity }} on hand</dd></div>
+            <div><dt class="item-label">Reserved for confirmed orders</dt><dd>{{ selectedItem.reservedQuantity || 0 }}</dd></div>
             <div><dt class="item-label">Price</dt><dd>{{ formatMoney(selectedItem.price ?? selectedItem.unitCost) }}</dd></div>
             <div><dt class="item-label">Measurement</dt><dd>{{ selectedItem.measurementValue || selectedItem.measurement || '—' }} {{ selectedItem.measurementUnit }}</dd></div>
             <div class="sm:col-span-2"><dt class="item-label">Description</dt><dd class="whitespace-pre-wrap break-words">{{ selectedItem.description || 'No description provided.' }}</dd></div>
@@ -243,7 +244,7 @@
 import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, runTransaction, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, runTransaction, where } from 'firebase/firestore'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import { db } from '@/config/firebaseConfig'
@@ -263,10 +264,12 @@ const items = ref([])
 const savedCatalog = ref([])
 const currentPage = ref(1)
 const selectedItem = ref(null)
+let stopCatalogListener = null
 const PAGE_SIZE = 5
 const totalPages = computed(() => Math.max(1, Math.ceil(savedCatalog.value.length / PAGE_SIZE)))
 const paginatedItems = computed(() => savedCatalog.value.slice((currentPage.value - 1) * PAGE_SIZE, currentPage.value * PAGE_SIZE))
 const formatMoney = (value) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value) || 0)
+const availableQuantity = (item) => Math.max(0, Number(item?.quantity || 0) - Number(item?.reservedQuantity || 0))
 
 const categoryOptions = ['Injectables', 'Skincare', 'Equipment', 'Medical Supplies', 'Others']
 const measurementOptions = ['mL', 'L', 'mg', 'g', 'kg', 'pcs', 'box', 'pack', 'set', 'unit', 'pair', 'cm', 'mm', 'dimensions', 'custom']
@@ -336,6 +339,12 @@ const loadSupplies = async (user) => {
     savedCatalog.value = currentItems.map((item) => ({ ...item, id: item.id || crypto.randomUUID() }))
     currentPage.value = 1
     items.value = [createEmptyItem()]
+    stopCatalogListener?.()
+    stopCatalogListener = onSnapshot(doc(db, 'suppliers', supplierDocId.value || user.uid), (snapshot) => {
+      if (!snapshot.exists() || saving.value) return
+      const liveItems = snapshot.data()?.offeredItems
+      if (Array.isArray(liveItems)) savedCatalog.value = liveItems.map((item) => ({ ...item, id: item.id || crypto.randomUUID() }))
+    })
   } finally {
     loading.value = false
   }
@@ -463,6 +472,7 @@ const validateItems = () => {
     if (category === 'Others' && !customCategory) return 'Please enter the custom category for items marked as Others.'
     if (!quantityRaw) return 'Please enter a quantity for each filled item.'
     if (!/^\d+$/.test(quantityRaw) || !Number.isSafeInteger(quantity) || quantity < 0) return 'Quantity must be a whole number of zero or more.'
+    if (quantity < Number(item.reservedQuantity || 0)) return `Quantity cannot be lower than the ${item.reservedQuantity} unit(s) reserved for confirmed orders.`
     if (!priceRaw) return 'Please enter a price for each filled item.'
     if (!/^\d+(\.\d{1,2})?$/.test(priceRaw) || !Number.isFinite(price) || price < 0 || price > 999999999.99) return 'Price must be between PHP 0.00 and PHP 999,999,999.99 with at most two decimal places.'
     if (name.length > 120 || customCategory.length > 80 || description.length > 2000 || String(item.specifications || '').length > 2000 || measurementValue.length > 80 || String(item.fdaRegistrationNumber || '').length > 100) return 'An item field exceeds its maximum length.'
@@ -589,7 +599,13 @@ const saveSupplies = async () => {
       const snapshot = await transaction.get(supplierRef)
       const existing = snapshot.data()?.offeredItems || []
       const newIds = new Set(savedItems.map((item) => item.id))
-      const combined = [...savedItems, ...existing.filter((item) => !newIds.has(item.id))]
+      const combined = [
+        ...savedItems.map((item) => {
+          const current = existing.find((entry) => entry.id === item.id)
+          return { ...item, reservedQuantity: Number(current?.reservedQuantity || 0), lastReservedAt: current?.lastReservedAt || null, lastReservedPoId: current?.lastReservedPoId || '', lastFulfilledAt: current?.lastFulfilledAt || null, lastFulfilledPoId: current?.lastFulfilledPoId || '' }
+        }),
+        ...existing.filter((item) => !newIds.has(item.id)),
+      ]
       const categories = [...new Set(combined.map((item) => item.category).filter(Boolean))]
       transaction.set(supplierRef, {
       ownerId: user.uid,
@@ -615,6 +631,7 @@ const saveSupplies = async () => {
 }
 
 onBeforeUnmount(() => {
+  stopCatalogListener?.()
   items.value.forEach((item) => {
     if (item.imageUrl.startsWith('blob:')) URL.revokeObjectURL(item.imageUrl)
   })
