@@ -20,6 +20,11 @@
         </button>
       </div>
 
+      <nav class="mb-6 flex gap-2 border-b border-slate-700" aria-label="Supplier directory sections">
+        <button type="button" class="border-b-2 border-amber-500 px-4 py-3 text-sm font-semibold text-amber-300">Supplier List</button>
+        <router-link to="/inventory/requests" class="px-4 py-3 text-sm font-semibold text-slate-400 hover:text-white">Inventory Requests</router-link>
+      </nav>
+
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
