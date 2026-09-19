@@ -274,7 +274,12 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         if (['confirm', 'verifyRequest'].includes(action)) {
           demand(r.status === 'Received', 'Only newly received requests can be confirmed.')
           demand(input.productsCorrect && input.quantitiesVerified && input.availabilityConfirmed && input.pricesVerified, 'Complete every procurement checklist item before confirming.', 400)
-          result = set(r, { status: 'Verified', verifiedBy: ctx.uid, verifiedAt: now, checklist: { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true } })
+          const supplierIds = [...new Set(r.lines.map(line => line.supplierId))]
+          demand(supplierIds.length === 1, 'A budget request must contain products from one supplier. Return the request to Inventory to revise it.', 400)
+          demand(!r.budgetRequestId, 'A budget request has already been created for this procurement request.')
+          const supplierId = supplierIds[0], requestedAmount = Number(r.estimatedProcurementValue || 0)
+          const budgetRequest = create('budgetRequest', { status: 'Submitted', supplierId, procurementId: r.id, requestedAmount, recommendedAmount: requestedAmount, department: r.department, category: String(r.lines[0]?.category || 'Procurement'), lines: r.lines, deliveryDate: r.requiredDate, deliveryLocation: String(r.lines[0]?.location || ''), terms: 'Per approved inventory request', links: [...r.links, r.id] })
+          result = set(r, { status: 'For Finance Approval', supplierId, verifiedBy: ctx.uid, verifiedAt: now, budgetRequestId: budgetRequest.id, checklist: { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true } })
         } else if (action === 'return') {
           demand(r.status === 'Received', 'Only newly received requests can be returned.')
           const reason = required(input.returnReason, 'Reason for return'), instructions = required(input.instructions, 'Revision instructions')
@@ -309,16 +314,14 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         if (action === 'resubmit') { allow(ctx, 'procurement:review'); demand(['Returned', 'Rejected'].includes(r.status), 'This request cannot be resubmitted.'); result = set(r, { status: 'Submitted', revision: required(input.remarks, 'Revision details') }) }
         else { allow(ctx, 'finance:payables:approve'); demand(r.createdBy !== ctx.uid, 'Finance approval must be performed by another user.'); demand(r.status === 'Submitted', 'Budget request is not awaiting a decision.')
           if (action === 'approve') {
-            const budget = get(input.budgetId, 'budget'), quote = get(r.quotationId, 'quotation'); demand(budget.department === r.department && budget.category === r.category, 'Budget department/category must match the request.')
+            const budget = get(input.budgetId, 'budget'); demand(budget.department === r.department && budget.category === r.category, 'Budget department/category must match the request.')
             const approvedAmount = money(input.approvedAmount); demand(approvedAmount >= r.requestedAmount && approvedAmount <= budget.total - budget.committed - budget.spent, 'Insufficient available budget, or approved amount is below the quotation.')
-            demand(quote.validUntil >= day(), 'Selected quotation has expired.')
             set(budget, { committed: budget.committed + approvedAmount })
             const remarks = required(input.remarks, 'Approval remarks')
-            const rfq = get(quote.rfqId, 'rfq')
             const approval = create('financeApproval', { status: 'Approved', budgetRequestId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...r.links, r.id] }, `approval-${r.id}`)
             const allocation = create('budgetAllocation', { status: 'Committed', budgetRequestId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...approval.links, approval.id] }, `allocation-${r.id}`)
             result = set(r, { status: 'Approved', budgetId: budget.id, approvedAmount, approvedBy: ctx.uid, approvedAt: now, remarks, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
-            create('po', { ...Object.fromEntries(['lines', 'subtotal', 'tax', 'delivery', 'otherCharges', 'discount', 'total', 'mode', 'supplierId', 'paymentTerms', 'warranty'].map(k => [k, quote[k] ?? ''])), status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, quotationId: quote.id, rfqId: rfq.id, procurementId: r.procurementId, links: [...allocation.links, allocation.id], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: rfq.deliveryDate, deliveryLocation: rfq.deliveryLocation, terms: rfq.terms }, `po-${r.id}`)
+            create('po', { lines: r.lines, subtotal: r.requestedAmount, tax: 0, delivery: 0, otherCharges: 0, discount: 0, total: r.requestedAmount, mode: 'Online', supplierId: r.supplierId, paymentTerms: 'Per supplier terms', warranty: '', status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...allocation.links, allocation.id], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
           } else { demand(['reject', 'return'].includes(action), 'Invalid action.'); result = set(r, { status: action === 'reject' ? 'Rejected' : 'Returned', remarks: required(input.remarks, 'Decision reason'), reviewedBy: ctx.uid, reviewedAt: now }) }
         }
       } else if (r.kind === 'po') {

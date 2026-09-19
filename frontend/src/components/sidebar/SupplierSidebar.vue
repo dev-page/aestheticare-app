@@ -23,7 +23,6 @@ export default {
         label: 'Clinic Requests & Orders',
         icon: 'mdi:file-document-multiple-outline',
         children: [
-          { label: 'RFQs & Quotations', icon: 'mdi:file-document-outline', to: '/supplier/supply/rfqs' },
           { label: 'Purchase Orders', icon: 'mdi:cart-check', to: '/supplier/supply/orders' },
           { label: 'Invoices & Payments', icon: 'mdi:receipt-text-outline', to: '/supplier/supply/invoices' }
         ]

@@ -35,12 +35,7 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   const aboveAvailable = await f.call('inventory', '/supply/records', { kind: 'request', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 1001, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Replenishment', requiredDate: date })
   assert.equal(aboveAvailable.status, 400)
   const procurement = f.read(request).procurementId
-  const rfq = await f.create('procurement', 'rfq', { procurementId: procurement, mode, supplierIds: ['vendor'], deadline: date, deliveryDate: date, deliveryLocation: 'Clinic', terms: 'Deliver intact', contact: 'Purchasing' })
-  if (mode === 'Manual') { await f.act('procurement', rfq, 'send', {}, 409); f.evidence(rfq) }
-  await f.act('procurement', rfq, 'send')
-  const quote = await f.create(mode === 'Manual' ? 'procurement' : 'supplier', 'quotation', { rfqId: rfq, supplierId: 'vendor', lines: [{ itemId: 'item', quantity: 100, unitPrice: 5 }], validUntil: date, leadDays: 1, paymentTerms: 'On delivery' })
-  if (mode === 'Manual') f.evidence(quote)
-  await f.act('procurement', quote, 'select', { justification: 'Meets specification and delivery date', category: 'Materials' })
+  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true })
   const budgetRequest = f.read(procurement).budgetRequestId
   const budget = await f.create('finance', 'budget', { department: 'Inventory', category: 'Materials', total: 1000 })
   await f.act('finance', budgetRequest, 'approve', { budgetId: budget, approvedAmount: 550, remarks: 'Within allocation' })
@@ -49,10 +44,9 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   assert.equal(f.read(`approval-${budgetRequest}`).status, 'Approved')
   assert.equal(f.read(`allocation-${budgetRequest}`).status, 'Committed')
   const po = `po-${budgetRequest}`
-  if (mode === 'Manual') f.evidence(po)
   await f.act('procurement', po, 'issue')
   await f.act('competitor', po, 'confirm', { remarks: 'Wrong supplier', deliveryDate: date }, 403)
-  await f.act(mode === 'Manual' ? 'procurement' : 'supplier', po, 'confirm', { remarks: 'Confirmed', deliveryDate: date })
+  await f.act('supplier', po, 'confirm', { remarks: 'Confirmed', deliveryDate: date })
   assert.equal(f.read(`confirmation-${po}`).status, 'Accepted')
   await f.act('logistics', po, 'claimOrder')
   assert.equal(f.read(po).status, 'Claimed by Logistics')
@@ -64,7 +58,7 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   const discrepancy = [...f.store.entries()].find(([key, value]) => key.startsWith('supplyRecords/') && value.kind === 'discrepancy' && value.receivingId === first)?.[1]
   assert.ok(discrepancy)
   await f.act('logistics', discrepancy.id, 'resolve', { resolutionType: 'Replacement', remarks: 'Supplier will replace five damaged boxes' })
-  const invoice = await f.create(mode === 'Manual' ? 'finance' : 'supplier', 'invoice', { poId: po, invoiceNumber: 'INV1', invoiceDate: date, dueDate: date, lines: [{ itemId: 'item', quantity: 100, unitPrice: 5 }] })
+  const invoice = await f.create('supplier', 'invoice', { poId: po, invoiceNumber: 'INV1', invoiceDate: date, dueDate: date, lines: [{ itemId: 'item', quantity: 100, unitPrice: 5 }] })
   f.evidence(invoice); await f.act('finance', invoice, 'startVerification'); await f.act('finance', invoice, 'verify'); assert.equal(f.read(invoice).status, 'Disputed')
   await f.act('finance', invoice, 'pay', {}, 409)
   const rest = await f.create('logistics', 'receiving', { poId: po, reference: 'DR2', deliveryDate: date, lines: [{ itemId: 'item', delivered: 40, accepted: 40, rejected: 0, condition: 'Good' }] })
