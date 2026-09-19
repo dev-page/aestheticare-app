@@ -63,6 +63,7 @@ const ATTENDANCE_RECORD_PATH = '/attendance/record'
 const ATTENDANCE_IMPORT_PATH = '/attendance/import'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const SUPPLIER_WELCOME_PATH = '/send-supplier-welcome'
+const SUPPLIER_ACCOUNT_CREATE_PATH = '/supply/suppliers/account'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
@@ -5284,6 +5285,131 @@ const handleAccountWelcome = async (req, res) => {
 
 app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), handleAccountWelcome)
 app.post(SUPPLIER_WELCOME_PATH, requireAuth, requirePermission('suppliers:create'), handleAccountWelcome)
+
+// Supplier accounts are external accounts. Creating one requires Firebase Auth
+// Admin privileges, so this operation must never be performed from the browser.
+app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
+  const input = req.body || {}
+  const branchId = String(input.branchId || '').trim()
+  const actorId = String(req.user?.uid || '').trim()
+  const text = (value, max = 500) => String(value || '').trim().slice(0, max)
+  const normalizedEmail = text(input.email, 320).toLowerCase()
+  const supplierName = text(input.name, 120)
+  const contact = text(input.contact, 120)
+  const businessType = text(input.businessType, 120)
+  const taxRegistrationNumber = text(input.taxRegistrationNumber, 32).replace(/\D/g, '')
+  const phone = text(input.phone, 32).replace(/\D/g, '')
+  const categories = [...new Set((Array.isArray(input.categories) ? input.categories : [])
+    .map((category) => text(category, 80))
+    .filter(Boolean))].slice(0, 20)
+
+  if (!/^[A-Za-z0-9_-]{1,150}$/.test(branchId)) return res.status(400).json({ success: false, error: 'A valid clinic branch is required.' })
+  if (!supplierName || !contact || !businessType || !EMAIL_ADDRESS_REGEX.test(normalizedEmail)) return res.status(400).json({ success: false, error: 'Supplier name, contact, business type, and a valid email are required.' })
+  if (!/^\d{12}$/.test(taxRegistrationNumber)) return res.status(400).json({ success: false, error: 'A valid 12-digit TIN is required.' })
+  if (!/^9\d{9}$/.test(phone)) return res.status(400).json({ success: false, error: 'A valid Philippine mobile number is required.' })
+  if (!categories.length) return res.status(400).json({ success: false, error: 'At least one supplier category is required.' })
+
+  let supplierId = ''
+  let supplierUid = ''
+  try {
+    const actor = await loadUserContext(actorId)
+    const actorRole = String(actor.roleKey || actor.userData?.role || '').toLowerCase().replace(/[\s_-]+/g, '')
+    const permitted = actor.permissions.has('suppliers:create')
+      || actor.permissions.has('administrator:full_access')
+      || ['owner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
+    if (!permitted || !await resolveBranchAccess(actorId, branchId)) return res.status(403).json({ success: false, error: 'Forbidden' })
+
+    const firestore = admin.firestore()
+    const branchSnap = await firestore.collection('clinics').doc(branchId).get()
+    if (!branchSnap.exists) return res.status(404).json({ success: false, error: 'Clinic branch not found.' })
+    const branch = branchSnap.data() || {}
+    const temporaryPassword = `${crypto.randomBytes(18).toString('base64url')}Aa1!`
+    let authUser
+    try {
+      authUser = await admin.auth().createUser({ email: normalizedEmail, password: temporaryPassword, displayName: contact })
+    } catch (error) {
+      if (String(error?.code || '') === 'auth/email-already-exists') return res.status(409).json({ success: false, error: 'This supplier email already has an account.' })
+      throw error
+    }
+    supplierUid = authUser.uid
+    const supplierRef = firestore.collection('suppliers').doc()
+    supplierId = supplierRef.id
+    const createdAt = admin.firestore.FieldValue.serverTimestamp()
+    const supplierData = {
+      name: supplierName,
+      businessName: supplierName,
+      businessType,
+      taxRegistrationNumber,
+      categories,
+      category: categories[0],
+      contact,
+      contactPerson: contact,
+      email: normalizedEmail,
+      phone,
+      address: text(input.address, 500),
+      branchId,
+      clinicOwnerId: String(branch.ownerId || actorId),
+      ownerId: supplierUid,
+      supplierUserId: supplierUid,
+      sharedAcrossBranches: true,
+      status: 'Pending Activation',
+      accreditationStatus: 'Pending Accreditation',
+      procurementAccess: 'Online',
+      accountActivated: false,
+      offeredItems: [],
+      createdBy: actorId,
+      createdAt,
+      updatedAt: createdAt,
+    }
+    const supplierUserData = {
+      firstName: contact,
+      lastName: '',
+      fullName: contact,
+      email: normalizedEmail,
+      role: 'Supplier',
+      userType: 'Supplier',
+      supplierId,
+      branchId,
+      clinicOwnerId: String(branch.ownerId || actorId),
+      status: 'Pending Activation',
+      accountActivated: false,
+      mustChangePassword: true,
+      archived: false,
+      createdAt,
+      updatedAt: createdAt,
+    }
+    const batch = firestore.batch()
+    batch.set(supplierRef, supplierData)
+    batch.set(firestore.collection('users').doc(supplierUid), supplierUserData)
+    batch.set(firestore.collection('supplyAudit').doc(), {
+      branchId,
+      recordId: supplierId,
+      actorId,
+      actorName: actor.userData?.fullName || actor.userData?.email || actorId,
+      role: actor.roleKey,
+      module: 'supplier',
+      action: 'supplier-account-created',
+      after: supplierData,
+      ipAddress: String(req.ip || req.socket?.remoteAddress || '').slice(0, 128),
+      device: String(req.get('user-agent') || '').slice(0, 500),
+      createdAt,
+    })
+    await batch.commit()
+    const activation = await createAccountActivation({ firestore, uid: supplierUid, email: normalizedEmail, name: contact, req, temporaryPassword })
+    return res.status(201).json({ success: true, data: { supplierId, uid: supplierUid, activationEmailSent: true, devMode: Boolean(activation.delivery?.devMode) } })
+  } catch (error) {
+    console.error('Supplier account creation failed:', error?.message || error)
+    if (supplierId || supplierUid) {
+      const firestore = admin.firestore()
+      await Promise.all([
+        supplierId ? firestore.collection('suppliers').doc(supplierId).delete().catch(() => {}) : Promise.resolve(),
+        supplierUid ? firestore.collection('users').doc(supplierUid).delete().catch(() => {}) : Promise.resolve(),
+        supplierUid ? admin.auth().deleteUser(supplierUid).catch(() => {}) : Promise.resolve(),
+      ])
+    }
+    return res.status(500).json({ success: false, error: 'Unable to create the supplier account. Please try again.' })
+  }
+})
 
 /*
  * Supplier self-registration was removed. These legacy endpoint bodies are

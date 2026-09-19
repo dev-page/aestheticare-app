@@ -373,9 +373,9 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
-import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged } from 'firebase/auth'
-import { deleteApp, getApp, initializeApp } from 'firebase/app'
+import { getFirestore, collection, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
+import { getAuth, onAuthStateChanged } from 'firebase/auth'
+import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
@@ -429,27 +429,6 @@ export default {
       if (status === 'Active') return 'bg-green-500/20 text-green-400'
       if (['Invited', 'Pending Activation'].includes(status)) return 'bg-amber-500/20 text-amber-300'
       return 'bg-red-500/20 text-red-400'
-    }
-
-    const generateTemporaryPassword = () => {
-      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*?'
-      const values = new Uint32Array(14)
-      globalThis.crypto?.getRandomValues?.(values)
-      return Array.from(values, (value, index) => alphabet[(value || (Date.now() + index)) % alphabet.length]).join('')
-    }
-
-    const sendSupplierWelcomeEmail = async ({ email, fullName, defaultPassword, uid }) => {
-      const user = auth.currentUser
-      if (!user) throw new Error('User not authenticated.')
-      const token = await user.getIdToken()
-      const response = await fetch(`${OTP_API_BASE}/send-supplier-welcome`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ recipient: email, fullName, defaultPassword, uid }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to send supplier activation email.')
-      return payload
     }
 
     const getEmptySupplier = () => ({
@@ -646,74 +625,24 @@ export default {
       }
 
       saving.value = true
-      let creatorApp = null
-      let createdAuthUser = null
-      let supplierRef = null
       try {
-        const supplierName = newSupplier.value.name
-        const normalizedEmail = newSupplier.value.email.trim().toLowerCase()
-        const temporaryPassword = generateTemporaryPassword()
-        creatorApp = initializeApp(getApp().options, `supplier-creator-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-        const creatorAuth = getAuth(creatorApp)
-        try {
-          const userCredential = await createUserWithEmailAndPassword(creatorAuth, normalizedEmail, temporaryPassword)
-          createdAuthUser = userCredential.user
-        } catch (error) {
-          if (error?.code === 'auth/email-already-in-use') throw new Error('This supplier email already has an account.')
-          throw error
-        }
-
-        supplierRef = await addDoc(collection(db, 'suppliers'), {
-          ...getSupplierPayload(newSupplier.value),
-          branchId: currentBranchId.value,
-          ownerId: createdAuthUser.uid,
-          clinicOwnerId: currentOwnerId.value || null,
-          supplierUserId: createdAuthUser.uid,
-          sharedAcrossBranches: true,
-          status: 'Pending Activation',
-          accountActivated: false,
-          createdAt: serverTimestamp()
+        const token = await auth.currentUser?.getIdToken()
+        if (!token) throw new Error('Your session has expired. Please sign in again.')
+        const response = await fetch(`${OTP_API_BASE}/supply/suppliers/account`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ branchId: currentBranchId.value, ...getSupplierPayload(newSupplier.value) }),
         })
-        await setDoc(doc(db, 'users', createdAuthUser.uid), {
-          firstName: newSupplier.value.contact.trim() || supplierName,
-          lastName: '',
-          fullName: newSupplier.value.contact.trim() || supplierName,
-          email: normalizedEmail,
-          role: 'Supplier',
-          userType: 'Supplier',
-          supplierId: supplierRef.id,
-          branchId: currentBranchId.value,
-          clinicOwnerId: currentOwnerId.value || null,
-          status: 'Pending Activation',
-          accountActivated: false,
-          mustChangePassword: true,
-          archived: false,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        })
-        await sendSupplierWelcomeEmail({
-          email: normalizedEmail,
-          fullName: newSupplier.value.contact.trim() || supplierName,
-          defaultPassword: temporaryPassword,
-          uid: createdAuthUser.uid,
-        })
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Added supplier',
-          details: `Added supplier: ${supplierName || 'Unnamed supplier'}.`
-        })
-
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to create supplier account.')
         toast.success('Supplier added. An activation email was sent to the supplier.')
         showAddModal.value = false
         resetAddForm()
         await loadSuppliers()
       } catch (error) {
         console.error(error)
-        if (supplierRef) await deleteDoc(supplierRef).catch(() => {})
-        if (createdAuthUser) await createdAuthUser.delete().catch(() => {})
-        toast.error('Failed to add supplier.')
+        toast.error(error?.message || 'Failed to add supplier.')
       } finally {
-        if (creatorApp) await deleteApp(creatorApp).catch(() => {})
         saving.value = false
       }
     }
