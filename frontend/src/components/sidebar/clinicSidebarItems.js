@@ -61,7 +61,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       ...supplyLinks('procurement', 'procurement:view', [['dashboard', 'Procurement Dashboard', 'mdi:view-dashboard-outline'], ['requests', 'Procurement Requests', 'mdi:clipboard-text-outline'], ['rfqs', 'RFQs & Quotations', 'mdi:file-compare'], ['orders', 'Purchase Orders', 'mdi:cart-check']]),
       { type: 'section', label: 'SUPPLIER MANAGEMENT' },
       { label: 'Supplier Directory', icon: 'mdi:truck-delivery-outline', to: '/procurement/suppliers/directory', permission: 'inventory:view' },
-      ...supplyLinks('procurement', 'procurement:view', [['suppliers', 'Supplier Products', 'mdi:store-outline']]),
       { type: 'section', label: 'REPORTING' },
       ...supplyLinks('procurement', 'procurement:view', [['reports', 'Procurement Reports', 'mdi:file-chart-outline']])
     ]

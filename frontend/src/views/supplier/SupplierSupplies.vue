@@ -62,7 +62,7 @@
                     <td class="px-5 py-4">{{ item.category === 'Others' ? item.customCategory : item.category }}</td>
                     <td class="px-5 py-4">{{ item.quantity }}</td>
                     <td class="px-5 py-4 whitespace-nowrap">{{ formatMoney(item.price ?? item.unitCost) }}</td>
-                    <td class="px-5 py-4"><button type="button" class="catalog-button" :aria-label="`View details for ${item.name}`" @click="selectedItem = item">View Details</button></td>
+                    <td class="px-5 py-4"><div class="flex gap-2"><button type="button" class="catalog-button" :aria-label="`View details for ${item.name}`" @click="selectedItem = item">View</button><button type="button" class="catalog-button" :aria-label="`Edit ${item.name}`" @click="editCatalogItem(item)">Edit</button></div></td>
                   </tr>
                 </tbody>
               </table>
@@ -77,7 +77,7 @@
           </template>
         </section>
 
-        <form v-if="!loading" class="space-y-5" @submit.prevent="saveSupplies">
+        <form v-if="!loading" data-supplier-catalog-form class="space-y-5" @submit.prevent="saveSupplies">
           <fieldset :disabled="saving || checkingImage" class="min-w-0 space-y-5">
           <article
             v-for="(item, index) in items"
@@ -343,6 +343,32 @@ const loadSupplies = async (user) => {
 
 const addItemRow = () => {
   items.value.push(createEmptyItem())
+}
+
+const hasDraftData = (item) => Boolean(
+  item.name || item.category || item.customCategory || item.description || item.quantity ||
+  item.measurementValue || item.measurementUnit || item.specifications || item.price ||
+  item.imageUrl || item.fdaRegistrationNumber || item.fdaApprovalDocument || item.fdaApprovalFile
+)
+
+const editCatalogItem = (savedItem) => {
+  const index = items.value.findIndex((item) => item.id === savedItem.id)
+  const editable = {
+    ...createEmptyItem(),
+    ...savedItem,
+    category: savedItem.categoryGroup || savedItem.category || '',
+    customCategory: savedItem.customCategory || '',
+    price: savedItem.price ?? savedItem.unitCost ?? '',
+    imageFile: null,
+    fdaApprovalFile: null,
+    fdaApprovalFileName: '',
+    showMeasurement: Boolean(savedItem.measurementValue || savedItem.measurementUnit),
+  }
+  if (index >= 0) items.value.splice(index, 1, editable)
+  else if (items.value.length === 1 && !hasDraftData(items.value[0])) items.value.splice(0, 1, editable)
+  else items.value.push(editable)
+  selectedItem.value = null
+  window.setTimeout(() => document.querySelector('[data-supplier-catalog-form]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
 }
 
 const removeItemRow = (index) => {

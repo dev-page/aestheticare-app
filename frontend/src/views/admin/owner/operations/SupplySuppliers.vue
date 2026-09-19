@@ -5,8 +5,8 @@
     <main class="flex-1 p-8">
       <div class="mb-8 flex items-center justify-between">
         <div>
-          <h1 class="text-3xl font-bold text-white mb-2">Supplier List</h1>
-          <p class="text-slate-400">Manage all suppliers and vendors</p>
+          <h1 class="text-3xl font-bold text-white mb-2">Supplier Directory</h1>
+          <p class="text-slate-400">Manage suppliers, browse their offered supplies, and start an inventory request.</p>
         </div>
         <button
           v-if="canCreateSuppliers"
