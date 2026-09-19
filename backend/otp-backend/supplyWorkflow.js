@@ -91,16 +91,34 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     await db.runTransaction(async tx => {
       const existing = await tx.get(ref), old = existing.data() || {}
       demand(!existing.exists || old.branchId === branchId, 'Item belongs to another branch.', 403)
+      const supplierId = String(input.supplierId || old.supplierId || '')
+      const catalogItemId = String(input.supplierCatalogItemId || old.supplierCatalogItemId || '')
+      const supplierSnap = supplierId ? await tx.get(db.collection('suppliers').doc(cleanId(supplierId))) : null
+      const supplier = supplierSnap?.data()
+      const catalogItem = Array.isArray(supplier?.offeredItems) ? supplier.offeredItems.find(product => String(product.id) === catalogItemId) : null
+      if (!existing.exists) demand(supplier && supplier.branchId === branchId && supplier.status === 'Active' && catalogItem, 'Choose an active supplier and an item from that supplier\'s catalog.', 400)
+      if (catalogItem) demand(supplier.branchId === branchId && supplier.status === 'Active', 'The selected supplier is not active for this branch.', 400)
       const currentStock = quantity(input.currentStock, true), minStock = quantity(input.minStock, true), targetStock = quantity(input.targetStock, true), maxStock = quantity(input.maxStock, true)
       demand(targetStock >= minStock && maxStock >= targetStock, 'Maximum stock must be at least target stock, and target must be at least the restocking threshold.', 400)
       demand(currentStock >= Number(old.reservedStock || 0), 'Stock cannot fall below reserved quantity.')
       const reason = required(input.adjustmentReason, 'Stock/edit reason')
-      const data = { branchId, name: required(input.name, 'Item name'), currentStock, reservedStock: Number(old.reservedStock || 0), minStock, targetStock, maxStock, updatedAt: stamp(), ...(!existing.exists ? { createdAt: stamp() } : {}) }
-      for (const key of ['brand', 'description', 'category', 'unit', 'location', 'condition', 'serialNumber', 'modelNumber', 'warranty', 'imageUrl', 'supplierId']) data[key] = String(input[key] || '').slice(0, 4000)
+      const data = { branchId, name: required(catalogItem?.name || catalogItem?.itemName || catalogItem?.productName || old.name || input.name, 'Catalog item name'), currentStock, reservedStock: Number(old.reservedStock || 0), minStock, targetStock, maxStock, updatedAt: stamp(), ...(!existing.exists ? { createdAt: stamp() } : {}) }
+      for (const key of ['location', 'condition', 'serialNumber', 'modelNumber', 'warranty']) data[key] = String(input[key] || '').slice(0, 4000)
+      if (catalogItem) {
+        data.supplierId = supplierId; data.supplierCatalogItemId = catalogItemId
+        data.category = String(catalogItem.category || catalogItem.categoryGroup || catalogItem.customCategory || '').slice(0, 4000)
+        data.description = String(catalogItem.description || catalogItem.specifications || '').slice(0, 4000)
+        data.unit = String(catalogItem.measurementUnit || catalogItem.unit || 'units').slice(0, 4000)
+        data.imageUrl = String(catalogItem.imageUrl || '').slice(0, 4000)
+        data.costPrice = money(catalogItem.price || catalogItem.unitCost || 0) / 100
+      } else {
+        for (const key of ['brand', 'description', 'category', 'unit', 'imageUrl', 'supplierId', 'supplierCatalogItemId']) data[key] = String(old[key] || '').slice(0, 4000)
+        data.costPrice = Number(old.costPrice || 0)
+      }
       demand(!data.imageUrl || /^https:\/\//.test(data.imageUrl), 'Images must use an HTTPS URL.', 400)
       demand(['Material', 'Equipment'].includes(input.itemType), 'Choose Material or Equipment.', 400)
       data.itemType = input.itemType; data.consumability = input.consumability === 'Non-consumable' ? 'Non-consumable' : 'Consumable'
-      data.expiryDate = input.expiryDate ? dateKey(input.expiryDate) : ''; data.costPrice = money(input.costPrice || 0) / 100
+      data.expiryDate = input.expiryDate ? dateKey(input.expiryDate) : ''
       tx.set(ref, data, { merge: true })
       tx.set(db.collection('inventoryMovements').doc(), { branchId, inventoryItemId: ref.id, type: existing.exists ? 'adjustment' : 'opening_stock', quantity: currentStock - Number(old.currentStock || 0), reason, createdBy: ctx.uid, createdAt: stamp() })
       tx.set(db.collection('supplyAudit').doc(), { recordId: ref.id, branchId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: 'inventory', action: 'inventory-edit', before: old, after: data, reason, ...ctx.auditContext, createdAt: stamp() })
@@ -149,6 +167,13 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     }
     const evidence = (r, message) => demand(documents.some(d => d.recordId === r.id), message || 'Upload supporting documents before continuing.')
     const supplier = id => { const s = suppliers.find(s => s.id === id); demand(s && s.status === 'Active', 'Select an active supplier assigned to this branch.'); return s }
+    const supplierCanProvideLine = (s, line) => (Array.isArray(s.offeredItems) ? s.offeredItems : []).some(product => {
+      const catalogMatch = s.id === line.supplierId && String(product.id || '') === String(line.supplierCatalogItemId || '')
+      const nameMatch = String(product.name || product.itemName || product.productName || '').trim().toLowerCase() === String(line.name || '').trim().toLowerCase()
+      const productCategory = String(product.category || product.categoryGroup || product.customCategory || '').trim().toLowerCase()
+      const categoryMatch = !line.category || productCategory === String(line.category).trim().toLowerCase()
+      return catalogMatch || nameMatch && categoryMatch
+    })
     const manualOrSupplier = (r, permission = 'procurement:create') => { if (ctx.supplier) demand(r.mode === 'Online' && supplierOwns(ctx, r), 'This record belongs to another supplier.', 403); else { allow(ctx, permission); demand(r.mode === 'Manual', 'The supplier must perform this action through their portal.'); } }
     const record = targetId ? records.find(r => r.id === targetId) : null
     let result, action = String(input.action || 'create'), before = record?.status || ''
@@ -156,13 +181,13 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       switch (input.kind) {
         case 'request': {
           allow(ctx, 'inventory:create'); const item = items.find(i => i.id === input.itemId); demand(item, 'Select an inventory item.', 400)
-          result = create('request', { status: 'Draft', itemId: item.id, lines: [{ itemId: item.id, name: item.name, quantity: quantity(input.quantity), unit: item.unit || 'units', specifications: item.description || '' }], currentStock: Number(item.currentStock || 0), minStock: Number(item.minStock || 0), department: required(input.department, 'Department'), reason: required(input.reason, 'Reason'), priority: input.priority || 'Normal', requiredDate: dateKey(input.requiredDate), estimatedCost: money(input.estimatedCost || 0) }); break
+          result = create('request', { status: 'Draft', itemId: item.id, lines: [{ itemId: item.id, name: item.name, category: item.category || '', supplierId: item.supplierId || '', supplierCatalogItemId: item.supplierCatalogItemId || '', quantity: quantity(input.quantity), unit: item.unit || 'units', specifications: item.description || '' }], currentStock: Number(item.currentStock || 0), minStock: Number(item.minStock || 0), department: required(input.department, 'Department'), reason: required(input.reason, 'Reason'), priority: input.priority || 'Normal', requiredDate: dateKey(input.requiredDate), estimatedCost: money(input.estimatedCost || 0) }); break
         }
         case 'budget': allow(ctx, 'finance:payables:approve'); result = create('budget', { status: 'Active', department: required(input.department, 'Department'), category: required(input.category, 'Category'), total: money(input.total), committed: 0, spent: 0 }); break
         case 'rfq': {
           allow(ctx, 'procurement:create'); const p = get(input.procurementId, 'procurement'); demand(['Received', 'Under Review', 'RFQ Preparation'].includes(p.status) && !p.rfqId, 'This procurement already has an active sourcing process.')
           demand(['Manual', 'Online'].includes(input.mode), 'Choose a procurement mode.', 400)
-          const supplierIds = [...new Set(input.supplierIds || [])]; demand(supplierIds.length > 0 && supplierIds.length <= 20, 'Select 1–20 suppliers.'); supplierIds.forEach(supplier)
+          const supplierIds = [...new Set(input.supplierIds || [])]; demand(supplierIds.length > 0 && supplierIds.length <= 20, 'Select 1–20 suppliers.'); supplierIds.forEach(id => { const selectedSupplier = supplier(id); demand(p.lines.every(line => supplierCanProvideLine(selectedSupplier, line)), 'Each invited supplier must offer every requested supply in its catalog.', 400) })
           if (input.mode === 'Online') demand(supplierIds.every(id => { const s = supplier(id); return s.ownerId || s.supplierUserId }), 'Online procurement requires suppliers with activated portal accounts.')
           const deadline = dateKey(input.deadline); demand(deadline >= day(), 'Quotation deadline cannot be in the past.')
           result = create('rfq', { status: 'Draft', mode: input.mode, procurementId: p.id, links: [...p.links, p.id], lines: p.lines, supplierIds, deadline, deliveryDate: dateKey(input.deliveryDate), deliveryLocation: required(input.deliveryLocation, 'Delivery location'), terms: required(input.terms, 'RFQ terms'), conditions: String(input.conditions || ''), contact: required(input.contact, 'Contact'), department: p.department })
@@ -188,7 +213,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             const expiryDate = line.expiryDate ? dateKey(line.expiryDate) : ''
             demand(!accepted || ((!expiryDate || expiryDate >= day()) && (line.condition || 'Good') === 'Good'), 'Only goods inspected as Good can be accepted into inventory.')
             if (rejected) required(line.reason, 'Rejection reason')
-            return { itemId: ordered.itemId, name: ordered.name, ordered: ordered.quantity, delivered, accepted, rejected, condition: String(line.condition || 'Good'), reason: String(line.reason || ''), expiryDate, lot: String(line.lot || ''), serialNumber: String(line.serialNumber || ''), modelNumber: String(line.modelNumber || ''), warranty: String(line.warranty || ''), packaging: String(line.packaging || '') }
+            return { itemId: ordered.itemId, name: ordered.name, category: ordered.category || '', supplierCatalogItemId: ordered.supplierCatalogItemId || '', ordered: ordered.quantity, delivered, accepted, rejected, condition: String(line.condition || 'Good'), reason: String(line.reason || ''), expiryDate, lot: String(line.lot || ''), serialNumber: String(line.serialNumber || ''), modelNumber: String(line.modelNumber || ''), warranty: String(line.warranty || ''), packaging: String(line.packaging || '') }
           })
           demand(lines.length && new Set(lines.map(l => l.itemId)).size === lines.length && lines.some(l => l.delivered > 0), 'Enter unique delivered items.')
           result = create('receiving', { status: 'Inspected', poId: po.id, supplierId: po.supplierId, links: [...po.links, po.id], lines, reference: required(input.reference, 'Delivery reference'), deliveryDate: dateKey(input.deliveryDate), receivedBy: ctx.uid, notes: String(input.notes || '') })
@@ -281,9 +306,9 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           const ordered = po.lines.find(l => l.itemId === line.itemId); accepted[line.itemId] = Number(accepted[line.itemId] || 0) + line.accepted
           demand(accepted[line.itemId] <= ordered.quantity, 'Receipt exceeds ordered quantity.')
           if (line.serialNumber) { demand(line.accepted === 1, 'Receive serialized equipment one unit per receiving record.'); demand(!docs(lotSnap).some(l => l.serialNumber === line.serialNumber && l.itemId === item.id), 'This equipment serial number has already been received.') }
-          writes.push([db.collection('supplyLots').doc(`${r.id}-${item.id}`), { branchId, itemId: item.id, receivingId: r.id, poId: po.id, supplierId: po.supplierId, receivedQuantity: line.accepted, remainingQuantity: line.accepted, lot: line.lot || '', expiryDate: line.expiryDate || '', serialNumber: line.serialNumber || '', modelNumber: line.modelNumber || '', warranty: line.warranty || '', condition: line.condition, location: po.deliveryLocation, unitCost: ordered.unitPrice, receivedAt: now }, false])
+          writes.push([db.collection('supplyLots').doc(`${r.id}-${item.id}`), { branchId, itemId: item.id, receivingId: r.id, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', receivedQuantity: line.accepted, remainingQuantity: line.accepted, lot: line.lot || '', expiryDate: line.expiryDate || '', serialNumber: line.serialNumber || '', modelNumber: line.modelNumber || '', warranty: line.warranty || '', condition: line.condition, location: po.deliveryLocation, unitCost: ordered.unitPrice, receivedAt: now }, false])
           writes.push([db.collection('inventoryItems').doc(item.id), { currentStock: Number(item.currentStock || 0) + line.accepted, supplierId: po.supplierId, receivedAt: now, updatedAt: now, expiryDate: Number(item.currentStock || 0) > 0 && item.expiryDate ? [item.expiryDate, line.expiryDate].filter(Boolean).sort()[0] : line.expiryDate || '', serialNumber: line.serialNumber || item.serialNumber || '', modelNumber: line.modelNumber || item.modelNumber || '', warranty: line.warranty || item.warranty || '', condition: line.condition, location: po.deliveryLocation, costPrice: ordered.unitPrice / 100 }, true])
-          writes.push([db.collection('inventoryMovements').doc(`${r.id}-${item.id}`), { branchId, inventoryItemId: item.id, receivingId: r.id, inspectionId: r.inspectionId, poId: po.id, quantity: line.accepted, type: 'purchase_receipt', createdBy: ctx.uid, createdAt: now, lot: line.lot, expiryDate: line.expiryDate }, false])
+          writes.push([db.collection('inventoryMovements').doc(`${r.id}-${item.id}`), { branchId, inventoryItemId: item.id, receivingId: r.id, inspectionId: r.inspectionId, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', quantity: line.accepted, type: 'purchase_receipt', createdBy: ctx.uid, createdAt: now, lot: line.lot, expiryDate: line.expiryDate }, false])
         }
         const complete = po.lines.every(l => Number(accepted[l.itemId] || 0) === l.quantity)
         set(po, { accepted, status: complete ? 'Delivered' : 'Partially Received' }); result = set(r, { status: 'Onboarded', onboardedBy: ctx.uid, onboardedAt: now })
