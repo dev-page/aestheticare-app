@@ -32,6 +32,8 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   const f = fixture(), date = '2099-12-31'
   const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 100, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Replenishment', requiredDate: date })
   assert.equal(f.read(request).status, 'Sent to Procurement')
+  const aboveAvailable = await f.call('inventory', '/supply/records', { kind: 'request', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 1001, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Replenishment', requiredDate: date })
+  assert.equal(aboveAvailable.status, 400)
   const procurement = f.read(request).procurementId
   const rfq = await f.create('procurement', 'rfq', { procurementId: procurement, mode, supplierIds: ['vendor'], deadline: date, deliveryDate: date, deliveryLocation: 'Clinic', terms: 'Deliver intact', contact: 'Purchasing' })
   if (mode === 'Manual') { await f.act('procurement', rfq, 'send', {}, 409); f.evidence(rfq) }
