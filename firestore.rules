@@ -114,9 +114,10 @@ service cloud.firestore {
     function isStaffOfOwner(ownerId) {
       return isSignedIn()
         && (userData().userType == 'Staff' || userData().userType == 'staff')
-        && userData().branchId != null
-        && exists(/databases/$(database)/documents/clinics/$(userData().branchId))
-        && clinicDoc(userData().branchId).data.ownerId == ownerId;
+        && (userData().organizationOwnerId == ownerId
+          || (userData().branchId != null
+            && exists(/databases/$(database)/documents/clinics/$(userData().branchId))
+            && clinicDoc(userData().branchId).data.ownerId == ownerId));
     }
 
     function isAssignedClinicRole(roleId) {
@@ -154,15 +155,11 @@ service cloud.firestore {
             && request.resource.data.get('customRoleIds', []) == [] && request.resource.data.get('customRoleId', null) == null
             && request.resource.data.get('adminRole', null) == null)
           || isSuperadmin()
-          || (request.resource.data.branchId != null
-            && canAccessBranch(request.resource.data.branchId)
-            && hasPermission('staff:create')
-            && request.resource.data.userType == 'Staff'
-            && ((isOwnerOfBranch(request.resource.data.branchId)
-              && request.resource.data.status == 'Active')
-              || request.resource.data.status == 'Pending Approval')));
+          // Employee profiles are created through the trusted backend. This
+          // prevents a browser from choosing another organization's branch.
+          );
       allow update: if isSignedIn()
-        && ((request.auth.uid == userId && applicantCannotChangeVerificationFields() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'userType', 'branchId', 'clinicId', 'permissions', 'effectivePermissions', 'customRoleIds', 'customRoleId', 'adminRole']))
+        && ((request.auth.uid == userId && applicantCannotChangeVerificationFields() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'userType', 'branchId', 'branchIds', 'organizationOwnerId', 'clinicId', 'permissions', 'effectivePermissions', 'customRoleIds', 'customRoleId', 'adminRole']))
           || (request.auth.uid == userId
             && request.resource.data.status == 'Inactive'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -172,7 +169,8 @@ service cloud.firestore {
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
             && hasPermission('staff:update')
-            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'userType', 'branchId', 'clinicId', 'permissions', 'effectivePermissions', 'customRoleIds', 'customRoleId', 'adminRole']) || hasPermission('roles:manage'))));
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['branchId', 'branchIds', 'organizationOwnerId', 'clinicLocation'])
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'userType', 'clinicId', 'permissions', 'effectivePermissions', 'customRoleIds', 'customRoleId', 'adminRole']) || hasPermission('roles:manage'))));
       allow delete: if isSignedIn()
         && (isSuperadmin()
           || (resource.data.branchId != null

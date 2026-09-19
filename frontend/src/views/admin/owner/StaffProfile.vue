@@ -320,9 +320,6 @@ export default {
             effectivePermissions: [...new Set(customRoles.value
               .filter((entry) => selectedRoleIds.includes(entry.id))
               .flatMap((entry) => entry.permissions || []))],
-            branchId: currentStaff.value.branchId,
-            branchIds: [...new Set(currentStaff.value.branchIds || [])],
-            clinicLocation: currentStaff.value.clinicLocation,
             status: nextStatus,
             archived: shouldArchive,
             archivedAt: shouldArchive ? serverTimestamp() : null

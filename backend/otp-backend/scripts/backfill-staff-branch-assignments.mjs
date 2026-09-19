@@ -14,8 +14,18 @@ const flush = async () => { if (pending) { await batch.commit(); batch = db.batc
 for (const doc of (await db.collection('users').where('userType', '==', 'Staff').get()).docs) {
   const staff = doc.data() || {}
   const branchIds = [...new Set([staff.branchId, ...(Array.isArray(staff.branchIds) ? staff.branchIds : [])].map((id) => String(id || '').trim()).filter(Boolean))]
-  if (!branchIds.length || (Array.isArray(staff.branchIds) && staff.branchIds.join('|') === branchIds.join('|'))) continue
-  batch.update(doc.ref, { branchId: String(staff.branchId || branchIds[0]), branchIds, branchAssignmentsMigratedAt: admin.firestore.FieldValue.serverTimestamp() })
+  if (!branchIds.length) continue
+  const primaryBranchId = String(staff.branchId || branchIds[0])
+  const primaryBranch = await db.collection('clinics').doc(primaryBranchId).get()
+  const organizationOwnerId = String(primaryBranch.data()?.ownerId || '').trim()
+  const assignmentsAlreadyCurrent = Array.isArray(staff.branchIds) && staff.branchIds.join('|') === branchIds.join('|')
+  if (assignmentsAlreadyCurrent && String(staff.organizationOwnerId || '') === organizationOwnerId) continue
+  batch.update(doc.ref, {
+    branchId: primaryBranchId,
+    branchIds,
+    organizationOwnerId: organizationOwnerId || null,
+    branchAssignmentsMigratedAt: admin.firestore.FieldValue.serverTimestamp(),
+  })
   updated++; pending++
   if (pending === 400) await flush()
 }

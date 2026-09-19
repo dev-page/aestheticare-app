@@ -2567,10 +2567,11 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
     if (appointment.contract?.status === 'signed' || appointment.startedAt) return res.status(409).json({ success: false, error: 'A signed or started booking contract cannot be replaced.' })
     req.userContext = req.userContext || await loadUserContext(req.user.uid)
     const roleKey = String(req.userContext.roleKey || '').trim()
+    const assignedBranches = new Set([req.userContext.userData?.branchId, ...(Array.isArray(req.userContext.userData?.branchIds) ? req.userContext.userData.branchIds : [])].map((id) => String(id || '').trim()).filter(Boolean))
     const canManage =
       roleKey === 'Superadmin' ||
       roleKey === 'Owner' ||
-      (String(req.userContext.userData?.branchId || '').trim() === String(appointment.branchId || '').trim() &&
+      (assignedBranches.has(String(appointment.branchId || '').trim()) &&
         (req.userContext.permissions.has('appointments:update') || req.userContext.permissions.has('appointments:review')))
     if (!canManage) return res.status(403).json({ success: false, error: 'Forbidden' })
 
@@ -5359,12 +5360,83 @@ app.post('/staff/:userId/branch-assignments', requireAuth, requirePermission('st
     const branches = branchSnaps.map((snap) => ({ id: snap.id, ...(snap.data() || {}) }))
     const ownerId = String(branches[0].ownerId || '').trim()
     if (!ownerId || branches.some((branch) => String(branch.ownerId || '') !== ownerId)) return res.status(403).json({ success: false, error: 'Employees may only be assigned to branches in one clinic organization.' })
+    const currentBranchId = String(targetSnap.data()?.branchId || '').trim()
+    if (currentBranchId) {
+      const currentBranch = await firestore.collection('clinics').doc(currentBranchId).get()
+      if (currentBranch.exists && String(currentBranch.data()?.ownerId || '') !== ownerId) {
+        return res.status(403).json({ success: false, error: 'An employee cannot be moved between clinic organizations.' })
+      }
+    }
     const actor = await loadUserContext(req.user.uid)
     const actorIsOwner = String(actor.roleKey || '') === 'Owner' && req.user.uid === ownerId
     if (!actorIsOwner && !(await Promise.all(branchIds.map((id) => resolveBranchAccess(req.user.uid, id)))).every(Boolean)) return res.status(403).json({ success: false, error: 'You are not authorized for every selected branch.' })
-    await targetRef.update({ branchId: branchIds[0], branchIds, clinicLocation: branches[0].clinicLocation || '', updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+    await targetRef.update({ branchId: branchIds[0], branchIds, organizationOwnerId: ownerId, clinicLocation: branches[0].clinicLocation || '', updatedAt: admin.firestore.FieldValue.serverTimestamp() })
     res.json({ success: true, data: { branchId: branchIds[0], branchIds } })
   } catch (error) { res.status(error.status || 500).json({ success: false, error: 'Unable to update employee branch assignments.' }) }
+})
+
+// Staff accounts are created in Firebase Authentication by the browser's
+// secondary Auth instance, but their organizational profile is always created
+// here.  In particular, a caller cannot write an arbitrary branchId/branchIds
+// pair directly to Firestore.
+app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'), async (req, res) => {
+  try {
+    const targetId = String(req.params.userId || '').trim()
+    const input = req.body || {}
+    const text = (value, max = 500) => String(value || '').trim().slice(0, max)
+    const email = text(input.email, 320).toLowerCase()
+    const firstName = text(input.firstName, 100)
+    const lastName = text(input.lastName, 100)
+    const requestedRole = normalizeRoleKey(text(input.role, 80))
+    const forbiddenRoles = new Set(['Owner', 'Superadmin'])
+    const branchIds = [...new Set((Array.isArray(input.branchIds) ? input.branchIds : []).map((id) => String(id || '').trim()).filter(Boolean))]
+    if (!targetId || !email || !firstName || !lastName || !requestedRole || forbiddenRoles.has(requestedRole) || !branchIds.length || branchIds.length > 100) {
+      return res.status(400).json({ success: false, error: 'Enter valid staff details and select at least one branch.' })
+    }
+
+    const firestore = admin.firestore()
+    const targetRef = firestore.collection('users').doc(targetId)
+    const [existing, authUser, branchSnaps] = await Promise.all([
+      targetRef.get(),
+      admin.auth().getUser(targetId),
+      Promise.all(branchIds.map((id) => firestore.collection('clinics').doc(id).get())),
+    ])
+    if (existing.exists) return res.status(409).json({ success: false, error: 'This employee profile already exists.' })
+    if (String(authUser.email || '').trim().toLowerCase() !== email) return res.status(400).json({ success: false, error: 'Employee email does not match the created account.' })
+    if (branchSnaps.some((snap) => !snap.exists)) return res.status(400).json({ success: false, error: 'One or more selected branches do not exist.' })
+    const branches = branchSnaps.map((snap) => ({ id: snap.id, ...(snap.data() || {}) }))
+    const ownerId = String(branches[0].ownerId || '').trim()
+    if (!ownerId || branches.some((branch) => String(branch.ownerId || '') !== ownerId)) return res.status(403).json({ success: false, error: 'Employees may only be assigned within one clinic organization.' })
+    const actor = await loadUserContext(req.user.uid)
+    const actorIsOwner = String(actor.roleKey || '') === 'Owner' && req.user.uid === ownerId
+    if (!actorIsOwner && !(await Promise.all(branchIds.map((id) => resolveBranchAccess(req.user.uid, id)))).every(Boolean)) {
+      return res.status(403).json({ success: false, error: 'You are not authorized for every selected branch.' })
+    }
+
+    const customRoleIds = [...new Set((Array.isArray(input.customRoleIds) ? input.customRoleIds : [input.customRoleId]).map((id) => String(id || '').trim()).filter(Boolean))]
+    const customRoleSnaps = await Promise.all(customRoleIds.map((id) => firestore.collection('clinicRoles').doc(id).get()))
+    if (customRoleSnaps.some((snap) => !snap.exists || String(snap.data()?.ownerId || '') !== ownerId)) {
+      return res.status(400).json({ success: false, error: 'One or more selected custom roles are not available to this clinic organization.' })
+    }
+    const effectivePermissions = [...new Set(customRoleSnaps.flatMap((snap) => Array.isArray(snap.data()?.permissions) ? snap.data().permissions : []))]
+    await targetRef.set({
+      firstName, middleName: text(input.middleName, 100) || null, lastName, suffix: text(input.suffix, 50) || null,
+      fullName: text(input.fullName, 250) || `${firstName} ${lastName}`,
+      email, phoneNumber: text(input.phoneNumber, 30), role: requestedRole,
+      customRoleId: customRoleIds[0] || null, customRoleIds,
+      customRoleName: text(input.customRoleName, 150) || null, effectivePermissions,
+      employmentType: text(input.employmentType, 80), userType: 'Staff',
+      branchId: branchIds[0], branchIds, organizationOwnerId: ownerId, clinicLocation: text(branches[0].clinicLocation, 250),
+      status: 'Pending Activation', practitionerLicenseUrl: text(input.practitionerLicenseUrl, 2000) || null,
+      practitionerLicenseName: text(input.practitionerLicenseName, 255) || null,
+      practitionerLicenseUploadedBy: input.practitionerLicenseUrl ? req.user.uid : null,
+      mustChangePassword: true, createdAt: admin.firestore.FieldValue.serverTimestamp(), createdBy: req.user.uid,
+    })
+    res.status(201).json({ success: true, data: { id: targetId, branchId: branchIds[0], branchIds } })
+  } catch (error) {
+    console.error('Create staff profile failed:', error)
+    res.status(500).json({ success: false, error: 'Unable to create employee profile.' })
+  }
 })
 app.post(SUPPLIER_WELCOME_PATH, requireAuth, requirePermission('suppliers:create'), handleAccountWelcome)
 

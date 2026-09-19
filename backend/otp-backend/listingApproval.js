@@ -52,7 +52,8 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         const post = snapshot.data()
         const clinic = (await tx.get(db.collection('clinics').doc(post.branchId))).data() || {}
         const owner = context.roleKey === 'Owner' && (clinic.ownerId === req.user.uid || post.branchId === req.user.uid)
-        if (!owner && (context.roleKey === 'Owner' || !context.userData?.branchId || context.userData.branchId !== post.branchId)) throw Object.assign(new Error('This listing belongs to another clinic.'), { status: 403 })
+        const assignedBranches = new Set([context.userData?.branchId, ...(Array.isArray(context.userData?.branchIds) ? context.userData.branchIds : [])].filter(Boolean))
+        if (!owner && (context.roleKey === 'Owner' || !assignedBranches.has(post.branchId))) throw Object.assign(new Error('This listing belongs to another clinic.'), { status: 403 })
         const update = listingTransition(post, action, context.roleKey, req.user.uid, String(req.body?.note || '').slice(0, 2000))
         if (action === 'publish' && post.postType === 'Package') {
           for (const id of post.packageServiceIds || []) {

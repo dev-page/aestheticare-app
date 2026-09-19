@@ -1,6 +1,6 @@
 <script>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { getFirestore, collection, doc, getDocs, setDoc, query, where } from 'firebase/firestore'
+import { getFirestore, collection, doc, getDocs, query, where } from 'firebase/firestore'
 import { deleteApp, getApp, initializeApp } from 'firebase/app'
 import { getAuth, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -501,8 +501,13 @@ export default {
             practitionerLicenseName = practitionerIdFile.value.name
           }
 
-          // Step 2: Save to Firestore
-          await setDoc(doc(db, "users", uid), {
+          // Step 2: create the profile through the trusted API. It validates
+          // the caller's authority over every assigned branch.
+          const token = await auth.currentUser?.getIdToken()
+          const profileResponse = await fetch(`${OTP_API_BASE}/staff/${uid}/profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
             firstName: currentStaff.value.firstName,
             middleName: currentStaff.value.middleName.trim() || null,
             lastName: currentStaff.value.lastName,
@@ -526,7 +531,12 @@ export default {
             practitionerLicenseUploadedBy: practitionerLicenseUrl ? (auth.currentUser?.uid || null) : null,
             mustChangePassword: true,
             createdAt: new Date()
+            })
           })
+          const profilePayload = await profileResponse.json().catch(() => ({}))
+          if (!profileResponse.ok || !profilePayload.success) {
+            throw new Error(profilePayload.error || 'Unable to create employee profile.')
+          }
 
           try {
             await sendStaffWelcomeEmail({
@@ -545,8 +555,8 @@ export default {
         } catch (firestoreError) {
           // Step 3: Rollback Auth if Firestore fails
           await userCredential.user.delete()
-          console.error("Error saving staff to Firestore:", firestoreError)
-          toast.error("Failed to save employee record. Auth user was rolled back.")
+          console.error("Error creating the employee profile:", firestoreError)
+          toast.error("Failed to create the employee profile. The new account was rolled back.")
         } finally {
           if (creatorAuth) {
             await signOut(creatorAuth).catch(() => {})
