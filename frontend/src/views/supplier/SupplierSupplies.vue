@@ -82,12 +82,12 @@
           <article
             v-for="(item, index) in items"
             :key="item.id"
-            class="overflow-hidden rounded-[2rem] border border-[#e4c7a1] bg-white/90 shadow-[0_12px_30px_rgba(77,52,31,0.06)]"
+            class="supplier-item-card overflow-hidden rounded-[2rem] border border-[#e4c7a1] bg-white/90 shadow-[0_12px_30px_rgba(77,52,31,0.06)]"
           >
-            <div class="flex flex-col gap-3 border-b border-[#ecd9c0] px-5 py-4 md:flex-row md:items-center md:justify-between">
+            <div class="supplier-item-header flex flex-col gap-3 border-b border-[#ecd9c0] px-5 py-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#9a6848]">Item {{ index + 1 }}</p>
-                <h2 class="mt-1 text-xl font-bold text-[#40261a]">{{ item.name || 'New item' }}</h2>
+                <h2 class="mt-1 text-xl font-bold text-[#40261a]">{{ item.name || 'Add New Item' }}</h2>
                 <p class="mt-1 text-sm text-[#7b5a43]">Provide item details, pricing, and tax information. Delivery and handling charges are added during Procurement requests.</p>
               </div>
               <button
@@ -99,9 +99,9 @@
               </button>
             </div>
 
-            <div class="grid gap-5 px-5 py-5 lg:grid-cols-[0.95fr_1.05fr]">
-              <div class="space-y-4">
-                <div class="overflow-hidden rounded-2xl border border-dashed border-[#dfb98d] bg-[#fff8ef] p-4">
+            <div class="supplier-item-grid grid gap-5 px-5 py-5 lg:grid-cols-[0.95fr_1.05fr]">
+              <div class="supplier-item-details space-y-4">
+                <div class="supplier-image-panel overflow-hidden rounded-2xl border border-dashed border-[#dfb98d] bg-[#fff8ef] p-4">
                   <div class="flex flex-col items-center gap-3">
                     <div class="flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl bg-[#f7e9d8]">
                       <img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.name || 'Item image'" class="h-full w-full object-cover" />
@@ -139,7 +139,7 @@
                 </div>
               </div>
 
-              <div class="grid gap-4 md:grid-cols-2">
+              <div class="supplier-item-pricing grid gap-4 md:grid-cols-2">
                 <div>
                   <label class="item-label">Quantity (Stock Available)</label>
                   <input :value="item.quantity" type="text" inputmode="numeric" @beforeinput="blockInvalidNumberInput($event)" @input="item.quantity = readNumberInput($event, item.quantity)" class="item-input" placeholder="0" />
@@ -703,6 +703,16 @@ onMounted(() => {
 .catalog-button { border: 1px solid #d9b38d; border-radius: 0.75rem; background: #fff8ef; padding: 0.5rem 0.85rem; color: #6f4329; font-weight: 600; }
 .catalog-button:hover:not(:disabled) { background: #f7ead8; }
 .catalog-button:disabled { cursor: not-allowed; }
+.supplier-item-card { border-color: #edc8a6; background: #fffdfb; box-shadow: 0 16px 42px rgba(128, 77, 35, .10); }
+.supplier-item-header { min-height: 108px; padding: 1.25rem 1.65rem; background: linear-gradient(90deg, #fffdfb, #fff8f0); }
+.supplier-item-header h2 { font-size: 1.55rem; letter-spacing: -.025em; }
+.supplier-item-header > button { border-color: #f1b99d; background: #fff9f5; color: #bd4429; }
+.supplier-item-grid { gap: 1.45rem; padding: 1.5rem 1.65rem; }
+.supplier-item-details { padding-right: 1.35rem; border-right: 1px solid #f2e1d3; }
+.supplier-image-panel { min-height: 300px; border-color: #f0b586; background: linear-gradient(135deg, #fff5e9, #fffaf4); }
+.supplier-image-panel > div { min-height: 260px; }
+.supplier-image-panel img { border-radius: .85rem; }
+.supplier-item-pricing { align-content: start; }
 .price-field { display: flex; align-items: center; border: 1px solid rgba(224, 192, 154, 0.95); border-radius: 1rem; background: white; overflow: hidden; }
 .price-prefix { flex: none; padding-left: 1rem; color: #8f6a4d; font-size: 0.875rem; }
 .price-field .price-input { min-width: 0; border: 0; border-radius: 0; padding-left: 0.75rem; }
@@ -738,8 +748,11 @@ button:disabled { opacity: 0.6; cursor: wait; }
   border-color: rgba(198, 148, 108, 0.95);
   box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
 }
+.item-input { border-radius: .8rem; min-height: 3.15rem; }
+.item-textarea { min-height: 7.8rem; }
 .tiered-pricing-button { width: 100%; border: 1px solid #e5b887; border-radius: 1rem; background: #fffaf4; padding: 0.9rem 1rem; color: #bd4e2d; font-weight: 700; }
 .tiered-pricing-button span { color: #8c6d55; font-weight: 400; }
 .order-charge-note { border: 1px solid #b8dcfb; border-radius: 1rem; background: #f0f9ff; padding: 1rem; color: #315a87; font-size: .82rem; line-height: 1.45; }
 .order-charge-note strong { display: block; margin-bottom: .35rem; color: #234879; }
+@media (max-width: 1023px) { .supplier-item-details { padding-right: 0; border-right: 0; border-bottom: 1px solid #f2e1d3; padding-bottom: 1.4rem; } }
 </style>
