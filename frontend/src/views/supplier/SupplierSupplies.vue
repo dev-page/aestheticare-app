@@ -88,6 +88,7 @@
               <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#9a6848]">Item {{ index + 1 }}</p>
                 <h2 class="mt-1 text-xl font-bold text-[#40261a]">{{ item.name || 'New item' }}</h2>
+                <p class="mt-1 text-sm text-[#7b5a43]">Provide item details, pricing, and tax information. Delivery and handling charges are added during Procurement requests.</p>
               </div>
               <button
                 type="button"
@@ -140,7 +141,7 @@
 
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label class="item-label">Quantity</label>
+                  <label class="item-label">Quantity (Stock Available)</label>
                   <input :value="item.quantity" type="text" inputmode="numeric" @beforeinput="blockInvalidNumberInput($event)" @input="item.quantity = readNumberInput($event, item.quantity)" class="item-input" placeholder="0" />
                 </div>
 
@@ -188,7 +189,7 @@
                 </template>
 
                 <div>
-                  <label class="item-label">Price</label>
+                  <label class="item-label">Unit Price (PHP)</label>
                   <div class="price-field">
                     <span class="price-prefix">PHP</span>
                     <input :value="item.price" @beforeinput="blockInvalidNumberInput($event, true)" @input="item.price = readNumberInput($event, item.price, true)" aria-label="Price in Philippine pesos" type="text" inputmode="decimal" maxlength="12" class="item-input price-input" placeholder="0.00" @blur="formatPrice(item)" />
@@ -196,18 +197,15 @@
                 </div>
 
                 <div>
-                  <label class="item-label">Default Tax Rate <span class="normal-case font-normal">(%)</span></label>
-                  <input v-model.number="item.taxRate" type="number" min="0" max="100" step="0.01" class="item-input" placeholder="0" />
+                  <label class="item-label">Tax Treatment</label>
+                  <select v-model="item.taxTreatment" class="item-input" @change="applyTaxTreatment(item)"><option value="vat-inclusive">12% VAT — price inclusive</option><option value="vat-exclusive">12% VAT — added to price</option><option value="zero-rated">Zero-rated VAT</option><option value="vat-exempt">VAT exempt</option></select>
+                  <p class="mt-2 text-xs text-[#7b5a43]">This determines how tax is used in Procurement’s funding request.</p>
                 </div>
                 <div>
                   <label class="item-label">Default Discount Rate <span class="normal-case font-normal">(%)</span></label>
                   <input v-model.number="item.discountRate" type="number" min="0" max="100" step="0.01" class="item-input" placeholder="0" />
                 </div>
-                <div class="md:col-span-2">
-                  <label class="item-label">Other Charge per Unit <span class="normal-case font-normal">(PHP, optional)</span></label>
-                  <input v-model.number="item.otherChargePerUnit" type="number" min="0" step="0.01" class="item-input" placeholder="0.00" />
-                  <p class="mt-2 text-xs text-[#7b5a43]">These defaults are added to Procurement’s funding request. Delivery remains per order because it depends on the destination and quantity.</p>
-                </div>
+                <div class="md:col-span-2 grid gap-3 md:grid-cols-2"><div><label class="item-label">Bulk Discount</label><button type="button" class="tiered-pricing-button">＋ Add Tiered Pricing <span>(Optional)</span></button><p class="mt-2 text-xs text-[#7b5a43]">Quantity-based discounts, such as 5% for 10+ units.</p></div><aside class="order-charge-note"><strong>ⓘ Order-level charges are not set here</strong><p>Delivery, handling, and other charges are added per Procurement request because they depend on the order destination and quantity.</p></aside></div>
 
                 <div class="md:col-span-2 rounded-2xl border border-[#dfb98d] bg-[#fff8ef] p-4">
                   <p class="item-label">FDA Documentation</p>
@@ -318,7 +316,8 @@ const createEmptyItem = () => ({
   manufacturingDate: '',
   expiryDate: '',
   price: '',
-  taxRate: 0,
+  taxTreatment: 'vat-inclusive',
+  taxRate: 12,
   discountRate: 0,
   otherChargePerUnit: 0,
   imageUrl: '',
@@ -476,6 +475,7 @@ const formatPrice = (item) => {
   const value = String(item.price ?? '').trim()
   if (/^\d+(\.\d{1,2})?$/.test(value)) item.price = Number(value).toFixed(2)
 }
+const applyTaxTreatment = (item) => { item.taxRate = ['vat-inclusive', 'vat-exclusive'].includes(item.taxTreatment) ? 12 : 0 }
 
 const validateItems = () => {
   for (const item of items.value) {
@@ -567,6 +567,7 @@ const saveSupplies = async () => {
         expiryDate: String(item.expiryDate || '').trim(),
         price: Number(item.price || 0),
         unitCost: Number(item.price || 0),
+        taxTreatment: String(item.taxTreatment || 'vat-inclusive'),
         taxRate: Number(item.taxRate || 0),
         discountRate: Number(item.discountRate || 0),
         otherChargePerUnit: Number(item.otherChargePerUnit || 0),
@@ -634,6 +635,7 @@ const saveSupplies = async () => {
         expiryDate: item.expiryDate,
         price: item.price,
         unitCost: item.unitCost,
+        taxTreatment: item.taxTreatment,
         taxRate: item.taxRate,
         discountRate: item.discountRate,
         otherChargePerUnit: item.otherChargePerUnit,
@@ -736,4 +738,8 @@ button:disabled { opacity: 0.6; cursor: wait; }
   border-color: rgba(198, 148, 108, 0.95);
   box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
 }
+.tiered-pricing-button { width: 100%; border: 1px solid #e5b887; border-radius: 1rem; background: #fffaf4; padding: 0.9rem 1rem; color: #bd4e2d; font-weight: 700; }
+.tiered-pricing-button span { color: #8c6d55; font-weight: 400; }
+.order-charge-note { border: 1px solid #b8dcfb; border-radius: 1rem; background: #f0f9ff; padding: 1rem; color: #315a87; font-size: .82rem; line-height: 1.45; }
+.order-charge-note strong { display: block; margin-bottom: .35rem; color: #234879; }
 </style>
