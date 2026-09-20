@@ -11,6 +11,7 @@ const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLower
 const routes = [
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
   { path: '/supplier/supply/rfqs', redirect: '/supplier/supply/orders' },
+  { path: '/supplier/chat', name: 'supplier-chat', component: () => import('@/views/supplier/SupplierChat.vue'), meta: { requiresAuth: true } },
   { path: '/:department(inventory|procurement|logistics)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true } },
   { path: '/finance/procurement/:page?', name: 'procurement-finance-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/management/supply/:page?', name: 'supply-management-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'management' } },

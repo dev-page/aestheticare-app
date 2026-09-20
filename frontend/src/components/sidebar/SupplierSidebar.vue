@@ -24,7 +24,8 @@ export default {
         icon: 'mdi:file-document-multiple-outline',
         children: [
           { label: 'Purchase Orders', icon: 'mdi:cart-check', to: '/supplier/supply/orders' },
-          { label: 'Invoices & Payments', icon: 'mdi:receipt-text-outline', to: '/supplier/supply/invoices' }
+          { label: 'Invoices & Payments', icon: 'mdi:receipt-text-outline', to: '/supplier/supply/invoices' },
+          { label: 'Clinic Messages', icon: 'mdi:chat-processing-outline', to: '/supplier/chat' }
         ]
       },
       {
