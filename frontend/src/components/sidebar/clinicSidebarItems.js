@@ -73,9 +73,9 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     children: [
       { label: 'Dashboard', icon: 'mdi:chart-pie', to: '/finance/dashboard', feature: 'reports', permission: 'finance:reports:view' },
       { label: 'Budget Allocations', icon: 'mdi:bank-outline', to: '/finance/procurement/budgets', permission: 'finance:payables:view' },
-      { label: 'Approvals', icon: 'mdi:clipboard-check-outline', to: '/finance/approvals', permission: 'finance:payables:view' },
+      { label: 'Approvals', icon: 'mdi:clipboard-check-outline', to: '/finance/procurement/requests', permission: 'finance:payables:view' },
       { label: 'Income', icon: 'mdi:cash-plus', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },
-      { label: 'Expenses & Payments', icon: 'mdi:receipt-text-check-outline', to: '/finance/expenses-payments', permission: 'finance:payables:view' },
+      { label: 'Invoices & Payments', icon: 'mdi:receipt-text-check-outline', to: '/finance/procurement/invoices', permission: 'finance:payables:view' },
       { label: 'Financial Reports', icon: 'mdi:file-chart-outline', to: '/finance/reports', feature: 'reports', permission: 'finance:reports:view' }
     ]
   },

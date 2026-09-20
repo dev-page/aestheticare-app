@@ -213,7 +213,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           set(result, { procurementId: procurement.id })
           break
         }
-        case 'budget': allow(ctx, 'finance:payables:approve'); result = create('budget', { status: 'Active', department: required(input.department, 'Department'), category: required(input.category, 'Category'), period: input.period ? String(input.period).slice(0, 7) : '', notes: String(input.notes || '').slice(0, 4000), total: money(input.total), committed: 0, spent: 0 }); break
+        case 'budget': { allow(ctx, 'finance:payables:approve'); const category = required(input.category, 'Category'), knownCategories = new Set([...items.map(item => item.category), ...records.filter(record => ['budget', 'budgetRequest'].includes(record.kind)).map(record => record.category), ...suppliers.flatMap(supplier => (supplier.offeredItems || []).map(item => item.category || item.categoryGroup || item.customCategory))].map(value => String(value || '').trim()).filter(Boolean)); demand(knownCategories.size === 0 || knownCategories.has(category), 'Choose a budget category from the approved catalog categories.', 400); result = create('budget', { status: 'Active', department: required(input.department, 'Department'), category, period: input.period ? String(input.period).slice(0, 7) : '', notes: String(input.notes || '').slice(0, 4000), total: money(input.total), committed: 0, spent: 0 }); break }
         case 'rfq': {
           allow(ctx, 'procurement:create'); const p = get(input.procurementId, 'procurement'); demand(['Received', 'Verified'].includes(p.status) && !p.rfqId, 'This procurement already has an active sourcing process.')
           demand(['Manual', 'Online'].includes(input.mode), 'Choose a procurement mode.', 400)
@@ -266,7 +266,13 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     } else {
       demand(record, 'Record not found.', 404); demand(canRead(ctx, record), 'Access denied.', 403)
       const r = record
-      if (r.kind === 'request') {
+      if (r.kind === 'budget') {
+        allow(ctx, 'finance:payables:approve')
+        demand(Number(r.committed || 0) === 0 && Number(r.spent || 0) === 0, 'Budgets with commitments or recognized spending cannot be changed or cancelled.')
+        if (action === 'editBudget') result = set(r, { department: required(input.department, 'Department'), category: required(input.category, 'Category'), period: input.period ? String(input.period).slice(0, 7) : '', notes: String(input.notes || '').slice(0, 4000), total: money(input.total), updatedBy: ctx.uid, updatedAt: now })
+        else if (action === 'cancelBudget') result = set(r, { status: 'Cancelled', cancellationReason: required(input.remarks, 'Cancellation reason'), cancelledBy: ctx.uid, cancelledAt: now })
+        else demand(false, 'Invalid budget action.')
+      } else if (r.kind === 'request') {
         if (action === 'resubmit') {
           allow(ctx, 'inventory:create'); demand(r.createdBy === ctx.uid && r.status === 'Returned', 'Only the original requester can resubmit a returned request.', 403)
           const procurement = get(r.procurementId, 'procurement')
