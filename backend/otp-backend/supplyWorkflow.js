@@ -86,7 +86,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const suppliers = broadRead ? await scopedDocs('suppliers') : []
     const movements = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('inventoryMovements') : []
     const snapshots = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('supplySnapshots') : []
-    res.json({ success: true, data: { branchId, branches, records, items, suppliers, movements, snapshots, permissions: [...ctx.permissions], supplier: ctx.supplier, supplierIds: ctx.supplierIds, uid: ctx.uid } })
+    res.json({ success: true, data: { branchId, branches, records, items, suppliers, movements, snapshots, permissions: [...ctx.permissions], roleKey: ctx.roleKey, supplier: ctx.supplier, supplierIds: ctx.supplierIds, uid: ctx.uid } })
   }))
 
   app.post('/supply/items', requireAuth, wrap(async (req, res, ctx) => {
@@ -322,7 +322,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         result = set(r, { status: 'Selected' }); set(rfq, { status: 'Awarded' }); set(p, { status: 'For Finance Approval', evaluationId: ev.id, budgetRequestId: br.id }); records.filter(q => q.kind === 'quotation' && q.rfqId === rfq.id && q.id !== r.id).forEach(q => set(q, { status: 'Not Selected' }))
       } else if (r.kind === 'budgetRequest') {
         if (action === 'resubmit') { allow(ctx, 'procurement:review'); demand(['Returned', 'Rejected'].includes(r.status), 'This request cannot be resubmitted.'); result = set(r, { status: 'Submitted', revision: required(input.remarks, 'Revision details') }) }
-        else { allow(ctx, 'finance:payables:approve'); demand(r.createdBy !== ctx.uid, 'Finance approval must be performed by another user.'); demand(r.status === 'Submitted', 'Budget request is not awaiting a decision.')
+        else { allow(ctx, 'finance:payables:approve'); const ownerSelfApproval = ctx.roleKey === 'Owner' && r.createdBy === ctx.uid; demand(r.createdBy !== ctx.uid || ownerSelfApproval, 'Finance approval must be performed by another user.'); demand(r.status === 'Submitted', 'Budget request is not awaiting a decision.')
           if (action === 'approve') {
             const budget = get(input.budgetId, 'budget'); demand(budget.department === r.department && budget.category === r.category, 'Budget department/category must match the request.')
             const approvedAmount = money(input.approvedAmount); demand(approvedAmount >= r.requestedAmount && approvedAmount <= budget.total - budget.committed - budget.spent, 'Insufficient available budget, or approved amount is below the quotation.')
@@ -330,7 +330,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             const remarks = required(input.remarks, 'Approval remarks')
             const approval = create('financeApproval', { status: 'Approved', budgetRequestId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...r.links, r.id] }, `approval-${r.id}`)
             const allocation = create('budgetAllocation', { status: 'Committed', budgetRequestId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...approval.links, approval.id] }, `allocation-${r.id}`)
-            result = set(r, { status: 'Approved', budgetId: budget.id, approvedAmount, approvedBy: ctx.uid, approvedAt: now, remarks, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
+            result = set(r, { status: 'Approved', budgetId: budget.id, approvedAmount, approvedBy: ctx.uid, approvedAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
             create('po', { lines: r.lines, subtotal: r.requestedAmount, tax: 0, delivery: 0, otherCharges: 0, discount: 0, total: r.requestedAmount, mode: 'Online', supplierId: r.supplierId, paymentTerms: 'Per supplier terms', warranty: '', status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...allocation.links, allocation.id], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
           } else { demand(['reject', 'return'].includes(action), 'Invalid action.'); result = set(r, { status: action === 'reject' ? 'Rejected' : 'Returned', remarks: required(input.remarks, 'Decision reason'), reviewedBy: ctx.uid, reviewedAt: now }) }
         }
