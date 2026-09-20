@@ -195,6 +195,20 @@
                   </div>
                 </div>
 
+                <div>
+                  <label class="item-label">Default Tax Rate <span class="normal-case font-normal">(%)</span></label>
+                  <input v-model.number="item.taxRate" type="number" min="0" max="100" step="0.01" class="item-input" placeholder="0" />
+                </div>
+                <div>
+                  <label class="item-label">Default Discount Rate <span class="normal-case font-normal">(%)</span></label>
+                  <input v-model.number="item.discountRate" type="number" min="0" max="100" step="0.01" class="item-input" placeholder="0" />
+                </div>
+                <div class="md:col-span-2">
+                  <label class="item-label">Other Charge per Unit <span class="normal-case font-normal">(PHP, optional)</span></label>
+                  <input v-model.number="item.otherChargePerUnit" type="number" min="0" step="0.01" class="item-input" placeholder="0.00" />
+                  <p class="mt-2 text-xs text-[#7b5a43]">These defaults are added to Procurement’s funding request. Delivery remains per order because it depends on the destination and quantity.</p>
+                </div>
+
                 <div class="md:col-span-2 rounded-2xl border border-[#dfb98d] bg-[#fff8ef] p-4">
                   <p class="item-label">FDA Documentation</p>
                   <p class="mb-3 text-xs leading-5 text-[#7b5a43]">
@@ -239,6 +253,9 @@
             <div><dt class="item-label">Available / On-hand</dt><dd>{{ availableQuantity(selectedItem) }} available / {{ selectedItem.quantity }} on hand</dd></div>
             <div><dt class="item-label">Reserved for confirmed orders</dt><dd>{{ selectedItem.reservedQuantity || 0 }}</dd></div>
             <div><dt class="item-label">Price</dt><dd>{{ formatMoney(selectedItem.price ?? selectedItem.unitCost) }}</dd></div>
+            <div><dt class="item-label">Default Tax</dt><dd>{{ Number(selectedItem.taxRate || 0) }}%</dd></div>
+            <div><dt class="item-label">Default Discount</dt><dd>{{ Number(selectedItem.discountRate || 0) }}%</dd></div>
+            <div><dt class="item-label">Other Charge / Unit</dt><dd>{{ formatMoney(selectedItem.otherChargePerUnit) }}</dd></div>
             <div><dt class="item-label">Measurement</dt><dd>{{ selectedItem.measurementValue || selectedItem.measurement || '—' }} {{ selectedItem.measurementUnit }}</dd></div>
             <div v-if="selectedItem.manufacturingDate"><dt class="item-label">Manufacturing Date</dt><dd>{{ selectedItem.manufacturingDate }}</dd></div>
             <div v-if="selectedItem.expiryDate"><dt class="item-label">Expiry Date</dt><dd>{{ selectedItem.expiryDate }}</dd></div>
@@ -301,6 +318,9 @@ const createEmptyItem = () => ({
   manufacturingDate: '',
   expiryDate: '',
   price: '',
+  taxRate: 0,
+  discountRate: 0,
+  otherChargePerUnit: 0,
   imageUrl: '',
   imageName: '',
   imageFile: null,
@@ -372,7 +392,7 @@ const addItemRow = () => {
 
 const hasDraftData = (item) => Boolean(
   item.name || item.category || item.customCategory || item.description || item.quantity ||
-  item.measurementValue || item.measurementUnit || item.specifications || item.manufacturingDate || item.expiryDate || item.price ||
+  item.measurementValue || item.measurementUnit || item.specifications || item.manufacturingDate || item.expiryDate || item.price || item.taxRate || item.discountRate || item.otherChargePerUnit ||
   item.imageUrl || item.fdaRegistrationNumber || item.fdaApprovalDocument || item.fdaApprovalFile
 )
 
@@ -469,6 +489,7 @@ const validateItems = () => {
     const measurementUnit = String(item.measurementUnit || '').trim()
     const priceRaw = String(item.price ?? '').trim()
     const price = Number(priceRaw)
+    const taxRate = Number(item.taxRate || 0), discountRate = Number(item.discountRate || 0), otherCharge = Number(item.otherChargePerUnit || 0)
 
     const hasAnyData =
       name ||
@@ -491,6 +512,7 @@ const validateItems = () => {
     if (quantity < Number(item.reservedQuantity || 0)) return `Quantity cannot be lower than the ${item.reservedQuantity} unit(s) reserved for confirmed orders.`
     if (!priceRaw) return 'Please enter a price for each filled item.'
     if (!/^\d+(\.\d{1,2})?$/.test(priceRaw) || !Number.isFinite(price) || price < 0 || price > 999999999.99) return 'Price must be between PHP 0.00 and PHP 999,999,999.99 with at most two decimal places.'
+    if (![taxRate, discountRate, otherCharge].every(Number.isFinite) || taxRate < 0 || taxRate > 100 || discountRate < 0 || discountRate > 100 || otherCharge < 0 || otherCharge > 999999999.99) return 'Tax and discount rates must be 0–100%; other charge must be a valid positive PHP amount.'
     if (name.length > 120 || customCategory.length > 80 || description.length > 2000 || String(item.specifications || '').length > 2000 || measurementValue.length > 80 || String(item.fdaRegistrationNumber || '').length > 100) return 'An item field exceeds its maximum length.'
     if (measurementValue && !measurementUnit) return 'Please select a unit for the measurement.'
     if (measurementUnit && !measurementOptions.includes(measurementUnit)) return 'Please select a valid measurement unit.'
@@ -545,6 +567,9 @@ const saveSupplies = async () => {
         expiryDate: String(item.expiryDate || '').trim(),
         price: Number(item.price || 0),
         unitCost: Number(item.price || 0),
+        taxRate: Number(item.taxRate || 0),
+        discountRate: Number(item.discountRate || 0),
+        otherChargePerUnit: Number(item.otherChargePerUnit || 0),
         imageUrl: String(item.imageUrl || '').trim(),
         imageName: String(item.imageName || '').trim(),
         fdaRegistrationNumber: String(item.fdaRegistrationNumber || '').trim(),
@@ -609,6 +634,9 @@ const saveSupplies = async () => {
         expiryDate: item.expiryDate,
         price: item.price,
         unitCost: item.unitCost,
+        taxRate: item.taxRate,
+        discountRate: item.discountRate,
+        otherChargePerUnit: item.otherChargePerUnit,
         imageUrl,
         imageName: item.imageName,
         fdaRegistrationNumber: item.fdaRegistrationNumber,

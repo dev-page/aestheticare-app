@@ -101,6 +101,22 @@ test('DSS thresholds, invalid dates, privacy and invoice overbilling', () => {
   assert.ok(invoiceMatch({ lines: [{ itemId: 'a', unitPrice: 100 }], accepted: { a: 5 }, total: 500 }, { lines: [{ itemId: 'a', quantity: 6, unitPrice: 100 }], total: 600 }, []).length)
 })
 
+test('Procurement can record a direct supplier quote without creating an RFQ', async () => {
+  const f = fixture(), date = '2099-12-31'
+  const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date, location: 'Main clinic' })
+  const procurement = f.read(request).procurementId
+  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true, category: 'Materials', paymentTerms: 'Net 30', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes', lines: [{ itemId: 'item', quantity: 20, unitPrice: 5 }], tax: 12, delivery: 8, otherCharges: 0, discount: 0 })
+  const funding = f.read(f.read(procurement).budgetRequestId)
+  assert.equal(funding.directSupplierQuote, true)
+  assert.equal(funding.requestedAmount, 12000)
+  const budget = await f.create('finance', 'budget', { department: 'Inventory', category: 'Materials', total: 200 })
+  await f.act('finance', funding.id, 'approve', { budgetId: budget, approvedAmount: 120, remarks: 'Approved from verified supplier quote' })
+  const po = f.read(`po-${funding.id}`)
+  assert.equal(po.directSupplierQuote, true)
+  assert.equal(po.tax, 1200)
+  assert.equal(po.delivery, 800)
+})
+
 test('Self approval, cross-branch writes and read-only document uploads are rejected', async () => {
   const f = fixture()
   f.seed('supplyRecords', 'self', { id: 'self', branchId: 'clinic', kind: 'request', status: 'Submitted', createdBy: 'reviewer' })
