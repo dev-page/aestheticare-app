@@ -272,6 +272,19 @@ const supplierCanProvideLine=(supplier,line)=>supplierProducts(supplier).some(pr
   const sameCategory=!line.category||normalizedCatalogValue(catalogCategory(product))===normalizedCatalogValue(line.category)
   return sameCatalogItem||(sameSupply&&sameCategory)
 })
+const catalogProductForQuote=(supplierId,line)=>supplierProducts(data.value.suppliers.find(s=>s.id===supplierId)||{}).find(product=>String(product.id||'')===String(line.supplierCatalogItemId||''))
+const catalogQuoteDraft=(target,supplierId)=>{
+  const lines=(target.lines||[]).map(line=>{
+    const product=catalogProductForQuote(supplierId,line)
+    return {...line,unitPrice:product ? Number(product.price??product.unitCost??0) : Number(line.unitPrice||0)/100}
+  })
+  const lineAmount=(line,product)=>Number(line.quantity||0)*Number(line.unitPrice||0)
+  const productFor=line=>catalogProductForQuote(supplierId,line)
+  const tax=lines.reduce((sum,line)=>{const product=productFor(line);return sum+(product?.taxTreatment==='vat-exclusive'?lineAmount(line,product)*Number(product.taxRate||0)/100:0)},0)
+  const discount=lines.reduce((sum,line)=>sum+lineAmount(line,productFor(line))*Number(productFor(line)?.discountRate||0)/100,0)
+  const otherCharges=lines.reduce((sum,line)=>sum+Number(line.quantity||0)*Number(productFor(line)?.otherChargePerUnit||0),0)
+  return {lines,tax,discount,otherCharges}
+}
 const procurementSupplierOptions=procurement=>data.value.suppliers.filter(s=>s.status==='Active'&&(procurement?.lines||[]).every(line=>supplierCanProvideLine(s,line))).map(s=>({value:s.id,label:supplierName(s.id)}))
 const moneyFields=()=>['tax','delivery','otherCharges','discount'].map(k=>field(k,label(k)+' (PHP)','number',false))
 const catalogSuppliers=()=>data.value.suppliers.filter(s=>s.status==='Active'&&supplierProducts(s).length).map(s=>({value:s.id,label:supplierName(s.id)}))
@@ -310,6 +323,7 @@ watch(()=>form.value.catalogSupplierId,(supplierId,previous)=>{ if(formKind.valu
 watch(()=>form.value.catalogCategory,(category,previous)=>{ if(formKind.value!=='item'||category===previous)return; form.value.catalogItemId='';refreshInventoryFields() })
 watch(()=>form.value.catalogItemId,(itemId,previous)=>{ if(formKind.value!=='item'||itemId===previous)return; const product=selectedCatalogItem(); const supplier=selectedCatalogSupplier(); if(!product||!supplier)return; Object.assign(form.value,{supplierId:supplier.id,supplierCatalogItemId:product.id,name:product.name||product.itemName||product.productName||'',category:catalogCategory(product),description:product.description||product.specifications||'',unit:product.measurementUnit||product.unit||'units',costPrice:Number(product.price||product.unitCost||0),imageUrl:product.imageUrl||'',supplierCatalogItemId:product.id});refreshInventoryFields() })
 watch(()=>form.value.supplierId,(supplierId,previous)=>{if(formKind.value!=='request'||supplierId===previous)return;form.value.catalogCategory='';form.value.supplierCatalogItemId='';formFields.value=requestFormFields()})
+watch(()=>form.value.supplierId,(supplierId,previous)=>{if(formKind.value!=='quotation'||!supplierId||supplierId===previous)return;const quote=catalogQuoteDraft(formTarget.value,supplierId);form.value.lines=quote.lines;form.value.tax=quote.tax;form.value.discount=quote.discount;form.value.otherCharges=quote.otherCharges})
 watch(()=>form.value.catalogCategory,(category,previous)=>{if(formKind.value!=='request'||category===previous)return;form.value.supplierCatalogItemId='';formFields.value=requestFormFields()})
 const refreshRequestPricing=()=>{const product=selectedRequestCatalogItem();const unitPrice=Number(product?.price||product?.unitCost||0);form.value.catalogUnitPrice=unitPrice;form.value.estimatedCost=unitPrice*Number(form.value.quantity||0)}
 watch(()=>form.value.supplierCatalogItemId,(itemId,previous)=>{if(formKind.value!=='request'||itemId===previous)return;refreshRequestPricing();formFields.value=requestFormFields()})
@@ -333,7 +347,9 @@ const openForm = (kind, target=null) => {
   if(kind==='cancelBudget')f.push(field('remarks','Cancellation reason','textarea'))
   if(kind==='rfq'){const eligibleSuppliers=procurementSupplierOptions(target);form.value={mode:'Online',supplierIds:eligibleSuppliers.filter(s=>target.lines?.some(line=>(line.preferredSupplierId||line.supplierId)===s.value)).map(s=>s.value),deliveryDate:target.requiredDate,deadline:today()};f.push(selectField('mode','Procurement mode',['Manual','Online']),selectField('supplierIds','Invited suppliers',eligibleSuppliers,true),field('deadline','Quotation deadline','date'),field('deliveryDate','Required delivery date','date'),field('deliveryLocation','Delivery location'),field('terms','Terms and specifications','textarea'),field('conditions','Conditions','textarea',false),field('contact','Procurement contact'),field('method','Procurement method'),field('strategy','Supplier strategy','textarea'))}
   if(['quotation','revise','invoice','reviseInvoice'].includes(kind)){
-    form.value={lines:target.lines.map(l=>({...l,unitPrice:kind==='quotation'?0:Number(l.unitPrice||0)/100})),tax:Number(target.tax||0)/100,delivery:Number(target.delivery||0)/100,otherCharges:Number(target.otherCharges||0)/100,discount:Number(target.discount||0)/100,validUntil:target.validUntil||today(),leadDays:target.leadDays||0,paymentTerms:target.paymentTerms||'',warranty:target.warranty||'',invoiceNumber:target.invoiceNumber||'',invoiceDate:today(),dueDate:today(),supplierId:data.value.supplierIds?.[0]||''}
+    const quoteSupplierId=supplierView.value?data.value.supplierIds?.[0]||'':data.value.supplierIds?.[0]||target.supplierIds?.[0]||''
+    const catalogQuote=kind==='quotation'?catalogQuoteDraft(target,quoteSupplierId):null
+    form.value={lines:catalogQuote?.lines||target.lines.map(l=>({...l,unitPrice:Number(l.unitPrice||0)/100})),tax:catalogQuote?.tax??Number(target.tax||0)/100,delivery:Number(target.delivery||0)/100,otherCharges:catalogQuote?.otherCharges??Number(target.otherCharges||0)/100,discount:catalogQuote?.discount??Number(target.discount||0)/100,validUntil:target.validUntil||today(),leadDays:target.leadDays||0,paymentTerms:target.paymentTerms||'',warranty:target.warranty||'',invoiceNumber:target.invoiceNumber||'',invoiceDate:today(),dueDate:today(),supplierId:quoteSupplierId}
     if(kind==='quotation'&&!supplierView.value)f.push(selectField('supplierId','Supplier',supplierOptions().filter(s=>target.supplierIds.includes(s.value))))
     if(kind==='invoice'||kind==='reviseInvoice')f.push(field('invoiceNumber','Supplier invoice number'),field('invoiceDate','Invoice date','date'),field('dueDate','Due date','date'))
     else f.push(field('validUntil','Quotation valid until','date'),field('leadDays','Delivery lead time (days)','number'),field('paymentTerms','Payment terms'),field('warranty','Warranty','text',false),field('notes','Notes / availability','textarea',false))
