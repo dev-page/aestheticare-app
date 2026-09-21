@@ -283,6 +283,12 @@
                         >
                           {{ item.requiredSupplyIds.length }} required {{ item.requiredSupplyIds.length === 1 ? 'supply' : 'supplies' }}
                         </span>
+                        <span
+                          v-if="item.allowInstallments"
+                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
+                        >
+                          {{ Number(item.depositPercent || 50) }}% initial payment available
+                        </span>
                       </div>
                       <p v-if="item.type === 'Package' && item.packageServiceNames.length" class="mt-3 text-xs text-[#6f4a2d]">
                         Includes: {{ item.packageServiceNames.join(', ') }}
@@ -453,8 +459,18 @@
                       Assigned Practitioner:
                       <span class="ml-1 font-semibold text-[#3d281d]">{{ assignedPractitioner?.fullName || '-' }}</span>
                     </p>
-                    <p class="mt-3 text-xs text-[#8b6a4d]">
-                      Full payment due:
+                    <template v-if="selectedServicesAllowInstallments">
+                      <p class="mt-3 text-xs text-[#8b6a4d]">
+                        Initial payment due after approval ({{ bookingDepositPercent }}%):
+                        <span class="ml-1 font-semibold text-[#3d281d]">PHP {{ bookingInitialPayment.toFixed(2) }}</span>
+                      </p>
+                      <p class="mt-1 text-xs text-[#8b6a4d]">
+                        Remaining balance after completion:
+                        <span class="ml-1 font-semibold text-[#3d281d]">PHP {{ bookingBalanceAmount.toFixed(2) }}</span>
+                      </p>
+                    </template>
+                    <p v-else class="mt-3 text-xs text-[#8b6a4d]">
+                      Full payment due after approval:
                       <span class="ml-1 font-semibold text-[#3d281d]">PHP {{ bookingDueAmount.toFixed(2) }}</span>
                     </p>
                     <p class="mt-1 text-xs text-[#8b6a4d]">
@@ -853,6 +869,19 @@ const selectedServiceCommission = computed(() =>
   calculateCommissionAmount(selectedServiceTotal.value, serviceCommissionPercent)
 )
 const bookingDueAmount = computed(() => selectedServiceTotal.value)
+const selectedServicesAllowInstallments = computed(() =>
+  selectedServices.value.length > 0 && selectedServices.value.every((service) => service.allowInstallments === true)
+)
+const bookingDepositPercent = computed(() => selectedServicesAllowInstallments.value
+  ? Math.max(...selectedServices.value.map((service) => Number(service.depositPercent || 50)))
+  : 100
+)
+const bookingInitialPayment = computed(() =>
+  Math.round(selectedServiceTotal.value * bookingDepositPercent.value) / 100
+)
+const bookingBalanceAmount = computed(() =>
+  Math.max(0, selectedServiceTotal.value - bookingInitialPayment.value)
+)
 const bookingCommissionAmount = computed(() => selectedServiceCommission.value)
 const bookingNetAmount = computed(() => selectedServiceNetAmount.value)
 const selectedServiceNetAmount = computed(() =>

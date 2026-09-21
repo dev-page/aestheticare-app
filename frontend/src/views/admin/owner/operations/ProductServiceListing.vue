@@ -59,7 +59,12 @@
           </div>
         </div>
 
-        <div v-if="form.postType === 'Package'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
+        <div class="mb-4 border-b border-slate-700 pb-3">
+          <h3 class="font-semibold text-white">{{ form.postType === 'Product' ? 'Product Information' : form.postType === 'Consultation' ? 'Consultation Information' : form.postType === 'Package' ? 'Package Information' : 'Service Information' }}</h3>
+          <p class="mt-1 text-xs text-slate-400">Complete the details required for this {{ form.postType.toLowerCase() }} before adding its customer-facing listing information.</p>
+        </div>
+
+        <div v-if="form.postType === 'Package'" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
           <label class="block text-slate-400 mb-1">Package Name</label>
           <input v-model="form.packageName" type="text" placeholder="Consultation + service package" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
           <label class="block text-slate-400 mt-4 mb-1">Included services and consultations</label>
@@ -70,6 +75,10 @@
         </div>
 
         <div v-if="form.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="md:col-span-2">
+            <p class="text-sm font-medium text-white">Inventory Details</p>
+            <p class="mt-1 text-xs text-slate-400">These optional details help customers identify the selected inventory product.</p>
+          </div>
           <div>
             <label class="block text-slate-400 mb-1">Quantity / Volume</label>
             <input
@@ -96,6 +105,10 @@
         </div>
 
         <div v-if="form.postType === 'Service' || form.postType === 'Consultation'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="md:col-span-2 border-b border-slate-700 pb-2">
+            <h3 class="font-semibold text-white">{{ form.postType === 'Service' ? 'Booking Rules' : 'Consultation Rules' }}</h3>
+            <p class="mt-1 text-xs text-slate-400">{{ form.postType === 'Service' ? 'Set only the rules customers need to know before requesting this service.' : 'Set the fee, duration, and appointment mode for this consultation.' }}</p>
+          </div>
           <label class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
             <input
               v-if="form.postType === 'Service'"
@@ -186,12 +199,20 @@
             <p class="mt-1 text-xs text-slate-400">The automatically created package will use this consultation mode.</p>
           </div>
           <div v-if="form.postType === 'Service'" class="md:col-span-2">
+            <div class="mb-3 border-t border-slate-700 pt-4">
+              <h3 class="font-semibold text-white">Resources & Payment</h3>
+              <p class="mt-1 text-xs text-slate-400">Materials are reserved for each booking. Payment terms require Finance approval before publishing.</p>
+            </div>
+            <label class="mb-4 flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+              <input v-model="form.allowInstallments" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
+              <span>
+                <span class="block font-medium text-white">Allow installment payment</span>
+                <span class="block text-xs text-slate-400">Customer pays an initial amount after approval; the balance is due after completion.</span>
+              </span>
+            </label>
+            <label v-if="form.allowInstallments" class="mb-4 block text-slate-400">Initial payment (%)<input v-model.number="form.depositPercent" type="number" min="1" max="99" step="1" required class="mt-1 w-full rounded-lg bg-slate-700 px-3 py-2 text-white" /><span class="mt-1 block text-xs text-slate-400">Use one initial percentage and one final balance—no multi-installment schedules.</span></label>
             <label class="block text-slate-400 mb-1">Required Supplies</label>
-            <div class="mb-4 space-y-2">
-              <label class="flex items-center gap-2"><input type="checkbox" v-model="form.allowInstallments" /> Allow installment payment</label>
-              <label v-if="form.allowInstallments" class="block">Initial payment (%)<input v-model.number="form.depositPercent" type="number" min="1" max="99" step="1" required class="w-full rounded-lg bg-slate-700 px-3 py-2" /></label>
-              <p class="text-xs text-slate-400">The remaining balance is due after the worker and customer confirm completion.</p>
-            </div><select v-model="form.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select v-model="form.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit || 'unit' }})</option>
             </select>
             <p class="mt-1 text-xs text-slate-400">One unit of each selected material is reserved per booking and deducted when the service starts.</p>
@@ -204,7 +225,21 @@
           </div>
         </div>
 
+        <div v-if="form.postType === 'Package'" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+          <h3 class="font-semibold text-white">Payment</h3>
+          <p class="mt-1 text-xs text-slate-400">Package payment terms also require Finance approval before publication.</p>
+          <label class="mt-4 flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-800 p-4">
+            <input v-model="form.allowInstallments" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
+            <span><span class="block font-medium text-white">Allow installment payment</span><span class="block text-xs text-slate-400">Use one initial payment and one final balance for the complete package.</span></span>
+          </label>
+          <label v-if="form.allowInstallments" class="mt-4 block text-slate-400">Initial payment (%)<input v-model.number="form.depositPercent" type="number" min="1" max="99" step="1" required class="mt-1 w-full rounded-lg bg-slate-700 px-3 py-2 text-white" /></label>
+        </div>
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="md:col-span-2 border-t border-slate-700 pt-4">
+            <h3 class="font-semibold text-white">Customer-Facing Listing</h3>
+            <p class="mt-1 text-xs text-slate-400">This is the information customers see when choosing the {{ form.postType.toLowerCase() }}.</p>
+          </div>
           <div>
             <label class="block text-slate-400 mb-1">Title</label>
             <input
@@ -230,16 +265,6 @@
               Product price comes from inventory unit price.
             </p>
           </div>
-        </div>
-
-        <div v-if="editForm.postType === 'Package'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
-          <label class="block text-slate-400 mb-1">Package Name</label>
-          <input v-model="editForm.name" type="text" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
-          <label class="block text-slate-400 mt-4 mb-1">Included consultation and services</label>
-          <select v-model="editForm.packageServiceIds" multiple class="min-h-28 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
-            <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
-          </select>
-          <p class="mt-2 text-xs text-slate-400">Keep one consultation and at least one service selected.</p>
         </div>
 
         <div class="mb-4">
@@ -271,6 +296,17 @@
             class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-blue-600 file:text-white"
           />
           <p v-if="imageFileName" class="text-xs text-slate-400 mt-1">Selected: {{ imageFileName }}</p>
+        </div>
+
+        <div class="mb-4 rounded-xl border border-slate-700 bg-slate-900/40 p-4 text-sm">
+          <p class="font-semibold text-white">{{ form.postType === 'Product' ? 'Listing Summary' : 'Booking Summary' }}</p>
+          <p v-if="form.postType === 'Service'" class="mt-2 text-slate-300">Consultation: {{ form.requiresConsultationFirst ? 'Required before booking' : 'Not required' }}</p>
+          <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Follow-up: {{ form.followUpAllowed ? `Available within ${form.followUpWindowDays || 14} days` : 'Not available' }}</p>
+          <p v-if="form.postType === 'Consultation'" class="mt-2 text-slate-300">Mode: {{ form.consultationMode === 'on-site' ? 'On-site consultation' : 'Online consultation' }}</p>
+          <p v-if="form.postType === 'Package'" class="mt-2 text-slate-300">Included appointments: {{ form.packageServiceIds.length }}</p>
+          <p v-if="form.postType === 'Product'" class="mt-2 text-slate-300">Source: selected inventory product</p>
+          <p class="mt-1 text-slate-300">Proposed {{ form.postType.toLowerCase() }} price: PHP {{ Number(form.price || form.consultationFee || 0).toFixed(2) }}</p>
+          <p class="mt-1 text-xs text-amber-200">Financial terms, including installment settings, require Finance approval before publication.</p>
         </div>
 
         <div class="flex gap-2">

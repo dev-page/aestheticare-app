@@ -6315,6 +6315,54 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
   return res.status(409).json({ success: false, error: 'Submit a booking request for clinic approval, then pay from My Appointments. Contact the clinic about any earlier checkout.' })
 })
 
+app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
+  if (!adminReady) return res.status(500).json({ success: false, error: adminInitError || 'firebase-admin is not ready' })
+  const appointmentId = String(req.params.id || '').trim()
+  if (!appointmentId) return res.status(400).json({ success: false, error: 'appointment id is required' })
+
+  try {
+    const firestore = admin.firestore()
+    const appointmentRef = firestore.collection('appointments').doc(appointmentId)
+    const appointmentSnap = await appointmentRef.get()
+    if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
+    const appointment = appointmentSnap.data() || {}
+    const branchId = String(appointment.branchId || '').trim()
+    await authorizeClinicAction(req.user.uid, branchId, 'appointments:update')
+
+    const status = normalizeBookingStatus(appointment.status)
+    if (!['scheduled', 'ready to start', 'paid'].includes(status)) {
+      return res.status(409).json({ success: false, error: 'Only an unattended scheduled appointment can be marked as a no-show.' })
+    }
+    const today = new Date().toISOString().slice(0, 10)
+    if (String(appointment.date || '') > today) {
+      return res.status(409).json({ success: false, error: 'An appointment cannot be marked as a no-show before its scheduled date.' })
+    }
+
+    const policySnap = await firestore.collection('clinicPolicies').doc(branchId).get()
+    const policy = policySnap.exists ? policySnap.data() || {} : {}
+    const rescheduleAllowed = policy.noShowRescheduleAllowed === true
+    await appointmentRef.update({
+      status: 'No-show',
+      noShowAt: admin.firestore.FieldValue.serverTimestamp(),
+      noShowMarkedById: req.user.uid,
+      noShowOutcome: rescheduleAllowed ? 'Reschedule eligible' : 'Forfeited',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    await createAppointmentNotification({
+      firestore,
+      customerId: appointment.customerId || '',
+      title: 'Appointment marked as no-show',
+      message: rescheduleAllowed
+        ? 'Your clinic recorded a missed appointment. Contact the clinic to arrange a staff-approved reschedule under its no-show policy.'
+        : 'Your clinic recorded a missed appointment. This appointment is forfeited under the clinic no-show policy.',
+      link: '/customer/appointments',
+    })
+    return res.json({ success: true, data: { appointmentId, status: 'No-show', noShowOutcome: rescheduleAllowed ? 'Reschedule eligible' : 'Forfeited' } })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error?.message || 'Unable to mark the appointment as a no-show.' })
+  }
+})
+
 app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
   if (!adminReady) {
     return res.status(500).json({ success: false, error: adminInitError || 'firebase-admin is not ready' })

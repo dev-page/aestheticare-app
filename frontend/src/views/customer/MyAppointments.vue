@@ -67,7 +67,7 @@
 
               <div class="unpaid-appointment-actions">
                 <button type="button" class="appointment-button appointment-button-primary" @click="payAppointment(appt)">Pay {{ formatBookingDue(appt) }}</button>
-                <button v-if="canModifyUnpaidAppointment(appt)" type="button" class="appointment-button appointment-button-secondary" :disabled="isRequestPending(appt, 'reschedule')" @click="openRequestModal('reschedule', appt)">{{ isRequestPending(appt, 'reschedule') ? 'Pending Approval' : 'Reschedule' }}</button>
+                <button v-if="canModifyUnpaidAppointment(appt) && canRequestReschedule(appt)" type="button" class="appointment-button appointment-button-secondary" :disabled="isRequestPending(appt, 'reschedule')" @click="openRequestModal('reschedule', appt)">{{ isRequestPending(appt, 'reschedule') ? 'Pending Approval' : 'Reschedule' }}</button>
                 <button v-if="canModifyUnpaidAppointment(appt)" type="button" class="appointment-button appointment-button-danger" :disabled="isRequestPending(appt, 'cancel')" @click="openRequestModal('cancel', appt)">{{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}</button>
               </div>
             </article>
@@ -225,6 +225,7 @@
                         Confirm Service Key
                       </button>
                       <button
+                        v-if="canRequestReschedule(appt)"
                         @click="runAction(() => openRequestModal('reschedule', appt))"
                         class="appointment-menu-item"
                         :disabled="isRequestPending(appt, 'reschedule')"
@@ -1266,6 +1267,16 @@ const canRequestCancellation = (appointment) => {
     && toDateTime(appointment?.date, appointment?.time) >= new Date()
 }
 
+const canRequestReschedule = (appointment) => {
+  const clinic = clinicsById.value[appointment?.branchId] || {}
+  const status = normalizeAppointmentStatus(appointment?.status)
+  return Boolean(appointment?.id)
+    && clinic.reschedulePolicyEnabled !== false
+    && Boolean(String(clinic.reschedulePolicy || '').trim())
+    && !['cancelled', 'completed', 'no-show'].includes(status)
+    && toDateTime(appointment?.date, appointment?.time) >= new Date()
+}
+
 const openRequestModal = async (type, appt) => {
   requestModal.value = {
     open: true,
@@ -1328,7 +1339,7 @@ const startAppointmentsListener = (userId) => {
       upcomingAppointments.value = all
         .filter((appt) =>
           !isOnlineConsultationAppointment(appt) &&
-          !['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status))
+          !['completed', 'cancelled', 'rejected', 'no-show'].includes(normalizeAppointmentStatus(appt.status))
         )
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
@@ -1337,7 +1348,7 @@ const startAppointmentsListener = (userId) => {
         })
 
       pastAppointments.value = all
-        .filter((appt) => !isOnlineConsultationAppointment(appt) && ['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status)))
+        .filter((appt) => !isOnlineConsultationAppointment(appt) && ['completed', 'cancelled', 'rejected', 'no-show'].includes(normalizeAppointmentStatus(appt.status)))
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
           const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()

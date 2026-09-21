@@ -81,6 +81,7 @@
                     <button v-if="appointment.source === 'walk_in' && appointment.paymentStatus === 'Paid'" @click="contractAppointment = appointment" class="rounded bg-indigo-700 px-3 py-2 text-white">{{ appointment.contract?.status === 'signed' ? 'View contract' : 'Client review & e-sign' }}</button>
                     <button v-if="appointment.serviceKey && appointment.contract?.status === 'signed' && !appointment.workerKeyVerified && ['Paid', 'Ready to Start', 'Scheduled'].includes(appointment.status)" :disabled="actionBusy" @click="openServiceKeyModal(appointment)" class="rounded bg-amber-700 px-3 py-2 text-white">Verify Customer Key</button>
                     <button v-if="appointment.status === 'Ready to Start' || (appointment.source === 'walk_in' && appointment.status === 'Paid' && appointment.workerKeyVerified && appointment.contract?.status === 'signed')" :disabled="actionBusy" @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white">Start Service</button>
+                    <button v-if="canMarkNoShow(appointment)" :disabled="actionBusy" @click="markNoShow(appointment)" class="rounded bg-rose-700 px-3 py-2 text-white">Mark No-show</button>
                     <button v-if="appointment.status === 'Ongoing'" :disabled="actionBusy" @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
                     <button
                       v-if="canRecommendFollowUp(appointment)"
@@ -177,6 +178,30 @@ export default {
     const submitServiceKey = async (serviceKey) => {
       const verified = await bookingAction(selectedServiceKeyAppointment.value, 'key', serviceKey)
       if (verified) closeServiceKeyModal()
+    }
+
+    const canMarkNoShow = (appointment) => {
+      const status = String(appointment?.status || '').trim().toLowerCase()
+      return ['scheduled', 'ready to start', 'paid'].includes(status)
+        && String(appointment?.date || '') <= new Date().toISOString().slice(0, 10)
+    }
+
+    const markNoShow = async (appointment) => {
+      if (!appointment?.id || actionBusy.value) return
+      actionBusy.value = true
+      try {
+        const token = await auth.currentUser.getIdToken()
+        const response = await fetch(`${OTP_API_BASE}/appointments/${appointment.id}/mark-no-show`, {
+          method: 'POST', headers: { Authorization: `Bearer ${token}` },
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to mark the appointment as a no-show.')
+        toast.success(`No-show recorded: ${payload.data.noShowOutcome}.`)
+      } catch (error) {
+        toast.error(error.message)
+      } finally {
+        actionBusy.value = false
+      }
     }
 
     const isAssignedToPractitioner = (appointment) => {
@@ -373,6 +398,7 @@ export default {
     return {
       contractAppointment, contractSaved,
       actionBusy, bookingAction, showServiceKeyModal, openServiceKeyModal, closeServiceKeyModal, submitServiceKey,
+      canMarkNoShow, markNoShow,
       searchQuery,
       statusFilter,
       dateFilter,
