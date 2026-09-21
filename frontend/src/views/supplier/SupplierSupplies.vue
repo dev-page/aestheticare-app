@@ -77,7 +77,7 @@
           </template>
         </section>
 
-        <form v-if="!loading" class="exact-catalog-form" @submit.prevent="saveSupplies">
+        <form v-if="!loading" data-supplier-catalog-form class="exact-catalog-form" @submit.prevent="saveSupplies">
           <article v-for="(item, index) in items" :key="`exact-${item.id}`" class="exact-item-card">
             <header class="exact-item-header"><div><p>ITEM {{ index + 1 }}</p><h2>{{ item.name || 'Add New Item' }}</h2><span>Provide the item details, pricing, and tax information. Order-level charges (e.g., delivery, handling) will be added during procurement requests.</span></div><button type="button" @click="removeItemRow(index)">♜ <b>Remove</b></button></header>
             <div class="exact-item-content"><section class="exact-left"><div class="exact-image"><img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.name || 'Item image'" /><template v-else><strong>▧＋</strong><b>No item image yet</b><span>Upload a clear photo of the product (PNG, JPG, WebP, or GIF, max 25 MB).</span></template><label>↥ &nbsp; Upload Item Photo<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" @change="handleItemImageChange(index, $event)" /></label></div><label>ITEM NAME <em>*</em><input v-model="item.name" placeholder="Enter item name (e.g., Disposable Gloves)" /></label><label>ITEM CATEGORY <em>*</em><select v-model="item.category"><option value="">Select category</option><option v-for="option in categoryOptions" :key="option" :value="option">{{ option }}</option></select></label><label v-if="item.category === 'Others'">CUSTOM CATEGORY<input v-model="item.customCategory" placeholder="Enter custom category" /></label><label>DESCRIPTION<textarea v-model="item.description" rows="5" placeholder="Describe the item, including key features, brand, or intended use."></textarea></label><div class="exact-pair"><label>UNIT OF MEASUREMENT <em>*</em><select v-model="item.measurementUnit"><option value="">Select unit (e.g., box, vial, pc)</option><option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option></select></label><label>MINIMUM ORDER QUANTITY<input v-model.number="item.minOrderQuantity" type="number" min="0" placeholder="Optional" /></label></div></section><section class="exact-right"><label>QUANTITY (STOCK AVAILABLE)<input :value="item.quantity" inputmode="numeric" @beforeinput="blockInvalidNumberInput($event)" @input="item.quantity = readNumberInput($event, item.quantity)" placeholder="0" /></label><small>Current available quantity in your inventory (optional).</small><div class="exact-package"><b>▣ &nbsp; Package details (optional)</b><span>Add package size, dimensions, or weight if available.</span><button type="button" @click="item.showMeasurement = true">＋ Add Measurement Details</button><div v-if="item.showMeasurement" class="exact-pair"><input v-model="item.measurementValue" placeholder="Value" /><select v-model="item.measurementUnit"><option value="">Unit</option><option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option></select></div></div><label>SPECIFICATIONS / DETAILS<textarea v-model="item.specifications" rows="5" placeholder="Example: sterile, 10 mL per vial, 5 pcs per box, 2 kg equipment, 15x20 cm dimensions."></textarea></label><div class="exact-pair"><label>UNIT PRICE (PHP) <em>*</em><div class="exact-price"><b>₱</b><input :value="item.price" @beforeinput="blockInvalidNumberInput($event, true)" @input="item.price = readNumberInput($event, item.price, true)" @blur="formatPrice(item)" placeholder="0.00" /></div></label><label>TAX TREATMENT <em>*</em><select v-model="item.taxTreatment" @change="applyTaxTreatment(item)"><option value="vat-inclusive">12% VAT — price inclusive</option><option value="vat-exclusive">12% VAT — added to price</option><option value="zero-rated">Zero-rated VAT</option><option value="vat-exempt">VAT exempt</option></select></label></div><p class="exact-tax-note">ⓘ Select how VAT applies to this item. This will be used when the item is added to a procurement request.</p><div class="exact-pair"><label>ITEM DISCOUNT RATE (%)<input v-model.number="item.discountRate" type="number" min="0" max="100" placeholder="0" /></label><div><label>BULK DISCOUNT</label><button type="button" class="exact-tier">＋ Add Tiered Pricing (Optional)</button></div></div><aside>ⓘ <div><b>Order-level charges are not set here</b><span>Delivery fees, handling fees, and other charges will be added per procurement request, as they depend on the order destination and quantity.</span></div></aside></section></div>
@@ -394,8 +394,10 @@ const loadSupplies = async (user) => {
   }
 }
 
+const scrollToCatalogForm = () => window.setTimeout(() => document.querySelector('[data-supplier-catalog-form]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
 const addItemRow = () => {
   items.value.push(createEmptyItem())
+  scrollToCatalogForm()
 }
 
 const hasDraftData = (item) => Boolean(
@@ -421,7 +423,7 @@ const editCatalogItem = (savedItem) => {
   else if (items.value.length === 1 && !hasDraftData(items.value[0])) items.value.splice(0, 1, editable)
   else items.value.push(editable)
   selectedItem.value = null
-  window.setTimeout(() => document.querySelector('[data-supplier-catalog-form]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+  scrollToCatalogForm()
 }
 
 const removeItemRow = (index) => {

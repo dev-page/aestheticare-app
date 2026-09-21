@@ -45,7 +45,7 @@ const routes = [
   { path: "/hr/attendance/face-registration", name: "hr-attendance-face-registration", component: () => import("@/views/clinic/attendance/FaceRegistration.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:create" } },
   { path: "/support/report", name: "support-report", component: () => import("@/views/common/SupportReport.vue"), meta: { requiresAuth: true } },
   { path: "/notifications", name: "notifications", component: () => import("@/views/common/Notifications.vue"), meta: { requiresAuth: true } },
-  { path: "/hr/attendance/scan", name: "hr-attendance-qr-scan", component: () => import("@/views/clinic/attendance/AttendanceQrScan.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:create", requiresFeature: "attendance" } },
+  { path: "/hr/attendance/scan", name: "hr-attendance-qr-scan", component: () => import("@/views/clinic/attendance/AttendanceQrScan.vue"), meta: { requiresAuth: true } },
 
   //{ path: "/customer/home", name: "customer-home", component: () => import("@/views/customer/CustomerHome.vue"), meta: { requiresAuth: true } },
   //{ path: "/customer/home/view-centers", name: "customer-view-center", component: () => import("@/views/customer/ViewCenterDetails.vue"), meta: { requiresAuth: true } },
@@ -75,7 +75,7 @@ const routes = [
   { path: "/hr/employees", name: "hr-employees", component: () => import("@/views/admin/owner/StaffProfile.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view", requiresFeature: "staff_management" } },
   { path: "/hr/employees/new", name: "hr-employees-new", component: () => import("@/views/admin/owner/AddStaff.vue"), meta: { requiresAuth: true, requiresPermission: "staff:create", requiresFeature: "staff_management" } },
   { path: "/hr/employees/archived", name: "hr-employees-archived", component: () => import("@/views/admin/owner/ArchivedEmployees.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view", requiresFeature: "staff_management" } },
-  { path: "/hr/attendance", name: "hr-attendance", component: () => import("@/views/admin/owner/Attendance.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
+  { path: "/hr/attendance", name: "hr-attendance", component: () => import("@/views/admin/owner/Attendance.vue"), meta: { requiresAuth: true, requiresNonEmployee: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
   { path: "/hr/roles", name: "hr-roles", component: () => import("@/views/admin/owner/OwnerRoleManagement.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "roles:manage", requiresFeature: "staff_management" } },
   { path: "/hr/reports", name: "hr-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
   { path: "/hr/base-pay", name: "hr-base-pay", component: () => import("@/views/admin/owner/hr/BasePay.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
@@ -272,6 +272,11 @@ const isClinicAccount = (userData = {}) => {
     || userType === 'employee'
 }
 
+const isEmployeeAccount = (userData = {}) => {
+  const userType = normalizeRole(userData.userType)
+  return userType === 'staff' || userType === 'employee'
+}
+
 const isFreeSubscriptionPlan = (value) => {
   const plan = String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-')
   return !plan || plan === 'free' || plan === 'free-plan' || plan === 'free-trial' || plan === 'trial'
@@ -450,6 +455,12 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (to.meta.requiresOwner && !isOwnerLikeRole(currentUserData, currentUser?.uid)) {
+    return next(safeUnauthorizedRedirect(currentUser, currentUserData));
+  }
+
+  // Attendance reports generate and rotate the branch QR, so they are an
+  // administrative screen rather than an employee clocking screen.
+  if (to.meta.requiresNonEmployee && isEmployeeAccount(currentUserData)) {
     return next(safeUnauthorizedRedirect(currentUser, currentUserData));
   }
 

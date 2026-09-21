@@ -93,28 +93,32 @@ export default {
     }
     const items = computed(() => {
       const baseItems = buildClinicSidebarItems({ dashboardTo: '/workspace/dashboard', isEmployee: true })
+      // Clocking in and out is a standard employee task. Keep it independent
+      // of the reporting permission, which is reserved for administrators.
+      baseItems.splice(1, 0, {
+        label: 'Attendance',
+        icon: 'mdi:qrcode-scan',
+        to: '/hr/attendance/scan'
+      })
       baseItems.push({ label: 'My Payslips', icon: 'report', to: '/hr/my-payslips', permission: 'profile:view' })
-      const attendanceChild = {
-        label: 'Scan Attendance QR',
-        icon: 'qr',
-        to: '/hr/attendance/scan',
-        feature: 'attendance',
-        permission: 'attendance:create'
-      }
 
       return baseItems
         .map((item) => {
           if (item.key !== 'team-management' || !Array.isArray(item.children)) {
+            // Employees may use the scanner, but must never be offered the
+            // administrator Attendance Report / QR management screen.
+            if (item.key === 'hr-module' && Array.isArray(item.children)) {
+              return {
+                ...item,
+                children: item.children.filter((child) => child.to !== '/hr/attendance')
+              }
+            }
             return item
           }
 
           return {
             ...item,
-            children: [
-              ...item.children.slice(0, 4),
-              attendanceChild,
-              ...item.children.slice(4)
-            ]
+            children: item.children
           }
         })
         .filter((item) => {

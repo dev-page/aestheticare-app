@@ -1551,6 +1551,27 @@ const requirePermission = (permission) => async (req, res, next) => {
   }
 }
 
+// Every assigned employee may clock themselves in or out. Administrative
+// attendance permissions continue to govern reports, imports, and edits.
+const requireAttendanceClockingAccess = async (req, res, next) => {
+  const uid = req.user?.uid
+  if (!uid) return res.status(401).json({ success: false, error: 'Unauthorized' })
+  try {
+    if (!req.userContext || req.userContext.uid !== uid) {
+      req.userContext = await loadUserContext(uid)
+    }
+    const userType = String(req.userContext.userData?.userType || '').trim().toLowerCase()
+    const isEmployee = userType === 'staff' || userType === 'employee'
+    const permissions = req.userContext.permissions
+    if (isEmployee || permissions.has('attendance:create') || permissions.has('administrator:full_access')) {
+      return next()
+    }
+    return res.status(403).json({ success: false, error: 'Forbidden' })
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Failed to verify attendance access' })
+  }
+}
+
 // Keep platform audit records independent from a clinic branch. Audit failures
 // must never prevent the protected operation itself from completing.
 const writeSystemAdminActivity = async (req, {
@@ -5014,7 +5035,7 @@ if (backupScheduleEnabled && adminReady) {
   runScheduledBackups().catch(() => {})
 }
 
-app.post(ATTENDANCE_RECORD_PATH, requireAuth, requirePermission('attendance:create'), async (req, res) => {
+app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, async (req, res) => {
   const { branchId, qrToken, latitude, longitude, accuracy, proofStoragePath, proofUrl } = req.body ?? {}
   const normalizedBranchId = String(branchId || '').trim()
   if (!normalizedBranchId || !qrToken) {
