@@ -101,6 +101,18 @@ test('DSS thresholds, invalid dates, privacy and invoice overbilling', () => {
   assert.ok(invoiceMatch({ lines: [{ itemId: 'a', unitPrice: 100 }], accepted: { a: 5 }, total: 500 }, { lines: [{ itemId: 'a', quantity: 6, unitPrice: 100 }], total: 600 }, []).length)
 })
 
+test('Supplier catalog commercial terms are validated and audited on the server', async () => {
+  const f = fixture()
+  const valid = { id: 'catalog-serum', name: 'Serum', categoryGroup: 'Skincare', category: 'Skincare', customCategory: '', quantity: 25, minOrderQuantity: 2, measurementValue: '30', measurementUnit: 'mL', specifications: 'Sealed', price: 199.99, taxTreatment: 'vat-exclusive', taxRate: 0, discountRate: 3, tieredDiscounts: [{ minQuantity: 10, discountRate: 8 }], otherChargePerUnit: 1.5, imageUrl: 'https://example.test/serum.jpg', imageName: 'serum.jpg', fdaRegistrationNumber: '' }
+  const saved = await f.call('supplier', '/supply/catalog', { supplierId: 'vendor', items: [valid] })
+  assert.equal(saved.status, 200, JSON.stringify(saved)); assert.equal(f.store.get('suppliers/vendor').offeredItems[0].taxRate, 12)
+  assert.equal(f.store.get('suppliers/vendor').offeredItems[0].tieredDiscounts[0].discountRate, 8)
+  const invalid = await f.call('supplier', '/supply/catalog', { supplierId: 'vendor', items: [{ ...valid, discountRate: 101 }] })
+  assert.equal(invalid.status, 400)
+  const foreign = await f.call('competitor', '/supply/catalog', { supplierId: 'vendor', items: [valid] })
+  assert.equal(foreign.status, 403)
+})
+
 test('Procurement can record a direct supplier quote without creating an RFQ', async () => {
   const f = fixture(), date = '2099-12-31'
   const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date, location: 'Main clinic' })

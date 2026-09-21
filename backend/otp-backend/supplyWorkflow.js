@@ -24,6 +24,24 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   const wrap = handler => async (req, res) => { try { const ctx = await identity(req); ctx.auditContext = { ipAddress: String(req.ip || req.socket?.remoteAddress || '').slice(0, 128), device: String(req.get?.('user-agent') || req.headers?.['user-agent'] || '').slice(0, 500) }; await handler(req, res, ctx) } catch (e) { res.status(e.status || 500).json({ success: false, error: e.status ? e.message : 'Supply operation failed. Please try again.' }) } }
   const supplierOwns = (ctx, r) => ctx.supplier && ctx.supplierIds.includes(r.supplierId)
   const allow = (ctx, permission) => demand(!ctx.supplier && hasPermission(ctx, permission), 'You do not have permission for this action.', 403)
+  const catalogItem = raw => {
+    const text = (value, label, max = 4000, optional = true) => { const result = String(value || '').trim(); demand(optional || result, `${label} is required.`, 400); demand(result.length <= max, `${label} is too long.`, 400); return result }
+    const id = String(raw.id || ''); demand(/^[A-Za-z0-9_-]{1,150}$/.test(id), 'Invalid catalog item identifier.', 400)
+    const categoryGroup = text(raw.categoryGroup, 'Category', 80, false), customCategory = text(raw.customCategory, 'Custom category', 80)
+    demand(['Injectables', 'Skincare', 'Equipment', 'Medical Supplies', 'Others'].includes(categoryGroup), 'Choose a valid catalog category.', 400)
+    const category = categoryGroup === 'Others' ? text(customCategory, 'Custom category', 80, false) : categoryGroup
+    const taxTreatment = String(raw.taxTreatment || 'vat-inclusive'); demand(['vat-inclusive', 'vat-exclusive', 'zero-rated', 'vat-exempt'].includes(taxTreatment), 'Choose a valid tax treatment.', 400)
+    const rate = value => { const result = Number(value || 0); demand(Number.isFinite(result) && result >= 0 && result <= 100, 'Tax and discount rates must be between 0 and 100.', 400); return Math.round(result * 100) / 100 }
+    const tiers = Array.isArray(raw.tieredDiscounts) ? raw.tieredDiscounts : []; demand(tiers.length <= 10, 'A catalog item can have at most 10 bulk-discount tiers.', 400)
+    const tieredDiscounts = tiers.map(tier => ({ minQuantity: quantity(tier.minQuantity), discountRate: rate(tier.discountRate) })).sort((a, b) => a.minQuantity - b.minQuantity)
+    demand(tieredDiscounts.every((tier, index) => tier.minQuantity >= 2 && (!index || tier.minQuantity > tieredDiscounts[index - 1].minQuantity)), 'Bulk discount tiers must start at 2 units and use unique quantities.', 400)
+    const imageUrl = text(raw.imageUrl, 'Image URL'); demand(!imageUrl || /^https:\/\//.test(imageUrl), 'Catalog images must use HTTPS URLs.', 400)
+    const manufacturingDate = raw.manufacturingDate ? dateKey(raw.manufacturingDate) : '', expiryDate = raw.expiryDate ? dateKey(raw.expiryDate) : ''
+    demand(!manufacturingDate || !expiryDate || manufacturingDate <= expiryDate, 'Expiry date cannot be earlier than manufacturing date.', 400)
+    const fda = raw.fdaApprovalDocument && typeof raw.fdaApprovalDocument === 'object' ? raw.fdaApprovalDocument : null
+    const fdaSize = Number(fda?.size || 0); demand(Number.isSafeInteger(fdaSize) && fdaSize >= 0 && fdaSize < 25 * 1024 * 1024, 'FDA document size is invalid.', 400)
+    return { id, name: text(raw.name, 'Item name', 120, false), category, categoryGroup, customCategory, description: text(raw.description, 'Description', 2000), quantity: quantity(raw.quantity, true), minOrderQuantity: quantity(raw.minOrderQuantity, true), measurementValue: text(raw.measurementValue, 'Measurement', 80), measurementUnit: text(raw.measurementUnit, 'Measurement unit', 40), specifications: text(raw.specifications, 'Specifications', 2000), manufacturingDate, expiryDate, price: money(raw.price) / 100, unitCost: money(raw.price) / 100, taxTreatment, taxRate: ['vat-inclusive', 'vat-exclusive'].includes(taxTreatment) ? 12 : 0, discountRate: rate(raw.discountRate), tieredDiscounts, otherChargePerUnit: money(raw.otherChargePerUnit) / 100, imageUrl, imageName: text(raw.imageName, 'Image name', 400), fdaRegistrationNumber: text(raw.fdaRegistrationNumber, 'FDA registration number', 100), fdaApprovalDocument: fda ? { name: text(fda.name, 'FDA document name', 400), type: text(fda.type, 'FDA document type', 100), size: fdaSize, path: text(fda.path, 'FDA document path', 1000), url: text(fda.url, 'FDA document URL', 4000) } : null }
+  }
 
   // Deterministic per-day IDs prevent repeated workspace refreshes from sending
   // the same alert twice. A deployment scheduler may invoke this endpoint too.
@@ -87,6 +105,24 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const movements = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('inventoryMovements') : []
     const snapshots = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('supplySnapshots') : []
     res.json({ success: true, data: { branchId, branches, records, items, suppliers, movements, snapshots, permissions: [...ctx.permissions], roleKey: ctx.roleKey, supplier: ctx.supplier, supplierIds: ctx.supplierIds, uid: ctx.uid } })
+  }))
+
+  app.post('/supply/catalog', requireAuth, wrap(async (req, res, ctx) => {
+    demand(ctx.supplier, 'Supplier access is required.', 403)
+    const supplierId = cleanId(req.body.supplierId), requested = req.body.items
+    demand(Array.isArray(requested) && requested.length >= 1 && requested.length <= 100, 'Provide 1–100 catalog items.', 400)
+    const ref = db.collection('suppliers').doc(supplierId)
+    let items
+    await db.runTransaction(async tx => {
+      const snapshot = await tx.get(ref); demand(snapshot.exists, 'Supplier profile not found.', 404)
+      const supplier = snapshot.data() || {}; demand(supplier.ownerId === ctx.uid || supplier.supplierUserId === ctx.uid, 'This catalog belongs to another supplier.', 403)
+      const oldItems = Array.isArray(supplier.offeredItems) ? supplier.offeredItems : [], ids = new Set()
+      const submitted = requested.map(raw => { const item = catalogItem(raw); demand(!ids.has(item.id), 'Duplicate catalog item identifiers are not allowed.', 400); ids.add(item.id); const old = oldItems.find(entry => entry.id === item.id); return { ...item, reservedQuantity: Number(old?.reservedQuantity || 0), lastReservedAt: old?.lastReservedAt || null, lastReservedPoId: old?.lastReservedPoId || '', lastFulfilledAt: old?.lastFulfilledAt || null, lastFulfilledPoId: old?.lastFulfilledPoId || '' } })
+      items = [...submitted, ...oldItems.filter(item => !ids.has(item.id))]
+      tx.set(ref, { offeredItems: items, categories: [...new Set(items.map(item => item.category))], updatedAt: stamp() }, { merge: true })
+      tx.set(db.collection('supplyAudit').doc(), { branchId: supplier.branchId || '', recordId: supplierId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: 'supplierCatalog', action: 'catalog-updated', itemCount: items.length, ...ctx.auditContext, createdAt: stamp() })
+    })
+    res.json({ success: true, data: { items } })
   }))
 
   app.post('/supply/items', requireAuth, wrap(async (req, res, ctx) => {
@@ -205,7 +241,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             const existingItem = items.find(item => item.supplierId === supplierId && String(item.supplierCatalogItemId || '') === catalogItemId)
             const unitPrice = money(product.price || product.unitCost || 0), requestedQuantity = quantity(raw.quantity), availableUnits = Math.max(0, quantity(product.quantity || 0, true) - quantity(product.reservedQuantity || 0, true))
             demand(requestedQuantity <= availableUnits, `Requested quantity cannot exceed the supplier's ${availableUnits} available unit(s).`, 400)
-            return { itemId: existingItem?.id || crypto.randomUUID(), initialInventory: !existingItem, name: required(product.name || product.itemName || product.productName, 'Catalog item name'), category: String(product.category || product.categoryGroup || product.customCategory || ''), supplierId, preferredSupplierId: supplierId, supplierCatalogItemId: catalogItemId, quantity: requestedQuantity, unit: String(product.measurementUnit || product.unit || 'units'), specifications: String(product.description || product.specifications || ''), packaging: String(product.measurementValue || ''), manufacturingDate: product.manufacturingDate ? dateKey(product.manufacturingDate) : '', expiryDate: product.expiryDate ? dateKey(product.expiryDate) : '', unitPrice, subtotal: requestedQuantity * unitPrice, taxRate: Math.max(0, Number(product.taxRate || 0)), taxTreatment: String(product.taxTreatment || 'vat-inclusive'), discountRate: Math.max(0, Number(product.discountRate || 0)), otherChargePerUnit: money(product.otherChargePerUnit || 0), currentStock: Number(existingItem?.currentStock || 0), minStock, targetStock, maxStock, location: String(raw.location || input.location || '') }
+            const tier = (Array.isArray(product.tieredDiscounts) ? product.tieredDiscounts : []).filter(entry => Number(entry.minQuantity) <= requestedQuantity).sort((a, b) => Number(b.minQuantity) - Number(a.minQuantity))[0]
+            return { itemId: existingItem?.id || crypto.randomUUID(), initialInventory: !existingItem, name: required(product.name || product.itemName || product.productName, 'Catalog item name'), category: String(product.category || product.categoryGroup || product.customCategory || ''), supplierId, preferredSupplierId: supplierId, supplierCatalogItemId: catalogItemId, quantity: requestedQuantity, unit: String(product.measurementUnit || product.unit || 'units'), specifications: String(product.description || product.specifications || ''), packaging: String(product.measurementValue || ''), manufacturingDate: product.manufacturingDate ? dateKey(product.manufacturingDate) : '', expiryDate: product.expiryDate ? dateKey(product.expiryDate) : '', unitPrice, subtotal: requestedQuantity * unitPrice, taxRate: Math.max(0, Number(product.taxRate || 0)), taxTreatment: String(product.taxTreatment || 'vat-inclusive'), discountRate: Math.max(0, Number((tier?.discountRate ?? product.discountRate) || 0)), tieredDiscounts: Array.isArray(product.tieredDiscounts) ? product.tieredDiscounts : [], otherChargePerUnit: money(product.otherChargePerUnit || 0), currentStock: Number(existingItem?.currentStock || 0), minStock, targetStock, maxStock, location: String(raw.location || input.location || '') }
           })
           const estimatedCost = lines.reduce((sum, line) => sum + line.subtotal, 0)
           result = create('request', { status: 'Sent to Procurement', supplierId: lines.length === 1 ? lines[0].supplierId : '', itemId: lines.length === 1 ? lines[0].itemId : '', lines, department: required(input.department, 'Department'), reason: required(input.reason, 'Reason'), notes: String(input.notes || ''), priority: input.priority || 'Normal', requiredDate: dateKey(input.requiredDate), estimatedCost, submittedBy: ctx.uid, submittedAt: now })

@@ -280,8 +280,9 @@ const catalogQuoteDraft=(target,supplierId)=>{
   })
   const lineAmount=(line,product)=>Number(line.quantity||0)*Number(line.unitPrice||0)
   const productFor=line=>catalogProductForQuote(supplierId,line)
+  const discountRateFor=line=>{const product=productFor(line);const tier=(product?.tieredDiscounts||[]).filter(entry=>Number(entry.minQuantity)<=Number(line.quantity||0)).sort((a,b)=>Number(b.minQuantity)-Number(a.minQuantity))[0];return Number(tier?.discountRate??product?.discountRate??line.discountRate??0)}
   const tax=lines.reduce((sum,line)=>{const product=productFor(line);return sum+(product?.taxTreatment==='vat-exclusive'?lineAmount(line,product)*Number(product.taxRate||0)/100:0)},0)
-  const discount=lines.reduce((sum,line)=>sum+lineAmount(line,productFor(line))*Number(productFor(line)?.discountRate||0)/100,0)
+  const discount=lines.reduce((sum,line)=>sum+lineAmount(line,productFor(line))*discountRateFor(line)/100,0)
   const otherCharges=lines.reduce((sum,line)=>sum+Number(line.quantity||0)*Number(productFor(line)?.otherChargePerUnit||0),0)
   return {lines,tax,discount,otherCharges}
 }

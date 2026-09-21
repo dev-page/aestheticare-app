@@ -2,7 +2,7 @@
   <div class="flex min-h-screen bg-gradient-to-br from-[#f9f1e5] via-[#f5e4cf] to-[#eed6bc]">
     <SupplierSidebar />
 
-    <main data-onboarding-key="supplier-catalog" class="flex-1 p-6 md:p-8">
+    <main data-onboarding-key="supplier-catalog" class="supplier-catalog-page flex-1 p-6 md:p-8">
       <section class="mx-auto max-w-7xl space-y-6">
         <div class="rounded-[2rem] border border-[#e4c7a1] bg-white/85 p-6 shadow-[0_18px_44px_rgba(77,52,31,0.08)] backdrop-blur">
           <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -77,11 +77,12 @@
           </template>
         </section>
 
-        <form v-if="!loading" data-supplier-catalog-form class="exact-catalog-form" @submit.prevent="saveSupplies">
+        <form v-if="!loading" data-supplier-catalog-form class="exact-catalog-form" @click="handleCatalogClick" @submit.prevent="saveSupplies">
           <article v-for="(item, index) in items" :key="`exact-${item.id}`" class="exact-item-card">
             <header class="exact-item-header"><div><p>ITEM {{ index + 1 }}</p><h2>{{ item.name || 'Add New Item' }}</h2><span>Provide the item details, pricing, and tax information. Order-level charges (e.g., delivery, handling) will be added during procurement requests.</span></div><button type="button" @click="removeItemRow(index)">♜ <b>Remove</b></button></header>
             <div class="exact-item-content"><section class="exact-left"><div class="exact-image"><img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.name || 'Item image'" /><template v-else><strong>▧＋</strong><b>No item image yet</b><span>Upload a clear photo of the product (PNG, JPG, WebP, or GIF, max 25 MB).</span></template><label>↥ &nbsp; Upload Item Photo<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" @change="handleItemImageChange(index, $event)" /></label></div><label>ITEM NAME <em>*</em><input v-model="item.name" placeholder="Enter item name (e.g., Disposable Gloves)" /></label><label>ITEM CATEGORY <em>*</em><select v-model="item.category"><option value="">Select category</option><option v-for="option in categoryOptions" :key="option" :value="option">{{ option }}</option></select></label><label v-if="item.category === 'Others'">CUSTOM CATEGORY<input v-model="item.customCategory" placeholder="Enter custom category" /></label><label>DESCRIPTION<textarea v-model="item.description" rows="5" placeholder="Describe the item, including key features, brand, or intended use."></textarea></label><div class="exact-pair"><label>UNIT OF MEASUREMENT <em>*</em><select v-model="item.measurementUnit"><option value="">Select unit (e.g., box, vial, pc)</option><option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option></select></label><label>MINIMUM ORDER QUANTITY<input v-model.number="item.minOrderQuantity" type="number" min="0" placeholder="Optional" /></label></div></section><section class="exact-right"><label>QUANTITY (STOCK AVAILABLE)<input :value="item.quantity" inputmode="numeric" @beforeinput="blockInvalidNumberInput($event)" @input="item.quantity = readNumberInput($event, item.quantity)" placeholder="0" /></label><small>Current available quantity in your inventory (optional).</small><div class="exact-package"><b>▣ &nbsp; Package details (optional)</b><span>Add package size, dimensions, or weight if available.</span><button type="button" @click="item.showMeasurement = true">＋ Add Measurement Details</button><div v-if="item.showMeasurement" class="exact-pair"><input v-model="item.measurementValue" placeholder="Value" /><select v-model="item.measurementUnit"><option value="">Unit</option><option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option></select></div></div><label>SPECIFICATIONS / DETAILS<textarea v-model="item.specifications" rows="5" placeholder="Example: sterile, 10 mL per vial, 5 pcs per box, 2 kg equipment, 15x20 cm dimensions."></textarea></label><div class="exact-pair"><label>UNIT PRICE (PHP) <em>*</em><div class="exact-price"><b>₱</b><input :value="item.price" @beforeinput="blockInvalidNumberInput($event, true)" @input="item.price = readNumberInput($event, item.price, true)" @blur="formatPrice(item)" placeholder="0.00" /></div></label><label>TAX TREATMENT <em>*</em><select v-model="item.taxTreatment" @change="applyTaxTreatment(item)"><option value="vat-inclusive">12% VAT — price inclusive</option><option value="vat-exclusive">12% VAT — added to price</option><option value="zero-rated">Zero-rated VAT</option><option value="vat-exempt">VAT exempt</option></select></label></div><p class="exact-tax-note">ⓘ Select how VAT applies to this item. This will be used when the item is added to a procurement request.</p><div class="exact-pair"><label>ITEM DISCOUNT RATE (%)<input v-model.number="item.discountRate" type="number" min="0" max="100" placeholder="0" /></label><div><label>BULK DISCOUNT</label><button type="button" class="exact-tier">＋ Add Tiered Pricing (Optional)</button></div></div><aside>ⓘ <div><b>Order-level charges are not set here</b><span>Delivery fees, handling fees, and other charges will be added per procurement request, as they depend on the order destination and quantity.</span></div></aside></section></div>
             <div class="exact-pair px-5 pb-5"><label>OTHER CHARGE / UNIT (PHP)<div class="exact-price"><b>₱</b><input v-model.number="item.otherChargePerUnit" type="number" min="0" step="0.01" placeholder="0.00" /></div><small>Recurring handling, packaging, or regulatory charge per unit. It will prefill supplier quotations.</small></label><aside>ⓘ <div><b>Delivery remains order-specific</b><span>Catalog price, VAT, discount, and per-unit charges carry into the quote. Delivery is set for the actual destination.</span></div></aside></div>
+            <section v-if="item.tieredDiscounts?.length" class="exact-fda"><h3>Bulk discount tiers</h3><div v-for="(tier, tierIndex) in item.tieredDiscounts" :key="tierIndex" class="exact-pair"><label>MINIMUM QUANTITY<input v-model.number="tier.minQuantity" type="number" min="2" step="1" /></label><label>DISCOUNT RATE (%)<input v-model.number="tier.discountRate" type="number" min="0" max="100" step="0.01" /><button type="button" class="exact-tier" @click="item.tieredDiscounts.splice(tierIndex, 1)">Remove tier</button></label></div></section>
             <section class="exact-fda"><h3>FDA Documentation <span>(optional)</span></h3><p>Upload supporting information when applicable. It is not required for every supply item.</p><div class="exact-pair"><label>FDA REGISTRATION NUMBER<input v-model.trim="item.fdaRegistrationNumber" maxlength="100" placeholder="Optional" /></label><label>FDA DOCUMENT<input v-if="!item.fdaApprovalDocument?.url && !item.fdaApprovalFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif" @change="handleFdaDocumentChange(index, $event)" /><span v-else>{{ item.fdaApprovalFileName || item.fdaApprovalDocument?.name || 'Document attached' }}</span></label></div></section>
             <footer><button type="button" @click="items = [createEmptyItem()]">Cancel</button><button type="submit">Save Item</button></footer>
           </article>
@@ -281,12 +282,13 @@
 import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, runTransaction, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import { db } from '@/config/firebaseConfig'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 const auth = getAuth()
 const storage = getStorage()
@@ -330,6 +332,7 @@ const createEmptyItem = () => ({
   taxRate: 12,
   discountRate: 0,
   otherChargePerUnit: 0,
+  tieredDiscounts: [],
   imageUrl: '',
   imageName: '',
   imageFile: null,
@@ -399,6 +402,12 @@ const scrollToCatalogForm = () => window.setTimeout(() => document.querySelector
 const addItemRow = () => {
   items.value.push(createEmptyItem())
   scrollToCatalogForm()
+}
+const handleCatalogClick = (event) => {
+  if (!event.target.closest('.exact-tier')) return
+  const card = event.target.closest('.exact-item-card')
+  const index = [...document.querySelectorAll('.exact-item-card')].indexOf(card)
+  if (index >= 0 && event.target.textContent.includes('Add Tiered')) items.value[index].tieredDiscounts.push({ minQuantity: 2, discountRate: 0 })
 }
 
 const hasDraftData = (item) => Boolean(
@@ -525,6 +534,8 @@ const validateItems = () => {
     if (!priceRaw) return 'Please enter a price for each filled item.'
     if (!/^\d+(\.\d{1,2})?$/.test(priceRaw) || !Number.isFinite(price) || price < 0 || price > 999999999.99) return 'Price must be between PHP 0.00 and PHP 999,999,999.99 with at most two decimal places.'
     if (![taxRate, discountRate, otherCharge].every(Number.isFinite) || taxRate < 0 || taxRate > 100 || discountRate < 0 || discountRate > 100 || otherCharge < 0 || otherCharge > 999999999.99) return 'Tax and discount rates must be 0–100%; other charge must be a valid positive PHP amount.'
+    const tiers = Array.isArray(item.tieredDiscounts) ? item.tieredDiscounts : []
+    if (tiers.length > 10 || tiers.some((tier) => !Number.isSafeInteger(Number(tier.minQuantity)) || Number(tier.minQuantity) < 2 || !Number.isFinite(Number(tier.discountRate)) || Number(tier.discountRate) < 0 || Number(tier.discountRate) > 100) || new Set(tiers.map(tier => Number(tier.minQuantity))).size !== tiers.length) return 'Bulk discount tiers need unique quantities of 2 or more and rates from 0–100%.'
     if (name.length > 120 || customCategory.length > 80 || description.length > 2000 || String(item.specifications || '').length > 2000 || measurementValue.length > 80 || String(item.fdaRegistrationNumber || '').length > 100) return 'An item field exceeds its maximum length.'
     if (measurementValue && !measurementUnit) return 'Please select a unit for the measurement.'
     if (measurementUnit && !measurementOptions.includes(measurementUnit)) return 'Please select a valid measurement unit.'
@@ -584,6 +595,7 @@ const saveSupplies = async () => {
         taxRate: Number(item.taxRate || 0),
         discountRate: Number(item.discountRate || 0),
         otherChargePerUnit: Number(item.otherChargePerUnit || 0),
+        tieredDiscounts: (item.tieredDiscounts || []).map(tier => ({ minQuantity: Number(tier.minQuantity), discountRate: Number(tier.discountRate) })),
         imageUrl: String(item.imageUrl || '').trim(),
         imageName: String(item.imageName || '').trim(),
         fdaRegistrationNumber: String(item.fdaRegistrationNumber || '').trim(),
@@ -653,35 +665,23 @@ const saveSupplies = async () => {
         taxRate: item.taxRate,
         discountRate: item.discountRate,
         otherChargePerUnit: item.otherChargePerUnit,
+        tieredDiscounts: item.tieredDiscounts,
         imageUrl,
         imageName: item.imageName,
         fdaRegistrationNumber: item.fdaRegistrationNumber,
         fdaApprovalDocument,
       })
     }
-    const supplierRef = doc(db, 'suppliers', supplierDocId.value || user.uid)
-    const combinedItems = await runTransaction(db, async (transaction) => {
-      const snapshot = await transaction.get(supplierRef)
-      const existing = snapshot.data()?.offeredItems || []
-      const newIds = new Set(savedItems.map((item) => item.id))
-      const combined = [
-        ...savedItems.map((item) => {
-          const current = existing.find((entry) => entry.id === item.id)
-          return { ...item, reservedQuantity: Number(current?.reservedQuantity || 0), lastReservedAt: current?.lastReservedAt || null, lastReservedPoId: current?.lastReservedPoId || '', lastFulfilledAt: current?.lastFulfilledAt || null, lastFulfilledPoId: current?.lastFulfilledPoId || '' }
-        }),
-        ...existing.filter((item) => !newIds.has(item.id)),
-      ]
-      const categories = [...new Set(combined.map((item) => item.category).filter(Boolean))]
-      transaction.set(supplierRef, {
-      ownerId: user.uid,
-      name: businessName.value || '',
-      businessName: businessName.value || '',
-      offeredItems: combined,
-      categories,
-      updatedAt: serverTimestamp(),
-      }, { merge: true })
-      return combined
-    })
+    const token = await user.getIdToken()
+    let result
+    for (const base of OTP_BACKEND_CANDIDATES) {
+      const response = await fetch(`${base}/supply/catalog`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ supplierId: supplierDocId.value || user.uid, items: savedItems }) })
+      result = await response.json()
+      if (response.ok && result.success) break
+      if (!response.ok) throw new Error(result.error || 'Unable to save the catalog.')
+    }
+    if (!result?.success) throw new Error(result?.error || 'Catalog service is unavailable.')
+    const combinedItems = result.data.items
 
     savedCatalog.value = combinedItems.map((item) => ({ ...item, id: item.id || crypto.randomUUID() }))
     currentPage.value = 1
@@ -714,11 +714,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.catalog-button { border: 1px solid #d9b38d; border-radius: 0.75rem; background: #fff8ef; padding: 0.5rem 0.85rem; color: #6f4329; font-weight: 600; }
+.supplier-catalog-page { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: 400; }
+.supplier-catalog-page h1, .supplier-catalog-page h2, .supplier-catalog-page h3, .supplier-catalog-page strong, .supplier-catalog-page .font-bold, .supplier-catalog-page .font-semibold { font-weight: 600; }
+.catalog-button { border: 1px solid #d9b38d; border-radius: 0.75rem; background: #fff8ef; padding: 0.5rem 0.85rem; color: #6f4329; font-weight: 500; }
 .legacy-catalog-form { display: none; }
 .exact-catalog-form { margin-top: 1.5rem; color: #273047; font-family: inherit; }
 .exact-item-card { overflow: hidden; border: 1px solid #edc7a4; border-radius: 1.6rem; background: #fffdfb; box-shadow: 0 10px 28px rgba(105, 67, 35, .09); }
-.exact-item-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1.15rem 1.6rem; border-bottom:1px solid #f1ddcc; background:linear-gradient(90deg,#fffdfb,#fff8f1); }.exact-item-header p,.exact-left label,.exact-right label { display:block; color:#4b5770; font-size:.72rem; font-weight:800; letter-spacing:.06em; }.exact-item-header h2{margin:.15rem 0;font-size:1.5rem;font-weight:800}.exact-item-header span{color:#77829a;font-size:.86rem}.exact-item-header button{border:1px solid #f0b99d;border-radius:.7rem;background:#fff9f6;padding:.7rem 1rem;color:#bd4429}.exact-item-content{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;padding:1.5rem}.exact-left{padding-right:1.4rem;border-right:1px solid #f1e2d5}.exact-left,.exact-right{display:grid;align-content:start;gap:1rem}.exact-left input,.exact-left select,.exact-left textarea,.exact-right input,.exact-right select,.exact-right textarea{width:100%;box-sizing:border-box;margin-top:.45rem;border:1px solid #e9bb92;border-radius:.75rem;background:#fffefd;padding:.85rem 1rem;color:#273047;font-size:.88rem}.exact-left textarea,.exact-right textarea{resize:vertical}.exact-left em,.exact-right em{color:#d64b36;font-style:normal}.exact-image{display:flex;min-height:275px;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;border:1px dashed #eead75;border-radius:.75rem;background:linear-gradient(135deg,#fff4e7,#fffbf5);text-align:center;color:#6d6d71}.exact-image img{max-height:270px;width:100%;object-fit:contain}.exact-image strong{font-size:2.6rem;color:#c6a185}.exact-image span{font-size:.8rem;color:#7c8395}.exact-image label,.exact-package button,.exact-tier{border:1px solid #e28b57;border-radius:.6rem;background:#fffdfb;padding:.65rem 1rem;color:#c54a2d;font-weight:700;letter-spacing:0}.exact-pair{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.exact-right>small{margin-top:-.7rem;color:#7c8395;font-size:.77rem}.exact-package{display:grid;gap:.55rem;border:1px dashed #edaf77;border-radius:.75rem;background:#fffaf4;padding:1rem}.exact-package span{color:#7c8395;font-size:.8rem}.exact-package button{justify-self:start}.exact-price{display:flex;overflow:hidden;margin-top:.45rem;border:1px solid #e9bb92;border-radius:.75rem}.exact-price b{padding:.85rem 1rem;background:#fff7ed}.exact-price input{margin:0!important;border:0!important;border-radius:0!important}.exact-tax-note{margin-top:-.5rem;color:#7c8395;font-size:.74rem}.exact-right aside{display:flex;gap:.75rem;border:1px solid #b9ddfc;border-radius:.75rem;background:#f1f9ff;padding:1rem;color:#245384;font-size:.8rem}.exact-right aside b,.exact-right aside span{display:block}.exact-right aside span{margin-top:.25rem}.exact-item-card footer{display:flex;justify-content:flex-end;gap:1rem;border-top:1px solid #f1e2d5;padding:1.25rem 1.6rem}.exact-item-card footer button{min-width:120px;border:1px solid #e5b78f;border-radius:.7rem;background:#fffdfb;padding:.8rem 1rem;font-weight:700}.exact-item-card footer button[type=submit]{border-color:#c84e2c;background:#c84e2c;color:#fff}@media(max-width:780px){.exact-item-content{grid-template-columns:1fr}.exact-left{padding-right:0;border-right:0;border-bottom:1px solid #f1e2d5;padding-bottom:1.4rem}.exact-pair{grid-template-columns:1fr}.exact-item-header{align-items:flex-start;flex-direction:column}}
+.exact-item-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1.15rem 1.6rem; border-bottom:1px solid #f1ddcc; background:linear-gradient(90deg,#fffdfb,#fff8f1); }.exact-item-header p,.exact-left label,.exact-right label { display:block; color:#4b5770; font-size:.72rem; font-weight:600; letter-spacing:.06em; }.exact-item-header h2{margin:.15rem 0;font-size:1.5rem;font-weight:600}.exact-item-header span{color:#77829a;font-size:.86rem}.exact-item-header button{border:1px solid #f0b99d;border-radius:.7rem;background:#fff9f6;padding:.7rem 1rem;color:#bd4429;font-weight:500}.exact-item-content{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;padding:1.5rem}.exact-left{padding-right:1.4rem;border-right:1px solid #f1e2d5}.exact-left,.exact-right{display:grid;align-content:start;gap:1rem}.exact-left input,.exact-left select,.exact-left textarea,.exact-right input,.exact-right select,.exact-right textarea{width:100%;box-sizing:border-box;margin-top:.45rem;border:1px solid #e9bb92;border-radius:.75rem;background:#fffefd;padding:.85rem 1rem;color:#273047;font-size:.88rem;font-weight:400}.exact-left input::placeholder,.exact-left textarea::placeholder,.exact-right input::placeholder,.exact-right textarea::placeholder{font-weight:400}.exact-left textarea,.exact-right textarea{resize:vertical}.exact-left em,.exact-right em{color:#d64b36;font-style:normal}.exact-image{display:flex;min-height:275px;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;border:1px dashed #eead75;border-radius:.75rem;background:linear-gradient(135deg,#fff4e7,#fffbf5);text-align:center;color:#6d6d71}.exact-image img{max-height:270px;width:100%;object-fit:contain}.exact-image strong{font-size:2.6rem;color:#c6a185}.exact-image span{font-size:.8rem;color:#7c8395}.exact-image label,.exact-package button,.exact-tier{border:1px solid #e28b57;border-radius:.6rem;background:#fffdfb;padding:.65rem 1rem;color:#c54a2d;font-weight:500;letter-spacing:0}.exact-pair{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.exact-right>small{margin-top:-.7rem;color:#7c8395;font-size:.77rem}.exact-package{display:grid;gap:.55rem;border:1px dashed #edaf77;border-radius:.75rem;background:#fffaf4;padding:1rem}.exact-package b,.exact-right aside b{font-weight:600}.exact-package span{color:#7c8395;font-size:.8rem}.exact-package button{justify-self:start}.exact-price{display:flex;overflow:hidden;margin-top:.45rem;border:1px solid #e9bb92;border-radius:.75rem}.exact-price b{padding:.85rem 1rem;background:#fff7ed;font-weight:500}.exact-price input{margin:0!important;border:0!important;border-radius:0!important}.exact-tax-note{margin-top:-.5rem;color:#7c8395;font-size:.74rem}.exact-right aside{display:flex;gap:.75rem;border:1px solid #b9ddfc;border-radius:.75rem;background:#f1f9ff;padding:1rem;color:#245384;font-size:.8rem}.exact-right aside b,.exact-right aside span{display:block}.exact-right aside span{margin-top:.25rem}.exact-item-card footer{display:flex;justify-content:flex-end;gap:1rem;border-top:1px solid #f1e2d5;padding:1.25rem 1.6rem}.exact-item-card footer button{min-width:120px;border:1px solid #e5b78f;border-radius:.7rem;background:#fffdfb;padding:.8rem 1rem;font-weight:500}.exact-item-card footer button[type=submit]{border-color:#c84e2c;background:#c84e2c;color:#fff}@media(max-width:780px){.exact-item-content{grid-template-columns:1fr}.exact-left{padding-right:0;border-right:0;border-bottom:1px solid #f1e2d5;padding-bottom:1.4rem}.exact-pair{grid-template-columns:1fr}.exact-item-header{align-items:flex-start;flex-direction:column}}
 .catalog-button:hover:not(:disabled) { background: #f7ead8; }
 .catalog-button:disabled { cursor: not-allowed; }
 .supplier-item-card { border-color: #edc8a6; background: #fffdfb; box-shadow: 0 16px 42px rgba(128, 77, 35, .10); }
@@ -773,5 +775,5 @@ button:disabled { opacity: 0.6; cursor: wait; }
 .order-charge-note { border: 1px solid #b8dcfb; border-radius: 1rem; background: #f0f9ff; padding: 1rem; color: #315a87; font-size: .82rem; line-height: 1.45; }
 .order-charge-note strong { display: block; margin-bottom: .35rem; color: #234879; }
 @media (max-width: 1023px) { .supplier-item-details { padding-right: 0; border-right: 0; border-bottom: 1px solid #f2e1d3; padding-bottom: 1.4rem; } }
-.exact-fda{margin:0 1.6rem 1.4rem;border-top:1px solid #f1e2d5;padding-top:1.25rem}.exact-fda h3{font-weight:800}.exact-fda h3 span,.exact-fda>p{color:#7c8395;font-size:.8rem}.exact-fda>p{margin:.25rem 0 1rem}.exact-fda label{display:block;color:#4b5770;font-size:.72rem;font-weight:800;letter-spacing:.06em}.exact-fda input{width:100%;box-sizing:border-box;margin-top:.45rem;border:1px solid #e9bb92;border-radius:.75rem;background:#fffefd;padding:.85rem 1rem;color:#273047}
+.exact-fda{margin:0 1.6rem 1.4rem;border-top:1px solid #f1e2d5;padding-top:1.25rem}.exact-fda h3{font-weight:600}.exact-fda h3 span,.exact-fda>p{color:#7c8395;font-size:.8rem}.exact-fda>p{margin:.25rem 0 1rem}.exact-fda label{display:block;color:#4b5770;font-size:.72rem;font-weight:600;letter-spacing:.06em}.exact-fda input{width:100%;box-sizing:border-box;margin-top:.45rem;border:1px solid #e9bb92;border-radius:.75rem;background:#fffefd;padding:.85rem 1rem;color:#273047;font-weight:400}
 </style>
