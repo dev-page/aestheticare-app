@@ -317,10 +317,12 @@ service cloud.firestore {
     }
 
     match /attendanceDailyQRCodes/{qrId} {
+      // The QR payload is handed to the authorized station by the backend;
+      // an employee never needs to read its challenge document directly.
       allow read: if isSignedIn()
         && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
-        && (hasPermission('attendance:view') || hasPermission('attendance:create'));
+        && hasPermission('attendance:update');
       // QR challenges are minted by the trusted attendance backend only.
       // Clients may read their branch challenge to scan it, but cannot forge,
       // refresh, or modify a challenge directly.
