@@ -210,7 +210,15 @@ service cloud.firestore {
           || (isOwnerOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
             && (applicantCannotChangeVerificationFields() || applicantCanSubmitClinicDocuments()))
           || (isOwnerOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
-            && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields()));
+            && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields())
+          || (isStaffOfBranch(clinicId) && hasPermission('policies:update')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'cancellationPolicy', 'cancellationPolicyEnabled', 'reschedulePolicy', 'reschedulePolicyEnabled',
+              'noShowPolicy', 'noShowPolicyEnabled', 'noShowRescheduleAllowed', 'refundPolicy', 'refundPolicyEnabled',
+              'consultationPolicy', 'consultationPolicyEnabled', 'serviceTerms', 'serviceTermsEnabled',
+              'productTerms', 'productTermsEnabled', 'deliveryPolicy', 'deliveryPolicyEnabled',
+              'paymentPolicy', 'paymentPolicyEnabled', 'policiesUpdatedAt'
+            ])));
       allow delete: if isSignedIn() && isSuperadmin();
     }
 
@@ -539,8 +547,8 @@ service cloud.firestore {
     match /clinicPolicies/{branchId} {
       allow read: if isSignedIn() && (canAccessBranch(branchId) || isPublicClinic(branchId));
       allow create, update: if isSignedIn()
-        && isOwnerOfBranch(branchId)
-        && (hasPermission('policies:update') || isOwnerOfBranch(branchId));
+        && (isOwnerOfBranch(branchId)
+          || (canAccessBranch(branchId) && hasPermission('policies:update')));
       allow delete: if false;
     }
 
