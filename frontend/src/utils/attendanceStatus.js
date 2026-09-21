@@ -34,7 +34,10 @@ export const classifyAttendanceRecord = ({
   const hasShiftAssignment = Boolean(String(shiftStart || '').trim() && String(shiftEnd || '').trim())
 
   const result = {
-    attendanceStatus: hasShiftAssignment ? 'Absent' : 'N/A',
+    // A missing punch alone is not evidence of absence. The attendance UI
+    // must wait for schedule, approved-leave, holiday, and cutoff evaluation
+    // before a separate workflow marks an employee absent.
+    attendanceStatus: hasShiftAssignment ? 'Scheduled' : 'N/A',
     workHoursStatus: hasShiftAssignment ? '-' : 'N/A',
     lateMinutes: 0,
     overtimeMinutes: 0,

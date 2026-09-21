@@ -1,629 +1,217 @@
-<script>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { collection, doc, getDoc, getDocs, getFirestore, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
-import { Icon } from '@iconify/vue'
-import { getApp } from 'firebase/app'
+<script setup>
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import QRCode from 'qrcode'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
-import { auth } from '@/config/firebaseConfig'
-import { classifyAttendanceRecord } from '@/utils/attendanceStatus'
-import { sortRecordsNewestFirst } from '@/utils/sortRecords'
-import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
-import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
-import { toast } from 'vue3-toastify'
+import AttendanceImportWizard from '@/components/common/AttendanceImportWizard.vue'
+import { auth, db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
+import { loadOwnerBranchScope, loadClinicDocsByIds } from '@/utils/ownerBranchScope'
+import { attendanceApi } from '@/utils/attendanceApi'
 
-export default {
-  name: 'AttendanceReports',
-  components: { OwnerSidebar, Icon },
-  setup() {
-    const db = getFirestore(getApp())
-    const { hasPermission } = usePermissions()
-
-    const attendanceRecords = ref([])
-    const staffUsers = ref([])
-    const branchMap = ref({})
-    const branches = ref([])
-    const selectedQrBranchId = ref('')
-    const qrCodeUrl = ref('')
-    const qrLoading = ref(false)
-    const qrTokenRecord = ref(null)
-    const importFile = ref(null)
-    const importPreview = ref(null)
-    const importLoading = ref(false)
-    const canImportAttendance = computed(() => hasPermission('attendance:import'))
-    const nowRef = ref(new Date())
-
-    const branchFilter = ref('')
-    const selectedDay = ref('')
-    let clockInterval = null
-
-    const toDateKey = (dateObj) => {
-      const yyyy = dateObj.getFullYear()
-      const mm = String(dateObj.getMonth() + 1).padStart(2, '0')
-      const dd = String(dateObj.getDate()).padStart(2, '0')
-      return `${yyyy}-${mm}-${dd}`
-    }
-
-    const liveTime = computed(() =>
-      nowRef.value.toLocaleTimeString('en-PH', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      })
-    )
-
-    const liveDate = computed(() =>
-      nowRef.value.toLocaleDateString('en-PH', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      })
-    )
-
-    const todayKey = computed(() => toDateKey(nowRef.value))
-
-    const chunkArray = (items, size = 10) => {
-      const chunks = []
-      for (let i = 0; i < items.length; i += size) {
-        chunks.push(items.slice(i, i + size))
-      }
-      return chunks
-    }
-
-    const generateToken = (length = 24) => {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
-      let token = ''
-      for (let index = 0; index < length; index += 1) {
-        token += chars[Math.floor(Math.random() * chars.length)]
-      }
-      return token
-    }
-
-    const getSelectedBranchLabel = () => {
-      const match = branches.value.find((branch) => branch.id === selectedQrBranchId.value)
-      if (!match) return 'Clinic Branch'
-      return `${match.branch}${match.location ? ` - ${match.location}` : ''}`
-    }
-
-    const renderQrCode = async (payload) => {
-      qrCodeUrl.value = await QRCode.toDataURL(payload, {
-        width: 320,
-        margin: 2,
-        color: {
-          dark: '#1f120b',
-          light: '#fffbf4'
-        }
-      })
-    }
-
-    const ensureDailyAttendanceQr = async (forceRegenerate = false) => {
-      const user = auth.currentUser
-      if (!user || !selectedQrBranchId.value) {
-        qrCodeUrl.value = ''
-        qrTokenRecord.value = null
-        return
-      }
-
-      qrLoading.value = true
-      try {
-        const dateKey = todayKey.value
-        const docId = `${selectedQrBranchId.value}_${dateKey}`
-        const qrRef = doc(db, 'attendanceDailyQRCodes', docId)
-        const qrSnap = await getDoc(qrRef)
-
-        let record = null
-        if (qrSnap.exists() && !forceRegenerate) {
-          record = qrSnap.data() || {}
-        } else {
-          const token = generateToken()
-          const branchLabel = getSelectedBranchLabel()
-          const qrPayloadObject = {
-            type: 'attendance-qr',
-            ownerId: user.uid,
-            branchId: selectedQrBranchId.value,
-            branchLabel,
-            date: dateKey,
-            token
-          }
-          const qrPayload = JSON.stringify(qrPayloadObject)
-
-          record = {
-            ...qrPayloadObject,
-            qrPayload
-          }
-
-          await setDoc(qrRef, {
-            ...record,
-            createdAt: qrSnap.exists() && !forceRegenerate ? (qrSnap.data()?.createdAt || serverTimestamp()) : serverTimestamp(),
-            updatedAt: serverTimestamp()
-          })
-        }
-
-        qrTokenRecord.value = record
-        await renderQrCode(record.qrPayload)
-      } catch (error) {
-        console.error('Failed to generate attendance QR:', error)
-        qrCodeUrl.value = ''
-        qrTokenRecord.value = null
-      } finally {
-        qrLoading.value = false
-      }
-    }
-
-    const regenerateDailyAttendanceQr = async () => {
-      await ensureDailyAttendanceQr(true)
-    }
-
-    const readImportFile = async (event) => {
-      if (!canImportAttendance.value) return
-      const file = event.target.files?.[0]
-      importFile.value = file || null
-      importPreview.value = null
-      if (!file) return
-      if (!/\.csv$/i.test(file.name)) {
-        toast.error('Please select a CSV attendance file.')
-        return
-      }
-      importPreview.value = await file.text()
-      toast.info('CSV loaded. Review the file, then import it.')
-    }
-
-    const importAttendance = async () => {
-      if (!canImportAttendance.value) {
-        toast.error('You do not have permission to import attendance.')
-        return
-      }
-      if (!importPreview.value || !selectedQrBranchId.value) return
-      importLoading.value = true
-      try {
-        const token = await auth.currentUser.getIdToken()
-        let responseData = null
-        let lastError = null
-        for (const baseUrl of OTP_BACKEND_CANDIDATES) {
-          try {
-            const response = await fetch(`${baseUrl}/attendance/import`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ branchId: selectedQrBranchId.value, csvText: importPreview.value }),
-            })
-            const data = await response.json().catch(() => ({}))
-            if (!response.ok) throw new Error(data.error || 'Attendance import failed.')
-            responseData = data
-            break
-          } catch (error) {
-            lastError = error
-          }
-        }
-        if (!responseData) throw lastError || new Error('Attendance service is unavailable.')
-        toast.success(`Imported ${responseData.validRows} attendance row(s). ${responseData.rejectedRows} rejected.`)
-        importPreview.value = null
-        importFile.value = null
-        await loadAttendance()
-      } catch (error) {
-        toast.error(error.message || 'Attendance import failed.')
-      } finally {
-        importLoading.value = false
-      }
-    }
-
-    const loadAttendance = async () => {
-      const user = auth.currentUser
-      if (!user) {
-        attendanceRecords.value = []
-        staffUsers.value = []
-        branchMap.value = {}
-        branches.value = []
-        return
-      }
-
-      const scope = await loadOwnerBranchScope(db, user.uid)
-      const clinics = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
-      branches.value = clinics.map((clinic) => ({
-        id: clinic.id,
-        branch: clinic.clinicBranch || 'Branch',
-        location: clinic.clinicLocation || ''
-      }))
-      if (!selectedQrBranchId.value && branches.value.length) {
-        selectedQrBranchId.value = branches.value[0].id
-      }
-      const clinicLookup = {}
-      clinics.forEach((clinic) => {
-        clinicLookup[clinic.id] = `${clinic.clinicBranch || 'Branch'}${clinic.clinicLocation ? ` - ${clinic.clinicLocation}` : ''}`
-      })
-      branchMap.value = clinicLookup
-
-      const branchIds = clinics.map((clinic) => clinic.id).filter(Boolean)
-      if (branchIds.length === 0) {
-        attendanceRecords.value = []
-        staffUsers.value = []
-        return
-      }
-
-      const attendanceChunks = chunkArray(branchIds)
-      let attendanceData = []
-      for (const chunk of attendanceChunks) {
-        const attendanceQuery = query(collection(db, 'attendance'), where('branchId', 'in', chunk))
-        const attendanceSnap = await getDocs(attendanceQuery)
-        attendanceData = attendanceData.concat(attendanceSnap.docs.map((recordDoc) => ({ id: recordDoc.id, ...recordDoc.data() })))
-      }
-
-      attendanceRecords.value = attendanceData
-        .sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0))
-
-      let staffData = []
-      for (const chunk of attendanceChunks) {
-        const staffQuery = query(
-          collection(db, 'users'),
-          where('branchId', 'in', chunk),
-          where('userType', '==', 'Staff')
-        )
-        const usersSnap = await getDocs(staffQuery)
-        staffData = staffData.concat(usersSnap.docs.map((userDoc) => ({ id: userDoc.id, ...userDoc.data() })))
-      }
-
-      staffUsers.value = staffData
-        .filter((user) => !user.archived && user.status === 'Active')
-    }
-
-    const activeStaffIds = computed(() => new Set(staffUsers.value.map((staff) => staff.id)))
-
-    const displayRecords = computed(() =>
-      sortRecordsNewestFirst(attendanceRecords.value)
-        .filter((record) => activeStaffIds.value.has(record.employeeId))
-        .map((record) => {
-        const branchName = branchMap.value[record.branchId] || record.branchId || 'N/A'
-        const dateValue = record.date || ''
-        return {
-          ...record,
-          dateKey: dateValue,
-          displayName: record.employeeName || record.staffName || 'N/A',
-          displayBranch: branchName,
-          displayDate: dateValue ? new Date(dateValue).toLocaleDateString() : '-',
-          displayTimeIn: record.timeIn || '-',
-          displayTimeOut: record.timeOut || '-'
-        }
-      })
-    )
-
-    // This table auto-resets every day because it always uses todayKey.
-    const todayDailyRecords = computed(() =>
-      displayRecords.value.filter((record) => {
-        const matchesDay = record.dateKey === todayKey.value
-        const matchesBranch = branchFilter.value
-          ? record.displayBranch.toLowerCase().includes(branchFilter.value.toLowerCase())
-          : true
-        return matchesDay && matchesBranch
-      })
-    )
-
-    const statusRows = computed(() => {
-      const selectedKey = selectedDay.value || todayKey.value
-      const branchNeedle = branchFilter.value.toLowerCase()
-
-      const staffPool = staffUsers.value.filter((staff) => {
-        const branchName = branchMap.value[staff.branchId] || staff.branchId || ''
-        return branchNeedle ? branchName.toLowerCase().includes(branchNeedle) : true
-      })
-
-      return staffPool
-        .map((staff) => {
-          const branchName = branchMap.value[staff.branchId] || staff.branchId || 'N/A'
-          const fullName = staff.fullName || `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.email || 'N/A'
-          const dayRecord = attendanceRecords.value.find(
-            (record) => record.employeeId === staff.id && record.date === selectedKey
-          )
-
-          const timeIn = dayRecord?.timeIn || '-'
-          const timeOut = dayRecord?.timeOut || '-'
-          const attendanceMeta = classifyAttendanceRecord({
-            timeIn: dayRecord?.timeIn || '',
-            timeOut: dayRecord?.timeOut || '',
-            shiftStart: dayRecord?.shiftStart || staff.shiftStart || '',
-            shiftEnd: dayRecord?.shiftEnd || staff.shiftEnd || '',
-          })
-
-          return {
-            id: `${staff.id}-${selectedKey}`,
-            name: fullName,
-            branch: branchName,
-            date: selectedKey,
-            timeIn,
-            timeOut,
-            attendanceStatus: dayRecord?.attendanceStatus || attendanceMeta.attendanceStatus,
-            workHoursStatus: dayRecord?.workHoursStatus || attendanceMeta.workHoursStatus,
-            lateMinutes: Number(dayRecord?.lateMinutes ?? attendanceMeta.lateMinutes ?? 0),
-            overtimeMinutes: Number(dayRecord?.overtimeMinutes ?? attendanceMeta.overtimeMinutes ?? 0),
-            undertimeMinutes: Number(dayRecord?.undertimeMinutes ?? attendanceMeta.undertimeMinutes ?? 0),
-            createdAt: dayRecord?.createdAt || staff.createdAt || null,
-            updatedAt: dayRecord?.updatedAt || staff.updatedAt || null,
-          }
-        })
-        .sort((a, b) => {
-          const left = a.updatedAt || a.createdAt || null
-          const right = b.updatedAt || b.createdAt || null
-          const leftMs = typeof left?.toDate === 'function' ? left.toDate().getTime() : left instanceof Date ? left.getTime() : left?.seconds ? left.seconds * 1000 : 0
-          const rightMs = typeof right?.toDate === 'function' ? right.toDate().getTime() : right instanceof Date ? right.getTime() : right?.seconds ? right.seconds * 1000 : 0
-          if (rightMs !== leftMs) return rightMs - leftMs
-          return a.name.localeCompare(b.name)
-        })
-    })
-
-    const todaySummary = computed(() =>
-      todayDailyRecords.value.reduce(
-        (acc, record) => {
-          if (record.timeIn) acc.clockedIn += 1
-          if (record.timeOut) acc.clockedOut += 1
-          if (record.timeIn && !record.timeOut) acc.pendingClockOut += 1
-          return acc
-        },
-        { clockedIn: 0, clockedOut: 0, pendingClockOut: 0 }
-      )
-    )
-
-    onMounted(async () => {
-      selectedDay.value = toDateKey(new Date())
-      await loadAttendance()
-      await ensureDailyAttendanceQr()
-
-      clockInterval = setInterval(() => {
-        nowRef.value = new Date()
-      }, 1000)
-    })
-
-    watch(selectedQrBranchId, async () => {
-      await ensureDailyAttendanceQr()
-    })
-
-    onUnmounted(() => {
-      if (clockInterval) clearInterval(clockInterval)
-    })
-
-    return {
-      branchFilter,
-      branches,
-      selectedDay,
-      selectedQrBranchId,
-      liveTime,
-      liveDate,
-      qrCodeUrl,
-      qrLoading,
-      qrTokenRecord,
-      ensureDailyAttendanceQr,
-      regenerateDailyAttendanceQr,
-      importFile,
-      importPreview,
-      importLoading,
-      readImportFile,
-      importAttendance,
-      canImportAttendance,
-      todayDailyRecords,
-      statusRows,
-      todaySummary
-    }
-  }
+const { hasPermission } = usePermissions()
+const tab = ref('records'), branches = ref([]), branchId = ref(''), records = ref([])
+const date = ref(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()))
+const search = ref(''), status = ref(''), source = ref(''), busy = ref(false), error = ref('')
+const config = ref({ fields: [], templates: [], holidays: [] }), chooser = ref(false), hidden = ref([])
+const selected = ref(null), audit = ref([]), reason = ref(''), edit = ref({}), batches = ref([]), batchDetails = ref(null)
+const field = ref({ label: '', type: 'text', options: '' }), holidays = ref('')
+const qr = ref(''), expires = ref(0), now = ref(Date.now()), station = ref(null), qrBusy = ref(false)
+let timer, refreshing = false, recordSequence = 0
+const columns = computed(() => [
+  { key: 'employeeName', label: 'Employee' }, { key: 'date', label: 'Date' },
+  { key: 'branchLabel', label: 'Branch' }, { key: 'timeIn', label: 'Time In' },
+  { key: 'timeOut', label: 'Time Out' }, { key: 'attendanceStatus', label: 'Status' },
+  { key: 'sourceLabel', label: 'Source' },
+  { key: 'employeeId', label: 'Employee ID', optional: true },
+  { key: 'totalWorkedMinutes', label: 'Work Minutes', optional: true },
+  { key: 'verification', label: 'Verification', optional: true },
+  ...(config.value.fields || []).map(f => ({ key: 'field:' + f.id, label: f.label + (f.archived ? ' (archived)' : ''), optional: true })),
+])
+const visible = computed(() => columns.value.filter(c => !hidden.value.includes(c.key)))
+const filtered = computed(() => records.value.filter(r =>
+  (!search.value || String(r.employeeName || '').toLowerCase().includes(search.value.toLowerCase())) &&
+  (!status.value || r.attendanceStatus === status.value) && (!source.value || r.source === source.value)))
+const summary = computed(() => [
+  ['Scheduled Employees', records.value.filter(r => r.scheduled).length],
+  ['Completed', records.value.filter(r => r.attendanceStatus === 'Complete').length],
+  ['On Duty', records.value.filter(r => r.attendanceStatus === 'On Duty').length],
+  ['Needs Review', records.value.filter(r => r.attendanceStatus === 'Needs Review').length],
+])
+const activeFields = computed(() => (config.value.fields || []).filter(f => !f.archived))
+const selectedBranch = computed(() => branches.value.find(b => b.id === branchId.value))
+const remaining = computed(() => Math.max(0, Math.ceil((expires.value - now.value) / 1000)))
+async function attempt(fn) {
+  busy.value = true; error.value = ''
+  try { await fn() } catch(e) { error.value = e.message }
+  finally { busy.value = false }
 }
+async function loadConfiguration() {
+  if (!branchId.value) return
+  config.value = await attendanceApi('configuration', { branchId: branchId.value })
+  holidays.value = (config.value.holidays || []).join('\n')
+}
+async function loadRecords() {
+  const sequence = ++recordSequence
+  const result = await attendanceApi('records', { branchId: branchId.value, date: date.value })
+  if (sequence === recordSequence) records.value = result.records
+}
+async function loadHistory() {
+  if (hasPermission('attendance:import')) batches.value = (await attendanceApi('imports/history', { branchId: branchId.value })).batches
+}
+async function refreshQr(forceRefresh = false) {
+  if (!branchId.value || qrBusy.value) return
+  qrBusy.value = true
+  try {
+    const selectedId = branchId.value
+    const result = await attendanceApi('qr', { branchId: selectedId, forceRefresh })
+    if (selectedId !== branchId.value) return
+    qr.value = await QRCode.toDataURL(result.qrPayload, { width: 480, margin: 4 })
+    expires.value = result.expiresAt
+  } finally { qrBusy.value = false }
+}
+async function openRecord(record) {
+  await attempt(async () => {
+    const result = await attendanceApi('details', { attendanceId: record.id })
+    selected.value = result.record; audit.value = result.audit; reason.value = ''
+    edit.value = { timeIn: result.record.timeIn || '', timeOut: result.record.timeOut || '', overnight: !!(result.record.timeOutEpoch && new Date(result.record.timeOutEpoch + 8 * 3600000).toISOString().slice(0,10) > result.record.date), customFields: { ...result.record.customFields } }
+  })
+}
+async function saveCorrection() {
+  await attempt(async () => {
+    const result = await attendanceApi('correction', { attendanceId: selected.value.id, revision: selected.value.revision || 0, reason: reason.value, ...edit.value })
+    selected.value = result.record
+    await loadRecords()
+    audit.value = (await attendanceApi('details', { attendanceId: selected.value.id })).audit
+    reason.value = ''
+  })
+}
+async function addField() {
+  await attempt(async () => {
+    await attendanceApi('fields', { branchId: branchId.value, label: field.value.label, type: field.value.type, options: field.value.options.split(',').map(s => s.trim()) })
+    await loadConfiguration(); field.value = { label: '', type: 'text', options: '' }
+  })
+}
+async function archiveField(id) { await attempt(async () => { await attendanceApi('fields', { branchId: branchId.value, archiveId: id }); await loadConfiguration() }) }
+async function saveHolidays() { await attempt(async () => { await attendanceApi('holidays', { branchId: branchId.value, holidays: holidays.value.split(/\s+/).filter(Boolean) }); await loadConfiguration(); await loadRecords() }) }
+function valueFor(record, key) {
+  if (key.startsWith('field:')) return record.customFields?.[key.slice(6)] ?? '—'
+  if (key === 'branchLabel') return selectedBranch.value?.clinicBranch || record.branchId
+  if (key === 'sourceLabel') return record.source === 'imported' ? 'Imported' : record.attendanceMethod ? 'QR + Location' : '—'
+  if (key === 'verification') return record.locationVerified ? 'Verified' : 'Not verified'
+  return record[key] ?? '—'
+}
+function toggleColumn(key) { hidden.value = hidden.value.includes(key) ? hidden.value.filter(k => k !== key) : [...hidden.value, key] }
+async function fullscreen() { await attempt(async () => { if (!station.value?.requestFullscreen) throw new Error('Fullscreen is unavailable in this browser.'); await station.value.requestFullscreen() }) }
+function timestamp(value) { return value?.seconds ? new Date(value.seconds * 1000).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '—' }
+watch(hidden, value => { try { localStorage.setItem('attendance-columns:' + auth.currentUser?.uid, JSON.stringify(value)) } catch {} })
+watch([branchId, date], () => {
+  records.value = []; selected.value = null; qr.value = ''; expires.value = 0
+  if (branchId.value) void attempt(async () => { await loadConfiguration(); await loadRecords(); if (tab.value === 'history') await loadHistory(); if (tab.value === 'qr') await refreshQr() })
+})
+watch(tab, () => { if (branchId.value) void attempt(async () => { if (tab.value === 'qr') await refreshQr(); if (tab.value === 'history') await loadHistory() }) })
+onMounted(async () => {
+  await attempt(async () => {
+    try { hidden.value = JSON.parse(localStorage.getItem('attendance-columns:' + auth.currentUser?.uid) || '["employeeId","totalWorkedMinutes","verification"]') } catch {}
+    const scope = await loadOwnerBranchScope(db, auth.currentUser.uid)
+    branches.value = await loadClinicDocsByIds(db, scope.branchIds)
+    branchId.value = branches.value[0]?.id || ''
+  })
+  timer = setInterval(async () => {
+    now.value = Date.now()
+    if (tab.value === 'qr' && expires.value && remaining.value <= 10 && !refreshing) {
+      refreshing = true
+      try { await refreshQr() } catch(e) { error.value = e.message } finally { refreshing = false }
+    }
+  }, 1000)
+})
+onBeforeUnmount(() => clearInterval(timer))
 </script>
 
 <template>
-  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
+  <div class="flex min-h-screen owner-theme bg-black">
     <OwnerSidebar />
-
-    <main class="flex-1 p-6 md:p-10 text-white">
-      <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
-        <div>
-          <h1 class="text-2xl font-bold">Attendance Reports</h1>
-          <p class="text-slate-400">Daily live attendance and filterable status report.</p>
+    <main class="attendance flex-1 min-w-0 p-3 md:p-6 text-white">
+      <div class="shell">
+        <h1>Attendance Management</h1>
+        <div class="summary"><div v-for="[label,count] in summary" :key="label"><small>{{ label }}</small><strong>{{ count }}</strong></div></div>
+        <nav aria-label="Attendance sections">
+          <button v-for="[key,label] in [['records','Attendance Records'],['qr','QR Station'],['import','Import Attendance'],['history','Import History']]" :key="key" :class="{active:tab===key}" @click="tab=key">{{ label }}</button>
+        </nav>
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
+        <p v-if="busy" role="status">Loading attendance…</p>
+        <div class="filters">
+          <label>Branch<select v-model="branchId"><option v-if="!branches.length" value="">No authorized branches</option><option v-for="b in branches" :key="b.id" :value="b.id">{{ b.clinicBranch }}</option></select></label>
+          <label v-if="tab==='records'">Date (Asia/Manila)<input v-model="date" type="date" /></label>
         </div>
-
-        <div class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 md:min-w-[240px] text-right">
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Current Time</p>
-          <p class="text-white text-2xl font-semibold leading-tight">{{ liveTime }}</p>
-          <p class="text-slate-300 text-sm">{{ liveDate }}</p>
-        </div>
-      </div>
-
-      <div class="flex flex-col md:flex-row gap-4 mb-6">
-        <input
-          type="text"
-          v-model="branchFilter"
-          placeholder="Filter by branch..."
-          class="px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
-        />
-      </div>
-
-      <section v-if="canImportAttendance" class="bg-slate-800 rounded-xl shadow-lg p-6 border border-slate-700 mb-6">
-        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h2 class="text-lg font-semibold text-white">Import Clinic Attendance</h2>
-            <p class="mt-1 text-sm text-slate-400">Upload a CSV exported by your existing attendance system. Required columns: <span class="text-slate-300">date, employeeId or email, timeIn or timeOut</span>.</p>
+        <section v-if="tab==='records'">
+          <div class="heading"><h2>Attendance Records</h2><button @click="chooser=!chooser">Customize Columns</button></div>
+          <div v-if="chooser" class="panel">
+            <p>Optional columns</p>
+            <label v-for="column in columns.filter(c=>c.optional)" :key="column.key" class="inline"><input type="checkbox" :checked="!hidden.includes(column.key)" @change="toggleColumn(column.key)" /> {{ column.label }}</label>
+            <details v-if="config.canManageFields"><summary>Organization custom fields</summary>
+              <form @submit.prevent="addField" class="filters">
+                <label>Field label<input v-model="field.label" required maxlength="80" /></label>
+                <label>Type<select v-model="field.type"><option v-for="type in ['text','number','date','dropdown','boolean']" :key="type">{{ type }}</option></select></label>
+                <label v-if="field.type==='dropdown'">Options (comma separated)<input v-model="field.options" required /></label>
+                <button :disabled="busy">Add field</button>
+              </form>
+              <div v-for="f in activeFields" :key="f.id" class="heading"><span>{{ f.label }} · {{ f.type }}</span><button :disabled="busy" @click="archiveField(f.id)">Archive</button></div>
+            </details>
           </div>
-          <div class="flex flex-wrap items-center gap-3">
-            <input type="file" accept=".csv,text/csv" class="max-w-xs text-sm text-slate-300" @change="readImportFile" />
-            <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="importLoading || !importPreview || !selectedQrBranchId" @click="importAttendance">
-              {{ importLoading ? 'Importing...' : 'Import CSV' }}
-            </button>
+          <input v-model="search" type="search" aria-label="Search employee" placeholder="Search employee…" />
+          <div class="filters"><label>Status<select v-model="status"><option value="">All statuses</option><option v-for="s in ['Complete','On Duty','Needs Review','Absent','Scheduled','On Leave','Holiday','Day Off']" :key="s">{{ s }}</option></select></label><label>Source<select v-model="source"><option value="">All sources</option><option value="imported">Imported</option><option value="built_in">QR + Location</option></select></label></div>
+          <div class="table-wrap"><table><thead><tr><th v-for="c in visible" :key="c.key">{{ c.label }}</th><th>Action</th></tr></thead><tbody>
+            <tr v-for="r in filtered" :key="r.employeeId + r.date"><td v-for="c in visible" :key="c.key"><span :class="c.key==='attendanceStatus' ? ['badge',r.attendanceStatus==='Complete'?'good':r.attendanceStatus==='Needs Review'?'review':''] : ''">{{ valueFor(r,c.key) }}</span></td><td><button :disabled="!r.id || busy" @click="openRecord(r)">View</button></td></tr>
+            <tr v-if="!filtered.length"><td :colspan="visible.length+1">No records for these filters.</td></tr>
+          </tbody></table></div>
+          <details v-if="config.canManageFields" class="panel"><summary>Organization non-working holidays</summary><p>Dates are evaluated with recurring schedules and approved leave. Absence is determined one hour after the scheduled shift ends. Overnight shifts end the following day.</p><label>One YYYY-MM-DD date per line<textarea v-model="holidays" rows="4" /></label><button :disabled="busy" @click="saveHolidays">Save holiday calendar</button></details>
+        </section>
+        <section v-else-if="tab==='qr'">
+          <h2>Branch QR Station</h2>
+          <div ref="station" class="station panel">
+            <span class="badge good">QR Station</span><h3>{{ selectedBranch?.clinicBranch }}</h3>
+            <img v-if="qr && remaining" :src="qr" alt="Branch attendance QR code" /><p v-else>No active QR. Refresh to issue a code.</p>
+            <p>Employees open My Attendance and tap Scan QR on their phone.</p>
+            <p>Expires in {{ remaining }} seconds · refreshes automatically</p>
+            <div class="heading"><button :disabled="qrBusy" @click="attempt(()=>refreshQr(true))">Refresh QR</button><button @click="fullscreen">Full screen</button></div>
           </div>
-        </div>
-        <p v-if="importPreview" class="mt-3 text-xs text-emerald-300">File loaded and ready for validation. The system will reject invalid rows and keep an import audit record.</p>
-      </section>
-
-      <section class="bg-slate-800 rounded-xl shadow-lg p-6 border border-slate-700 mb-6">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div class="max-w-2xl">
-            <h2 class="text-lg font-semibold text-white">Daily Attendance QR</h2>
-            <p class="mt-1 text-sm text-slate-400">
-              Generate a branch attendance QR that changes every day. Employees can scan the current day’s QR for attendance validation.
-            </p>
-
-            <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-              <label class="block flex-1">
-                <span class="mb-1 block text-sm text-slate-300">Branch</span>
-                <select
-                  v-model="selectedQrBranchId"
-                  class="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500"
-                >
-                  <option disabled value="">Select Branch</option>
-                  <option v-for="branch in branches" :key="branch.id" :value="branch.id">
-                    {{ branch.branch }}{{ branch.location ? ` - ${branch.location}` : '' }}
-                  </option>
-                </select>
+        </section>
+        <AttendanceImportWizard v-else-if="tab==='import' && hasPermission('attendance:import')" :branch-id="branchId" :fields="config.fields || []" :templates="config.templates || []" @configuration="attempt(loadConfiguration)" @done="tab='history'" />
+        <section v-else-if="tab==='history' && hasPermission('attendance:import')">
+          <h2>Import History</h2><div class="table-wrap"><table><thead><tr><th>File</th><th>Date</th><th>Uploaded by</th><th>Imported</th><th>Rejected</th><th>Review</th><th>Status</th><th>Action</th></tr></thead><tbody><tr v-for="b in batches" :key="b.id"><td>{{ b.sourceFileName || b.id }}</td><td>{{ timestamp(b.createdAt) }}</td><td>{{ b.importedBy }}</td><td>{{ b.validRows }}</td><td>{{ b.rejectedRows }}</td><td>{{ b.reviewRows || 0 }}</td><td>{{ b.status || 'Completed' }}</td><td><button @click="batchDetails=b">View</button></td></tr><tr v-if="!batches.length"><td colspan="8">No imports yet.</td></tr></tbody></table></div>
+        </section>
+        <p v-else>You do not have permission to import attendance.</p>
+      </div>
+      <div v-if="selected || batchDetails" class="overlay" role="dialog" aria-modal="true" aria-label="Attendance details" @click.self="selected=null;batchDetails=null" @keydown.esc="selected=null;batchDetails=null">
+        <article class="dialog">
+          <div class="heading"><h2>{{ selected ? 'Attendance Record' : 'Import Details' }}</h2><button aria-label="Close details" @click="selected=null;batchDetails=null">Close</button></div>
+          <p v-if="error" class="error" role="alert">{{ error }}</p>
+          <template v-if="selected">
+            <p>{{ selected.employeeName }} · {{ selected.date }} · {{ selectedBranch?.clinicBranch }}</p>
+            <dl><dt>Source</dt><dd>{{ valueFor(selected,'sourceLabel') }}</dd><dt>Verification</dt><dd>{{ selected.locationVerified ? 'Location verified' : 'Not verified' }}</dd><dt>Distance / accuracy</dt><dd>{{ selected.locationDistanceMeters ?? '—' }} m / {{ selected.locationAccuracyMeters ?? '—' }} m</dd><dt>Work minutes</dt><dd>{{ selected.totalWorkedMinutes ?? '—' }}</dd><dt>Import batch</dt><dd>{{ selected.importBatchId || '—' }}</dd></dl>
+            <a v-if="selected.proofUrl" :href="selected.proofUrl" target="_blank" rel="noopener">Open attendance proof</a>
+            <form v-if="hasPermission('attendance:update')" @submit.prevent="saveCorrection">
+              <div class="filters"><label>Time In<input v-model="edit.timeIn" required placeholder="08:30" /></label><label>Time Out<input v-model="edit.timeOut" placeholder="17:30" /></label></div>
+              <label class="inline"><input v-model="edit.overnight" type="checkbox" /> Overnight shift</label>
+              <label v-for="f in activeFields" :key="f.id">{{ f.label }}
+                <select v-if="f.type==='dropdown'" v-model="edit.customFields[f.id]"><option value="">Not set</option><option v-for="o in f.options" :key="o">{{ o }}</option></select>
+                <select v-else-if="f.type==='boolean'" v-model="edit.customFields[f.id]"><option :value="null">Not set</option><option :value="true">Yes</option><option :value="false">No</option></select>
+                <input v-else-if="f.type==='number'" v-model.number="edit.customFields[f.id]" type="number" step="any" />
+                <input v-else v-model="edit.customFields[f.id]" :type="f.type==='date'?'date':'text'" maxlength="1000" />
               </label>
-
-              <button
-                type="button"
-                class="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-600 bg-slate-700 text-white transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="qrLoading || !selectedQrBranchId"
-                @click="regenerateDailyAttendanceQr"
-                title="Generate a new QR"
-              >
-                <Icon icon="mdi:reload" class="h-5 w-5" />
-              </button>
-            </div>
-
-            <div v-if="qrTokenRecord" class="mt-4 grid gap-3 sm:grid-cols-2">
-              <div class="rounded-lg border border-slate-700 bg-slate-900/70 p-4">
-                <p class="text-xs uppercase tracking-wide text-slate-500">Date</p>
-                <p class="mt-1 text-sm font-medium text-white">{{ qrTokenRecord.date }}</p>
-              </div>
-              <div class="rounded-lg border border-slate-700 bg-slate-900/70 p-4">
-                <p class="text-xs uppercase tracking-wide text-slate-500">Token</p>
-                <p class="mt-1 break-all text-sm font-medium text-cyan-300">{{ qrTokenRecord.token }}</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex w-full max-w-sm justify-center lg:justify-end">
-            <div class="rounded-[1.5rem] border border-slate-700 bg-slate-900 p-4 shadow-xl">
-              <div v-if="qrCodeUrl" class="space-y-3">
-                <img :src="qrCodeUrl" alt="Daily attendance QR" class="h-72 w-72 rounded-2xl bg-white object-contain p-3" />
-                <p class="text-center text-xs uppercase tracking-[0.18em] text-slate-400">
-                  Valid for {{ qrTokenRecord?.date || 'today' }}
-                </p>
-              </div>
-              <div v-else class="flex h-72 w-72 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-950 p-6 text-center text-sm text-slate-400">
-                Select a branch to generate the daily attendance QR.
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div class="grid grid-cols-3 gap-4 mb-6">
-        <div class="bg-slate-800 p-4 rounded-lg text-center">
-          <p class="text-slate-400">Clocked In Today</p>
-          <p class="text-green-400 text-xl font-bold">{{ todaySummary.clockedIn }}</p>
-        </div>
-        <div class="bg-slate-800 p-4 rounded-lg text-center">
-          <p class="text-slate-400">Clocked Out Today</p>
-          <p class="text-blue-400 text-xl font-bold">{{ todaySummary.clockedOut }}</p>
-        </div>
-        <div class="bg-slate-800 p-4 rounded-lg text-center">
-          <p class="text-slate-400">Pending Clock Out</p>
-          <p class="text-yellow-400 text-xl font-bold">{{ todaySummary.pendingClockOut }}</p>
-        </div>
+              <label>Reason for correction<textarea v-model="reason" required minlength="5" maxlength="1000" /></label>
+              <button :disabled="busy">Save audited correction</button>
+            </form>
+            <h3>Correction history</h3><p v-if="!audit.length">No corrections.</p>
+            <div v-for="entry in audit" :key="entry.id" class="panel"><p>{{ timestamp(entry.createdAt) }} · {{ entry.correctedBy }}</p><p>{{ entry.reason }}</p><p>{{ entry.before?.timeIn || '—' }} – {{ entry.before?.timeOut || '—' }} → {{ entry.after?.timeIn || '—' }} – {{ entry.after?.timeOut || '—' }}</p></div>
+          </template>
+          <template v-else><p>{{ batchDetails.sourceFileName }} · {{ timestamp(batchDetails.createdAt) }}</p><p>Batch: {{ batchDetails.id }}</p><ul><li v-for="(issue,i) in [...(batchDetails.rejected || []),...(batchDetails.review || [])]" :key="i">Row {{ issue.row }}: {{ issue.reason }}</li></ul><p v-if="!batchDetails.rejected?.length && !batchDetails.review?.length">No recorded validation issues.</p></template>
+        </article>
       </div>
-
-      <section class="bg-slate-800 rounded-xl shadow-lg p-6 border border-slate-700 mb-8">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-semibold text-white">Daily Attendance (Today)</h2>
-          <p class="text-sm text-slate-400">Auto-resets every 24 hours</p>
-        </div>
-
-        <table class="w-full text-left text-sm">
-          <thead class="text-slate-400 border-b border-slate-600">
-            <tr>
-              <th class="px-4 py-2">Name</th>
-              <th class="px-4 py-2">Branch</th>
-              <th class="px-4 py-2">Date</th>
-              <th class="px-4 py-2">Time In</th>
-              <th class="px-4 py-2">Time Out</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="record in todayDailyRecords" :key="record.id" class="border-b border-slate-700">
-              <td class="px-4 py-2">{{ record.displayName }}</td>
-              <td class="px-4 py-2">{{ record.displayBranch }}</td>
-              <td class="px-4 py-2">{{ record.displayDate }}</td>
-              <td class="px-4 py-2">{{ record.displayTimeIn }}</td>
-              <td class="px-4 py-2">{{ record.displayTimeOut }}</td>
-            </tr>
-
-            <tr v-if="todayDailyRecords.length === 0">
-              <td colspan="5" class="px-4 py-6 text-center text-slate-400">
-                No attendance records for today.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section class="bg-slate-800 rounded-xl shadow-lg p-6 border border-slate-700">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-          <h2 class="text-lg font-semibold text-white">Attendance Status (Per Day)</h2>
-          <input
-            type="date"
-            v-model="selectedDay"
-            class="px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        <table class="w-full text-left text-sm">
-          <thead class="text-slate-400 border-b border-slate-600">
-            <tr>
-              <th class="px-4 py-2">Name</th>
-              <th class="px-4 py-2">Branch</th>
-              <th class="px-4 py-2">Date</th>
-              <th class="px-4 py-2">Time In</th>
-              <th class="px-4 py-2">Time Out</th>
-              <th class="px-4 py-2">Attendance</th>
-              <th class="px-4 py-2">Hours</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in statusRows" :key="row.id" class="border-b border-slate-700">
-              <td class="px-4 py-2">{{ row.name }}</td>
-              <td class="px-4 py-2">{{ row.branch }}</td>
-              <td class="px-4 py-2">{{ row.date }}</td>
-              <td class="px-4 py-2">{{ row.timeIn }}</td>
-              <td class="px-4 py-2">{{ row.timeOut }}</td>
-              <td class="px-4 py-2">
-                <span
-                  :class="[
-                    'px-2 py-1 rounded-full text-xs font-medium',
-                    row.attendanceStatus === 'Present' ? 'bg-green-500/20 text-green-400' :
-                    row.attendanceStatus === 'Late' ? 'bg-yellow-500/20 text-yellow-400' :
-                    row.attendanceStatus === 'Absent' ? 'bg-red-500/20 text-red-400' :
-                    'bg-slate-600 text-slate-200'
-                  ]"
-                >
-                  {{ row.attendanceStatus }}
-                </span>
-              </td>
-              <td class="px-4 py-2">
-                <span
-                  :class="[
-                    'px-2 py-1 rounded-full text-xs font-medium',
-                    row.workHoursStatus === 'Overtime' ? 'bg-blue-500/20 text-blue-400' :
-                    row.workHoursStatus === 'Undertime' ? 'bg-orange-500/20 text-orange-400' :
-                    row.workHoursStatus === 'No Clock Out' ? 'bg-amber-500/20 text-amber-400' :
-                    'bg-slate-600 text-slate-200'
-                  ]"
-                >
-                  {{ row.workHoursStatus }}
-                </span>
-              </td>
-            </tr>
-
-            <tr v-if="statusRows.length === 0">
-              <td colspan="7" class="px-4 py-6 text-center text-slate-400">
-                No employee records found.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
     </main>
   </div>
 </template>
+
+<style scoped>
+.attendance{background:#000;color:#f4f4f5;font-size:14px}.shell{max-width:1200px;margin:auto;border:1px solid #27272a;border-radius:14px;padding:18px}h1{font-size:26px;font-weight:700;border-bottom:1px solid #18181b;padding-bottom:16px}h2,h3{font-weight:600;font-size:17px;margin:12px 0}.summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.summary>div{border:1px solid #27272a;border-radius:10px;padding:14px}.summary small{color:#a1a1aa}.summary strong{display:block;font-size:28px;font-weight:600}nav{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid #18181b;padding-bottom:16px;margin-bottom:16px}button{border:1px solid #3f3f46;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer}button:hover{border-color:#a1a1aa}button.active{background:#fafafa;color:#09090b}button:disabled{opacity:.4;cursor:default}.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:14px 0}label{display:block;font-size:12px;color:#a1a1aa;margin:8px 0}input:not([type=checkbox]),select,textarea{display:block;background:#09090b!important;color:#fafafa!important;border:1px solid #3f3f46;border-radius:12px;padding:8px 12px;width:100%;margin-top:5px}.inline{display:inline-block;margin-right:14px}.heading{display:flex;justify-content:space-between;gap:12px;align-items:center}.table-wrap{overflow:auto;border:1px solid #27272a;border-radius:10px}table{width:100%;text-align:left;font-size:12px}th,td{padding:10px;white-space:nowrap;border-bottom:1px solid #18181b}th{color:#a1a1aa}.badge{border-radius:20px;background:#172554;color:#93c5fd;padding:3px 8px;font-size:11px}.good{background:#052e16;color:#86efac}.review{background:#451a03;color:#fdba74}.panel{border:1px solid #27272a;border-radius:12px;padding:16px;margin:14px 0}.station{background:#000;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}.station img{width:min(100%,360px);margin:16px auto}.station:fullscreen{padding:30px}.station:fullscreen img{width:min(60vh,600px)}p{font-size:13px;color:#a1a1aa;margin:10px 0}.error{color:#fca5a5}.overlay{position:fixed;inset:0;z-index:60;background:#000c;display:flex;align-items:center;justify-content:center;padding:16px}.dialog{width:100%;max-width:680px;max-height:90vh;overflow:auto;border:1px solid #52525b;border-radius:16px;background:#09090b;padding:22px}dl{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}dt{color:#a1a1aa}a{color:#93c5fd}summary{cursor:pointer;font-size:13px}li{margin:8px 0;font-size:13px}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
+</style>

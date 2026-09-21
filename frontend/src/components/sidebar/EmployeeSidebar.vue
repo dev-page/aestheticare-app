@@ -96,7 +96,7 @@ export default {
       // Clocking in and out is a standard employee task. Keep it independent
       // of the reporting permission, which is reserved for administrators.
       baseItems.splice(1, 0, {
-        label: 'Attendance',
+        label: 'My Attendance',
         icon: 'mdi:qrcode-scan',
         to: '/hr/attendance/scan'
       })

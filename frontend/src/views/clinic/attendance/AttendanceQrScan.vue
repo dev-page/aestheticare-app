@@ -11,7 +11,7 @@
             <span class="text-lg leading-none">&#8249;</span>
             <span class="text-sm font-medium">Back</span>
           </button>
-          <h1 class="text-2xl font-bold text-white md:text-3xl">Scan Attendance QR</h1>
+          <h1 class="text-2xl font-bold text-white md:text-3xl">My Attendance</h1>
           <p class="mt-1 text-slate-400">
             Scan the clinic admin QR for today to record your attendance.
           </p>
@@ -42,11 +42,8 @@
             </button>
           </div>
 
-          <label class="mt-4 flex cursor-pointer flex-wrap items-center gap-2 text-sm text-slate-300">
-            <span class="rounded-lg border border-slate-600 bg-slate-900 px-3 py-2">Photo proof</span>
-            <input type="file" accept="image/jpeg,image/png,image/webp" capture="user" class="sr-only" @change="selectProof" />
-            <span class="text-xs text-slate-400">{{ proofFileName || 'Required before scanning' }}</span>
-          </label>
+          <AttendanceCamera v-if="!isScanning" @capture="selectProof" />
+          <p class="mt-2 text-xs text-slate-400">{{ proofFileName || 'Take a fresh photo before scanning.' }}</p>
 
           <div class="mt-5 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950">
             <div id="attendance-qr-reader" class="min-h-[320px]"></div>
@@ -65,6 +62,18 @@
               <p><span class="text-slate-400">Role:</span> {{ employeeRole }}</p>
               <p><span class="text-slate-400">Branch:</span> {{ branchLabel }}</p>
             </div>
+          </section>
+
+          <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
+            <p class="text-xs uppercase tracking-[0.18em] text-slate-500">My Attendance Today</p>
+            <div class="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-300"><div><p class="text-xs text-slate-500">Time in</p><p class="mt-1 font-medium text-white">{{ attendanceRecord.timeIn || 'Not recorded' }}</p></div><div><p class="text-xs text-slate-500">Time out</p><p class="mt-1 font-medium text-white">{{ attendanceRecord.timeOut || 'Not recorded' }}</p></div></div>
+            <p class="mt-3 text-xs text-slate-400">Status: <span class="text-white">{{ attendanceRecord.timeOut ? 'Complete' : attendanceRecord.timeIn ? 'On Duty' : 'Not clocked in' }}</span></p>
+          </section>
+
+          <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
+            <p class="text-xs uppercase tracking-[0.18em] text-slate-500">Recent Attendance</p>
+            <ul v-if="attendanceHistory.length" class="mt-3 space-y-2 text-xs text-slate-300"><li v-for="record in attendanceHistory" :key="record.id" class="flex justify-between gap-3 border-b border-slate-700 pb-2 last:border-0"><span>{{ record.date }}</span><span>{{ record.timeIn || '—' }} – {{ record.timeOut || '—' }}</span></li></ul>
+            <p v-else class="mt-3 text-sm text-slate-400">No previous attendance records.</p>
           </section>
 
           <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
@@ -100,19 +109,21 @@
 
 <script>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { doc, getDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { onAuthStateChanged } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import { useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
-import { classifyAttendanceRecord } from '@/utils/attendanceStatus'
+import { parseClockToMinutes } from '@/utils/attendanceStatus'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
+import AttendanceCamera from '@/components/common/AttendanceCamera.vue'
 
 const READER_ID = 'attendance-qr-reader'
 
 export default {
   name: 'AttendanceQrScan',
+  components: { AttendanceCamera },
   setup() {
     const router = useRouter()
 
@@ -124,6 +135,7 @@ export default {
     const employeeShiftStart = ref('')
     const employeeShiftEnd = ref('')
     const attendanceRecord = ref({})
+    const attendanceHistory = ref([])
     const html5QrCode = ref(null)
     const isScanning = ref(false)
     const isProcessing = ref(false)
@@ -136,11 +148,11 @@ export default {
     const proofFileName = ref('')
 
     const todayKey = computed(() => {
-      const now = new Date()
-      const yyyy = now.getFullYear()
-      const mm = String(now.getMonth() + 1).padStart(2, '0')
-      const dd = String(now.getDate()).padStart(2, '0')
-      return `${yyyy}-${mm}-${dd}`
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).formatToParts(nowRef.value)
+      const value = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]))
+      return `${value.year}-${value.month}-${value.day}`
     })
 
     const todayLabel = computed(() =>
@@ -189,20 +201,18 @@ export default {
     const getCurrentLocation = () => new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error('Location is not supported by this browser.'))
       navigator.geolocation.getCurrentPosition(
-        (position) => resolve(position.coords),
+        (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, locationTimestamp: position.timestamp }),
         () => reject(new Error('Location permission is required to record attendance.')),
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       )
     })
 
-    const selectProof = (event) => {
-      const file = event.target.files?.[0] || null
+    const selectProof = (file) => {
       proofFile.value = null
       proofFileName.value = ''
       if (!file) return
       if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
         toast.error('Photo proof must be JPG, PNG, or WEBP and no larger than 5 MB.')
-        event.target.value = ''
         return
       }
       proofFile.value = file
@@ -211,6 +221,7 @@ export default {
 
     const uploadProof = async () => {
       if (!proofFile.value) throw new Error('A current photo proof is required before scanning.')
+      if (Date.now() - proofFile.value.lastModified > 120000) throw new Error('Take a new attendance photo; the previous photo is over two minutes old.')
       const extension = proofFile.value.name.split('.').pop()?.toLowerCase() || 'jpg'
       const path = `attendanceProofs/${currentBranchId.value}/${currentUserId.value}/${todayKey.value}/${Date.now()}.${extension}`
       const fileRef = storageRef(storage, path)
@@ -276,6 +287,11 @@ export default {
 
       const attendanceSnap = await getDoc(getAttendanceDocRef())
       attendanceRecord.value = attendanceSnap.exists() ? attendanceSnap.data() || {} : {}
+      const historySnap = await getDocs(query(collection(db, 'attendance'), where('employeeId', '==', user.uid)))
+      attendanceHistory.value = historySnap.docs.map((recordDoc) => ({ id: recordDoc.id, ...recordDoc.data() })).sort((left, right) => String(right.date || '').localeCompare(String(left.date || ''))).slice(0, 7)
+      const previousDate = new Date(Date.parse(`${todayKey.value}T12:00:00+08:00`) - 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+      const openOvernight = attendanceHistory.value.find(record => record.date === previousDate && record.timeIn && !record.timeOut && parseClockToMinutes(record.shiftEnd) < parseClockToMinutes(record.shiftStart))
+      if (openOvernight) attendanceRecord.value = openOvernight
     }
 
     const setStatus = (message, tone = 'neutral') => {
@@ -315,20 +331,7 @@ export default {
           return
         }
 
-        const qrDocId = `${currentBranchId.value}_${todayKey.value}`
-        const qrSnap = await getDoc(doc(db, 'attendanceDailyQRCodes', qrDocId))
-        if (!qrSnap.exists()) {
-          setStatus('The attendance QR record could not be found.', 'error')
-          toast.error('Attendance QR record not found.')
-          return
-        }
-
-        const savedQr = qrSnap.data() || {}
-        if (String(savedQr.token || '').trim() !== String(payload.token || '').trim()) {
-          setStatus('This attendance QR token does not match the latest record.', 'error')
-          toast.error('Attendance QR is invalid.')
-          return
-        }
+        await stopScanner()
 
         const coords = await getCurrentLocation()
         const proof = await uploadProof()
@@ -338,84 +341,34 @@ export default {
           latitude: coords.latitude,
           longitude: coords.longitude,
           accuracy: coords.accuracy,
+          locationTimestamp: coords.locationTimestamp,
+          requestId: crypto.randomUUID(),
+          intent: attendanceRecord.value.timeIn ? 'clock_out' : 'clock_in',
           ...proof,
         })
         const recordedAction = response.action === 'clock_out' ? 'Clock Out' : 'Clock In'
         const record = response.record || {}
         attendanceRecord.value = { ...attendanceRecord.value, ...record }
+        attendanceHistory.value = [{ id: `${currentUserId.value}_${record.date}`, ...attendanceRecord.value }, ...attendanceHistory.value.filter((entry) => entry.date !== record.date)].slice(0, 7)
         lastAttendanceAction.value = recordedAction
         lastAttendanceTime.value = record.timeOut || record.timeIn || 'Recorded by server'
         setStatus(`${recordedAction} recorded successfully using QR and location verification.`, 'success')
         toast.success(`${recordedAction} recorded successfully.`)
+        proofFile.value = null
+        proofFileName.value = ''
         return
 
-        /* Legacy client-side attendance write removed; the server owns timestamps and validation. */
-        const now = new Date()
-        const timeLabel = now.toLocaleTimeString('en-PH', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-
-        const existingSnap = await getDoc(getAttendanceDocRef())
-        const existing = existingSnap.exists() ? existingSnap.data() || {} : {}
-
-        let action = ''
-        const payloadToSave = {
-          employeeId: currentUserId.value,
-          employeeName: employeeName.value,
-          role: employeeRole.value,
-          branchId: currentBranchId.value,
-          date: todayKey.value,
-          attendanceMethod: 'qr',
-          qrToken: String(payload.token || '').trim(),
-          shiftStart: employeeShiftStart.value || existing.shiftStart || '',
-          shiftEnd: employeeShiftEnd.value || existing.shiftEnd || '',
-          updatedAt: serverTimestamp(),
-          createdAt: existing.createdAt || serverTimestamp(),
-        }
-
-        if (!existing.timeIn) {
-          action = 'Clock In'
-          payloadToSave.timeIn = timeLabel
-          payloadToSave.status = 'Logged'
-        } else if (!existing.timeOut) {
-          action = 'Clock Out'
-          payloadToSave.timeOut = timeLabel
-          payloadToSave.status = 'Logged'
-        } else {
-          setStatus('You already recorded both time in and time out for today.', 'error')
-          toast.info('Attendance already completed for today.')
-          return
-        }
-
-        const nextRecord = { ...existing, ...payloadToSave }
-        const attendanceMeta = classifyAttendanceRecord({
-          timeIn: nextRecord.timeIn,
-          timeOut: nextRecord.timeOut,
-          shiftStart: nextRecord.shiftStart,
-          shiftEnd: nextRecord.shiftEnd,
-        })
-
-        Object.assign(payloadToSave, attendanceMeta)
-
-        await setDoc(getAttendanceDocRef(), payloadToSave, { merge: true })
-        attendanceRecord.value = { ...existing, ...payloadToSave }
-        lastAttendanceAction.value = action
-        lastAttendanceTime.value = timeLabel
-        setStatus(`${action} recorded successfully using today’s QR.`, 'success')
-        toast.success(`${action} recorded successfully.`)
       } catch (error) {
         console.error('Failed to process attendance QR:', error)
-        setStatus('Unable to process the scanned QR right now.', 'error')
-        toast.error('Failed to process attendance QR.')
+        setStatus(error.message || 'Unable to process the scanned QR right now.', 'error')
+        toast.error(error.message || 'Failed to process attendance QR.')
       } finally {
         isProcessing.value = false
       }
     }
 
     const startScanner = async () => {
-      if (isScanning.value) return
+      if (isScanning.value || isProcessing.value || !proofFile.value) return
 
       await nextTick()
       try {
@@ -479,6 +432,8 @@ export default {
 
     return {
       branchLabel,
+      attendanceRecord,
+      attendanceHistory,
       employeeName,
       employeeRole,
       goBack,

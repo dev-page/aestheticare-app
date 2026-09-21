@@ -321,10 +321,10 @@ service cloud.firestore {
         && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
         && (hasPermission('attendance:view') || hasPermission('attendance:create'));
-      allow create, update: if isSignedIn()
-        && request.resource.data.branchId != null
-        && isOwnerOfBranch(request.resource.data.branchId)
-        && hasPermission('attendance:create');
+      // QR challenges are minted by the trusted attendance backend only.
+      // Clients may read their branch challenge to scan it, but cannot forge,
+      // refresh, or modify a challenge directly.
+      allow create, update: if false;
       allow delete: if false;
     }
 
@@ -346,10 +346,7 @@ service cloud.firestore {
         && ((resource.data.employeeId == request.auth.uid)
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('attendance:view'))
           || isSuperadmin());
-      allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && isOwnerOfBranch(request.resource.data.branchId) && hasPermission('attendance:create'));
-      allow update: if isSignedIn()
-        && (resource.data.branchId != null && isOwnerOfBranch(resource.data.branchId) && hasPermission('attendance:update'));
+      allow create, update: if false;
       allow delete: if false;
     }
 

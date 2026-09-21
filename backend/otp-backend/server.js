@@ -20,6 +20,9 @@ import { PassThrough } from 'node:stream'
 import { google } from 'googleapis'
 import vision from '@google-cloud/vision'
 import { EMAIL_WEBSITE_URL } from './emailLinks.js'
+import { demand, punches, clock, verifyLocation, scanAction } from './attendancePolicy.js'
+import { registerAttendanceManagement } from './attendanceManagement.js'
+import { registerAttendanceImports } from './attendanceImports.js'
 
 // firebase-admin v13 can hit a Google auth compatibility edge in some Node/runtime combinations.
 // Keep the same fallback used by the backend maintenance scripts so OTP requests do not fail.
@@ -60,7 +63,10 @@ const VERIFY_LOGIN_OTP_PATH = '/auth/verify-login-otp'
 const CHECK_CUSTOMER_REGISTRATION_STATUS_PATH = '/auth/check-customer-registration-status'
 const ATTENDANCE_PIN_PATH = '/send-attendance-pin'
 const ATTENDANCE_RECORD_PATH = '/attendance/record'
+const ATTENDANCE_QR_PATH = '/attendance/qr'
 const ATTENDANCE_IMPORT_PATH = '/attendance/import'
+const ATTENDANCE_CORRECTION_PATH = '/attendance/correct'
+const ATTENDANCE_FIELDS_PATH = '/attendance/fields'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const SUPPLIER_WELCOME_PATH = '/send-supplier-welcome'
 const SUPPLIER_ACCOUNT_CREATE_PATH = '/supply/suppliers/account'
@@ -148,6 +154,7 @@ const corsOptions = {
 app.use(cors(corsOptions))
 app.options(/.*/, cors(corsOptions))
 app.use('/supply', express.json({ limit: '8mb' }))
+app.use('/attendance', express.json({ limit: '5mb' }))
 app.use(express.json())
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && Object.prototype.hasOwnProperty.call(error, 'body')) {
@@ -1964,6 +1971,8 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
 
 registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
 registerFinanceWorkflow(app, { admin, requireAuth, loadUserContext })
+registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule })
+registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess })
 registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders })
 registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext })
 
@@ -5036,7 +5045,8 @@ if (backupScheduleEnabled && adminReady) {
 }
 
 app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, async (req, res) => {
-  const { branchId, qrToken, latitude, longitude, accuracy, proofStoragePath, proofUrl } = req.body ?? {}
+  const { branchId, qrToken, latitude, longitude, accuracy, proofStoragePath, proofUrl, requestId, intent } = req.body ?? {}
+  if (!/^[a-zA-Z0-9-]{16,80}$/.test(String(requestId || ''))) return res.status(400).json({ success: false, error: 'A scan request ID is required.' })
   const normalizedBranchId = String(branchId || '').trim()
   if (!normalizedBranchId || !qrToken) {
     return res.status(400).json({ success: false, error: 'branchId and qrToken are required' })
@@ -5056,6 +5066,10 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
     ])
     const userData = userSnap.exists ? userSnap.data() || {} : {}
     const branch = branchSnap.exists ? branchSnap.data() || {} : {}
+    demand(userSnap.exists && !userData.archived && String(userData.status || '').toLowerCase() === 'active', 'An active employee account is required.', 403)
+    const proofObject = admin.storage().bucket(firebaseStorageBucket || admin.app().options.storageBucket).file(String(proofStoragePath))
+    const [proofMetadata] = await proofObject.getMetadata()
+    demand(/^image\/(jpeg|png|webp)$/.test(proofMetadata.contentType || '') && Number(proofMetadata.size) <= 5 * 1024 * 1024 && Date.now() - Date.parse(proofMetadata.timeCreated) <= 180000, 'A recently captured attendance photo is required.')
     if (!branchSnap.exists || !await resolveBranchAccess(req.user.uid, normalizedBranchId)) {
       return res.status(403).json({ success: false, error: 'You are not assigned to this branch.' })
     }
@@ -5064,7 +5078,15 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
       return res.status(403).json({ success: false, error: 'Your employee profile is not assigned to this branch.' })
     }
 
-    const approvedLeave = await getApprovedLeaveForDate(req.user.uid, dateKey)
+    let attendanceDate = dateKey
+    const previousDate = new Date(Date.parse(`${dateKey}T12:00:00+08:00`) - 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+    const previousRecord = await firestore.collection('attendance').doc(`${req.user.uid}_${previousDate}`).get()
+    if (previousRecord.data()?.timeIn && !previousRecord.data()?.timeOut) {
+      const previousSchedule = await loadAttendanceSchedule(req.user.uid, previousDate)
+      if (previousSchedule.shiftStart && previousSchedule.shiftEnd && clock(previousSchedule.shiftEnd) < clock(previousSchedule.shiftStart)) attendanceDate = previousDate
+      else demand(intent !== 'clock_out', 'An earlier incomplete shift requires HR review.', 409)
+    }
+    const approvedLeave = await getApprovedLeaveForDate(req.user.uid, attendanceDate)
     if (approvedLeave) {
       return res.status(409).json({
         success: false,
@@ -5075,48 +5097,18 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
     }
 
     const qrSnap = await firestore.collection('attendanceDailyQRCodes').doc(`${normalizedBranchId}_${dateKey}`).get()
-    if (!qrSnap.exists || String(qrSnap.data()?.token || '') !== String(qrToken).trim()) {
+    const qrData = qrSnap.exists ? qrSnap.data() || {} : {}
+    const expiresAtMs = typeof qrData.expiresAt?.toDate === 'function' ? qrData.expiresAt.toDate().getTime() : Number(qrData.expiresAt || 0)
+    if (!qrSnap.exists || String(qrData.token || '') !== String(qrToken).trim() || !expiresAtMs || expiresAtMs <= Date.now()) {
       return res.status(400).json({ success: false, error: 'The attendance QR is invalid or expired.' })
     }
 
-    const settings = branch.attendanceSettings || {}
-    const latitudeNumber = Number(latitude)
-    const longitudeNumber = Number(longitude)
-    const accuracyNumber = Number(accuracy)
-    const hasLocation = Number.isFinite(latitudeNumber) && Number.isFinite(longitudeNumber)
-    const requiresLocation = settings.requireLocation !== false
-    if (hasLocation && (latitudeNumber < -90 || latitudeNumber > 90 || longitudeNumber < -180 || longitudeNumber > 180)) {
-      return res.status(400).json({ success: false, error: 'The reported location coordinates are invalid.' })
-    }
-    if (Number.isFinite(accuracyNumber) && accuracyNumber < 0) {
-      return res.status(400).json({ success: false, error: 'The reported location accuracy is invalid.' })
-    }
-    if (requiresLocation && !hasLocation) {
-      return res.status(400).json({ success: false, error: 'Location permission is required to record attendance.' })
-    }
-    if (hasLocation && Number.isFinite(accuracyNumber) && accuracyNumber > Number(settings.maxAccuracyMeters || 150)) {
-      return res.status(400).json({ success: false, error: 'Your location accuracy is too low. Move to an open area and try again.' })
-    }
+    const distanceMeters = verifyLocation(req.body, branch)
+    const hasLocation = true
+    const accuracyNumber = accuracy
 
-    let distanceMeters = null
-    const branchLatitude = Number(branch.latitude ?? branch.lat ?? branch.clinicLocationLat)
-    const branchLongitude = Number(branch.longitude ?? branch.lng ?? branch.lon ?? branch.clinicLocationLng)
-    const radiusMeters = Math.max(25, Math.min(1000, Number(settings.geofenceRadiusMeters || 150)))
-    if (hasLocation && Number.isFinite(branchLatitude) && Number.isFinite(branchLongitude)) {
-      const toRadians = (value) => (value * Math.PI) / 180
-      const earthRadius = 6371000
-      const dLat = toRadians(latitudeNumber - branchLatitude)
-      const dLon = toRadians(longitudeNumber - branchLongitude)
-      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(branchLatitude)) * Math.cos(toRadians(latitudeNumber)) * Math.sin(dLon / 2) ** 2
-      distanceMeters = Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)))
-      if (distanceMeters > radiusMeters) {
-        return res.status(400).json({ success: false, error: `You are outside the allowed attendance area (${radiusMeters} meters).` })
-      }
-    } else if (requiresLocation) {
-      return res.status(400).json({ success: false, error: 'This branch has no valid attendance location configured.' })
-    }
 
-    const schedule = await loadAttendanceSchedule(req.user.uid, dateKey)
+    const schedule = await loadAttendanceSchedule(req.user.uid, attendanceDate)
     if (schedule.onLeave) {
       return res.status(409).json({
         success: false,
@@ -5132,17 +5124,26 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
         error: 'Attendance is unavailable because today is your scheduled day off.',
       })
     }
-    const attendanceRef = firestore.collection('attendance').doc(`${req.user.uid}_${dateKey}`)
+    const attendanceRef = firestore.collection('attendance').doc(`${req.user.uid}_${attendanceDate}`)
+    const receiptRef = firestore.collection('attendanceScanReceipts').doc(`${req.user.uid}_${requestId}`)
+    const proofClaim = firestore.collection('attendanceProofClaims').doc(crypto.createHash('sha256').update(String(proofStoragePath)).digest('hex'))
     const result = await firestore.runTransaction(async (transaction) => {
+      const receipt = await transaction.get(receiptRef)
+      if (receipt.exists) return receipt.data().result
+      demand(!(await transaction.get(proofClaim)).exists, 'This photo was already used. Capture a fresh attendance photo.', 409)
+      const challenge = await transaction.get(qrSnap.ref)
+      demand(challenge.data()?.token === qrToken && challenge.data()?.expiresAt?.toMillis() > Date.now(), 'The QR expired. Scan the current QR again.')
       const existingSnap = await transaction.get(attendanceRef)
       const existing = existingSnap.exists ? existingSnap.data() || {} : {}
+      demand(!existing.branchId || existing.branchId === normalizedBranchId, 'Clock out at the branch where you clocked in.', 409)
+      scanAction(existing, intent, Date.now())
       const now = admin.firestore.Timestamp.now()
       const next = {
         employeeId: req.user.uid,
         employeeName: String(userData.fullName || `${userData.firstName || ''} ${userData.lastName || ''}`).trim() || userData.email || 'Employee',
         role: userData.customRoleName || userData.role || 'Staff',
         branchId: normalizedBranchId,
-        date: dateKey,
+        date: attendanceDate,
         attendanceMethod: 'qr_gps',
         source: 'built_in',
         qrToken: String(qrToken).trim(),
@@ -5153,15 +5154,18 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
         locationAccuracyMeters: Number.isFinite(accuracyNumber) ? Math.round(accuracyNumber) : null,
         locationDistanceMeters: distanceMeters,
         proofStoragePath: String(proofStoragePath),
-        proofUrl: String(proofUrl || ''),
+        proofUrl: '',
         updatedAt: now,
         createdAt: existing.createdAt || now,
       }
       if (!existing.timeIn) {
+        next.timeInEpoch = now.toMillis()
         next.timeIn = manilaTimeLabel()
         next.status = 'Logged'
         next.action = 'clock_in'
       } else if (!existing.timeOut) {
+        next.timeOutEpoch = now.toMillis()
+        next.totalWorkedMinutes = existing.timeInEpoch ? Math.round((now.toMillis() - existing.timeInEpoch) / 60000) : null
         next.timeIn = existing.timeIn
         next.timeOut = manilaTimeLabel()
         next.status = 'Logged'
@@ -5170,26 +5174,79 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
         return { alreadyComplete: true }
       }
       transaction.set(attendanceRef, next, { merge: true })
+      transaction.create(receiptRef, { employeeId: req.user.uid, createdAt: now, result: { ...next, alreadyComplete: false } })
+      transaction.create(proofClaim, { employeeId: req.user.uid, attendanceId: attendanceRef.id, createdAt: now })
       return { ...next, alreadyComplete: false }
     })
     if (result.alreadyComplete) return res.status(409).json({ success: false, error: 'Attendance is already complete for today.' })
     return res.json({ success: true, action: result.action, record: result })
   } catch (error) {
     console.error('Attendance record failed:', error)
-    return res.status(500).json({ success: false, error: 'Unable to record attendance.' })
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Unable to record attendance.' })
   }
 })
 
+// QR challenges are issued only by the trusted backend. The value is short
+// lived and tied to one branch, so a screenshot cannot be reused indefinitely.
+app.post(ATTENDANCE_QR_PATH, requireAuth, requirePermission('attendance:update'), async (req, res) => {
+  const normalizedBranchId = String(req.body?.branchId || '').trim()
+  const forceRefresh = req.body?.forceRefresh === true
+  if (!normalizedBranchId) return res.status(400).json({ success: false, error: 'branchId is required' })
+  try {
+    if (!await resolveBranchAccess(req.user.uid, normalizedBranchId)) {
+      return res.status(403).json({ success: false, error: 'You cannot manage attendance for this branch.' })
+    }
+    const firestore = admin.firestore()
+    const branchSnap = await firestore.collection('clinics').doc(normalizedBranchId).get()
+    if (!branchSnap.exists) return res.status(404).json({ success: false, error: 'Branch not found.' })
+    const dateKey = manilaDateKey()
+    const qrRef = firestore.collection('attendanceDailyQRCodes').doc(`${normalizedBranchId}_${dateKey}`)
+    const now = Date.now()
+    const result = await firestore.runTransaction(async transaction => {
+    const currentSnap = await transaction.get(qrRef)
+    const current = currentSnap.exists ? currentSnap.data() || {} : {}
+    const currentExpiry = typeof current.expiresAt?.toDate === 'function' ? current.expiresAt.toDate().getTime() : Number(current.expiresAt || 0)
+    if (!forceRefresh && current.token && currentExpiry > now + 15_000) {
+      return { qrPayload: current.qrPayload, date: current.date, expiresAt: currentExpiry }
+    }
+    demand(!current.issuedAtMs || now - current.issuedAtMs >= 15000, 'Wait 15 seconds before refreshing the QR again.', 429)
+    const expiresAt = now + 5 * 60 * 1000
+    const branch = branchSnap.data() || {}
+    const payload = {
+      type: 'attendance-qr',
+      branchId: normalizedBranchId,
+      branchLabel: `${branch.clinicBranch || 'Branch'}${branch.clinicLocation ? ` - ${branch.clinicLocation}` : ''}`,
+      date: dateKey,
+      token: crypto.randomBytes(24).toString('base64url'),
+      expiresAt,
+    }
+    const qrPayload = JSON.stringify(payload)
+    transaction.set(qrRef, { ...payload, qrPayload, issuedAtMs: now, issuedBy: req.user.uid, expiresAt: admin.firestore.Timestamp.fromMillis(expiresAt), createdAt: current.createdAt || admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+    return { qrPayload, date: dateKey, expiresAt }
+    })
+    return res.json({ success: true, ...result })
+  } catch (error) {
+    console.error('Attendance QR issuance failed:', error)
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Unable to issue attendance QR.' })
+  }
+})
+
+
 app.post(ATTENDANCE_IMPORT_PATH, requireAuth, requirePermission('attendance:import'), async (req, res) => {
-  const { branchId, csvText, dryRun = false } = req.body ?? {}
+  const { branchId, csvText, fileName, dryRun = false } = req.body ?? {}
   const normalizedBranchId = String(branchId || '').trim()
   if (!normalizedBranchId || !String(csvText || '').trim()) return res.status(400).json({ success: false, error: 'branchId and csvText are required' })
   try {
     if (!await resolveBranchAccess(req.user.uid, normalizedBranchId)) return res.status(403).json({ success: false, error: 'You cannot import attendance for this branch.' })
     const rows = parseAttendanceCsv(csvText)
+    demand(rows.length > 0 && rows.length <= 400, 'Import 1–400 rows per file.')
     const firestore = admin.firestore()
+    const contentHash = crypto.createHash('sha256').update(String(csvText)).digest('hex')
+    const priorBatch = await firestore.collection('attendanceImports').where('branchId', '==', normalizedBranchId).where('contentHash', '==', contentHash).limit(1).get()
+    if (!dryRun && !priorBatch.empty) return res.status(409).json({ success: false, error: 'This attendance file was already imported for this branch.' })
     const valid = []
     const rejected = []
+    const seenAttendance = new Set()
     for (const [index, row] of rows.entries()) {
       const employeeId = String(row.employeeid || row.uid || '').trim()
       const email = String(row.email || '').trim().toLowerCase()
@@ -5214,13 +5271,28 @@ app.post(ATTENDANCE_IMPORT_PATH, requireAuth, requirePermission('attendance:impo
         rejected.push({ row: index + 2, reason: 'Employee does not belong to this branch.' })
         continue
       }
-      valid.push({ employeeId: resolvedId, branchId: normalizedBranchId, date, timeIn, timeOut, source: 'imported', importSource: 'clinic_csv' })
+      const existingAttendance = await firestore.collection('attendance').doc(`${resolvedId}_${date}`).get()
+      if (existingAttendance.exists) {
+        rejected.push({ row: index + 2, reason: 'An attendance record already exists for this employee and date.' })
+        continue
+      }
+      const recordKey = `${resolvedId}_${date}`
+      if (seenAttendance.has(recordKey)) {
+        rejected.push({ row: index + 2, reason: 'Duplicate employee and date within this file.' })
+        continue
+      }
+      let times
+      try { times = punches(date, timeIn, timeOut, req.body.overnight === true) }
+      catch (error) { rejected.push({ row: index + 2, reason: error.message }); continue }
+      seenAttendance.add(recordKey)
+      const user = userSnap.data()
+      valid.push({ employeeId: resolvedId, employeeName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email, branchId: normalizedBranchId, date, ...times, locationVerified: false, source: 'imported', importSource: 'clinic_csv' })
     }
     if (!dryRun && valid.length) {
       const batch = firestore.batch()
-      valid.forEach((record) => batch.set(firestore.collection('attendance').doc(`${record.employeeId}_${record.date}`), { ...record, importedBy: req.user.uid, importedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }))
-      const importRef = firestore.collection('attendanceImports').doc()
-      batch.set(importRef, { branchId: normalizedBranchId, importedBy: req.user.uid, validRows: valid.length, rejectedRows: rejected.length, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      const importRef = firestore.collection('attendanceImports').doc(crypto.createHash('sha256').update(`${normalizedBranchId}:${contentHash}`).digest('hex'))
+      valid.forEach((record) => batch.create(firestore.collection('attendance').doc(`${record.employeeId}_${record.date}`), { ...record, importBatchId: importRef.id, importedBy: req.user.uid, importedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }))
+      batch.create(importRef, { branchId: normalizedBranchId, importedBy: req.user.uid, sourceFileName: String(fileName || 'attendance.csv').slice(0, 255), contentHash, validRows: valid.length, rejectedRows: rejected.length, rejected, status: rejected.length ? 'Needs Review' : 'Completed', createdAt: admin.firestore.FieldValue.serverTimestamp() })
       await batch.commit()
     }
     return res.json({ success: true, dryRun: Boolean(dryRun), validRows: valid.length, rejectedRows: rejected.length, rejected })
