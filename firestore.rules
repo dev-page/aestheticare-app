@@ -305,6 +305,13 @@ service cloud.firestore {
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')));
     }
 
+    match /consultationClearances/{clearanceId} {
+      allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:review')));
+      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid && request.resource.data.status == 'Pending' && request.resource.data.branchId != null && isPublicClinic(request.resource.data.branchId);
+      allow update: if isSignedIn() && resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:review') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reviewNote']);
+      allow delete: if false;
+    }
+
     match /clients/{clientId} {
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:view')) || isSuperadmin());

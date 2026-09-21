@@ -35,6 +35,25 @@
         </div>
       </div>
 
+      <section v-if="pendingConsultationClearances.length" class="mb-6 rounded-xl border border-amber-500/40 bg-amber-950/20 p-5">
+        <div class="mb-4">
+          <h2 class="text-lg font-semibold text-white">Consultation verification requests</h2>
+          <p class="mt-1 text-sm text-slate-300">Confirm a customer's prior external consultation before they can book a service that requires one.</p>
+        </div>
+        <div class="space-y-3">
+          <article v-for="clearance in pendingConsultationClearances" :key="clearance.id" class="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-800/80 p-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p class="font-medium text-white">{{ clearance.customerEmail || 'Customer verification request' }}</p>
+              <p class="mt-1 text-sm text-slate-300">{{ clearance.serviceNames?.join(', ') || 'Selected consultation-required service' }}</p>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" :disabled="actionBusy" class="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60" @click="reviewConsultationClearance(clearance, 'Approved')">Approve</button>
+              <button type="button" :disabled="actionBusy" class="rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60" @click="reviewConsultationClearance(clearance, 'Rejected')">Reject</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
       <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <div class="overflow-x-auto">
           <table class="w-full">
@@ -125,6 +144,7 @@ export default {
     const statusFilter = ref('')
     const dateFilter = ref('')
     const appointments = ref([])
+    const consultationClearances = ref([])
     const actionBusy = ref(false)
     const contractAppointment = ref(null)
     const contractSaved = async () => { contractAppointment.value = null; await loadAppointments() }
@@ -187,6 +207,10 @@ export default {
       })
     })
 
+    const pendingConsultationClearances = computed(() =>
+      consultationClearances.value.filter((clearance) => clearance.status === 'Pending')
+    )
+
     const statusClass = (status) => {
       if (status === 'Completed') return 'px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400'
       if (status === 'Cancelled') return 'px-3 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-400'
@@ -217,6 +241,25 @@ export default {
       } catch (error) {
         console.error(error)
         toast.error('Failed to recommend follow-up.')
+      }
+    }
+
+    const reviewConsultationClearance = async (clearance, status) => {
+      if (!clearance?.id || actionBusy.value) return
+      actionBusy.value = true
+      try {
+        await updateDoc(doc(db, 'consultationClearances', clearance.id), {
+          status,
+          reviewedBy: currentUserId.value,
+          reviewedAt: new Date().toISOString(),
+          reviewNote: status === 'Rejected' ? 'Please book a consultation with the clinic before requesting this service.' : '',
+        })
+        toast.success(status === 'Approved' ? 'Consultation verification approved.' : 'Consultation verification rejected.')
+      } catch (error) {
+        console.error(error)
+        toast.error('Unable to review the consultation verification request.')
+      } finally {
+        actionBusy.value = false
       }
     }
 
@@ -290,11 +333,13 @@ export default {
 
     let unsubscribeAuth = null
     let unsubscribeAppointments = null
+    let unsubscribeConsultationClearances = null
 
     onMounted(() => {
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         unsubscribeAppointments?.()
-        if (!user) { appointments.value = []; return }
+        unsubscribeConsultationClearances?.()
+        if (!user) { appointments.value = []; consultationClearances.value = []; return }
 
         currentUserId.value = user.uid
         const userSnap = await getDoc(doc(db, 'users', user.uid))
@@ -309,12 +354,20 @@ export default {
           (snapshot) => loadAppointments(snapshot),
           () => toast.error('Unable to refresh bookings.')
         )
+        unsubscribeConsultationClearances = onSnapshot(
+          query(collection(db, 'consultationClearances'), where('branchId', '==', currentBranchId.value)),
+          (snapshot) => {
+            consultationClearances.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+          },
+          () => toast.error('Unable to refresh consultation verification requests.')
+        )
       })
     })
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
       unsubscribeAppointments?.()
+      unsubscribeConsultationClearances?.()
     })
 
     return {
@@ -327,7 +380,9 @@ export default {
       filteredAppointments,
       statusClass,
       canRecommendFollowUp,
-      recommendFollowUp
+      recommendFollowUp,
+      pendingConsultationClearances,
+      reviewConsultationClearance
     }
   }
 }

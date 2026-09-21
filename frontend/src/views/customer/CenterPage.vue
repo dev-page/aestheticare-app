@@ -444,6 +444,7 @@
                       </span>
                     </div>
                     <p v-if="bookingRulesNotice" class="mt-3 text-xs text-amber-200">{{ bookingRulesNotice }}</p>
+                    <label v-if="selectedServicesRequireConsultation" class="mt-3 flex items-start gap-2 text-xs text-[#8b6a4d]"><input v-model="priorConsultationConfirmed" type="checkbox" class="mt-0.5" /> I already completed a consultation for this service and want the clinic to verify it.</label>
                   </div>
                   <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Selected Schedule</p>
@@ -860,6 +861,7 @@ const selectedServiceNetAmount = computed(() =>
 const selectedServicesRequireConsultation = computed(() =>
   selectedServices.value.some((service) => Boolean(service.requiresConsultationFirst))
 )
+const priorConsultationConfirmed = ref(false)
 const selectedServicesAllowFollowUp = computed(() =>
   selectedServices.value.some((service) => Boolean(service.followUpAllowed))
 )
@@ -2879,6 +2881,11 @@ const submitBooking = async () => {
   }
   if (activeClinicPolicies.value.length && !bookingPolicyAcknowledged.value) {
     toast.error('Please review and acknowledge the active clinic policies before submitting.')
+    return
+  }
+  if (selectedServicesRequireConsultation.value && priorConsultationConfirmed.value) {
+    await addDoc(collection(db, 'consultationClearances'), { branchId: activeBranchId.value, customerId: user.uid, customerEmail: user.email || '', serviceIds: selectedServices.value.filter(service => service.requiresConsultationFirst).map(service => service.id).filter(Boolean), serviceNames: selectedServices.value.filter(service => service.requiresConsultationFirst).map(service => service.title || service.name || '').filter(Boolean), status: 'Pending', requestedAt: serverTimestamp() })
+    toast.success('Consultation verification was sent to the clinic. You can book after it is approved.')
     return
   }
 

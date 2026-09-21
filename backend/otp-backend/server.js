@@ -3865,6 +3865,23 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     if (!branchId) return res.status(400).json({ success: false, error: 'branchId is required' })
     if (!date) return res.status(400).json({ success: false, error: 'date is required' })
 
+    if (!walkIn && String(reservation.bookingType || '').toLowerCase() === 'follow-up') {
+      const followUpOf = String(reservation.followUpOf || '').trim()
+      if (!followUpOf) {
+        return res.status(400).json({ success: false, error: 'A follow-up must be linked to the completed appointment.' })
+      }
+      const sourceSnap = await firestore.collection('appointments').doc(followUpOf).get()
+      const source = sourceSnap.exists ? sourceSnap.data() || {} : null
+      if (!source || String(source.customerId || '') !== customerId || String(source.branchId || '') !== branchId || normalizeBookingStatus(source.status) !== 'completed') {
+        return res.status(403).json({ success: false, error: 'The selected appointment is not eligible for a follow-up.' })
+      }
+      const existingFollowUps = await firestore.collection('appointments').where('followUpOf', '==', followUpOf).get()
+      const hasOpenFollowUp = existingFollowUps.docs.some((docSnap) => !['cancelled', 'rejected'].includes(normalizeBookingStatus(docSnap.data()?.status)))
+      if (hasOpenFollowUp) {
+        return res.status(409).json({ success: false, error: 'A follow-up booking has already been requested for this appointment.' })
+      }
+    }
+
     const approvedLeave = await getApprovedLeaveForDate(practitionerId, date)
     if (approvedLeave) {
       return res.status(409).json({
@@ -3920,7 +3937,9 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
           : []
         return consultationRequiredIds.every((id) => coveredIds.includes(id))
       })
-      if (!hasCompletedConsultation) {
+      const clearanceSnap = await firestore.collection('consultationClearances').where('customerId', '==', customerId).where('branchId', '==', branchId).where('status', '==', 'Approved').get()
+      const hasApprovedClearance = clearanceSnap.docs.some(docSnap => consultationRequiredIds.every(id => (docSnap.data().serviceIds || []).map(value => String(value)).includes(id)))
+      if (!hasCompletedConsultation && !hasApprovedClearance) {
         return res.status(422).json({
           success: false,
           code: 'CONSULTATION_REQUIRED',
@@ -6079,6 +6098,14 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
   if (!customerId || !req.user?.uid || customerId !== req.user.uid) {
     return res.status(403).json({ success: false, error: 'Forbidden' })
   }
+  if (bookingType === 'follow-up') {
+    if (!followUpOf) return res.status(400).json({ success: false, error: 'A follow-up must be linked to the completed appointment.' })
+    const source = await admin.firestore().collection('appointments').doc(followUpOf).get()
+    const sourceData = source.data() || {}
+    if (!source.exists || sourceData.customerId !== customerId || normalizeBookingStatus(sourceData.status) !== 'completed') return res.status(409).json({ success: false, error: 'The source appointment is not eligible for follow-up.' })
+    const existing = await admin.firestore().collection('appointments').where('followUpOf', '==', followUpOf).get()
+    if (existing.docs.some(docSnap => !['cancelled', 'rejected'].includes(normalizeBookingStatus(docSnap.data().status)))) return res.status(409).json({ success: false, error: 'A follow-up has already been booked for this appointment.' })
+  }
   if (!branchId || !practitionerId || !date || !time) {
     return res.status(400).json({ success: false, error: 'Missing booking details' })
   }
@@ -6119,7 +6146,9 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
         : []
       return consultationRequiredIds.every((id) => coveredIds.includes(id))
     })
-    if (!hasCompletedConsultation) {
+    const clearanceSnap = await firestore.collection('consultationClearances').where('customerId', '==', customerId).where('branchId', '==', branchId).where('status', '==', 'Approved').get()
+    const hasApprovedClearance = clearanceSnap.docs.some(docSnap => consultationRequiredIds.every(id => (docSnap.data().serviceIds || []).map(value => String(value)).includes(id)))
+    if (!hasCompletedConsultation && !hasApprovedClearance) {
       return res.status(422).json({
         success: false,
         code: 'CONSULTATION_REQUIRED',
