@@ -1402,7 +1402,9 @@ app.post('/auth/resend-activation', async (req, res) => {
     const userSnap = snapshot.docs[0]
     const userData = userSnap.data() || {}
     const status = String(userData.status || '').trim().toLowerCase()
-    if (status !== 'pending activation') return res.json({ success: true, data: { sent: false } })
+    if (status !== 'pending activation') {
+      return res.json({ success: true, data: { sent: false, alreadyActive: status === 'active' || userData.accountActivated === true } })
+    }
     const lastSentAt = userData.activationLastSentAt?.toDate?.()?.getTime?.() || Date.parse(userData.activationLastSentAt || '') || 0
     const retryAfterSeconds = Math.ceil((lastSentAt + 60 * 1000 - Date.now()) / 1000)
     if (retryAfterSeconds > 0) return res.status(429).json({ success: false, error: `Please wait ${retryAfterSeconds} seconds before requesting another activation email.`, retryAfterSeconds })

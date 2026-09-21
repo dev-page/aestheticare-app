@@ -87,7 +87,9 @@ const resendActivationEmail = async () => {
   }
   try {
     const response = await axios.post(`${OTP_API_BASE}/auth/resend-activation`, { email: normalizedEmail })
-    toast.success(response.data?.data?.sent ? 'A new activation email was sent.' : 'If the account needs activation, an email will be sent shortly.')
+    const result = response.data?.data || {}
+    if (result.alreadyActive) toast.info('This email is already active. You can sign in now.')
+    else toast.success(result.sent ? 'A new activation email was sent.' : 'If the account needs activation, an email will be sent shortly.')
   } catch (error) {
     toast.error(error?.response?.data?.error || 'Unable to resend the activation email.')
   }
