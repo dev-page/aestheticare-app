@@ -386,10 +386,10 @@ const initLocationMap = async () => {
     })
   }
 
-  if (locationMarker?.addListener) {
+  if (AdvancedMarkerElement && locationMarker?.addEventListener) {
+    locationMarker.addEventListener('gmp-dragend', (event) => updateFromPosition(event?.latLng || locationMarker.position))
+  } else if (locationMarker?.addListener) {
     locationMarker.addListener('dragend', (event) => updateFromPosition(event?.latLng))
-  } else if (locationMarker?.addEventListener) {
-    locationMarker.addEventListener('dragend', (event) => updateFromPosition(event?.latLng))
   }
 
   locationMap.addListener?.('click', (event) => {

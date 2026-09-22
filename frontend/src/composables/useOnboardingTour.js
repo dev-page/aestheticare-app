@@ -8,16 +8,12 @@ const TOUR_VERSION = 3
 
 const tourCatalog = {
   customer: {
-    title: 'Your Customer Panel',
+    title: 'Your customer space',
     steps: [
-      { title: 'Home', text: 'Explore clinics, filter centers, save favorites, and open a clinic to view its details.', selector: '[data-onboarding-key="customer-home"]', path: '/customer/home' },
-      { title: 'Appointments', text: 'Review your appointment requests, schedules, consultation details, and booking progress.', selector: '[data-onboarding-key="customer-appointments"]', path: '/customer/appointments' },
-      { title: 'Orders', text: 'Track your customer orders, payment progress, and fulfillment updates here.', selector: '[data-onboarding-key="customer-orders"]', path: '/customer/orders' },
-      { title: 'Cart', text: 'Review selected products or services before proceeding to checkout.', selector: '[data-onboarding-key="customer-cart"]', path: '/customer/cart' },
-      { title: 'Profile', text: 'Update your personal information and contact details used for bookings.', selector: '[data-onboarding-key="customer-profile"]', path: '/customer/profile' },
-      { title: 'Account Settings', text: 'Manage account access, request deactivation, or submit an account deletion request for review.', selector: '[data-onboarding-key="customer-account-settings"]', path: '/customer/account-settings' },
-      { title: 'Notifications', text: 'Check booking, order, payment, and clinic updates sent to your account.', selector: '[data-onboarding-key="customer-notifications"]', path: '/notifications' },
-      { title: 'Report Issue', text: 'Send a support request when you encounter a problem or need assistance.', selector: '[data-onboarding-key="customer-report-issue"]', path: '/support/report' },
+      { title: 'Discover clinics', text: 'Search verified clinics, compare treatments, save favorites, and open a clinic to book a service or consultation.', selector: '[data-onboarding-key="customer-home"]', path: '/customer/home' },
+      { title: 'My care', text: 'Keep track of appointment requests, confirmed schedules, consultation progress, signed contracts, and payments due.', selector: '[data-onboarding-key="customer-appointments"]', path: '/customer/appointments' },
+      { title: 'Shop', text: 'Review products in your cart, complete checkout, and track orders or pickup updates in one place.', selector: '[data-onboarding-key="customer-cart"]', path: '/customer/cart' },
+      { title: 'My account', text: 'Update your profile and manage notifications, privacy, password, support, and account access settings.', selector: '[data-onboarding-key="customer-profile"]', path: '/customer/account-settings?tab=profile' },
     ],
   },
   owner: {

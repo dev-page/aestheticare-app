@@ -2120,7 +2120,10 @@ const startChatListener = async () => {
   const threadRef = await ensureChatThread()
   if (!threadRef) return
 
-  const messagesRef = collection(db, 'chatThreads', chatThreadId.value, 'messages')
+  // Build the subcollection from the verified thread reference. Re-reading the
+  // reactive id here could briefly produce `chatThreads/messages` while the
+  // branch page is changing, which is not a valid Firestore collection path.
+  const messagesRef = collection(threadRef, 'messages')
   const q = query(messagesRef)
   chatUnsubscribe = onSnapshot(q, (snapshot) => {
     chatMessages.value = snapshot.docs
@@ -2150,7 +2153,7 @@ const startUnreadListener = async () => {
     customerLastReadAt.value = data.customerLastReadAt || null
   })
 
-  const messagesRef = collection(db, 'chatThreads', chatThreadId.value, 'messages')
+  const messagesRef = collection(threadRef, 'messages')
   const q = query(messagesRef)
   unreadUnsubscribe = onSnapshot(q, (snapshot) => {
     const lastRead = customerLastReadAt.value
@@ -2215,7 +2218,7 @@ const sendChat = async () => {
       createdAt: serverTimestamp(),
     }
 
-    await addDoc(collection(db, 'chatThreads', chatThreadId.value, 'messages'), messagePayload)
+    await addDoc(collection(threadRef, 'messages'), messagePayload)
 
     await setDoc(
       threadRef,
@@ -2306,14 +2309,14 @@ const sendQuickQuestion = async (question) => {
     return
   }
   try {
-    await ensureChatThread()
+    const threadRef = await ensureChatThread()
+    if (!threadRef) return
     const profile = await resolveCustomerProfile()
-    const threadId = chatThreadId.value
     const questionText = question?.label || 'Quick question'
     const answerText = buildQuickAnswer(question?.key)
 
     const baseTime = Date.now()
-    await addDoc(collection(db, 'chatThreads', threadId, 'messages'), {
+    await addDoc(collection(threadRef, 'messages'), {
       text: questionText,
       senderId: user.uid,
       senderName: profile?.name || 'Customer',
@@ -2323,7 +2326,7 @@ const sendQuickQuestion = async (question) => {
       clientCreatedAt: baseTime
     })
 
-    await addDoc(collection(db, 'chatThreads', threadId, 'messages'), {
+    await addDoc(collection(threadRef, 'messages'), {
       text: answerText,
       senderId: 'system',
       senderName: 'AesthetiCare',
@@ -2333,7 +2336,7 @@ const sendQuickQuestion = async (question) => {
     })
 
     await setDoc(
-      doc(db, 'chatThreads', threadId),
+      threadRef,
       {
         lastMessage: answerText,
         lastMessageAt: serverTimestamp(),

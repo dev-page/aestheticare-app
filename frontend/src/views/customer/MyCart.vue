@@ -5,8 +5,12 @@
     <main class="cart-main">
       <div class="cart-content">
         <section class="cart-header">
-          <h1 class="cart-title">My Cart</h1>
-          <p class="cart-subtitle">Review and manage the products you selected before checkout.</p>
+          <div>
+            <p class="customer-page-eyebrow">Shop</p>
+            <h1 class="cart-title">My Cart</h1>
+            <p class="cart-subtitle">Review and manage the products you selected before checkout.</p>
+          </div>
+          <span class="customer-page-chip">{{ cartItems.length }} item{{ cartItems.length === 1 ? '' : 's' }}</span>
         </section>
 
         <div v-if="cartItems.length === 0" class="cart-empty-panel">Your cart is empty.</div>
@@ -135,6 +139,10 @@ const checkout = () => {
 .cart-summary-panel {
   padding: 1.25rem;
 }
+
+.cart-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.customer-page-eyebrow { margin: 0 0 .35rem; color: #98613d; font-size: .7rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.customer-page-chip { flex: none; border: 1px solid #e1bf95; border-radius: 999px; padding: .48rem .7rem; background: #fff6e9; color: #704225; font-size: .75rem; font-weight: 700; }
 
 .cart-title {
   margin: 0;

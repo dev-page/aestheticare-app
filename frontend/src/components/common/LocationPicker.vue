@@ -848,13 +848,13 @@ const initMap = async () => {
   }
 
   markerDragHandler = (event) =>
-      handlePosition(event?.latLng).then((ok) => {
+      handlePosition(event?.latLng || marker?.position).then((ok) => {
         if (!ok) revertMarker()
       })
-  if (marker?.addListener) {
+  if (AdvancedMarkerElement && marker?.addEventListener) {
+    marker.addEventListener('gmp-dragend', markerDragHandler)
+  } else if (marker?.addListener) {
     markerDragListener = marker.addListener('dragend', markerDragHandler)
-  } else if (marker?.addEventListener) {
-    marker.addEventListener('dragend', markerDragHandler)
   }
 
   mapClickListener = map.addListener?.('click', (event) => {

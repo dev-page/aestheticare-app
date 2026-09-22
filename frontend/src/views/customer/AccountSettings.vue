@@ -182,10 +182,14 @@ import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import MyProfile from '@/views/customer/MyProfile.vue'
 
-const accountEmail = ref('')
-const activeTab = ref('profile')
 const route = useRoute()
 const router = useRouter()
+const allowedTabs = new Set(['profile', 'notifications', 'account', 'help', 'privacy'])
+const initialTab = String(route.query.tab || '')
+const accountEmail = ref('')
+// Use the route value synchronously so a direct link such as
+// ?tab=notifications never renders the Profile tab for one frame.
+const activeTab = ref(allowedTabs.has(initialTab) ? initialTab : 'profile')
 const status = ref('Active')
 const deletionRequested = ref(false)
 const tutorialEnabled = ref(true)
@@ -224,8 +228,6 @@ const currentReasonOptions = computed(() => accountAction.value === 'deactivate'
 const combinedReason = computed(() => [reasonPreset.value, actionReason.value.trim()].filter(Boolean).join(': '))
 const notificationPageCount = computed(() => Math.max(1, Math.ceil(notifications.value.length / pageSize)))
 const pagedNotifications = computed(() => notifications.value.slice((notificationPage.value - 1) * pageSize, notificationPage.value * pageSize))
-
-const allowedTabs = new Set(['profile', 'notifications', 'account', 'help', 'privacy'])
 
 const selectTab = (tab) => {
   const nextTab = allowedTabs.has(tab) ? tab : 'profile'

@@ -5,9 +5,13 @@
     <main class="appointments-main">
       <div class="appointments-content">
         <section class="appointments-header">
-          <h1 class="appointments-title">{{ isUnpaidAppointmentsPage ? 'Unpaid Appointments' : 'My Appointments' }}</h1>
-          <p v-if="isUnpaidAppointmentsPage" class="appointments-subtitle">Sign your clinic contract first, then complete payment for your approved booking.</p>
-          <button v-else-if="unpaidAppointments.length" type="button" class="appointments-pay-link" @click="router.push({ name: 'customer-unpaid-appointments' })">
+          <div>
+            <p class="appointments-eyebrow">{{ isUnpaidAppointmentsPage ? 'Payment centre' : 'My care' }}</p>
+            <h1 class="appointments-title">{{ isUnpaidAppointmentsPage ? 'Unpaid Appointments' : 'My Appointments' }}</h1>
+            <p v-if="isUnpaidAppointmentsPage" class="appointments-subtitle">Sign your clinic contract first, then complete payment for your approved booking.</p>
+            <p v-else class="appointments-subtitle">See every request, upcoming visit, online consultation, and completed service in one place.</p>
+          </div>
+          <button v-if="!isUnpaidAppointmentsPage && unpaidAppointments.length" type="button" class="appointments-pay-link" @click="router.push({ name: 'customer-unpaid-appointments' })">
             Pay {{ unpaidAppointments.length }} unpaid appointment{{ unpaidAppointments.length === 1 ? '' : 's' }}
           </button>
         </section>
@@ -1764,6 +1768,8 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 1rem;
 }
+
+.appointments-eyebrow { margin: 0 0 .35rem; color: #98613d; font-size: .7rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
 
 .appointments-subtitle {
   margin: 0.65rem 0 0;

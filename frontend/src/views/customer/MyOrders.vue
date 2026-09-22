@@ -5,8 +5,12 @@
     <main class="orders-main">
       <div class="orders-content">
         <div class="orders-header">
-          <h1 class="orders-title">My Orders</h1>
-          <p class="orders-subtitle">Track your orders placed through the platform.</p>
+          <div>
+            <p class="customer-page-eyebrow">Shop</p>
+            <h1 class="orders-title">My Orders</h1>
+            <p class="orders-subtitle">Track your orders placed through the platform.</p>
+          </div>
+          <span class="customer-page-chip">{{ filteredOrders.length }} total</span>
         </div>
 
         <div class="orders-panel">
@@ -1086,8 +1090,15 @@ export default {
 }
 
 .orders-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
   padding: 1.25rem;
 }
+
+.customer-page-eyebrow { margin: 0 0 .35rem; color: #98613d; font-size: .7rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.customer-page-chip { flex: none; border: 1px solid #e1bf95; border-radius: 999px; padding: .48rem .7rem; background: #fff6e9; color: #704225; font-size: .75rem; font-weight: 700; }
 
 .orders-panel {
   margin-top: 1.35rem;
