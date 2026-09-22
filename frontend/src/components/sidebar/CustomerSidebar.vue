@@ -1,7 +1,8 @@
 <template>
   <BaseCollapsibleSidebar
-    title="Customer Sidebar"
-    subtitle="Customer Panel"
+    class="customer-sidebar"
+    title="AesthetiCare"
+    subtitle="Your wellness space"
     panel-key="customer"
     default-name="Customer"
     default-email="customer@aestheticare.com"
@@ -17,13 +18,25 @@ export default {
   components: { BaseCollapsibleSidebar },
   setup() {
     const items = [
-      { label: 'Home', icon: 'home', to: '/customer/home', tourKey: 'customer-home' },
-      { label: 'Appointments', icon: 'calendar', to: '/customer/appointments', tourKey: 'customer-appointments' },
-      { label: 'Unpaid Appointments', icon: 'card', to: '/customer/unpaid-appointments', tourKey: 'customer-unpaid-appointments' },
-      { label: 'Orders', icon: 'clipboard', to: '/customer/orders', tourKey: 'customer-orders' },
-      { label: 'Cart', icon: 'cart', to: '/customer/cart', tourKey: 'customer-cart' },
+      { label: 'Discover clinics', icon: 'home', to: '/customer/home', tourKey: 'customer-home' },
       {
-        label: 'Account Settings',
+        label: 'My care',
+        icon: 'calendar',
+        children: [
+          { label: 'Appointments', icon: 'calendar', to: '/customer/appointments', tourKey: 'customer-appointments' },
+          { label: 'Payments due', icon: 'card', to: '/customer/unpaid-appointments', tourKey: 'customer-unpaid-appointments' },
+        ],
+      },
+      {
+        label: 'Shop',
+        icon: 'cart',
+        children: [
+          { label: 'My cart', icon: 'cart', to: '/customer/cart', tourKey: 'customer-cart' },
+          { label: 'Orders & pickup', icon: 'clipboard', to: '/customer/orders', tourKey: 'customer-orders' },
+        ],
+      },
+      {
+        label: 'My account',
         icon: 'settings',
         children: [
           { label: 'Profile', icon: 'profile', to: '/customer/account-settings?tab=profile', tourKey: 'customer-profile' },
@@ -41,3 +54,19 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+:deep(.customer-sidebar aside) {
+  border-color: #4a2d1c;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(170, 103, 53, .20), transparent 30%),
+    linear-gradient(180deg, #21130c, #170d08 100%);
+}
+
+:deep(.customer-sidebar aside > div:first-child) {
+  padding-top: 1.35rem;
+  border-bottom-color: rgba(134, 82, 47, .45);
+}
+
+:deep(.customer-sidebar aside h2) { font-family: Georgia, 'Times New Roman', serif; letter-spacing: -.02em; }
+</style>

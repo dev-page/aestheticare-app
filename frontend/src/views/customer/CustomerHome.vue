@@ -4,6 +4,17 @@
 
     <main class="customer-home-main flex-1">
       <div class="customer-home-content">
+        <section class="customer-home-hero">
+          <div>
+            <p class="customer-home-eyebrow">Find care that fits your routine</p>
+            <h1>Feel confident about your next appointment.</h1>
+            <p>Discover verified clinics, compare their services, and keep every booking and order in one calm, simple space.</p>
+          </div>
+          <div class="customer-home-hero-actions">
+            <RouterLink to="/customer/appointments" class="customer-home-primary-action">My appointments</RouterLink>
+            <RouterLink to="/customer/cart" class="customer-home-secondary-action">View cart</RouterLink>
+          </div>
+        </section>
         <section class="customer-filter-section">
           <div class="customer-filter-panel">
             <div class="customer-filter-grid">
@@ -494,6 +505,26 @@ watch(radiusKm, () => {
   box-shadow: 0 24px 60px rgba(84, 54, 34, 0.12);
 }
 
+.customer-home-hero {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+  padding: clamp(1.35rem, 3vw, 2.1rem);
+  overflow: hidden;
+  border: 1px solid rgba(190, 133, 87, .42);
+  border-radius: 1.75rem;
+  background:
+    radial-gradient(circle at 86% 16%, rgba(250, 215, 174, .82), transparent 23%),
+    linear-gradient(125deg, #3c2417, #704124 62%, #9b6744);
+  box-shadow: 0 20px 48px rgba(79, 46, 27, .16);
+}
+.customer-home-eyebrow { margin: 0; color: #f2ca9d; font-size: .72rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.customer-home-hero h1 { max-width: 42rem; margin: .45rem 0 0; color: #fffaf4; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.8rem, 3.5vw, 3rem); line-height: 1.08; letter-spacing: -.035em; }
+.customer-home-hero p:not(.customer-home-eyebrow) { max-width: 42rem; margin: .75rem 0 0; color: #f4e2d0; font-size: .92rem; line-height: 1.65; }
+.customer-home-hero-actions { display: flex; flex: none; flex-wrap: wrap; gap: .65rem; }.customer-home-primary-action, .customer-home-secondary-action { border-radius: .8rem; padding: .72rem .9rem; font-size: .82rem; font-weight: 700; text-decoration: none; transition: transform .16s ease, background .16s ease; }.customer-home-primary-action { background: #fff8ee; color: #58311d; }.customer-home-secondary-action { border: 1px solid rgba(255, 244, 231, .5); color: #fff8ee; }.customer-home-primary-action:hover, .customer-home-secondary-action:hover { transform: translateY(-2px); }
+
 .customer-filter-panel {
   padding: 1rem;
 }
@@ -742,6 +773,8 @@ watch(radiusKm, () => {
   .customer-home-content {
     padding: 1.7rem 2rem 2.2rem;
   }
+
+  .customer-home-hero { align-items: flex-start; flex-direction: column; }
 
   .customer-results-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
