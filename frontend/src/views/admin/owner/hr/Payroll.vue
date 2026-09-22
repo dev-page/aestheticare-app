@@ -8,6 +8,13 @@
         <p class="text-slate-400 text-sm md:text-base">Create payroll entries and generate payslips for your branch staff.</p>
       </div>
 
+      <section class="mb-6 grid grid-cols-1 gap-2 text-xs sm:grid-cols-4" aria-label="Payroll workflow">
+        <div class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-300"><strong class="block text-amber-300">1. HR prepares</strong>Payroll is calculated from attendance, approved overtime, base pay, and deductions.</div>
+        <div class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-300"><strong class="block text-amber-300">2. Finance decides</strong>Finance reviews the monthly summary and approves or returns it.</div>
+        <div class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-300"><strong class="block text-amber-300">3. HR releases</strong>Approved employee payslips are released individually.</div>
+        <div class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-300"><strong class="block text-amber-300">4. Finance pays</strong>Finance records the verified payroll transfer after all payslips are released.</div>
+      </section>
+
       <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <h2 class="text-lg font-semibold text-white mb-4">Payroll Settings (Deductions)</h2>
 
@@ -152,6 +159,7 @@
                 <th class="py-2 px-3">Total Earnings</th>
                 <th class="py-2 px-3">Total Deductions</th>
                 <th class="py-2 px-3">Net Pay</th>
+                <th class="py-2 px-3">Payment</th>
                 <th class="py-2 px-3">Generated At</th>
                 <th class="py-2 px-3">Actions</th>
               </tr>
@@ -163,6 +171,7 @@
                 <td class="py-2 px-3 text-amber-300 font-semibold">{{ formatCurrency(slip.totalEarnings || 0) }}</td>
                 <td class="py-2 px-3 text-slate-300">{{ formatCurrency(slip.totalDeductions || 0) }}</td>
                 <td class="py-2 px-3 text-emerald-300 font-semibold">{{ formatCurrency(slip.netPay || 0) }}</td>
+                <td class="py-2 px-3 text-xs" :class="slip.paymentStatus === 'Paid' ? 'text-emerald-300' : 'text-amber-200'">{{ slip.paymentStatus || 'Unpaid' }}</td>
                 <td class="py-2 px-3 text-slate-300">{{ formatDate(slip.dateGenerated || slip.createdAt) }}</td>
                 <td class="py-2 px-3">
                   <button
@@ -202,6 +211,8 @@
                 <th class="py-2 px-3">Net Pay</th>
                 <th class="py-2 px-3">Approved At</th>
                 <th class="py-2 px-3">Approved By</th>
+                <th class="py-2 px-3">Release / Payout</th>
+                <th class="py-2 px-3">Actions</th>
               </tr>
             </thead>
             <tbody class="text-white">
@@ -213,6 +224,9 @@
                 <td class="py-2 px-3 text-emerald-300 font-semibold">{{ formatCurrency(summary.totalNetPay || 0) }}</td>
                 <td class="py-2 px-3 text-slate-300">{{ formatDate(summary.approvedAt || summary.updatedAt) }}</td>
                 <td class="py-2 px-3 text-slate-300">{{ summary.approvedByName || '-' }}</td>
+                <td class="py-2 px-3 text-xs" :class="summary.paymentStatus === 'Paid' ? 'text-emerald-300' : 'text-amber-200'">
+                  {{ summary.paymentStatus === 'Paid' ? 'Paid' : `${summary.releasedCount || 0}/${summary.totalEntries || 0} payslips released` }}
+                </td>
                 <td class="py-2 px-3">
                   <button
                     class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-500 text-slate-200 hover:bg-slate-600/40"
@@ -1669,5 +1683,3 @@ export default {
   }
 }
 </script>
-
-

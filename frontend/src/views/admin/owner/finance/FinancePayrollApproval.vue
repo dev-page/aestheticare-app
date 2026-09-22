@@ -27,6 +27,7 @@
                 <th class="px-5 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Total Payroll</th>
                 <th class="px-5 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Net Pay</th>
                 <th class="px-5 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Status</th>
+                <th class="px-5 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Payout</th>
                 <th class="px-5 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Created At</th>
                 <th class="px-5 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Approved By</th>
                 <th class="px-5 py-3 text-left text-[11px] font-medium text-slate-300 uppercase tracking-wider">Actions</th>
@@ -44,6 +45,11 @@
                     :class="statusBadge(summary.status)"
                   >
                     {{ formatStatus(summary.status) }}
+                  </span>
+                </td>
+                <td class="px-5 py-3 text-xs">
+                  <span :class="summary.paymentStatus === 'Paid' ? 'text-emerald-300' : summary.payslipStatus === 'Released' ? 'text-amber-200' : 'text-slate-400'">
+                    {{ summary.paymentStatus === 'Paid' ? 'Paid' : summary.payslipStatus === 'Released' ? 'Ready to pay' : `${summary.releasedCount || 0}/${summary.totalEntries || 0} payslips released` }}
                   </span>
                 </td>
                 <td class="px-5 py-3 text-slate-300 text-sm">{{ formatDate(summary.createdAt || summary.updatedAt) }}</td>

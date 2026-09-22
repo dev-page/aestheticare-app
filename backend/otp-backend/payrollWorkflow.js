@@ -96,8 +96,15 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     const payload = { employeeId: approved.employeeId, employeeName: approved.employeeName || '', branchId: approved.branchId, payrollEntryId: entryRef.id, payPeriodMonthKey: month, payPeriod: month, earnings: { hoursWorked: Number(approved.hoursWorked || 0), hourlyRate: Number(approved.hourlyRate || 0), overtimePay: Number(approved.overtimePay || 0), commission: Number(approved.commission || 0), total: Number(approved.totalPay || 0) }, deductions: approved.deductions || {}, totalEarnings: Number(approved.totalPay || 0), totalDeductions: Number(approved.totalDeductions || 0), netPay: Number(approved.netPay || 0), createdBy: req.user.uid, createdAt: now, dateGenerated: now, paymentStatus: 'Unpaid' }
     tx.set(slipRef, payload)
     tx.set(db.collection('users').doc(approved.employeeId).collection('payslips').doc(entryRef.id), payload)
+    const releasedCount = Number(summary.releasedCount || 0) + 1
+    const totalEntries = Object.keys(summary.approvedEntries || {}).length
     tx.update(entryRef, { payslipReleasedAt: now })
-    tx.update(summaryRef, { releasedCount: Number(summary.releasedCount || 0) + 1 })
+    tx.update(summaryRef, {
+      releasedCount,
+      payslipStatus: releasedCount >= totalEntries ? 'Released' : 'Partially Released',
+      payslipsReleasedAt: releasedCount >= totalEntries ? now : null,
+      updatedAt: now,
+    })
     tx.set(db.collection('notifications').doc(), { recipientUserId: approved.employeeId, branchId: approved.branchId, title: 'Payslip available', message: `Your approved payslip for ${month} is available.`, link: '/hr/my-payslips', read: false, deleted: false, createdAt: now })
     return { id: entryRef.id }
   })
