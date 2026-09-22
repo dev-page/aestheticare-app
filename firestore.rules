@@ -140,6 +140,12 @@ service cloud.firestore {
           || request.time < clinicDoc(branchId).data.subscriptionExpiresAt);
     }
 
+    function planAllowsBookingAvailability(branchId) {
+      return exists(/databases/$(database)/documents/clinics/$(branchId))
+        && (clinicDoc(branchId).data.subscriptionPlan == 'basic'
+          || clinicDoc(branchId).data.subscriptionPlan == 'premium');
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn()
         && (request.auth.uid == userId
@@ -187,12 +193,14 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.branchId != null
         && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('hr:update');
+        && (hasPermission('hr:update')
+          || (request.resource.data.recurring == true && hasPermission('appointments:review') && planAllowsBookingAvailability(request.resource.data.branchId)));
       allow update: if isSignedIn()
         && resource.data.branchId != null
         && request.resource.data.branchId == resource.data.branchId
         && canAccessBranch(resource.data.branchId)
-        && hasPermission('hr:update');
+        && (hasPermission('hr:update')
+          || (resource.data.recurring == true && request.resource.data.recurring == true && hasPermission('appointments:review') && planAllowsBookingAvailability(resource.data.branchId)));
       allow delete: if isSignedIn()
         && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
@@ -204,6 +212,10 @@ service cloud.firestore {
         || (isSignedIn()
           && (isSuperadmin() || isOwnerOfBranch(clinicId) || isStaffOfBranch(clinicId)));
       allow create: if isSignedIn()
+        // The browser may create only its initial owner clinic (whose ID is
+        // the owner's UID during registration). Additional branches are
+        // created by the trusted subscription-aware backend.
+        && clinicId == request.auth.uid
         && request.resource.data.ownerId == request.auth.uid;
       allow update: if isSignedIn()
         && (isSuperadmin()

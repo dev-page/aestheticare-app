@@ -25,6 +25,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       { type: 'section', label: 'APPOINTMENTS' },
       { label: 'Appointments', icon: 'mdi:calendar-month-outline', to: '/crm/appointments', permission: 'appointments:view' },
       { label: 'Booking Requests', icon: 'mdi:calendar-question', to: '/crm/appointments/requests', permission: 'appointments:review' },
+      { label: 'Booking Availability', icon: 'mdi:calendar-clock-outline', to: '/appointments/booking-availability', feature: 'booking_availability', permission: 'appointments:review' },
       { label: 'Online Consultation', icon: 'mdi:video-outline', to: '/clinical/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
       { type: 'section', label: 'PAYMENTS & MESSAGES' },
       { label: 'POS', icon: 'mdi:cash-register', to: '/crm/pos', permission: 'payments:create' },

@@ -69,6 +69,7 @@ const routes = [
   //{ path: "/hr/schedule", name: "hr-schedule", component: () => import("@/views/clinic/hr/HRSchedule.vue"), meta: { requiresAuth: true } },
   { path: "/hr/add-shift", name: "hr-add-shift", component: () => import("@/views/admin/owner/hr/AddShift.vue"), meta: { requiresAuth: true, requiresPermission: "hr:create", requiresFeature: "hr" } },
   { path: "/hr/schedule-assignment", name: "hr-schedule-assignment", component: () => import("@/views/admin/owner/hr/ScheduleAssignment.vue"), meta: { requiresAuth: true, requiresPermission: "hr:update", requiresFeature: "hr" } },
+  { path: "/appointments/booking-availability", name: "booking-availability", component: () => import("@/views/admin/owner/BookingAvailability.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:review", requiresFeature: "booking_availability" } },
   { path: "/hr/leave-request", name: "hr-leave-request", component: () => import("@/views/admin/owner/hr/LeaveRequest.vue"), meta: { requiresAuth: true, requiresPermission: "leave:create", requiresFeature: "hr" } },
   { path: "/hr/leave-management", name: "hr-leave-management", component: () => import("@/views/admin/owner/hr/LeaveManagement.vue"), meta: { requiresAuth: true, requiresPermission: "leave:review", requiresFeature: "hr" } },
   { path: "/hr/overtime", name: "hr-overtime", component: () => import("@/views/admin/owner/hr/Overtime.vue"), meta: { requiresAuth: true, requiresPermission: "overtime:view", requiresFeature: "hr" } },

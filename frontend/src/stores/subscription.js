@@ -30,12 +30,12 @@ const DEFAULT_FEATURES = {
     'pos_payments',
     'inventory',
     'services',
-    'payroll',
-    'attendance',
+    'booking_availability',
   ],
   premium: [
     'subscription',
     'multi_branch',
+    'booking_availability',
     'staff_management',
     'appointments',
     'pos_payments',
@@ -53,6 +53,7 @@ const DEFAULT_FEATURES = {
 DEFAULT_FEATURES.premium = [
   'subscription',
   'multi_branch',
+  'booking_availability',
   'staff_management',
   'appointments',
   'pos_payments',

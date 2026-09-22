@@ -764,7 +764,7 @@ import { auth, db } from '@/config/firebaseConfig'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { addCartItem, readCart } from '@/utils/customerCart'
-import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
+import { buildWeekScheduleMap, getScheduleDayWindow } from '@/utils/employeeSchedules'
 import { calculateCommissionAmount, calculateNetAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
@@ -1658,10 +1658,9 @@ const bookingSlots = computed(() => {
 
     practitioners.value.forEach((practitioner) => {
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
-      const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitioner.id] || {}, weekKey)
-      const shiftLabel = String(assignments?.[dayName] || '').trim()
-      if (!shiftLabel) return
-      const windowMinutes = extractShiftWindowMinutes(shiftLabel)
+      const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
+      if (!scheduleWindow) return
+      const windowMinutes = extractShiftWindowMinutes(`${scheduleWindow.start} - ${scheduleWindow.end}`)
       if (!windowMinutes) return
 
       let { start, end } = windowMinutes
@@ -1840,11 +1839,9 @@ const buildBookingSlotsForPractitioners = (practitionerList = []) => {
 
     practitionerList.forEach((practitioner) => {
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
-      const assignments = resolveWeekAssignments(practitionerSchedules.value?.[practitioner.id] || {}, weekKey)
-      const shiftLabel = String(assignments?.[dayName] || '').trim()
-      if (!shiftLabel) return
-
-      const windowMinutes = extractShiftWindowMinutes(shiftLabel)
+      const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
+      if (!scheduleWindow) return
+      const windowMinutes = extractShiftWindowMinutes(`${scheduleWindow.start} - ${scheduleWindow.end}`)
       if (!windowMinutes) return
 
       let { start, end } = windowMinutes

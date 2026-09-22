@@ -34,3 +34,5 @@ backend/otp-backend/*.log
 backend/otp-backend/.env
 backend/otp-backend/.env.*
 backend/otp-backend/serviceAccountKey.json
+
+.vercel

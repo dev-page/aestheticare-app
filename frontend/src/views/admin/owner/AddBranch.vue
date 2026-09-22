@@ -9,6 +9,7 @@ import { Icon } from '@iconify/vue'
 import Modal from '@/components/common/Modal.vue'
 import LocationPicker from '@/components/common/LocationPicker.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import {
   validateCavitePinSelection,
 } from '@/utils/locationValidation'
@@ -20,6 +21,20 @@ export default {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const branches = ref([])
+    const createBranch = async (payload) => {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Please sign in again before adding a branch.')
+      let lastError
+      for (const base of OTP_BACKEND_CANDIDATES) {
+        try {
+          const response = await fetch(`${base}/owner/branches`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+          const result = await response.json()
+          if (!response.ok || !result.success) throw new Error(result.error || 'Unable to add branch.')
+          return result.data
+        } catch (error) { lastError = error }
+      }
+      throw lastError || new Error('Unable to reach the branch service.')
+    }
 
     const currentBranch = ref({
       id: null,
@@ -542,35 +557,10 @@ export default {
           return
         }
 
-        if (currentBranch.value.isMainBranch) {
-          const ownerBranchesQuery = query(collection(db, 'clinics'), where('ownerId', '==', ownerId))
-          const existingBranches = await getDocs(ownerBranchesQuery)
-          const batch = writeBatch(db)
-          existingBranches.docs.forEach((branchDoc) => {
-            batch.update(branchDoc.ref, { isMainBranch: false })
-          })
-          await batch.commit()
-        }
-
-        const docRef = await addDoc(collection(db, 'clinics'), {
-          clinicBranch: currentBranch.value.name.trim(),
-          clinicName: currentBranch.value.name.trim(),
-          clinicLocation: currentBranch.value.location.trim(),
-          clinicLocationLat: currentBranch.value.clinicLocationLat,
-          clinicLocationLng: currentBranch.value.clinicLocationLng,
-          clinicLocationAddress: currentBranch.value.clinicLocationAddress,
-          clinicBarangay: currentBranch.value.clinicBarangay,
-          clinicProvince: currentBranch.value.clinicProvince,
-          clinicPostalCode: currentBranch.value.clinicPostalCode,
-          status: 'Active',
-          isMainBranch: Boolean(currentBranch.value.isMainBranch),
-          isPublished: true,
-          ownerId,
-          createdAt: serverTimestamp()
-        })
+        const created = await createBranch({ ...currentBranch.value, ownerId })
 
         branches.value.push({
-          id: docRef.id,
+          id: created.id,
           ...currentBranch.value,
           clinicBranch: currentBranch.value.name.trim(),
           clinicName: currentBranch.value.name.trim(),

@@ -2105,6 +2105,22 @@ const PLAN_PRIORITIES = {
   premium: 2,
 }
 
+const PLAN_FEATURES = Object.freeze({
+  basic: new Set(['booking_availability']),
+  premium: new Set(['booking_availability', 'multi_branch']),
+})
+
+const assertClinicPlanFeature = async (firestore, branchId, feature) => {
+  const clinicSnap = await firestore.collection('clinics').doc(String(branchId || '').trim()).get()
+  assertWorkflow(clinicSnap.exists, 'Clinic branch not found.', 404)
+  const clinic = clinicSnap.data() || {}
+  const plan = normalizePlanKey(clinic.subscriptionPlan || clinic.plan || 'free')
+  const expiresAt = toDateValue(clinic.subscriptionExpiresAt)
+  assertWorkflow(!expiresAt || expiresAt.getTime() > Date.now(), 'This clinic subscription is no longer active.', 403)
+  assertWorkflow(PLAN_FEATURES[plan]?.has(feature), 'This clinic plan does not include customer booking availability.', 403)
+  return { plan, clinic }
+}
+
 const getPlanPriority = (planKey) => PLAN_PRIORITIES[normalizePlanKey(planKey)] ?? 0
 
 const getPlanDurationDays = (planKey, billingCycle = 'month') => {
@@ -2567,6 +2583,37 @@ const authorizeClinicAction = async (uid, branchId, permission) => {
   assertWorkflow(await resolveBranchAccess(uid, branchId), 'You cannot manage appointments for this branch.', 403)
   assertWorkflow(context.permissions.has(permission) || context.permissions.has('administrator:full_access'), 'You do not have permission for this action.', 403)
 }
+
+// Branch entitlement belongs to the clinic organization, never to an individual
+// browser page. Basic clinics retain one active branch; Premium clinics may add
+// branches. The new branch inherits its organization's subscription state.
+app.post('/owner/branches', requireAuth, async (req, res) => {
+  try {
+    const firestore = admin.firestore(), ownerId = req.user.uid, context = await loadUserContext(ownerId)
+    assertWorkflow(context.roleKey === 'Owner' || context.permissions.has('administrator:full_access'), 'Only the clinic owner can add a branch.', 403)
+    const input = req.body || {}, branches = (await firestore.collection('clinics').where('ownerId', '==', ownerId).get()).docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) }))
+    const organization = branches.find(branch => branch.id === ownerId) || branches.find(branch => branch.isMainBranch) || branches[0] || {}
+    const plan = normalizePlanKey(organization.subscriptionPlan || context.userData.subscriptionPlan || context.userData.plan || 'free')
+    const activeBranches = branches.filter(branch => String(branch.status || 'Active').toLowerCase() === 'active')
+    assertWorkflow(plan === 'premium', 'Adding another branch requires the Premium subscription.', 403)
+    const name = String(input.name || input.clinicBranch || '').trim(), location = String(input.location || input.clinicLocation || '').trim()
+    assertWorkflow(name && location, 'Branch name and location are required.', 400)
+    const branchRef = firestore.collection('clinics').doc()
+    await firestore.runTransaction(async tx => {
+      const current = await tx.get(firestore.collection('clinics').where('ownerId', '==', ownerId))
+      const currentBranches = current.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) }))
+      const currentOrganization = currentBranches.find(branch => branch.id === ownerId) || currentBranches.find(branch => branch.isMainBranch) || currentBranches[0] || {}
+      const currentPlan = normalizePlanKey(currentOrganization.subscriptionPlan || context.userData.subscriptionPlan || context.userData.plan || 'free')
+      assertWorkflow(currentPlan === 'premium', 'Adding another branch requires the Premium subscription.', 403)
+      if (input.isMainBranch === true) currentBranches.forEach(branch => tx.set(firestore.collection('clinics').doc(branch.id), { isMainBranch: false, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }))
+      tx.set(branchRef, { clinicBranch: name, clinicName: name, clinicLocation: location, clinicLocationLat: String(input.clinicLocationLat || ''), clinicLocationLng: String(input.clinicLocationLng || ''), clinicLocationAddress: String(input.clinicLocationAddress || ''), clinicBarangay: String(input.clinicBarangay || ''), clinicProvince: String(input.clinicProvince || 'Cavite'), clinicPostalCode: String(input.clinicPostalCode || ''), status: 'Active', isMainBranch: input.isMainBranch === true, isPublished: true, ownerId, organizationOwnerId: ownerId, subscriptionPlan: currentPlan, subscriptionExpiresAt: currentOrganization.subscriptionExpiresAt || context.userData.subscriptionExpiresAt || null, createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(firestore.collection('activities').doc(), { branchId: branchRef.id, ownerId, action: 'branch-created', details: `Created ${name} under the ${currentPlan} organization subscription.`, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+    })
+    return res.json({ success: true, data: { id: branchRef.id, plan, activeBranchCount: activeBranches.length + 1 } })
+  } catch (error) {
+    return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Unable to add branch.' })
+  }
+})
 registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction })
 registerWalkInPayments(app, {
   admin, requireAuth, authorizeClinicAction,
@@ -3873,6 +3920,8 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     if (!practitionerId) return res.status(400).json({ success: false, error: 'practitionerId is required' })
     if (!branchId) return res.status(400).json({ success: false, error: 'branchId is required' })
     if (!date) return res.status(400).json({ success: false, error: 'date is required' })
+
+    await assertClinicPlanFeature(firestore, branchId, 'booking_availability')
 
     if (!walkIn && String(reservation.bookingType || '').toLowerCase() === 'follow-up') {
       const followUpOf = String(reservation.followUpOf || '').trim()

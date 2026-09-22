@@ -27,13 +27,21 @@ export const buildWeekScheduleMap = (scheduleDocs = []) => {
       String(data.type || '').trim().toLowerCase() === RECURRING_SCHEDULE_ID
 
     if (isRecurring) {
-      weekMap[RECURRING_WEEKMAP_KEY] = data.assignmentLabels || data.assignments || {}
+      weekMap[RECURRING_WEEKMAP_KEY] = {
+        assignments: data.assignments || {},
+        assignmentLabels: data.assignmentLabels || data.assignments || {},
+        availability: data.availability || {},
+      }
       return
     }
 
     const weekKey = String(data.weekStart || docId || '').trim()
     if (!weekKey) return
-    weekMap[weekKey] = data.assignmentLabels || data.assignments || {}
+    weekMap[weekKey] = {
+      assignments: data.assignments || {},
+      assignmentLabels: data.assignmentLabels || data.assignments || {},
+      availability: data.availability || {},
+    }
   })
 
   return weekMap
@@ -41,9 +49,9 @@ export const buildWeekScheduleMap = (scheduleDocs = []) => {
 
 export const resolveWeekAssignments = (weekMap = {}, weekKey = '') => {
   const specific = weekKey ? weekMap?.[weekKey] : null
-  if (specific && typeof specific === 'object') return specific
+  if (specific && typeof specific === 'object') return specific.assignmentLabels || specific.assignments || specific
   const recurring = weekMap?.[RECURRING_WEEKMAP_KEY]
-  if (recurring && typeof recurring === 'object') return recurring
+  if (recurring && typeof recurring === 'object') return recurring.assignmentLabels || recurring.assignments || recurring
   return {}
 }
 
@@ -69,6 +77,21 @@ export const parseShiftDurationHours = (shift = {}) => {
   const endTotal = endHour * 60 + endMinute
   if (endTotal <= startTotal) return 0
   return (endTotal - startTotal) / 60
+}
+
+// Basic plans store booking windows directly; Premium schedules can continue
+// using their existing shift labels. This keeps customer booking independent
+// of the HR module.
+export const getScheduleDayWindow = (scheduleMap = {}, weekKey = '', day = '') => {
+  const specific = weekKey ? scheduleMap?.[weekKey] : null
+  const source = specific || scheduleMap?.[RECURRING_WEEKMAP_KEY] || {}
+  const availability = source?.availability?.[day]
+  if (availability && availability.enabled !== false && availability.start && availability.end) {
+    return { start: String(availability.start), end: String(availability.end) }
+  }
+  const label = String((source?.assignmentLabels || source?.assignments || source)?.[day] || '').trim()
+  const parts = label.split('||').pop().trim().split(' - ')
+  return parts.length === 2 && parts[0] && parts[1] ? { start: parts[0], end: parts[1] } : null
 }
 
 export const normalizeEmploymentType = (value = '') => {

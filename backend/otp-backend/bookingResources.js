@@ -49,13 +49,16 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const entries = schedules.docs.map((doc) => ({ ...doc.data(), id: doc.id }))
   const schedule = entries.find((entry) => (entry.weekStart || entry.id) === weekKey) || entries.find((entry) => entry.id === 'recurring' || entry.recurring || entry.type === 'recurring') || {}
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).format(dayDate)
+  const directAvailability = schedule.availability?.[weekday]
   const assignment = schedule.assignments?.[weekday]
   const label = schedule.assignmentLabels?.[weekday] || assignment
   const shifts = await tx.get(db.collection('shifts').where('branchId', '==', branchId))
   const shift = shifts.docs.map((doc) => ({ ...doc.data(), id: doc.id })).find((item) => item.id === assignment || `${item.shiftType || 'Shift'} || ${item.start} - ${item.end}` === label)
   const [labelStart, labelEnd] = String(label || '').split('||').pop().trim().split(' - ')
-  const shiftRange = shift ? getBookingRange({ time: shift.start, endTime: shift.end }) : labelStart && labelEnd ? getBookingRange({ time: labelStart, endTime: labelEnd }) : null
-  check(shiftRange && range.start >= shiftRange.start && range.end <= shiftRange.end, 'The selected time is outside the worker’s assigned shift.')
+  const shiftRange = directAvailability?.enabled !== false && directAvailability?.start && directAvailability?.end
+    ? getBookingRange({ time: directAvailability.start, endTime: directAvailability.end })
+    : shift ? getBookingRange({ time: shift.start, endTime: shift.end }) : labelStart && labelEnd ? getBookingRange({ time: labelStart, endTime: labelEnd }) : null
+  check(shiftRange && range.start >= shiftRange.start && range.end <= shiftRange.end, 'The selected time is outside the worker’s published availability.')
   const lock = db.collection('bookingResourceLocks').doc(branchId)
   await tx.get(lock)
   const appointments = await tx.get(db.collection('appointments').where('branchId', '==', branchId))
