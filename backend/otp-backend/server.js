@@ -1378,6 +1378,7 @@ app.post('/auth/activate-account', async (req, res) => {
         const supplierBatch = firestore.batch()
         supplierRefs.forEach((supplierRef) => supplierBatch.set(supplierRef, {
           status: 'Active',
+          accreditationStatus: 'Active',
           accountActivated: true,
           accountActivatedAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2325,6 +2326,48 @@ const applySubscriptionPaymentForOwner = async ({
       : 'Your plan change is now active.',
   }
 }
+
+// A new clinic may pay before it has a Firebase account.  Once registration
+// creates that account, this endpoint attaches only the matching, verified
+// PayMongo payment.  The browser never gets to choose a plan or payment state.
+app.post('/subscription/claim-registration-payment', requireAuth, async (req, res) => {
+  try {
+    const paymentId = String(req.body?.paymentId || '').trim()
+    if (!paymentId) return res.status(400).json({ success: false, error: 'Payment reference is required.' })
+    const firestore = admin.firestore()
+    const [userSnap, clinicSnap, paymentSnap] = await Promise.all([
+      firestore.collection('users').doc(req.user.uid).get(),
+      firestore.collection('clinics').doc(req.user.uid).get(),
+      firestore.collection('planPayments').doc(paymentId).get(),
+    ])
+    if (!userSnap.exists || !clinicSnap.exists) return res.status(409).json({ success: false, error: 'Create the clinic account before claiming its payment.' })
+    if (!paymentSnap.exists) return res.status(404).json({ success: false, error: 'Subscription payment was not found.' })
+    const user = userSnap.data() || {}, clinic = clinicSnap.data() || {}, payment = paymentSnap.data() || {}
+    const userEmail = String(req.user.email || user.email || '').trim().toLowerCase()
+    const payerEmail = String(payment.payerEmail || payment.email || '').trim().toLowerCase()
+    const planId = normalizePlanKey(payment.planId || '')
+    const paid = String(payment.paymongoStatus || '').trim().toLowerCase() === 'paid'
+    if (!userEmail || payerEmail !== userEmail || !paid || !['basic', 'premium'].includes(planId)) {
+      return res.status(403).json({ success: false, error: 'This verified payment does not belong to this clinic account.' })
+    }
+    if (String(clinic.ownerId || req.user.uid) !== req.user.uid) return res.status(403).json({ success: false, error: 'Only the clinic owner can claim this payment.' })
+    const claimedBy = String(payment.ownerUid || '').trim()
+    if (claimedBy && claimedBy !== req.user.uid) return res.status(409).json({ success: false, error: 'This subscription payment has already been claimed.' })
+
+    const action = await applySubscriptionPaymentForOwner({
+      firestore,
+      ownerUid: req.user.uid,
+      targetPlan: planId,
+      paidAt: payment.paymongoPaidAt || payment.createdAt || new Date(),
+      paymentReference: payment.paymongoPaymentId || paymentId,
+      billingCycle: String(payment.billingCycle || 'month'),
+    })
+    await paymentSnap.ref.set({ ownerUid: req.user.uid, claimedAt: admin.firestore.FieldValue.serverTimestamp(), claimAction: action.action }, { merge: true })
+    return res.json({ success: true, data: { planId, ...action } })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to apply the subscription payment.' })
+  }
+})
 
 const buildBookingAppointmentPayload = ({
   reservation,
@@ -3285,8 +3328,8 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
         try {
           const loginUrl = `${EMAIL_WEBSITE_URL}/login`
           const subject = 'Welcome to AesthetiCare — Your Clinic is Approved'
-          const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. You can now log in at ${loginUrl}.\n\nThank you for joining AesthetiCare.`
-          const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>. You can now <a href="${loginUrl}">log in</a> to access your account.</p><p>Thank you for joining AesthetiCare.</p></div>`
+          const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. Please use the activation link in the separate Activate your AesthetiCare account email before logging in.\n\nThank you for joining AesthetiCare.`
+          const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>.</p><p>Please use the activation link in the separate <strong>Activate your AesthetiCare account</strong> email before logging in.</p><p>Thank you for joining AesthetiCare.</p></div>`
           await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
           await createAccountActivation({ firestore, uid, email: recipient, name: userData.fullName || userData.firstName || 'Clinic owner', req })
         } catch (emailErr) {
@@ -3390,8 +3433,8 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
         try {
           const loginUrl = `${EMAIL_WEBSITE_URL}/login`
           const subject = 'Welcome to AesthetiCare — Your Clinic is Approved'
-          const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. You can now log in at ${loginUrl}.\n\nThank you for joining AesthetiCare.`
-          const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>. You can now <a href="${loginUrl}">log in</a> to access your account.</p><p>Thank you for joining AesthetiCare.</p></div>`
+          const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. Please use the activation link in the separate Activate your AesthetiCare account email before logging in.\n\nThank you for joining AesthetiCare.`
+          const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>.</p><p>Please use the activation link in the separate <strong>Activate your AesthetiCare account</strong> email before logging in.</p><p>Thank you for joining AesthetiCare.</p></div>`
           await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
           await createAccountActivation({ firestore, uid, email: recipient, name: userData.fullName || userData.firstName || 'Clinic owner', req })
         } catch (emailErr) {
@@ -3504,8 +3547,8 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
       try {
         const loginUrl = `${EMAIL_WEBSITE_URL}/login`
         const subject = 'Welcome to AesthetiCare — Your Clinic is Approved'
-        const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. You can now log in at ${loginUrl}.\n\nThank you for joining AesthetiCare.`
-        const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>. You can now <a href="${loginUrl}">log in</a> to access your account.</p><p>Thank you for joining AesthetiCare.</p></div>`
+        const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. Please use the activation link in the separate Activate your AesthetiCare account email before logging in.\n\nThank you for joining AesthetiCare.`
+        const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>.</p><p>Please use the activation link in the separate <strong>Activate your AesthetiCare account</strong> email before logging in.</p><p>Thank you for joining AesthetiCare.</p></div>`
         await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
         await createAccountActivation({
           firestore,
@@ -4729,14 +4772,13 @@ app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
 
     // Send welcome email to customer (transactional)
     try {
-      const loginUrl = `${EMAIL_WEBSITE_URL}/login`
-      const subject = 'Welcome to AestheticCare — Your account is ready'
-      const textBody = `Hi,\n\nWelcome to AestheticCare! Your account has been verified and is ready to use.\n\nYou can sign in here: ${loginUrl}\n\nIf you need help, reply to this email or contact us at ${senderEmail}.\n\nWarm regards,\nThe AestheticCare Team`
+      const subject = 'Welcome to AestheticCare — Activate your account'
+      const textBody = `Hi,\n\nWelcome to AestheticCare! Your email has been verified. Please use the activation link in the separate Activate your AesthetiCare account email before logging in.\n\nIf you need help, reply to this email or contact us at ${senderEmail}.\n\nWarm regards,\nThe AestheticCare Team`
       const htmlBody = `
         <div style="font-family:Arial, sans-serif;color:#222;">
           <p>Hi,</p>
-          <p><strong>Welcome to AestheticCare!</strong> Your account has been verified and is ready to use.</p>
-          <p><a href="${loginUrl}">Sign in to your account</a> to book services, save favorites, and more.</p>
+          <p><strong>Welcome to AestheticCare!</strong> Your email has been verified.</p>
+          <p>Please use the activation link in the separate <strong>Activate your AesthetiCare account</strong> email before logging in.</p>
           <p>If you need help, reply to this email or contact us at <a href="mailto:${senderEmail}">${senderEmail}</a>.</p>
           <p>Warm regards,<br/>The AestheticCare Team</p>
         </div>
@@ -5859,6 +5901,44 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
       ])
     }
     return res.status(500).json({ success: false, error: 'Unable to create the supplier account. Please try again.' })
+  }
+})
+
+app.post('/supply/supplier-profile', requireAuth, async (req, res) => {
+  try {
+    const firestore = admin.firestore()
+    const context = await loadUserContext(req.user.uid)
+    const role = String(context.roleKey || context.userData?.role || context.userData?.userType || '').trim().toLowerCase()
+    if (role !== 'supplier') return res.status(403).json({ success: false, error: 'Supplier access is required.' })
+    const matches = await Promise.all([
+      firestore.collection('suppliers').where('ownerId', '==', req.user.uid).limit(1).get(),
+      firestore.collection('suppliers').where('supplierUserId', '==', req.user.uid).limit(1).get(),
+    ])
+    const supplierSnap = matches.find(snapshot => !snapshot.empty)?.docs[0]
+    if (!supplierSnap) return res.status(404).json({ success: false, error: 'Supplier profile not found.' })
+    const input = req.body || {}, text = (value, limit = 500) => String(value || '').trim().slice(0, limit)
+    const email = text(input.email, 320).toLowerCase()
+    const accountEmail = String(context.userData?.email || req.user.email || '').trim().toLowerCase()
+    if (email && accountEmail && email !== accountEmail) return res.status(400).json({ success: false, error: 'Email changes must be made through account settings.' })
+    const tin = text(input.taxRegistrationNumber, 32).replace(/\D/g, '')
+    if (tin && !/^\d{12}$/.test(tin)) return res.status(400).json({ success: false, error: 'TIN must contain 12 digits.' })
+    const picture = text(input.profilePicture, 4000)
+    if (picture && !/^https:\/\//.test(picture)) return res.status(400).json({ success: false, error: 'Profile image must be a secure uploaded image.' })
+    const data = {
+      name: text(input.businessName, 120), businessName: text(input.businessName, 120),
+      contact: text(input.contactNumber, 32), contactNumber: text(input.contactNumber, 32), phone: text(input.contactNumber, 32),
+      address: text(input.businessAddress, 500), businessAddress: text(input.businessAddress, 500),
+      businessAddressStreet: text(input.businessAddressStreet, 250), businessAddressBarangay: text(input.businessAddressBarangay, 150),
+      businessAddressCity: text(input.businessAddressCity, 150), businessAddressProvince: text(input.businessAddressProvince, 150),
+      businessAddressPostalCode: text(input.businessAddressPostalCode, 20), businessAddressLat: text(input.businessAddressLat, 40), businessAddressLng: text(input.businessAddressLng, 40),
+      businessType: text(input.businessType, 120), taxRegistrationNumber: tin, profilePicture: picture,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+    await supplierSnap.ref.set(data, { merge: true })
+    await firestore.collection('supplyAudit').add({ branchId: supplierSnap.data()?.branchId || '', recordId: supplierSnap.id, actorId: req.user.uid, actorName: context.userData?.fullName || context.userData?.email || req.user.uid, role: context.roleKey, module: 'supplier', action: 'supplier-profile-updated', createdAt: admin.firestore.FieldValue.serverTimestamp() })
+    return res.json({ success: true, data: { id: supplierSnap.id, ...data } })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to update the supplier profile.' })
   }
 })
 

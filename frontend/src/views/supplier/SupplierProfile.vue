@@ -168,9 +168,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore'
+import { getStorage, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import { db } from '@/config/firebaseConfig'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import LocationPicker from '@/components/common/LocationPicker.vue'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 import {
@@ -180,11 +182,13 @@ import {
 } from '@/utils/supplierTin'
 
 const auth = getAuth()
+const storage = getStorage()
 const loading = ref(true)
 const locationError = ref('')
 const userEmail = ref('')
 const supplierDocId = ref('')
 const locationSearchValue = ref('')
+const profilePictureFile = ref(null)
 
 const profile = ref({
   businessName: '',
@@ -254,16 +258,12 @@ const handleLocationSelection = ({ lat, lng, address, street, barangay, city, pr
 const handleProfilePictureChange = (event) => {
   const file = event?.target?.files?.[0]
   if (!file) return
-  if (!file.type?.startsWith('image/')) {
-    toast.error('Please upload an image file.')
+  if (!file.type?.startsWith('image/') || file.size > 5 * 1024 * 1024) {
+    toast.error('Please upload an image smaller than 5 MB.')
     return
   }
-
-  const reader = new FileReader()
-  reader.onload = (loadEvent) => {
-    profile.value.profilePicture = String(loadEvent.target?.result || '')
-  }
-  reader.readAsDataURL(file)
+  profilePictureFile.value = file
+  profile.value.profilePicture = URL.createObjectURL(file)
 }
 
 const loadProfile = async (user) => {
@@ -321,58 +321,32 @@ const saveProfile = async () => {
   }
 
   try {
-    const userPayload = {
-      businessName: profile.value.businessName || '',
-      email: profile.value.email || '',
-      contactNumber: profile.value.contactNumber || '',
-      address: profile.value.businessAddress || '',
-      addressStreet: profile.value.businessAddressStreet || '',
-      addressBarangay: profile.value.businessAddressBarangay || '',
-      addressCity: profile.value.businessAddressCity || '',
-      addressProvince: profile.value.businessAddressProvince || '',
-      addressPostalCode: profile.value.businessAddressPostalCode || '',
-      addressLat: profile.value.businessAddressLat || '',
-      addressLng: profile.value.businessAddressLng || '',
-      businessType: profile.value.businessType || '',
-      taxRegistrationNumber: normalizeTinDigits(profile.value.taxRegistrationNumber || ''),
-      profilePicture: profile.value.profilePicture || '',
-      updatedAt: serverTimestamp(),
+    let profilePicture = profile.value.profilePicture || ''
+    if (profilePictureFile.value) {
+      const ref = storageRef(storage, `supplier-profile-images/${user.uid}/${Date.now()}-${profilePictureFile.value.name}`)
+      const snapshot = await uploadBytes(ref, profilePictureFile.value)
+      profilePicture = await getDownloadURL(snapshot.ref)
+      profilePictureFile.value = null
+      profile.value.profilePicture = profilePicture
     }
-
-    const supplierPayload = {
-      ownerId: user.uid,
-      name: profile.value.businessName || '',
-      businessName: profile.value.businessName || '',
-      email: profile.value.email || '',
-      contactNumber: profile.value.contactNumber || '',
-      contact: profile.value.contactNumber || '',
-      phone: profile.value.contactNumber || '',
-      address: profile.value.businessAddress || '',
-      businessAddress: profile.value.businessAddress || '',
-      businessAddressStreet: profile.value.businessAddressStreet || '',
-      businessAddressBarangay: profile.value.businessAddressBarangay || '',
-      businessAddressCity: profile.value.businessAddressCity || '',
-      businessAddressProvince: profile.value.businessAddressProvince || '',
-      businessAddressPostalCode: profile.value.businessAddressPostalCode || '',
-      businessAddressLat: profile.value.businessAddressLat || '',
-      businessAddressLng: profile.value.businessAddressLng || '',
-      businessType: profile.value.businessType || '',
-      taxRegistrationNumber: normalizeTinDigits(profile.value.taxRegistrationNumber || ''),
-      profilePicture: profile.value.profilePicture || '',
-      status: profile.value.status || 'Active',
-      approvalStatus: profile.value.approvalStatus || 'Approved',
-      updatedAt: serverTimestamp(),
+    const payload = {
+      businessName: profile.value.businessName || '', email: profile.value.email || '', contactNumber: profile.value.contactNumber || '',
+      businessAddress: profile.value.businessAddress || '', businessAddressStreet: profile.value.businessAddressStreet || '',
+      businessAddressBarangay: profile.value.businessAddressBarangay || '', businessAddressCity: profile.value.businessAddressCity || '',
+      businessAddressProvince: profile.value.businessAddressProvince || '', businessAddressPostalCode: profile.value.businessAddressPostalCode || '',
+      businessAddressLat: profile.value.businessAddressLat || '', businessAddressLng: profile.value.businessAddressLng || '',
+      businessType: profile.value.businessType || '', taxRegistrationNumber: normalizeTinDigits(profile.value.taxRegistrationNumber || ''), profilePicture,
     }
-
-    await Promise.all([
-      setDoc(doc(db, 'users', user.uid), userPayload, { merge: true }),
-      setDoc(doc(db, 'supplierApplications', user.uid), {
-        ...userPayload,
-        role: 'Supplier',
-        userType: 'supplier',
-      }, { merge: true }),
-      setDoc(doc(db, 'suppliers', supplierDocId.value || user.uid), supplierPayload, { merge: true }),
-    ])
+    const token = await user.getIdToken()
+    let result
+    for (const base of OTP_BACKEND_CANDIDATES) {
+      const response = await fetch(`${base}/supply/supplier-profile`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      result = await response.json().catch(() => null)
+      if (response.ok && result?.success) break
+      if (!response.ok) throw new Error(result?.error || 'Unable to update the supplier profile.')
+    }
+    if (!result?.success) throw new Error(result?.error || 'Supplier profile service is unavailable.')
+    supplierDocId.value = result.data.id || supplierDocId.value
 
     toast.success('Supplier profile updated successfully.')
   } catch (error) {

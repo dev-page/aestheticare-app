@@ -1313,10 +1313,10 @@ const verifyOtp = async () => {
       userUid.value = String(verifyRes.data.data.uid).trim()
     }
 
-    // Verification activates the account, but the user should still enter
-    // through the normal login flow rather than remain signed in here.
+    // Activation is a separate final step, so this account cannot be used
+    // until the activation link sent to the customer's inbox is redeemed.
     await signOut(auth).catch(() => {})
-    toast.success('Email verified! You can now log in.')
+    toast.success('Email verified. Check your inbox and activate your account before logging in.')
     clearFormFields()
     resetOtpState()
 

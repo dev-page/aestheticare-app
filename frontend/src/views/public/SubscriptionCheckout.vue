@@ -137,7 +137,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { collection, deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { auth, db } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -577,44 +577,8 @@ const handlePayMongoReturn = async () => {
     const currentUser = await getCurrentUser()
 
     if (shouldPrefill.value && currentUser) {
-      const currentPlan = normalizePlanId(subscriptionStore.activePlan || '')
-      const targetPlan = normalizePlanId(pending.planId || '')
-      const shouldApplyImmediateFallback =
-        subscriptionAction?.action !== 'scheduled_downgrade' &&
-        targetPlan &&
-        getPlanPriority(targetPlan) >= getPlanPriority(currentPlan)
-
-      if (shouldApplyImmediateFallback) {
-        const planDays = targetPlan === 'free-trial' || targetPlan === 'free' ? 14 : 30
-        const startedAt = subscriptionAction?.effectiveAt ? new Date(subscriptionAction.effectiveAt) : new Date()
-        const parsedExpiresAt = subscriptionAction?.expiresAt ? new Date(subscriptionAction.expiresAt) : null
-        const expiresAt =
-          parsedExpiresAt && !Number.isNaN(parsedExpiresAt.getTime())
-            ? parsedExpiresAt
-            : new Date(startedAt.getTime() + planDays * 24 * 60 * 60 * 1000)
-        const immediatePayload = {
-          subscriptionPlan: targetPlan,
-          paymentStatus: 'Paid',
-          paymentId: paymentDocId,
-          subscriptionOnboardingRequired: false,
-          subscriptionOnboardingCompletedAt: serverTimestamp(),
-          subscriptionStartedAt: startedAt,
-          subscriptionExpiresAt: expiresAt,
-          pendingSubscriptionPlan: deleteField(),
-          pendingSubscriptionApplyAt: deleteField(),
-          pendingSubscriptionRequestedAt: deleteField(),
-          pendingSubscriptionChangeType: deleteField(),
-          pendingSubscriptionPaymentId: deleteField(),
-          pendingSubscriptionPaidAt: deleteField(),
-          pendingSubscriptionNextExpiresAt: deleteField(),
-          pendingSubscriptionBillingCycle: deleteField(),
-        }
-
-        await Promise.all([
-          setDoc(doc(db, 'users', currentUser.uid), immediatePayload, { merge: true }),
-          setDoc(doc(db, 'clinics', currentUser.uid), immediatePayload, { merge: true }),
-        ])
-      }
+      // Subscription state is applied only by the verified backend checkout
+      // endpoint.  Do not fall back to a browser write here.
 
       await subscriptionStore.refreshSubscription()
 

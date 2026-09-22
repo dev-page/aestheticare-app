@@ -41,7 +41,14 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'status', 'approvalStatus', 'verificationStatus', 'verificationResults',
         'verificationProcessedAt', 'verificationProcessedBy', 'approvedAt',
-        'approvedBy', 'rejectedAt', 'rejectionReason', 'reviewedBy', 'reviewedAt'
+        'approvedBy', 'rejectedAt', 'rejectionReason', 'reviewedBy', 'reviewedAt',
+        'subscriptionPlan', 'plan', 'paymentStatus', 'paymentId',
+        'subscriptionStartedAt', 'subscriptionExpiresAt', 'subscriptionUpdatedAt',
+        'subscriptionOnboardingRequired', 'subscriptionOnboardingCompletedAt',
+        'pendingSubscriptionPlan', 'pendingSubscriptionApplyAt',
+        'pendingSubscriptionRequestedAt', 'pendingSubscriptionChangeType',
+        'pendingSubscriptionPaymentId', 'pendingSubscriptionPaidAt',
+        'pendingSubscriptionNextExpiresAt', 'pendingSubscriptionBillingCycle'
       ]);
     }
 
@@ -155,7 +162,7 @@ service cloud.firestore {
               && userData().branchIds.hasAny(resource.data.branchIds))));
       allow create: if isSignedIn()
         && ((request.auth.uid == userId
-            && request.resource.data.get('role', '') in ['Customer', 'Supplier', 'Clinic Admin', 'Owner']
+            && request.resource.data.get('role', '') in ['Customer', 'Supplier', 'Clinic Admin', 'Clinic Owner', 'Owner']
             && request.resource.data.get('branchId', userId) in [userId, '', null]
             && request.resource.data.get('permissions', []) == [] && request.resource.data.get('effectivePermissions', []) == []
             && request.resource.data.get('customRoleIds', []) == [] && request.resource.data.get('customRoleId', null) == null

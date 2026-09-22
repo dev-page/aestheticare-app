@@ -2744,6 +2744,8 @@ const registerClinic = async () => {
       sendOtpPromise,
     ])
 
+    await claimPrepaidSubscriptionPayment()
+
     if (!otpResult.success && otpResult.retryAfterSeconds <= 0) {
       await cleanupFailedRegistration(uid)
       toast.error('Failed to send OTP. Registration was rolled back. Please try again.')
@@ -2922,6 +2924,29 @@ const requestAutomaticClinicVerification = async (uid) => {
   })
   const payload = await response.json().catch(() => null)
   if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Automatic verification could not be started.')
+  return payload.data
+}
+
+const claimPrepaidSubscriptionPayment = async () => {
+  let paymentId = String(route.query.paymentId || '').trim()
+  if (!paymentId) {
+    try {
+      const draft = JSON.parse(sessionStorage.getItem('register_clinic_draft') || '{}')
+      paymentId = String(draft?.paymentId || '').trim()
+    } catch (_error) {
+      // A missing browser draft simply means this is a free registration.
+    }
+  }
+  if (!paymentId || !auth.currentUser) return null
+  const token = await auth.currentUser.getIdToken()
+  const response = await fetch(`${OTP_API_BASE}/subscription/claim-registration-payment`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ paymentId }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Your verified subscription payment could not be linked to this clinic.')
+  try { sessionStorage.removeItem('register_clinic_draft') } catch (_error) { /* no-op */ }
   return payload.data
 }
 
