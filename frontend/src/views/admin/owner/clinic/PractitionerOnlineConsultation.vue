@@ -84,7 +84,7 @@
                       v-if="appointment.consultationMode !== 'on-site'"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs hover:bg-sky-500 disabled:opacity-60"
-                      :disabled="creatingId === appointment.id || isExpiredAppointment(appointment) || isCancelledAppointment(appointment)"
+                      :disabled="creatingId === appointment.id || isExpiredAppointment(appointment) || isCancelledAppointment(appointment) || Boolean(meetLinkGateReason(appointment))"
                       @click="createMeetLink(appointment)"
                     >
                       {{ creatingId === appointment.id ? 'Creating...' : (appointment.meetLink ? 'Regenerate Link' : 'Create Link') }}
@@ -98,6 +98,9 @@
                     >
                       Join Call
                     </button>
+                    <p v-if="meetLinkGateReason(appointment)" class="w-full text-xs text-amber-300">
+                      {{ meetLinkGateReason(appointment) }}
+                    </p>
                   </div>
                 </td>
               </tr>
@@ -125,6 +128,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { Icon } from '@iconify/vue'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { initialPaymentReceived, normalized } from '../../../../../../backend/otp-backend/bookingWorkflow.js'
 
 export default {
   name: 'PractitionerOnlineConsultation',
@@ -232,8 +236,26 @@ export default {
     const isCancelledAppointment = (appointment) =>
       String(appointment?.status || '').trim().toLowerCase() === 'cancelled'
 
+    const meetLinkGateReason = (appointment) => {
+      if (String(appointment?.approvalStatus || '').trim() !== 'Approved') {
+        return 'Waiting for clinic approval.'
+      }
+      if (appointment?.contractRequired === true && normalized(appointment?.contract?.status) !== 'signed') {
+        return 'Waiting for the customer to sign the consultation contract.'
+      }
+      if (!initialPaymentReceived(appointment)) {
+        return 'Waiting for the required consultation payment.'
+      }
+      return ''
+    }
+
     const createMeetLink = async (appointment) => {
       if (!appointment?.id) return
+      const gateReason = meetLinkGateReason(appointment)
+      if (gateReason) {
+        toast.info(gateReason)
+        return
+      }
       creatingId.value = appointment.id
 
       try {
@@ -413,6 +435,7 @@ export default {
       currentUserId,
       isSeedingDemo,
       createMeetLink,
+      meetLinkGateReason,
       joinCall,
       copyMeetLink,
       seedDemoConsultation,

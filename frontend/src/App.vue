@@ -247,6 +247,9 @@ const connectionMessage = computed(() => {
 
 const sidebarPanelKey = computed(() => {
   const path = String(route.path || '').toLowerCase()
+  // The shared employee dashboard is served from /workspace, not /employee.
+  // Keep its global overlays (including the onboarding tooltip) on the employee theme.
+  if (path.startsWith('/workspace')) return 'employee'
   if (path.startsWith('/employee')) return 'employee'
   if (path.startsWith('/manager')) return 'manager'
   if (path.startsWith('/hr')) return 'hr'

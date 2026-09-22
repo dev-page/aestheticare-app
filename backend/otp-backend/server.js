@@ -2715,6 +2715,15 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
   if (String(appointment.type || '').trim().toLowerCase() !== 'consultation' || String(appointment.consultationMode || '').trim().toLowerCase() !== 'online') {
     return res.status(409).json({ success: false, error: 'Only online consultation appointments can have an online consultation link.' })
   }
+  if (String(appointment.approvalStatus || '').trim() !== 'Approved') {
+    return res.status(409).json({ success: false, error: 'The clinic must approve this online consultation before a meeting link can be created.' })
+  }
+  if (appointment.contractRequired === true && normalized(appointment.contract?.status) !== 'signed') {
+    return res.status(409).json({ success: false, error: 'The customer must sign the consultation contract before a meeting link can be created.' })
+  }
+  if (!initialPaymentReceived(appointment)) {
+    return res.status(409).json({ success: false, error: 'The required consultation payment must be received before a meeting link can be created.' })
+  }
 
   const cleanSummary = String(summary || '').trim()
   const cleanDescription = String(description || '').trim()
