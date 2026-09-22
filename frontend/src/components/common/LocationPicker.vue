@@ -163,6 +163,8 @@ let mapsReady = false
 let map = null
 let marker = null
 let geocoder = null
+let disposed = false
+let initializationToken = 0
 let lastValidSelection = null
 let caviteBoundaryBackdrop = null
 let caviteBoundaryOutlines = []
@@ -707,7 +709,13 @@ const searchLocation = async () => {
 }
 
 const initMap = async () => {
-  if (!mapCanvas.value) return
+  const token = ++initializationToken
+  const getLiveCanvas = () => {
+    const canvas = mapCanvas.value
+    if (disposed || token !== initializationToken || !(canvas instanceof HTMLElement) || !canvas.isConnected) return null
+    return canvas
+  }
+  if (!getLiveCanvas()) return
 
   loading.value = true
   error.value = ''
@@ -721,6 +729,7 @@ const initMap = async () => {
     loading.value = false
     return
   }
+  if (!getLiveCanvas()) return
 
   let MapCtor = window.google?.maps?.Map
   let AdvancedMarkerElement = window.google?.maps?.marker?.AdvancedMarkerElement
@@ -734,6 +743,7 @@ const initMap = async () => {
       console.error('Failed to import Google Maps libraries:', importError)
     }
   }
+  if (!getLiveCanvas()) return
 
   if (!MapCtor) {
     console.error('Google Maps failed to initialize: Map constructor is unavailable after loading the Maps libraries.')
@@ -746,12 +756,14 @@ const initMap = async () => {
   if (!hasOfficialCaviteBoundary.value) {
     caviteBoundaryNotice.value = 'Loading the Cavite province boundary...'
     const localBoundary = await loadLocalCaviteBoundary()
+    if (!getLiveCanvas()) return
     if (localBoundary) {
       caviteBoundaryGeometry.value = localBoundary
       caviteBoundaryNotice.value = ''
     } else {
       caviteBoundaryNotice.value = 'Unable to load the local Cavite boundary. Falling back to the official source.'
       const officialBoundary = await getOfficialCaviteBoundary()
+      if (!getLiveCanvas()) return
       if (officialBoundary) {
         caviteBoundaryGeometry.value = officialBoundary
         caviteBoundaryNotice.value = ''
@@ -776,8 +788,17 @@ const initMap = async () => {
     emit('error', error.value)
   }
 
+  const canvas = getLiveCanvas()
+  if (!canvas) return
+  // A tab change can replace the map element while Maps libraries are loading.
+  // Never pass an old or detached element to the Maps constructor.
+  if (map?.getDiv?.() && map.getDiv() !== canvas) {
+    cleanupMapListeners()
+    clearBoundaryOverlays()
+    map = null
+  }
   if (!map) {
-    map = new MapCtor(mapCanvas.value, {
+    map = new MapCtor(canvas, {
       center,
       zoom: hasValidInitialCoords ? 15 : defaultZoom,
       restriction: { latLngBounds: regionConfig.value.bounds, strictBounds: true },
@@ -922,11 +943,14 @@ watch(
 )
 
 onMounted(async () => {
+  disposed = false
   await nextTick()
   await initMap()
 })
 
 onBeforeUnmount(() => {
+  disposed = true
+  initializationToken += 1
   cleanupMapListeners()
   clearBoundaryOverlays()
   if (marker?.setMap) {

@@ -70,6 +70,14 @@
                     >
                       {{ summary.status === 'rejected' ? 'Rejected' : 'Reject' }}
                     </button>
+                    <button
+                      v-if="summary.status === 'approved'"
+                      class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-500/60 text-emerald-200 hover:bg-emerald-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+                      :disabled="processingId === summary.id || summary.paymentStatus === 'Paid'"
+                      @click="recordPayment(summary)"
+                    >
+                      {{ summary.paymentStatus === 'Paid' ? 'Payment recorded' : 'Record payment' }}
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -292,6 +300,30 @@ export default {
       }
     }
 
+    const recordPayment = async (summary) => {
+      if (!summary?.id || summary.paymentStatus === 'Paid') return
+      const result = await Swal.fire({
+        title: 'Record payroll payment',
+        html: '<p style="font-size:14px">All approved payslips must be released first.</p>',
+        input: 'text',
+        inputLabel: 'Bank / e-wallet reference',
+        inputPlaceholder: 'Transaction reference',
+        showCancelButton: true,
+        confirmButtonText: 'Record payment',
+        inputValidator: (value) => String(value || '').trim().length >= 3 ? undefined : 'Enter the payment reference.'
+      })
+      if (!result.isConfirmed) return
+      processingId.value = summary.id
+      try {
+        await workflowApi('/finance/payroll/' + summary.id + '/record-payment', { paymentReference: String(result.value || '').trim(), paymentMethod: 'Bank transfer' })
+        toast.success('Payroll payment recorded and payslips updated.')
+      } catch (error) {
+        toast.error(error.message || 'Unable to record payroll payment.')
+      } finally {
+        processingId.value = ''
+      }
+    }
+
     const getMonthKeyFromDate = (value) => {
       if (!value) return ''
       if (value?.toDate) return getMonthKeyFromDate(value.toDate())
@@ -358,7 +390,8 @@ export default {
       statusBadge,
       openSummaryModal,
       approveSummary,
-      rejectSummary
+      rejectSummary,
+      recordPayment
     }
   }
 }

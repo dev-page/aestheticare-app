@@ -65,7 +65,7 @@ const routes = [
 
   // HR routes
   { path: "/hr/dashboard", redirect: "/workspace/dashboard" },
-  { path: "/hr/sales", redirect: "/finance/reports" },
+  { path: "/hr/sales", redirect: "/hr/reports" },
   //{ path: "/hr/schedule", name: "hr-schedule", component: () => import("@/views/clinic/hr/HRSchedule.vue"), meta: { requiresAuth: true } },
   { path: "/hr/add-shift", name: "hr-add-shift", component: () => import("@/views/admin/owner/hr/AddShift.vue"), meta: { requiresAuth: true, requiresPermission: "hr:create", requiresFeature: "hr" } },
   { path: "/hr/schedule-assignment", name: "hr-schedule-assignment", component: () => import("@/views/admin/owner/hr/ScheduleAssignment.vue"), meta: { requiresAuth: true, requiresPermission: "hr:update", requiresFeature: "hr" } },

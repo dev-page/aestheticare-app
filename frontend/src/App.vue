@@ -13,7 +13,11 @@
         :badge-variant="customerTopbarVariant"
         :show-badge-status="showTopbarStatus"
       />
-      <router-view :key="$route.fullPath" />
+      <!-- Keep Account Settings mounted while its tab query changes. A fullPath
+           key tears down the entire page for ?tab=notifications and causes a
+           visible flash before the notification listener reconnects. Other
+           routes retain their existing query-driven remount behavior. -->
+      <router-view :key="$route.path === '/customer/account-settings' ? $route.path : $route.fullPath" />
       <OnboardingTour
         :is-open="onboardingIsOpen"
         :tour="onboardingTour"

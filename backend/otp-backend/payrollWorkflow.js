@@ -28,6 +28,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     const entries = snapshots.docs.filter((d) => payrollEntryIds.includes(d.id) && payrollMonth(d.data()) === monthKey)
     check(entries.length === new Set(payrollEntryIds).size && new Set(entries.map((d) => d.data().employeeId)).size === entries.length, 'Payroll entries are missing, duplicated or belong to another month.')
     const staff = await tx.get(db.collection('users').where('branchId', '==', branchId))
+    const staffById = new Map(staff.docs.map((snapshot) => [snapshot.id, snapshot.data() || {}]))
     const totals = { totalPayroll: 0, totalNetPay: 0, totalDeductions: 0 }
     for (const d of entries) {
       totals.totalPayroll += Number(d.data().totalPay)
@@ -35,6 +36,13 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
       totals.totalDeductions += Number(d.data().totalDeductions)
     }
     check(Object.values(totals).every(Number.isFinite), 'Payroll amounts are invalid.')
+    for (const entry of entries) {
+      const data = entry.data() || {}
+      const employee = staffById.get(data.employeeId)
+      check(employee && !employee.archived, 'Every payroll entry must belong to an active employee in this branch.')
+      check(Math.round(Number(employee.basePay || 0) * 100) === Math.round(Number(data.hourlyRate || 0) * 100), `Base pay changed for ${data.employeeName || 'an employee'}. Regenerate payroll before submission.`)
+      check(Math.abs(Number(data.totalPay || 0) - Number(data.totalDeductions || 0) - Number(data.netPay || 0)) < 0.011, 'Payroll earnings, deductions, and net pay do not agree.')
+    }
     const now = timestamp()
     tx.set(ref, { branchId, monthKey, monthLabel: monthKey, payrollEntryIds: entries.map((d) => d.id), ...totals, totalEntries: entries.length, totalEmployees: entries.length, status: 'pending', approvedBy: null, approvedAt: null, updatedBy: req.user.uid, updatedAt: now })
     for (const user of staff.docs.filter((d) => String(d.data().role || '').toLowerCase() === 'finance')) tx.set(db.collection('notifications').doc(), { recipientUserId: user.id, branchId, title: 'Payroll awaiting approval', message: `HR submitted payroll for ${monthKey}.`, link: '/finance/payroll-approval', read: false, deleted: false, createdAt: now })
@@ -92,5 +100,41 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     tx.update(summaryRef, { releasedCount: Number(summary.releasedCount || 0) + 1 })
     tx.set(db.collection('notifications').doc(), { recipientUserId: approved.employeeId, branchId: approved.branchId, title: 'Payslip available', message: `Your approved payslip for ${month} is available.`, link: '/hr/my-payslips', read: false, deleted: false, createdAt: now })
     return { id: entryRef.id }
+  })
+  route('/finance/payroll/:id/record-payment', async (tx, req, context) => {
+    const summaryRef = db.collection('payrollSummaries').doc(req.params.id)
+    const summary = (await tx.get(summaryRef)).data()
+    check(summary && assignedToBranch(context, summary.branchId) && context.permissions.has('payroll:approve'), 'Finance payroll approval permission required for this branch.', 403)
+    check(summary.status === 'approved' && summary.approvedEntries, 'Only an approved payroll can be recorded as paid.')
+    if (summary.paymentStatus === 'Paid') return { alreadyRecorded: true }
+
+    const paymentReference = String(req.body?.paymentReference || '').trim()
+    const paymentMethod = String(req.body?.paymentMethod || 'Bank transfer').trim()
+    check(paymentReference.length >= 3 && paymentReference.length <= 200, 'Enter a valid payment reference.', 400)
+    check(paymentMethod.length > 0 && paymentMethod.length <= 80, 'Enter a valid payment method.', 400)
+
+    const entryIds = Object.keys(summary.approvedEntries || {})
+    check(entryIds.length > 0, 'This payroll has no approved entries.')
+    const slipRefs = entryIds.map((id) => db.collection('payslips').doc(id))
+    const slips = await Promise.all(slipRefs.map((ref) => tx.get(ref)))
+    check(slips.every((slip) => slip.exists), 'HR must release every approved payslip before Finance records payroll payment.')
+
+    const now = timestamp()
+    let paidAmount = 0
+    for (let index = 0; index < slips.length; index += 1) {
+      const slipData = slips[index].data() || {}
+      const amount = Number(slipData.netPay || 0)
+      check(Number.isFinite(amount) && amount >= 0, 'A payslip has an invalid net pay.')
+      paidAmount += amount
+      const paymentUpdate = { paymentStatus: 'Paid', paymentMethod, paymentReference, paidAt: now, paidBy: req.user.uid, updatedAt: now }
+      tx.update(slipRefs[index], paymentUpdate)
+      tx.update(db.collection('users').doc(slipData.employeeId).collection('payslips').doc(entryIds[index]), paymentUpdate)
+      tx.update(db.collection('payrolls').doc(entryIds[index]), { paymentStatus: 'Paid', paidAt: now, paidBy: req.user.uid, paymentReference, updatedAt: now })
+    }
+    const expenseRef = db.collection('financialRecords').doc(`payroll-${summaryRef.id}`)
+    const expenseSnap = await tx.get(expenseRef)
+    if (expenseSnap.exists) tx.update(expenseRef, { paidAmount: Math.round(paidAmount * 100), outstandingAmount: 0, status: 'Paid', paidAt: now, paymentReference, paymentMethod, updatedAt: now })
+    tx.update(summaryRef, { paymentStatus: 'Paid', paymentMethod, paymentReference, paidAt: now, paidBy: req.user.uid, updatedAt: now })
+    return { paymentStatus: 'Paid', paidAmount }
   })
 }
