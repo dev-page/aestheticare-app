@@ -15,7 +15,7 @@ import {
 
 export default {
   name: 'AddBranch',
-  components: { OwnerSidebar, Modal, Icon },
+  components: { OwnerSidebar, Modal, Icon, LocationPicker },
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -24,7 +24,6 @@ export default {
     const currentBranch = ref({
       id: null,
       name: '',
-      revenue: 0,
       status: 'Active',
       location: '',
       clinicLocationLat: '',
@@ -99,7 +98,6 @@ export default {
       currentBranch.value = {
         id: null,
         name: '',
-        revenue: 0,
         status: 'Active',
         location: '',
         clinicLocationLat: '',
@@ -115,8 +113,7 @@ export default {
     const isFormEmpty = computed(() => {
       const branch = currentBranch.value
       return !branch.name?.trim() &&
-             !branch.location?.trim() &&
-             (branch.revenue || branch.revenue === 0)
+             !branch.location?.trim()
     })
 
     const branchNameError = computed(() => {
@@ -523,10 +520,6 @@ export default {
         toast.error('Only branches located in Cavite can be added.')
         return
       }
-      if (currentBranch.value.revenue < 0) {
-        toast.error('Revenue cannot be negative.')
-        return
-      }
 
       try {
         const result = await Swal.fire({
@@ -569,7 +562,6 @@ export default {
           clinicBarangay: currentBranch.value.clinicBarangay,
           clinicProvince: currentBranch.value.clinicProvince,
           clinicPostalCode: currentBranch.value.clinicPostalCode,
-          revenue: currentBranch.value.revenue,
           status: 'Active',
           isMainBranch: Boolean(currentBranch.value.isMainBranch),
           isPublished: true,
@@ -723,18 +715,6 @@ export default {
           </div>
 
           <div>
-            <label class="mb-1 block text-slate-400">Revenue</label>
-            <input
-              v-model.number="currentBranch.revenue"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Revenue"
-              class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
             <label class="mb-1 block text-slate-400">Status</label>
             <input
               v-model="currentBranch.status"
@@ -783,7 +763,8 @@ export default {
       </div>
 
       <Modal
-        panelClass="bg-slate-900 text-white w-full max-w-4xl"
+        panelClass="bg-cream-50 border border-gold-200/80 w-full max-w-4xl shadow-2xl shadow-gold-900/15"
+        bodyClass="location-modal-body"
         :isOpen="showLocationModal"
         :title="'Select Branch Location'"
         @close="closeLocationModal"

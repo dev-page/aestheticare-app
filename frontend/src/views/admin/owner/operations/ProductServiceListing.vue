@@ -72,12 +72,18 @@
             <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
           </select>
           <p class="mt-2 text-xs text-slate-400">A package must include one consultation and at least one service. Customers book and pay for the package as one appointment.</p>
+          <label class="mt-4 block text-slate-400">Number of treatment sessions<input v-model.number="form.sessionCount" type="number" min="1" max="50" step="1" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" /><span class="mt-1 block text-xs text-slate-400">Use 1 for a one-time package. For multiple sessions, the clinic schedules each visit separately after approval.</span></label>
         </div>
 
         <div v-if="form.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="md:col-span-2">
             <p class="text-sm font-medium text-white">Inventory Details</p>
             <p class="mt-1 text-xs text-slate-400">These optional details help customers identify the selected inventory product.</p>
+          </div>
+          <div v-if="form.postType === 'Service'" class="md:col-span-2">
+            <label class="block text-slate-400 mb-1">Number of Treatment Sessions</label>
+            <input v-model.number="form.sessionCount" type="number" min="1" max="50" step="1" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p class="text-xs text-slate-400 mt-1">Use 1 for a one-time service. A multi-session plan tracks the total sessions; the clinic schedules each next visit to match availability.</p>
           </div>
           <div>
             <label class="block text-slate-400 mb-1">Quantity / Volume</label>
@@ -304,6 +310,7 @@
           <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Follow-up: {{ form.followUpAllowed ? `Available within ${form.followUpWindowDays || 14} days` : 'Not available' }}</p>
           <p v-if="form.postType === 'Consultation'" class="mt-2 text-slate-300">Mode: {{ form.consultationMode === 'on-site' ? 'On-site consultation' : 'Online consultation' }}</p>
           <p v-if="form.postType === 'Package'" class="mt-2 text-slate-300">Included appointments: {{ form.packageServiceIds.length }}</p>
+          <p v-if="['Service', 'Package'].includes(form.postType)" class="mt-1 text-slate-300">Treatment sessions: {{ Math.max(1, Number(form.sessionCount || 1)) }}</p>
           <p v-if="form.postType === 'Product'" class="mt-2 text-slate-300">Source: selected inventory product</p>
           <p class="mt-1 text-slate-300">Proposed {{ form.postType.toLowerCase() }} price: PHP {{ Number(form.price || form.consultationFee || 0).toFixed(2) }}</p>
           <p class="mt-1 text-xs text-amber-200">Financial terms, including installment settings, require Finance approval before publication.</p>
@@ -666,6 +673,7 @@ export default {
       consultationMode: 'on-site',
       followUpAllowed: false,
       followUpWindowDays: 14,
+      sessionCount: 1,
       durationMinutes: 60,
       productVolume: '',
       productUnit: '',
@@ -694,6 +702,7 @@ export default {
       consultationMode: 'on-site',
       followUpAllowed: false,
       followUpWindowDays: 14,
+      sessionCount: 1,
       durationMinutes: 60,
       productVolume: '',
       productUnit: '',
@@ -773,6 +782,7 @@ export default {
         consultationMode: 'on-site',
         followUpAllowed: false,
         followUpWindowDays: 14,
+        sessionCount: 1,
         durationMinutes: 60,
         productVolume: '',
         productUnit: '',
@@ -1032,6 +1042,7 @@ export default {
             : postType === 'Package' && packageFollowUpComponents.length
               ? Math.min(...packageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
+          sessionCount: ['Service', 'Package'].includes(postType) ? Math.min(50, Math.max(1, Number(form.value.sessionCount || 1))) : 1,
           durationMinutes: postType === 'Product' ? null : postType === 'Package'
             ? Math.max(1, (form.value.packageServiceIds || []).reduce((total, id) => total + Number(posts.value.find((post) => post.id === id)?.durationMinutes || 0), 0))
             : Math.max(1, Number(form.value.durationMinutes || 60)),
@@ -1069,6 +1080,7 @@ export default {
             consultationFee: Number(form.value.consultationFee || 0),
             followUpAllowed: false,
             followUpWindowDays: null,
+            sessionCount: 1,
             durationMinutes: 30,
             requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50,
             isPackageComponent: true,

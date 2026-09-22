@@ -69,7 +69,7 @@
             <tbody class="divide-y divide-slate-700">
               <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-slate-700/50 transition-colors">
                 <td class="px-6 py-4 text-white">{{ appointment.clientName || appointment.customerName || appointment.patientName || '-' }}</td>
-                <td class="px-6 py-4 text-slate-300">{{ appointment.service || appointment.type || '-' }}</td>
+                <td class="px-6 py-4 text-slate-300"><p>{{ appointment.service || appointment.type || '-' }}</p><p v-if="appointment.treatmentPlan?.totalSessions > 1" class="mt-1 text-xs text-amber-300">Treatment plan: {{ appointment.treatmentPlan.completedSessions || 0 }}/{{ appointment.treatmentPlan.totalSessions }} completed</p></td>
                 <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ appointment.time || '' }}</td>
                 <td class="px-6 py-4">
                   <span :class="statusClass(appointment.status)">

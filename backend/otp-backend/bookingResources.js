@@ -30,6 +30,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
     inventory.push({ ...snapshot.data(), id: snapshot.id })
   }
   const duration = services.reduce((sum, service) => sum + Math.max(1, Number(service.durationMinutes || 60)), 0)
+  const totalSessions = Math.max(1, ...services.map((service) => Math.min(50, Math.max(1, Number(service.sessionCount || 1)))))
   const range = getBookingRange({ ...reservation, endTime: '', totalServiceDurationMinutes: duration })
   check(range, 'Choose a valid appointment time.', 400)
   const day = String(reservation.date || '')
@@ -74,5 +75,5 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const terms = services.map((service) => `${service.title || service.name || 'Service'}\n${String(service.termsAndConditions || '').trim()}`).join('\n\n')
   check(services.every((service) => String(service.termsAndConditions || '').trim()), 'The clinic must publish contract terms for each selected service before it can be booked.')
   const endTime = `${String(Math.floor(range.end / 60)).padStart(2, '0')}:${String(range.end % 60).padStart(2, '0')}`
-  return { lock, data: { bookingWorkflowVersion: 2, resources, endTime, selectedServices: services, serviceDetails: services, totalServiceDurationMinutes: duration, amount: total, totalAmount: total, installmentsAllowed, depositPercent, contractRequired: true, contract: { title: 'Service booking agreement', terms, status: 'pending', requiredSigners: [], signatures: {} } } }
+  return { lock, data: { bookingWorkflowVersion: 2, resources, endTime, selectedServices: services, serviceDetails: services, totalServiceDurationMinutes: duration, sessionNumber: 1, treatmentPlan: { totalSessions, completedSessions: 0, remainingSessions: totalSessions, schedulingMode: totalSessions > 1 ? 'clinic-scheduled' : 'single-visit' }, amount: total, totalAmount: total, installmentsAllowed, depositPercent, contractRequired: true, contract: { title: 'Service booking agreement', terms, status: 'pending', requiredSigners: [], signatures: {} } } }
 }

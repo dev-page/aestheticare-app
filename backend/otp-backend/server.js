@@ -6463,6 +6463,18 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       if (approved) prepared = await prepareBooking({ tx, db: firestore, reservation: latest, getBookingRange, rangesOverlap, appointmentId })
       if (prepared) tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.update(appointmentRef, { ...(prepared && !Number(latest.amountPaid) ? prepared.data : {}), ...update })
+      const totalSessions = Number(prepared?.data?.treatmentPlan?.totalSessions || latest?.treatmentPlan?.totalSessions || 1)
+      if (approved && totalSessions > 1) {
+        for (let sessionNumber = 1; sessionNumber <= totalSessions; sessionNumber += 1) {
+          const sessionRef = firestore.collection('treatmentSessions').doc(`${appointmentId}-${sessionNumber}`)
+          tx.set(sessionRef, {
+            branchId: latest.branchId, treatmentPlanAppointmentId: appointmentId, customerId: latest.customerId,
+            practitionerId: latest.practitionerId || latest.assignedPractitionerId || '', sessionNumber, totalSessions,
+            status: sessionNumber === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: sessionNumber === 1 ? appointmentId : '',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true })
+        }
+      }
     })
 
     if (appointment.bookingId) {

@@ -277,6 +277,9 @@
                         >
                           {{ item.durationMinutes }} mins
                         </span>
+                        <span v-if="Number(item.sessionCount || 1) > 1" class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium">
+                          {{ item.sessionCount }} treatment sessions
+                        </span>
                         <span
                           v-if="item.requiredSupplyIds?.length"
                           class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
@@ -484,6 +487,10 @@
                     <p v-if="selectedServiceDurationMinutes" class="mt-1 text-xs text-[#8b6a4d]">
                       Total duration:
                       <span class="ml-1 font-semibold text-[#3d281d]">{{ selectedServiceDurationMinutes }} mins</span>
+                    </p>
+                    <p v-if="selectedTreatmentSessionCount > 1" class="mt-1 text-xs text-[#8b6a4d]">
+                      Treatment plan:
+                      <span class="ml-1 font-semibold text-[#3d281d]">{{ selectedTreatmentSessionCount }} sessions; the clinic schedules each visit after approval.</span>
                     </p>
                     <div class="mt-4 border-t border-[#e6cfb0] pt-4">
                       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Time Slots</p>
@@ -864,6 +871,7 @@ const selectedServiceTotal = computed(() =>
 const selectedServiceDurationMinutes = computed(() =>
   selectedServices.value.reduce((sum, service) => sum + Number(service.durationMinutes || 0), 0)
 )
+const selectedTreatmentSessionCount = computed(() => Math.max(1, ...selectedServices.value.map((service) => Number(service.sessionCount || 1))))
 const bookingDurationMinutes = computed(() => Math.max(Number(selectedServiceDurationMinutes.value || 0), 30))
 const selectedServiceCommission = computed(() =>
   calculateCommissionAmount(selectedServiceTotal.value, serviceCommissionPercent)
@@ -1591,6 +1599,7 @@ const loadBranchData = async (branchId) => {
       followUpAllowed: Boolean(post.followUpAllowed),
       followUpWindowDays: post.followUpWindowDays != null ? Number(post.followUpWindowDays) : null,
       durationMinutes: post.durationMinutes != null ? Number(post.durationMinutes) : null,
+      sessionCount: Math.max(1, Number(post.sessionCount || 1)),
       productVolume: String(post.productVolume || '').trim(),
       productUnit: String(post.productUnit || '').trim(),
       termsAndConditions: String(post.termsAndConditions || '').trim(),
