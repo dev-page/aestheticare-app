@@ -1,0 +1,166 @@
+/* Customer portal visual layer.  It intentionally styles presentation only;
+   booking, cart, payment, order, and profile behaviour remain in each view. */
+
+body .customer-home-main,
+body .cart-main,
+body .orders-main,
+body .appointments-main,
+body .customer-settings-main,
+body .profile-main,
+body .checkout-page,
+body .customer-center-page main {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(229, 178, 123, .25), transparent 28%),
+    radial-gradient(circle at 4% 14%, rgba(255, 250, 242, .9), transparent 25%),
+    linear-gradient(155deg, #fffaf3 0%, #f9eddc 48%, #f0dcc1 100%) !important;
+}
+
+body .customer-home-content,
+body .cart-content,
+body .orders-content,
+body .appointments-content,
+body .customer-settings-content,
+body .profile-content {
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
+body .cart-header,
+body .orders-header,
+body .appointments-header,
+body .settings-hero,
+body .profile-panel,
+body .checkout-hero,
+body .center-shell {
+  border-color: rgba(196, 139, 91, .42) !important;
+  box-shadow: 0 22px 54px rgba(89, 51, 26, .11) !important;
+}
+
+body .cart-header,
+body .orders-header,
+body .appointments-header,
+body .settings-hero,
+body .checkout-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+body .cart-header::before,
+body .orders-header::before,
+body .appointments-header::before,
+body .settings-hero::before,
+body .checkout-hero::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  content: '';
+  background: linear-gradient(90deg, #8f522c, #d79f67 55%, #f2cf9c);
+}
+
+body .cart-title,
+body .orders-title,
+body .appointments-title,
+body .settings-title,
+body .profile-title,
+body .checkout-title {
+  color: #3a2114 !important;
+  letter-spacing: -.035em;
+}
+
+body .cart-subtitle,
+body .orders-subtitle,
+body .appointments-subtitle,
+body .settings-subtitle,
+body .profile-subtitle,
+body .checkout-subtitle {
+  color: #76563f !important;
+}
+
+body .cart-item-card,
+body .cart-summary-panel,
+body .orders-panel,
+body .appointments-panel,
+body .settings-card,
+body .settings-tab-panel,
+body .profile-panel,
+body .checkout-panel,
+body .center-panel,
+body .center-section-card,
+body .center-item-card,
+body .center-review-card,
+body .center-branch-card {
+  border-color: rgba(211, 166, 121, .53) !important;
+  box-shadow: 0 14px 36px rgba(89, 51, 26, .075) !important;
+}
+
+body .cart-item-card:hover,
+body .center-item-card:hover,
+body .center-branch-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 42px rgba(89, 51, 26, .13) !important;
+}
+
+body .orders-table-wrap,
+body .orders-table,
+body .payment-agreement,
+body .checkout-item-card,
+body .checkout-main .checkout-panel > div,
+body .settings-notification-item {
+  border-color: rgba(214, 173, 130, .56) !important;
+}
+
+body .orders-table thead tr {
+  background: linear-gradient(90deg, #f0d4b1, #e8c08e) !important;
+}
+
+body .orders-table th { color: #57331f !important; }
+body .orders-table tbody tr:hover { background: #fff7eb !important; }
+
+body .cart-qty-button,
+body .orders-search-input,
+body .settings-tab,
+body .profile-input,
+body .checkout-input-wrap,
+body .center-search-input,
+body .center-toolbar {
+  border-color: rgba(204, 151, 104, .58) !important;
+}
+
+body .orders-search-input:focus,
+body .profile-input:focus,
+body .checkout-input-wrap:focus-within,
+body .center-search-input:focus {
+  border-color: #a86335 !important;
+  box-shadow: 0 0 0 4px rgba(180, 111, 59, .13) !important;
+}
+
+body .cart-checkout-button,
+body .appointments-pay-link,
+body .checkout-submit,
+body .profile-save-button,
+body .customer-center-button,
+body .orders-button-primary,
+body .appointment-button-primary {
+  box-shadow: 0 9px 20px rgba(103, 55, 26, .18);
+}
+
+body .settings-tabs { scrollbar-width: thin; }
+body .settings-tab { border-radius: .8rem !important; }
+body .settings-tab-active { box-shadow: 0 8px 18px rgba(107, 61, 30, .12); }
+
+@media (max-width: 767px) {
+  body .customer-home-content,
+  body .cart-content,
+  body .orders-content,
+  body .appointments-content,
+  body .customer-settings-content,
+  body .profile-content { padding-inline: 1rem !important; }
+
+  body .cart-header,
+  body .orders-header,
+  body .appointments-header,
+  body .settings-hero,
+  body .checkout-hero { border-radius: 1.25rem !important; }
+}
