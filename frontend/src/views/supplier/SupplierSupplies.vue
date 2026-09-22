@@ -215,7 +215,7 @@
                   <label class="item-label">Default Discount Rate <span class="normal-case font-normal">(%)</span></label>
                   <input v-model.number="item.discountRate" type="number" min="0" max="100" step="0.01" class="item-input" placeholder="0" />
                 </div>
-                <div class="md:col-span-2 grid gap-3 md:grid-cols-2"><div><label class="item-label">Bulk Discount</label><button type="button" class="tiered-pricing-button">＋ Add Tiered Pricing <span>(Optional)</span></button><p class="mt-2 text-xs text-[#7b5a43]">Quantity-based discounts, such as 5% for 10+ units.</p></div><aside class="order-charge-note"><strong>ⓘ Order-level charges are not set here</strong><p>Delivery, handling, and other charges are added per Procurement request because they depend on the order destination and quantity.</p></aside></div>
+                <div class="md:col-span-2 grid gap-3 md:grid-cols-2"><div><label class="item-label">Bulk Discount</label><button type="button" class="tiered-pricing-button" @click="item.tieredDiscounts.push({ minQuantity: 2, discountRate: 0 })">＋ Add Tiered Pricing <span>(Optional)</span></button><p class="mt-2 text-xs text-[#7b5a43]">Quantity-based discounts, such as 5% for 10+ units.</p></div><aside class="order-charge-note"><strong>ⓘ Order-level charges are not set here</strong><p>Delivery, handling, and other charges are added per Procurement request because they depend on the order destination and quantity.</p></aside></div>
 
                 <div class="md:col-span-2 rounded-2xl border border-[#dfb98d] bg-[#fff8ef] p-4">
                   <p class="item-label">FDA Documentation</p>

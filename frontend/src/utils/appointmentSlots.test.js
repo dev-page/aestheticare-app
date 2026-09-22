@@ -39,3 +39,10 @@ test('missing, off, and malformed schedules do not offer free-form fallback time
     assert.deepEqual(getAppointmentSlots(fixture({ schedules: { worker: { __recurring__: { Monday: label } } } })), [])
   }
 })
+
+test('basic booking availability works without an HR shift assignment', () => {
+  const slots = getAppointmentSlots(fixture({ schedules: { worker: { __recurring__: {
+    availability: { Monday: { enabled: true, start: '10:00', end: '13:00' } },
+  } } } }))
+  assert.deepEqual(slots.map((slot) => slot.value), ['10:00', '10:30', '11:00', '11:30', '12:00'])
+})

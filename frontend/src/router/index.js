@@ -60,6 +60,7 @@ const routes = [
   { path: "/clinical/dashboard", name: "clinical-dashboard", component: () => import("@/views/admin/owner/clinic/PractitionerDashboard.vue"), meta: { requiresAuth: true } },
   { path: "/clinical/clients", name: "clinical-clients", component: () => import("@/views/admin/owner/clinic/PractitionerClients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/clinical/appointments", name: "clinical-appointments", component: () => import("@/views/admin/owner/clinic/PractitionerAppointments.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:view" } },
+  { path: "/clinical/treatment-sessions", name: "clinical-treatment-sessions", component: () => import("@/views/admin/owner/clinic/TreatmentSessions.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:update" } },
   { path: "/clinical/consultations/online", name: "clinical-online-consultation", component: () => import("@/views/admin/owner/clinic/PractitionerOnlineConsultation.vue"), meta: { requiresAuth: true, requiresPermission: "consultations:view", requiresFeature: "online_consultations" } },
   { path: "/activities", name: "activities", component: () => import("@/views/common/Activities.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
 

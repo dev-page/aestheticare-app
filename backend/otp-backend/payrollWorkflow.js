@@ -39,8 +39,11 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     for (const entry of entries) {
       const data = entry.data() || {}
       const employee = staffById.get(data.employeeId)
-      check(employee && !employee.archived, 'Every payroll entry must belong to an active employee in this branch.')
-      check(Math.round(Number(employee.basePay || 0) * 100) === Math.round(Number(data.hourlyRate || 0) * 100), `Base pay changed for ${data.employeeName || 'an employee'}. Regenerate payroll before submission.`)
+      // A generated payroll remains reviewable even if an employee profile was
+      // archived after the period closed. When the profile still exists, its
+      // current base pay must match the generated payroll snapshot.
+      check(!employee || !employee.archived, 'An archived employee payroll entry must be corrected before submission.')
+      if (employee) check(Math.round(Number(employee.basePay || 0) * 100) === Math.round(Number(data.hourlyRate || 0) * 100), `Base pay changed for ${data.employeeName || 'an employee'}. Regenerate payroll before submission.`)
       check(Math.abs(Number(data.totalPay || 0) - Number(data.totalDeductions || 0) - Number(data.netPay || 0)) < 0.011, 'Payroll earnings, deductions, and net pay do not agree.')
     }
     const now = timestamp()

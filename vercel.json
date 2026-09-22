@@ -36,5 +36,8 @@
         }
       ]
     }
+  ],
+  "crons": [
+    { "path": "/api/cron/appointment-reminders", "schedule": "0 1 * * *" }
   ]
 }

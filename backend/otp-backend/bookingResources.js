@@ -58,7 +58,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const shiftRange = directAvailability?.enabled !== false && directAvailability?.start && directAvailability?.end
     ? getBookingRange({ time: directAvailability.start, endTime: directAvailability.end })
     : shift ? getBookingRange({ time: shift.start, endTime: shift.end }) : labelStart && labelEnd ? getBookingRange({ time: labelStart, endTime: labelEnd }) : null
-  check(shiftRange && range.start >= shiftRange.start && range.end <= shiftRange.end, 'The selected time is outside the worker’s published availability.')
+  check(shiftRange && range.start >= shiftRange.start && range.end <= shiftRange.end, 'The selected time is outside the worker’s assigned shift or published availability.')
   const lock = db.collection('bookingResourceLocks').doc(branchId)
   await tx.get(lock)
   const appointments = await tx.get(db.collection('appointments').where('branchId', '==', branchId))

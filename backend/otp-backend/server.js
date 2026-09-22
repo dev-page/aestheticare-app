@@ -2117,7 +2117,12 @@ const assertClinicPlanFeature = async (firestore, branchId, feature) => {
   const plan = normalizePlanKey(clinic.subscriptionPlan || clinic.plan || 'free')
   const expiresAt = toDateValue(clinic.subscriptionExpiresAt)
   assertWorkflow(!expiresAt || expiresAt.getTime() > Date.now(), 'This clinic subscription is no longer active.', 403)
-  assertWorkflow(PLAN_FEATURES[plan]?.has(feature), 'This clinic plan does not include customer booking availability.', 403)
+  const configured = await firestore.collection('planPermissions').doc(plan).get()
+  const configuredFeatures = configured.exists && Array.isArray(configured.data()?.permissions)
+    ? new Set(configured.data().permissions.map(value => String(value || '').trim()).filter(Boolean))
+    : null
+  const features = configuredFeatures?.size ? configuredFeatures : PLAN_FEATURES[plan]
+  assertWorkflow(features?.has(feature), 'This clinic plan does not include customer booking availability.', 403)
   return { plan, clinic }
 }
 
@@ -2615,6 +2620,124 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
   }
 })
 registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction })
+
+// Each treatment visit has its own lifecycle. The original appointment is the
+// treatment-plan parent; later visits are scheduled explicitly so a missed
+// visit never silently consumes the remaining sessions.
+app.get('/treatment-sessions', requireAuth, async (req, res) => {
+  try {
+    const firestore = admin.firestore(), branchId = String(req.query.branchId || '').trim()
+    if (!branchId) return res.status(400).json({ success: false, error: 'branchId is required.' })
+    await authorizeClinicAction(req.user.uid, branchId, 'appointments:view')
+    const rows = (await firestore.collection('treatmentSessions').where('branchId', '==', branchId).get()).docs
+      .map(snap => ({ id: snap.id, ...(snap.data() || {}) }))
+    return res.json({ success: true, data: rows })
+  } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to load treatment sessions.' }) }
+})
+
+app.get('/treatment-sessions/:id/audit', requireAuth, async (req, res) => {
+  try {
+    const firestore = admin.firestore(), sessionRef = firestore.collection('treatmentSessions').doc(String(req.params.id || ''))
+    const sessionSnap = await sessionRef.get(); assertWorkflow(sessionSnap.exists, 'Treatment session not found.', 404)
+    const session = sessionSnap.data() || {}; await authorizeClinicAction(req.user.uid, session.branchId, 'appointments:view')
+    const entries = (await firestore.collection('treatmentSessionAudit').where('sessionId', '==', sessionRef.id).get()).docs
+      .map(snap => ({ id: snap.id, ...(snap.data() || {}) })).sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt))
+    return res.json({ success: true, data: entries })
+  } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to load treatment-session history.' }) }
+})
+
+app.post('/treatment-sessions/:id/schedule', requireAuth, async (req, res) => {
+  try {
+    const firestore = admin.firestore(), ref = firestore.collection('treatmentSessions').doc(String(req.params.id || ''))
+    const date = String(req.body?.date || '').trim(), time = String(req.body?.time || '').trim()
+    assertWorkflow(/^\d{4}-\d{2}-\d{2}$/.test(date) && parseClockToMinutes(time) !== null, 'Choose a valid session date and time.', 400)
+    const result = await firestore.runTransaction(async tx => {
+      const snap = await tx.get(ref); assertWorkflow(snap.exists, 'Treatment session not found.', 404)
+      const session = snap.data() || {}; await authorizeClinicAction(req.user.uid, session.branchId, 'appointments:update')
+      assertWorkflow(['unscheduled', 'reschedule eligible'].includes(normalizeBookingStatus(session.status)), 'Only an unscheduled or eligible session can be scheduled.')
+      const parentRef = firestore.collection('appointments').doc(session.treatmentPlanAppointmentId); const parent = await tx.get(parentRef)
+      assertWorkflow(parent.exists, 'Treatment plan appointment not found.', 404)
+      const parentData = parent.data() || {}, requestedRange = getBookingRange({ time, totalServiceDurationMinutes: parentData.totalServiceDurationMinutes || 60 })
+      const scheduleSnap = await tx.get(firestore.collection('users').doc(session.practitionerId).collection('schedules').doc('recurring'))
+      const schedule = scheduleSnap.exists ? scheduleSnap.data() || {} : {}
+      const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).format(new Date(`${date}T12:00:00+08:00`))
+      const availability = schedule.availability?.[weekday], label = String(schedule.assignmentLabels?.[weekday] || schedule.assignments?.[weekday] || '').trim()
+      const [labelStart, labelEnd] = label.split('||').pop().trim().split(' - ')
+      const availableRange = availability?.enabled !== false && availability?.start && availability?.end
+        ? getBookingRange({ time: availability.start, endTime: availability.end })
+        : labelStart && labelEnd ? getBookingRange({ time: labelStart, endTime: labelEnd }) : null
+      assertWorkflow(availableRange && requestedRange && requestedRange.start >= availableRange.start && requestedRange.end <= availableRange.end, 'The chosen time is outside the practitioner’s published availability.')
+      const [otherAppointments, otherSessions] = await Promise.all([
+        tx.get(firestore.collection('appointments').where('branchId', '==', session.branchId)),
+        tx.get(firestore.collection('treatmentSessions').where('branchId', '==', session.branchId)),
+      ])
+      const conflicts = [...otherAppointments.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) })), ...otherSessions.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) }))]
+        .some(item => item.id !== ref.id && item.date === date && String(item.practitionerId || item.assignedPractitionerId || '') === String(session.practitionerId || '') && ['scheduled', 'paid', 'ready to start', 'ongoing'].includes(normalizeBookingStatus(item.status)) && (() => { const range = getBookingRange(item); return range && rangesOverlap(requestedRange.start, requestedRange.end, range.start, range.end) })())
+      assertWorkflow(!conflicts, 'The practitioner already has an appointment or treatment session at that time.')
+      const action = normalizeBookingStatus(session.status) === 'reschedule eligible' ? 'rescheduled' : 'scheduled'
+      tx.update(ref, { status: 'Scheduled', date, time, scheduledById: req.user.uid, scheduledAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action, previousStatus: session.status || '', nextStatus: 'Scheduled', date, time, actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(firestore.collection('notifications').doc(), { recipientUserId: session.customerId, branchId: session.branchId, title: `Treatment session ${session.sessionNumber} scheduled`, message: `Your next treatment session is scheduled for ${date} at ${time}.`, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      return { id: ref.id, status: 'Scheduled', date, time }
+    })
+    return res.json({ success: true, data: result })
+  } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to schedule treatment session.' }) }
+})
+
+app.post('/treatment-sessions/:id/no-show', requireAuth, async (req, res) => {
+  try {
+    const firestore = admin.firestore(), ref = firestore.collection('treatmentSessions').doc(String(req.params.id || ''))
+    const result = await firestore.runTransaction(async tx => {
+      const snap = await tx.get(ref); assertWorkflow(snap.exists, 'Treatment session not found.', 404)
+      const session = snap.data() || {}; await authorizeClinicAction(req.user.uid, session.branchId, 'appointments:update')
+      assertWorkflow(normalizeBookingStatus(session.status) === 'scheduled', 'Only a scheduled session can be marked as a no-show.')
+      assertWorkflow(String(session.date || '') <= new Date().toISOString().slice(0, 10), 'A session cannot be marked as a no-show before its date.')
+      const policySnap = await tx.get(firestore.collection('clinicPolicies').doc(session.branchId)); const eligible = policySnap.exists && policySnap.data()?.noShowRescheduleAllowed === true
+      const nextStatus = eligible ? 'Reschedule eligible' : 'Forfeited'
+      tx.update(ref, { status: nextStatus, noShowAt: admin.firestore.FieldValue.serverTimestamp(), noShowMarkedById: req.user.uid, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action: 'no_show', previousStatus: session.status || '', nextStatus, actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      return { status: nextStatus }
+    })
+    return res.json({ success: true, data: result })
+  } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to mark treatment session as no-show.' }) }
+})
+
+app.post('/treatment-sessions/:id/complete', requireAuth, async (req, res) => {
+  try {
+    const firestore = admin.firestore(), ref = firestore.collection('treatmentSessions').doc(String(req.params.id || ''))
+    const result = await firestore.runTransaction(async tx => {
+      const snap = await tx.get(ref); assertWorkflow(snap.exists, 'Treatment session not found.', 404)
+      const session = snap.data() || {}; await authorizeClinicAction(req.user.uid, session.branchId, 'appointments:update')
+      assertWorkflow(normalizeBookingStatus(session.status) === 'scheduled', 'Only a scheduled session can be completed.')
+      const parentRef = firestore.collection('appointments').doc(session.treatmentPlanAppointmentId); const parentSnap = await tx.get(parentRef); assertWorkflow(parentSnap.exists, 'Treatment plan appointment not found.', 404)
+      const parent = parentSnap.data() || {}, total = Number(session.totalSessions || parent.treatmentPlan?.totalSessions || 1)
+      const nextNumber = Number(session.sessionNumber || 1) + 1, completed = Math.min(total, Number(parent.treatmentPlan?.completedSessions || 0) + 1)
+      tx.update(ref, { status: 'Completed', completedById: req.user.uid, completedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action: 'completed', previousStatus: session.status || '', nextStatus: 'Completed', actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.update(parentRef, { treatmentPlan: { ...(parent.treatmentPlan || {}), totalSessions: total, completedSessions: completed, remainingSessions: Math.max(0, total - completed), schedulingMode: 'clinic-scheduled' }, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      if (nextNumber <= total) tx.set(firestore.collection('notifications').doc(), { recipientUserId: session.customerId, branchId: session.branchId, title: 'Next treatment session ready to schedule', message: `Session ${nextNumber} is ready for the clinic to schedule.`, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      return { completedSessions: completed, remainingSessions: Math.max(0, total - completed), planCompleted: completed === total }
+    })
+    return res.json({ success: true, data: result })
+  } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to complete treatment session.' }) }
+})
+
+app.all('/cron/appointment-reminders', async (req, res) => {
+  const secret = String(process.env.CRON_SECRET || '').trim()
+  if (!secret || String(req.get('authorization') || '') !== `Bearer ${secret}`) return res.status(401).json({ success: false, error: 'Unauthorized.' })
+  try {
+    const firestore = admin.firestore(), tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const rows = (await firestore.collection('appointments').where('date', '==', tomorrow).get()).docs.map(snap => ({ id: snap.id, ...(snap.data() || {}) }))
+      .filter(row => ['scheduled', 'ready to start', 'paid'].includes(normalizeBookingStatus(row.status)))
+    await Promise.all(rows.map(async row => {
+      const reminderRef = firestore.collection('notifications').doc(`appointment-reminder-${row.id}-${tomorrow}`)
+      const existing = await reminderRef.get(); if (existing.exists) return
+      await reminderRef.set({ recipientUserId: row.customerId, branchId: row.branchId, title: 'Appointment reminder', message: `Reminder: ${row.service || 'your appointment'} is tomorrow at ${row.time || 'the scheduled time'}.`, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      if (postmarkClient && senderEmail && row.customerEmail) await postmarkClient.sendEmail({ From: senderEmail, To: row.customerEmail, Subject: 'AesthetiCare appointment reminder', TextBody: `Reminder: your ${row.service || 'appointment'} is tomorrow at ${row.time || 'the scheduled time'}.` })
+    }))
+    return res.json({ success: true, reminders: rows.length })
+  } catch (error) { return res.status(500).json({ success: false, error: 'Unable to send appointment reminders.' }) }
+})
 registerWalkInPayments(app, {
   admin, requireAuth, authorizeClinicAction,
   verifyCheckout: async (sessionId, appointmentId, branchId) => {
@@ -6399,13 +6522,35 @@ app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
     const policySnap = await firestore.collection('clinicPolicies').doc(branchId).get()
     const policy = policySnap.exists ? policySnap.data() || {} : {}
     const rescheduleAllowed = policy.noShowRescheduleAllowed === true
-    await appointmentRef.update({
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const noShowOutcome = rescheduleAllowed ? 'Reschedule eligible' : 'Forfeited'
+    const batch = firestore.batch()
+    batch.update(appointmentRef, {
       status: 'No-show',
-      noShowAt: admin.firestore.FieldValue.serverTimestamp(),
+      noShowAt: timestamp,
       noShowMarkedById: req.user.uid,
-      noShowOutcome: rescheduleAllowed ? 'Reschedule eligible' : 'Forfeited',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      noShowOutcome,
+      updatedAt: timestamp,
     })
+    const totalSessions = Number(appointment.treatmentPlan?.totalSessions || 1)
+    if (totalSessions > 1) {
+      const sessionNumber = Number(appointment.sessionNumber || 1)
+      const sessionRef = firestore.collection('treatmentSessions').doc(`${appointmentId}-${sessionNumber}`)
+      batch.set(sessionRef, {
+        branchId, treatmentPlanAppointmentId: appointmentId, customerId: appointment.customerId || '',
+        customerName: appointment.customerName || appointment.clientName || 'Customer',
+        practitionerId: appointment.practitionerId || appointment.assignedPractitionerId || '',
+        sessionNumber, totalSessions, appointmentId, status: noShowOutcome,
+        noShowAt: timestamp, noShowMarkedById: req.user.uid, updatedAt: timestamp,
+      }, { merge: true })
+      batch.set(firestore.collection('treatmentSessionAudit').doc(), {
+        sessionId: sessionRef.id, treatmentPlanAppointmentId: appointmentId, branchId,
+        action: 'no_show', previousStatus: appointment.status || '', nextStatus: noShowOutcome,
+        date: appointment.date || '', time: appointment.time || '', actorId: req.user.uid,
+        actorName: req.user.email || '', createdAt: timestamp,
+      })
+    }
+    await batch.commit()
     await createAppointmentNotification({
       firestore,
       customerId: appointment.customerId || '',
@@ -6415,7 +6560,7 @@ app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
         : 'Your clinic recorded a missed appointment. This appointment is forfeited under the clinic no-show policy.',
       link: '/customer/appointments',
     })
-    return res.json({ success: true, data: { appointmentId, status: 'No-show', noShowOutcome: rescheduleAllowed ? 'Reschedule eligible' : 'Forfeited' } })
+    return res.json({ success: true, data: { appointmentId, status: 'No-show', noShowOutcome } })
   } catch (error) {
     return res.status(error.status || 500).json({ success: false, error: error?.message || 'Unable to mark the appointment as a no-show.' })
   }
@@ -6526,7 +6671,7 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
         for (let sessionNumber = 1; sessionNumber <= totalSessions; sessionNumber += 1) {
           const sessionRef = firestore.collection('treatmentSessions').doc(`${appointmentId}-${sessionNumber}`)
           tx.set(sessionRef, {
-            branchId: latest.branchId, treatmentPlanAppointmentId: appointmentId, customerId: latest.customerId,
+            branchId: latest.branchId, treatmentPlanAppointmentId: appointmentId, customerId: latest.customerId, customerName: latest.customerName || latest.clientName || 'Customer',
             practitionerId: latest.practitionerId || latest.assignedPractitionerId || '', sessionNumber, totalSessions,
             status: sessionNumber === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: sessionNumber === 1 ? appointmentId : '',
             createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(),

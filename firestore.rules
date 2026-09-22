@@ -332,6 +332,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /treatmentSessions/{sessionId} {
+      // Session state is written only through the trusted booking API. The
+      // customer may read their own progress; authorized clinic staff may
+      // read sessions for their branch.
+      allow read: if isSignedIn()
+        && (resource.data.customerId == request.auth.uid
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:view'))
+          || isSuperadmin());
+      allow write: if false;
+    }
+
+    match /treatmentSessionAudit/{auditId} {
+      allow read: if isSignedIn()
+        && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId)
+        && hasPermission('appointments:view');
+      allow write: if false;
+    }
+
     match /clients/{clientId} {
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:view')) || isSuperadmin());

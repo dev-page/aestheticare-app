@@ -1,12 +1,12 @@
 import { extractShiftWindowMinutes, getDayName, getWeekStartKey, parseClockToMinutes, minutesToTime, minutesToTime12 } from './appointmentDss.js'
-import { resolveWeekAssignments } from './employeeSchedules.js'
+import { getScheduleDayWindow } from './employeeSchedules.js'
 
 // Use the same slots for calendar days, time choices, and staff suggestions.
 export const getAppointmentSlots = ({ date, practitionerId, schedules = {}, appointments = [], durationMinutes, now = Date.now() }) => {
   const duration = Number(durationMinutes)
   if (!date || !practitionerId || !Number.isFinite(duration) || duration <= 0) return []
-  const assignments = resolveWeekAssignments(schedules[practitionerId] || {}, getWeekStartKey(date))
-  const shift = extractShiftWindowMinutes(assignments[getDayName(date)])
+  const window = getScheduleDayWindow(schedules[practitionerId] || {}, getWeekStartKey(date), getDayName(date))
+  const shift = window && extractShiftWindowMinutes(`${window.start} - ${window.end}`)
   if (!shift || shift.end <= shift.start) return []
   const midnight = new Date(`${date}T00:00:00+08:00`).getTime()
   if (!Number.isFinite(midnight)) return []

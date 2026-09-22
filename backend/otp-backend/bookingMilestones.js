@@ -90,7 +90,25 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             update.status = balanceSettled(appointment) ? 'Completed' : 'Balance Due'
           } else check(false, 'Invalid booking action.', 400)
         }
-        if (update.status === 'Completed') update.completedAt = timestamp
+        if (update.status === 'Completed') {
+          update.completedAt = timestamp
+          const totalSessions = Number(appointment.treatmentPlan?.totalSessions || 1)
+          if (totalSessions > 1) {
+            const sessionNumber = Number(appointment.sessionNumber || 1)
+            tx.set(db.collection('treatmentSessions').doc(`${ref.id}-${sessionNumber}`), {
+              branchId: appointment.branchId, treatmentPlanAppointmentId: ref.id, customerId: appointment.customerId,
+              practitionerId: appointment.practitionerId || appointment.assignedPractitionerId || '', sessionNumber, totalSessions,
+              appointmentId: ref.id, status: 'Completed', completedById: req.user.uid, completedAt: timestamp, updatedAt: timestamp,
+            }, { merge: true })
+            tx.set(db.collection('treatmentSessionAudit').doc(), {
+              sessionId: `${ref.id}-${sessionNumber}`, treatmentPlanAppointmentId: ref.id, branchId: appointment.branchId,
+              action: 'completed', previousStatus: appointment.status || '', nextStatus: 'Completed', actorId: req.user.uid,
+              actorName: req.user.email || '', createdAt: timestamp,
+            })
+            update.treatmentPlan = { ...(appointment.treatmentPlan || {}), totalSessions, completedSessions: Math.min(totalSessions, Number(appointment.treatmentPlan?.completedSessions || 0) + 1), remainingSessions: Math.max(0, totalSessions - Math.min(totalSessions, Number(appointment.treatmentPlan?.completedSessions || 0) + 1)), schedulingMode: 'clinic-scheduled' }
+            if (sessionNumber < totalSessions) tx.set(db.collection('notifications').doc(), { recipientUserId: appointment.customerId, branchId: appointment.branchId, title: 'Next treatment session ready to schedule', message: `Session ${sessionNumber + 1} is ready for the clinic to schedule.`, link: '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
+          }
+        }
         tx.update(ref, update)
         if (appointment.bookingId) tx.set(db.collection('bookings').doc(appointment.bookingId), { status: update.status, updatedAt: timestamp }, { merge: true })
         const recipientUserId = customer ? appointment.practitionerId || appointment.assignedPractitionerId : appointment.customerId

@@ -81,6 +81,10 @@
         </section>
 
         <template v-if="!isUnpaidAppointmentsPage">
+        <section v-if="treatmentSessions.length" class="appointments-panel">
+          <div class="panel-head"><div><p class="panel-kicker">Treatment Plan</p><h2 class="panel-title">My Treatment Sessions</h2></div><p class="panel-note">{{ treatmentSessions.length }} session{{ treatmentSessions.length === 1 ? '' : 's' }}</p></div>
+          <div class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Status</th></tr></thead><tbody><tr v-for="session in treatmentSessions" :key="session.id"><td>Session {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.date ? `${session.date} ${session.time || ''}` : 'The clinic will schedule this visit.' }}</td><td>{{ session.status }}</td></tr></tbody></table></div>
+        </section>
         <section class="appointments-panel">
           <div class="panel-head">
             <div>
@@ -540,6 +544,7 @@ const isUnpaidAppointmentsPage = computed(() => route.name === 'customer-unpaid-
 const upcomingAppointments = ref([])
 const pastAppointments = ref([])
 const onlineConsultations = ref([])
+const treatmentSessions = ref([])
 const openActionMenuId = ref(null)
 const clinicsById = ref({})
 const showContractModal = ref(false)
@@ -570,6 +575,7 @@ const requestModalLoadSeq = ref(0)
 let unsubscribeAuth = null
 let unsubscribeAppointments = null
 let unsubscribeClinics = null
+let unsubscribeTreatmentSessions = null
 
 const SLOT_STEP_MINUTES = 30
 const SLOT_DAYS_LOOKAHEAD = 365
@@ -1368,6 +1374,14 @@ const startAppointmentsListener = (userId) => {
   )
 }
 
+const startTreatmentSessionsListener = (userId) => {
+  if (unsubscribeTreatmentSessions) unsubscribeTreatmentSessions()
+  if (!userId) { treatmentSessions.value = []; return }
+  unsubscribeTreatmentSessions = onSnapshot(query(collection(db, 'treatmentSessions'), where('customerId', '==', userId)), (snapshot) => {
+    treatmentSessions.value = snapshot.docs.map((snap) => ({ id: snap.id, ...(snap.data() || {}) })).sort((a, b) => Number(a.sessionNumber || 0) - Number(b.sessionNumber || 0))
+  }, () => { treatmentSessions.value = [] })
+}
+
 const startClinicsListener = () => {
   if (unsubscribeClinics) {
     unsubscribeClinics()
@@ -1712,6 +1726,7 @@ onMounted(() => {
       return
     }
     startAppointmentsListener(user.uid)
+    startTreatmentSessionsListener(user.uid)
     await handlePaymentReturn(user)
   })
 })
@@ -1719,6 +1734,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (unsubscribeAppointments) unsubscribeAppointments()
   if (unsubscribeClinics) unsubscribeClinics()
+  if (unsubscribeTreatmentSessions) unsubscribeTreatmentSessions()
   if (unsubscribeAuth) unsubscribeAuth()
 })
 </script>
