@@ -71,6 +71,7 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   assert.ok(discrepancy)
   await f.act('logistics', discrepancy.id, 'resolve', { resolutionType: 'Replacement', remarks: 'Supplier will replace five damaged boxes' })
   const invoice = await f.create(mode === 'Online' ? 'supplier' : 'finance', 'invoice', { poId: po, invoiceNumber: 'INV1', invoiceDate: date, dueDate: date, lines: [{ itemId: 'item', quantity: 100, unitPrice: 5 }], tax: 20, delivery: 15, otherCharges: 10, discount: 5 })
+  assert.equal(f.store.get(`financialRecords/supply-${invoice}`).status, 'Unpaid')
   f.evidence(invoice); await f.act('finance', invoice, 'startVerification'); await f.act('finance', invoice, 'verify'); assert.equal(f.read(invoice).status, 'Disputed')
   await f.act('finance', invoice, 'pay', {}, 409)
   const rest = await f.create('logistics', 'receiving', { poId: po, reference: 'DR2', deliveryDate: date, lines: [{ itemId: 'item', delivered: 40, accepted: 40, rejected: 0, condition: 'Good' }] })
@@ -87,10 +88,23 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   await f.act('finance', invoice, 'pay', { proofId: f.evidence(payment), method: 'Manual/External', reference: 'BANK1', paymentDate: date })
   await f.act('finance', invoice, 'pay')
   assert.equal(f.read(po).status, 'Completed'); assert.equal(f.read(budget).committed, 0); assert.equal(f.read(budget).spent, 54000)
+  assert.equal(f.store.get(`financialRecords/supply-${invoice}`).status, 'Paid')
   assert.equal(f.read(`allocation-${budgetRequest}`).status, 'Settled')
   const own = await f.call('supplier', '/supply/workspace', {}, undefined, 'GET')
   assert.ok(own.data.records.every(r => !r.links && !r.budgetId && !r.justification && !r.procurementId))
   const other = await f.call('competitor', '/supply/workspace', {}, undefined, 'GET'); assert.equal(other.data.records.length, 0)
+})
+
+test('Inventory can save a request as a draft before sending it to Procurement', async () => {
+  const f = fixture(), date = '2099-12-31'
+  const saved = await f.call('inventory', '/supply/records', { branchId: 'clinic', kind: 'request', action: 'saveDraft', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 10, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Review stock requirement', requiredDate: date })
+  assert.equal(saved.status, 200, JSON.stringify(saved))
+  const draft = f.read(saved.data.id)
+  assert.equal(draft.status, 'Draft')
+  assert.equal(draft.procurementId, undefined)
+  await f.act('inventory', draft.id, 'submitDraft')
+  assert.equal(f.read(draft.id).status, 'Sent to Procurement')
+  assert.ok(f.read(draft.id).procurementId)
 })
 
 test('DSS thresholds, invalid dates, privacy and invoice overbilling', () => {
@@ -117,9 +131,10 @@ test('Procurement can record a direct supplier quote without creating an RFQ', a
   const f = fixture(), date = '2099-12-31'
   const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date, location: 'Main clinic' })
   const procurement = f.read(request).procurementId
-  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true, category: 'Materials', paymentTerms: 'Net 30', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes', lines: [{ itemId: 'item', quantity: 20, unitPrice: 5 }], tax: 12, delivery: 8, otherCharges: 0, discount: 0 })
+  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true, category: 'Materials', paymentTerms: 'Net 30', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes', lines: [{ itemId: 'item', quantity: 20, unitPrice: 5 }], tax: 12, delivery: 8, otherCharges: 0, discount: 0, commercialOverrideReason: 'Supplier provided a documented VAT-exclusive, delivered quote.' })
   const funding = f.read(f.read(procurement).budgetRequestId)
   assert.equal(funding.directSupplierQuote, true)
+  assert.equal(funding.commercialTermsOverride.reason, 'Supplier provided a documented VAT-exclusive, delivered quote.')
   assert.equal(funding.requestedAmount, 12000)
   const budget = await f.create('finance', 'budget', { department: 'Inventory', category: 'Materials', total: 200 })
   await f.act('finance', funding.id, 'approve', { budgetId: budget, approvedAmount: 120, remarks: 'Approved from verified supplier quote' })
@@ -138,6 +153,14 @@ test('Self approval, cross-branch writes and read-only document uploads are reje
   assert.equal(cross.status, 403)
   const upload = await f.call('reader', '/supply/records/:id/documents', {}, 'self')
   assert.equal(upload.status, 403)
+})
+
+test('A legacy purchase order without links can still be confirmed by its supplier', async () => {
+  const f = fixture(), date = '2099-12-31'
+  f.seed('supplyRecords', 'legacy-po', { id: 'legacy-po', kind: 'po', mode: 'Online', branchId: 'clinic', supplierId: 'vendor', status: 'Sent to Supplier', deliveryDate: date, lines: [{ itemId: 'item', supplierCatalogItemId: 'catalog-gloves', name: 'Gloves', category: 'Materials', quantity: 1 }] })
+  await f.act('supplier', 'legacy-po', 'confirm', { remarks: 'Confirmed', deliveryDate: date })
+  assert.equal(f.read('legacy-po').status, 'Supplier Confirmed')
+  assert.deepEqual(f.read('confirmation-legacy-po').links, ['legacy-po'])
 })
 
 test('Invoice corrections cannot bypass matching or overwrite an approved invoice', async () => {

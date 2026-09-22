@@ -3,6 +3,8 @@ import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMa
 
 const docs = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }))
 const cleanId = value => { const id = String(value || ''); demand(/^[A-Za-z0-9_-]{1,150}$/.test(id), 'Invalid record identifier.', 400); return id }
+// Older workflow records did not always include relationship links.
+const linksOf = record => Array.isArray(record?.links) ? record.links.filter(Boolean) : []
 const names = { request: 'IR', procurement: 'PR', rfq: 'RFQ', quotation: 'QT', evaluation: 'EV', budget: 'BD', budgetRequest: 'BR', financeApproval: 'FA', budgetAllocation: 'BA', po: 'PO', supplierConfirmation: 'PC', receiving: 'RC', inspection: 'INSP', discrepancy: 'DS', invoice: 'INV', threeWayMatch: 'MT', payment: 'PAY' }
 export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContext, storageBucket }) => {
   const db = admin.firestore(), stamp = () => admin.firestore.FieldValue.serverTimestamp()
@@ -198,7 +200,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       tx.get(db.collection('supplyLots').where('branchId', '==', branchId)),
     ])
     const records = docs(recordSnap), items = docs(itemSnap), suppliers = docs(supplierSnap), documents = docs(documentSnap)
-    const writes = [], now = stamp()
+    const writes = [], financialWrites = [], now = stamp()
     const get = (id, kind) => { const r = records.find(r => r.id === id && r.kind === kind); demand(r, `${kind} record not found.`, 404); return r }
     const set = (r, patch) => { writes.push([db.collection('supplyRecords').doc(r.id), patch, true]); return { ...r, ...patch } }
     const create = (kind, data, id = crypto.randomUUID()) => {
@@ -222,6 +224,22 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       const categoryMatch = !line.category || productCategory === String(line.category).trim().toLowerCase()
       return catalogMatch || nameMatch && categoryMatch
     })
+    const catalogCommercialTerms = (request, totals, allowOverride = false) => {
+      const sourceSupplier = supplier([...new Set(request.lines.map(line => line.supplierId))][0])
+      let tax = 0, discount = 0, otherCharges = 0
+      for (const line of totals.lines) {
+        const source = request.lines.find(candidate => candidate.itemId === line.itemId)
+        const index = source && supplierCatalogIndexForLine(sourceSupplier.offeredItems || [], source)
+        demand(index >= 0, `The supplier catalog no longer contains ${line.name || line.itemId}.`, 400)
+        const product = sourceSupplier.offeredItems[index]
+        if (!allowOverride) demand(line.unitPrice === money(product.price || product.unitCost || 0), `${line.name || line.itemId}: unit price differs from the supplier catalog. Provide an override reason for a negotiated quote.`, 400)
+        if (product.taxTreatment === 'vat-exclusive') tax += Math.round(line.total * Number(product.taxRate || 0) / 100)
+        const tier = (Array.isArray(product.tieredDiscounts) ? product.tieredDiscounts : []).filter(entry => Number(entry.minQuantity) <= line.quantity).sort((a, b) => Number(b.minQuantity) - Number(a.minQuantity))[0]
+        discount += Math.round(line.total * Number(tier?.discountRate ?? product.discountRate ?? 0) / 100)
+        otherCharges += line.quantity * money(product.otherChargePerUnit || 0)
+      }
+      return { tax, discount, otherCharges }
+    }
     const manualOrSupplier = (r, permission = 'procurement:create') => { if (ctx.supplier) demand(r.mode === 'Online' && supplierOwns(ctx, r), 'This record belongs to another supplier.', 403); else { allow(ctx, permission); demand(r.mode === 'Manual', 'The supplier must perform this action through their portal.'); } }
     const record = targetId ? records.find(r => r.id === targetId) : null
     let result, action = String(input.action || 'create'), before = record?.status || ''
@@ -245,9 +263,12 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             return { itemId: existingItem?.id || crypto.randomUUID(), initialInventory: !existingItem, name: required(product.name || product.itemName || product.productName, 'Catalog item name'), category: String(product.category || product.categoryGroup || product.customCategory || ''), supplierId, preferredSupplierId: supplierId, supplierCatalogItemId: catalogItemId, quantity: requestedQuantity, unit: String(product.measurementUnit || product.unit || 'units'), specifications: String(product.description || product.specifications || ''), packaging: String(product.measurementValue || ''), manufacturingDate: product.manufacturingDate ? dateKey(product.manufacturingDate) : '', expiryDate: product.expiryDate ? dateKey(product.expiryDate) : '', unitPrice, subtotal: requestedQuantity * unitPrice, taxRate: Math.max(0, Number(product.taxRate || 0)), taxTreatment: String(product.taxTreatment || 'vat-inclusive'), discountRate: Math.max(0, Number((tier?.discountRate ?? product.discountRate) || 0)), tieredDiscounts: Array.isArray(product.tieredDiscounts) ? product.tieredDiscounts : [], otherChargePerUnit: money(product.otherChargePerUnit || 0), currentStock: Number(existingItem?.currentStock || 0), minStock, targetStock, maxStock, location: String(raw.location || input.location || '') }
           })
           const estimatedCost = lines.reduce((sum, line) => sum + line.subtotal, 0)
-          result = create('request', { status: 'Sent to Procurement', supplierId: lines.length === 1 ? lines[0].supplierId : '', itemId: lines.length === 1 ? lines[0].itemId : '', lines, department: required(input.department, 'Department'), reason: required(input.reason, 'Reason'), notes: String(input.notes || ''), priority: input.priority || 'Normal', requiredDate: dateKey(input.requiredDate), estimatedCost, submittedBy: ctx.uid, submittedAt: now })
-          const procurement = create('procurement', { status: 'Received', requestId: result.id, requesterId: ctx.uid, lines, department: result.department, requiredDate: result.requiredDate, reason: result.reason, priority: result.priority, estimatedProcurementValue: estimatedCost, links: [result.id] }, `proc-${result.id}`)
-          set(result, { procurementId: procurement.id })
+          const saveDraft = input.action === 'saveDraft'
+          result = create('request', { status: saveDraft ? 'Draft' : 'Sent to Procurement', supplierId: lines.length === 1 ? lines[0].supplierId : '', itemId: lines.length === 1 ? lines[0].itemId : '', lines, department: required(input.department, 'Department'), reason: required(input.reason, 'Reason'), notes: String(input.notes || ''), priority: input.priority || 'Normal', requiredDate: dateKey(input.requiredDate), estimatedCost, submittedBy: ctx.uid, ...(saveDraft ? { savedAt: now } : { submittedAt: now }) })
+          if (!saveDraft) {
+            const procurement = create('procurement', { status: 'Received', requestId: result.id, requesterId: ctx.uid, lines, department: result.department, requiredDate: result.requiredDate, reason: result.reason, priority: result.priority, estimatedProcurementValue: estimatedCost, links: [result.id] }, `proc-${result.id}`)
+            set(result, { procurementId: procurement.id })
+          }
           break
         }
         case 'budget': { allow(ctx, 'finance:payables:approve'); const category = required(input.category, 'Category'), knownCategories = new Set([...items.map(item => item.category), ...records.filter(record => ['budget', 'budgetRequest'].includes(record.kind)).map(record => record.category), ...suppliers.flatMap(supplier => (supplier.offeredItems || []).map(item => item.category || item.categoryGroup || item.customCategory))].map(value => String(value || '').trim()).filter(Boolean)); demand(knownCategories.size === 0 || knownCategories.has(category), 'Choose a budget category from the approved catalog categories.', 400); result = create('budget', { status: 'Active', department: required(input.department, 'Department'), category, period: input.period ? String(input.period).slice(0, 7) : '', notes: String(input.notes || '').slice(0, 4000), total: money(input.total), committed: 0, spent: 0 }); break }
@@ -257,7 +278,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           const supplierIds = [...new Set(input.supplierIds || [])]; demand(supplierIds.length > 0 && supplierIds.length <= 20, 'Select 1–20 suppliers.'); supplierIds.forEach(id => { const selectedSupplier = supplier(id); demand(p.lines.every(line => supplierCanProvideLine(selectedSupplier, line)), 'Each invited supplier must offer every requested supply in its catalog.', 400) })
           if (input.mode === 'Online') demand(supplierIds.every(id => { const s = supplier(id); return s.ownerId || s.supplierUserId }), 'Online procurement requires suppliers with activated portal accounts.')
           const deadline = dateKey(input.deadline); demand(deadline >= day(), 'Quotation deadline cannot be in the past.')
-          result = create('rfq', { status: 'Draft', mode: input.mode, procurementId: p.id, links: [...p.links, p.id], lines: p.lines, supplierIds, deadline, deliveryDate: dateKey(input.deliveryDate), deliveryLocation: required(input.deliveryLocation, 'Delivery location'), terms: required(input.terms, 'RFQ terms'), conditions: String(input.conditions || ''), contact: required(input.contact, 'Contact'), department: p.department })
+          result = create('rfq', { status: 'Draft', mode: input.mode, procurementId: p.id, links: [...linksOf(p), p.id], lines: p.lines, supplierIds, deadline, deliveryDate: dateKey(input.deliveryDate), deliveryLocation: required(input.deliveryLocation, 'Delivery location'), terms: required(input.terms, 'RFQ terms'), conditions: String(input.conditions || ''), contact: required(input.contact, 'Contact'), department: p.department })
           set(p, { status: 'RFQ Preparation', mode: input.mode, rfqId: result.id, officer: ctx.uid, method: String(input.method || ''), strategy: String(input.strategy || '') }); break
         }
         case 'quotation': {
@@ -286,8 +307,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             return { itemId: ordered.itemId, name: ordered.name, category: ordered.category || '', supplierCatalogItemId: ordered.supplierCatalogItemId || '', ordered: ordered.quantity, delivered, accepted, rejected, condition: String(line.condition || 'Good'), reason: String(line.reason || ''), manufacturingDate, expiryDate, lot: String(line.lot || ''), serialNumber: String(line.serialNumber || ''), modelNumber: String(line.modelNumber || ''), warranty: String(line.warranty || ''), packaging: String(line.packaging || '') }
           })
           demand(lines.length && new Set(lines.map(l => l.itemId)).size === lines.length && lines.some(l => l.delivered > 0), 'Enter unique delivered items.')
-          result = create('receiving', { status: 'Inspected', poId: po.id, supplierId: po.supplierId, links: [...po.links, po.id], lines, reference: required(input.reference, 'Delivery reference'), deliveryDate: dateKey(input.deliveryDate), receivedBy: ctx.uid, notes: String(input.notes || '') })
-          const inspection = create('inspection', { status: 'Completed', poId: po.id, receivingId: result.id, supplierId: po.supplierId, links: [...result.links, result.id], lines, quantityResult: lines.some(l => l.delivered !== l.ordered) ? 'Discrepancy' : 'Verified', qualityResult: lines.some(l => l.rejected > 0) ? 'Discrepancy' : 'Accepted', inspectedBy: ctx.uid, inspectedAt: now }, `inspection-${result.id}`)
+          result = create('receiving', { status: 'Inspected', poId: po.id, supplierId: po.supplierId, links: [...linksOf(po), po.id], lines, reference: required(input.reference, 'Delivery reference'), deliveryDate: dateKey(input.deliveryDate), receivedBy: ctx.uid, notes: String(input.notes || '') })
+          const inspection = create('inspection', { status: 'Completed', poId: po.id, receivingId: result.id, supplierId: po.supplierId, links: [...linksOf(result), result.id], lines, quantityResult: lines.some(l => l.delivered !== l.ordered) ? 'Discrepancy' : 'Verified', qualityResult: lines.some(l => l.rejected > 0) ? 'Discrepancy' : 'Accepted', inspectedBy: ctx.uid, inspectedAt: now }, `inspection-${result.id}`)
           set(result, { inspectionId: inspection.id })
           if (lines.some(l => l.rejected > 0)) create('discrepancy', { status: 'Open', poId: po.id, receivingId: result.id, supplierId: po.supplierId, links: [po.id, result.id], lines: lines.filter(l => l.rejected), reason: 'Rejected delivery items require resolution' })
           break
@@ -296,7 +317,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           const po = get(input.poId, 'po'); manualOrSupplier(po, 'finance:payables:approve'); demand(['Partially Received', 'Delivered'].includes(po.status), 'Receive and onboard goods before invoicing.')
           const invoiceNumber = required(input.invoiceNumber, 'Invoice number'); demand(!records.some(r => r.kind === 'invoice' && r.supplierId === po.supplierId && r.invoiceNumber === invoiceNumber), 'This supplier invoice number already exists.')
           const receiving = records.filter(r => r.kind === 'receiving' && r.poId === po.id && r.status === 'Onboarded')
-          result = create('invoice', { ...quoteTotals(input), mode: po.mode, status: 'Submitted', poId: po.id, supplierId: po.supplierId, invoiceNumber, invoiceDate: dateKey(input.invoiceDate), dueDate: dateKey(input.dueDate), links: [...new Set([...po.links, po.id, ...receiving.flatMap(record => [record.id, record.inspectionId].filter(Boolean))])], receivingIds: receiving.map(record => record.id) }); break
+          result = create('invoice', { ...quoteTotals(input), mode: po.mode, status: 'Submitted', poId: po.id, supplierId: po.supplierId, invoiceNumber, invoiceDate: dateKey(input.invoiceDate), dueDate: dateKey(input.dueDate), links: [...new Set([...linksOf(po), po.id, ...receiving.flatMap(record => [record.id, record.inspectionId].filter(Boolean))])], receivingIds: receiving.map(record => record.id) });
+          financialWrites.push([db.collection('financialRecords').doc(`supply-${result.id}`), { id: `supply-${result.id}`, branchId, kind: 'procurementPayable', status: 'Unpaid', category: 'Procurement', description: `Supplier invoice ${invoiceNumber}`, payee: po.supplierId, amount: result.total, paidAmount: 0, outstandingAmount: result.total, supplyInvoiceId: result.id, purchaseOrderId: po.id, dueDate: result.dueDate, createdBy: ctx.uid, createdAt: now, updatedAt: now }, false]); break
         }
         default: demand(false, 'Unsupported record type.', 400)
       }
@@ -310,12 +332,16 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         else if (action === 'cancelBudget') result = set(r, { status: 'Cancelled', cancellationReason: required(input.remarks, 'Cancellation reason'), cancelledBy: ctx.uid, cancelledAt: now })
         else demand(false, 'Invalid budget action.')
       } else if (r.kind === 'request') {
-        if (action === 'resubmit') {
+        if (action === 'submitDraft') {
+          allow(ctx, 'inventory:create'); demand(r.createdBy === ctx.uid && r.status === 'Draft', 'Only the original requester can submit this draft.', 403)
+          const procurement = create('procurement', { status: 'Received', requestId: r.id, requesterId: ctx.uid, lines: r.lines, department: r.department, requiredDate: r.requiredDate, reason: r.reason, priority: r.priority, estimatedProcurementValue: r.estimatedCost, links: [...linksOf(r), r.id] }, `proc-${r.id}`)
+          result = set(r, { status: 'Sent to Procurement', procurementId: procurement.id, submittedBy: ctx.uid, submittedAt: now })
+        } else if (action === 'resubmit') {
           allow(ctx, 'inventory:create'); demand(r.createdBy === ctx.uid && r.status === 'Returned', 'Only the original requester can resubmit a returned request.', 403)
           const procurement = get(r.procurementId, 'procurement')
           result = set(r, { status: 'Sent to Procurement', resubmittedAt: now, resubmissionResponse: required(input.remarks, 'Response to Procurement') })
           set(procurement, { status: 'Received', returnedAt: '', returnReason: '', returnInstructions: '', returnedItemId: '', resubmittedAt: now })
-        } else demand(false, 'Inventory requests are sent directly to Procurement when created.')
+        } else demand(false, 'Draft requests can be submitted only by their original requester.')
       } else if (r.kind === 'procurement') {
         allow(ctx, 'procurement:review')
         if (['confirm', 'verifyRequest'].includes(action)) {
@@ -327,7 +353,14 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           const totals = quoteTotals(input)
           demand(totals.lines.length === r.lines.length && totals.lines.every(line => { const source = r.lines.find(candidate => candidate.itemId === line.itemId); return source && Number(source.quantity) === Number(line.quantity) }), 'The supplier quote must cover every requested item and quantity.', 400)
           const supplierId = supplierIds[0]
-          const budgetRequest = create('budgetRequest', { status: 'Submitted', directSupplierQuote: true, supplierId, procurementId: r.id, requestedAmount: totals.total, recommendedAmount: totals.total, department: r.department, category: String(input.category || r.lines[0]?.category || 'Procurement'), lines: totals.lines, subtotal: totals.subtotal, tax: totals.tax, delivery: totals.delivery, otherCharges: totals.otherCharges, discount: totals.discount, paymentTerms: required(input.paymentTerms, 'Payment terms'), warranty: String(input.warranty || ''), deliveryDate: dateKey(input.deliveryDate || r.requiredDate), deliveryLocation: required(input.deliveryLocation || r.lines[0]?.location, 'Delivery location'), terms: required(input.terms || 'Per approved inventory request', 'Purchase terms'), quoteNotes: String(input.quoteNotes || ''), quotedBy: ctx.uid, quotedAt: now, links: [...r.links, r.id] })
+          const overrideReason = String(input.commercialOverrideReason || '').trim()
+          const expectedTerms = catalogCommercialTerms(r, totals, Boolean(overrideReason))
+          const termsMatch = totals.tax === expectedTerms.tax && totals.discount === expectedTerms.discount && totals.otherCharges === expectedTerms.otherCharges && totals.lines.every(line => {
+            const source = r.lines.find(candidate => candidate.itemId === line.itemId), product = source && supplier(supplierId).offeredItems[supplierCatalogIndexForLine(supplier(supplierId).offeredItems || [], source)]
+            return product && line.unitPrice === money(product.price || product.unitCost || 0)
+          })
+          demand(termsMatch || overrideReason, 'Quote tax, discount, other charges, or unit price differs from the supplier catalog. Provide a negotiated-terms reason.', 400)
+          const budgetRequest = create('budgetRequest', { status: 'Submitted', directSupplierQuote: true, supplierId, procurementId: r.id, requestedAmount: totals.total, recommendedAmount: totals.total, department: r.department, category: String(input.category || r.lines[0]?.category || 'Procurement'), lines: totals.lines, subtotal: totals.subtotal, tax: totals.tax, delivery: totals.delivery, otherCharges: totals.otherCharges, discount: totals.discount, paymentTerms: required(input.paymentTerms, 'Payment terms'), warranty: String(input.warranty || ''), deliveryDate: dateKey(input.deliveryDate || r.requiredDate), deliveryLocation: required(input.deliveryLocation || r.lines[0]?.location, 'Delivery location'), terms: required(input.terms || 'Per approved inventory request', 'Purchase terms'), quoteNotes: String(input.quoteNotes || ''), commercialTermsOverride: termsMatch ? null : { reason: required(overrideReason, 'Negotiated-terms reason'), expected: expectedTerms, submitted: { tax: totals.tax, discount: totals.discount, otherCharges: totals.otherCharges }, authorizedBy: ctx.uid, authorizedAt: now }, quotedBy: ctx.uid, quotedAt: now, links: [...linksOf(r), r.id] })
           result = set(r, { status: 'For Finance Approval', supplierId, verifiedBy: ctx.uid, verifiedAt: now, budgetRequestId: budgetRequest.id, checklist: { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true } })
         } else if (action === 'return') {
           demand(r.status === 'Received', 'Only newly received requests can be returned.')
@@ -356,8 +389,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         demand(r.status === 'Submitted' && ['Open', 'Quotation Received'].includes(rfq.status) && !p.evaluationId, 'This quotation is no longer available for selection.'); demand(r.validUntil >= day(), 'Quotation has expired.')
         if (r.mode === 'Manual') evidence(r, 'Upload the supplier quotation first.')
         const justification = required(input.justification, 'Selection justification')
-        const ev = create('evaluation', { status: 'Supplier Selected', quotationId: r.id, supplierId: r.supplierId, rfqId: rfq.id, procurementId: p.id, recommendation: String(input.recommendation || justification), justification, evaluatorId: ctx.uid, evaluatedAt: now, links: [...p.links, p.id, rfq.id, r.id] })
-        const br = create('budgetRequest', { status: 'Submitted', quotationId: r.id, supplierId: r.supplierId, procurementId: p.id, evaluationId: ev.id, requestedAmount: r.total, recommendedAmount: r.total, department: p.department, category: required(input.category, 'Budget category'), lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, paymentTerms: r.paymentTerms, warranty: r.warranty, deliveryDate: rfq.deliveryDate, deliveryLocation: rfq.deliveryLocation, terms: rfq.terms, mode: r.mode, links: [...ev.links, ev.id] })
+        const ev = create('evaluation', { status: 'Supplier Selected', quotationId: r.id, supplierId: r.supplierId, rfqId: rfq.id, procurementId: p.id, recommendation: String(input.recommendation || justification), justification, evaluatorId: ctx.uid, evaluatedAt: now, links: [...linksOf(p), p.id, rfq.id, r.id] })
+        const br = create('budgetRequest', { status: 'Submitted', quotationId: r.id, supplierId: r.supplierId, procurementId: p.id, evaluationId: ev.id, requestedAmount: r.total, recommendedAmount: r.total, department: p.department, category: required(input.category, 'Budget category'), lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, paymentTerms: r.paymentTerms, warranty: r.warranty, deliveryDate: rfq.deliveryDate, deliveryLocation: rfq.deliveryLocation, terms: rfq.terms, mode: r.mode, links: [...linksOf(ev), ev.id] })
         result = set(r, { status: 'Selected' }); set(rfq, { status: 'Awarded' }); set(p, { status: 'For Finance Approval', evaluationId: ev.id, budgetRequestId: br.id }); records.filter(q => q.kind === 'quotation' && q.rfqId === rfq.id && q.id !== r.id).forEach(q => set(q, { status: 'Not Selected' }))
       } else if (r.kind === 'budgetRequest') {
         if (action === 'resubmit') { allow(ctx, 'procurement:review'); demand(['Returned', 'Rejected'].includes(r.status), 'This request cannot be resubmitted.'); result = set(r, { status: 'Submitted', revision: required(input.remarks, 'Revision details') }) }
@@ -368,15 +401,15 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             const approvedAmount = money(input.approvedAmount); demand(approvedAmount >= r.requestedAmount && approvedAmount <= budget.total - budget.committed - budget.spent, 'Insufficient available budget, or approved amount is below the quotation.')
             set(budget, { committed: budget.committed + approvedAmount })
             const remarks = required(input.remarks, 'Approval remarks')
-            const approval = create('financeApproval', { status: 'Approved', budgetRequestId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...r.links, r.id] }, `approval-${r.id}`)
-            const allocation = create('budgetAllocation', { status: 'Committed', budgetRequestId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...approval.links, approval.id] }, `allocation-${r.id}`)
+            const approval = create('financeApproval', { status: 'Approved', budgetRequestId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...linksOf(r), r.id] }, `approval-${r.id}`)
+            const allocation = create('budgetAllocation', { status: 'Committed', budgetRequestId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...linksOf(approval), approval.id] }, `allocation-${r.id}`)
             result = set(r, { status: 'Approved', budgetId: budget.id, approvedAmount, approvedBy: ctx.uid, approvedAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
-            create('po', { lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, total: r.requestedAmount, sourceQuotationId: r.quotationId || '', directSupplierQuote: Boolean(r.directSupplierQuote), mode: r.mode || 'Online', supplierId: r.supplierId, paymentTerms: r.paymentTerms, warranty: r.warranty, status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...allocation.links, allocation.id, ...(r.quotationId ? [r.quotationId] : [])], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
+            create('po', { lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, total: r.requestedAmount, sourceQuotationId: r.quotationId || '', directSupplierQuote: Boolean(r.directSupplierQuote), mode: r.mode || 'Online', supplierId: r.supplierId, paymentTerms: r.paymentTerms, warranty: r.warranty, status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...linksOf(allocation), allocation.id, ...(r.quotationId ? [r.quotationId] : [])], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
           } else { demand(['reject', 'return'].includes(action), 'Invalid action.'); result = set(r, { status: action === 'reject' ? 'Rejected' : 'Returned', remarks: required(input.remarks, 'Decision reason'), reviewedBy: ctx.uid, reviewedAt: now }) }
         }
       } else if (r.kind === 'po') {
         if (action === 'issue') { allow(ctx, 'procurement:review'); demand(r.status === 'Approved', 'Finance approval is required before issuing the PO.'); if (r.mode === 'Manual') evidence(r, 'Upload the manual PO first.'); result = set(r, { status: 'Sent to Supplier', issuedBy: ctx.uid, issuedAt: now }); set(get(r.procurementId, 'procurement'), { status: 'Ordered' }) }
-        else if (['confirm', 'decline', 'clarify'].includes(action)) { manualOrSupplier(r, 'procurement:review'); demand(r.status === 'Sent to Supplier', 'PO is not awaiting supplier confirmation.'); const response = action === 'confirm' ? 'Accepted' : action === 'decline' ? 'Rejected' : 'Clarification Requested'; const reason = required(input.remarks, 'Supplier response'), confirmationId = `confirmation-${r.id}`, oldConfirmation = records.find(x => x.id === confirmationId && x.kind === 'supplierConfirmation'), confirmationData = { status: response, poId: r.id, supplierId: r.supplierId, response, reason, confirmedDeliveryDate: action === 'confirm' ? dateKey(input.deliveryDate) : r.deliveryDate, respondedBy: ctx.uid, respondedAt: now, links: [...r.links, r.id] }
+        else if (['confirm', 'decline', 'clarify'].includes(action)) { manualOrSupplier(r, 'procurement:review'); demand(r.status === 'Sent to Supplier', 'PO is not awaiting supplier confirmation.'); const response = action === 'confirm' ? 'Accepted' : action === 'decline' ? 'Rejected' : 'Clarification Requested'; const reason = required(input.remarks, 'Supplier response'), confirmationId = `confirmation-${r.id}`, oldConfirmation = records.find(x => x.id === confirmationId && x.kind === 'supplierConfirmation'), confirmationData = { status: response, poId: r.id, supplierId: r.supplierId, response, reason, confirmedDeliveryDate: action === 'confirm' ? dateKey(input.deliveryDate) : r.deliveryDate, respondedBy: ctx.uid, respondedAt: now, links: [...linksOf(r), r.id] }
           if (action === 'confirm') {
             const stockSupplier = supplier(r.supplierId), catalog = [...(stockSupplier.offeredItems || [])]
             for (const line of r.lines) {
@@ -434,12 +467,12 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       else if (r.kind === 'invoice') {
         allow(ctx, action === 'pay' ? 'finance:payables:settle' : 'finance:payables:approve'); const po = get(r.poId, 'po')
         if (action === 'startVerification') { demand(['Submitted', 'Disputed'].includes(r.status), 'Invoice cannot enter verification.'); evidence(r, 'Upload the supplier invoice document.'); result = set(r, { status: 'Under Verification', verificationStartedBy: ctx.uid, verificationStartedAt: now }) }
-        else if (action === 'verify') { demand(r.status === 'Under Verification', 'Start invoice verification first.'); const issues = invoiceMatch(po, r, records.filter(i => i.kind === 'invoice' && i.poId === po.id && i.id !== r.id)), matchedReceiving = records.filter(x => x.kind === 'receiving' && x.poId === po.id && x.status === 'Onboarded'), receivingIds = matchedReceiving.map(x => x.id), traceLinks = [...new Set([...r.links, ...matchedReceiving.flatMap(x => [x.id, x.inspectionId].filter(Boolean))])]; const matchId = `match-${r.id}`, existingMatch = records.find(x => x.id === matchId && x.kind === 'threeWayMatch'); const matchData = { status: issues.length ? 'Disputed' : 'Matched', invoiceId: r.id, poId: po.id, receivingIds, supplierId: r.supplierId, issues, checkedBy: ctx.uid, checkedAt: now, links: [...traceLinks, r.id] }; if (existingMatch) set(existingMatch, matchData); else create('threeWayMatch', matchData, matchId); result = set(r, { status: issues.length ? 'Disputed' : 'Matched', receivingIds, links: traceLinks, threeWayMatchId: matchId, matchIssues: issues, verifiedBy: ctx.uid, verifiedAt: now }) }
+        else if (action === 'verify') { demand(r.status === 'Under Verification', 'Start invoice verification first.'); const issues = invoiceMatch(po, r, records.filter(i => i.kind === 'invoice' && i.poId === po.id && i.id !== r.id)), matchedReceiving = records.filter(x => x.kind === 'receiving' && x.poId === po.id && x.status === 'Onboarded'), receivingIds = matchedReceiving.map(x => x.id), traceLinks = [...new Set([...linksOf(r), ...matchedReceiving.flatMap(x => [x.id, x.inspectionId].filter(Boolean))])]; const matchId = `match-${r.id}`, existingMatch = records.find(x => x.id === matchId && x.kind === 'threeWayMatch'); const matchData = { status: issues.length ? 'Disputed' : 'Matched', invoiceId: r.id, poId: po.id, receivingIds, supplierId: r.supplierId, issues, checkedBy: ctx.uid, checkedAt: now, links: [...traceLinks, r.id] }; if (existingMatch) set(existingMatch, matchData); else create('threeWayMatch', matchData, matchId); result = set(r, { status: issues.length ? 'Disputed' : 'Matched', receivingIds, links: traceLinks, threeWayMatchId: matchId, matchIssues: issues, verifiedBy: ctx.uid, verifiedAt: now }) }
         else if (action === 'approve') { demand(r.status === 'Matched', 'Three-way matching is required.'); demand(r.createdBy !== ctx.uid && r.verifiedBy !== ctx.uid, 'Invoice approval must be performed by another Finance user.'); result = set(r, { status: 'Approved for Payment', approvedBy: ctx.uid, approvedAt: now }) }
         else if (action === 'preparePayment') {
           demand(r.status === 'Approved for Payment', 'Approve the invoice before preparing payment.')
           demand(!records.some(p => p.kind === 'payment' && p.invoiceId === r.id && p.status !== 'Rejected'), 'A payment is already prepared.')
-          result = create('payment', { status: 'Pending', mode: po.mode, supplierId: po.supplierId, invoiceId: r.id, poId: po.id, budgetId: po.budgetId, total: r.total, amount: r.total, links: [...r.links, r.id], invoiceApprovedBy: r.approvedBy }, `payment-${r.id}`)
+          result = create('payment', { status: 'Pending', mode: po.mode, supplierId: po.supplierId, invoiceId: r.id, poId: po.id, budgetId: po.budgetId, total: r.total, amount: r.total, links: [...linksOf(r), r.id], invoiceApprovedBy: r.approvedBy }, `payment-${r.id}`)
         }
         else if (action === 'pay') {
           if (r.status === 'Paid') return { id: r.id, alreadyRecorded: true }
@@ -453,6 +486,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           const paidInvoices = records.filter(i => i.kind === 'invoice' && i.poId === po.id && (i.status === 'Paid' || i.id === r.id))
           const complete = allReceived && po.lines.every(line => paidInvoices.reduce((sum, i) => sum + (i.lines.find(l => l.itemId === line.itemId)?.quantity || 0), 0) === line.quantity)
           set(payment, { status: 'Paid', method: input.method, reference: required(input.reference, 'Payment reference'), paymentDate: dateKey(input.paymentDate), proofId: proof.id, processedBy: ctx.uid, paidAt: now })
+          financialWrites.push([db.collection('financialRecords').doc(`supply-${r.id}`), { status: 'Paid', paidAmount: r.total, outstandingAmount: 0, paymentMethod: input.method, paymentReference: input.reference, paidAt: now, updatedAt: now }, true])
           set(budget, { committed: budget.committed - r.total - (complete ? remaining : 0), spent: budget.spent + r.total })
           if (po.budgetAllocationId) set(get(po.budgetAllocationId, 'budgetAllocation'), { status: complete ? 'Settled' : 'Partially Spent', spentAmount: paidAmount, releasedAmount: complete ? remaining : 0, settledAt: complete ? now : null })
           set(po, { paidAmount, committedAmount: complete ? 0 : remaining, status: complete ? 'Completed' : po.status })
@@ -483,6 +517,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       const clinicLink = department === 'finance' ? '/finance/procurement/dashboard' : `/${department}/dashboard`
       for (const uid of new Set(recipients.filter(Boolean))) tx.set(db.collection('notifications').doc(), { recipientUserId: uid, branchId, title: `${names[changed.kind]} updated`, message: `${changed.number}: ${changed.status}`, link: suppliers.some(s => s.ownerId === uid || s.supplierUserId === uid) ? '/supplier/supply' : clinicLink, read: false, deleted: false, createdAt: now })
     }
+    for (const [ref, value, merge] of financialWrites) tx.set(ref, { ...value, updatedAt: now }, { merge })
     return { id: result.id, status: result.status }
   })
   const validateQuoteLines = (rfq, quote) => {
