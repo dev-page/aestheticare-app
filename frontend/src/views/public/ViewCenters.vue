@@ -36,10 +36,10 @@
             <h2 class="centers-resource-title">Search for Centers</h2>
           </div>
 
-          <div class="mt-6 rounded-[1.75rem] border border-white/70 bg-white/76 p-4 shadow-[0_18px_60px_rgba(96,64,43,0.08)] backdrop-blur-xl md:p-5">
-            <div class="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_0.75fr_0.75fr_auto_auto]">
+          <div class="discovery-filter-bar mt-6">
+            <div class="discovery-filter-main">
               <label class="filter-shell">
-                <span class="filter-label">Search</span>
+                <span class="filter-label"><Icon icon="mdi:magnify" aria-hidden="true" /> Search</span>
                 <div class="filter-search-wrap">
                   <input
                     v-model="search"
@@ -54,7 +54,7 @@
               </label>
 
               <label class="filter-shell">
-                <span class="filter-label">City</span>
+                <span class="filter-label"><Icon icon="mdi:map-marker-outline" aria-hidden="true" /> City</span>
                 <select v-model="city" class="filter-input">
                   <option value="">All cities</option>
                   <option v-for="option in cities" :key="option" :value="option">{{ option }}</option>
@@ -62,7 +62,7 @@
               </label>
 
               <label class="filter-shell">
-                <span class="filter-label">Service</span>
+                <span class="filter-label"><Icon icon="mdi:apps" aria-hidden="true" /> Service</span>
                 <select v-model="service" class="filter-input">
                   <option value="">All services</option>
                   <option v-for="option in services" :key="option" :value="option">{{ option }}</option>
@@ -70,11 +70,11 @@
               </label>
 
               <div class="filter-shell">
-                <span class="filter-label">Nearby</span>
+                <span class="filter-label"><Icon icon="mdi:crosshairs-gps" aria-hidden="true" /> Nearby</span>
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    class="inline-flex h-[3.5rem] flex-1 items-center justify-center gap-2 rounded-[1.1rem] border border-gold-300/80 bg-gold-700 px-4 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-70"
+                    class="nearby-location-button"
                     :disabled="locationLoading"
                     aria-label="Toggle nearby centers"
                     @click="toggleNearbyCenters"
@@ -96,53 +96,48 @@
                 </div>
               </div>
 
-              <button
-                type="button"
-                class="filter-icon-button self-end inline-flex h-[3.5rem] min-h-[3.5rem] items-center justify-center rounded-[1.1rem] border border-gold-300/70 bg-gold-700 text-white transition hover:-translate-y-0.5 hover:bg-gold-800"
-                aria-label="Reset filters"
-                @click="clearFilters"
-              >
-                <Icon icon="mdi:filter-off-outline" class="h-6 w-6" aria-hidden="true" />
-              </button>
             </div>
 
-            <div class="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-gold-100/80 pt-4">
-              <div class="flex flex-wrap items-center gap-2">
+            <div class="discovery-filter-secondary">
+              <div class="filter-secondary-group">
                 <button
                   type="button"
-                  class="inline-flex h-11 items-center gap-2 rounded-2xl border px-4 text-sm font-semibold transition"
+                  class="favorites-filter"
                   :class="favoritesOnly ? 'border-gold-500 bg-gold-700 text-white' : 'border-gold-200 bg-white text-charcoal-700 hover:border-gold-400'"
                   :aria-pressed="favoritesOnly"
                   @click="favoritesOnly = !favoritesOnly"
                 >
-                  <Icon icon="mdi:heart" class="h-4 w-4" aria-hidden="true" />
+                  <Icon icon="mdi:heart" aria-hidden="true" />
                   Favorites only
                   <span v-if="favoriteClinicIds.size" class="rounded-full bg-white/80 px-2 py-0.5 text-xs text-gold-800">
                     {{ favoriteClinicIds.size }}
                   </span>
                 </button>
                 <p v-if="!auth.currentUser" class="text-xs text-charcoal-500">Saved on this device until you sign in.</p>
-              </div>
 
-              <div class="flex items-center gap-2">
-                <label for="center-sort" class="text-xs font-semibold uppercase tracking-[0.16em] text-charcoal-500">Sort</label>
-                <select id="center-sort" v-model="sortBy" class="filter-input h-11 min-w-[12rem] rounded-2xl">
+              <label class="compact-filter-shell">
+                <span class="filter-label"><Icon icon="mdi:star-outline" aria-hidden="true" /> Minimum rating</span>
+                <select v-model="minimumRating" class="compact-filter-input">
+                  <option :value="0">Any rating</option>
+                  <option :value="3">3.0+ stars</option>
+                  <option :value="4">4.0+ stars</option>
+                  <option :value="4.5">4.5+ stars</option>
+                </select>
+              </label>
+
+              <label class="compact-filter-shell">
+                <span class="filter-label"><Icon icon="mdi:sort-variant" aria-hidden="true" /> Sort by</span>
+                <select id="center-sort" v-model="sortBy" class="compact-filter-input">
                   <option value="relevance">Best match</option>
                   <option value="rating">Highest rated</option>
                   <option value="name">Name A-Z</option>
                   <option value="distance">Nearest first</option>
                 </select>
+              </label>
               </div>
-            </div>
-
-            <div class="mt-3 flex flex-wrap items-center gap-2">
-              <label for="minimum-rating" class="text-xs font-semibold uppercase tracking-[0.16em] text-charcoal-500">Minimum rating</label>
-              <select id="minimum-rating" v-model="minimumRating" class="filter-input h-11 max-w-[11rem] rounded-2xl">
-                <option :value="0">Any rating</option>
-                <option :value="3">3.0+ stars</option>
-                <option :value="4">4.0+ stars</option>
-                <option :value="4.5">4.5+ stars</option>
-              </select>
+              <button type="button" class="clear-filters-button" @click="clearFilters">
+                <Icon icon="mdi:refresh" aria-hidden="true" /> Clear filters
+              </button>
             </div>
           </div>
         </div>
@@ -775,6 +770,124 @@ watch(radiusKm, () => {
   display: block;
 }
 
+/* Compact discovery controls shared visually with the signed-in clinic finder. */
+.discovery-filter-bar {
+  overflow: hidden;
+  border: 1px solid rgba(220, 195, 174, 0.7);
+  border-radius: 1.15rem;
+  background: rgba(255, 253, 250, 0.96);
+  box-shadow: 0 10px 28px rgba(84, 54, 34, 0.09);
+}
+
+.discovery-filter-main {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.9rem;
+  grid-template-columns: minmax(13rem, 1.35fr) minmax(9rem, 0.78fr) minmax(9rem, 0.82fr) minmax(14rem, 1.1fr);
+}
+
+.filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  padding-left: 0.12rem;
+  color: #6f5240;
+  font-size: 0.61rem;
+  letter-spacing: 0.16em;
+}
+
+.filter-label :deep(svg) {
+  height: 0.9rem;
+  width: 0.9rem;
+  color: #74513b;
+}
+
+.filter-shell { gap: 0.38rem; }
+
+.filter-input {
+  height: 2.3rem;
+  border-radius: 0.72rem;
+  border-color: rgba(224, 202, 183, 0.9);
+  background: #fff;
+  padding-inline: 0.78rem;
+  font-size: 0.77rem;
+  box-shadow: 0 2px 7px rgba(87, 58, 40, 0.035);
+}
+
+.filter-input-search { padding-left: 2.35rem; }
+.filter-search-icon { left: 0.78rem; height: 0.93rem; width: 0.93rem; }
+
+.nearby-location-button {
+  display: inline-flex;
+  height: 2.3rem;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(145, 91, 58, 0.32);
+  border-radius: 0.72rem;
+  background: #956142;
+  padding: 0 0.75rem;
+  color: #fffaf6;
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+.nearby-location-button:hover { background: #805035; transform: translateY(-1px); }
+.nearby-location-button:disabled { cursor: not-allowed; opacity: 0.7; }
+.nearby-location-button :deep(svg) { height: 0.95rem; width: 0.95rem; }
+
+.discovery-filter-secondary {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid rgba(235, 221, 208, 0.9);
+  padding: 0.72rem 0.9rem;
+  background: rgba(252, 248, 244, 0.7);
+}
+.filter-secondary-group { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1.2rem; }
+.favorites-filter {
+  display: inline-flex;
+  height: 2.2rem;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(224, 202, 183, 0.92);
+  border-radius: 0.65rem;
+  background: #fff;
+  padding: 0 0.7rem;
+  color: #4d3628;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.favorites-filter :deep(svg) { height: 0.88rem; width: 0.88rem; color: #6b3f2a; }
+.compact-filter-shell { display: flex; align-items: center; gap: 0.55rem; }
+.compact-filter-shell .filter-label { white-space: nowrap; }
+.compact-filter-input {
+  height: 2.2rem;
+  min-width: 7.5rem;
+  border: 1px solid rgba(224, 202, 183, 0.92);
+  border-radius: 0.65rem;
+  background: #fff;
+  padding: 0 0.68rem;
+  color: #4d3628;
+  font-size: 0.72rem;
+  outline: none;
+}
+.compact-filter-input:focus { border-color: #b98562; box-shadow: 0 0 0 3px rgba(214, 169, 123, 0.16); }
+.clear-filters-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  background: transparent;
+  color: #9a6849;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.clear-filters-button:hover { color: #70432b; }
+.clear-filters-button :deep(svg) { height: 0.9rem; width: 0.9rem; }
+
 .center-card {
   overflow: hidden;
   border-radius: 1.75rem;
@@ -910,5 +1023,17 @@ watch(radiusKm, () => {
   .filter-input {
     height: 3.25rem;
   }
+}
+
+@media (max-width: 980px) {
+  .discovery-filter-main { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .discovery-filter-secondary { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 560px) {
+  .discovery-filter-main { grid-template-columns: 1fr; }
+  .filter-secondary-group { align-items: flex-start; flex-direction: column; gap: 0.65rem; }
+  .compact-filter-shell { width: 100%; justify-content: space-between; }
+  .compact-filter-input { min-width: 9rem; }
 }
 </style>
