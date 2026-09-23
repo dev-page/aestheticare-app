@@ -139,6 +139,7 @@
                   <h4 class="text-slate-200 font-medium">Clinic Address and Map Location</h4>
                   <p class="mt-1 mb-4 text-xs text-slate-400">Search the address, then drag or click the pin to the clinic's exact location before saving.</p>
                   <LocationPicker
+                    theme="dark"
                     region="cavite"
                     title="Select Clinic Location in Cavite"
                     instruction-title="Cavite only"
@@ -588,6 +589,14 @@ export default {
         return
       }
 
+      // The About tab and loading skeleton can replace this element. Recreate
+      // the map if its old Google Maps canvas has been detached.
+      if (branchMap?.getDiv?.() && branchMap.getDiv() !== branchMapEl.value) {
+        if (branchMarker?.setMap) branchMarker.setMap(null)
+        branchMarker = null
+        branchMap = null
+      }
+
       if (!branchMap) {
         branchMap = new MapCtor(branchMapEl.value, {
           center,
@@ -621,6 +630,7 @@ export default {
         }
       }
 
+      await nextTick()
       window.google?.maps?.event?.trigger(branchMap, 'resize')
       branchMap.setCenter(center)
       mapLoading.value = false
@@ -836,6 +846,12 @@ export default {
         reviews.value = []
       } finally {
         loading.value = false
+        // The map canvas is inside the non-loading branch of the template, so
+        // initialize only after that element exists in the DOM.
+        if (branches.value.length) {
+          await nextTick()
+          await initBranchMap()
+        }
       }
     }
 
@@ -1003,7 +1019,7 @@ export default {
       })
     })
 
-    watch(selectedBranchId, async () => {
+    watch([selectedBranchId, activeTab], async () => {
       await nextTick()
       await initBranchMap()
     })

@@ -1,17 +1,17 @@
 <template>
-  <div class="space-y-4">
-    <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" v-if="instructionText">
+  <div :class="['space-y-4', { 'location-picker--dark': theme === 'dark' }]">
+    <div :class="['rounded-2xl border px-4 py-3 text-sm', theme === 'dark' ? 'border-amber-700/50 bg-[#2d1a10] text-[#f3e7e0]' : 'border-amber-200 bg-amber-50 text-amber-900']" v-if="instructionText">
       <p class="font-semibold">{{ instructionTitle }}</p>
       <p class="mt-1 leading-relaxed">{{ instructionText }}</p>
     </div>
 
-    <div class="rounded-2xl border border-gold-200/80 bg-cream-100 p-4 space-y-3">
-      <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">Search location</label>
+    <div :class="['rounded-2xl border p-4 space-y-3', theme === 'dark' ? 'border-[#6c432c] bg-[#2d1a10]' : 'border-gold-200/80 bg-cream-100']">
+      <label :class="['block text-xs font-semibold uppercase tracking-[0.14em]', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700']">Search location</label>
       <div class="flex flex-col gap-3 sm:flex-row">
         <input
           v-model="searchQuery"
           type="text"
-          class="w-full rounded-xl border border-gold-200/80 bg-white px-4 py-3 text-charcoal-700 outline-none placeholder:text-charcoal-400 focus:border-gold-400 focus:ring-4 focus:ring-gold-200/30"
+          :class="['w-full rounded-xl border px-4 py-3 outline-none focus:ring-4', theme === 'dark' ? 'border-[#6c432c] bg-[#1d100a] text-[#f7ede7] placeholder:text-[#a88470] focus:border-[#b9784f] focus:ring-[#b9784f]/20' : 'border-gold-200/80 bg-white text-charcoal-700 placeholder:text-charcoal-400 focus:border-gold-400 focus:ring-gold-200/30']"
           :placeholder="searchPlaceholder"
           @keyup.enter.prevent="searchLocation"
         />
@@ -23,7 +23,7 @@
           Search
         </button>
       </div>
-      <p class="text-xs text-charcoal-500">
+      <p :class="['text-xs', theme === 'dark' ? 'text-[#c5a18b]' : 'text-charcoal-500']">
         {{ searchHint }}
       </p>
     </div>
@@ -32,7 +32,8 @@
       <div
         ref="mapCanvas"
         :class="[
-          'relative overflow-hidden rounded-2xl border border-gold-200/80 bg-cream-100',
+          'relative overflow-hidden rounded-2xl border',
+          theme === 'dark' ? 'border-[#6c432c] bg-[#1d100a]' : 'border-gold-200/80 bg-cream-100',
           mapClass,
           { 'location-picker__cavite-map--fallback': !hasOfficialCaviteBoundary },
         ]"
@@ -41,7 +42,7 @@
       <div
         class="pointer-events-none absolute inset-x-4 top-4 z-[4] flex items-start justify-between gap-3"
       >
-        <div class="rounded-full border border-amber-200/80 bg-[rgba(255,248,240,0.92)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-800 shadow-sm backdrop-blur-sm">
+        <div :class="['rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] shadow-sm backdrop-blur-sm', theme === 'dark' ? 'border-[#8d5a3b] bg-[rgba(45,26,16,0.92)] text-[#f3d1b7]' : 'border-amber-200/80 bg-[rgba(255,248,240,0.92)] text-gold-800']">
           {{ hasOfficialCaviteBoundary ? 'Cavite boundary' : 'Cavite only' }}
         </div>
         <div class="hidden rounded-full border border-gold-200/70 bg-[rgba(255,248,240,0.82)] px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-charcoal-500 shadow-sm backdrop-blur-sm sm:block">
@@ -56,7 +57,7 @@
       </div>
       <div
         v-if="loading"
-        class="absolute inset-0 z-[5] flex items-center justify-center rounded-2xl bg-[rgba(255,248,240,0.72)] text-sm font-semibold text-gold-800 backdrop-blur-[2px]"
+        :class="['absolute inset-0 z-[5] flex items-center justify-center rounded-2xl text-sm font-semibold backdrop-blur-[2px]', theme === 'dark' ? 'bg-[rgba(29,16,10,0.78)] text-[#f3d1b7]' : 'bg-[rgba(255,248,240,0.72)] text-gold-800']"
       >
         Loading map...
       </div>
@@ -69,23 +70,23 @@
       {{ error }}
     </div>
 
-    <div class="rounded-2xl border border-gold-200/80 bg-gradient-to-br from-cream-100 to-gold-100 p-4 space-y-3 shadow-[0_10px_24px_rgba(54,34,22,0.06)]">
+    <div :class="['rounded-2xl border p-4 space-y-3 shadow-[0_10px_24px_rgba(54,34,22,0.06)]', theme === 'dark' ? 'border-[#6c432c] bg-[#2d1a10]' : 'border-gold-200/80 bg-gradient-to-br from-cream-100 to-gold-100']">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">{{ pinnedAddressLabel }}</p>
-        <p class="mt-1 text-sm text-charcoal-700">{{ displayAddress }}</p>
+        <p :class="['text-xs font-semibold uppercase tracking-[0.14em]', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700']">{{ pinnedAddressLabel }}</p>
+        <p :class="['mt-1 text-sm', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ displayAddress }}</p>
       </div>
       <div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
         <div>
           <p class="text-xs uppercase tracking-wide text-gold-700/80">Latitude</p>
-          <p class="mt-1 text-charcoal-700">{{ lat || '-' }}</p>
+          <p :class="['mt-1', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ lat || '-' }}</p>
         </div>
         <div>
           <p class="text-xs uppercase tracking-wide text-gold-700/80">Longitude</p>
-          <p class="mt-1 text-charcoal-700">{{ lng || '-' }}</p>
+          <p :class="['mt-1', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ lng || '-' }}</p>
         </div>
         <div>
           <p class="text-xs uppercase tracking-wide text-gold-700/80">Allowed area</p>
-          <p class="mt-1 text-charcoal-700">{{ allowedAreaLabel }}</p>
+          <p :class="['mt-1', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ allowedAreaLabel }}</p>
         </div>
       </div>
     </div>
@@ -141,6 +142,7 @@ const props = defineProps({
   initialLng: { type: [String, Number], default: '' },
   mapHeight: { type: String, default: '380px' },
   mapClass: { type: String, default: '' },
+  theme: { type: String, default: 'light' },
   confirmLabel: { type: String, default: 'Use Pin' },
   closeLabel: { type: String, default: 'Close' },
   showActions: { type: Boolean, default: true },

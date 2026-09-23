@@ -274,13 +274,30 @@ export default {
         todayShiftTime.value = 'Branch schedule details are unavailable.'
         return
       }
-      const shiftSnapshot = await getDocs(query(collection(db, 'shifts'), where('branchId', '==', branchId)))
-      const shift = shiftSnapshot.docs.map((shiftDoc) => ({ id: shiftDoc.id, ...shiftDoc.data() })).find((entry) => {
-        const label = `${String(entry.shiftType || 'Shift').trim()} || ${String(entry.start || '').trim()} - ${String(entry.end || '').trim()}`
-        return entry.id === assignment || label === assignmentLabel || label === assignment
-      })
-      todayShiftLabel.value = shift?.shiftType || assignmentLabel || 'Assigned Shift'
-      todayShiftTime.value = shift?.start && shift?.end ? `${shift.start} - ${shift.end}` : 'Shift time is not configured.'
+
+      // A staff member may read their own recurring schedule but must not load
+      // every shift template in the branch unless their role can view HR data.
+      // The old branch-wide query was denied for ordinary employees and its
+      // async error escaped the snapshot callback as an uncaught promise.
+      if (!hasPermission('hr:view')) {
+        todayShiftLabel.value = assignmentLabel || 'Assigned Shift'
+        todayShiftTime.value = 'Your assigned shift is scheduled for today.'
+        return
+      }
+
+      try {
+        const shiftSnapshot = await getDocs(query(collection(db, 'shifts'), where('branchId', '==', branchId)))
+        const shift = shiftSnapshot.docs.map((shiftDoc) => ({ id: shiftDoc.id, ...shiftDoc.data() })).find((entry) => {
+          const label = `${String(entry.shiftType || 'Shift').trim()} || ${String(entry.start || '').trim()} - ${String(entry.end || '').trim()}`
+          return entry.id === assignment || label === assignmentLabel || label === assignment
+        })
+        todayShiftLabel.value = shift?.shiftType || assignmentLabel || 'Assigned Shift'
+        todayShiftTime.value = shift?.start && shift?.end ? `${shift.start} - ${shift.end}` : 'Shift time is not configured.'
+      } catch (error) {
+        console.warn('Unable to load branch shift details for employee dashboard:', error)
+        todayShiftLabel.value = assignmentLabel || 'Assigned Shift'
+        todayShiftTime.value = 'Your assigned shift is scheduled for today.'
+      }
     }
 
     const subscribeToBranchSource = (user, userData = {}) => {
@@ -338,13 +355,20 @@ export default {
           unsubscribeProfile = null
         }
 
-        unsubscribeProfile = onSnapshot(doc(db, 'users', user.uid), async (userSnap) => {
-          const userData = userSnap.exists() ? userSnap.data() || {} : {}
-          roleLabel.value = String(userData.customRoleName || userData.role || 'Employee').trim()
-          subscribeToBranchSource(user, userData)
-          await loadTodayShift(user.uid, userData)
-          loading.value = false
-        })
+        unsubscribeProfile = onSnapshot(
+          doc(db, 'users', user.uid),
+          async (userSnap) => {
+            const userData = userSnap.exists() ? userSnap.data() || {} : {}
+            roleLabel.value = String(userData.customRoleName || userData.role || 'Employee').trim()
+            subscribeToBranchSource(user, userData)
+            await loadTodayShift(user.uid, userData)
+            loading.value = false
+          },
+          (error) => {
+            console.error('Failed to load employee profile:', error)
+            loading.value = false
+          }
+        )
       })
     })
 

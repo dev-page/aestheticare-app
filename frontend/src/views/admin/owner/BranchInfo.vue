@@ -286,12 +286,17 @@ export default {
           }
 
           const branchRef = doc(db, 'clinics', currentBranch.value.id)
-          if (currentBranch.value.isMainBranch) {
+          // A Basic clinic has one branch, so there is nothing else to
+          // demote. Avoid writing unrelated historical/archived branches
+          // during a simple edit of that one branch.
+          if (canManageMultipleBranches.value && currentBranch.value.isMainBranch) {
             const ownerBranchesQuery = query(collection(db, 'clinics'), where('ownerId', '==', ownerId))
             const ownerBranches = await getDocs(ownerBranchesQuery)
             const batch = writeBatch(db)
             ownerBranches.docs.forEach((branchDoc) => {
-              batch.update(branchDoc.ref, { isMainBranch: false })
+              if (branchDoc.id !== currentBranch.value.id) {
+                batch.update(branchDoc.ref, { isMainBranch: false, updatedAt: serverTimestamp() })
+              }
             })
             await batch.commit()
           }
@@ -304,17 +309,8 @@ export default {
             isMainBranch: Boolean(currentBranch.value.isMainBranch),
             branchAdminId: branchAdminId || null,
             branchAdminName: branchAdminName || null,
-            ownerId,
             updatedAt: serverTimestamp()
           })
-
-          if (branchAdminId) {
-            await updateDoc(doc(db, 'users', branchAdminId), {
-              branchId: currentBranch.value.id,
-              clinicBranch: currentBranch.value.clinicBranch.trim(),
-              updatedAt: serverTimestamp()
-            })
-          }
 
           const index = branches.value.findIndex((branch) => branch.id === currentBranch.value.id)
           if (index !== -1) {
@@ -324,8 +320,7 @@ export default {
               clinicLocation: currentBranch.value.clinicLocation.trim(),
               revenue,
               branchAdminId,
-              branchAdminName,
-              ownerId
+              branchAdminName
             }
           }
 
