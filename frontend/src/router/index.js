@@ -90,7 +90,7 @@ const routes = [
   // Every clinic owner can view their primary branch. Only adding/managing
   // additional branches is a Premium multi-branch feature.
   { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/BranchInfo.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "branches:view" } },
-  { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/AddBranch.vue"), meta: { requiresAuth: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
+  { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/AddBranch.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
   { path: "/clinic/profile", name: "clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:view" } },
   { path: "/clinic/page", name: "clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:update" } },
   { path: "/clinic/policies", name: "clinic-policies", component: () => import("@/views/admin/owner/OwnerPolicyManagement.vue"), meta: { requiresAuth: true, requiresPermission: "policies:view" } },

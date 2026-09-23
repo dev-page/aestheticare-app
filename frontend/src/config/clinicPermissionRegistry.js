@@ -279,7 +279,6 @@ export const permissionFeatureMap = {
   'roles:manage': 'staff_management',
   'attendance:view': 'attendance',
   'attendance:create': 'attendance',
-  'branches:view': 'multi_branch',
   'branches:create': 'multi_branch',
   'appointments:view': 'appointments',
   'appointments:create': 'appointments',

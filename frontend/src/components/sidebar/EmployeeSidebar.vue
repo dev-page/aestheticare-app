@@ -98,9 +98,10 @@ export default {
       baseItems.splice(1, 0, {
         label: 'My Attendance',
         icon: 'mdi:qrcode-scan',
-        to: '/hr/attendance/scan'
+        to: '/hr/attendance/scan',
+        feature: 'attendance'
       })
-      baseItems.push({ label: 'My Payslips', icon: 'report', to: '/hr/my-payslips', permission: 'profile:view' })
+      baseItems.push({ label: 'My Payslips', icon: 'report', to: '/hr/my-payslips', permission: 'profile:view', feature: 'payroll' })
 
       return baseItems
         .map((item) => {
