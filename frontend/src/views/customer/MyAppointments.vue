@@ -2018,11 +2018,14 @@ onUnmounted(() => {
   gap: 0.55rem;
 }
 
+.appointments-table td[data-label="Actions"] {
+  min-width: 14.75rem;
+}
+
 .appointment-menu {
-  position: relative;
-  display: inline-flex;
-  justify-content: flex-end;
-  isolation: isolate;
+  display: inline-grid;
+  width: 100%;
+  justify-items: end;
 }
 
 .appointment-menu-trigger {
@@ -2056,21 +2059,18 @@ onUnmounted(() => {
 }
 
 .appointment-menu-popover {
-  position: absolute;
-  z-index: 30;
-  right: 0;
-  bottom: calc(100% + 0.6rem);
+  position: static;
   display: grid;
-  width: max-content;
-  min-width: 13.5rem;
-  max-width: min(19rem, calc(100vw - 2rem));
+  width: 100%;
+  min-width: 0;
+  max-width: 16rem;
   gap: 0.15rem;
+  margin-top: 0.65rem;
   padding: 0.5rem;
   border: 1px solid rgba(126, 78, 53, 0.2);
   border-radius: 1rem;
   background: rgba(255, 252, 247, 0.98);
   box-shadow: 0 18px 40px rgba(70, 42, 26, 0.2), 0 3px 8px rgba(70, 42, 26, 0.08);
-  transform-origin: bottom right;
 }
 
 .appointment-menu-label {
@@ -2704,6 +2704,10 @@ onUnmounted(() => {
     white-space: normal;
     word-break: break-word;
     font-size: 0.92rem;
+  }
+
+  .appointments-table td[data-label="Actions"] {
+    min-width: 0;
   }
 
   .appointments-table tbody tr {
