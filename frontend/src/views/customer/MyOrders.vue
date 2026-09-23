@@ -47,11 +47,11 @@
                   <td colspan="7" class="orders-empty-cell">No orders found.</td>
                 </tr>
                 <tr v-for="order in filteredOrders" :key="order.id">
-                  <td class="orders-primary-cell">{{ getDisplayOrderId(order) }}</td>
-                  <td>{{ order.items.length }}</td>
-                  <td class="orders-total-cell">PHP {{ Number(order.total || 0).toFixed(2) }}</td>
-                  <td>{{ order.paymentMethod || 'Cash' }}</td>
-                  <td>
+                  <td class="orders-primary-cell" data-label="Order ID">{{ getDisplayOrderId(order) }}</td>
+                  <td data-label="Items">{{ order.items.length }}</td>
+                  <td class="orders-total-cell" data-label="Total">PHP {{ Number(order.total || 0).toFixed(2) }}</td>
+                  <td data-label="Payment">{{ order.paymentMethod || 'Cash' }}</td>
+                  <td data-label="Status">
                     <span
                       class="orders-status-badge"
                       :class="order.status === 'Completed'
@@ -63,8 +63,8 @@
                       {{ order.status || 'Pending' }}
                     </span>
                   </td>
-                  <td>{{ formatDate(order.createdAt) }}</td>
-                  <td>
+                  <td data-label="Created">{{ formatDate(order.createdAt) }}</td>
+                  <td data-label="Actions">
                     <div class="orders-action-group">
                       <button
                         type="button"
@@ -1312,6 +1312,68 @@ export default {
 
   .orders-search-input {
     max-width: none;
+  }
+
+  .orders-table-wrap {
+    overflow: hidden;
+  }
+
+  .orders-table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .orders-table thead {
+    display: none;
+  }
+
+  .orders-table,
+  .orders-table tbody,
+  .orders-table tr,
+  .orders-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .orders-table tbody tr:not(:has(.orders-empty-cell)) {
+    padding: 0.7rem 0.85rem;
+  }
+
+  .orders-table td:not(.orders-empty-cell) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: 2.6rem;
+    padding: 0.55rem 0;
+    border-top: 1px solid rgba(230, 193, 150, 0.45);
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+
+  .orders-table td:not(.orders-empty-cell)::before {
+    content: attr(data-label);
+    flex: 0 0 5.6rem;
+    color: #8b6a4d;
+    font-size: 0.69rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-align: left;
+    text-transform: uppercase;
+  }
+
+  .orders-table td.orders-primary-cell {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .orders-table td[data-label="Actions"] {
+    align-items: flex-start;
+  }
+
+  .orders-action-group {
+    flex: 1;
+    justify-content: flex-end;
   }
 }
 </style>

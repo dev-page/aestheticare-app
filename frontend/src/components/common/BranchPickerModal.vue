@@ -51,4 +51,5 @@ const titleId = 'branch-picker-title'
 .branch-picker-option strong { color: #342419; font-size: .95rem; }
 .branch-picker-option small { margin-top: .3rem; color: #72573f; font-size: .8rem; }
 .branch-picker-arrow { color: #956344; font-size: 1.75rem; line-height: 1; }
+@media (max-width: 480px) { .branch-picker { padding: 1.1rem; border-radius: 1.15rem; }.branch-picker h2 { font-size: 1.25rem; }.branch-picker-option { padding: .85rem; } }
 </style>

@@ -5,4 +5,31 @@ const sessions=ref([]),error=ref(''),target=ref(null),date=ref(''),time=ref(''),
 const api=async(path,body)=>{const token=await auth.currentUser.getIdToken();const r=await fetch(OTP_API_BASE+path,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});const p=await r.json();if(!r.ok||!p.success)throw new Error(p.error||'Request failed');return p.data}
 const load=async()=>{try{const u=await getDoc(doc(db,'users',auth.currentUser.uid));branchId=String(u.data()?.branchId||auth.currentUser.uid);sessions.value=await api(`/treatment-sessions?branchId=${encodeURIComponent(branchId)}`)}catch(e){error.value=e.message}}
 const openSchedule=s=>{target.value=s;date.value='';time.value=''};const schedule=async()=>{try{await api(`/treatment-sessions/${target.value.id}/schedule`,{date:date.value,time:time.value});toast.success('Session scheduled.');target.value=null;load()}catch(e){toast.error(e.message)}};const complete=async s=>{try{await api(`/treatment-sessions/${s.id}/complete`,{});toast.success('Session completed.');load()}catch(e){toast.error(e.message)}};const noShow=async s=>{if(!confirm('Mark this session as a no-show?'))return;try{const data=await api(`/treatment-sessions/${s.id}/no-show`,{});toast.success(`Session marked ${data.status}.`);load()}catch(e){toast.error(e.message)}};const showHistory=async s=>{try{historySession.value=s;history.value=await api(`/treatment-sessions/${s.id}/audit`)}catch(e){toast.error(e.message)}};const formatDate=v=>{if(!v)return'Just now';if(v?.toDate)return v.toDate().toLocaleString();const seconds=Number(v?._seconds??v?.seconds);return Number.isFinite(seconds)?new Date(seconds*1000).toLocaleString():new Date(v).toLocaleString()};onMounted(load)
-</script><style scoped>.field{display:block;width:100%;margin-top:.35rem;border:1px solid #475569;border-radius:.5rem;background:#0f172a;padding:.55rem;color:#fff}.btn{border-radius:.45rem;background:#b45309;padding:.45rem .75rem;color:#fff}</style>
+</script>
+
+<style scoped>
+.field { display: block; width: 100%; margin-top: .35rem; border: 1px solid #475569; border-radius: .5rem; background: #0f172a; padding: .55rem; color: #fff; }
+.btn { border-radius: .45rem; background: #b45309; padding: .45rem .75rem; color: #fff; }
+
+@media (max-width: 767px) {
+  main { min-width: 0; padding: 1rem !important; }
+  h1 { font-size: 1.45rem; line-height: 1.2; }
+
+  section.overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-inline: contain;
+  }
+
+  section.overflow-x-auto table { min-width: 34rem; }
+
+  section.overflow-x-auto td:last-child { white-space: nowrap; }
+  section.overflow-x-auto td:last-child .ml-2 { margin-left: .35rem; }
+
+  section.mt-6.bg-slate-800 { padding: 1rem; }
+  section.mt-6.bg-slate-800 > div { flex-direction: column; align-items: flex-start; gap: .75rem; }
+
+  form.fixed { align-items: flex-start; overflow: auto; padding-top: 1rem; }
+  form.fixed > section { max-height: calc(100dvh - 2rem); overflow: auto; }
+  form.fixed > section > div { flex-wrap: wrap; }
+}
+</style>
