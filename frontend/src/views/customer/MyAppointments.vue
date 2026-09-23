@@ -130,8 +130,9 @@
                   </td>
                   <td data-label="Actions">
                     <div class="appointment-menu">
-                      <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id)">•••</button>
-                      <div v-if="openActionMenuId === appt.id" class="appointment-menu-popover">
+                      <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id)"><span aria-hidden="true">&#8943;</span></button>
+                      <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" role="menu" aria-label="Appointment actions">
+                      <p class="appointment-menu-label">Appointment actions</p>
                       <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => openMeetLink(appt.meetLink))">Join Call</button>
                       <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => copyMeetLink(appt.meetLink))">Copy Link</button>
                       <button
@@ -205,8 +206,9 @@
                   <td data-label="Actions">
                     <div class="table-actions">
                       <div class="appointment-menu">
-                        <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id)">•••</button>
-                        <div v-if="openActionMenuId === appt.id" class="appointment-menu-popover">
+                        <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id)"><span aria-hidden="true">&#8943;</span></button>
+                        <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" role="menu" aria-label="Appointment actions">
+                      <p class="appointment-menu-label">Appointment actions</p>
                       <button
                         v-if="appt.contract && appt.approvalStatus === 'Approved'"
                         type="button"
@@ -1388,21 +1390,30 @@ const startClinicsListener = () => {
     unsubscribeClinics = null
   }
 
-  unsubscribeClinics = onSnapshot(collection(db, 'clinics'), (snapshot) => {
-    const clinicMap = new Map()
-    sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))).forEach((data) => {
-      clinicMap.set(data.id, {
-        name: data.clinicName || data.clinicBranch || 'Clinic',
-        cancellationPolicy: String(data.cancellationPolicy || '').trim(),
-        cancellationPolicyEnabled: data.cancellationPolicyEnabled !== false,
-        reschedulePolicy: String(data.reschedulePolicy || '').trim(),
-        reschedulePolicyEnabled: data.reschedulePolicyEnabled !== false,
-        refundPolicy: String(data.refundPolicy || '').trim(),
-        refundPolicyEnabled: data.refundPolicyEnabled !== false,
+  // Public clinic reads must be constrained to the field required by the
+  // Firestore rule. Historical appointments still fall back to “Clinic” when
+  // their former clinic is no longer published.
+  unsubscribeClinics = onSnapshot(
+    query(collection(db, 'clinics'), where('isPublished', '==', true)),
+    (snapshot) => {
+      const clinicMap = new Map()
+      sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))).forEach((data) => {
+        clinicMap.set(data.id, {
+          name: data.clinicName || data.clinicBranch || 'Clinic',
+          cancellationPolicy: String(data.cancellationPolicy || '').trim(),
+          cancellationPolicyEnabled: data.cancellationPolicyEnabled !== false,
+          reschedulePolicy: String(data.reschedulePolicy || '').trim(),
+          reschedulePolicyEnabled: data.reschedulePolicyEnabled !== false,
+          refundPolicy: String(data.refundPolicy || '').trim(),
+          refundPolicyEnabled: data.refundPolicyEnabled !== false,
+        })
       })
-    })
-    clinicsById.value = Object.fromEntries(clinicMap.entries())
-  })
+      clinicsById.value = Object.fromEntries(clinicMap.entries())
+    },
+    () => {
+      clinicsById.value = {}
+    }
+  )
 }
 
 const submitRequest = async () => {
@@ -2011,46 +2022,79 @@ onUnmounted(() => {
   position: relative;
   display: inline-flex;
   justify-content: flex-end;
+  isolation: isolate;
 }
 
 .appointment-menu-trigger {
-  min-width: 2.65rem;
-  min-height: 2.65rem;
-  border: 1px solid rgba(126, 78, 53, 0.24);
-  border-radius: 0.8rem;
-  background: #fff8ee;
+  display: inline-grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  place-items: center;
+  border: 1px solid rgba(126, 78, 53, 0.22);
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #fffaf3 0%, #fdf1e2 100%);
   color: #6e4330;
-  font-size: 1.1rem;
+  font-size: 1.55rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
   line-height: 1;
+  box-shadow: 0 2px 5px rgba(87, 56, 35, 0.06);
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.appointment-menu-trigger:hover {
+.appointment-menu-trigger:hover,
+.appointment-menu-trigger[aria-expanded="true"] {
+  border-color: rgba(126, 78, 53, 0.38);
   background: #f3dfc8;
+  box-shadow: 0 6px 14px rgba(87, 56, 35, 0.14);
+  transform: translateY(-1px);
+}
+
+.appointment-menu-trigger:focus-visible {
+  outline: 3px solid rgba(159, 102, 67, 0.28);
+  outline-offset: 2px;
 }
 
 .appointment-menu-popover {
   position: absolute;
-  z-index: 10;
-  top: calc(100% + 0.4rem);
+  z-index: 30;
   right: 0;
+  bottom: calc(100% + 0.6rem);
   display: grid;
-  min-width: 11.5rem;
-  padding: 0.4rem;
-  border: 1px solid rgba(126, 78, 53, 0.22);
-  border-radius: 0.8rem;
-  background: #fffaf2;
-  box-shadow: 0 12px 28px rgba(87, 56, 35, 0.18);
+  width: max-content;
+  min-width: 13.5rem;
+  max-width: min(19rem, calc(100vw - 2rem));
+  gap: 0.15rem;
+  padding: 0.5rem;
+  border: 1px solid rgba(126, 78, 53, 0.2);
+  border-radius: 1rem;
+  background: rgba(255, 252, 247, 0.98);
+  box-shadow: 0 18px 40px rgba(70, 42, 26, 0.2), 0 3px 8px rgba(70, 42, 26, 0.08);
+  transform-origin: bottom right;
+}
+
+.appointment-menu-label {
+  margin: 0;
+  padding: 0.38rem 0.55rem 0.3rem;
+  color: #8a6249;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .appointment-menu-item {
-  padding: 0.68rem 0.8rem;
-  border-radius: 0.55rem;
+  width: 100%;
+  min-height: 2.55rem;
+  padding: 0.68rem 0.75rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: transparent;
   color: #4d301f;
   font-size: 0.84rem;
   font-weight: 700;
   text-align: left;
+  transition: background 150ms ease, color 150ms ease;
 }
 
 .appointment-menu-item:hover:not(:disabled) {
@@ -2058,11 +2102,16 @@ onUnmounted(() => {
 }
 
 .appointment-menu-item-primary {
-  color: #7c4f34;
+  background: #f3e2ce;
+  color: #704127;
 }
 
 .appointment-menu-item-danger {
   color: #a04646;
+}
+
+.appointment-menu-item-danger:hover:not(:disabled) {
+  background: #f9e4df;
 }
 
 .appointment-menu-item:disabled {
@@ -2073,10 +2122,18 @@ onUnmounted(() => {
 .appointment-menu-empty,
 .appointment-menu-key {
   margin: 0;
-  padding: 0.55rem 0.8rem;
+  padding: 0.6rem 0.7rem;
   color: #7f6655;
   font-size: 0.78rem;
   line-height: 1.4;
+}
+
+.appointment-menu-key {
+  margin: 0.15rem 0;
+  border-left: 3px solid #c28b5e;
+  border-radius: 0.5rem;
+  background: #fff4e4;
+  overflow-wrap: anywhere;
 }
 
 .payment-agreement {

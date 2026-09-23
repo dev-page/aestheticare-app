@@ -973,8 +973,15 @@ export default {
             ...(Array.isArray(order.items) ? order.items.map((item) => item?.branchId) : []),
           ]).map((value) => String(value || '').trim()).filter(Boolean)))
           const policyEntries = await Promise.all(branchIds.map(async (branchId) => {
-            const policySnap = await getDoc(doc(db, 'clinicPolicies', branchId))
-            return [branchId, policySnap.exists() ? policySnap.data() || {} : {}]
+            // A historical order can belong to a clinic that is no longer
+            // public. Its optional policy copy must not prevent the customer
+            // from reading their own order history.
+            try {
+              const policySnap = await getDoc(doc(db, 'clinicPolicies', branchId))
+              return [branchId, policySnap.exists() ? policySnap.data() || {} : {}]
+            } catch (_error) {
+              return [branchId, {}]
+            }
           }))
           policiesByBranch.value = Object.fromEntries(policyEntries)
           loading.value = false
