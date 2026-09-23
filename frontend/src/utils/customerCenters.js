@@ -96,7 +96,11 @@ const buildServiceMap = async (clinicIds) => {
 }
 
 export const fetchCustomerCenters = async () => {
-  const clinicsSnapshot = await getDocs(collection(db, 'clinics'))
+  // This constraint is required by the Firestore rule for public clinic
+  // discovery; querying the whole collection could include private drafts.
+  const clinicsSnapshot = await getDocs(
+    query(collection(db, 'clinics'), where('isPublished', '==', true))
+  )
   const clinics = clinicsSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
   const serviceMap = await buildServiceMap(clinics.map((clinic) => clinic.id))
   return buildCenters(clinics, serviceMap)
@@ -139,7 +143,7 @@ export const subscribeCustomerCenters = (onChange, onError) => {
   }
 
   clinicUnsubscribe = onSnapshot(
-    collection(db, 'clinics'),
+    query(collection(db, 'clinics'), where('isPublished', '==', true)),
     (snapshot) => {
       const clinics = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
       stopServiceListeners()
