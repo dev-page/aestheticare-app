@@ -38,13 +38,13 @@ const routes = [
   //Hidden routes
   { path: "/change-password", name: "change-password", component: () => import("@/views/auth/ChangePassword.vue"), meta: { requiresAuth: true } },
   { path: "/workspace/dashboard", name: "workspace-dashboard", component: () => import("@/views/admin/owner/employee/EmployeeDashboard.vue"), meta: { requiresAuth: true } },
-  { path: "/hr/my-payslips", name: "hr-my-payslips", component: () => import("@/views/admin/owner/employee/EmployeePayslips.vue"), meta: { requiresAuth: true, requiresPermission: "profile:view" } },
+  { path: "/hr/my-payslips", name: "hr-my-payslips", component: () => import("@/views/admin/owner/employee/EmployeePayslips.vue"), meta: { requiresAuth: true, requiresPermission: "profile:view", requiresFeature: "payroll" } },
   { path: "/account/profile", name: "account-profile", component: () => import("@/views/admin/owner/employee/EmployeeProfileSelf.vue"), meta: { requiresAuth: true, requiresPermission: "profile:view" } },
   { path: "/account/change-password", name: "account-change-password", component: () => import("@/views/admin/owner/employee/EmployeeChangePassword.vue"), meta: { requiresAuth: true, requiresPermission: "password:update" } },
-  { path: "/hr/attendance/face-registration", name: "hr-attendance-face-registration", component: () => import("@/views/clinic/attendance/FaceRegistration.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:create" } },
+  { path: "/hr/attendance/face-registration", name: "hr-attendance-face-registration", component: () => import("@/views/clinic/attendance/FaceRegistration.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:create", requiresFeature: "attendance" } },
   { path: "/support/report", name: "support-report", component: () => import("@/views/common/SupportReport.vue"), meta: { requiresAuth: true } },
   { path: "/notifications", name: "notifications", component: () => import("@/views/common/Notifications.vue"), meta: { requiresAuth: true } },
-  { path: "/hr/attendance/scan", name: "hr-attendance-qr-scan", component: () => import("@/views/clinic/attendance/AttendanceQrScan.vue"), meta: { requiresAuth: true } },
+  { path: "/hr/attendance/scan", name: "hr-attendance-qr-scan", component: () => import("@/views/clinic/attendance/AttendanceQrScan.vue"), meta: { requiresAuth: true, requiresFeature: "attendance" } },
 
   //{ path: "/customer/home", name: "customer-home", component: () => import("@/views/customer/CustomerHome.vue"), meta: { requiresAuth: true } },
   //{ path: "/customer/home/view-centers", name: "customer-view-center", component: () => import("@/views/customer/ViewCenterDetails.vue"), meta: { requiresAuth: true } },
@@ -101,7 +101,7 @@ const routes = [
   // Operations and catalog module routes
   { path: "/operations/dashboard", name: "operations-dashboard", component: () => import("@/views/admin/owner/operations/ManagerDashboard.vue"), meta: { requiresAuth: true } },
   { path: "/operations/team", name: "operations-team", component: () => import("@/views/admin/owner/operations/ManagerStaffs.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view" } },
-  { path: "/operations/attendance", name: "operations-attendance", component: () => import("@/views/admin/owner/operations/ManagerAttendance.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:view" } },
+  { path: "/operations/attendance", name: "operations-attendance", component: () => import("@/views/admin/owner/operations/ManagerAttendance.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
   { path: "/catalog/archived", name: "catalog-archived", component: () => import("@/views/admin/owner/operations/ArchivedPosts.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },
   { path: "/procurement/suppliers/directory", name: "procurement-supplier-directory", component: () => import("@/views/admin/owner/operations/SupplySuppliers.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
   { path: "/catalog/products-services", name: "catalog-products-services", component: () => import("@/views/admin/owner/operations/ProductServiceListing.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },

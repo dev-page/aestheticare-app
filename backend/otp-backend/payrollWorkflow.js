@@ -4,12 +4,13 @@ export const payrollMonth = (entry) => {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).formatToParts(entry.createdAt?.toDate?.() || new Date(entry.createdAt))
   return parts.find((p) => p.type === 'year').value + '-' + parts.find((p) => p.type === 'month').value
 }
-export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserContext }) => {
+export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserContext, assertPlanFeature }) => {
   const db = admin.firestore(), timestamp = () => admin.firestore.FieldValue.serverTimestamp()
   const assignedToBranch = (context, branchId) => {
     const assigned = new Set([context.userData?.branchId, ...(Array.isArray(context.userData?.branchIds) ? context.userData.branchIds : [])].filter(Boolean))
     return assigned.has(branchId)
   }
+  const requirePayrollPlan = async (branchId) => assertPlanFeature(db, branchId, 'payroll')
   const route = (path, fn) => app.post(path, requireAuth, async (req, res) => {
     try {
       const context = await loadUserContext(req.user.uid)
@@ -19,6 +20,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   })
   route('/payroll/summaries/:id/submit', async (tx, req, context) => {
     const { branchId, monthKey, payrollEntryIds } = req.body || {}
+    await requirePayrollPlan(branchId)
     check(assignedToBranch(context, branchId) && context.permissions.has('payroll:update'), 'HR payroll permission required for this branch.', 403)
     check(/^\d{4}-\d{2}$/.test(monthKey || '') && req.params.id === `${branchId}_${monthKey}`, 'Invalid payroll month.', 400)
     const ref = db.collection('payrollSummaries').doc(req.params.id), previous = (await tx.get(ref)).data()
@@ -53,6 +55,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   })
   route('/finance/payroll/:id/reject', async (tx, req, context) => {
     const ref = db.collection('payrollSummaries').doc(req.params.id), summary = (await tx.get(ref)).data()
+    await requirePayrollPlan(summary?.branchId)
     check(summary && assignedToBranch(context, summary.branchId) && context.permissions.has('payroll:approve'), 'Finance payroll approval permission required for this branch.', 403)
     check(summary.status === 'pending' || (summary.status === 'approved' && !summary.approvedEntries && !summary.releasedCount), 'Only pending or unconfirmed legacy payroll can be returned to HR.')
     const reason = String(req.body?.reason || '').trim()
@@ -64,6 +67,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   })
   route('/finance/payroll/:id/approve', async (tx, req, context) => {
     const ref = db.collection('payrollSummaries').doc(req.params.id), summary = (await tx.get(ref)).data()
+    await requirePayrollPlan(summary?.branchId)
     check(summary && assignedToBranch(context, summary.branchId) && context.permissions.has('payroll:approve'), 'Finance payroll approval permission required for this branch.', 403)
     check(summary.status === 'pending' || (summary.status === 'approved' && !summary.approvedEntries), 'This payroll summary is no longer awaiting approval.')
     const records = await tx.get(db.collection('payrolls').where('branchId', '==', summary.branchId))
@@ -88,6 +92,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   })
   route('/payroll/:id/release', async (tx, req, context) => {
     const entryRef = db.collection('payrolls').doc(req.params.id), entry = (await tx.get(entryRef)).data()
+    await requirePayrollPlan(entry?.branchId)
     check(entry && assignedToBranch(context, entry.branchId) && context.permissions.has('payroll:update'), 'HR payroll permission required for this branch.', 403)
     const month = payrollMonth(entry), summaryRef = db.collection('payrollSummaries').doc(`${entry.branchId}_${month}`)
     const summary = (await tx.get(summaryRef)).data()
@@ -114,6 +119,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   route('/finance/payroll/:id/record-payment', async (tx, req, context) => {
     const summaryRef = db.collection('payrollSummaries').doc(req.params.id)
     const summary = (await tx.get(summaryRef)).data()
+    await requirePayrollPlan(summary?.branchId)
     check(summary && assignedToBranch(context, summary.branchId) && context.permissions.has('payroll:approve'), 'Finance payroll approval permission required for this branch.', 403)
     check(summary.status === 'approved' && summary.approvedEntries, 'Only an approved payroll can be recorded as paid.')
     if (summary.paymentStatus === 'Paid') return { alreadyRecorded: true }

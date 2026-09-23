@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import { demand, dateKey, clock, punches, validateField, fieldValues } from './attendancePolicy.js'
 
-export function registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule }) {
+export function registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature }) {
   const db = () => admin.firestore()
   const stamp = () => admin.firestore.FieldValue.serverTimestamp()
   const run = handler => async (req, res) => {
@@ -12,6 +12,7 @@ export function registerAttendanceManagement(app, { admin, requireAuth, requireP
     const branchId = String(input.branchId || '').trim()
     demand(branchId && !branchId.includes('/'), 'Select a branch.')
     demand(await resolveBranchAccess(req.user.uid, branchId), 'You cannot access this branch.', 403)
+    await assertPlanFeature(db(), branchId, 'attendance')
     const branch = (await db().collection('clinics').doc(branchId).get()).data()
     demand(branch?.ownerId, 'Branch organization is missing.')
     return { branchId, branch, ownerId: branch.ownerId }

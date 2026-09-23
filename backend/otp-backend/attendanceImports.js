@@ -17,12 +17,13 @@ export function parseCsv(text) {
   return rows
 }
 
-export function registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess }) {
+export function registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, assertPlanFeature }) {
   const db = () => admin.firestore(), stamp = () => admin.firestore.FieldValue.serverTimestamp()
   const run = fn => async (req,res) => { try { res.json({ success: true, ...await fn(req) }) } catch(e) { res.status(e.status || 400).json({ success: false, error: e.message }) } }
   const scope = async (req, branchId) => {
     demand(typeof branchId === 'string' && branchId && !branchId.includes('/'), 'Select a branch.')
     demand(await resolveBranchAccess(req.user.uid, branchId), 'Branch access denied.', 403)
+    await assertPlanFeature(db(), branchId, 'attendance')
     const branch = (await db().collection('clinics').doc(branchId).get()).data()
     demand(branch?.ownerId, 'Branch organization is missing.')
     return branch.ownerId

@@ -157,6 +157,14 @@ service cloud.firestore {
           || clinicDoc(branchId).data.subscriptionPlan == 'premium');
     }
 
+    // Attendance, shifts, leave, overtime, base pay, payroll and payslips
+    // are deliberately Premium-only. Basic remains focused on appointments,
+    // consultations, product orders, inventory and operational finance.
+    function planAllowsWorkforceManagement(branchId) {
+      return exists(/databases/$(database)/documents/clinics/$(branchId))
+        && clinicDoc(branchId).data.subscriptionPlan == 'premium';
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn()
         && (request.auth.uid == userId
@@ -204,18 +212,19 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.branchId != null
         && canAccessBranch(request.resource.data.branchId)
-        && (hasPermission('hr:update')
+        && ((hasPermission('hr:update') && planAllowsWorkforceManagement(request.resource.data.branchId))
           || (request.resource.data.recurring == true && hasPermission('appointments:review') && planAllowsBookingAvailability(request.resource.data.branchId)));
       allow update: if isSignedIn()
         && resource.data.branchId != null
         && request.resource.data.branchId == resource.data.branchId
         && canAccessBranch(resource.data.branchId)
-        && (hasPermission('hr:update')
+        && ((hasPermission('hr:update') && planAllowsWorkforceManagement(resource.data.branchId))
           || (resource.data.recurring == true && request.resource.data.recurring == true && hasPermission('appointments:review') && planAllowsBookingAvailability(resource.data.branchId)));
       allow delete: if isSignedIn()
         && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
-        && hasPermission('hr:update');
+        && hasPermission('hr:update')
+        && planAllowsWorkforceManagement(resource.data.branchId);
     }
 
     match /clinics/{clinicId} {
@@ -381,7 +390,8 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
-        && hasPermission('attendance:update');
+        && hasPermission('attendance:update')
+        && planAllowsWorkforceManagement(resource.data.branchId);
       // QR challenges are minted by the trusted attendance backend only.
       // Clients may read their branch challenge to scan it, but cannot forge,
       // refresh, or modify a challenge directly.
@@ -404,8 +414,8 @@ service cloud.firestore {
 
     match /attendance/{attendanceId} {
       allow read: if isSignedIn()
-        && ((resource.data.employeeId == request.auth.uid)
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('attendance:view'))
+        && ((resource.data.employeeId == request.auth.uid && planAllowsWorkforceManagement(resource.data.branchId))
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('attendance:view') && planAllowsWorkforceManagement(resource.data.branchId))
           || isSuperadmin());
       allow create, update: if false;
       allow delete: if false;
@@ -414,21 +424,24 @@ service cloud.firestore {
     match /overtimeRequests/{requestId} {
       allow read: if isSignedIn()
         && (isSuperadmin()
-          || resource.data.requesterId == request.auth.uid
+          || (resource.data.requesterId == request.auth.uid && planAllowsWorkforceManagement(resource.data.branchId))
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
-            && (hasPermission('overtime:view') || hasPermission('payroll:update'))));
+            && (hasPermission('overtime:view') || hasPermission('payroll:update'))
+            && planAllowsWorkforceManagement(resource.data.branchId)));
       allow create: if isSignedIn()
         && request.resource.data.requesterId == request.auth.uid
         && request.resource.data.branchId != null
         && canAccessBranch(request.resource.data.branchId)
         && hasPermission('overtime:create')
+        && planAllowsWorkforceManagement(request.resource.data.branchId)
         && request.resource.data.status == 'Pending'
         && request.resource.data.calculatedOvertimeMinutes > 0;
       allow update: if isSignedIn()
         && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
         && hasPermission('overtime:review')
+        && planAllowsWorkforceManagement(resource.data.branchId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'reviewRemarks', 'reviewedBy', 'reviewedById', 'reviewedAt', 'updatedAt'
         ]);
@@ -438,19 +451,22 @@ service cloud.firestore {
     match /leaveRequests/{requestId} {
       allow read: if isSignedIn()
         && (isSuperadmin()
-          || resource.data.requesterId == request.auth.uid
+          || (resource.data.requesterId == request.auth.uid && planAllowsWorkforceManagement(resource.data.branchId))
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
-            && hasPermission('leave:review')));
+            && hasPermission('leave:review')
+            && planAllowsWorkforceManagement(resource.data.branchId)));
       allow create: if isSignedIn()
         && request.resource.data.requesterId == request.auth.uid
         && request.resource.data.branchId != null
         && canAccessBranch(request.resource.data.branchId)
         && hasPermission('leave:create')
+        && planAllowsWorkforceManagement(request.resource.data.branchId)
         && request.resource.data.status == 'Pending';
       allow update: if isSignedIn()
         && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
+        && planAllowsWorkforceManagement(resource.data.branchId)
         && ((resource.data.requesterId == request.auth.uid
           && resource.data.status == 'Pending'
           && (request.resource.data.status == 'Pending' || request.resource.data.status == 'Cancelled')
@@ -703,13 +719,13 @@ service cloud.firestore {
 
     match /shifts/{shiftId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:view')) || isSuperadmin());
+        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:view') && planAllowsWorkforceManagement(resource.data.branchId)) || isSuperadmin());
       allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('hr:create'));
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('hr:create') && planAllowsWorkforceManagement(request.resource.data.branchId));
       allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:update'));
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:update') && planAllowsWorkforceManagement(resource.data.branchId));
       allow delete: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:update'));
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:update') && planAllowsWorkforceManagement(resource.data.branchId));
     }
 
     function editablePayrollMonth(branchId, month) {
@@ -717,11 +733,11 @@ service cloud.firestore {
         || get(/databases/$(database)/documents/payrollSummaries/$(branchId + '_' + month)).data.status != 'approved';
     }
     match /payrolls/{payrollId} {
-      allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
-      allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update')
+      allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && hasPermission('payroll:view') && planAllowsWorkforceManagement(resource.data.branchId)) || isSuperadmin());
+      allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update') && planAllowsWorkforceManagement(request.resource.data.branchId)
         && request.resource.data.payPeriodMonthKey.matches('^[0-9]{4}-[0-9]{2}$')
         && editablePayrollMonth(request.resource.data.branchId, request.resource.data.payPeriodMonthKey);
-      allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('payroll:update')
+      allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('payroll:update') && planAllowsWorkforceManagement(resource.data.branchId)
         && request.resource.data.branchId == resource.data.branchId && request.resource.data.employeeId == resource.data.employeeId
         && request.resource.data.payPeriodMonthKey == resource.data.get('payPeriodMonthKey', request.resource.data.payPeriodMonthKey)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['payslipReleasedAt', 'paymentStatus', 'paidAt'])
@@ -729,27 +745,29 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /payrollSummaries/{summaryId} {
-      allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && (hasPermission('payroll:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
+      allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && (hasPermission('payroll:view') || hasPermission('finance:reports:view')) && planAllowsWorkforceManagement(resource.data.branchId)) || isSuperadmin());
       allow create, update: if false;
       allow delete: if false;
     }
     match /payslips/{payslipId} {
-      allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
+      allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && hasPermission('payroll:view') && planAllowsWorkforceManagement(resource.data.branchId)) || isSuperadmin());
       allow write: if false;
     }
     match /users/{employeeId}/payslips/{payslipId} {
-      allow read: if isSignedIn() && (request.auth.uid == employeeId || (canAccessBranch(resource.data.branchId) && hasPermission('payroll:view')) || isSuperadmin());
+      allow read: if isSignedIn() && ((request.auth.uid == employeeId && planAllowsWorkforceManagement(resource.data.branchId)) || (canAccessBranch(resource.data.branchId) && hasPermission('payroll:view') && planAllowsWorkforceManagement(resource.data.branchId)) || isSuperadmin());
       allow write: if false;
     }
 
     match /payrollSettings/{branchId} {
       allow read: if isSignedIn()
         && canAccessBranch(branchId)
-        && hasPermission('payroll:view');
+        && hasPermission('payroll:view')
+        && planAllowsWorkforceManagement(branchId);
       allow create, update: if isSignedIn()
         && request.resource.data.branchId == branchId
         && canAccessBranch(branchId)
-        && hasPermission('payroll:update');
+        && hasPermission('payroll:update')
+        && planAllowsWorkforceManagement(branchId);
       allow delete: if false;
     }
 
@@ -757,11 +775,13 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
-        && hasPermission('payroll:view');
+        && hasPermission('payroll:view')
+        && planAllowsWorkforceManagement(resource.data.branchId);
       allow create: if isSignedIn()
         && request.resource.data.branchId != null
         && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('payroll:update');
+        && hasPermission('payroll:update')
+        && planAllowsWorkforceManagement(request.resource.data.branchId);
       allow update, delete: if false;
     }
 

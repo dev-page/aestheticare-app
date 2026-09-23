@@ -1974,10 +1974,10 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
 
 registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
 registerFinanceWorkflow(app, { admin, requireAuth, loadUserContext })
-registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule })
-registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess })
+registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
+registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders })
-registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext })
+registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 
 app.post('/admin/trigger-clinic-registration-verification', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const uid = String(req.body?.uid || '').trim()
@@ -2107,8 +2107,11 @@ const PLAN_PRIORITIES = {
 }
 
 const PLAN_FEATURES = Object.freeze({
-  basic: new Set(['booking_availability']),
-  premium: new Set(['booking_availability', 'multi_branch']),
+  // Basic is a single-clinic operational plan: bookings, consultations,
+  // services/packages, orders, inventory and operational finance.
+  basic: new Set(['booking_availability', 'online_consultations', 'reports']),
+  // Workforce management is intentionally a Premium boundary.
+  premium: new Set(['booking_availability', 'online_consultations', 'reports', 'multi_branch', 'hr', 'attendance', 'payroll']),
 })
 
 const assertClinicPlanFeature = async (firestore, branchId, feature) => {
@@ -2122,8 +2125,14 @@ const assertClinicPlanFeature = async (firestore, branchId, feature) => {
   const configuredFeatures = configured.exists && Array.isArray(configured.data()?.permissions)
     ? new Set(configured.data().permissions.map(value => String(value || '').trim()).filter(Boolean))
     : null
-  const features = configuredFeatures?.size ? configuredFeatures : PLAN_FEATURES[plan]
-  assertWorkflow(features?.has(feature), 'This clinic plan does not include customer booking availability.', 403)
+  const allowedFeatures = PLAN_FEATURES[plan] || new Set()
+  // A persisted plan-permissions document can never widen the hard plan
+  // boundary. This protects Basic clinics even when an old document still
+  // contains workforce or payroll permissions.
+  const features = configuredFeatures?.size
+    ? new Set([...allowedFeatures, ...[...configuredFeatures].filter(value => allowedFeatures.has(value))])
+    : allowedFeatures
+  assertWorkflow(features.has(feature), `This clinic plan does not include ${String(feature || 'this')} access.`, 403)
   return { plan, clinic }
 }
 
@@ -5383,6 +5392,7 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
     ])
     const userData = userSnap.exists ? userSnap.data() || {} : {}
     const branch = branchSnap.exists ? branchSnap.data() || {} : {}
+    await assertClinicPlanFeature(firestore, normalizedBranchId, 'attendance')
     demand(userSnap.exists && !userData.archived && String(userData.status || '').toLowerCase() === 'active', 'An active employee account is required.', 403)
     const proofObject = admin.storage().bucket(firebaseStorageBucket || admin.app().options.storageBucket).file(String(proofStoragePath))
     const [proofMetadata] = await proofObject.getMetadata()
@@ -5514,6 +5524,7 @@ app.post(ATTENDANCE_QR_PATH, requireAuth, requirePermission('attendance:update')
       return res.status(403).json({ success: false, error: 'You cannot manage attendance for this branch.' })
     }
     const firestore = admin.firestore()
+    await assertClinicPlanFeature(firestore, normalizedBranchId, 'attendance')
     const branchSnap = await firestore.collection('clinics').doc(normalizedBranchId).get()
     if (!branchSnap.exists) return res.status(404).json({ success: false, error: 'Branch not found.' })
     const dateKey = manilaDateKey()
@@ -5558,6 +5569,7 @@ app.post(ATTENDANCE_IMPORT_PATH, requireAuth, requirePermission('attendance:impo
     const rows = parseAttendanceCsv(csvText)
     demand(rows.length > 0 && rows.length <= 400, 'Import 1–400 rows per file.')
     const firestore = admin.firestore()
+    await assertClinicPlanFeature(firestore, normalizedBranchId, 'attendance')
     const contentHash = crypto.createHash('sha256').update(String(csvText)).digest('hex')
     const priorBatch = await firestore.collection('attendanceImports').where('branchId', '==', normalizedBranchId).where('contentHash', '==', contentHash).limit(1).get()
     if (!dryRun && !priorBatch.empty) return res.status(409).json({ success: false, error: 'This attendance file was already imported for this branch.' })

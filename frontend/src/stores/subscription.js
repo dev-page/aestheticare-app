@@ -31,6 +31,12 @@ const DEFAULT_FEATURES = {
     'inventory',
     'services',
     'booking_availability',
+    // Basic is the single-clinic operational plan. It deliberately includes
+    // the customer, booking, consultation, inventory, order and financial
+    // reporting workflow, but not workforce management or payroll.
+    'online_consultations',
+    'reports',
+    'dss',
   ],
   premium: [
     'subscription',
@@ -235,12 +241,13 @@ export const useSubscriptionStore = defineStore('subscription', () => {
   }
 
   const loadPlanPermissions = async (planKey) => {
+    const allowed = new Set(DEFAULT_FEATURES[planKey] || DEFAULT_FEATURES.free)
     try {
       const cached = JSON.parse(localStorage.getItem(`${PLAN_FEATURES_CACHE_PREFIX}${planKey}`) || 'null')
       if (cached && Array.isArray(cached.data) && cached.ts) {
         const isFresh = Date.now() - cached.ts < PLAN_CACHE_TTL_MS
         if (isFresh && cached.data.length) {
-          activeFeatures.value = cached.data
+          activeFeatures.value = cached.data.filter((feature) => allowed.has(feature))
         }
       }
     } catch (_error) {
@@ -252,7 +259,12 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       if (planDoc.exists()) {
         const data = planDoc.data() || {}
         if (Array.isArray(data.permissions) && data.permissions.length) {
-          const permissions = data.permissions.map((value) => String(value || '').trim()).filter(Boolean)
+          const permissions = [...new Set([
+            ...allowed,
+            ...data.permissions
+              .map((value) => String(value || '').trim())
+              .filter((feature) => allowed.has(feature))
+          ])]
           try {
             localStorage.setItem(
               `${PLAN_FEATURES_CACHE_PREFIX}${planKey}`,
@@ -267,7 +279,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     } catch (error) {
       console.error('Failed to load plan permissions:', error)
     }
-    return DEFAULT_FEATURES[planKey] || DEFAULT_FEATURES.free
+    return [...allowed]
   }
 
   const startPlanPermissionsListener = (planKey) => {
@@ -283,9 +295,15 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         if (snapshot.exists()) {
           const data = snapshot.data() || {}
           if (Array.isArray(data.permissions) && data.permissions.length) {
-            activeFeatures.value = data.permissions
-              .map((value) => String(value || '').trim())
-              .filter(Boolean)
+            const allowed = new Set(DEFAULT_FEATURES[planKey] || DEFAULT_FEATURES.free)
+            // A plan-permissions document can refine a plan, but it must not
+            // grant a Basic clinic a Premium-only workforce/payroll feature.
+            activeFeatures.value = [...new Set([
+              ...allowed,
+              ...data.permissions
+                .map((value) => String(value || '').trim())
+                .filter((feature) => allowed.has(feature))
+            ])]
             try {
               localStorage.setItem(
                 `${PLAN_FEATURES_CACHE_PREFIX}${planKey}`,
