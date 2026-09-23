@@ -180,7 +180,7 @@
             <div class="center-card-body">
               <div>
                 <h3 class="center-title">{{ center.name }}</h3>
-                <p class="center-location">{{ center.branches.length }} {{ center.branches.length === 1 ? 'branch' : 'branches' }} · {{ center.location || 'Location not set' }}</p>
+                <p class="center-location">Main branch · {{ center.mainBranch.location || 'Location not set' }}</p>
                 <p v-if="center.distanceKm !== null" class="mt-2 inline-flex rounded-full border border-gold-200/80 bg-gold-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-800">
                   {{ formatDistance(center.distanceKm) }} away
                 </p>
@@ -203,7 +203,7 @@
               </div>
 
               <div class="center-footer">
-                <span class="center-location">{{ center.city || 'Clinic location' }}</span>
+                <span class="center-location">{{ center.branches.length }} {{ center.branches.length === 1 ? 'branch' : 'branches' }}</span>
                 <button @click="openCenter(center)" class="customer-center-button">
                   View Center
                 </button>

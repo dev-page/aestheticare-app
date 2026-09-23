@@ -56,6 +56,7 @@ const buildBranches = (clinics, serviceMap) =>
       return {
         id: clinic.id,
         organizationId: toText(clinic.organizationOwnerId || clinic.ownerId) || clinic.id,
+        clinicName: toText(clinic.clinicName),
         name: toText(clinic.clinicName || clinic.clinicBranch) || 'Unnamed Center',
         branchName: toText(clinic.clinicBranch || clinic.clinicName) || 'Unnamed Branch',
         isMainBranch: clinic.isMainBranch === true,
@@ -83,15 +84,19 @@ const buildCenters = (clinics, serviceMap) => {
   })
 
   return Array.from(groups, ([id, branches]) => {
-    const primary = branches.find((branch) => branch.isMainBranch) || branches[0]
+    const primary = branches.find((branch) => branch.isMainBranch) || branches.find((branch) => branch.id === id) || branches[0]
+    const mainBranch = { ...primary, isMainBranch: true }
     const services = [...new Set(branches.flatMap((branch) => branch.services))]
     return {
-      ...primary,
+      ...mainBranch,
       id,
-      name: primary.name,
+      // The organization card is named after the main clinic record, never a
+      // secondary branch. Its location and image also come from that branch.
+      name: primary.clinicName || primary.name,
       services: services.length ? services : [FALLBACK_SERVICE],
       rating: Math.max(...branches.map((branch) => branch.rating || 0)),
-      branches,
+      mainBranch,
+      branches: [mainBranch, ...branches.filter((branch) => branch.id !== primary.id)],
     }
   }).sort((a, b) => a.name.localeCompare(b.name))
 }

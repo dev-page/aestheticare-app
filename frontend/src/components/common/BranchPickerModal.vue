@@ -18,7 +18,7 @@
           @click="$emit('select', branch)"
         >
           <span>
-            <strong>{{ branch.branchName || branch.name }}</strong>
+            <strong>{{ branch.isMainBranch ? `Main branch · ${branch.branchName || branch.name}` : branch.branchName || branch.name }}</strong>
             <small>{{ branch.location || 'Location not set' }}</small>
           </span>
           <span class="branch-picker-arrow" aria-hidden="true">›</span>

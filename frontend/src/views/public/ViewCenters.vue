@@ -192,7 +192,7 @@
               </span>
             </div>
 
-            <p class="mt-3 text-sm text-charcoal-600">{{ center.location || 'Location not set' }}</p>
+            <p class="mt-3 text-sm text-charcoal-600">Main branch · {{ center.mainBranch.location || 'Location not set' }}</p>
             <p class="mt-2 text-sm text-charcoal-500">
               {{ center.services.slice(0, 2).join(' • ') || 'General services' }}
             </p>
@@ -266,7 +266,7 @@
             <div class="p-5">
               <div class="flex items-start justify-between gap-4">
                 <div>
-                  <p class="text-sm font-medium text-charcoal-700">{{ center.location || 'Location not set' }}</p>
+                  <p class="text-sm font-medium text-charcoal-700">Main branch · {{ center.mainBranch.location || 'Location not set' }}</p>
                   <p class="mt-1 text-sm text-charcoal-500">
                     {{ center.branches.length }} {{ center.branches.length === 1 ? 'branch' : 'branches' }} · {{ center.services.length }} {{ center.services.length === 1 ? 'service area' : 'service areas' }}
                   </p>
