@@ -1,12 +1,11 @@
 {
   "name": "AesthetiCare",
   "short_name": "AesthetiCare",
-  "description": "A convenient platform for discovering aesthetic clinics, booking services, managing appointments, and accessing your AesthetiCare account.",
+  "description": "Discover aesthetic clinics, explore services and products, book appointments, place pickup orders, and manage your AesthetiCare account—all in one convenient platform.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "lang": "en",
