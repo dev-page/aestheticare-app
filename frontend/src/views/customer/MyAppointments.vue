@@ -130,8 +130,8 @@
                   </td>
                   <td data-label="Actions">
                     <div class="appointment-menu">
-                      <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id)"><span aria-hidden="true">&#8943;</span></button>
-                      <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" role="menu" aria-label="Appointment actions">
+                      <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id, $event)"><span aria-hidden="true">&#8943;</span></button>
+                      <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" :style="actionMenuStyle" role="menu" aria-label="Appointment actions">
                       <p class="appointment-menu-label">Appointment actions</p>
                       <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => openMeetLink(appt.meetLink))">Join Call</button>
                       <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => copyMeetLink(appt.meetLink))">Copy Link</button>
@@ -206,8 +206,8 @@
                   <td data-label="Actions">
                     <div class="table-actions">
                       <div class="appointment-menu">
-                        <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id)"><span aria-hidden="true">&#8943;</span></button>
-                        <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" role="menu" aria-label="Appointment actions">
+                        <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id, $event)"><span aria-hidden="true">&#8943;</span></button>
+                        <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" :style="actionMenuStyle" role="menu" aria-label="Appointment actions">
                       <p class="appointment-menu-label">Appointment actions</p>
                       <button
                         v-if="appt.contract && appt.approvalStatus === 'Approved'"
@@ -548,6 +548,7 @@ const pastAppointments = ref([])
 const onlineConsultations = ref([])
 const treatmentSessions = ref([])
 const openActionMenuId = ref(null)
+const actionMenuStyle = ref({})
 const clinicsById = ref({})
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
@@ -604,12 +605,31 @@ const isOnlineConsultationAppointment = (appointment) => {
   return (type === 'consultation' && mode === 'online') || serviceText.includes('online consultation')
 }
 
-const toggleActionMenu = (appointmentId) => {
-  openActionMenuId.value = openActionMenuId.value === appointmentId ? null : appointmentId
+const toggleActionMenu = (appointmentId, event) => {
+  if (openActionMenuId.value === appointmentId) {
+    openActionMenuId.value = null
+    return
+  }
+
+  const rect = event?.currentTarget?.getBoundingClientRect()
+  if (rect) {
+    const viewportPadding = 12
+    const menuWidth = Math.min(272, window.innerWidth - (viewportPadding * 2))
+    const belowSpace = window.innerHeight - rect.bottom - viewportPadding
+    const aboveSpace = rect.top - viewportPadding
+    const openBelow = belowSpace >= aboveSpace
+    const left = Math.max(viewportPadding, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - viewportPadding))
+
+    actionMenuStyle.value = openBelow
+      ? { top: `${rect.bottom + 10}px`, bottom: 'auto', left: `${left}px`, maxHeight: `${Math.max(120, belowSpace - 10)}px` }
+      : { top: 'auto', bottom: `${window.innerHeight - rect.top + 10}px`, left: `${left}px`, maxHeight: `${Math.max(120, aboveSpace - 10)}px` }
+  }
+  openActionMenuId.value = appointmentId
 }
 
 const runAction = async (action) => {
   openActionMenuId.value = null
+  actionMenuStyle.value = {}
   await action()
 }
 
@@ -2018,14 +2038,10 @@ onUnmounted(() => {
   gap: 0.55rem;
 }
 
-.appointments-table td[data-label="Actions"] {
-  min-width: 14.75rem;
-}
-
 .appointment-menu {
-  display: inline-grid;
-  width: 100%;
-  justify-items: end;
+  position: relative;
+  display: inline-flex;
+  justify-content: flex-end;
 }
 
 .appointment-menu-trigger {
@@ -2059,18 +2075,20 @@ onUnmounted(() => {
 }
 
 .appointment-menu-popover {
-  position: static;
+  position: fixed;
+  z-index: 1000;
   display: grid;
-  width: 100%;
-  min-width: 0;
-  max-width: 16rem;
+  width: min(17rem, calc(100vw - 1.5rem));
+  min-width: 13.5rem;
+  max-width: calc(100vw - 1.5rem);
   gap: 0.15rem;
-  margin-top: 0.65rem;
+  margin: 0;
   padding: 0.5rem;
   border: 1px solid rgba(126, 78, 53, 0.2);
   border-radius: 1rem;
   background: rgba(255, 252, 247, 0.98);
   box-shadow: 0 18px 40px rgba(70, 42, 26, 0.2), 0 3px 8px rgba(70, 42, 26, 0.08);
+  overflow-y: auto;
 }
 
 .appointment-menu-label {
@@ -2706,9 +2724,6 @@ onUnmounted(() => {
     font-size: 0.92rem;
   }
 
-  .appointments-table td[data-label="Actions"] {
-    min-width: 0;
-  }
 
   .appointments-table tbody tr {
     margin-bottom: 0.9rem;
