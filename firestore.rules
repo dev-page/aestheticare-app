@@ -81,7 +81,11 @@ service cloud.firestore {
     }
 
     function hasPermission(permission) {
-      return (userData().permissions != null && userData().permissions.hasAny([permission, 'administrator:full_access']))
+      // A clinic owner is the authority for their own organization. Individual
+      // staff still require explicit permissions, and every caller must pass
+      // the surrounding branch-scope check before this helper grants access.
+      return isClinicOwner()
+        || (userData().permissions != null && userData().permissions.hasAny([permission, 'administrator:full_access']))
         || (userData().effectivePermissions != null && userData().effectivePermissions.hasAny([permission, 'administrator:full_access']))
         || (rolePermissions() != null && rolePermissions().hasAny([permission, 'administrator:full_access']));
     }
