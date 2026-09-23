@@ -76,6 +76,14 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // Self-service account profile photos. Files are immutable because the
+    // client creates a fresh timestamped filename for each replacement.
+    match /userProfiles/{userId}/{fileName} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperadmin());
+      allow create: if isSignedIn() && request.auth.uid == userId && isImageUpload();
+      allow update, delete: if false;
+    }
+
     match /product-service-posts/{branchId}/{fileName} {
       allow read: if isSignedIn() && canAccessBranch(branchId);
       allow create: if canAccessBranch(branchId) && isImageUpload();
