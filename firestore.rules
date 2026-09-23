@@ -312,6 +312,7 @@ service cloud.firestore {
     match /appointments/{appointmentId} {
       allow read: if isSignedIn()
         && (resource.data.customerId == request.auth.uid
+          || (resource.data.branchId != null && isOwnerOfBranch(resource.data.branchId))
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
             && (hasPermission('appointments:view') || hasPermission('finance:refunds:view')))
           || isSuperadmin());
@@ -360,7 +361,8 @@ service cloud.firestore {
 
     match /clients/{clientId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:view')) || isSuperadmin());
+        && ((resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
+          || (canAccessBranch(resource.data.branchId) && hasPermission('clients:view')))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('clients:create'));
       allow update: if isSignedIn()
@@ -465,8 +467,9 @@ service cloud.firestore {
 
     match /transactions/{transactionId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (hasPermission('payments:view') || hasPermission('finance:sales:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
+        && ((resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
+          || (canAccessBranch(resource.data.branchId)
+            && (hasPermission('payments:view') || hasPermission('finance:sales:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)
           && (hasPermission('payments:create') || hasPermission('finance:refunds:manage')));
@@ -477,8 +480,9 @@ service cloud.firestore {
 
     match /inventoryItems/{itemId} {
       allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (hasPermission('inventory:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
+        && ((resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
+          || (canAccessBranch(resource.data.branchId)
+            && (hasPermission('inventory:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
       allow update: if isSignedIn()
@@ -522,7 +526,8 @@ service cloud.firestore {
 
     match /purchaseRequests/{requestId} {
       allow read: if isSignedIn() && (get(/databases/$(database)/documents/suppliers/$(resource.data.supplierId)).data.ownerId == request.auth.uid
-        || (canAccessBranch(resource.data.branchId) && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view') || hasPermission('finance:payables:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))) || isSuperadmin());
+        || (resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
+          || (canAccessBranch(resource.data.branchId) && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view') || hasPermission('finance:payables:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
       // Historical records remain readable for reports. All new procurement writes
       // use the server-authoritative supplyRecords workflow.
       allow create, update, delete: if false;
