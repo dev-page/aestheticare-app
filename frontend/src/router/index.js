@@ -216,6 +216,7 @@ const routes = [
 
   // Superadmin routes
   { path: "/superadmin/dashboard", name: "superadmin-dashboard", component: () => import("@/views/superAdmin/Dashboard.vue"), meta: { requiresAuth: true, requiresPermission: "system:dashboard:view" } },
+  { path: "/superadmin/notifications", name: "superadmin-notifications", component: () => import("@/views/common/Notifications.vue"), meta: { requiresAuth: true, requiresPermission: "system:dashboard:view" } },
   { path: "/superadmin/admin-list", name: "superadmin-admin-list", component: () => import("@/views/superAdmin/AdminList.vue"), meta: { requiresAuth: true, requiresPermission: "system:admins:manage" } },
   { path: "/superadmin/subscription/plans", name: "superadmin-subscription-plans", component: () => import("@/views/superAdmin/SubscriptionPlans.vue"), meta: { requiresAuth: true, requiresPermission: "system:plans:manage" } },
   { path: "/superadmin/subscription/permissions", name: "superadmin-subscription-permissions", component: () => import("@/views/superAdmin/SubscriptionPermission.vue"), meta: { requiresAuth: true, requiresPermission: "system:permissions:manage" } },

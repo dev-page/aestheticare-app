@@ -128,7 +128,10 @@ export default {
     const freeTrialCount = ref(0)
     const basicCount = ref(0)
     const premiumCount = ref(0)
-    const realtimeCollections = ['clinics', 'users', 'planPayments', 'subscriptionPayments', 'payments']
+    // planPayments is the current, rule-protected subscription payment source.
+    // The older subscriptionPayments and payments collections have no client
+    // read rule and must not be queried from the browser dashboard.
+    const realtimeCollections = ['clinics', 'users', 'planPayments']
     const realtimeUnsubscribers = []
     let refreshTimer = null
 
@@ -168,7 +171,7 @@ export default {
     })
 
     const loadPaymentRevenue = async () => {
-      const paymentCollections = ['planPayments', 'subscriptionPayments', 'payments']
+      const paymentCollections = ['planPayments']
       let total = 0
 
       for (const name of paymentCollections) {

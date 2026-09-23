@@ -1,6 +1,7 @@
 <template>
   <div :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen notifications-shell-module' : 'notifications-shell'">
     <EmployeeTopbar
+      v-if="!isSystemAdminView"
       title=""
       :plan-label="planLabel"
       :is-expired="isExpired"
@@ -154,6 +155,7 @@ import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
+import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 
 export default {
   name: 'NotificationsPage',
@@ -165,7 +167,8 @@ export default {
     CustomerSidebar,
     EmployeeSidebar,
     OwnerSidebar,
-    SupplierSidebar
+    SupplierSidebar,
+    SuperAdminSidebar
   },
   setup() {
     const router = useRouter()
@@ -191,20 +194,22 @@ export default {
       const typeValue = String(userType.value || '').toLowerCase()
 
       if (typeValue === 'customer' || roleValue === 'customer') return 'customer'
+      if (roleValue.includes('superadmin')) return 'superadmin'
       if (typeValue === 'supplier' || roleValue.includes('supplier')) return 'supplier'
       if (typeValue === 'staff') return 'employee'
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return 'owner'
       return ''
     })
 
-    const isModuleView = computed(() => ['owner', 'employee'].includes(panelKey.value))
+    const isModuleView = computed(() => ['owner', 'employee', 'superadmin'].includes(panelKey.value))
+    const isSystemAdminView = computed(() => panelKey.value === 'superadmin')
 
     const sidebarComponent = computed(() => {
       const roleValue = String(role.value || '').toLowerCase()
       const typeValue = String(userType.value || '').toLowerCase()
 
       if (!roleValue && !typeValue) return null
-      if (roleValue.includes('superadmin')) return null
+      if (roleValue.includes('superadmin')) return SuperAdminSidebar
       if (typeValue === 'customer' || roleValue === 'customer') return CustomerSidebar
       if (typeValue === 'supplier' || roleValue.includes('supplier')) return SupplierSidebar
       if (typeValue === 'staff') return EmployeeSidebar
@@ -486,6 +491,7 @@ export default {
       badgeStatusLabel,
       showBadgeStatus,
       isModuleView,
+      isSystemAdminView,
       markNotificationRead,
       openNotification,
       showNotificationModal,
@@ -523,6 +529,7 @@ export default {
 }
 
 .notifications-main-module {
+  padding: 2rem;
   background: transparent;
 }
 
@@ -843,6 +850,10 @@ export default {
 }
 
 @media (max-width: 767px) {
+  .notifications-main-module {
+    padding: 1rem;
+  }
+
   .notifications-main {
     padding: 1rem 1rem 1.5rem;
   }

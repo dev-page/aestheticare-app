@@ -54,7 +54,7 @@ export default {
         icon: 'settings',
         children: [
           { label: 'Profile & Security', icon: 'profile', to: '/superadmin/account-settings' },
-          { label: 'Notifications', icon: 'bell', to: '/notifications' },
+          { label: 'Notifications', icon: 'bell', to: '/superadmin/notifications' },
           { label: 'Change Password', icon: 'key', to: '/change-password' },
           { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' },
         ]
