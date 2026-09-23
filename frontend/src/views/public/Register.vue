@@ -4051,7 +4051,7 @@ const handleRegistrationSubmit = () => {
                 </div>
                 <div class="choice-body">
                   <p class="choice-kicker">Business Access</p>
-                  <h2 class="choice-title">Register as Clinic Admin</h2>
+                  <h2 class="choice-title">Register as Clinic Owner</h2>
                   <p class="choice-copy">Continue with clinic registration, account verification, and document submission for approval.</p>
                 </div>
                 <span class="choice-cta">Continue</span>

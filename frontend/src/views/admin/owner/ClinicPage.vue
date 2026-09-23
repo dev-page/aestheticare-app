@@ -523,12 +523,46 @@ export default {
       return `Rating: ${Math.round(numeric)}/5`
     }
 
+    const waitForMapConstructor = () => new Promise((resolve, reject) => {
+      const startedAt = Date.now()
+      const tryResolve = async () => {
+        if (typeof window.google?.maps?.Map === 'function') {
+          resolve()
+          return
+        }
+
+        // With the modern async Maps loader, `google.maps` can exist before
+        // either the legacy Map constructor or the maps library is available.
+        // Import the library when possible, then retry briefly while it starts.
+        if (typeof window.google?.maps?.importLibrary === 'function') {
+          try {
+            const mapsLibrary = await window.google.maps.importLibrary('maps')
+            if (typeof mapsLibrary?.Map === 'function') {
+              resolve()
+              return
+            }
+          } catch {
+            // The library can still be bootstrapping immediately after script load.
+          }
+        }
+
+        if (Date.now() - startedAt >= 8000) {
+          reject(new Error('Google Maps did not finish initializing. Check the API key and referrer restrictions.'))
+          return
+        }
+        window.setTimeout(tryResolve, 75)
+      }
+      void tryResolve()
+    })
+
     const loadMapsScript = () => {
-      if (window.google?.maps?.Map || window.google?.maps?.importLibrary) return Promise.resolve()
+      if (typeof window.google?.maps?.Map === 'function') return Promise.resolve()
       return new Promise((resolve, reject) => {
         const existing = document.getElementById('google-maps-js')
         if (existing) {
-          existing.addEventListener('load', () => resolve(), { once: true })
+          // It may already have fired its load event, so wait for the API
+          // itself rather than relying solely on that DOM event.
+          waitForMapConstructor().then(resolve).catch(reject)
           existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), { once: true })
           return
         }
@@ -543,8 +577,10 @@ export default {
         script.id = 'google-maps-js'
         script.async = true
         script.defer = true
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&loading=async&v=weekly`
-        script.onload = () => resolve()
+        // Do not use loading=async without the Google callback helper. That
+        // setting lets this event fire before Map/importLibrary is usable.
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&v=weekly`
+        script.onload = () => waitForMapConstructor().then(resolve).catch(reject)
         script.onerror = () => reject(new Error('Failed to load Google Maps'))
         document.head.appendChild(script)
       })
