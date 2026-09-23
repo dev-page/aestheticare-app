@@ -1241,38 +1241,22 @@ const startReviewsListener = (branchId) => {
     return
   }
 
-  const sourceMap = new Map()
-  const reviewQueries = []
-  const queryKeys = new Set()
-  const addReviewQuery = (field, value) => {
-    const normalizedValue = String(value || '').trim()
-    if (!normalizedValue) return
-    const key = `${field}:${normalizedValue}`
-    if (queryKeys.has(key)) return
-    queryKeys.add(key)
-    reviewQueries.push({
-      key,
-      ref: query(collection(db, 'reviews'), where(field, '==', normalizedValue)),
-    })
-  }
-
-  addReviewQuery('branchId', branchId)
-  addReviewQuery('centerId', centerId)
-  addReviewQuery('clinicId', centerId)
-
-  reviewQueries.forEach(({ key, ref }) => {
-    const unsubscribe = onSnapshot(
-      ref,
-      (snapshot) => {
-        sourceMap.set(key, snapshot.docs.map(normalizeReview))
-        syncReviews(sourceMap)
-      },
-      (error) => {
-        console.error('Failed to load center reviews:', error)
-      }
-    )
-    reviewUnsubscribers.push(unsubscribe)
-  })
+  // Public review access is scoped by branchId in Firestore rules. Legacy
+  // centerId/clinicId queries cannot prove that a review belongs to a public
+  // clinic, so they are intentionally not used in the customer-facing page.
+  const unsubscribe = onSnapshot(
+    query(collection(db, 'reviews'), where('branchId', '==', branchId)),
+    (snapshot) => {
+      reviews.value = snapshot.docs.map(normalizeReview).sort(
+        (a, b) => toTimestampMillis(b.createdAt) - toTimestampMillis(a.createdAt)
+      )
+    },
+    (error) => {
+      console.error('Failed to load center reviews:', error)
+      reviews.value = []
+    }
+  )
+  reviewUnsubscribers.push(unsubscribe)
 }
 
 const stopBranchSensitiveListeners = () => {
@@ -1486,10 +1470,9 @@ const startAppointmentsListener = async (branchId) => {
     appointmentsUnsubscribe = null
   }
 
-  const appointmentsQuery = query(collection(db, 'appointments'), where('branchId', '==', branchId))
-  appointmentsUnsubscribe = onSnapshot(appointmentsQuery, (snapshot) => {
-    appointments.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-  })
+  // Appointment details belong to individual customers and clinic staff.
+  // The booking API checks conflicts transactionally before accepting a slot.
+  appointments.value = []
 }
 
 const startBookingReservationsListener = async (branchId) => {
@@ -1498,15 +1481,9 @@ const startBookingReservationsListener = async (branchId) => {
     bookingReservationsUnsubscribe = null
   }
 
-  const reservationsQuery = query(collection(db, 'bookingReservations'), where('branchId', '==', branchId))
-  bookingReservationsUnsubscribe = onSnapshot(reservationsQuery, (snapshot) => {
-    bookingReservations.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-  })
-}
-
-const fetchBranchAppointmentsSnapshot = async (branchId) => {
-  const snapshot = await getDocs(query(collection(db, 'appointments'), where('branchId', '==', branchId)))
-  return snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+  // Temporary reservations are private server-side state. Do not stream them
+  // to customers; availability is revalidated by the booking API on submit.
+  bookingReservations.value = []
 }
 
 const loadPractitioners = async (branchId = activeBranchId.value) => {
