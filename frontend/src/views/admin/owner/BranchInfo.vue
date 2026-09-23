@@ -73,6 +73,7 @@ export default {
         return
       }
 
+      try {
       const scope = await loadOwnerBranchScope(db, user.uid)
       currentOwnerId.value = scope.ownerId || user.uid
       const branchDocs = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
@@ -134,6 +135,12 @@ export default {
         .filter((staff, index, array) => array.findIndex((entry) => entry.id === staff.id) === index)
         .filter((staff) => staff.id)
         .sort((left, right) => left.fullName.localeCompare(right.fullName))
+      } catch (error) {
+        console.error('Failed to load branch management data:', error)
+        branches.value = []
+        staffOptions.value = []
+        toast.error('We could not load branch management. Please refresh and try again.')
+      }
     }
 
     onMounted(loadBranches)

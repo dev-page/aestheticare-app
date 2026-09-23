@@ -432,7 +432,11 @@ export default {
       currentBranch.value.clinicPostalCode = String(postalCode || currentBranch.value.clinicPostalCode || '').trim()
     }
 
-    const handleLocationConfirm = () => {
+    const handleLocationConfirm = (selection) => {
+      // The picker emits the final validated selection with the confirm event.
+      // Applying it here also covers a user who presses Use Pin immediately
+      // after selecting a result.
+      if (selection) handleLocationSelection(selection)
       closeLocationModal()
       toast.success('Branch location selected successfully.')
     }
@@ -531,7 +535,7 @@ export default {
         toast.error('Please pin the exact branch location on the map.')
         return
       }
-      if (!caviteLocationSet.has(normalizeLocationName(currentBranch.value.location))) {
+      if (!/cavite/i.test(String(currentBranch.value.clinicProvince || ''))) {
         toast.error('Only branches located in Cavite can be added.')
         return
       }
@@ -602,6 +606,8 @@ export default {
       handleBranchNameInput,
       openLocationModal,
       closeLocationModal,
+      handleLocationSelection,
+      handleLocationConfirm,
       searchLocation,
       usePinnedLocation,
       saveBranch,
@@ -639,15 +645,12 @@ export default {
           <div>
             <label class="mb-1 block text-slate-400">Location</label>
             <div class="flex flex-col gap-3 sm:flex-row">
-              <select
-                v-model="currentBranch.location"
-                class="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="" disabled>Select city/municipality in Cavite</option>
-                <option v-for="location in caviteLocations" :key="location" :value="location">
-                  {{ location }}
-                </option>
-              </select>
+              <input
+                :value="currentBranch.location"
+                readonly
+                placeholder="Choose the branch location on the map"
+                class="flex-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-white placeholder:text-slate-500"
+              />
               <button
                 type="button"
                 @click="openLocationModal"
@@ -656,7 +659,7 @@ export default {
                 Pick on Map
               </button>
             </div>
-            <p class="mt-1 text-xs text-slate-400">Choose the city or municipality, then pin the exact branch location on the map.</p>
+            <p class="mt-1 text-xs text-slate-400">Use the map to choose and confirm the exact branch location in Cavite.</p>
           </div>
 
           <div>

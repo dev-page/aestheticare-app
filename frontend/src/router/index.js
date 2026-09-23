@@ -87,7 +87,7 @@ const routes = [
   // Clinic configuration routes
   { path: "/clinic/onboarding", name: "clinic-onboarding", component: () => import("@/views/admin/owner/OwnerSubscriptionOnboarding.vue"), meta: { requiresAuth: true, requiresOwner: true } },
   { path: "/clinic/dashboard", name: "clinic-dashboard", component: () => import("@/views/admin/owner/OwnerDashboard.vue"), meta: { requiresAuth: true, requiresOwner: true } },
-  { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/BranchInfo.vue"), meta: { requiresAuth: true, requiresPermission: "branches:view" } },
+  { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/BranchInfo.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "branches:view", requiresFeature: "multi_branch" } },
   { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/AddBranch.vue"), meta: { requiresAuth: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
   { path: "/clinic/profile", name: "clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:view" } },
   { path: "/clinic/page", name: "clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:update" } },

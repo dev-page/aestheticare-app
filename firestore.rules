@@ -192,6 +192,12 @@ service cloud.firestore {
             ]))
           || isSuperadmin()
           || (resource.data.branchId != null
+            && isOwnerOfBranch(resource.data.branchId)
+            && request.resource.data.branchId != null
+            && isOwnerOfBranch(request.resource.data.branchId)
+            && hasPermission('staff:update')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['branchId', 'clinicBranch', 'clinicLocation', 'updatedAt']))
+          || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
             && hasPermission('staff:update')
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['branchId', 'branchIds', 'organizationOwnerId', 'clinicLocation'])
@@ -230,7 +236,7 @@ service cloud.firestore {
     match /clinics/{clinicId} {
       allow read: if (resource.data.isPublished == true)
         || (isSignedIn()
-          && (isSuperadmin() || isOwnerOfBranch(clinicId) || isStaffOfBranch(clinicId)));
+          && (isSuperadmin() || resource.data.ownerId == request.auth.uid || isStaffOfBranch(clinicId)));
       allow create: if isSignedIn()
         // The browser may create only its initial owner clinic (whose ID is
         // the owner's UID during registration). Additional branches are
