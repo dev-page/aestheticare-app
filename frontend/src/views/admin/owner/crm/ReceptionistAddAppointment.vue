@@ -439,11 +439,12 @@ export default {
     })
 
     const loadPractitionerSchedules = async (list) => {
-      const shiftSnapshot = await getDocs(query(collection(db, 'shifts'), where('branchId', '==', currentBranchId.value)))
-      const shifts = new Map(shiftSnapshot.docs.map(snap => [snap.id, snap.data()]))
+      // Basic clinics publish recurring booking availability. Do not load HR
+      // shifts here: those are Premium-only and are not needed to book a slot.
+      const shifts = new Map()
       const pairs = await Promise.all(
         list.map(async (practitioner) => {
-          const scheduleSnap = await getDocs(collection(db, 'users', practitioner.id, 'schedules'))
+          const scheduleSnap = await getDocs(query(collection(db, 'users', practitioner.id, 'schedules'), where('recurring', '==', true)))
           const weekMap = buildWeekScheduleMap(scheduleSnap.docs.map((snap) => {
             const data = snap.data() || {}
             const labels = { ...(data.assignmentLabels || {}) }

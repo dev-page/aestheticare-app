@@ -978,12 +978,11 @@ const loadRescheduleAvailability = async (appointment, { autoSelect = true } = {
       return
     }
 
-    const [scheduleSnap, leaveSnap, appointmentsSnap, reservationsSnap, practitionerSnap] = await Promise.all([
-      getDocs(collection(db, 'users', practitionerId, 'schedules')),
-      getDocs(query(collection(db, 'leaveRequests'), where('requesterId', '==', practitionerId))),
-      getDocs(query(collection(db, 'appointments'), where('branchId', '==', branchId))),
-      getDocs(query(collection(db, 'bookingReservations'), where('branchId', '==', branchId))),
-      getDoc(doc(db, 'users', practitionerId)),
+    // Customers may use published recurring availability, but must never read
+    // private staff leave, other appointments, temporary reservations, or a
+    // practitioner profile. The booking API revalidates the slot on submit.
+    const [scheduleSnap] = await Promise.all([
+      getDocs(query(collection(db, 'users', practitionerId, 'schedules'), where('recurring', '==', true))),
     ])
 
     if (loadSeq !== requestModalLoadSeq.value || !requestModal.value.open) return
@@ -991,22 +990,12 @@ const loadRescheduleAvailability = async (appointment, { autoSelect = true } = {
     requestModalSchedules.value = buildWeekScheduleMap(
       scheduleSnap.docs.map((snap) => ({ id: snap.id, data: snap.data() || {} }))
     )
-    requestModalLeaves.value = leaveSnap.docs
-      .map((snap) => snap.data() || {})
-      .filter((request) => String(request.status || '').trim().toLowerCase() === 'approved')
-      .map((request) => ({
-        startDate: String(request.startDate || '').trim(),
-        endDate: String(request.endDate || '').trim(),
-      }))
-      .filter((request) => request.startDate && request.endDate)
-    requestModalAppointments.value = appointmentsSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-    requestModalReservations.value = reservationsSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-    const practitionerData = practitionerSnap.exists() ? practitionerSnap.data() || {} : {}
+    requestModalLeaves.value = []
+    requestModalAppointments.value = []
+    requestModalReservations.value = []
     requestModalPractitioner.value = {
       id: practitionerId,
       fullName:
-        String(practitionerData.fullName || '').trim() ||
-        `${String(practitionerData.firstName || '').trim()} ${String(practitionerData.lastName || '').trim()}`.trim() ||
         appointment?.assignedPractitionerName ||
         appointment?.practitionerName ||
         'Assigned Practitioner',
