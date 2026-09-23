@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="pointer-events-none fixed inset-0 z-[10000]" aria-live="polite">
+    <div v-if="isOpen" class="onboarding-tour-layer pointer-events-none fixed inset-0 z-[10000]" aria-live="polite">
       <div
         v-if="highlightStyle"
         class="pointer-events-none absolute rounded-xl border-2 border-amber-300 shadow-[0_0_0_3px_rgba(252,211,77,0.25),0_0_24px_rgba(252,211,77,0.75)] transition-all duration-300"
@@ -9,6 +9,7 @@
 
       <section
         :class="['onboarding-tooltip', { 'onboarding-tooltip-module': panelKey && panelKey !== 'customer' }]"
+        :data-placement="tooltipPlacement"
         ref="tooltipElement"
         :style="tooltipStyle"
         role="dialog"
@@ -71,6 +72,8 @@ const emit = defineEmits(['close', 'next', 'previous', 'update:dontShowAgain'])
 const targetRect = ref(null)
 const tooltipElement = ref(null)
 const tooltipPosition = ref(null)
+const tooltipPlacement = ref('center')
+let targetObserver = null
 
 const close = () => emit('close')
 const next = () => emit('next')
@@ -85,6 +88,17 @@ const updateTarget = () => {
   }
   const rect = element.getBoundingClientRect()
   targetRect.value = { top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12 }
+}
+
+const observeTarget = () => {
+  if (!targetObserver) return
+  targetObserver.disconnect()
+  const selector = String(props.step?.selector || '').trim()
+  const element = selector ? document.querySelector(selector) : null
+  if (!element) return
+  targetObserver.observe(element)
+  const sidebar = element.closest('aside')
+  if (sidebar) targetObserver.observe(sidebar)
 }
 
 const highlightStyle = computed(() => {
@@ -128,6 +142,21 @@ const updateTooltipPosition = () => {
 
   const margin = 12
   const gap = 14
+
+  // A sidebar consumes most of a phone-sized viewport. A floating card has no
+  // reliable place to go there, so use a deliberate bottom-sheet layout.
+  if (window.innerWidth <= 767) {
+    tooltipPlacement.value = 'bottom-sheet'
+    tooltipPosition.value = {
+      right: `${margin}px`,
+      bottom: `${margin}px`,
+      left: `${margin}px`,
+      width: `calc(100vw - ${margin * 2}px)`,
+      maxHeight: 'calc(100vh - 1.5rem)',
+    }
+    return
+  }
+
   const tooltipWidth = tooltipElement.value.offsetWidth || Math.min(368, window.innerWidth - 24)
   const tooltipHeight = tooltipElement.value.offsetHeight || 330
   const rightSpace = window.innerWidth - (rect.left + rect.width + gap)
@@ -148,11 +177,13 @@ const updateTooltipPosition = () => {
     left: `${Math.max(margin, left)}px`,
     maxHeight: `calc(100vh - ${margin * 2}px)`,
   }
+  tooltipPlacement.value = canPlaceRight ? 'right' : 'below'
 }
 
 const syncTarget = async () => {
   await nextTick()
   updateTarget()
+  observeTarget()
   tooltipPosition.value = null
   await nextTick()
   updateTooltipPosition()
@@ -165,11 +196,19 @@ const syncTarget = async () => {
 watch(() => [props.isOpen, props.stepIndex, props.step?.selector], syncTarget, { immediate: true })
 
 onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined') {
+    targetObserver = new ResizeObserver(() => {
+      updateTarget()
+      updateTooltipPosition()
+    })
+  }
+  syncTarget()
   window.addEventListener('resize', syncTarget)
   window.addEventListener('scroll', syncTarget, true)
 })
 
 onBeforeUnmount(() => {
+  targetObserver?.disconnect()
   window.removeEventListener('resize', syncTarget)
   window.removeEventListener('scroll', syncTarget, true)
 })
@@ -200,6 +239,12 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid rgba(245, 214, 187, .7);
   border-left: 1px solid rgba(245, 214, 187, .7);
   background: #fffaf2;
+}
+
+.onboarding-tooltip[data-placement='below']::after {
+  top: -7px;
+  left: 2rem;
+  transform: rotate(225deg);
 }
 
 .onboarding-tooltip-accent { height: .32rem; background: linear-gradient(90deg, #d89246, #e9b377 55%, #f4d3a7); }
@@ -238,5 +283,21 @@ onBeforeUnmount(() => {
 @media (max-width: 360px) {
   .onboarding-tooltip { width: calc(100vw - 24px); }
   .onboarding-tooltip-content { padding: 1rem; }
+}
+
+@media (max-width: 767px) {
+  .onboarding-tour-layer {
+    background: rgba(31, 18, 11, .28);
+    backdrop-filter: blur(1px);
+  }
+
+  .onboarding-tooltip[data-placement='bottom-sheet'] {
+    border-radius: 1.2rem;
+    box-shadow: 0 20px 52px rgba(35, 18, 8, .3);
+  }
+
+  .onboarding-tooltip[data-placement='bottom-sheet']::after {
+    display: none;
+  }
 }
 </style>
