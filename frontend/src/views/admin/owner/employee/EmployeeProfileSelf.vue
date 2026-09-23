@@ -210,6 +210,10 @@ export default {
             return
           }
           resolveBranchFromClinic(clinicSnap, branchId)
+        }, (error) => {
+          console.error('Failed to load assigned branch:', error)
+          profile.value.branchId = branchId
+          profile.value.branchLabel = '-'
         })
         return
       }
@@ -224,6 +228,10 @@ export default {
           }
 
           resolveBranchFromClinic(snapshot.docs[0])
+        }, (error) => {
+          console.error('Failed to load branch assignment:', error)
+          profile.value.branchId = ''
+          profile.value.branchLabel = '-'
         }
       )
     }

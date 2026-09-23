@@ -184,6 +184,10 @@ export default {
         messages.value = [...groupedChats, ...otherMessages].sort(
           (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
         )
+      }, (error) => {
+        console.error('Failed to listen to branch messages:', error)
+        messages.value = []
+        toast.error('Inbox messages are unavailable for your current access.', { toastId: 'inbox-message-access' })
       })
     }
 
@@ -204,6 +208,10 @@ export default {
           .map((snap) => ({ id: snap.id, ...snap.data() }))
           .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0))
         scrollChatToBottom()
+      }, (error) => {
+        console.error('Failed to listen to chat messages:', error)
+        chatMessages.value = []
+        toast.error('This conversation is unavailable for your current access.', { toastId: 'chat-message-access' })
       })
     }
 

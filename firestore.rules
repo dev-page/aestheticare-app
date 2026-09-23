@@ -347,7 +347,19 @@ service cloud.firestore {
                 'paymentStatus', 'installmentsAllowed', 'depositPercent', 'contract', 'contractRequired',
                 'serviceKey', 'customerKeyVerified', 'workerKeyVerified', 'workerCompleted', 'customerCompleted',
                 'resources', 'materialsConsumed', 'startedAt', 'completedAt', 'recordedPaymentSessions'
-              ]))));
+              ])))
+          // Practitioners can record only their own clinical follow-up and meeting-link metadata.
+          // Workflow and financial fields remain restricted to the server workflow or appointment managers.
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+            && (resource.data.practitionerId == request.auth.uid
+              || resource.data.assignedPractitionerId == request.auth.uid
+              || resource.data.staffId == request.auth.uid
+              || resource.data.assignedTo == request.auth.uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'followUpRecommended', 'followUpRecommendedAt', 'followUpRecommendedById',
+              'consultationMode', 'meetLink', 'meetEventId', 'meetCreatedAt', 'meetCreatedBy',
+              'updatedAt'
+            ])));
       allow delete: if isSignedIn()
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')));
     }
@@ -658,15 +670,19 @@ service cloud.firestore {
     match /archivedProductServicePosts/{postId} {
       allow read: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('services:view'));
-      allow write: if isSignedIn()
+      allow create, update: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('services:disable'));
+      allow delete: if isSignedIn()
+        && resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('services:disable');
     }
 
     match /archivedSuppliers/{supplierId} {
       allow read: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view'));
-      allow write: if isSignedIn()
+      allow create, update: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:disable'));
+      allow delete: if isSignedIn()
+        && resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable');
     }
 
     match /messages/{messageId} {

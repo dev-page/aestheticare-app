@@ -1456,7 +1456,7 @@ const CLINIC_ADMIN_PERMISSIONS = new Set([
   'staff:view', 'staff:create', 'staff:update',
   'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import',
   'clients:view', 'clients:create',
-  'appointments:view', 'appointments:create', 'appointments:review', 'consultations:view',
+  'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view',
   'payments:view', 'payments:create', 'inbox:view', 'reports:view',
   'services:view', 'services:create', 'services:update',
   'inventory:view', 'inventory:create', 'inventory:review',

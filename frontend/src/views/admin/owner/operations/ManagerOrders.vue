@@ -102,7 +102,7 @@
           <div v-for="item in selectedOrder.items" :key="item.id" class="flex items-start justify-between py-2 border-b border-slate-700 last:border-b-0">
             <div>
               <p class="text-white font-medium">{{ item.name }}</p>
-              <p class="text-xs text-slate-400">Qty: {{ item.quantity }} • Branch: {{ item.branchName || 'N/A' }}</p>
+              <p class="text-xs text-slate-400">Qty: {{ item.quantity }} â€¢ Branch: {{ item.branchName || 'N/A' }}</p>
             </div>
             <div class="text-amber-300">PHP {{ Number(item.price || 0).toFixed(2) }}</div>
           </div>
@@ -114,7 +114,7 @@
 
 <script>
 import { ref, computed, onMounted } from 'vue'
-import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -146,12 +146,13 @@ export default {
       if (!currentBranchId.value) return
       loading.value = true
       try {
-        const snapshot = await getDocs(collection(db, 'customerOrders'))
-        const allOrders = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-        orders.value = allOrders.filter((order) => {
-          const items = Array.isArray(order.items) ? order.items : []
-          return items.some((item) => String(item.branchId || '').trim() === currentBranchId.value)
-        })
+        // Orders are authorized by their top-level branchId. Reading the
+        // whole collection is both unnecessary and denied for branch users.
+        const snapshot = await getDocs(query(
+          collection(db, 'customerOrders'),
+          where('branchId', '==', currentBranchId.value)
+        ))
+        orders.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
       } catch (error) {
         console.error('Failed to load orders:', error)
       } finally {

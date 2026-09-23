@@ -50,6 +50,7 @@
 
                 <div class="mt-3">
                   <button
+                    v-if="canRestorePosts"
                     @click="unarchivePost(post)"
                     :disabled="loadingId === post.id"
                     class="px-3 py-1 text-xs rounded bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
@@ -57,6 +58,7 @@
                     Unarchive
                   </button>
                   <button
+                    v-if="canDeletePosts"
                     @click="deletePermanently(post)"
                     :disabled="loadingId === post.id"
                     class="ml-2 px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-50"
@@ -95,6 +97,7 @@
 
               <div class="flex items-center gap-2">
                 <button
+                  v-if="canRestoreSuppliers"
                   @click="unarchiveSupplier(supplier)"
                   :disabled="loadingId === supplier.id"
                   class="px-3 py-1 text-xs rounded bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
@@ -102,6 +105,7 @@
                   Unarchive
                 </button>
                 <button
+                  v-if="canDeleteSuppliers"
                   @click="deleteSupplierPermanently(supplier)"
                   :disabled="loadingId === supplier.id"
                   class="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-50"
@@ -118,7 +122,7 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
@@ -126,6 +130,7 @@ import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
+import { usePermissions } from '@/composables/usePermissions'
 
 export default {
   name: 'ArchivedPosts',
@@ -133,12 +138,17 @@ export default {
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const { hasPermission } = usePermissions()
 
     const currentBranchId = ref('')
     const posts = ref([])
     const archivedSuppliers = ref([])
     const loadingId = ref('')
     const activeTab = ref('posts')
+    const canRestorePosts = computed(() => hasPermission('services:create') && hasPermission('services:disable'))
+    const canDeletePosts = computed(() => hasPermission('services:disable'))
+    const canRestoreSuppliers = computed(() => hasPermission('inventory:create') && hasPermission('inventory:disable'))
+    const canDeleteSuppliers = computed(() => hasPermission('inventory:disable'))
 
     const formatCurrency = (value) =>
       new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value) || 0)
@@ -157,6 +167,10 @@ export default {
     }
 
     const loadArchivedPosts = async () => {
+      if (!hasPermission('services:view')) {
+        posts.value = []
+        return
+      }
       if (!currentBranchId.value) {
         posts.value = []
         return
@@ -172,6 +186,10 @@ export default {
     }
 
     const loadArchivedSuppliers = async () => {
+      if (!hasPermission('inventory:view')) {
+        archivedSuppliers.value = []
+        return
+      }
       if (!currentBranchId.value) {
         archivedSuppliers.value = []
         return
@@ -187,6 +205,10 @@ export default {
     }
 
     const unarchivePost = async (post) => {
+      if (!canRestorePosts.value) {
+        toast.error('You do not have permission to restore archived posts.')
+        return
+      }
       const result = await Swal.fire({
         title: 'Unarchive Post?',
         text: `Restore "${post.title || 'this post'}" to active posts?`,
@@ -222,6 +244,10 @@ export default {
     }
 
     const deletePermanently = async (post) => {
+      if (!canDeletePosts.value) {
+        toast.error('You do not have permission to permanently delete archived posts.')
+        return
+      }
       const result = await Swal.fire({
         title: 'Delete Permanently?',
         text: `Permanently delete "${post.title || 'this post'}"? This cannot be undone.`,
@@ -251,6 +277,10 @@ export default {
     }
 
     const unarchiveSupplier = async (supplier) => {
+      if (!canRestoreSuppliers.value) {
+        toast.error('You do not have permission to restore archived suppliers.')
+        return
+      }
       const result = await Swal.fire({
         title: 'Unarchive Supplier?',
         text: `Restore "${supplier.name || 'this supplier'}" to active suppliers?`,
@@ -285,6 +315,10 @@ export default {
     }
 
     const deleteSupplierPermanently = async (supplier) => {
+      if (!canDeleteSuppliers.value) {
+        toast.error('You do not have permission to permanently delete archived suppliers.')
+        return
+      }
       const result = await Swal.fire({
         title: 'Delete Permanently?',
         text: `Permanently delete "${supplier.name || 'this supplier'}"? This cannot be undone.`,
@@ -340,6 +374,10 @@ export default {
       archivedSuppliers,
       loadingId,
       activeTab,
+      canRestorePosts,
+      canDeletePosts,
+      canRestoreSuppliers,
+      canDeleteSuppliers,
       formatCurrency,
       formatDate,
       normalizedCategories,
@@ -351,4 +389,3 @@ export default {
   }
 }
 </script>
-

@@ -236,6 +236,10 @@ export default {
       const messageQuery = query(collection(db, 'messages'), where('branchId', '==', currentBranchId.value))
       unsubscribeMessages = onSnapshot(messageQuery, (snapshot) => {
         messages.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
+      }, (error) => {
+        console.error('Failed to listen to branch messages:', error)
+        messages.value = []
+        toast.error('Messages are unavailable for your current access.', { toastId: 'crm-message-access' })
       })
     }
 

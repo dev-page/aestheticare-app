@@ -5,7 +5,7 @@
       <div class="mx-auto max-w-5xl">
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div><h1 class="text-3xl font-bold">Commission Agreements</h1><p class="mt-2 text-slate-400">Define the commission terms that apply to product and service transactions.</p></div>
-          <button class="rounded-xl bg-amber-600 px-4 py-2 font-semibold hover:bg-amber-500" @click="openNew">New Agreement</button>
+          <button v-if="canManageCommissionContracts" class="rounded-xl bg-amber-600 px-4 py-2 font-semibold hover:bg-amber-500" @click="openNew">New Agreement</button>
         </div>
         <div class="mt-8 space-y-4">
           <article v-for="item in contracts" :key="item.id" class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
@@ -29,23 +29,37 @@
   </div>
 </template>
 <script setup>
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { addDoc, collection, doc, getDoc, onSnapshot, query, serverTimestamp, where } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth, db } from '@/config/firebaseConfig'
+import { usePermissions } from '@/composables/usePermissions'
 const contracts = ref([]); const branchId = ref(''); const ownerId = ref(''); const showForm = ref(false); let stopListening = null
+const { hasPermission, isClinicAdminOwner } = usePermissions()
+const canViewCommissionContracts = computed(() => hasPermission('commissions:view'))
+const canManageCommissionContracts = computed(() => isClinicAdminOwner.value)
 const form = reactive({ title: '', terms: '', commissionPercent: 0, effectiveFrom: '', effectiveUntil: '' })
-const openNew = () => { Object.assign(form, { title: '', terms: '', commissionPercent: 0, effectiveFrom: '', effectiveUntil: '' }); showForm.value = true }
+const openNew = () => {
+  if (!canManageCommissionContracts.value) {
+    toast.error('Only the clinic owner can manage commission agreements.')
+    return
+  }
+  Object.assign(form, { title: '', terms: '', commissionPercent: 0, effectiveFrom: '', effectiveUntil: '' }); showForm.value = true
+}
 const saveContract = async () => {
+  if (!canManageCommissionContracts.value) {
+    toast.error('Only the clinic owner can manage commission agreements.')
+    return
+  }
   try {
     const now = { ...form, branchId: branchId.value, ownerId: ownerId.value, status: 'Active', createdBy: auth.currentUser.uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }
     await addDoc(collection(db, 'commissionContracts'), now)
-    await addDoc(collection(db, 'notifications'), { senderId: auth.currentUser.uid, recipientUserId: ownerId.value, recipientRole: 'Owner', type: 'commission_agreement', title: 'Commission agreement updated', message: `${form.title} is now active for your clinic.`, link: '/finance/reports', read: false, createdAt: serverTimestamp() })
+    await addDoc(collection(db, 'notifications'), { senderId: auth.currentUser.uid, recipientUserId: ownerId.value, recipientRole: 'Owner', branchId: branchId.value, type: 'commission_agreement', title: 'Commission agreement updated', message: `${form.title} is now active for your clinic.`, link: '/finance/reports', read: false, createdAt: serverTimestamp() })
     showForm.value = false; toast.success('Agreement saved and owner notification created.')
   } catch (error) { console.error(error); toast.error(error?.message || 'Could not save agreement.') }
 }
-onMounted(async () => { const uid = auth.currentUser?.uid; if (!uid) return; const user = await getDoc(doc(db, 'users', uid)); const data = user.data() || {}; ownerId.value = data.ownerId || uid; branchId.value = data.branchId || uid; stopListening = onSnapshot(query(collection(db, 'commissionContracts'), where('branchId', '==', branchId.value)), (snap) => { contracts.value = snap.docs.map((item) => ({ id: item.id, ...item.data() })) }) })
+onMounted(async () => { const uid = auth.currentUser?.uid; if (!uid) return; const user = await getDoc(doc(db, 'users', uid)); const data = user.data() || {}; ownerId.value = data.ownerId || uid; branchId.value = data.branchId || uid; if (!canViewCommissionContracts.value) return; stopListening = onSnapshot(query(collection(db, 'commissionContracts'), where('branchId', '==', branchId.value)), (snap) => { contracts.value = snap.docs.map((item) => ({ id: item.id, ...item.data() })) }, (error) => { console.error('Failed to listen to commission contracts:', error); contracts.value = []; toast.error('Commission agreements are unavailable for your current access.', { toastId: 'commission-contract-access' }) }) })
 onUnmounted(() => stopListening?.())
 </script>
 <style scoped>

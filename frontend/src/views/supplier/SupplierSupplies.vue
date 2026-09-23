@@ -392,6 +392,9 @@ const loadSupplies = async (user) => {
       if (!snapshot.exists() || saving.value) return
       const liveItems = snapshot.data()?.offeredItems
       if (Array.isArray(liveItems)) savedCatalog.value = liveItems.map((item) => ({ ...item, id: item.id || crypto.randomUUID() }))
+    }, (error) => {
+      console.error('Failed to listen to supplier catalog:', error)
+      toast.error('Your supplier catalog is unavailable for your current access.', { toastId: 'supplier-catalog-access' })
     })
   } finally {
     loading.value = false

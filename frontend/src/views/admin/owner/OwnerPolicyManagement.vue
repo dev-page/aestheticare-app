@@ -99,6 +99,9 @@ const load = async () => {
     })
     form.noShowRescheduleAllowed = data.noShowRescheduleAllowed === true
     savedAt.value = data.updatedAt || null
+  }, (error) => {
+    console.error('Failed to listen to clinic policies:', error)
+    toast.error('Clinic policies are unavailable for your current access.', { toastId: 'clinic-policy-access' })
   })
 }
 

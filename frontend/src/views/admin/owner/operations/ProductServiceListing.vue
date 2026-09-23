@@ -351,9 +351,9 @@
               <p class="mb-2 text-sm font-semibold">{{ post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft' }}</p>
               <p v-if="post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
               <div class="mb-3 flex flex-wrap gap-2">
-                <button v-if="!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus)" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">Submit to Finance</button>
-                <button v-if="post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">Publish</button>
-                <button v-if="post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">Unpublish</button>
+                <button v-if="canManageListingWorkflow && (!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus))" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">Submit to Finance</button>
+                <button v-if="canManageListingWorkflow && post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">Publish</button>
+                <button v-if="canManageListingWorkflow && post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">Unpublish</button>
               </div>
               <p class="text-sm text-slate-300 mb-1">{{ post.productName || post.serviceName || post.consultationName || post.packageName }}</p>
               <p v-if="post.postType === 'Package'" class="mb-2 text-xs text-amber-200">
@@ -628,7 +628,7 @@
 </template>
 
 <script>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { draftListing, financialTermsChanged, updateListingApproval } from '@/utils/listingApproval'
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -638,6 +638,7 @@ import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
+import { usePermissions } from '@/composables/usePermissions'
 
 export default {
   name: 'ProductServiceListing',
@@ -646,6 +647,10 @@ export default {
     const db = getFirestore(getApp())
     const storage = getStorage(getApp())
     const auth = getAuth(getApp())
+    const { userRole, isClinicAdminOwner } = usePermissions()
+    const canManageListingWorkflow = computed(() =>
+      isClinicAdminOwner.value || String(userRole.value || '').trim().toLowerCase() === 'manager'
+    )
 
     const loading = ref(false)
     const currentUserId = ref('')
@@ -825,6 +830,10 @@ export default {
     }
 
     const listingAction = async (post, action) => {
+      if (!canManageListingWorkflow.value) {
+        toast.error('Only the clinic owner or a manager can submit or publish listings.')
+        return
+      }
       actionLoadingId.value = post.id
       try { await updateListingApproval(post.id, action); await loadPosts(); toast.success('Listing updated.') }
       catch (error) { toast.error(error.message) }
@@ -1422,6 +1431,7 @@ export default {
 
     return {
       listingAction,
+      canManageListingWorkflow,
       loading,
       form,
       posts,

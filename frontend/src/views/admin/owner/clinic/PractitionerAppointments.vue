@@ -46,7 +46,7 @@
               <p class="font-medium text-white">{{ clearance.customerEmail || 'Customer verification request' }}</p>
               <p class="mt-1 text-sm text-slate-300">{{ clearance.serviceNames?.join(', ') || 'Selected consultation-required service' }}</p>
             </div>
-            <div class="flex gap-2">
+            <div v-if="canReviewConsultationClearances" class="flex gap-2">
               <button type="button" :disabled="actionBusy" class="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60" @click="reviewConsultationClearance(clearance, 'Approved')">Approve</button>
               <button type="button" :disabled="actionBusy" class="rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60" @click="reviewConsultationClearance(clearance, 'Rejected')">Reject</button>
             </div>
@@ -131,6 +131,7 @@ import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import BookingContractModal from '@/components/BookingContractModal.vue'
 import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
+import { usePermissions } from '@/composables/usePermissions'
 
 export default {
   name: 'PractitionerAppointments',
@@ -138,6 +139,7 @@ export default {
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const { hasPermission } = usePermissions()
 
     const currentBranchId = ref('')
     const currentUserId = ref('')
@@ -151,6 +153,7 @@ export default {
     const contractSaved = async () => { contractAppointment.value = null; await loadAppointments() }
     const showServiceKeyModal = ref(false)
     const selectedServiceKeyAppointment = ref(null)
+    const canReviewConsultationClearances = computed(() => hasPermission('appointments:review'))
     const bookingAction = async (appointment, action, serviceKey = '') => {
       if (actionBusy.value) return
       if (action === 'key' && !serviceKey) return false
@@ -270,6 +273,10 @@ export default {
     }
 
     const reviewConsultationClearance = async (clearance, status) => {
+      if (!canReviewConsultationClearances.value) {
+        toast.error('You do not have permission to review consultation verification requests.')
+        return
+      }
       if (!clearance?.id || actionBusy.value) return
       actionBusy.value = true
       try {
@@ -379,13 +386,15 @@ export default {
           (snapshot) => loadAppointments(snapshot),
           () => toast.error('Unable to refresh bookings.')
         )
-        unsubscribeConsultationClearances = onSnapshot(
-          query(collection(db, 'consultationClearances'), where('branchId', '==', currentBranchId.value)),
-          (snapshot) => {
-            consultationClearances.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-          },
-          () => toast.error('Unable to refresh consultation verification requests.')
-        )
+        if (canReviewConsultationClearances.value) {
+          unsubscribeConsultationClearances = onSnapshot(
+            query(collection(db, 'consultationClearances'), where('branchId', '==', currentBranchId.value)),
+            (snapshot) => {
+              consultationClearances.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+            },
+            () => toast.error('Unable to refresh consultation verification requests.')
+          )
+        }
       })
     })
 
@@ -408,6 +417,7 @@ export default {
       canRecommendFollowUp,
       recommendFollowUp,
       pendingConsultationClearances,
+      canReviewConsultationClearances,
       reviewConsultationClearance
     }
   }

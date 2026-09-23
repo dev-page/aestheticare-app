@@ -294,6 +294,9 @@ export default {
             return
           }
           void applyBranchSnapshot(branchSnap, branchId)
+        }, (error) => {
+          console.error('Failed to load assigned branch:', error)
+          branchLabel.value = branchId
         })
         return
       }
@@ -308,6 +311,9 @@ export default {
 
           const branchSnap = snapshot.docs[0]
           void applyBranchSnapshot(branchSnap)
+        }, (error) => {
+          console.error('Failed to load branch assignment:', error)
+          branchLabel.value = ''
         }
       )
     }

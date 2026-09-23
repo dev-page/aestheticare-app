@@ -76,6 +76,7 @@ export const permissionGroups = [
         permissions: [
           { key: 'appointments:view', label: 'View Appointments', description: 'See appointment listings and schedules.', icon: 'mdi:calendar-month-outline' },
           { key: 'appointments:create', label: 'Create Appointments', description: 'Create or reschedule appointments.', icon: 'mdi:calendar-plus-outline' },
+          { key: 'appointments:update', label: 'Update Appointments', description: 'Record permitted practitioner updates, follow-ups, and appointment changes.', icon: 'mdi:calendar-edit-outline' },
           { key: 'appointments:review', label: 'Review Appointment Requests', description: 'Approve or reject appointment requests.', icon: 'mdi:calendar-check-outline' },
           { key: 'consultations:view', label: 'View Online Consultations', description: 'Access online consultation screens.', icon: 'mdi:video-outline' },
         ],
