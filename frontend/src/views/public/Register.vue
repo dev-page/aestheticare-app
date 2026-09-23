@@ -209,6 +209,7 @@ const emailChecked = ref(false)
 const isCheckingEmail = ref(false)
 const emailAvailability = ref('idle')
 const emailAvailabilityMessage = ref('')
+const recoveryLoginAvailable = ref(false)
 const otpVerifiedForRegistration = ref(false)
 const pendingApprovalMode = ref(false)
 
@@ -1321,6 +1322,14 @@ const checkEmailAvailability = async (emailValue) => {
       return
     }
 
+    if (statusResult.ownerRecoveryEligible) {
+      emailChecked.value = false
+      emailAvailability.value = 'recovery'
+      recoveryLoginAvailable.value = true
+      emailAvailabilityMessage.value = 'This clinic-owner account is temporarily closed. Sign in to restore it during the recovery period.'
+      return
+    }
+
     applyProfileData(profile)
     userUid.value = String(statusResult.uid || profileResult.uid || '').trim()
     setStoredRegistrationUid(userUid.value)
@@ -1901,6 +1910,7 @@ const handleEmailDraftInput = () => {
   emailLookupSequence += 1
   emailAvailability.value = 'idle'
   emailAvailabilityMessage.value = ''
+  recoveryLoginAvailable.value = false
   if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
 
   const normalizedEmail = String(email.value || '').trim().toLowerCase()
@@ -3185,7 +3195,7 @@ const handleRegistrationSubmit = () => {
                   <svg v-else-if="emailAvailability === 'used'" class="h-5 w-5 text-rose-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path stroke-linecap="round" stroke-linejoin="round" d="m7 7 10 10M17 7 7 17" />
                   </svg>
-                  <svg v-else-if="emailAvailability === 'resume'" class="h-5 w-5 text-gold-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg v-else-if="emailAvailability === 'resume' || emailAvailability === 'recovery'" class="h-5 w-5 text-gold-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l2.5 2.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                   </svg>
                   <svg v-else-if="emailAvailability === 'error' || emailAvailability === 'invalid'" class="h-5 w-5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -3196,9 +3206,10 @@ const handleRegistrationSubmit = () => {
                 <p v-else-if="emailAvailabilityMessage" aria-live="polite" class="mt-1 text-xs" :class="{
                   'text-emerald-700': emailAvailability === 'available',
                   'text-rose-700': emailAvailability === 'used',
-                  'text-gold-700': emailAvailability === 'resume',
+                  'text-gold-700': emailAvailability === 'resume' || emailAvailability === 'recovery',
                   'text-amber-700': emailAvailability === 'error' || emailAvailability === 'invalid'
                 }">{{ emailAvailabilityMessage }}</p>
+                <button v-if="recoveryLoginAvailable" type="button" class="mt-2 inline-flex items-center rounded-lg bg-gold-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-gold-800" @click="router.push('/login')">Sign in to recover</button>
               </div>
             </div>
 

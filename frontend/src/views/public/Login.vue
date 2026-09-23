@@ -38,6 +38,40 @@ const passwordResetSuccess = ref(route.query.reset === 'success')
 
 const EMAIL_REGEX = /^[A-Za-z0-9._]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
 
+const timestampToMillis = (value) => {
+  if (typeof value?.toMillis === 'function') return value.toMillis()
+  if (typeof value?.toDate === 'function') return value.toDate().getTime()
+  const parsed = new Date(value || 0).getTime()
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const hasCustomerRecoveryWindow = (userData = {}) => {
+  const role = String(userData.role || userData.userType || '').trim().toLowerCase()
+  return role === 'customer'
+    && userData.accountDeactivationRequested === true
+    && String(userData.status || '').trim().toLowerCase() === 'inactive'
+    && timestampToMillis(userData.accountRecoveryEndsAt) > Date.now()
+}
+
+const hasCustomerDeletionWindow = (userData = {}) => {
+  const role = String(userData.role || userData.userType || '').trim().toLowerCase()
+  return role === 'customer'
+    && userData.accountDeletionRequested === true
+    && timestampToMillis(userData.accountDeletionScheduledFor) > Date.now()
+}
+
+const hasOwnerRecoveryWindow = (userData = {}, uid = '') => {
+  const role = String(userData.role || userData.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+  const isOwner = ['owner', 'clinicadmin', 'clinicadministrator'].includes(role)
+    || (Boolean(uid) && String(userData.branchId || '').trim() === uid)
+  return isOwner
+    && String(userData.status || '').trim().toLowerCase() === 'inactive'
+    && userData.archived === true
+    && userData.accountClosed === true
+    && String(userData.accountClosureAction || '').trim().toLowerCase() === 'deactivate'
+    && timestampToMillis(userData.accountRecoveryEndsAt) > Date.now()
+}
+
 const roleRoutes = {
   Superadmin: "/superadmin/dashboard",
   Owner: "/clinic/dashboard",
@@ -212,6 +246,18 @@ const handleLogin = async () => {
         const accountStatus = String(userData.status || '').trim().toLowerCase()
         const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated', 'rejected'].includes(accountStatus)
         if (accountClosed) {
+          if (hasCustomerRecoveryWindow(userData)) {
+            toast.info('Your account is deactivated. You can restore it until the end of the recovery period.')
+            clearFormFields()
+            startRedirectFlow('/customer/account-recovery')
+            return
+          }
+          if (hasOwnerRecoveryWindow(userData, userCredentials.user.uid)) {
+            toast.info('Your owner account is closed, but can still be restored during the 30-day recovery period.')
+            clearFormFields()
+            startRedirectFlow('/clinic/account-recovery')
+            return
+          }
           await signOut(auth)
           toast.error('This account has been closed. Please contact the system administrator.')
           setProcessLoading(false)
@@ -228,6 +274,13 @@ const handleLogin = async () => {
         if (['pending', 'pending approval'].includes(accountStatus)) {
           toast.error('Your employee account is still awaiting approval.')
           setProcessLoading(false)
+          return
+        }
+
+        if (hasCustomerDeletionWindow(userData)) {
+          toast.info('Your account has a pending deletion request. You can cancel it during the 30-day recovery period.')
+          clearFormFields()
+          startRedirectFlow('/customer/account-recovery')
           return
         }
 

@@ -14,7 +14,7 @@
           <div>
             <p class="settings-card-kicker">Current account</p>
             <h2 class="settings-card-title">{{ accountEmail || 'Customer account' }}</h2>
-            <p class="settings-copy">Deactivation signs you out and prevents login until an administrator reactivates the account.</p>
+          <p class="settings-copy">Deactivation signs you out. You can restore the account yourself by signing in within 30 days.</p>
           </div>
           <span class="settings-status" :class="status === 'Active' ? 'settings-status-active' : 'settings-status-inactive'">{{ status }}</span>
         </section>
@@ -68,7 +68,7 @@
               <div>
                 <p class="settings-card-kicker">Temporary option</p>
                 <h2 class="settings-card-title">Deactivate account</h2>
-                <p class="settings-copy">Use this if you want to stop using the platform temporarily. Your records are retained and your account can be reactivated through support.</p>
+                <p class="settings-copy">Use this if you want to stop using the platform temporarily. Your records are retained and you can reactivate the account yourself within 30 days.</p>
               </div>
               <button type="button" class="settings-button settings-button-warning" :disabled="busy || status !== 'Active'" @click="deactivateAccount">
                 {{ busy && action === 'deactivate' ? 'Deactivating...' : 'Deactivate Account' }}
@@ -151,7 +151,7 @@
           <p class="settings-modal-label">Important terms</p>
           <ul v-if="accountAction === 'deactivate'" class="settings-terms-list">
             <li>Your account will be deactivated immediately and you will be signed out.</li>
-            <li>Your records will be retained and your account can be reactivated through support.</li>
+            <li>Your records will be retained for 30 days. Sign in during that period to reactivate your account.</li>
             <li>Deactivation is not the same as permanent deletion.</li>
           </ul>
           <ul v-else class="settings-terms-list">
@@ -357,11 +357,13 @@ const submitAccountAction = async () => {
   errorMessage.value = ''
   try {
     if (accountAction.value === 'deactivate') {
+      const recoveryEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       await updateDoc(doc(db, 'users', auth.currentUser.uid), {
         status: 'Inactive',
         accountDeactivationRequested: true,
         accountDeactivationReason: combinedReason.value,
         accountDeactivatedAt: serverTimestamp(),
+        accountRecoveryEndsAt: Timestamp.fromDate(recoveryEndsAt),
         updatedAt: serverTimestamp(),
       })
       await signOut(auth)

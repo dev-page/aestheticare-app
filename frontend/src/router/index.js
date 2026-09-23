@@ -209,6 +209,8 @@ const routes = [
   { path: "/customer/orders", name: "customer-orders", component: () => import("@/views/customer/MyOrders.vue"), meta: { requiresAuth: true } },
   { path: "/customer/checkout", name: "customer-checkout", component: () => import("@/views/customer/Checkout.vue"), meta: { requiresAuth: true } },
   { path: "/customer/cart", name: "customer-cart", component: () => import("@/views/customer/MyCart.vue"), meta: { requiresAuth: true } },
+  { path: "/customer/account-recovery", name: "customer-account-recovery", component: () => import("@/views/customer/AccountRecovery.vue"), meta: { requiresAuth: true } },
+  { path: "/clinic/account-recovery", name: "clinic-account-recovery", component: () => import("@/views/admin/owner/OwnerAccountRecovery.vue"), meta: { requiresAuth: true } },
   { path: "/customer/profile", name: "customer-profile", redirect: { path: "/customer/account-settings", query: { tab: "profile" } }, meta: { requiresAuth: true } },
   { path: "/customer/account-settings", name: "customer-account-settings", component: () => import("@/views/customer/AccountSettings.vue"), meta: { requiresAuth: true } },
 
@@ -261,6 +263,35 @@ const isSuperadminRole = (userData = {}) => {
 
 const isCustomerRole = (userData = {}) => {
   return normalizeRole(userData.role) === 'customer' || normalizeRole(userData.userType) === 'customer'
+}
+
+const timestampToMillis = (value) => {
+  if (typeof value?.toMillis === 'function') return value.toMillis()
+  if (typeof value?.toDate === 'function') return value.toDate().getTime()
+  const parsed = new Date(value || 0).getTime()
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const hasCustomerRecoveryWindow = (userData = {}) => {
+  if (!isCustomerRole(userData)) return false
+  const recoveryEndsAt = timestampToMillis(userData.accountRecoveryEndsAt)
+  return userData.accountDeactivationRequested === true
+    && String(userData.status || '').trim().toLowerCase() === 'inactive'
+    && recoveryEndsAt > Date.now()
+}
+
+const hasCustomerDeletionWindow = (userData = {}) => {
+  if (!isCustomerRole(userData) || userData.accountDeletionRequested !== true) return false
+  return timestampToMillis(userData.accountDeletionScheduledFor) > Date.now()
+}
+
+const hasOwnerRecoveryWindow = (userData = {}, uid = '') => {
+  return isOwnerLikeRole(userData, uid)
+    && String(userData.status || '').trim().toLowerCase() === 'inactive'
+    && userData.archived === true
+    && userData.accountClosed === true
+    && String(userData.accountClosureAction || '').trim().toLowerCase() === 'deactivate'
+    && timestampToMillis(userData.accountRecoveryEndsAt) > Date.now()
 }
 
 const isSupplierRole = (userData = {}) => {
@@ -353,8 +384,19 @@ router.beforeEach(async (to, from, next) => {
       const accountStatus = String(userData.status || '').trim().toLowerCase();
       const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
       if (accountClosed) {
+        if (hasCustomerRecoveryWindow(userData)) {
+          if (to.path === '/customer/account-recovery') return next()
+          return next('/customer/account-recovery')
+        }
+        if (hasOwnerRecoveryWindow(userData, currentUser.uid)) {
+          if (to.path === '/clinic/account-recovery') return next()
+          return next('/clinic/account-recovery')
+        }
         await signOut(auth).catch(() => {})
         return next('/login');
+      }
+      if (hasCustomerDeletionWindow(userData) && to.path !== '/customer/account-recovery') {
+        return next('/customer/account-recovery')
       }
       const mustChangePassword = userData.mustChangePassword === true
         || String(userData.mustChangePassword || '').trim().toLowerCase() === 'true'

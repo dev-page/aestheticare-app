@@ -37,6 +37,14 @@ service cloud.firestore {
           || userData().userType == 'owner');
     }
 
+    function isCustomer() {
+      return isSignedIn()
+        && (userData().role == 'Customer'
+          || userData().role == 'customer'
+          || userData().userType == 'Customer'
+          || userData().userType == 'customer');
+    }
+
     function applicantCannotChangeVerificationFields() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'status', 'approvalStatus', 'verificationStatus', 'verificationResults',
@@ -191,9 +199,42 @@ service cloud.firestore {
       allow update: if isSignedIn()
         && ((request.auth.uid == userId && applicantCannotChangeVerificationFields() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'userType', 'branchId', 'branchIds', 'organizationOwnerId', 'clinicId', 'permissions', 'effectivePermissions', 'customRoleIds', 'customRoleId', 'adminRole']))
           || (request.auth.uid == userId
+            && isCustomer()
             && request.resource.data.status == 'Inactive'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'status', 'accountDeactivationRequested', 'accountDeactivationReason', 'accountDeactivatedAt', 'updatedAt'
+              'status', 'accountDeactivationRequested', 'accountDeactivationReason', 'accountDeactivatedAt', 'accountRecoveryEndsAt', 'updatedAt'
+            ]))
+          // A customer who deactivated their own account may restore it only
+          // during the recorded 30-day recovery window. This deliberately
+          // does not apply to administrator-closed, rejected, or archived
+          // accounts.
+          || (request.auth.uid == userId
+            && (resource.data.role == 'Customer' || resource.data.userType == 'Customer' || resource.data.userType == 'customer')
+            && resource.data.status == 'Inactive'
+            && resource.data.accountDeactivationRequested == true
+            && resource.data.accountRecoveryEndsAt != null
+            && request.time < resource.data.accountRecoveryEndsAt
+            && request.resource.data.status == 'Active'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'accountDeactivationRequested', 'accountDeactivationReason', 'accountRecoveryEndsAt', 'accountReactivatedAt', 'updatedAt'
+            ]))
+          // Only an owner-only closure can be restored by its owner. Clinic
+          // shutdowns and ownership transfers require an administrator,
+          // because they can affect branches, staff, and ownership records.
+          || (request.auth.uid == userId
+            && isClinicOwner()
+            && resource.data.status == 'Inactive'
+            && resource.data.archived == true
+            && resource.data.accountClosed == true
+            && resource.data.accountClosureAction == 'deactivate'
+            && resource.data.accountRecoveryEndsAt != null
+            && request.time < resource.data.accountRecoveryEndsAt
+            && request.resource.data.status == 'Active'
+            && request.resource.data.archived == false
+            && request.resource.data.accountClosed == false
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'archived', 'accountClosed', 'accountClosureAction',
+              'accountRecoveryEndsAt', 'accountReactivatedAt', 'updatedAt'
             ]))
           || isSuperadmin()
           || (resource.data.branchId != null
@@ -275,10 +316,11 @@ service cloud.firestore {
         && (isSuperadmin() || resource.data.ownerId == request.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.ownerId == request.auth.uid
-        && (!('requestType' in request.resource.data)
-          || request.resource.data.requestType == 'customer_account_deletion');
+        && ((isCustomer() && request.resource.data.requestType == 'customer_account_deletion')
+          || (isClinicOwner() && !('requestType' in request.resource.data)));
       allow update: if isSignedIn()
-        && (isSuperadmin() || resource.data.ownerId == request.auth.uid);
+        && (isSuperadmin()
+          || (resource.data.ownerId == request.auth.uid && (isCustomer() || isClinicOwner())));
       allow delete: if isSuperadmin();
     }
 

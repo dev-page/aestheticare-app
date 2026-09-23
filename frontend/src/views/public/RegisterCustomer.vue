@@ -70,6 +70,7 @@ const isCustomerFormComplete = computed(() => {
     addressLng.value &&
     termsAccepted.value &&
     emailAvailability.value !== 'used' &&
+    emailAvailability.value !== 'recovery' &&
     emailAvailability.value !== 'error' &&
     emailAvailability.value !== 'invalid'
   )
@@ -86,6 +87,7 @@ const termsAccepted = ref(false)
 const isCheckingEmail = ref(false)
 const emailAvailability = ref('idle')
 const emailAvailabilityMessage = ref('')
+const recoveryLoginAvailable = ref(false)
 const contactNumber = ref('')
 const address = ref('')
 const addressBuildingNumber = ref('')
@@ -784,6 +786,7 @@ const handleEmailDraftInput = () => {
   emailLookupSequence += 1
   emailAvailability.value = 'idle'
   emailAvailabilityMessage.value = ''
+  recoveryLoginAvailable.value = false
   if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
 
   const normalizedEmail = String(email.value || '').trim().toLowerCase()
@@ -804,6 +807,7 @@ const clearFormFields = () => {
   email.value = ''
   emailAvailability.value = 'idle'
   emailAvailabilityMessage.value = ''
+  recoveryLoginAvailable.value = false
   password.value = ''
   confirmPassword.value = ''
   birthDate.value = ''
@@ -1092,6 +1096,15 @@ const checkCustomerEmailAvailability = async (emailValue) => {
     if (role !== 'customer') {
       emailAvailability.value = 'used'
       emailAvailabilityMessage.value = 'This email is already used by another account.'
+      return
+    }
+
+    if (statusResult.accountRecoveryEligible || statusResult.deletionRecoveryEligible) {
+      emailAvailability.value = 'recovery'
+      recoveryLoginAvailable.value = true
+      emailAvailabilityMessage.value = statusResult.deletionRecoveryEligible
+        ? 'This account has a pending deletion request. Sign in to cancel it during the recovery period.'
+        : 'This account is temporarily deactivated. Sign in to reactivate it during the recovery period.'
       return
     }
 
@@ -1386,7 +1399,7 @@ onBeforeUnmount(() => {
                 <svg v-else-if="emailAvailability === 'used'" class="h-5 w-5 text-rose-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <path stroke-linecap="round" stroke-linejoin="round" d="m7 7 10 10M17 7 7 17" />
                 </svg>
-                <svg v-else-if="emailAvailability === 'resume'" class="h-5 w-5 text-gold-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg v-else-if="emailAvailability === 'resume' || emailAvailability === 'recovery'" class="h-5 w-5 text-gold-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l2.5 2.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                 </svg>
                 <svg v-else-if="emailAvailability === 'error' || emailAvailability === 'invalid'" class="h-5 w-5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1397,9 +1410,10 @@ onBeforeUnmount(() => {
               <p v-else-if="emailAvailabilityMessage" aria-live="polite" class="mt-1 text-xs" :class="{
                 'text-emerald-700': emailAvailability === 'available',
                 'text-rose-700': emailAvailability === 'used',
-                'text-gold-700': emailAvailability === 'resume',
+                  'text-gold-700': emailAvailability === 'resume' || emailAvailability === 'recovery',
                 'text-amber-700': emailAvailability === 'error' || emailAvailability === 'invalid'
-              }">{{ emailAvailabilityMessage }}</p>
+                }">{{ emailAvailabilityMessage }}</p>
+                <button v-if="recoveryLoginAvailable" type="button" class="mt-2 inline-flex items-center rounded-lg bg-gold-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-gold-800" @click="router.push('/login')">Sign in to recover</button>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

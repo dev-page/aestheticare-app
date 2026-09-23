@@ -198,7 +198,7 @@
 
 <script>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { addDoc, collection, doc, getDocs, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore'
+import { addDoc, collection, doc, getDocs, onSnapshot, orderBy, query, serverTimestamp, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import { toast } from 'vue3-toastify'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
@@ -288,6 +288,13 @@ export default {
     }
 
     const closureImpactText = (request = {}) => {
+      if (String(request.requestType || '').toLowerCase() === 'customer_account_deletion') {
+        return [
+          'Approval starts the customer\'s 30-day pending-deletion period.',
+          'The customer can still sign in and cancel the request during that period.',
+          'No customer records are deleted when this request is approved.'
+        ].join('\n')
+      }
       const action = String(request.action || '').toLowerCase()
       if (action === 'transfer') {
         return [
@@ -314,12 +321,16 @@ export default {
 
     const saveUserClosureState = (batch, userId, action, branchIds = []) => {
       if (!userId) return
+      const canRecoverOwnerClosure = action === 'deactivate'
       batch.update(doc(db, 'users', userId), {
         archived: true,
         status: 'Inactive',
         accountClosed: true,
         accountClosureAction: action,
         accountClosedAt: serverTimestamp(),
+        accountRecoveryEndsAt: canRecoverOwnerClosure
+          ? Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
+          : null,
         updatedAt: serverTimestamp(),
       })
 
@@ -402,6 +413,7 @@ export default {
         const requestRef = doc(db, 'accountClosureRequests', selectedRequest.value.id)
         const nextAction = String(selectedRequest.value.action || 'deactivate').toLowerCase()
         const branchIds = Array.isArray(selectedRequest.value.branchIds) ? selectedRequest.value.branchIds.filter(Boolean) : []
+        const isCustomerDeletionRequest = String(selectedRequest.value.requestType || '').toLowerCase() === 'customer_account_deletion'
 
         if (nextStatus === 'Rejected') {
           await updateDoc(requestRef, {
@@ -458,7 +470,28 @@ export default {
           processedAction: nextAction,
         })
 
-        if (nextAction === 'transfer') {
+        if (isCustomerDeletionRequest) {
+          if (selectedRequest.value.ownerId) {
+            batch.update(doc(db, 'users', selectedRequest.value.ownerId), {
+              accountDeletionRequested: true,
+              accountDeletionApprovedAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          }
+          await batch.commit()
+          if (selectedRequest.value.ownerId) {
+            await addDoc(collection(db, 'notifications'), {
+              recipientUserId: selectedRequest.value.ownerId,
+              senderId: reviewerId,
+              type: 'account_deletion_pending',
+              title: 'Account deletion request approved',
+              message: 'Your account is in a 30-day pending-deletion period. Sign in before the scheduled date if you want to cancel the request.',
+              link: '/customer/account-recovery',
+              read: false,
+              createdAt: serverTimestamp(),
+            })
+          }
+        } else if (nextAction === 'transfer') {
           const transferEmail = String(selectedRequest.value.transferEmail || '').trim().toLowerCase()
           if (!transferEmail) {
             throw new Error('Transfer email is required for ownership transfer.')
@@ -545,8 +578,10 @@ export default {
               senderId: reviewerId,
               type: 'account_closure_review',
               title: 'Account Closure Request Approved',
-              message: 'Your owner account has been closed. Clinic branches remain active.',
-              link: '/account/closure',
+              message: nextAction === 'deactivate'
+                ? 'Your owner account has been closed. Sign in within 30 days if you want to restore owner access. Clinic branches remain active.'
+                : 'Your owner account has been closed. Clinic branches remain active.',
+              link: nextAction === 'deactivate' ? '/clinic/account-recovery' : '/account/closure',
               read: false,
               createdAt: serverTimestamp(),
             })

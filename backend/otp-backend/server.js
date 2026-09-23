@@ -4411,6 +4411,15 @@ app.post(CHECK_CUSTOMER_REGISTRATION_STATUS_PATH, async (req, res) => {
       normalizedRole === 'customer' &&
       !customerState.emailVerified &&
       normalizedStatus !== 'active'
+    const recoveryEndsAt = getTimestampDate(customerState.userData?.accountRecoveryEndsAt)
+    const deletionEndsAt = getTimestampDate(customerState.userData?.accountDeletionScheduledFor)
+    const accountRecoveryEligible = normalizedRole === 'customer'
+      && normalizedStatus === 'inactive'
+      && customerState.userData?.accountDeactivationRequested === true
+      && recoveryEndsAt && recoveryEndsAt.getTime() > Date.now()
+    const deletionRecoveryEligible = normalizedRole === 'customer'
+      && customerState.userData?.accountDeletionRequested === true
+      && deletionEndsAt && deletionEndsAt.getTime() > Date.now()
 
     return res.json({
       success: true,
@@ -4420,6 +4429,8 @@ app.post(CHECK_CUSTOMER_REGISTRATION_STATUS_PATH, async (req, res) => {
       status,
       emailVerified: customerState.emailVerified,
       canResumeOtp,
+      accountRecoveryEligible,
+      deletionRecoveryEligible,
     })
   } catch (error) {
     return res.status(400).json({
@@ -4463,6 +4474,14 @@ app.post('/auth/check-registration-status', async (req, res) => {
     const clinicStatus = String(clinicData.approvalStatus || '').toLowerCase()
     const businessType =
       String(userData.businessType || clinicData.businessType || '').trim()
+    const normalizedRole = String(userData.role || userData.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+    const recoveryEndsAt = getTimestampDate(userData.accountRecoveryEndsAt)
+    const ownerRecoveryEligible = ['owner', 'clinicadmin', 'clinicadministrator'].includes(normalizedRole)
+      && userStatus === 'inactive'
+      && userData.archived === true
+      && userData.accountClosed === true
+      && String(userData.accountClosureAction || '').trim().toLowerCase() === 'deactivate'
+      && recoveryEndsAt && recoveryEndsAt.getTime() > Date.now()
 
     const hasSubmittedDocs =
       Boolean(clinicData.documentsSubmittedAt) ||
@@ -4497,6 +4516,7 @@ app.post('/auth/check-registration-status', async (req, res) => {
       clinicStatus,
       hasSubmittedDocs,
       businessType,
+      ownerRecoveryEligible,
     })
   } catch (error) {
     const code = error?.code || ''

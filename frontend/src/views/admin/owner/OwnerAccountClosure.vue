@@ -37,7 +37,7 @@
                 <div>
                   <h2 class="text-lg font-semibold text-[#f3e7e0]">What happens when you close the account</h2>
                   <p class="mt-2 text-sm leading-6 text-[#e2c7b6]">
-                    The owner login is disabled, but clinic records remain in the system for continuity, review, and legal support.
+                    The owner login is disabled, but clinic records remain in the system for continuity, review, and legal support. For an owner-only closure, signing in within 30 days restores access.
                   </p>
                 </div>
               </div>
@@ -204,7 +204,7 @@ const closureOptions = [
   {
     value: 'deactivate',
     title: 'Close owner account only',
-    description: 'Best if another admin is already handling the clinic. Staff and branch records stay active.',
+    description: 'Best if another admin is already handling the clinic. Staff and branch records stay active, and you can restore your access by signing in within 30 days.',
   },
   {
     value: 'transfer',
