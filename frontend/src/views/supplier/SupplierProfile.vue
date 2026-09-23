@@ -64,7 +64,21 @@
 
                 <div>
                   <label class="profile-label">Contact Number</label>
-                  <input v-model="profile.contactNumber" type="tel" class="profile-input" placeholder="+63..." />
+                  <div class="phone-input-shell" :class="{ 'phone-input-invalid': contactNumberError }">
+                    <span>+63</span>
+                    <input
+                      :value="profile.contactNumber"
+                      type="tel"
+                      inputmode="numeric"
+                      autocomplete="tel-national"
+                      maxlength="10"
+                      class="profile-input"
+                      placeholder="9XXXXXXXXX"
+                      @input="handleContactNumberInput"
+                      @blur="validateContactNumber"
+                    />
+                  </div>
+                  <p v-if="contactNumberError" class="field-error">{{ contactNumberError }}</p>
                 </div>
 
                 <div>
@@ -189,6 +203,7 @@ const userEmail = ref('')
 const supplierDocId = ref('')
 const locationSearchValue = ref('')
 const profilePictureFile = ref(null)
+const contactNumberError = ref('')
 
 const profile = ref({
   businessName: '',
@@ -230,6 +245,26 @@ const businessInitial = computed(() => {
 
 const handleTinInput = (event) => {
   profile.value.taxRegistrationNumber = normalizeTinDigits(event?.target?.value || '')
+}
+
+const normalizePhilippineMobile = (value) => {
+  let digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('63')) digits = digits.slice(2)
+  if (digits.startsWith('0')) digits = digits.slice(1)
+  return digits.slice(0, 10)
+}
+
+const validateContactNumber = () => {
+  const number = String(profile.value.contactNumber || '').trim()
+  contactNumberError.value = /^9\d{9}$/.test(number)
+    ? ''
+    : 'Enter exactly 10 digits starting with 9.'
+  return !contactNumberError.value
+}
+
+const handleContactNumberInput = (event) => {
+  profile.value.contactNumber = normalizePhilippineMobile(event?.target?.value)
+  if (contactNumberError.value) validateContactNumber()
 }
 
 const resolveSupplierDocument = async (uid) => {
@@ -291,7 +326,7 @@ const loadProfile = async (user) => {
         merged.name ||
         '',
       email: merged.email || user.email || '',
-      contactNumber: merged.contactNumber || merged.phone || '',
+      contactNumber: normalizePhilippineMobile(merged.contactNumber || merged.phone || ''),
       businessAddress: merged.businessAddress || merged.address || '',
       businessAddressStreet: merged.businessAddressStreet || merged.addressStreet || '',
       businessAddressBarangay: merged.businessAddressBarangay || merged.addressBarangay || '',
@@ -320,6 +355,11 @@ const saveProfile = async () => {
     return
   }
 
+  if (!validateContactNumber()) {
+    toast.error('Enter a valid Philippine mobile number before saving.')
+    return
+  }
+
   try {
     let profilePicture = profile.value.profilePicture || ''
     if (profilePictureFile.value) {
@@ -330,7 +370,7 @@ const saveProfile = async () => {
       profile.value.profilePicture = profilePicture
     }
     const payload = {
-      businessName: profile.value.businessName || '', email: profile.value.email || '', contactNumber: profile.value.contactNumber || '',
+      businessName: profile.value.businessName || '', email: profile.value.email || '', contactNumber: `+63${profile.value.contactNumber}`,
       businessAddress: profile.value.businessAddress || '', businessAddressStreet: profile.value.businessAddressStreet || '',
       businessAddressBarangay: profile.value.businessAddressBarangay || '', businessAddressCity: profile.value.businessAddressCity || '',
       businessAddressProvince: profile.value.businessAddressProvince || '', businessAddressPostalCode: profile.value.businessAddressPostalCode || '',
@@ -397,4 +437,37 @@ onMounted(() => {
   border-color: rgba(198, 148, 108, 0.95);
   box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
 }
+
+.phone-input-shell {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid rgba(224, 192, 154, 0.95);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.95);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.phone-input-shell:focus-within {
+  border-color: rgba(198, 148, 108, 0.95);
+  box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
+}
+
+.phone-input-shell > span {
+  display: inline-flex;
+  align-items: center;
+  border-right: 1px solid rgba(224, 192, 154, 0.95);
+  padding: 0 1rem;
+  color: #6f503d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.phone-input-shell .profile-input {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.phone-input-invalid { border-color: #c2413a; }
+.field-error { margin-top: 0.35rem; color: #b8322b; font-size: 0.75rem; }
 </style>

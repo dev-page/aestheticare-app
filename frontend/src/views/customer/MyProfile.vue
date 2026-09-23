@@ -59,7 +59,21 @@
 
               <div>
                 <label class="profile-field-label">Phone Number</label>
-                <input v-model="customer.contactNumber" type="tel" class="profile-input" />
+                <div class="phone-input-shell" :class="{ 'phone-input-invalid': contactNumberError }">
+                  <span>+63</span>
+                  <input
+                    :value="customer.contactNumber"
+                    type="tel"
+                    inputmode="numeric"
+                    autocomplete="tel-national"
+                    maxlength="10"
+                    class="profile-input"
+                    placeholder="9XXXXXXXXX"
+                    @input="handleContactNumberInput"
+                    @blur="validateContactNumber"
+                  />
+                </div>
+                <p v-if="contactNumberError" class="field-error">{{ contactNumberError }}</p>
               </div>
 
               <div>
@@ -127,6 +141,7 @@ const customer = ref({
   profilePicture: '',
 })
 const loading = ref(true)
+const contactNumberError = ref('')
 const locationMapEl = ref(null)
 const locationSearchQuery = ref('')
 const locationError = ref('')
@@ -140,6 +155,26 @@ const philippinesBounds = { north: 21.5, south: 4.3, east: 127.5, west: 116.0 }
 const defaultPhilippinesCenter = { lat: 12.8797, lng: 121.774 }
 
 const fullName = computed(() => `${customer.value.firstName || ''} ${customer.value.lastName || ''}`.trim())
+
+const normalizePhilippineMobile = (value) => {
+  let digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('63')) digits = digits.slice(2)
+  if (digits.startsWith('0')) digits = digits.slice(1)
+  return digits.slice(0, 10)
+}
+
+const validateContactNumber = () => {
+  const number = String(customer.value.contactNumber || '').trim()
+  contactNumberError.value = /^9\d{9}$/.test(number)
+    ? ''
+    : 'Enter exactly 10 digits starting with 9.'
+  return !contactNumberError.value
+}
+
+const handleContactNumberInput = (event) => {
+  customer.value.contactNumber = normalizePhilippineMobile(event?.target?.value)
+  if (contactNumberError.value) validateContactNumber()
+}
 
 const hasLocationCoords = computed(() => {
   const lat = Number(customer.value.addressLat || 0)
@@ -433,6 +468,7 @@ const loadCustomerProfile = () => {
     async (userSnap) => {
       if (userSnap.exists()) {
         customer.value = { ...customer.value, ...userSnap.data(), email: user.email || '' }
+        customer.value.contactNumber = normalizePhilippineMobile(customer.value.contactNumber)
       } else {
         await setDoc(userRef, {
           ...customer.value,
@@ -462,12 +498,17 @@ const saveCustomerProfile = async () => {
     return
   }
 
+  if (!validateContactNumber()) {
+    toast.error('Enter a valid Philippine mobile number before saving.')
+    return
+  }
+
   try {
     await updateDoc(doc(db, 'users', user.uid), {
       firstName: customer.value.firstName || '',
       lastName: customer.value.lastName || '',
       email: customer.value.email || '',
-      contactNumber: customer.value.contactNumber || '',
+      contactNumber: `+63${customer.value.contactNumber}`,
       address: customer.value.address || '',
       addressCity: customer.value.addressCity || '',
       addressBarangay: customer.value.addressBarangay || '',
@@ -683,6 +724,30 @@ input[type="file"]::file-selector-button {
   border-color: rgba(198, 148, 108, 0.9);
   box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
 }
+
+.phone-input-shell {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid rgba(230, 193, 150, 0.9);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.92);
+}
+.phone-input-shell:focus-within {
+  border-color: rgba(198, 148, 108, 0.9);
+  box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
+}
+.phone-input-shell > span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 1rem;
+  border-right: 1px solid rgba(230, 193, 150, 0.9);
+  color: #6f503d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.phone-input-shell .profile-input { border: 0; border-radius: 0; box-shadow: none; }
+.phone-input-invalid { border-color: #c2413a; }
+.field-error { margin: 0.35rem 0 0; color: #b8322b; font-size: 0.75rem; }
 
 .profile-save-button {
   width: 100%;

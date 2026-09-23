@@ -117,8 +117,10 @@
             <span>Phone Number</span>
             <div class="checkout-input-wrap">
               <Icon icon="mdi:phone-outline" class="h-4 w-4 text-[#a77d57]" />
-              <input type="text" placeholder="09xxxxxxxxx" v-model="delivery.phone" />
+              <span class="font-semibold text-[#6f4a2d]">+63</span>
+              <input type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" :value="delivery.phone" @input="handleDeliveryPhoneInput" />
             </div>
+            <p v-if="deliveryPhoneError" class="mt-1 text-xs text-rose-600">{{ deliveryPhoneError }}</p>
           </label>
         </form>
       </div>
@@ -229,6 +231,26 @@ const delivery = ref({
   addressLng: '',
   phone: '',
 })
+const deliveryPhoneError = ref('')
+
+const normalizePhilippineMobile = (value) => {
+  let digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('63')) digits = digits.slice(2)
+  if (digits.startsWith('0')) digits = digits.slice(1)
+  return digits.slice(0, 10)
+}
+
+const validateDeliveryPhone = () => {
+  deliveryPhoneError.value = /^9\d{9}$/.test(String(delivery.value.phone || '').trim())
+    ? ''
+    : 'Enter exactly 10 digits starting with 9.'
+  return !deliveryPhoneError.value
+}
+
+const handleDeliveryPhoneInput = (event) => {
+  delivery.value.phone = normalizePhilippineMobile(event?.target?.value)
+  if (deliveryPhoneError.value) validateDeliveryPhone()
+}
 
 const pickupBranches = computed(() => {
   const branches = new Map()
@@ -496,8 +518,8 @@ const createPayMongoCheckoutSession = async () => {
     throw new Error('You must be logged in to continue.')
   }
 
-  if (paymentMethod.value === 'GCash' && !String(delivery.value.phone || '').trim()) {
-    throw new Error('Mobile phone number is required for GCash payments.')
+  if (!validateDeliveryPhone()) {
+    throw new Error('Enter a valid Philippine mobile number before payment.')
   }
 
   const paymentMethodType = paymentMethod.value === 'Card' ? 'card' : 'gcash'
@@ -523,7 +545,7 @@ const createPayMongoCheckoutSession = async () => {
       billing: {
         name: delivery.value.fullName,
         email: auth.currentUser?.email || '',
-        phone: String(delivery.value.phone || '').trim(),
+        phone: `+63${delivery.value.phone}`,
       },
       metadata: {
         module: 'customer_order',
@@ -570,8 +592,8 @@ const startPayMongoCheckout = async () => {
     toast.error('Please complete your pickup and contact details.')
     return
   }
-  if (paymentMethod.value === 'GCash' && !String(delivery.value.phone || '').trim()) {
-    toast.error('Mobile phone number is required for GCash payments.')
+  if (!validateDeliveryPhone()) {
+    toast.error(deliveryPhoneError.value)
     return
   }
   if (!checkoutPolicyAcknowledged.value) {
@@ -700,7 +722,7 @@ const prefillDeliveryInfo = async (user) => {
       if (!delivery.value.addressPostalCode && data.addressPostalCode) delivery.value.addressPostalCode = String(data.addressPostalCode || '')
       if (!delivery.value.addressLat && data.addressLat) delivery.value.addressLat = String(data.addressLat || '')
       if (!delivery.value.addressLng && data.addressLng) delivery.value.addressLng = String(data.addressLng || '')
-      if (!delivery.value.phone && data.contactNumber) delivery.value.phone = String(data.contactNumber || '')
+      if (!delivery.value.phone && data.contactNumber) delivery.value.phone = normalizePhilippineMobile(data.contactNumber)
     }
     await nextTick()
     await initDeliveryMap()

@@ -50,12 +50,11 @@
 
           <div>
             <label class="block text-slate-400 text-sm mb-1">Phone Number</label>
-            <input
-              v-model="clinic.contactNumber"
-              type="tel"
-              placeholder="+1 234 567 890"
-              class="w-full rounded-lg p-3 bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
+            <div class="flex overflow-hidden rounded-lg border border-slate-600 bg-slate-700 focus-within:ring-2 focus-within:ring-purple-500">
+              <span class="inline-flex items-center border-r border-slate-600 px-3 text-sm font-semibold text-slate-300">+63</span>
+              <input :value="clinic.contactNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" class="min-w-0 flex-1 bg-transparent p-3 text-white outline-none" @input="handleContactNumberInput" @blur="validateContactNumber" />
+            </div>
+            <p v-if="contactNumberError" class="mt-1 text-xs text-rose-300">{{ contactNumberError }}</p>
           </div>
 
           <div>
@@ -154,12 +153,28 @@ export default {
     };
     const defaultCaviteCenter = { lat: 14.3294, lng: 120.9367 };
     const locationError = ref('');
+    const contactNumberError = ref('');
     const exporting = ref(false);
     const tutorialEnabled = ref(true);
 
     const isOwnerLikeRole = (role) => {
       const normalized = String(role || '').trim().toLowerCase();
       return ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized);
+    };
+
+    const normalizePhilippineMobile = (value) => {
+      let digits = String(value || '').replace(/\D/g, '');
+      if (digits.startsWith('63')) digits = digits.slice(2);
+      if (digits.startsWith('0')) digits = digits.slice(1);
+      return digits.slice(0, 10);
+    };
+    const validateContactNumber = () => {
+      contactNumberError.value = /^9\d{9}$/.test(String(clinic.value.contactNumber || '').trim()) ? '' : 'Enter exactly 10 digits starting with 9.';
+      return !contactNumberError.value;
+    };
+    const handleContactNumberInput = (event) => {
+      clinic.value.contactNumber = normalizePhilippineMobile(event?.target?.value);
+      if (contactNumberError.value) validateContactNumber();
     };
 
     const hasLocationCoords = computed(() => {
@@ -190,7 +205,7 @@ export default {
       if (userSnap.exists()) {
         const data = userSnap.data();
         clinic.value.email = data.email;
-        clinic.value.contactNumber = data.contactNumber;
+        clinic.value.contactNumber = normalizePhilippineMobile(data.contactNumber);
         tutorialEnabled.value = data.preferences?.onboarding?.owner?.disabled !== true;
       }
     };
@@ -592,6 +607,10 @@ export default {
         toast.error('User not authenticated');
         return;
       }
+      if (!validateContactNumber()) {
+        toast.error('Enter a valid Philippine mobile number before saving.');
+        return;
+      }
 
       const lat = Number(clinic.value.clinicLocationLat);
       const lng = Number(clinic.value.clinicLocationLng);
@@ -616,6 +635,8 @@ export default {
 
     return {
       clinic,
+      contactNumberError,
+      handleContactNumberInput,
       saveClinicProfile,
       locationMapEl,
       hasLocationCoords,
@@ -627,6 +648,7 @@ export default {
       exporting,
       exportAccountData,
       tutorialEnabled,
+      validateContactNumber,
       saveTutorialPreference,
     };
   },

@@ -1373,6 +1373,35 @@ onBeforeUnmount(() => {
               <p class="text-charcoal-600 text-sm mt-1">Build your AesthetiCare profile and start booking with confidence.</p>
             </div>
 
+            <div class="relative">
+              <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" :class="{ 'input-error': emailError }" @input="handleEmailDraftInput" />
+              <label class="floating-label">Email Address</label>
+              <!-- Validation text changes the wrapper height; anchor to the
+                   input's fixed 4rem height so the status icon stays centered. -->
+              <span class="absolute right-4 top-8 -translate-y-1/2" aria-hidden="true">
+                <span v-if="isCheckingEmail" class="block h-5 w-5 animate-spin rounded-full border-2 border-gold-300 border-t-gold-700"></span>
+                <svg v-else-if="emailAvailability === 'available'" class="h-5 w-5 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 12.5 9.5 17 19 7.5" />
+                </svg>
+                <svg v-else-if="emailAvailability === 'used'" class="h-5 w-5 text-rose-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m7 7 10 10M17 7 7 17" />
+                </svg>
+                <svg v-else-if="emailAvailability === 'resume'" class="h-5 w-5 text-gold-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l2.5 2.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <svg v-else-if="emailAvailability === 'error' || emailAvailability === 'invalid'" class="h-5 w-5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M10.3 4.7 3.4 17a2 2 0 0 0 1.7 3h13.8a2 2 0 0 0 1.7-3l-6.9-12.3a2 2 0 0 0-3.4 0Z" />
+                </svg>
+              </span>
+              <p v-if="emailError" class="mt-1 text-xs text-red-600">{{ emailError }}</p>
+              <p v-else-if="emailAvailabilityMessage" aria-live="polite" class="mt-1 text-xs" :class="{
+                'text-emerald-700': emailAvailability === 'available',
+                'text-rose-700': emailAvailability === 'used',
+                'text-gold-700': emailAvailability === 'resume',
+                'text-amber-700': emailAvailability === 'error' || emailAvailability === 'invalid'
+              }">{{ emailAvailabilityMessage }}</p>
+            </div>
+
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="relative">
                 <input v-model="firstName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
@@ -1594,35 +1623,6 @@ onBeforeUnmount(() => {
                 />
                 <label class="floating-label">Postal Code</label>
               </div>
-            </div>
-
-            <div class="relative">
-              <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" :class="{ 'input-error': emailError }" @input="handleEmailDraftInput" />
-              <label class="floating-label">Email Address</label>
-              <!-- Validation text changes the wrapper height; anchor to the
-                   input's fixed 4rem height so the status icon stays centered. -->
-              <span class="absolute right-4 top-8 -translate-y-1/2" aria-hidden="true">
-                <span v-if="isCheckingEmail" class="block h-5 w-5 animate-spin rounded-full border-2 border-gold-300 border-t-gold-700"></span>
-                <svg v-else-if="emailAvailability === 'available'" class="h-5 w-5 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 12.5 9.5 17 19 7.5" />
-                </svg>
-                <svg v-else-if="emailAvailability === 'used'" class="h-5 w-5 text-rose-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="m7 7 10 10M17 7 7 17" />
-                </svg>
-                <svg v-else-if="emailAvailability === 'resume'" class="h-5 w-5 text-gold-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l2.5 2.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                </svg>
-                <svg v-else-if="emailAvailability === 'error' || emailAvailability === 'invalid'" class="h-5 w-5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M10.3 4.7 3.4 17a2 2 0 0 0 1.7 3h13.8a2 2 0 0 0 1.7-3l-6.9-12.3a2 2 0 0 0-3.4 0Z" />
-                </svg>
-              </span>
-              <p v-if="emailError" class="mt-1 text-xs text-red-600">{{ emailError }}</p>
-              <p v-else-if="emailAvailabilityMessage" aria-live="polite" class="mt-1 text-xs" :class="{
-                'text-emerald-700': emailAvailability === 'available',
-                'text-rose-700': emailAvailability === 'used',
-                'text-gold-700': emailAvailability === 'resume',
-                'text-amber-700': emailAvailability === 'error' || emailAvailability === 'invalid'
-              }">{{ emailAvailabilityMessage }}</p>
             </div>
 
             <div class="relative">

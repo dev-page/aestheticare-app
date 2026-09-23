@@ -128,10 +128,21 @@
                   </div>
                   <div>
                     <label class="block text-slate-300 text-sm mb-1">Contact Number</label>
-                    <input
-                      v-model="editForm.contactNumber"
-                      class="w-full rounded-lg px-3 py-2 bg-slate-800 text-white border border-slate-500 focus:outline-none focus:ring-2 focus:ring-gold-500"
-                    />
+                    <div class="flex overflow-hidden rounded-lg border border-slate-500 bg-slate-800 focus-within:ring-2 focus-within:ring-gold-500">
+                      <span class="inline-flex items-center border-r border-slate-500 px-3 text-sm font-semibold text-slate-300">+63</span>
+                      <input
+                        :value="editForm.contactNumber"
+                        type="tel"
+                        inputmode="numeric"
+                        autocomplete="tel-national"
+                        maxlength="10"
+                        placeholder="9XXXXXXXXX"
+                        class="min-w-0 flex-1 bg-transparent px-3 py-2 text-white outline-none"
+                        @input="handleContactNumberInput"
+                        @blur="validateContactNumber"
+                      />
+                    </div>
+                    <p v-if="contactNumberError" class="mt-1 text-xs text-rose-300">{{ contactNumberError }}</p>
                   </div>
                 </div>
 
@@ -419,6 +430,7 @@ export default {
     const isEditing = ref(false)
     const saving = ref(false)
     const locationError = ref('')
+    const contactNumberError = ref('')
 
     const editForm = ref({
       clinicName: '',
@@ -451,6 +463,25 @@ export default {
       west: 120.626
     }
     const defaultCaviteCenter = { lat: 14.3294, lng: 120.9367 }
+
+    const normalizePhilippineMobile = (value) => {
+      let digits = String(value || '').replace(/\D/g, '')
+      if (digits.startsWith('63')) digits = digits.slice(2)
+      if (digits.startsWith('0')) digits = digits.slice(1)
+      return digits.slice(0, 10)
+    }
+
+    const validateContactNumber = () => {
+      contactNumberError.value = /^9\d{9}$/.test(String(editForm.value.contactNumber || '').trim())
+        ? ''
+        : 'Enter exactly 10 digits starting with 9.'
+      return !contactNumberError.value
+    }
+
+    const handleContactNumberInput = (event) => {
+      editForm.value.contactNumber = normalizePhilippineMobile(event?.target?.value)
+      if (contactNumberError.value) validateContactNumber()
+    }
 
     const tabs = [
       { id: 'about', label: 'About Us' },
@@ -685,7 +716,7 @@ export default {
       editForm.value = {
         clinicName: selectedBranch.value.clinicName || selectedBranch.value.clinicBranch || '',
         businessEmail: selectedBranch.value.businessEmail || selectedBranch.value.email || '',
-        contactNumber: selectedBranch.value.contactNumber || '',
+        contactNumber: normalizePhilippineMobile(selectedBranch.value.contactNumber || ''),
         description: selectedBranch.value.description || '',
         services: Array.isArray(selectedBranch.value.services)
           ? selectedBranch.value.services.map((entry) => String(entry || '').trim()).filter(Boolean)
@@ -937,6 +968,10 @@ export default {
 
     const saveEdit = async () => {
       if (!selectedBranch.value?.id) return
+      if (!validateContactNumber()) {
+        toast.error('Enter a valid Philippine mobile number before saving.')
+        return
+      }
       saving.value = true
       try {
         commitServiceInput()
@@ -977,7 +1012,7 @@ export default {
         const payload = {
           clinicName: (editForm.value.clinicName || '').trim(),
           businessEmail: (editForm.value.businessEmail || '').trim(),
-          contactNumber: (editForm.value.contactNumber || '').trim(),
+          contactNumber: `+63${editForm.value.contactNumber}`,
           description: (editForm.value.description || '').trim(),
           services: uniqueServices,
           clinicLocation: (editForm.value.clinicLocation || '').trim(),

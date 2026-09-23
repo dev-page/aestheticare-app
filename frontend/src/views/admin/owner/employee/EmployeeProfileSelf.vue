@@ -78,11 +78,11 @@
               <div class="grid gap-5 md:grid-cols-2">
                 <label class="block">
                   <span class="mb-2 block text-sm font-medium text-slate-300">Phone Number</span>
-                  <input
-                    v-model.trim="profile.phoneNumber"
-                    type="text"
-                    class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
-                  />
+                  <div class="flex overflow-hidden rounded-xl border border-slate-700 bg-slate-900 focus-within:border-cyan-400">
+                    <span class="inline-flex items-center border-r border-slate-700 px-4 text-sm font-semibold text-slate-300">+63</span>
+                    <input :value="profile.phoneNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" class="min-w-0 flex-1 bg-transparent px-4 py-3 text-white outline-none" @input="handlePhoneInput" @blur="validatePhoneNumber" />
+                  </div>
+                  <span v-if="phoneNumberError" class="mt-2 block text-xs text-rose-400">{{ phoneNumberError }}</span>
                 </label>
 
                 <label class="block">
@@ -160,6 +160,7 @@ export default {
     const saving = ref(false)
     const exporting = ref(false)
     const tutorialEnabled = ref(true)
+    const phoneNumberError = ref('')
     const profilePictureFile = ref(null)
     const profilePreview = ref('')
     const currentUserId = ref('')
@@ -183,6 +184,21 @@ export default {
 
     const fullName = computed(() => `${profile.value.firstName || ''} ${profile.value.lastName || ''}`.trim())
     const userInitial = computed(() => (fullName.value || profile.value.email || 'E').charAt(0).toUpperCase())
+
+    const normalizePhilippineMobile = (value) => {
+      let digits = String(value || '').replace(/\D/g, '')
+      if (digits.startsWith('63')) digits = digits.slice(2)
+      if (digits.startsWith('0')) digits = digits.slice(1)
+      return digits.slice(0, 10)
+    }
+    const validatePhoneNumber = () => {
+      phoneNumberError.value = /^9\d{9}$/.test(String(profile.value.phoneNumber || '').trim()) ? '' : 'Enter exactly 10 digits starting with 9.'
+      return !phoneNumberError.value
+    }
+    const handlePhoneInput = (event) => {
+      profile.value.phoneNumber = normalizePhilippineMobile(event?.target?.value)
+      if (phoneNumberError.value) validatePhoneNumber()
+    }
 
     const clearBranchSubscription = () => {
       if (unsubscribeBranch) {
@@ -250,7 +266,7 @@ export default {
         firstName: String(userData.firstName || '').trim(),
         lastName: String(userData.lastName || '').trim(),
         email: String(userData.email || email || '').trim(),
-        phoneNumber: String(userData.phoneNumber || '').trim(),
+        phoneNumber: normalizePhilippineMobile(userData.phoneNumber),
         address: String(userData.address || '').trim(),
         role: String(userData.role || '').trim(),
         customRoleName: String(userData.customRoleName || '').trim(),
@@ -288,6 +304,10 @@ export default {
         toast.error('First name and last name are required.')
         return
       }
+      if (!validatePhoneNumber()) {
+        toast.error('Enter a valid Philippine mobile number before saving.')
+        return
+      }
 
       saving.value = true
       try {
@@ -302,7 +322,7 @@ export default {
           firstName: profile.value.firstName,
           lastName: profile.value.lastName,
           fullName: `${profile.value.firstName} ${profile.value.lastName}`.trim(),
-          phoneNumber: profile.value.phoneNumber || '',
+          phoneNumber: `+63${profile.value.phoneNumber}`,
           address: profile.value.address || '',
           profilePicture,
           updatedAt: serverTimestamp(),
@@ -414,7 +434,9 @@ export default {
 
     return {
       fullName,
+      handlePhoneInput,
       loading,
+      phoneNumberError,
       profile,
       saveProfile,
       saving,
@@ -422,6 +444,7 @@ export default {
       exporting,
       exportAccountData,
       tutorialEnabled,
+      validatePhoneNumber,
       saveTutorialPreference,
     }
   },

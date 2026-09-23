@@ -50,7 +50,11 @@
 
               <label class="block space-y-2">
                 <span class="text-sm text-slate-300">Phone Number</span>
-                <input v-model.trim="profile.phoneNumber" inputmode="numeric" placeholder="9XXXXXXXXX" class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none transition focus:border-cyan-500" />
+                <div class="flex overflow-hidden rounded-lg border border-slate-700 bg-slate-900 focus-within:border-cyan-500">
+                  <span class="inline-flex items-center border-r border-slate-700 px-3 text-sm font-semibold text-slate-300">+63</span>
+                  <input :value="profile.phoneNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" class="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-white outline-none" @input="handlePhoneInput" @blur="validatePhoneNumber" />
+                </div>
+                <span v-if="phoneNumberError" class="block text-xs text-rose-400">{{ phoneNumberError }}</span>
               </label>
 
               <button type="submit" class="rounded-lg bg-cyan-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60" :disabled="savingProfile">
@@ -112,8 +116,24 @@ const changingPassword = ref(false)
 const profile = reactive({ firstName: '', lastName: '', email: '', phoneNumber: '', profilePicture: '' })
 const profilePictureFile = ref(null)
 const profilePreview = ref('')
+const phoneNumberError = ref('')
 const profileInitial = computed(() => `${profile.firstName || ''} ${profile.lastName || ''}`.trim().charAt(0).toUpperCase() || 'A')
 const passwords = reactive({ current: '', next: '', confirm: '' })
+
+const normalizePhilippineMobile = (value) => {
+  let digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('63')) digits = digits.slice(2)
+  if (digits.startsWith('0')) digits = digits.slice(1)
+  return digits.slice(0, 10)
+}
+const validatePhoneNumber = () => {
+  phoneNumberError.value = /^9\d{9}$/.test(profile.phoneNumber) ? '' : 'Enter exactly 10 digits starting with 9.'
+  return !phoneNumberError.value
+}
+const handlePhoneInput = (event) => {
+  profile.phoneNumber = normalizePhilippineMobile(event?.target?.value)
+  if (phoneNumberError.value) validatePhoneNumber()
+}
 
 const loadProfile = async () => {
   const user = auth.currentUser
@@ -124,7 +144,7 @@ const loadProfile = async () => {
     profile.firstName = data.firstName || ''
     profile.lastName = data.lastName || ''
     profile.email = data.email || user.email || ''
-    profile.phoneNumber = String(data.phoneNumber || '').replace(/^\+63/, '')
+    profile.phoneNumber = normalizePhilippineMobile(data.phoneNumber)
     profile.profilePicture = String(data.profilePicture || '').trim()
   } catch (error) {
     console.error('Failed to load system-admin profile:', error)
@@ -137,6 +157,10 @@ const loadProfile = async () => {
 const saveProfile = async () => {
   const user = auth.currentUser
   if (!user) return
+  if (!validatePhoneNumber()) {
+    toast.error('Enter a valid Philippine mobile number before saving.')
+    return
+  }
   savingProfile.value = true
   try {
     let profilePicture = profile.profilePicture || ''
