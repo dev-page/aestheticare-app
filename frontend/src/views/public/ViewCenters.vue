@@ -200,7 +200,7 @@
             <button
               type="button"
               class="mt-4 inline-flex items-center gap-2 rounded-2xl bg-charcoal-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-charcoal-700"
-              @click="openCenter(center.id)"
+              @click="openCenter(center)"
             >
               View center
               <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -268,7 +268,7 @@
                 <div>
                   <p class="text-sm font-medium text-charcoal-700">{{ center.location || 'Location not set' }}</p>
                   <p class="mt-1 text-sm text-charcoal-500">
-                    {{ center.services.length }} {{ center.services.length === 1 ? 'service area' : 'service areas' }} available
+                    {{ center.branches.length }} {{ center.branches.length === 1 ? 'branch' : 'branches' }} · {{ center.services.length }} {{ center.services.length === 1 ? 'service area' : 'service areas' }}
                   </p>
                   <p v-if="center.distanceKm !== null" class="mt-2 inline-flex rounded-full border border-gold-200/80 bg-gold-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-800">
                     {{ formatDistance(center.distanceKm) }} away
@@ -307,7 +307,7 @@
                 <button
                   type="button"
                   class="inline-flex items-center gap-2 rounded-2xl bg-charcoal-800 px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-charcoal-700"
-                  @click="openCenter(center.id)"
+                  @click="openCenter(center)"
                 >
                   View center
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -334,6 +334,12 @@
     </div>
   </main>
 
+  <BranchPickerModal
+    :center="selectedCenter"
+    @close="selectedCenter = null"
+    @select="openBranch"
+  />
+
   <transition name="fade">
     <div v-if="showRedirectPopup" class="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(28,15,7,0.62)] px-4 backdrop-blur-md">
       <div class="w-full max-w-md rounded-[1.75rem] border border-gold-200/80 bg-[#fff7ec] shadow-[0_28px_80px_rgba(48,26,12,0.34)] p-6">
@@ -355,11 +361,13 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import { fetchCustomerCenters } from '@/utils/customerCenters'
+import BranchPickerModal from '@/components/common/BranchPickerModal.vue'
 
 const router = useRouter()
 const loading = ref(false)
 const errorMessage = ref('')
 const centers = ref([])
+const selectedCenter = ref(null)
 const showRedirectPopup = ref(false)
 const search = ref('')
 const city = ref('')
@@ -400,7 +408,7 @@ const formatDistance = (distanceKm) => {
   return `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`
 }
 
-const cities = computed(() => [...new Set(centers.value.map((item) => item.city).filter(Boolean))])
+const cities = computed(() => [...new Set(centers.value.flatMap((item) => item.branches.map((branch) => branch.city)).filter(Boolean))])
 const services = computed(() => [...new Set(centers.value.flatMap((item) => item.services).filter(Boolean))])
 
 const filteredCenters = computed(() => {
@@ -419,9 +427,9 @@ const filteredCenters = computed(() => {
       const matchesSearch =
         !keyword ||
         center.name.toLowerCase().includes(keyword) ||
-        center.location.toLowerCase().includes(keyword) ||
+        center.branches.some((branch) => `${branch.name} ${branch.branchName} ${branch.location}`.toLowerCase().includes(keyword)) ||
         center.services.some((entry) => entry.toLowerCase().includes(keyword))
-      const matchesCity = !city.value || center.city === city.value
+      const matchesCity = !city.value || center.branches.some((branch) => branch.city === city.value)
       const matchesService = !service.value || center.services.includes(service.value)
       const matchesRating = !minimumRating.value || center.rating >= Number(minimumRating.value)
       const matchesFavorite = !favoritesOnly.value || favoriteClinicIds.value.has(center.id)
@@ -570,7 +578,18 @@ const getInitials = (name) => {
     .join('')
 }
 
-const openCenter = (centerId) => {
+const openCenter = (center) => {
+  if (center.branches.length > 1) {
+    selectedCenter.value = center
+    return
+  }
+  openBranch(center.branches[0])
+}
+
+const openBranch = (branch) => {
+  const centerId = branch?.id
+  if (!centerId) return
+  selectedCenter.value = null
   if (!auth.currentUser) {
     showRedirectPopup.value = true
     if (redirectTimeout) clearTimeout(redirectTimeout)

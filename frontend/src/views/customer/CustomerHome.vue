@@ -180,7 +180,7 @@
             <div class="center-card-body">
               <div>
                 <h3 class="center-title">{{ center.name }}</h3>
-                <p class="center-location">{{ center.location || 'Location not set' }}</p>
+                <p class="center-location">{{ center.branches.length }} {{ center.branches.length === 1 ? 'branch' : 'branches' }} · {{ center.location || 'Location not set' }}</p>
                 <p v-if="center.distanceKm !== null" class="mt-2 inline-flex rounded-full border border-gold-200/80 bg-gold-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-800">
                   {{ formatDistance(center.distanceKm) }} away
                 </p>
@@ -204,7 +204,7 @@
 
               <div class="center-footer">
                 <span class="center-location">{{ center.city || 'Clinic location' }}</span>
-                <button @click="openCenter(center.id)" class="customer-center-button">
+                <button @click="openCenter(center)" class="customer-center-button">
                   View Center
                 </button>
               </div>
@@ -219,6 +219,11 @@
         </section>
       </div>
     </main>
+    <BranchPickerModal
+      :center="selectedCenter"
+      @close="selectedCenter = null"
+      @select="openBranch"
+    />
   </div>
 </template>
 
@@ -231,11 +236,13 @@ import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { subscribeCustomerCenters } from '@/utils/customerCenters'
+import BranchPickerModal from '@/components/common/BranchPickerModal.vue'
 
 const router = useRouter()
 const loading = ref(true)
 const errorMessage = ref('')
 const centers = ref([])
+const selectedCenter = ref(null)
 
 const search = ref('')
 const city = ref('')
@@ -252,7 +259,7 @@ const radiusOptions = [5, 10, 15, 25, 50]
 const FAVORITES_STORAGE_KEY = 'aestheticCare.favoriteClinicIds'
 let unsubscribeCenters = null
 
-const cities = computed(() => [...new Set(centers.value.map((item) => item.city).filter(Boolean))])
+const cities = computed(() => [...new Set(centers.value.flatMap((item) => item.branches.map((branch) => branch.city)).filter(Boolean))])
 const services = computed(() => [...new Set(centers.value.flatMap((item) => item.services).filter(Boolean))])
 
 const toRadians = (value) => (value * Math.PI) / 180
@@ -290,9 +297,9 @@ const filteredCenters = computed(() => {
       const matchesKeyword =
         !keyword ||
         center.name.toLowerCase().includes(keyword) ||
-        center.location.toLowerCase().includes(keyword) ||
+        center.branches.some((branch) => `${branch.name} ${branch.branchName} ${branch.location}`.toLowerCase().includes(keyword)) ||
         center.services.some((entry) => entry.toLowerCase().includes(keyword))
-      const matchesCity = !city.value || center.city === city.value
+      const matchesCity = !city.value || center.branches.some((branch) => branch.city === city.value)
       const matchesService = !service.value || center.services.includes(service.value)
       const matchesRating = !minimumRating.value || center.rating >= Number(minimumRating.value)
       const matchesFavorite = !favoritesOnly.value || favoriteClinicIds.value.has(center.id)
@@ -439,7 +446,18 @@ const toggleNearbyCenters = () => {
   )
 }
 
-const openCenter = (centerId) => {
+const openCenter = (center) => {
+  if (center.branches.length > 1) {
+    selectedCenter.value = center
+    return
+  }
+  openBranch(center.branches[0])
+}
+
+const openBranch = (branch) => {
+  const centerId = branch?.id
+  if (!centerId) return
+  selectedCenter.value = null
   router.push({ name: 'customer-center', params: { id: centerId } })
 }
 

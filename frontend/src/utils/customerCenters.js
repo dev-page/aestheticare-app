@@ -31,7 +31,7 @@ const chunkArray = (items, size = 10) => {
   return chunks
 }
 
-const buildCenters = (clinics, serviceMap) =>
+const buildBranches = (clinics, serviceMap) =>
   clinics
     .filter((clinic) => {
       const ownerId = toText(clinic.ownerId)
@@ -55,7 +55,10 @@ const buildCenters = (clinics, serviceMap) =>
       const location = toText(clinic.clinicLocation)
       return {
         id: clinic.id,
+        organizationId: toText(clinic.organizationOwnerId || clinic.ownerId) || clinic.id,
         name: toText(clinic.clinicName || clinic.clinicBranch) || 'Unnamed Center',
+        branchName: toText(clinic.clinicBranch || clinic.clinicName) || 'Unnamed Branch',
+        isMainBranch: clinic.isMainBranch === true,
         city: extractCity(location),
         location,
         lat: Number(clinic.clinicLocationLat || 0) || null,
@@ -67,6 +70,31 @@ const buildCenters = (clinics, serviceMap) =>
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name))
+
+// Clinic documents represent branches. Public discovery should show the clinic
+// organization once, then let the visitor choose its branch before browsing.
+const buildCenters = (clinics, serviceMap) => {
+  const groups = new Map()
+
+  buildBranches(clinics, serviceMap).forEach((branch) => {
+    const key = branch.organizationId
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(branch)
+  })
+
+  return Array.from(groups, ([id, branches]) => {
+    const primary = branches.find((branch) => branch.isMainBranch) || branches[0]
+    const services = [...new Set(branches.flatMap((branch) => branch.services))]
+    return {
+      ...primary,
+      id,
+      name: primary.name,
+      services: services.length ? services : [FALLBACK_SERVICE],
+      rating: Math.max(...branches.map((branch) => branch.rating || 0)),
+      branches,
+    }
+  }).sort((a, b) => a.name.localeCompare(b.name))
+}
 
 const buildServiceMap = async (clinicIds) => {
   const serviceMap = new Map()
