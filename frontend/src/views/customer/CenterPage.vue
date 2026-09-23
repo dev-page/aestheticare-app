@@ -146,7 +146,7 @@
                   />
                 </div>
               </div>
-              <button @click="goToCart" class="center-cart-button px-4 py-2 rounded-2xl text-white">
+              <button type="button" @click="goToCart" class="center-cart-button" aria-label="Open cart">
                 <Icon icon="mdi:cart-outline" class="h-5 w-5" />
                 <span>My Cart</span>
                 <span class="center-cart-pill">{{ cartCount }}</span>
@@ -669,7 +669,7 @@
     </div>
     <button
       type="button"
-      class="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#8d5a3b] text-white shadow-lg hover:bg-[#6f4329] transition flex items-center justify-center"
+      class="center-chat-button"
       title="Chat with clinic"
       @click="openChat"
     >
@@ -3147,11 +3147,24 @@ const formatChatTime = (timestamp) => {
 
 .center-cart-button {
   display: inline-flex;
+  min-height: 2.75rem;
   align-items: center;
+  justify-content: center;
   gap: 0.55rem;
+  border: 1px solid rgba(91, 53, 31, 0.3);
+  border-radius: 0.9rem;
+  padding: 0.55rem 0.9rem;
+  color: #fffaf3;
+  font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0.01em;
+  line-height: 1;
+  transition: transform 0.18s ease, filter 0.18s ease;
 }
+
+.center-cart-button:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.center-cart-button:focus-visible,
+.center-chat-button:focus-visible { outline: 3px solid rgba(236, 191, 138, 0.7); outline-offset: 3px; }
 
 .center-cart-pill {
   min-width: 1.75rem;
@@ -3163,6 +3176,27 @@ const formatChatTime = (timestamp) => {
   font-weight: 700;
   text-align: center;
 }
+
+.center-chat-button {
+  position: fixed;
+  z-index: 45;
+  right: max(1.5rem, env(safe-area-inset-right));
+  bottom: max(1.5rem, env(safe-area-inset-bottom));
+  display: inline-flex;
+  height: 3.5rem;
+  width: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 248, 235, 0.42);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #9b6744 0%, #70432b 100%);
+  color: #fffaf3;
+  box-shadow: 0 16px 32px rgba(71, 40, 23, 0.28);
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+
+.center-chat-button:hover { transform: translateY(-2px) scale(1.03); filter: brightness(1.06); }
+.center-chat-button :deep(svg) { height: 1.4rem; width: 1.4rem; }
 
 .center-qty-stepper {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
