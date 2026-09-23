@@ -1599,7 +1599,9 @@ onBeforeUnmount(() => {
             <div class="relative">
               <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" :class="{ 'input-error': emailError }" @input="handleEmailDraftInput" />
               <label class="floating-label">Email Address</label>
-              <span class="absolute right-4 top-1/2 -translate-y-1/2" aria-hidden="true">
+              <!-- Validation text changes the wrapper height; anchor to the
+                   input's fixed 4rem height so the status icon stays centered. -->
+              <span class="absolute right-4 top-8 -translate-y-1/2" aria-hidden="true">
                 <span v-if="isCheckingEmail" class="block h-5 w-5 animate-spin rounded-full border-2 border-gold-300 border-t-gold-700"></span>
                 <svg v-else-if="emailAvailability === 'available'" class="h-5 w-5 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M5 12.5 9.5 17 19 7.5" />
