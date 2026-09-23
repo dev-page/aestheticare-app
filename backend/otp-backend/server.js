@@ -4050,6 +4050,79 @@ app.post(RESET_PASSWORD_PATH, async (req, res) => {
   }
 })
 
+// Customer booking pages need practitioner availability, but must never read
+// employee profiles, roles, schedules, or leave records directly from Firestore.
+// Return only the minimum public booking metadata from this trusted endpoint.
+app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res) => {
+  try {
+    const branchId = String(req.params?.branchId || '').trim()
+    if (!branchId) return res.status(400).json({ success: false, error: 'branchId is required.' })
+
+    const firestore = admin.firestore()
+    const clinicSnap = await firestore.collection('clinics').doc(branchId).get()
+    const clinic = clinicSnap.exists ? clinicSnap.data() || {} : null
+    if (!clinic || clinic.isPublished !== true || String(clinic.status || '').trim().toLowerCase() === 'inactive') {
+      return res.status(404).json({ success: false, error: 'Center unavailable.' })
+    }
+
+    const ownerId = String(clinic.ownerId || '').trim()
+    if (!ownerId) return res.status(404).json({ success: false, error: 'Center unavailable.' })
+
+    const rolesSnap = await firestore.collection('clinicRoles').where('ownerId', '==', ownerId).get()
+    const practitionerRoleIds = new Set(
+      rolesSnap.docs
+        .filter((roleSnap) => Array.isArray(roleSnap.data()?.permissions)
+          && roleSnap.data().permissions.some((permission) => String(permission || '').trim() === 'consultations:view'))
+        .map((roleSnap) => roleSnap.id)
+    )
+
+    if (!practitionerRoleIds.size) {
+      return res.json({ success: true, practitioners: [], schedules: {}, leaves: {} })
+    }
+
+    const staffSnap = await firestore.collection('users').where('branchId', '==', branchId).get()
+    const practitioners = staffSnap.docs
+      .map((staffSnap) => ({ id: staffSnap.id, ...staffSnap.data() }))
+      .filter((staff) => String(staff.userType || '').trim().toLowerCase() === 'staff'
+        && staff.archived !== true
+        && practitionerRoleIds.has(String(staff.customRoleId || '').trim()))
+      .map((staff) => ({
+        id: staff.id,
+        fullName: String(staff.fullName || '').trim()
+          || `${String(staff.firstName || '').trim()} ${String(staff.lastName || '').trim()}`.trim()
+          || 'Unnamed Practitioner',
+      }))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName))
+
+    const availabilityEntries = await Promise.all(practitioners.map(async (practitioner) => {
+      const [schedulesSnap, leavesSnap] = await Promise.all([
+        firestore.collection('users').doc(practitioner.id).collection('schedules').get(),
+        firestore.collection('leaveRequests').where('requesterId', '==', practitioner.id).get(),
+      ])
+      const schedules = schedulesSnap.docs.map((scheduleSnap) => ({ id: scheduleSnap.id, data: scheduleSnap.data() || {} }))
+      const leaves = leavesSnap.docs
+        .map((leaveSnap) => leaveSnap.data() || {})
+        .filter((leave) => String(leave.status || '').trim().toLowerCase() === 'approved')
+        .map((leave) => ({
+          startDate: String(leave.startDate || '').trim(),
+          endDate: String(leave.endDate || '').trim(),
+          leaveType: String(leave.leaveType || 'Approved leave').trim(),
+        }))
+        .filter((leave) => leave.startDate && leave.endDate)
+      return [practitioner.id, schedules, leaves]
+    }))
+
+    const schedules = {}, leaves = {}
+    availabilityEntries.forEach(([practitionerId, practitionerSchedules, practitionerLeaves]) => {
+      schedules[practitionerId] = practitionerSchedules
+      leaves[practitionerId] = practitionerLeaves
+    })
+    return res.json({ success: true, practitioners, schedules, leaves })
+  } catch (error) {
+    return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Unable to load practitioner availability.' })
+  }
+})
+
 // Bookings: create booking record and corresponding appointment (transactional) with availability checks
 app.post('/bookings/create', requireAuth, async (req, res) => {
   const { reservation } = req.body ?? {}

@@ -764,7 +764,7 @@ import { auth, db } from '@/config/firebaseConfig'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { addCartItem, readCart } from '@/utils/customerCart'
-import { buildWeekScheduleMap, getScheduleDayWindow } from '@/utils/employeeSchedules'
+import { getScheduleDayWindow } from '@/utils/employeeSchedules'
 import { calculateCommissionAmount, calculateNetAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
@@ -1419,44 +1419,6 @@ const extractShiftWindowMinutes = (shiftLabel) => {
   return { start, end }
 }
 
-const loadPractitionerSchedules = async (list) => {
-  const pairs = await Promise.all(
-    list.map(async (practitioner) => {
-      const scheduleSnap = await getDocs(collection(db, 'users', practitioner.id, 'schedules'))
-      const weekMap = buildWeekScheduleMap(scheduleSnap.docs.map((snap) => ({ id: snap.id, data: snap.data() || {} })))
-      return [practitioner.id, weekMap]
-    })
-  )
-  practitionerSchedules.value = Object.fromEntries(pairs)
-}
-
-const loadPractitionerLeaves = async (list) => {
-  if (!auth.currentUser) {
-    practitionerLeaves.value = {}
-    return
-  }
-
-  const pairs = await Promise.all(
-    list.map(async (practitioner) => {
-      const leaveSnap = await getDocs(query(
-        collection(db, 'leaveRequests'),
-        where('requesterId', '==', practitioner.id)
-      ))
-      const approved = leaveSnap.docs
-        .map((snap) => snap.data() || {})
-        .filter((request) => String(request.status || '').trim().toLowerCase() === 'approved')
-        .map((request) => ({
-          startDate: String(request.startDate || '').trim(),
-          endDate: String(request.endDate || '').trim(),
-          leaveType: String(request.leaveType || 'Approved leave').trim(),
-        }))
-        .filter((request) => request.startDate && request.endDate)
-      return [practitioner.id, approved]
-    })
-  )
-  practitionerLeaves.value = Object.fromEntries(pairs)
-}
-
 const isPractitionerOnApprovedLeave = (practitionerId, dateKey) => {
   const normalizedDate = String(dateKey || '').trim()
   return (practitionerLeaves.value?.[practitionerId] || []).some((leave) =>
@@ -1487,48 +1449,12 @@ const startBookingReservationsListener = async (branchId) => {
 }
 
 const loadPractitioners = async (branchId = activeBranchId.value) => {
-  const clinicSnap = await getDoc(doc(db, 'clinics', branchId))
-  const ownerId = clinicSnap.exists() ? String(clinicSnap.data()?.ownerId || '').trim() : ''
-  const allowedRoleIds = new Set()
-
-  if (ownerId) {
-    const rolesSnap = await getDocs(query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId)))
-    rolesSnap.docs.forEach((roleDoc) => {
-      const data = roleDoc.data() || {}
-      const permissions = Array.isArray(data.permissions)
-        ? data.permissions.map((value) => String(value || '').trim()).filter(Boolean)
-        : []
-      if (permissions.includes('consultations:view')) {
-        allowedRoleIds.add(roleDoc.id)
-      }
-    })
-  }
-
-  if (!allowedRoleIds.size) {
-    practitioners.value = []
-    practitionerSchedules.value = {}
-    practitionerLeaves.value = {}
-    return
-  }
-
-  const snapshot = await getDocs(query(collection(db, 'users'), where('branchId', '==', branchId)))
-  const list = snapshot.docs
-    .map((snap) => ({ id: snap.id, ...snap.data() }))
-    .filter((user) => {
-      const userType = String(user.userType || '').trim().toLowerCase()
-      const customRoleId = String(user.customRoleId || '').trim()
-      return userType === 'staff' && !user.archived && allowedRoleIds.has(customRoleId)
-    })
-    .map((user) => ({
-      ...user,
-      fullName:
-        String(user.fullName || '').trim() ||
-        `${String(user.firstName || '').trim()} ${String(user.lastName || '').trim()}`.trim() ||
-        'Unnamed Practitioner'
-    }))
-    .sort((a, b) => String(a.fullName || '').localeCompare(String(b.fullName || '')))
-  practitioners.value = list
-  await Promise.all([loadPractitionerSchedules(list), loadPractitionerLeaves(list)])
+  // Practitioner profiles, role assignments, schedules, and leave records are
+  // private. A customer page must not read them directly from Firestore.
+  // The booking API remains responsible for validating a submitted time slot.
+  practitioners.value = []
+  practitionerSchedules.value = {}
+  practitionerLeaves.value = {}
 }
 
 const loadBranchData = async (branchId) => {
