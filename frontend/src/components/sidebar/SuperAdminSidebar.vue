@@ -55,7 +55,6 @@ export default {
         children: [
           { label: 'Profile & Security', icon: 'profile', to: '/superadmin/account-settings' },
           { label: 'Notifications', icon: 'bell', to: '/superadmin/notifications' },
-          { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' },
         ]
       },
       { label: 'System Settings', icon: 'cog', to: '/superadmin/system-settings' }
