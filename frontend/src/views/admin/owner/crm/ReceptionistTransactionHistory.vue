@@ -5,7 +5,7 @@
     <main class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Transaction History</h1>
-        <p class="text-slate-400">All branch transactions recorded by reception and cashier flow.</p>
+          <p class="text-slate-400">Customer payment transactions recorded for this branch.</p>
       </div>
 
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
@@ -27,7 +27,7 @@
             </thead>
             <tbody class="divide-y divide-slate-700">
               <tr v-for="txn in transactions" :key="txn.id" class="hover:bg-slate-700/50 transition-colors">
-                <td class="px-6 py-4 text-white">{{ txn.clientName || 'Walk-in Client' }}</td>
+                <td class="px-6 py-4 text-white">{{ txn.clientName || txn.customerName || 'Customer' }}</td>
                 <td class="px-6 py-4 text-green-400 font-medium">{{ formatAmount(txn.amount) }}</td>
                 <td class="px-6 py-4 text-slate-300">{{ txn.method || '-' }}</td>
                 <td class="px-6 py-4">

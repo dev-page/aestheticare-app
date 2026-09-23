@@ -10,13 +10,6 @@
         </div>
         <div class="flex flex-wrap gap-3">
           <router-link
-            v-if="canCreateAppointments"
-            to="/crm/appointments/new"
-            class="rounded-lg bg-purple-500 px-4 py-2 text-sm text-white hover:bg-purple-600"
-          >
-            Add Appointment
-          </router-link>
-          <router-link
             v-if="canReviewRequests"
             to="/crm/appointments/requests"
             class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-500"

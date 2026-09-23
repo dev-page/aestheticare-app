@@ -129,7 +129,6 @@ export default {
         label: 'Clients',
         entries: [
           { label: 'Client List', to: '/crm/clients', permission: 'clients:view', feature: 'appointments', description: 'Review and search clinic clients.' },
-          { label: 'Add Client', to: '/crm/clients/new', permission: 'clients:create', feature: 'appointments', description: 'Create a new client record.' },
           { label: 'Practitioner Clients', to: '/clinical/clients', permission: 'clients:view', feature: 'appointments', description: 'Open clinical client access.' }
         ]
       },
@@ -160,7 +159,6 @@ export default {
         key: 'finance',
         label: 'Finance',
         entries: [
-          { label: 'POS', to: '/crm/pos', permission: 'payments:create', feature: 'pos_payments', description: 'Process in-clinic payments.' },
           { label: 'Transactions', to: '/crm/transactions', permission: 'payments:view', feature: 'reports', description: 'Review payment history.' },
           { label: 'Sales Ledger', to: '/finance/sales', permission: 'finance:sales:view', feature: 'reports', description: 'Open the sales ledger and reconciliation view.' },
           { label: 'Refunds', to: '/finance/refunds', permission: 'finance:refunds:view', feature: 'reports', description: 'Review refund workflows.' },

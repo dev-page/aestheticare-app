@@ -109,7 +109,7 @@
 
 <script>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
+import { doc, getDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { onAuthStateChanged } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
@@ -196,8 +196,6 @@ export default {
       router.push(getFallbackPath())
     }
 
-    const getAttendanceDocRef = () => doc(db, 'attendance', `${currentUserId.value}_${todayKey.value}`)
-
     const getCurrentLocation = () => new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error('Location is not supported by this browser.'))
       navigator.geolocation.getCurrentPosition(
@@ -249,6 +247,26 @@ export default {
       throw lastError || new Error('Attendance service is unavailable.')
     }
 
+    const loadMyAttendance = async () => {
+      const token = await auth.currentUser.getIdToken()
+      let lastError = null
+      for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+        try {
+          const response = await fetch(`${baseUrl}/attendance/my-records`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({}),
+          })
+          const data = await response.json().catch(() => ({}))
+          if (!response.ok) throw new Error(data.error || 'Unable to load your attendance records.')
+          return data.data || { record: null, history: [] }
+        } catch (error) {
+          lastError = error
+        }
+      }
+      throw lastError || new Error('Attendance service is unavailable.')
+    }
+
     const loadEmployeeProfile = async () => {
       const user = auth.currentUser
       if (!user) return
@@ -285,10 +303,9 @@ export default {
       employeeShiftStart.value = String(data.shiftStart || '').trim()
       employeeShiftEnd.value = String(data.shiftEnd || '').trim()
 
-      const attendanceSnap = await getDoc(getAttendanceDocRef())
-      attendanceRecord.value = attendanceSnap.exists() ? attendanceSnap.data() || {} : {}
-      const historySnap = await getDocs(query(collection(db, 'attendance'), where('employeeId', '==', user.uid)))
-      attendanceHistory.value = historySnap.docs.map((recordDoc) => ({ id: recordDoc.id, ...recordDoc.data() })).sort((left, right) => String(right.date || '').localeCompare(String(left.date || ''))).slice(0, 7)
+      const attendance = await loadMyAttendance()
+      attendanceRecord.value = attendance.record || {}
+      attendanceHistory.value = Array.isArray(attendance.history) ? attendance.history : []
       const previousDate = new Date(Date.parse(`${todayKey.value}T12:00:00+08:00`) - 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
       const openOvernight = attendanceHistory.value.find(record => record.date === previousDate && record.timeIn && !record.timeOut && parseClockToMinutes(record.shiftEnd) < parseClockToMinutes(record.shiftStart))
       if (openOvernight) attendanceRecord.value = openOvernight
@@ -416,7 +433,13 @@ export default {
           router.push('/login')
           return
         }
-        await loadEmployeeProfile()
+        try {
+          await loadEmployeeProfile()
+        } catch (error) {
+          console.error('Failed to load employee attendance:', error)
+          setStatus(error.message || 'Unable to load your attendance records.', 'error')
+          toast.error(error.message || 'Unable to load your attendance records.')
+        }
       })
 
       clockInterval = setInterval(() => {

@@ -273,6 +273,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         }
         case 'budget': { allow(ctx, 'finance:payables:approve'); const category = required(input.category, 'Category'), knownCategories = new Set([...items.map(item => item.category), ...records.filter(record => ['budget', 'budgetRequest'].includes(record.kind)).map(record => record.category), ...suppliers.flatMap(supplier => (supplier.offeredItems || []).map(item => item.category || item.categoryGroup || item.customCategory))].map(value => String(value || '').trim()).filter(Boolean)); demand(knownCategories.size === 0 || knownCategories.has(category), 'Choose a budget category from the approved catalog categories.', 400); result = create('budget', { status: 'Active', department: required(input.department, 'Department'), category, period: input.period ? String(input.period).slice(0, 7) : '', notes: String(input.notes || '').slice(0, 4000), total: money(input.total), committed: 0, spent: 0 }); break }
         case 'rfq': {
+          demand(false, 'RFQs are no longer used. Procurement sends the catalog-priced request directly to Finance.', 410)
           allow(ctx, 'procurement:create'); const p = get(input.procurementId, 'procurement'); demand(['Received', 'Verified'].includes(p.status) && !p.rfqId, 'This procurement already has an active sourcing process.')
           demand(['Manual', 'Online'].includes(input.mode), 'Choose a procurement mode.', 400)
           const supplierIds = [...new Set(input.supplierIds || [])]; demand(supplierIds.length > 0 && supplierIds.length <= 20, 'Select 1–20 suppliers.'); supplierIds.forEach(id => { const selectedSupplier = supplier(id); demand(p.lines.every(line => supplierCanProvideLine(selectedSupplier, line)), 'Each invited supplier must offer every requested supply in its catalog.', 400) })
@@ -282,6 +283,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           set(p, { status: 'RFQ Preparation', mode: input.mode, rfqId: result.id, officer: ctx.uid, method: String(input.method || ''), strategy: String(input.strategy || '') }); break
         }
         case 'quotation': {
+          demand(false, 'Supplier quotations are no longer used. The supplier catalog is the source of commercial terms.', 410)
           const r = get(input.rfqId, 'rfq'); const supplierId = cleanId(input.supplierId); supplier(supplierId)
           demand(r.supplierIds.includes(supplierId), 'Supplier is not invited to this RFQ.', 403)
           manualOrSupplier({ ...r, supplierId }); demand(['Open', 'Quotation Received'].includes(r.status) && r.deadline >= day(), 'RFQ is closed or its deadline has passed.')
@@ -350,17 +352,17 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           const supplierIds = [...new Set(r.lines.map(line => line.supplierId))]
           demand(supplierIds.length === 1, 'A funding request must contain products from one supplier. Return the request to Inventory to revise it.', 400)
           demand(!r.budgetRequestId, 'A budget request has already been created for this procurement request.')
-          const totals = quoteTotals(input)
-          demand(totals.lines.length === r.lines.length && totals.lines.every(line => { const source = r.lines.find(candidate => candidate.itemId === line.itemId); return source && Number(source.quantity) === Number(line.quantity) }), 'The supplier quote must cover every requested item and quantity.', 400)
           const supplierId = supplierIds[0]
-          const overrideReason = String(input.commercialOverrideReason || '').trim()
-          const expectedTerms = catalogCommercialTerms(r, totals, Boolean(overrideReason))
-          const termsMatch = totals.tax === expectedTerms.tax && totals.discount === expectedTerms.discount && totals.otherCharges === expectedTerms.otherCharges && totals.lines.every(line => {
-            const source = r.lines.find(candidate => candidate.itemId === line.itemId), product = source && supplier(supplierId).offeredItems[supplierCatalogIndexForLine(supplier(supplierId).offeredItems || [], source)]
-            return product && line.unitPrice === money(product.price || product.unitCost || 0)
-          })
-          demand(termsMatch || overrideReason, 'Quote tax, discount, other charges, or unit price differs from the supplier catalog. Provide a negotiated-terms reason.', 400)
-          const budgetRequest = create('budgetRequest', { status: 'Submitted', directSupplierQuote: true, supplierId, procurementId: r.id, requestedAmount: totals.total, recommendedAmount: totals.total, department: r.department, category: String(input.category || r.lines[0]?.category || 'Procurement'), lines: totals.lines, subtotal: totals.subtotal, tax: totals.tax, delivery: totals.delivery, otherCharges: totals.otherCharges, discount: totals.discount, paymentTerms: required(input.paymentTerms, 'Payment terms'), warranty: String(input.warranty || ''), deliveryDate: dateKey(input.deliveryDate || r.requiredDate), deliveryLocation: required(input.deliveryLocation || r.lines[0]?.location, 'Delivery location'), terms: required(input.terms || 'Per approved inventory request', 'Purchase terms'), quoteNotes: String(input.quoteNotes || ''), commercialTermsOverride: termsMatch ? null : { reason: required(overrideReason, 'Negotiated-terms reason'), expected: expectedTerms, submitted: { tax: totals.tax, discount: totals.discount, otherCharges: totals.otherCharges }, authorizedBy: ctx.uid, authorizedAt: now }, quotedBy: ctx.uid, quotedAt: now, links: [...linksOf(r), r.id] })
+          // Procurement may verify catalog terms but cannot alter them. The
+          // supplier catalog is the authoritative source of price, tax,
+          // discount, and per-unit charges sent to Finance.
+          const lines = r.lines.map(line => ({ ...line, total: Number(line.quantity) * Number(line.unitPrice) }))
+          const subtotal = lines.reduce((sum, line) => sum + line.total, 0)
+          const catalogTerms = catalogCommercialTerms(r, { lines })
+          const totals = { lines, subtotal, tax: catalogTerms.tax, delivery: 0, otherCharges: catalogTerms.otherCharges, discount: catalogTerms.discount }
+          totals.total = totals.subtotal + totals.tax + totals.delivery + totals.otherCharges - totals.discount
+          demand(totals.total > 0, 'The supplier catalog total must be positive.', 400)
+          const budgetRequest = create('budgetRequest', { status: 'Submitted', directSupplierCatalog: true, supplierId, procurementId: r.id, requestedAmount: totals.total, recommendedAmount: totals.total, department: r.department, category: String(input.category || r.lines[0]?.category || 'Procurement'), lines: totals.lines, subtotal: totals.subtotal, tax: totals.tax, delivery: totals.delivery, otherCharges: totals.otherCharges, discount: totals.discount, paymentTerms: required(input.paymentTerms, 'Payment terms'), warranty: String(input.warranty || ''), deliveryDate: dateKey(input.deliveryDate || r.requiredDate), deliveryLocation: required(input.deliveryLocation || r.lines[0]?.location, 'Delivery location'), terms: required(input.terms || 'Per approved inventory request', 'Purchase terms'), catalogPricingVerifiedBy: ctx.uid, catalogPricingVerifiedAt: now, links: [...linksOf(r), r.id] })
           result = set(r, { status: 'For Finance Approval', supplierId, verifiedBy: ctx.uid, verifiedAt: now, budgetRequestId: budgetRequest.id, checklist: { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true } })
         } else if (action === 'return') {
           demand(r.status === 'Received', 'Only newly received requests can be returned.')
@@ -396,7 +398,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         if (action === 'resubmit') { allow(ctx, 'procurement:review'); demand(['Returned', 'Rejected'].includes(r.status), 'This request cannot be resubmitted.'); result = set(r, { status: 'Submitted', revision: required(input.remarks, 'Revision details') }) }
         else { allow(ctx, 'finance:payables:approve'); const ownerSelfApproval = ctx.roleKey === 'Owner' && r.createdBy === ctx.uid; demand(r.createdBy !== ctx.uid || ownerSelfApproval, 'Finance approval must be performed by another user.'); demand(r.status === 'Submitted', 'Budget request is not awaiting a decision.')
           if (action === 'approve') {
-            demand((r.quotationId || r.directSupplierQuote) && Array.isArray(r.lines) && r.lines.length, 'Funding requests must include Procurement’s verified supplier quote.', 400)
+            demand((r.quotationId || r.directSupplierCatalog || r.directSupplierQuote) && Array.isArray(r.lines) && r.lines.length, 'Funding requests must include Procurement’s verified supplier catalog terms.', 400)
             const budget = get(input.budgetId, 'budget'); demand(budget.department === r.department && budget.category === r.category, 'Budget department/category must match the request.')
             const approvedAmount = money(input.approvedAmount); demand(approvedAmount >= r.requestedAmount && approvedAmount <= budget.total - budget.committed - budget.spent, 'Insufficient available budget, or approved amount is below the quotation.')
             set(budget, { committed: budget.committed + approvedAmount })
@@ -404,7 +406,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             const approval = create('financeApproval', { status: 'Approved', budgetRequestId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...linksOf(r), r.id] }, `approval-${r.id}`)
             const allocation = create('budgetAllocation', { status: 'Committed', budgetRequestId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...linksOf(approval), approval.id] }, `allocation-${r.id}`)
             result = set(r, { status: 'Approved', budgetId: budget.id, approvedAmount, approvedBy: ctx.uid, approvedAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
-            create('po', { lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, total: r.requestedAmount, sourceQuotationId: r.quotationId || '', directSupplierQuote: Boolean(r.directSupplierQuote), mode: r.mode || 'Online', supplierId: r.supplierId, paymentTerms: r.paymentTerms, warranty: r.warranty, status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...linksOf(allocation), allocation.id, ...(r.quotationId ? [r.quotationId] : [])], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
+            create('po', { lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, total: r.requestedAmount, sourceQuotationId: r.quotationId || '', directSupplierCatalog: Boolean(r.directSupplierCatalog || r.directSupplierQuote), mode: r.mode || 'Online', supplierId: r.supplierId, paymentTerms: r.paymentTerms, warranty: r.warranty, status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...linksOf(allocation), allocation.id, ...(r.quotationId ? [r.quotationId] : [])], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
           } else { demand(['reject', 'return'].includes(action), 'Invalid action.'); result = set(r, { status: action === 'reject' ? 'Rejected' : 'Returned', remarks: required(input.remarks, 'Decision reason'), reviewedBy: ctx.uid, reviewedAt: now }) }
         }
       } else if (r.kind === 'po') {

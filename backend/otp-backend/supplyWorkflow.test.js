@@ -28,20 +28,14 @@ function fixture() {
   return { store, seed, call, create, act, read, evidence }
 }
 
-for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, partial receiving, matching and payment`, async () => {
+for (const mode of ['Online']) test(`${mode}: catalog-priced request to funded PO, partial receiving, matching and payment`, async () => {
   const f = fixture(), date = '2099-12-31'
   const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 100, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Replenishment', requiredDate: date })
   assert.equal(f.read(request).status, 'Sent to Procurement')
   const aboveAvailable = await f.call('inventory', '/supply/records', { kind: 'request', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 1001, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Replenishment', requiredDate: date })
   assert.equal(aboveAvailable.status, 400)
   const procurement = f.read(request).procurementId
-  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true }, 400)
-  const rfq = await f.create('procurement', 'rfq', { procurementId: procurement, mode, supplierIds: ['vendor'], deadline: date, deliveryDate: date, deliveryLocation: 'Clinic', terms: 'Deliver sealed boxes', contact: 'Procurement' })
-  if (mode === 'Manual') f.evidence(rfq)
-  await f.act('procurement', rfq, 'send')
-  const quotation = await f.create(mode === 'Online' ? 'supplier' : 'procurement', 'quotation', { rfqId: rfq, supplierId: 'vendor', validUntil: date, leadDays: 2, paymentTerms: 'Net 30', warranty: 'None', lines: [{ itemId: 'item', quantity: 100, unitPrice: 5 }], tax: 20, delivery: 15, otherCharges: 10, discount: 5 })
-  if (mode === 'Manual') f.evidence(quotation)
-  await f.act('procurement', quotation, 'select', { recommendation: 'Best value', justification: 'Complete compliant quotation', category: 'Materials' })
+  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true, category: 'Materials', paymentTerms: 'Net 30', warranty: 'None', deliveryDate: date, deliveryLocation: 'Clinic', terms: 'Deliver sealed boxes' })
   const budgetRequest = f.read(procurement).budgetRequestId
   const budget = await f.create('finance', 'budget', { department: 'Inventory', category: 'Materials', total: 1000 })
   await f.act('finance', budgetRequest, 'approve', { budgetId: budget, approvedAmount: 550, remarks: 'Within allocation' })
@@ -50,12 +44,11 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   assert.equal(f.read(`approval-${budgetRequest}`).status, 'Approved')
   assert.equal(f.read(`allocation-${budgetRequest}`).status, 'Committed')
   const po = `po-${budgetRequest}`
-  assert.equal(f.read(po).tax, 2000)
-  assert.equal(f.read(po).delivery, 1500)
-  assert.equal(f.read(po).otherCharges, 1000)
-  assert.equal(f.read(po).discount, 500)
-  assert.equal(f.read(po).total, 54000)
-  if (mode === 'Manual') f.evidence(po)
+  assert.equal(f.read(po).tax, 0)
+  assert.equal(f.read(po).delivery, 0)
+  assert.equal(f.read(po).otherCharges, 0)
+  assert.equal(f.read(po).discount, 0)
+  assert.equal(f.read(po).total, 50000)
   await f.act('procurement', po, 'issue')
   await f.act('competitor', po, 'confirm', { remarks: 'Wrong supplier', deliveryDate: date }, 403)
   await f.act(mode === 'Online' ? 'supplier' : 'procurement', po, 'confirm', { remarks: 'Confirmed', deliveryDate: date })
@@ -70,7 +63,7 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   const discrepancy = [...f.store.entries()].find(([key, value]) => key.startsWith('supplyRecords/') && value.kind === 'discrepancy' && value.receivingId === first)?.[1]
   assert.ok(discrepancy)
   await f.act('logistics', discrepancy.id, 'resolve', { resolutionType: 'Replacement', remarks: 'Supplier will replace five damaged boxes' })
-  const invoice = await f.create(mode === 'Online' ? 'supplier' : 'finance', 'invoice', { poId: po, invoiceNumber: 'INV1', invoiceDate: date, dueDate: date, lines: [{ itemId: 'item', quantity: 100, unitPrice: 5 }], tax: 20, delivery: 15, otherCharges: 10, discount: 5 })
+  const invoice = await f.create(mode === 'Online' ? 'supplier' : 'finance', 'invoice', { poId: po, invoiceNumber: 'INV1', invoiceDate: date, dueDate: date, lines: [{ itemId: 'item', quantity: 100, unitPrice: 5 }], tax: 0, delivery: 0, otherCharges: 0, discount: 0 })
   assert.equal(f.store.get(`financialRecords/supply-${invoice}`).status, 'Unpaid')
   f.evidence(invoice); await f.act('finance', invoice, 'startVerification'); await f.act('finance', invoice, 'verify'); assert.equal(f.read(invoice).status, 'Disputed')
   await f.act('finance', invoice, 'pay', {}, 409)
@@ -87,7 +80,7 @@ for (const mode of ['Manual', 'Online']) test(`${mode}: request to funded PO, pa
   await f.act('finance', payment, 'startPayment')
   await f.act('finance', invoice, 'pay', { proofId: f.evidence(payment), method: 'Manual/External', reference: 'BANK1', paymentDate: date })
   await f.act('finance', invoice, 'pay')
-  assert.equal(f.read(po).status, 'Completed'); assert.equal(f.read(budget).committed, 0); assert.equal(f.read(budget).spent, 54000)
+  assert.equal(f.read(po).status, 'Completed'); assert.equal(f.read(budget).committed, 0); assert.equal(f.read(budget).spent, 50000)
   assert.equal(f.store.get(`financialRecords/supply-${invoice}`).status, 'Paid')
   assert.equal(f.read(`allocation-${budgetRequest}`).status, 'Settled')
   const own = await f.call('supplier', '/supply/workspace', {}, undefined, 'GET')
@@ -127,21 +120,21 @@ test('Supplier catalog commercial terms are validated and audited on the server'
   assert.equal(foreign.status, 403)
 })
 
-test('Procurement can record a direct supplier quote without creating an RFQ', async () => {
+test('Procurement sends supplier catalog terms directly to Finance without an RFQ', async () => {
   const f = fixture(), date = '2099-12-31'
   const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date, location: 'Main clinic' })
   const procurement = f.read(request).procurementId
-  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true, category: 'Materials', paymentTerms: 'Net 30', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes', lines: [{ itemId: 'item', quantity: 20, unitPrice: 5 }], tax: 12, delivery: 8, otherCharges: 0, discount: 0, commercialOverrideReason: 'Supplier provided a documented VAT-exclusive, delivered quote.' })
+  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true, category: 'Materials', paymentTerms: 'Net 30', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes' })
   const funding = f.read(f.read(procurement).budgetRequestId)
-  assert.equal(funding.directSupplierQuote, true)
-  assert.equal(funding.commercialTermsOverride.reason, 'Supplier provided a documented VAT-exclusive, delivered quote.')
-  assert.equal(funding.requestedAmount, 12000)
+  assert.equal(funding.directSupplierCatalog, true)
+  assert.equal(funding.requestedAmount, 10000)
   const budget = await f.create('finance', 'budget', { department: 'Inventory', category: 'Materials', total: 200 })
-  await f.act('finance', funding.id, 'approve', { budgetId: budget, approvedAmount: 120, remarks: 'Approved from verified supplier quote' })
+  await f.act('finance', funding.id, 'approve', { budgetId: budget, approvedAmount: 100, remarks: 'Approved from verified supplier catalog' })
   const po = f.read(`po-${funding.id}`)
-  assert.equal(po.directSupplierQuote, true)
-  assert.equal(po.tax, 1200)
-  assert.equal(po.delivery, 800)
+  assert.equal(po.directSupplierCatalog, true)
+  assert.equal(po.total, 10000)
+  assert.equal(po.tax, 0)
+  assert.equal(po.delivery, 0)
 })
 
 test('Self approval, cross-branch writes and read-only document uploads are rejected', async () => {
