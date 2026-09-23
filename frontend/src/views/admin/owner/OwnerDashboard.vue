@@ -617,7 +617,7 @@ const renderEmployeeChart = () => {
         <section class="dashboard-hero">
           <div class="dashboard-hero-copy">
             <p class="dashboard-kicker">Owner overview</p>
-            <h1 class="dashboard-title">Branch Overview</h1>
+            <h1 class="dashboard-title" data-onboarding-key="owner-dashboard-title">Branch Overview</h1>
             <p class="dashboard-subtitle">Monitor clinic locations, employees, daily operations, and revenue performance in one view.</p>
           </div>
 

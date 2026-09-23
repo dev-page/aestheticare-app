@@ -20,7 +20,7 @@
         <div class="support-content">
           <div :class="isModuleView ? 'support-header support-header-module' : 'support-header'">
             <p :class="isModuleView ? 'support-eyebrow support-eyebrow-module' : 'support-eyebrow'">
-              {{ isModuleView ? 'Module Support' : 'Support Center' }}
+              {{ isModuleView ? (panelKey === 'supplier' ? 'Supplier Support' : 'Module Support') : 'Support Center' }}
             </p>
             <h1 :class="isModuleView ? 'support-title support-title-module' : 'support-title'">Report an Issue</h1>
             <p :class="isModuleView ? 'support-subtitle support-subtitle-module' : 'support-subtitle'">
@@ -235,7 +235,7 @@ export default {
       if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return 'owner'
       return ''
     })
-    const isModuleView = computed(() => ['owner', 'employee'].includes(panelKey.value))
+    const isModuleView = computed(() => ['owner', 'employee', 'supplier'].includes(panelKey.value))
     const showClinicSelector = computed(() => Boolean(branchId.value) || ['Clinic Complaint', 'Service Complaint', 'Employee Complaint'].includes(category.value) || panelKey.value === 'customer')
     const clinicSelectionRequired = computed(() => ['Clinic Complaint', 'Service Complaint', 'Employee Complaint'].includes(category.value))
 
@@ -817,13 +817,17 @@ export default {
 }
 [data-panel="supplier"] .support-file-input,
 [data-panel="supplier"] .support-remove-file {
-  color: #7b4a2f;
+  color: #ead8ca;
+}
+
+[data-panel="supplier"] .support-eyebrow-module {
+  color: #d6a878;
 }
 
 [data-panel="supplier"] .support-file-input::file-selector-button {
-  border: 1px solid #d8b289;
-  background: #fff8ef;
-  color: #7b4a2f;
+  border: 1px solid #6a4c33;
+  background: #2a1c13;
+  color: #f2e2d2;
 }
 
 [data-panel="supplier"] .support-submit-button {

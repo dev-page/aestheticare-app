@@ -3,12 +3,17 @@
     <div v-if="isOpen" class="onboarding-tour-layer pointer-events-none fixed inset-0 z-[10000]" aria-live="polite">
       <div
         v-if="highlightStyle"
-        class="pointer-events-none absolute rounded-xl border-2 border-amber-300 shadow-[0_0_0_3px_rgba(252,211,77,0.25),0_0_24px_rgba(252,211,77,0.75)] transition-all duration-300"
+        class="onboarding-spotlight pointer-events-none absolute rounded-xl border-2 border-amber-300"
         :style="highlightStyle"
+        aria-hidden="true"
       ></div>
 
       <section
-        :class="['onboarding-tooltip', { 'onboarding-tooltip-module': panelKey && panelKey !== 'customer' }]"
+        :class="[
+          'onboarding-tooltip',
+          { 'onboarding-tooltip-module': panelKey && panelKey !== 'customer' },
+          { 'onboarding-tooltip-supplier': panelKey === 'supplier' },
+        ]"
         :data-placement="tooltipPlacement"
         ref="tooltipElement"
         :style="tooltipStyle"
@@ -71,156 +76,304 @@ const props = defineProps({
 const emit = defineEmits(['close', 'next', 'previous', 'update:dontShowAgain'])
 const targetRect = ref(null)
 const tooltipElement = ref(null)
-const tooltipPosition = ref(null)
+const tooltipPosition = ref({ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' })
 const tooltipPlacement = ref('center')
+const positionReady = ref(false)
+
+const TARGET_PADDING = 3
+const TOOLTIP_GAP = 16
+const VIEWPORT_MARGIN = 12
+const TOOLTIP_MAX_WIDTH = 336
+let targetElement = null
 let targetObserver = null
+let layoutObserver = null
+let mutationObserver = null
+let refreshFrame = 0
+let syncSequence = 0
+let placementSequence = 0
 
 const close = () => emit('close')
 const next = () => emit('next')
 const previous = () => emit('previous')
 
-const updateTarget = () => {
-  const selector = String(props.step?.selector || '').trim()
-  const element = selector ? document.querySelector(selector) : null
-  if (!element) {
-    targetRect.value = null
-    return
+const highlightStyle = computed(() => {
+  if (!targetRect.value) return null
+  const rect = targetRect.value
+  return {
+    top: `${rect.top - TARGET_PADDING}px`,
+    left: `${rect.left - TARGET_PADDING}px`,
+    width: `${rect.width + TARGET_PADDING * 2}px`,
+    height: `${rect.height + TARGET_PADDING * 2}px`,
   }
+})
+
+const tooltipStyle = computed(() => ({ ...tooltipPosition.value, visibility: positionReady.value ? 'visible' : 'hidden' }))
+
+const readTargetRect = () => {
+  if (!targetElement?.isConnected) return false
+  const rect = targetElement.getBoundingClientRect()
+  targetRect.value = { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }
+  return true
+}
+
+const targetIsInViewport = (rect) => {
+  const oversized = rect.height > window.innerHeight - (VIEWPORT_MARGIN + TARGET_PADDING) * 2 ||
+    rect.width > window.innerWidth - (VIEWPORT_MARGIN + TARGET_PADDING) * 2
+  const intersectsViewport = rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth
+  if (oversized) return intersectsViewport
+
+  return rect.top >= VIEWPORT_MARGIN + TARGET_PADDING &&
+    rect.left >= 0 &&
+    rect.bottom <= window.innerHeight - VIEWPORT_MARGIN - TARGET_PADDING &&
+    rect.right <= window.innerWidth
+}
+
+const waitForScrollSettle = () => new Promise((resolve) => {
+  let settled = false
+  const finish = () => {
+    if (settled) return
+    settled = true
+    window.clearTimeout(timeout)
+    window.removeEventListener('scrollend', finish)
+    resolve()
+  }
+  const timeout = window.setTimeout(finish, 550)
+  window.addEventListener('scrollend', finish, { once: true })
+})
+
+const ensureTargetVisible = async (element) => {
   const rect = element.getBoundingClientRect()
-  targetRect.value = { top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12 }
+  if (targetIsInViewport(rect)) return
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  element.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center', inline: 'nearest' })
+  if (!reduceMotion) await waitForScrollSettle()
+  await nextTick()
+}
+
+const findTarget = async (selector, sequence) => {
+  if (!selector) return null
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    if (sequence !== syncSequence || !props.isOpen) return null
+    const element = document.querySelector(selector)
+    if (element) return element
+    await new Promise((resolve) => window.setTimeout(resolve, 100))
+  }
+  return null
 }
 
 const observeTarget = () => {
-  if (!targetObserver) return
-  targetObserver.disconnect()
-  const selector = String(props.step?.selector || '').trim()
-  const element = selector ? document.querySelector(selector) : null
-  if (!element) return
-  targetObserver.observe(element)
-  const sidebar = element.closest('aside')
-  if (sidebar) targetObserver.observe(sidebar)
+  targetObserver?.disconnect()
+  if (!targetObserver || !targetElement) return
+  const ancestors = [targetElement, targetElement.parentElement, targetElement.closest('main, aside')].filter(Boolean)
+  for (const element of new Set(ancestors)) targetObserver.observe(element)
 }
 
-const highlightStyle = computed(() => {
-  if (!targetRect.value) return null
-  return { top: `${targetRect.value.top}px`, left: `${targetRect.value.left}px`, width: `${targetRect.value.width}px`, height: `${targetRect.value.height}px` }
-})
+const collisionFreeRect = (direction, target, width, height, available) => {
+  const centeredLeft = target.left + (target.width - width) / 2
+  const centeredTop = target.top + (target.height - height) / 2
+  let left = centeredLeft
+  let top = centeredTop
 
-const tooltipStyle = computed(() => {
-  if (tooltipPosition.value) return tooltipPosition.value
-  const rect = targetRect.value
-  const cardWidth = Math.min(368, window.innerWidth - 24)
-  if (!rect) {
-    return {
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      maxHeight: 'calc(100vh - 2rem)',
-    }
+  if (direction === 'right') left = target.right + TARGET_PADDING + TOOLTIP_GAP
+  if (direction === 'left') left = target.left - TARGET_PADDING - TOOLTIP_GAP - width
+  if (direction === 'below') top = target.bottom + TARGET_PADDING + TOOLTIP_GAP
+  if (direction === 'above') top = target.top - TARGET_PADDING - TOOLTIP_GAP - height
+
+  if (direction === 'right' || direction === 'left') {
+    top = Math.max(VIEWPORT_MARGIN, Math.min(top, window.innerHeight - VIEWPORT_MARGIN - height))
+  } else {
+    left = Math.max(VIEWPORT_MARGIN, Math.min(left, window.innerWidth - VIEWPORT_MARGIN - width))
   }
 
-  const gap = 14
-  const preferredLeft = rect.left + rect.width + gap
-  const left = preferredLeft + cardWidth <= window.innerWidth - 12
-    ? preferredLeft
-    : Math.max(12, rect.left)
-  const preferredTop = preferredLeft + cardWidth <= window.innerWidth - 12
-    ? rect.top
-    : rect.top + rect.height + gap
-  const top = Math.min(Math.max(12, preferredTop), Math.max(12, window.innerHeight - 300))
+  const box = { left, top, right: left + width, bottom: top + height }
+  const overlapsTarget = box.left < target.right + TOOLTIP_GAP &&
+    box.right > target.left - TOOLTIP_GAP &&
+    box.top < target.bottom + TOOLTIP_GAP &&
+    box.bottom > target.top - TOOLTIP_GAP
+  const insideViewport = left >= VIEWPORT_MARGIN && top >= VIEWPORT_MARGIN &&
+    box.right <= window.innerWidth - VIEWPORT_MARGIN && box.bottom <= window.innerHeight - VIEWPORT_MARGIN
+  return { ...box, overlapsTarget, insideViewport, available }
+}
 
-  return {
-    top: `${top}px`,
-    left: `${Math.min(left, Math.max(12, window.innerWidth - cardWidth - 12))}px`,
-    maxHeight: 'calc(100vh - 1.5rem)',
-  }
-})
+const getPlacementCandidates = (target) => {
+  const width = window.innerWidth
+  const height = window.innerHeight
+  const targetLeft = target.left - TARGET_PADDING
+  const targetRight = target.right + TARGET_PADDING
+  const targetTop = target.top - TARGET_PADDING
+  const targetBottom = target.bottom + TARGET_PADDING
+  const verticalRoom = height - VIEWPORT_MARGIN * 2
+  const horizontalRoom = width - VIEWPORT_MARGIN * 2
 
-const updateTooltipPosition = () => {
-  const rect = targetRect.value
-  if (!rect || !tooltipElement.value) return
+  return [
+    { direction: 'right', width: width - VIEWPORT_MARGIN - targetRight - TOOLTIP_GAP, height: verticalRoom, priority: 4 },
+    { direction: 'left', width: targetLeft - TOOLTIP_GAP - VIEWPORT_MARGIN, height: verticalRoom, priority: 3 },
+    { direction: 'below', width: horizontalRoom, height: height - VIEWPORT_MARGIN - targetBottom - TOOLTIP_GAP, priority: 2 },
+    { direction: 'above', width: horizontalRoom, height: targetTop - TOOLTIP_GAP - VIEWPORT_MARGIN, priority: 1 },
+  ].map((candidate) => ({ ...candidate, width: Math.max(0, candidate.width), height: Math.max(0, candidate.height) }))
+}
 
-  const margin = 12
-  const gap = 14
+const updateTooltipPosition = async () => {
+  if (!targetRect.value || !tooltipElement.value) return
+  const sequence = ++placementSequence
+  const target = targetRect.value
+  const naturalWidth = Math.min(TOOLTIP_MAX_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2)
+  const naturalHeight = tooltipElement.value.getBoundingClientRect().height || 360
+  const candidates = getPlacementCandidates(target)
+    .filter((candidate) => candidate.width >= 180 && candidate.height >= 150)
+    .map((candidate) => {
+      const width = Math.min(naturalWidth, candidate.width)
+      const estimatedHeight = Math.min(candidate.height, naturalHeight * (naturalWidth / width))
+      const box = collisionFreeRect(candidate.direction, target, width, estimatedHeight, candidate)
+      const fits = candidate.width >= naturalWidth && candidate.height >= naturalHeight
+      const capacity = Math.min(1, candidate.width / naturalWidth) * Math.min(1, candidate.height / naturalHeight)
+      return { ...candidate, width, estimatedHeight, box, score: (fits ? 1000 : 0) + capacity * 100 + candidate.priority }
+    })
+    .filter((candidate) => !candidate.box.overlapsTarget && candidate.box.insideViewport)
+    .sort((a, b) => b.score - a.score)
 
-  // A sidebar consumes most of a phone-sized viewport. A floating card has no
-  // reliable place to go there, so use a deliberate bottom-sheet layout.
-  if (window.innerWidth <= 767) {
-    tooltipPlacement.value = 'bottom-sheet'
-    tooltipPosition.value = {
-      right: `${margin}px`,
-      bottom: `${margin}px`,
-      left: `${margin}px`,
-      width: `calc(100vw - ${margin * 2}px)`,
-      maxHeight: 'calc(100vh - 1.5rem)',
-    }
+  const placement = candidates[0]
+  if (!placement) {
+    // A target can fill most of a small viewport. Keep the tooltip in the
+    // largest free region and constrain its contents rather than covering it.
+    const fallback = getPlacementCandidates(target)
+      .filter((candidate) => candidate.width > 0 && candidate.height > 0)
+      .sort((a, b) => b.width * b.height - a.width * a.height)[0]
+    if (!fallback) return
+    const width = Math.min(naturalWidth, fallback.width)
+    const height = Math.min(naturalHeight, fallback.height)
+    const box = collisionFreeRect(fallback.direction, target, width, height, fallback)
+    tooltipPlacement.value = fallback.direction
+    tooltipPosition.value = { top: `${box.top}px`, left: `${box.left}px`, width: `${width}px`, maxHeight: `${fallback.height}px` }
     return
   }
 
-  const tooltipWidth = tooltipElement.value.offsetWidth || Math.min(368, window.innerWidth - 24)
-  const tooltipHeight = tooltipElement.value.offsetHeight || 330
-  const rightSpace = window.innerWidth - (rect.left + rect.width + gap)
-  const canPlaceRight = rightSpace >= tooltipWidth + margin
-  const maxLeft = Math.max(margin, window.innerWidth - tooltipWidth - margin)
-  const left = canPlaceRight
-    ? rect.left + rect.width + gap
-    : Math.min(Math.max(margin, rect.left), maxLeft)
-  const belowTop = rect.top + rect.height + gap
-  const aboveTop = rect.top - tooltipHeight - gap
-  const top = belowTop + tooltipHeight <= window.innerHeight - margin
-    ? belowTop
-    : Math.max(margin, aboveTop)
-  const maxTop = Math.max(margin, window.innerHeight - tooltipHeight - margin)
-
+  tooltipPlacement.value = placement.direction
   tooltipPosition.value = {
-    top: `${Math.max(margin, Math.min(top, maxTop))}px`,
-    left: `${Math.max(margin, left)}px`,
-    maxHeight: `calc(100vh - ${margin * 2}px)`,
+    top: `${VIEWPORT_MARGIN}px`,
+    left: `${VIEWPORT_MARGIN}px`,
+    width: `${placement.width}px`,
+    maxHeight: `${placement.height}px`,
   }
-  tooltipPlacement.value = canPlaceRight ? 'right' : 'below'
+  await nextTick()
+  if (sequence !== placementSequence) return
+
+  const actual = tooltipElement.value.getBoundingClientRect()
+  const box = collisionFreeRect(placement.direction, target, actual.width, actual.height, placement)
+  tooltipPosition.value = {
+    top: `${box.top}px`,
+    left: `${box.left}px`,
+    width: `${placement.width}px`,
+    maxHeight: `${placement.height}px`,
+  }
 }
 
 const syncTarget = async () => {
+  const sequence = ++syncSequence
+  placementSequence += 1
+  positionReady.value = false
   await nextTick()
-  updateTarget()
+  if (!props.isOpen) {
+    targetElement = null
+    targetRect.value = null
+    return
+  }
+
+  const selector = String(props.step?.selector || '').trim()
+  targetElement = await findTarget(selector, sequence)
+  if (sequence !== syncSequence) return
+
+  if (!targetElement) {
+    targetRect.value = null
+    tooltipPlacement.value = 'center'
+    tooltipPosition.value = { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: `min(92vw, ${TOOLTIP_MAX_WIDTH}px)`, maxHeight: `calc(100vh - ${VIEWPORT_MARGIN * 2}px)` }
+    positionReady.value = true
+    return
+  }
+
+  await ensureTargetVisible(targetElement)
+  if (sequence !== syncSequence || !readTargetRect()) return
   observeTarget()
-  tooltipPosition.value = null
+  tooltipPosition.value = { top: `${VIEWPORT_MARGIN}px`, left: `${VIEWPORT_MARGIN}px`, width: `min(92vw, ${TOOLTIP_MAX_WIDTH}px)`, maxHeight: `calc(100vh - ${VIEWPORT_MARGIN * 2}px)` }
   await nextTick()
-  updateTooltipPosition()
-  // The next step can also navigate to a new customer page. Give the
-  // sidebar time to remount before measuring its target item.
-  window.setTimeout(() => { updateTarget(); updateTooltipPosition() }, 120)
-  window.setTimeout(() => { updateTarget(); updateTooltipPosition() }, 350)
+  await updateTooltipPosition()
+  if (sequence === syncSequence) positionReady.value = true
 }
+
+const refreshPosition = () => {
+  if (refreshFrame) return
+  refreshFrame = window.requestAnimationFrame(() => {
+    refreshFrame = 0
+    if (!props.isOpen) return
+    if (!targetElement?.isConnected) {
+      syncTarget()
+      return
+    }
+    readTargetRect()
+    updateTooltipPosition()
+  })
+}
+
+const handleResize = () => syncTarget()
 
 watch(() => [props.isOpen, props.stepIndex, props.step?.selector], syncTarget, { immediate: true })
 
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined') {
-    targetObserver = new ResizeObserver(() => {
-      updateTarget()
-      updateTooltipPosition()
-    })
+    targetObserver = new ResizeObserver(refreshPosition)
+    layoutObserver = new ResizeObserver(refreshPosition)
+    layoutObserver.observe(document.documentElement)
+    layoutObserver.observe(document.body)
   }
+  if (typeof MutationObserver !== 'undefined') {
+    mutationObserver = new MutationObserver(() => {
+      if (targetElement && !targetElement.isConnected) {
+        targetElement = null
+        targetRect.value = null
+        syncTarget()
+      }
+      else if (targetElement) refreshPosition()
+      else {
+        const selector = String(props.step?.selector || '').trim()
+        if (props.isOpen && selector && document.querySelector(selector)) syncTarget()
+      }
+    })
+    mutationObserver.observe(document.body, { childList: true, subtree: true })
+  }
+  window.addEventListener('resize', handleResize)
+  window.addEventListener('scroll', refreshPosition, true)
+  document.fonts?.ready?.then(refreshPosition)
   syncTarget()
-  window.addEventListener('resize', syncTarget)
-  window.addEventListener('scroll', syncTarget, true)
 })
 
 onBeforeUnmount(() => {
+  syncSequence += 1
   targetObserver?.disconnect()
-  window.removeEventListener('resize', syncTarget)
-  window.removeEventListener('scroll', syncTarget, true)
+  layoutObserver?.disconnect()
+  mutationObserver?.disconnect()
+  if (refreshFrame) window.cancelAnimationFrame(refreshFrame)
+  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('scroll', refreshPosition, true)
 })
 </script>
 
 <style scoped>
+.onboarding-spotlight {
+  z-index: 1;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 9999px rgba(16, 10, 7, .68), 0 0 0 3px rgba(252, 211, 77, .25), 0 0 24px rgba(252, 211, 77, .75);
+  transition: top .18s ease, left .18s ease, width .18s ease, height .18s ease;
+}
+
 .onboarding-tooltip {
   position: fixed;
-  z-index: 1;
+  z-index: 2;
   pointer-events: auto;
   width: min(92vw, 21rem);
-  overflow: hidden;
+  max-width: calc(100vw - 24px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 1rem;
   border: 1px solid rgba(245, 214, 187, .7);
   background: linear-gradient(135deg, #fffaf2, #fff, #f8e7cf);
@@ -245,6 +398,19 @@ onBeforeUnmount(() => {
   top: -7px;
   left: 2rem;
   transform: rotate(225deg);
+}
+
+.onboarding-tooltip[data-placement='left']::after {
+  right: -7px;
+  left: auto;
+  transform: rotate(225deg);
+}
+
+.onboarding-tooltip[data-placement='above']::after {
+  top: auto;
+  bottom: -7px;
+  left: 2rem;
+  transform: rotate(45deg);
 }
 
 .onboarding-tooltip-accent { height: .32rem; background: linear-gradient(90deg, #d89246, #e9b377 55%, #f4d3a7); }
@@ -280,24 +446,120 @@ onBeforeUnmount(() => {
 .onboarding-tooltip-module .bg-amber-200 { background: #8d5a3b; }
 .onboarding-tooltip-module input[type='checkbox'] { accent-color: #c58b5e; }
 
+.onboarding-tooltip-supplier {
+  border-color: #4a3322;
+  border-radius: 1.1rem;
+  background: linear-gradient(160deg, #24180f, #1a130d 72%, #2f2015);
+  color: #f2e2d2;
+  box-shadow: 0 18px 48px rgba(11, 6, 4, .42);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.onboarding-tooltip-supplier::after {
+  border-color: #4a3322;
+  background: #24180f;
+}
+
+.onboarding-tooltip-supplier .onboarding-tooltip-accent,
+.onboarding-tooltip-supplier > div:first-child {
+  background: linear-gradient(90deg, #8d5a3b, #b4875d 55%, #d6a878);
+}
+
+.onboarding-tooltip-supplier .onboarding-guide-icon {
+  border: 1px solid #4a3322;
+  background: #2f2015;
+  color: #d6a878;
+}
+
+.onboarding-tooltip-supplier .onboarding-step-card {
+  border-color: #4a3322;
+  border-radius: 1rem;
+  background: rgba(26, 19, 13, .88);
+}
+
+.onboarding-tooltip-supplier .onboarding-step-card > p:first-child {
+  color: #d6a878 !important;
+}
+
+.onboarding-tooltip-supplier .onboarding-step-card h3 {
+  color: #f2e2d2;
+  font-weight: 700;
+}
+
+.onboarding-tooltip-supplier .onboarding-step-card > p:last-child,
+.onboarding-tooltip-supplier .onboarding-preference,
+.onboarding-tooltip-supplier .text-\[\#8b6a4d\],
+.onboarding-tooltip-supplier .text-\[\#674b37\] {
+  color: #c8af97 !important;
+}
+
+.onboarding-tooltip-supplier .text-amber-700 {
+  color: #d6a878 !important;
+}
+
+.onboarding-tooltip-supplier .onboarding-preference input[type='checkbox'] {
+  border-color: #6a4c33;
+  accent-color: #b4875d;
+}
+
+.onboarding-tooltip-supplier .onboarding-actions > button:first-child {
+  border: 1px solid transparent;
+  color: #c8af97 !important;
+}
+
+.onboarding-tooltip-supplier .onboarding-actions > button:first-child:hover:not(:disabled),
+.onboarding-tooltip-supplier .onboarding-actions > button:first-child:focus-visible,
+.onboarding-tooltip-supplier .onboarding-tooltip-content > div:first-child button:hover {
+  background: #2f2015;
+  color: #f2e2d2 !important;
+}
+
+.onboarding-tooltip-supplier .onboarding-actions > button:last-child {
+  border: 1px solid #b4875d;
+  border-radius: .75rem;
+  background: #b4875d !important;
+  color: #1a130d !important;
+  font-weight: 700;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.onboarding-tooltip-supplier .onboarding-actions > button:last-child:hover {
+  transform: translateY(-1px);
+  border-color: #c39770;
+  background: #c39770 !important;
+}
+
+.onboarding-tooltip-supplier button:focus-visible {
+  outline: 2px solid #d6a878;
+  outline-offset: 3px;
+}
+
+.onboarding-tooltip-supplier .onboarding-actions > div[aria-hidden='true'] span {
+  background: #4a3322;
+}
+
+.onboarding-tooltip-supplier .onboarding-actions > div[aria-hidden='true'] span.w-6 {
+  background: #b4875d;
+}
+
 @media (max-width: 360px) {
   .onboarding-tooltip { width: calc(100vw - 24px); }
   .onboarding-tooltip-content { padding: 1rem; }
 }
 
 @media (max-width: 767px) {
-  .onboarding-tour-layer {
-    background: rgba(31, 18, 11, .28);
-    backdrop-filter: blur(1px);
-  }
+  .onboarding-tooltip { border-radius: 1.2rem; }
+}
 
-  .onboarding-tooltip[data-placement='bottom-sheet'] {
-    border-radius: 1.2rem;
-    box-shadow: 0 20px 52px rgba(35, 18, 8, .3);
-  }
+@media (max-width: 767px) {
+  .onboarding-tooltip-supplier { border-radius: 1.1rem; }
+  .onboarding-tooltip-supplier .onboarding-step-card { margin-top: 1rem; padding: .85rem; }
+  .onboarding-tooltip-supplier .onboarding-actions { gap: .5rem; margin-top: 1rem; }
+}
 
-  .onboarding-tooltip[data-placement='bottom-sheet']::after {
-    display: none;
-  }
+@media (max-width: 360px) {
+  .onboarding-tooltip-supplier .onboarding-tooltip-content { padding: .9rem; }
+  .onboarding-tooltip-supplier .onboarding-guide-icon { width: 1.9rem; height: 1.9rem; }
+  .onboarding-tooltip-supplier .onboarding-actions button { padding-left: .65rem; padding-right: .65rem; }
 }
 </style>

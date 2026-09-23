@@ -1,0 +1,434 @@
+AESTHETICARE PROCESS GUIDE
+
+1. CLINIC REGISTRATION AND OCR
+
+Clinic owner registers
+-> verifies email through OTP
+-> enters clinic and owner details, branch address, and map pin
+-> uploads required documents
+-> submits registration
+-> System Administrator reviews the application and OCR results
+-> approve or reject
+-> approved owner activates the account and chooses a plan
+
+Detailed steps:
+1. The applicant selects Register as Clinic Owner.
+2. They provide personal details, clinic details, Philippine contact number,
+   branch address, and map pin.
+3. They verify their email through the registration OTP.
+4. They upload the required registration documents and submit the application.
+5. The application is placed in Pending Review. The applicant cannot use the
+   clinic workspace yet.
+6. In System Admin > Clinic Verification, an administrator opens the
+   application and triggers OCR for each document.
+7. OCR extracts readable text and returns a confidence score.
+   - 85% or above: the document can be marked OCR-verified.
+   - Below 85%: the document requires manual review.
+   - OCR supports review; it does not replace the System Administrator's
+     approval decision.
+8. The System Administrator checks document validity, names, details, clinic
+   address, and OCR output.
+   - Approve: an activation email is sent. The owner activates the account,
+     signs in, and selects/pays for Basic or Premium.
+   - Reject: the applicant receives the reason and may correct their details
+     or documents and register again using the same email.
+
+For reliable OCR, documents should be upright, uncropped, sharp, well lit,
+and without glare or reflections.
+
+
+2. GETTING CLINIC SUPPLIES
+
+Inventory request
+-> Procurement verifies request and supplier catalog terms
+-> Finance approves funding
+-> Procurement issues purchase order
+-> Supplier confirms or declines
+-> Logistics receives and inspects goods
+-> Inventory is updated
+-> Finance records invoice/payment
+
+Detailed steps:
+1. Inventory identifies low stock or a needed supply.
+2. Inventory creates a purchase request with items, quantities, and reason.
+3. Procurement reviews the request. It confirms the supplier catalog item,
+   quantity, availability, price, tax, discount, other charges, payment terms,
+   delivery date, and delivery location.
+4. Procurement may return or reject incomplete requests. Complete requests are
+   sent to Finance for funding approval.
+5. Finance approves, returns, or rejects the funding request.
+   - Approve: the request goes back to Procurement for ordering.
+   - Return: Procurement corrects and resubmits it.
+   - Reject: no purchase order is issued.
+6. Procurement issues the purchase order to the selected supplier.
+7. The supplier confirms or declines the purchase order.
+   - Declined: Procurement changes supplier, revises, or cancels the order.
+   - Confirmed: the order becomes available to Logistics.
+8. Logistics receives and inspects goods. It records accepted quantities,
+   partial deliveries, damaged/rejected goods, and discrepancies.
+9. Accepted quantities update Inventory stock.
+10. Finance reviews the supplier invoice/payable and records payment.
+
+Customer product orders are separate. They are pickup-only and do not enter
+the supplier logistics workflow.
+
+2A. HOW CLINIC SUPPLIES ARE PAID
+
+The supply workflow controls and records supplier payments. It does not yet
+initiate a real bank transfer or PayMongo payout to a supplier.
+
+Supplier-confirmed PO
+-> Logistics receives and onboards accepted goods
+-> supplier submits invoice (or Finance records the manual invoice)
+-> Finance performs three-way matching
+-> Finance approves invoice for payment
+-> Finance prepares, reviews, and approves payment record
+-> Finance makes the external payment
+-> Finance uploads proof and records settlement
+
+Detailed steps:
+1. Procurement includes the agreed payment terms in the funding request and
+   purchase order. The supplier catalog remains the source for item price,
+   VAT/tax treatment, discounts, and per-unit charges.
+2. The supplier confirms the purchase order and Logistics receives/inspects
+   the goods. Accepted goods must be onboarded before invoicing.
+3. The supplier submits an invoice through the supplier flow, or Finance
+   creates/records the supplier invoice for a manual supplier arrangement.
+4. The invoice is initially Submitted. Finance attaches the invoice document
+   and starts verification.
+5. Finance performs a three-way match:
+   - Purchase Order: what the clinic ordered.
+   - Receiving/Inspection: what Logistics accepted into inventory.
+   - Supplier Invoice: what the supplier is charging.
+6. A mismatch creates a Disputed invoice. Finance resolves it before payment.
+7. A matched invoice is approved for payment. The system requires separation
+   of duties: the person who created or verified an invoice cannot approve it.
+8. Finance creates a payment record, reviews it, and a different authorized
+   Finance user approves it.
+9. Finance changes the payment record to Processing, then makes the real
+   payment outside AesthetiCare, such as through bank transfer or another
+   approved external/electronic method.
+10. After the external payment succeeds, Finance uploads payment proof,
+    enters the payment reference, payment date, and method, then records the
+    settlement as Paid.
+11. The system updates the supplier invoice, procurement payable/financial
+    record, reserved budget, actual spending, and purchase-order status.
+
+Supported recorded payment methods are Manual/External and Electronic.
+Therefore, the platform provides an auditable accounts-payable workflow, not
+an automatic supplier-money-transfer integration.
+
+
+3. BASE PAY, PAYROLL, FINANCE, AND EMPLOYEE PAYSLIPS
+
+HR sets employee base pay
+-> attendance and approved overtime are recorded
+-> HR prepares payroll entries
+-> HR submits monthly payroll summary
+-> Finance approves or returns it
+-> payroll is released
+-> employee sees payslip
+
+Detailed steps:
+1. HR creates the employee account and assigns role/position.
+2. HR sets the employee's Base Pay using the supported salary basis.
+3. For each payroll period, the system uses base pay, completed attendance,
+   approved overtime, deductions, adjustments, and payroll settings.
+4. HR generates payroll entries and reviews the calculations.
+5. HR submits the monthly payroll summary to Finance.
+6. Finance reviews it.
+   - Approve: the payroll is locked for release.
+   - Return/reject: HR corrects the entries and resubmits them.
+7. After release, the employee opens My Payslips to see the period, pay
+   breakdown, deductions, overtime effects, net pay, and status.
+8. The system records approval and release. It does not automatically transfer
+   money to a bank account.
+
+This full payroll workflow is Premium-only.
+
+
+4. ATTENDANCE TAKING
+
+HR/configured staff issues branch daily QR
+-> employee opens My Attendance on mobile
+-> employee permits camera and location
+-> employee takes current photo proof
+-> employee scans QR
+-> system validates QR, branch, GPS/geofence, and scan order
+-> time-in or time-out is recorded
+
+Detailed steps:
+1. The clinic configures the branch attendance location and allowed geofence.
+2. An authorized HR/manager user opens Attendance > QR Station and generates
+   or refreshes the branch QR code.
+3. The employee opens My Attendance on a mobile device.
+4. The employee permits camera and location, takes current photo proof, and
+   scans the branch QR.
+5. The system verifies that the QR is valid and unexpired, the employee belongs
+   to the permitted branch, the device is inside the geofence, location
+   accuracy is acceptable, and the scan order is valid.
+6. The first valid scan records time-in. The next valid scan records time-out.
+7. Duplicate and out-of-order scans are rejected.
+8. HR can review records, inspect proof/details, and make audited corrections
+   if their role permits it.
+
+Face registration is available for employee identity setup. The daily
+attendance flow is currently based on QR, GPS/geofence validation, and current
+photo proof.
+
+
+5. SHIFT CREATION AND ASSIGNMENT
+
+HR creates shift template
+-> HR assigns it to employee/date or recurring schedule
+-> employee sees the assignment
+-> attendance and overtime use the shift as reference
+
+Detailed steps:
+1. HR opens Add Shift.
+2. HR defines the shift name, start/end time, break details when applicable,
+   branch, and relevant days/dates.
+3. HR saves the shift.
+4. HR opens Shift Assignment.
+5. HR selects the employee, branch, date or recurring schedule, and assigns
+   the shift.
+6. The employee sees the assignment in their workspace/dashboard.
+7. Attendance is compared with the assigned shift for expected time-in/out,
+   lateness, and overtime eligibility.
+8. Overtime can be requested only when completed attendance extends beyond the
+   assigned shift.
+
+Shifts are Premium-only.
+
+
+6. APPOINTMENT DATE AVAILABILITY: BASIC VS PREMIUM
+
+Both Basic and Premium support customer booking availability.
+
+BASIC
+- One clinic branch.
+- The clinic publishes recurring bookable days and times for each practitioner.
+- Example: a practitioner can be bookable Monday to Friday, 9:00 AM to 5:00 PM.
+- No HR shifts, attendance, leave, overtime, base pay, or payroll workflows.
+
+PREMIUM
+- Includes everything in Basic.
+- Multiple clinic branches are supported.
+- Availability can be configured per practitioner and branch.
+- HR shifts, attendance, leave, overtime, and payroll are available.
+
+IMPORTANT
+- Booking Availability is separate from HR shifts.
+- A shift does not automatically publish appointment slots to customers.
+- In both plans, customers see only dates/times that are published as available,
+  do not conflict with existing bookings, and satisfy service duration and
+  resource checks.
+
+
+7. CLINIC OWNER ACCOUNT CLOSURE AND EMPLOYEE EFFECTS
+
+Clinic owner submits closure request
+-> System Administrator reviews it
+-> reject, deactivate owner only, transfer ownership, or approve full shutdown
+
+The owner opens Account Settings > Account Access, selects a closure type,
+acknowledges the consequences, types CLOSE MY ACCOUNT, and submits the request.
+It is not immediate; a System Administrator must review it.
+
+A. CLOSE OWNER ACCOUNT ONLY (DEACTIVATE)
+1. The System Administrator approves the request.
+2. The owner login becomes inactive.
+3. Clinic branches remain active.
+4. Employees linked to the clinic remain active and can continue using the
+   pages/actions their role allows.
+5. Clinic records, appointments, finance history, and audit logs are retained.
+6. The owner can restore owner access by signing in within 30 days.
+
+This option is appropriate only when another authorized clinic administrator
+can continue managing the clinic.
+
+B. TRANSFER MAIN BRANCH OWNERSHIP
+1. The owner enters the email of an eligible existing clinic owner/admin.
+2. The System Administrator approves the transfer.
+3. Connected branch ownership is reassigned to that account.
+4. The previous owner account is closed.
+5. Employees remain active, so clinic operations continue under the new owner.
+
+C. REQUEST FULL CLINIC SHUTDOWN
+1. The System Administrator approves the request.
+2. The owner account is closed.
+3. Connected branches are marked inactive and archived.
+4. Employees whose branch is one of the closed branches are archived/inactive.
+5. Those employees can no longer use the employee portal until an authorized
+   administrator restores them.
+6. Clinic records are retained for audit, compliance, legal support, and
+   continuity; they are not immediately erased.
+
+
+8. CUSTOMER SERVICE APPOINTMENT PROCESS
+
+Customer selects a clinic and service
+-> selects an available date/time and practitioner
+-> sends booking request
+-> clinic approves or rejects
+-> customer signs contract and pays required amount
+-> assigned practitioner verifies service key at the appointment
+-> service starts and is completed
+-> customer confirms completion
+
+Detailed steps:
+1. The customer opens a clinic page, selects one or more published services,
+   and selects an available date/time.
+2. The system checks practitioner availability, service duration, booking
+   conflicts, and required resources before accepting the request.
+3. The customer submits the booking request.
+4. Authorized clinic staff review it in Booking Requests.
+   - Approve: the booking moves forward for contract/payment preparation.
+   - Reject: the customer receives the decision and reason where provided.
+   - The customer may request cancellation or rescheduling; clinic staff review
+     the request before the original appointment is changed.
+5. If required, the customer reviews and electronically signs the clinic
+   contract.
+6. The customer pays the required initial amount through the supported online
+   payment flow.
+7. Once the booking is approved, the contract is signed, and the initial
+   payment is recorded, it can proceed to the service appointment.
+8. At the appointment, the assigned practitioner verifies the customer service
+   key before starting the service.
+9. Starting the service records it as Ongoing and deducts any configured
+   consumable materials from inventory.
+10. The practitioner marks the service complete.
+11. The customer confirms completion. If a balance remains, the booking is
+    marked Balance Due; otherwise it becomes Completed.
+
+For treatment plans with multiple sessions, completion of a session creates a
+record and makes the next clinic-scheduled session ready.
+
+
+9. ONLINE CONSULTATION PROCESS
+
+Customer books an online consultation
+-> clinic approves and assigns a practitioner
+-> contract/payment requirements are completed
+-> assigned practitioner creates Google Meet link
+-> customer and practitioner join at the schedule
+-> consultation is completed
+
+Detailed steps:
+1. The customer chooses a published Online Consultation and selects an
+   available date/time.
+2. The customer submits the consultation booking request.
+3. Clinic staff approve/reject the request and ensure a practitioner is
+   assigned.
+4. The customer signs the consultation contract if the clinic requires one.
+5. The customer pays the required consultation amount.
+6. Only the assigned practitioner (or an authorized owner) can create the
+   Google Meet link.
+7. A meeting link can be created only after approval, required contract signing,
+   and payment. Google Meet integration must also be configured for the system.
+8. The customer sees the link in My Appointments; the practitioner sees it in
+   Online Consultation. Both join at the scheduled time.
+9. The practitioner completes the consultation and the customer sees its final
+   status in appointment history.
+
+An online consultation does not use the in-person service-key handoff. The
+meeting link and appointment access control are the relevant controls.
+
+
+10. SERVICE KEY PROCESS
+
+The service key is a six-digit, one-time in-person service verification code.
+It is not a payment code, POS code, or customer-order pickup code.
+
+1. A booking is approved.
+2. The customer signs the contract.
+3. The system generates a six-digit service key for that appointment.
+4. The customer makes the required initial payment.
+5. The key is shown in the customer's My Appointments details. The customer
+   shares it with the assigned practitioner in person.
+6. The key is valid only from 30 minutes before the scheduled start until the
+   end of the appointment.
+7. Only the assigned practitioner can enter and verify the key.
+8. A correct verified key allows the practitioner to start the service.
+9. The system records the verification time as part of the appointment audit
+   trail.
+
+The customer should not need to separately confirm the same service key. The
+customer's role is to present it; the assigned practitioner verifies it. This
+prevents a staff member from starting an in-person service without the customer
+being present.
+
+
+11. PRODUCT, SERVICE, CONSULTATION, AND PACKAGE LISTING PROCESS
+
+All customer-facing listings follow this approval path:
+
+Create or edit draft
+-> submit financial terms to Finance
+-> Finance/owner approves or requests changes
+-> owner/manager publishes approved listing
+-> customers can see and use the published listing
+
+COMMON LISTING STEPS
+1. An authorized owner or manager opens Products & Services > Product &
+   Service Listing and chooses Product, Service, Consultation, or Package.
+2. They enter the required listing details, customer-facing description, image,
+   price/payment terms, and terms and conditions.
+3. The listing starts as Draft and is not visible to customers.
+4. The owner or manager submits the financial terms for review.
+5. Finance, or the clinic owner, reviews price, consultation fee, deposit or
+   installment settings, discounts, and other payment terms.
+   - Approve: listing becomes Finance Approved but remains unpublished.
+   - Request changes: listing becomes Rejected/Changes Requested; the reason
+     is saved and the owner/manager edits then resubmits it.
+6. Only the owner or manager publishes the Finance-approved listing.
+7. Only listings that are both Finance Approved and Published are visible to
+   customers. They may later be unpublished or archived; an archived listing
+   must be restored before it can be submitted again.
+
+PRODUCT LISTING
+1. Select an approved inventory product as the source.
+2. Product details and availability are tied to the clinic's inventory.
+3. Supplier-supplied FDA details are copied from inventory/supplier catalog and
+   should be updated at the supplier/catalog source, not manually in the public
+   listing.
+4. Add the customer-facing description, product terms/return information, and
+   image.
+5. Submit, obtain Finance approval, and publish.
+6. Customers can add the published product to cart, pay online, and collect it
+   through pickup. Customer delivery is not supported.
+
+SERVICE LISTING
+1. Enter service name, description, duration, price, and service contract terms.
+2. Configure booking rules, including eligible materials/resources, follow-up
+   eligibility, and whether a consultation is required first.
+3. If a consultation is required, choose whether it must be on-site or online
+   and set the consultation fee.
+4. Submit the financial terms, obtain approval, then publish.
+5. Customers can request an appointment only after the service is published;
+   applicable booking availability, practitioner, duration, and resource checks
+   are enforced.
+
+CONSULTATION LISTING
+1. Enter consultation name, description, fee, duration, and terms.
+2. Choose exactly one consultation mode:
+   - On-site consultation, or
+   - Online consultation.
+3. Submit for Finance approval and publish after approval.
+4. Customers can book it as a standalone consultation. An approved and
+   completed consultation can also satisfy a service's consultation-first rule
+   when it covers that service.
+
+PACKAGE LISTING
+1. Create the service and consultation listings that will be included first.
+2. Create the package and select its included listings.
+3. A valid package must contain at least one consultation and at least one
+   service.
+4. Set package price, contract terms, installment/deposit terms if allowed,
+   and number of treatment sessions. Use one session for a one-time package.
+5. Submit package financial terms for approval.
+6. Before publishing the package, every included service/consultation must
+   already be Finance Approved and Published.
+7. Customers book and pay for the package as one appointment. For a
+   multi-session package, the clinic schedules later sessions after each
+   completed session.

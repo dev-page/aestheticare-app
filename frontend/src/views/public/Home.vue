@@ -1,6 +1,6 @@
 <template>
   <div class="home-page bg-gradient-to-br from-cream-100 via-gold-100 to-cream-200 text-charcoal-800 overflow-x-hidden">
-    <nav class="public-glass-nav fixed top-0 inset-x-0 z-50">
+    <nav class="public-glass-nav fixed top-0 inset-x-0 z-50" @keydown.esc.prevent="closeMobileMenu">
       <div class="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-6 md:px-8 h-16">
         <router-link to="/" class="public-brand-cluster shrink-0">
           <span class="public-nav-mark" aria-hidden="true"></span>
@@ -66,6 +66,8 @@
           @click="isMobileMenuOpen = !isMobileMenuOpen"
           class="lg:hidden inline-flex items-center justify-center h-10 w-10 rounded-lg border border-gold-500/60 text-gold-700 hover:bg-gold-100 transition"
           aria-label="Toggle navigation menu"
+          aria-controls="home-mobile-menu"
+          :aria-expanded="isMobileMenuOpen"
         >
           <svg v-if="!isMobileMenuOpen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
@@ -87,6 +89,8 @@
       <transition name="sidebar-menu">
         <aside
           v-if="isMobileMenuOpen"
+          id="home-mobile-menu"
+          aria-label="Mobile navigation"
           class="lg:hidden fixed top-0 right-0 h-screen w-[84%] max-w-[340px] z-[70] bg-gradient-to-b from-gold-50 via-cream-100 to-gold-100 border-l border-gold-300/40 shadow-2xl flex flex-col"
         >
           <div class="h-16 px-4 flex items-center justify-between border-b border-gold-300/40">
@@ -377,6 +381,12 @@
           class="capability-showcase"
           :class="{ 'is-switching': isCapabilitySwitching }"
           :style="{ backgroundImage: `url(${currentCapability.image})` }"
+          role="region"
+          aria-label="Platform capabilities"
+          @mouseenter="isCapabilityHovered = true"
+          @mouseleave="isCapabilityHovered = false"
+          @focusin="isCapabilityFocused = true"
+          @focusout="handleCapabilityFocusout"
         >
           <div class="capability-showcase-overlay"></div>
           <div class="capability-showcase-sheen" aria-hidden="true"></div>
@@ -393,6 +403,20 @@
             </router-link>
             <button @click="prevCapability" class="capability-btn-icon" aria-label="Previous capability">&#8592;</button>
             <button @click="nextCapability" class="capability-btn-icon" aria-label="Next capability">&#8594;</button>
+            <button
+              @click="toggleCapabilityAutoplay"
+              class="capability-btn-icon capability-autoplay-button"
+              :aria-label="isCapabilityAutoplayPaused ? 'Play capability rotation' : 'Pause capability rotation'"
+              :aria-pressed="isCapabilityAutoplayPaused"
+              :title="isCapabilityAutoplayPaused ? 'Play capability rotation' : 'Pause capability rotation'"
+            >
+              <svg v-if="isCapabilityAutoplayPaused" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M8 5.5v13l10-6.5z" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M7 5h4v14H7zm6 0h4v14h-4z" />
+              </svg>
+            </button>
           </div>
 
           <div class="capability-rail-wrap" :class="{ 'is-switching': isMiniSwitching }">
@@ -569,6 +593,10 @@ export default {
     const miniStartIndex = ref(3);
     const isCapabilitySwitching = ref(false);
     const isMiniSwitching = ref(false);
+    const isCapabilityAutoplayPaused = ref(false);
+    const isCapabilityHovered = ref(false);
+    const isCapabilityFocused = ref(false);
+    const prefersReducedMotion = ref(false);
     const miniMotionTick = ref(0);
     let capabilityTimer = null;
     let capabilitySwitchTimer = null;
@@ -576,6 +604,26 @@ export default {
     let heroVideoTimer = null;
     const closeMobileMenu = () => {
       isMobileMenuOpen.value = false;
+    };
+
+    const handleCapabilityFocusout = (event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        isCapabilityFocused.value = false;
+      }
+    };
+
+    const shouldPauseCapabilityAutoplay = computed(() =>
+      isCapabilityAutoplayPaused.value ||
+      isCapabilityHovered.value ||
+      isCapabilityFocused.value ||
+      prefersReducedMotion.value
+    );
+
+    const toggleCapabilityAutoplay = () => {
+      isCapabilityAutoplayPaused.value = !isCapabilityAutoplayPaused.value;
+      if (!isCapabilityAutoplayPaused.value) {
+        prefersReducedMotion.value = false;
+      }
     };
 
     const scrollToSection = (section) => {
@@ -704,6 +752,8 @@ export default {
 
     onMounted(() => {
       initAuth()
+      prefersReducedMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (prefersReducedMotion.value) isCapabilityAutoplayPaused.value = true
       const revealHeroVideo = () => {
         showHeroVideo.value = true
       }
@@ -715,7 +765,7 @@ export default {
       }
 
       capabilityTimer = window.setInterval(() => {
-        nextCapability();
+        if (!shouldPauseCapabilityAutoplay.value) nextCapability();
       }, 5000);
     });
 
@@ -745,6 +795,10 @@ export default {
       currentCapabilityIndex,
       isCapabilitySwitching,
       isMiniSwitching,
+      isCapabilityAutoplayPaused,
+      isCapabilityHovered,
+      isCapabilityFocused,
+      toggleCapabilityAutoplay,
       miniMotionTick,
       showHeroVideo,
       visibleMiniCapabilities,
@@ -758,6 +812,7 @@ export default {
       isLoading,
       isMobileMenuOpen,
       closeMobileMenu,
+      handleCapabilityFocusout,
     };
   },
 };
@@ -997,6 +1052,14 @@ export default {
 .capability-btn-icon:hover {
   transform: translateY(-1px);
   background: rgba(255, 248, 235, 0.18);
+}
+.capability-autoplay-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+.home-page :is(a, button):focus-visible {
+  outline: 3px solid #7b4f37;
+  outline-offset: 3px;
 }
 .capability-rail-wrap {
   position: absolute;
@@ -2232,6 +2295,17 @@ export default {
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page *,
+  .home-page *::before,
+  .home-page *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 </style>

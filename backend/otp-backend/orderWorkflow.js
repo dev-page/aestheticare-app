@@ -102,7 +102,15 @@ export const registerOrderWorkflow = (app, { admin, requireAuth, loadUserContext
         const assignedBranches = new Set([context.userData?.branchId, ...(Array.isArray(context.userData?.branchIds) ? context.userData.branchIds : [])].filter(Boolean))
         check(order && assignedBranches.has(order.branchId), 'Order belongs to another clinic.', 403)
         check(!order.cancellationInProgress, 'A cancellation is being processed. Wait for its result.')
-        check(({ 'Awaiting Stock': ['Preparing'], Preparing: ['Packed', 'Ready for Pickup'], Packed: ['Shipped', 'Ready for Pickup'], Shipped: ['Out for Delivery', 'Delivered'], 'Out for Delivery': ['Delivered'], 'Ready for Pickup': ['Delivered', 'Received'] })[order.status]?.includes(next), 'Invalid order transition.')
+        // Customer product orders are collected from the selected clinic branch.
+        // Keep fulfillment pickup-only even when a caller invokes this endpoint directly.
+        const pickupTransitions = {
+          'Awaiting Stock': ['Preparing'],
+          Preparing: ['Packed', 'Ready for Pickup'],
+          Packed: ['Ready for Pickup'],
+          'Ready for Pickup': ['Received']
+        }
+        check(pickupTransitions[order.status]?.includes(next), 'Invalid pickup order transition.')
         check(order.paymentStatus === 'Paid', 'Confirm payment before fulfilling this order.')
         let plan = []
         if (order.inventoryDeducted !== true) {

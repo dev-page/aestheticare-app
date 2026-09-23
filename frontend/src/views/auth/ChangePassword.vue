@@ -323,6 +323,7 @@ onMounted(async () => {
 
 .password-shell.password-theme-clinic,
 .password-shell.password-theme-employee,
+.password-shell.password-theme-supplier,
 .password-shell.password-theme-superadmin {
   background: #0f1418;
   color: #f8eee5;
@@ -330,6 +331,7 @@ onMounted(async () => {
 
 .password-shell.password-theme-clinic::before,
 .password-shell.password-theme-employee::before,
+.password-shell.password-theme-supplier::before,
 .password-shell.password-theme-superadmin::before {
   content: '';
   position: absolute;
@@ -340,6 +342,7 @@ onMounted(async () => {
 
 .password-shell.password-theme-clinic nav,
 .password-shell.password-theme-employee nav,
+.password-shell.password-theme-supplier nav,
 .password-shell.password-theme-superadmin nav {
   background: rgba(24, 17, 14, .96);
   border-color: rgba(141, 90, 59, .45);
@@ -347,6 +350,7 @@ onMounted(async () => {
 
 .password-shell.password-theme-clinic > div.relative.z-10 > div,
 .password-shell.password-theme-employee > div.relative.z-10 > div,
+.password-shell.password-theme-supplier > div.relative.z-10 > div,
 .password-shell.password-theme-superadmin > div.relative.z-10 > div {
   background: rgba(28, 20, 17, .96);
   border-color: rgba(141, 90, 59, .65);
@@ -354,6 +358,7 @@ onMounted(async () => {
 
 .password-shell.password-theme-clinic .form-title,
 .password-shell.password-theme-employee .form-title,
+.password-shell.password-theme-supplier .form-title,
 .password-shell.password-theme-superadmin .form-title {
   background: linear-gradient(120deg, #f1d7bd, #c58b5e);
   -webkit-background-clip: text;
@@ -362,6 +367,7 @@ onMounted(async () => {
 
 .password-shell.password-theme-clinic .nav-brand,
 .password-shell.password-theme-employee .nav-brand,
+.password-shell.password-theme-supplier .nav-brand,
 .password-shell.password-theme-superadmin .nav-brand {
   background: linear-gradient(120deg, #f0d2b4, #b9784d);
   -webkit-background-clip: text;
@@ -370,12 +376,14 @@ onMounted(async () => {
 
 .password-shell.password-theme-clinic .text-charcoal-600,
 .password-shell.password-theme-employee .text-charcoal-600,
+.password-shell.password-theme-supplier .text-charcoal-600,
 .password-shell.password-theme-superadmin .text-charcoal-600 {
   color: #cbb4a5;
 }
 
 .password-shell.password-theme-clinic .input,
 .password-shell.password-theme-employee .input,
+.password-shell.password-theme-supplier .input,
 .password-shell.password-theme-superadmin .input {
   background: rgba(15, 20, 24, .82);
   border-color: rgba(197, 139, 94, .5);
@@ -384,20 +392,43 @@ onMounted(async () => {
 
 .password-shell.password-theme-clinic .floating-label,
 .password-shell.password-theme-employee .floating-label,
+.password-shell.password-theme-supplier .floating-label,
 .password-shell.password-theme-superadmin .floating-label {
   color: #d2ae91;
 }
 
 .password-shell.password-theme-clinic .peer:placeholder-shown + .floating-label,
 .password-shell.password-theme-employee .peer:placeholder-shown + .floating-label,
+.password-shell.password-theme-supplier .peer:placeholder-shown + .floating-label,
 .password-shell.password-theme-superadmin .peer:placeholder-shown + .floating-label {
   color: #9e887b;
 }
 
 .password-shell.password-theme-clinic .password-back-button,
 .password-shell.password-theme-employee .password-back-button,
+.password-shell.password-theme-supplier .password-back-button,
 .password-shell.password-theme-superadmin .password-back-button {
   color: #e6c3a7;
+}
+
+.password-shell.password-theme-supplier {
+  background: #140f0b;
+}
+
+.password-shell.password-theme-supplier nav {
+  border-color: rgba(74, 51, 34, .9);
+  background: rgba(26, 19, 13, .96);
+}
+
+.password-shell.password-theme-supplier > div.relative.z-10 > div {
+  border-color: #4a3322;
+  background: rgba(36, 24, 15, .97);
+}
+
+.password-shell.password-theme-supplier .input {
+  border-color: #6a4c33;
+  background: #1a130d;
+  color: #f2e2d2;
 }
 
 .password-back-button { border-radius: .4rem; padding: .25rem .5rem; color: #4f3527; transition: color .2s, background .2s; }

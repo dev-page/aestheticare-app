@@ -1,3 +1,5 @@
+!START HERE!
+
 <template>
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
@@ -20,7 +22,7 @@
             <p class="mt-3 text-lg font-semibold text-[#fff0e1]">{{ roleLabel || headingTitle || 'Employee' }}</p>
             <p class="mt-1 text-sm text-[#d4bead]">Your current access level in the panel.</p>
           </div>
-              <div class="rounded-[1.5rem] border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] p-5 shadow-[0_18px_44px_rgba(11,6,4,0.16)]">
+              <div data-onboarding-key="employee-branch-info" class="rounded-[1.5rem] border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] p-5 shadow-[0_18px_44px_rgba(11,6,4,0.16)]">
                 <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Assigned Branch</p>
                 <p class="mt-3 text-lg font-semibold text-[#fff0e1]">{{ branchLabel || 'No branch assigned' }}</p>
                 <p class="mt-1 text-sm text-[#d4bead]">This updates when your branch assignment changes.</p>
@@ -36,7 +38,7 @@
           <div class="flex flex-col gap-2 border-b border-[rgba(123,79,55,0.24)] px-6 py-5 md:flex-row md:items-end md:justify-between">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Quick Access</p>
-              <h2 class="mt-2 font-serif text-2xl font-semibold text-[#fff0e1]">Open the pages you need most</h2>
+              <h2 class="mt-2 font-serif text-2xl font-semibold text-[#fff0e1]" data-onboarding-key="employee-quick-access-title">Open the pages you need most</h2>
               <p class="mt-1 text-sm text-[#d4bead]">
                 These shortcuts are filtered to what your account can actually use.
               </p>

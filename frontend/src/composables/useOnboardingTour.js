@@ -19,25 +19,25 @@ const tourCatalog = {
   owner: {
     title: 'Your Clinic Owner workspace',
     steps: [
-      { title: 'Start with the dashboard', text: 'This area summarizes your organization and gives you access to every branch you own.', selector: 'main' },
-      { title: 'Manage your branches and modules', text: 'Use the sidebar to manage branches, finance, inventory, staff, appointments, and other clinic operations.', selector: 'aside' },
-      { title: 'Assign branch administrators carefully', text: 'Clinic Admin employees can fully manage only their assigned branch. You retain organization-wide control.', selector: 'aside' },
+      { title: 'Start with the dashboard', text: 'This area summarizes your organization and gives you access to every branch you own.', selector: '[data-onboarding-key="owner-dashboard-title"]' },
+      { title: 'Explore your workspace', text: 'Use the sidebar to reach clinic setup and the modules available to your account.', selector: '[data-onboarding-key="owner-sidebar-nav"]' },
+      { title: 'Manage branch access carefully', text: 'Clinic Admin employees can fully manage only their assigned branch. You retain organization-wide control.', selector: '[data-onboarding-key="clinic-setup"]' },
     ],
   },
   employee: {
     title: 'Your employee workspace',
     steps: [
-      { title: 'Your assigned tools', text: 'The sidebar contains only the modules and actions assigned to your account.', selector: 'aside' },
-      { title: 'Follow the current task', text: 'Use the page content to complete your assigned clinic, appointment, attendance, or operations work.', selector: 'main' },
-      { title: 'Need help?', text: 'Ask your clinic administrator if you need access to another module or action.', selector: 'main' },
+      { title: 'Your assigned tools', text: 'The sidebar contains only the modules and actions assigned to your account.', selector: '[data-onboarding-key="employee-dashboard-nav"]' },
+      { title: 'Follow the current task', text: 'Use the quick access links to open the clinic, appointment, attendance, or operations tools assigned to you.', selector: '[data-onboarding-key="employee-quick-access-title"]' },
+      { title: 'Need help?', text: 'Ask your clinic administrator if you need access to another module or action.', selector: '[data-onboarding-key="employee-branch-info"]' },
     ],
   },
   supplier: {
     title: 'Your external supplier portal',
     steps: [
-      { title: 'Publish your supply catalog', text: 'List the supplies your business offers so clinics can consider them during procurement.', selector: '[data-onboarding-key="supplier-catalog"]' },
-      { title: 'Respond to clinic requests', text: 'RFQs, purchase orders, invoices, and payment updates are available only for your supplier account.', selector: 'aside' },
-      { title: 'Keep information current', text: 'Accurate availability, specifications, and prices help clinics make informed purchasing decisions.', selector: '[data-onboarding-key="supplier-catalog"]' },
+      { title: 'Publish your supply catalog', text: 'List the supplies your business offers so clinics can consider them during procurement.', selector: '[data-onboarding-key="supplier-catalog-save"]' },
+      { title: 'Respond to clinic requests', text: 'Purchase orders, invoices, and payment updates are available in the clinic requests section.', selector: '[data-onboarding-key="supplier-requests"]' },
+      { title: 'Keep information current', text: 'Accurate availability, specifications, and prices help clinics make informed purchasing decisions.', selector: '[data-onboarding-key="supplier-saved-catalog"]' },
     ],
   },
 }

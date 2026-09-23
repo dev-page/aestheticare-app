@@ -594,7 +594,7 @@ export default {
 
     const canMarkReceived = (order) => {
       const status = String(order?.status || '').trim().toLowerCase()
-      return ['ready for pickup', 'picked up', 'delivered', 'received'].includes(status)
+      return ['ready for pickup', 'received'].includes(status)
     }
 
     const canRequestRefund = (order) => {

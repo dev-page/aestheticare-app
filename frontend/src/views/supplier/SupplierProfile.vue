@@ -1,5 +1,5 @@
 <template>
-  <div class="flex min-h-screen bg-gradient-to-br from-[#f9f1e5] via-[#f6e6d2] to-[#eed8be]">
+  <div class="supplier-theme flex min-h-screen">
     <SupplierSidebar />
 
     <main class="flex-1 p-6 md:p-8">
@@ -50,7 +50,7 @@
               </div>
             </div>
 
-            <form class="space-y-5" @submit.prevent="saveProfile">
+            <form class="space-y-5" :aria-busy="saving" @submit.prevent="saveProfile">
               <div class="grid gap-4 md:grid-cols-2">
                 <div class="md:col-span-2">
                   <label class="profile-label">Business Name</label>
@@ -168,8 +168,8 @@
                 {{ locationError }}
               </div>
 
-              <button type="submit" class="w-full rounded-2xl bg-[#8d5a3b] px-5 py-3.5 font-semibold text-white transition hover:bg-[#6f4329]">
-                Save Supplier Profile
+              <button type="submit" class="w-full rounded-2xl bg-[#8d5a3b] px-5 py-3.5 font-semibold text-white transition hover:bg-[#6f4329]" :disabled="saving">
+                {{ saving ? 'Saving profile…' : 'Save Supplier Profile' }}
               </button>
             </form>
           </div>
@@ -180,6 +180,7 @@
 </template>
 
 <script setup>
+import './supplierTheme.css'
 import { computed, onMounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore'
@@ -198,6 +199,7 @@ import {
 const auth = getAuth()
 const storage = getStorage()
 const loading = ref(true)
+const saving = ref(false)
 const locationError = ref('')
 const userEmail = ref('')
 const supplierDocId = ref('')
@@ -349,6 +351,7 @@ const loadProfile = async (user) => {
 }
 
 const saveProfile = async () => {
+  if (saving.value) return
   const user = auth.currentUser
   if (!user) {
     toast.error('You are not signed in.')
@@ -360,6 +363,7 @@ const saveProfile = async () => {
     return
   }
 
+  saving.value = true
   try {
     let profilePicture = profile.value.profilePicture || ''
     if (profilePictureFile.value) {
@@ -392,6 +396,8 @@ const saveProfile = async () => {
   } catch (error) {
     console.error('Failed to save supplier profile:', error)
     toast.error('Failed to save supplier profile.')
+  } finally {
+    saving.value = false
   }
 }
 

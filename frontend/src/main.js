@@ -1,4 +1,3 @@
-
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import './style.css'
@@ -18,15 +17,6 @@ createApp(App)
   icon: false,
 })
 .use(VueSweetalert2, {
-  customClass: {
-    popup: 'swal-theme-popup',
-    title: 'swal-theme-title',
-    htmlContainer: 'swal-theme-text',
-    confirmButton: 'swal-theme-confirm',
-    cancelButton: 'swal-theme-cancel',
-    denyButton: 'swal-theme-cancel'
-  },
   buttonsStyling: false
 })
 .mount('#app')
-

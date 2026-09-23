@@ -55,7 +55,7 @@
         </button>
       </div>
 
-      <nav ref="sidebarNav" class="sidebar-scroll min-h-0 flex-1 overflow-y-auto p-3">
+      <nav ref="sidebarNav" :data-onboarding-key="panelKey === 'owner' ? 'owner-sidebar-nav' : undefined" class="sidebar-scroll min-h-0 flex-1 overflow-y-auto p-3">
       <ul v-if="showSkeleton" class="space-y-2">
         <li v-for="index in skeletonCount" :key="index">
           <div
@@ -76,6 +76,7 @@
           <template v-if="isGroup(item)">
             <button
               @click="toggleGroup(item)"
+              :data-onboarding-key="item.tourKey || undefined"
               :class="[
                 'group relative w-full flex items-center rounded-lg transition-colors duration-200',
                 collapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2.5',

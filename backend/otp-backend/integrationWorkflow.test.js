@@ -69,6 +69,13 @@ test('Paid order retains payment and alerts clinic if stock changes; replenishme
   assert.equal((await h.call('/logistics/customer-orders/:id/transition', 'procurement', { id: 'cs_test' }, { nextStatus: 'Preparing' })).code, 200)
   assert.equal(h.records.get('inventoryItems/i').currentStock, 3)
 })
+test('Customer orders can only move through pickup fulfillment statuses', async () => {
+  const h = harness(orderSeed(5))
+  await recordVerifiedOrder({ db: h.db, timestamp: h.timestamp, sessionId: 'cs_test', customerId: 'customer', attributes: paidAttributes() })
+  assert.equal((await h.call('/logistics/customer-orders/:id/transition', 'procurement', { id: 'cs_test' }, { nextStatus: 'Packed' })).code, 200)
+  assert.equal((await h.call('/logistics/customer-orders/:id/transition', 'procurement', { id: 'cs_test' }, { nextStatus: 'Shipped' })).code, 409)
+  assert.equal((await h.call('/logistics/customer-orders/:id/transition', 'procurement', { id: 'cs_test' }, { nextStatus: 'Ready for Pickup' })).code, 200)
+})
 test('Unpaid or mismatched payments cannot create an order', async () => {
   const h = harness(orderSeed(5)), attributes = paidAttributes()
   attributes.payments[0].attributes.status = 'failed'

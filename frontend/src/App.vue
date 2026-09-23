@@ -261,6 +261,7 @@ const sidebarPanelKey = computed(() => {
   if (path.startsWith('/receptionist')) return 'receptionist'
   if (path.startsWith('/practitioner')) return 'practitioner'
   if (path.startsWith('/cashier')) return 'cashier'
+  if (path.startsWith('/supplier')) return 'supplier'
   if (path.startsWith('/supply')) return 'supply'
   if (path.startsWith('/owner') || path.startsWith('/clinic')) return 'owner'
   if (path.startsWith('/customer')) return 'customer'
@@ -540,4 +541,3 @@ const planLabel = computed(() => {
   }
 }
 </style>
-

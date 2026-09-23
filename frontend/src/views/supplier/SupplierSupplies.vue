@@ -1,5 +1,5 @@
 <template>
-  <div class="flex min-h-screen bg-gradient-to-br from-[#f9f1e5] via-[#f5e4cf] to-[#eed6bc]">
+  <div class="supplier-theme flex min-h-screen">
     <SupplierSidebar />
 
     <main data-onboarding-key="supplier-catalog" class="supplier-catalog-page flex-1 p-6 md:p-8">
@@ -18,7 +18,7 @@
               <button type="button" class="rounded-xl bg-[#8d5a3b] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6f4329]" :disabled="loading || saving || checkingImage" @click="addItemRow">
                 Add Item
               </button>
-              <button type="button" class="rounded-xl border border-[#d9b38d] bg-[#fff8ef] px-4 py-2 text-sm font-semibold text-[#6f4329] transition hover:bg-[#f7ead8]" :disabled="loading || saving || checkingImage" @click="saveSupplies">
+              <button type="button" data-onboarding-key="supplier-catalog-save" class="rounded-xl border border-[#d9b38d] bg-[#fff8ef] px-4 py-2 text-sm font-semibold text-[#6f4329] transition hover:bg-[#f7ead8]" :disabled="loading || saving || checkingImage" @click="saveSupplies">
                 Save Supplies
               </button>
             </div>
@@ -46,7 +46,7 @@
 
         <section v-if="!loading" class="overflow-hidden rounded-[2rem] border border-[#e4c7a1] bg-white/90 shadow-sm">
           <div class="border-b border-[#ecd9c0] px-5 py-4">
-            <h2 class="text-xl font-bold text-[#40261a]">Saved Supplies</h2>
+            <h2 class="text-xl font-bold text-[#40261a]" data-onboarding-key="supplier-saved-catalog">Saved Supplies</h2>
             <p class="mt-1 text-sm text-[#6f503d]">{{ savedCatalog.length }} saved items · 5 items per page</p>
           </div>
           <p v-if="!savedCatalog.length" class="p-5 text-sm text-[#6f503d]">No saved items yet. Add your first item using the form below.</p>
@@ -279,6 +279,7 @@
 </template>
 
 <script setup>
+import './supplierTheme.css'
 import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -780,3 +781,4 @@ button:disabled { opacity: 0.6; cursor: wait; }
 @media (max-width: 1023px) { .supplier-item-details { padding-right: 0; border-right: 0; border-bottom: 1px solid #f2e1d3; padding-bottom: 1.4rem; } }
 .exact-fda{margin:0 1.6rem 1.4rem;border-top:1px solid #f1e2d5;padding-top:1.25rem}.exact-fda h3{font-weight:600}.exact-fda h3 span,.exact-fda>p{color:#7c8395;font-size:.8rem}.exact-fda>p{margin:.25rem 0 1rem}.exact-fda label{display:block;color:#4b5770;font-size:.72rem;font-weight:600;letter-spacing:.06em}.exact-fda input{width:100%;box-sizing:border-box;margin-top:.45rem;border:1px solid #e9bb92;border-radius:.75rem;background:#fffefd;padding:.85rem 1rem;color:#273047;font-weight:400}
 </style>
+

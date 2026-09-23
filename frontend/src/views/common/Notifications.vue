@@ -201,7 +201,7 @@ export default {
       return ''
     })
 
-    const isModuleView = computed(() => ['owner', 'employee', 'superadmin'].includes(panelKey.value))
+    const isModuleView = computed(() => ['owner', 'employee', 'superadmin', 'supplier'].includes(panelKey.value))
     const isSystemAdminView = computed(() => panelKey.value === 'superadmin')
 
     const sidebarComponent = computed(() => {
