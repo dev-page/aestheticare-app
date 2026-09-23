@@ -1455,9 +1455,9 @@ const CLINIC_ADMIN_PERMISSIONS = new Set([
   'branches:view', 'clinic_profile:view',
   'staff:view', 'staff:create', 'staff:update', 'staff:disable',
   'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import',
-  'clients:view', 'clients:create', 'clients:update', 'clients:disable',
-  'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create',
-  'payments:view', 'payments:create', 'payments:update', 'inbox:view', 'reports:view',
+  'clients:view', 'clients:update', 'clients:disable',
+  'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create',
+  'payments:view', 'inbox:view', 'reports:view',
   'services:view', 'services:create', 'services:update', 'services:disable',
   'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review',
   'suppliers:create', 'suppliers:update', 'orders:view', 'orders:update',
@@ -1467,7 +1467,7 @@ const CLINIC_ADMIN_PERMISSIONS = new Set([
   'payroll:view', 'payroll:update', 'payroll:approve',
   'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle',
   'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view',
-  'policies:view', 'policies:update', 'activities:view', 'notifications:view', 'support:view',
+  'policies:view', 'policies:update', 'activities:view', 'notifications:view',
   'profile:view', 'password:update',
 ])
 

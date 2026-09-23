@@ -654,7 +654,7 @@ const colorPresets = ['#5865F2', '#57F287', '#FEE75C', '#EB459E', '#ED4245', '#3
 // These account pages are available to every signed-in clinic user. Showing
 // them as optional role grants was misleading because toggling them never
 // changed actual access.
-const defaultPermissionKeys = new Set(['activities:view', 'notifications:view', 'support:view'])
+const defaultPermissionKeys = new Set(['activities:view', 'notifications:view'])
 const ownerOnlyPermissionKeys = new Set(
   permissionGroups.flatMap((group) => group.sections.flatMap((section) =>
     section.permissions.filter((permission) => permission.ownerOnly).map((permission) => permission.key)
@@ -664,31 +664,31 @@ const ownerOnlyPermissionKeys = new Set(
 const permissionSuggestionRules = [
   {
     match: ['reception', 'front desk', 'frontdesk', 'receptionist', 'desk'],
-    permissions: ['clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'payments:create', 'payments:view', 'inbox:view', 'overtime:view', 'overtime:create', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['clients:view', 'appointments:view', 'appointments:review', 'payments:view', 'inbox:view', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['practitioner', 'doctor', 'dentist', 'nurse', 'therapist', 'clinician'],
-    permissions: ['clients:view', 'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['clients:view', 'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['hr', 'human resources'],
-    permissions: ['staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:update', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:update', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['finance', 'accounting', 'cashier'],
-    permissions: ['payments:view', 'payments:create', 'reports:view', 'payroll:view', 'payroll:approve', 'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['payments:view', 'reports:view', 'payroll:view', 'payroll:approve', 'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['manager', 'operations', 'supervisor'],
-    permissions: ['staff:view', 'staff:update', 'staff:disable', 'appointments:view', 'appointments:review', 'inventory:view', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'inventory:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'reports:view', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['staff:view', 'staff:update', 'staff:disable', 'appointments:view', 'appointments:review', 'inventory:view', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'inventory:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'reports:view', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['supply', 'inventory', 'warehouse', 'stock'],
-    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'reports:view', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'reports:view', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['admin', 'owner', 'administrator'],
-    permissions: ['clinic_profile:view', 'staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:create', 'clients:update', 'clients:disable', 'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'payments:create', 'payments:update', 'reports:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:view', 'payroll:update', 'profile:view', 'password:update', 'activities:view', 'notifications:view', 'support:view'],
+    permissions: ['clinic_profile:view', 'staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:update', 'clients:disable', 'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'reports:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:view', 'payroll:update', 'profile:view', 'password:update', 'activities:view', 'notifications:view'],
   },
 ]
 
@@ -703,7 +703,7 @@ const builtInRoleTemplates = [
   {
     key: 'receptionist',
     name: 'Receptionist',
-    description: 'Handles clients, bookings, appointments, payments, inbox messages, and notifications.',
+    description: 'Handles customer booking requests, appointment records, transaction history, inbox messages, and notifications.',
     color: '#c58b5c',
     suggestion: 'reception',
   },
@@ -852,7 +852,14 @@ export default {
       || selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
 
     const normalizePermissionSet = (permissionList = []) => {
-      const permissions = new Set(permissionList)
+      // Drop retired permissions from older role documents. This keeps the
+      // editor, saved roles, and denormalized staff permissions aligned with
+      // the features that are actually available now.
+      const permissions = new Set(
+        (Array.isArray(permissionList) ? permissionList : []).filter((permission) =>
+          allPermissionKeys.includes(permission) || permission === fullAccessPermissionKey
+        )
+      )
       ownerOnlyPermissionKeys.forEach((permissionKey) => permissions.delete(permissionKey))
       // Full access is a platform-level capability; clinic custom roles can
       // never delegate it to a staff account.
@@ -912,7 +919,7 @@ export default {
         }
       }
 
-      return ['staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:create', 'clients:update', 'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'payments:create', 'payments:update', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'orders:view', 'orders:update', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:view', 'payroll:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'inbox:view', 'profile:view', 'password:update']
+      return ['staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:update', 'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'orders:view', 'orders:update', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:view', 'payroll:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'inbox:view', 'profile:view', 'password:update']
         .filter((permission) => allPermissionKeys.includes(permission))
         .filter((permission) => !selectedPermissions.has(permission))
     })

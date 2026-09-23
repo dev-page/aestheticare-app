@@ -87,15 +87,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     children: supplyLinks('logistics', 'orders:view', [['dashboard', 'Logistics Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Receiving & Inspection', 'mdi:clipboard-check-outline'], ['onboarding', 'Inventory Onboarding', 'mdi:package-down'], ['requests', 'Requests & Discrepancies', 'mdi:alert-box-outline'], ['reports', 'Logistics Reports', 'mdi:file-chart-outline']])
   },
   {
-    key: 'supply-management-module',
-    label: 'Management & Reports',
-    icon: 'mdi:chart-timeline-variant',
-    moduleKey: 'reports',
-    children: [
-      ...supplyLinks('management', 'reports:view', [['dashboard', 'Supply Chain Overview', 'mdi:view-dashboard-outline'], ['reports', 'End-to-End Reports', 'mdi:chart-box-outline']])
-    ]
-  },
-  {
     key: 'hr-module',
     label: 'Human Resources',
     icon: 'users',

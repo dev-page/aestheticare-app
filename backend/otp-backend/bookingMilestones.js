@@ -22,6 +22,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
         const snapshot = await tx.get(ref)
         check(snapshot.exists, 'Appointment not found.', 404)
         const appointment = snapshot.data()
+        check(appointment.source !== 'walk_in', 'Walk-in appointments are no longer supported.', 410)
         const walkIn = appointment.source === 'walk_in'
         const customer = !walkIn && appointment.customerId === req.user.uid
         const worker = [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo].includes(req.user.uid)
