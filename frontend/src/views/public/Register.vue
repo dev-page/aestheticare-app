@@ -76,13 +76,13 @@ const birthDateError = ref('')
 const MINIMUM_AGE = 18
 
 const calculateAge = (isoDate) => {
-  if (!isoDate) return null
-  const birth = new Date(isoDate)
+  const [year, month, day] = String(isoDate || '').split('-').map(Number)
+  if (!year || !month || !day) return null
+  const birth = new Date(year, month - 1, day)
   if (Number.isNaN(birth.getTime())) return null
   const today = new Date()
-  let age = today.getFullYear() - birth.getFullYear()
-  const m = today.getMonth() - birth.getMonth()
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
+  let age = today.getFullYear() - year
+  if (today.getMonth() < month - 1 || (today.getMonth() === month - 1 && today.getDate() < day)) age--
   return age
 }
 
@@ -453,6 +453,7 @@ const isStep1FormComplete = computed(() => {
     lastName.value?.trim() &&
     emailIsValid &&
     birthDate.value &&
+    computedAge.value >= MINIMUM_AGE &&
     clinicName.value?.trim() &&
     clinicLocation.value?.trim() &&
     clinicLocationLat.value &&
@@ -785,7 +786,7 @@ const selectDate = (dayObj) => {
   if (isFutureIsoDate(dayObj?.iso)) return
   birthDate.value = dayObj.iso
   syncManualBirthDate()
-  birthDateError.value = ''
+  validateBirthAge()
   closeCalendar()
 }
 
@@ -3346,6 +3347,7 @@ const handleRegistrationSubmit = () => {
                 </transition>
               </div>
               <p v-if="birthDateError" class="mt-1 text-xs text-red-600">{{ birthDateError }}</p>
+              <p v-else-if="computedAge !== null" class="mt-1 text-xs text-emerald-700">Age verified: {{ computedAge }} years old.</p>
             </div>
 
             <div v-if="requiresPasswordForStep1" class="relative">

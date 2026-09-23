@@ -32,6 +32,37 @@ const confirmPassword = ref('')
 const birthDate = ref('')
 const manualBirthDate = ref('')
 const birthDateError = ref('')
+const MINIMUM_AGE = 18
+
+const calculateAge = (isoDate) => {
+  const [year, month, day] = String(isoDate || '').split('-').map(Number)
+  if (!year || !month || !day) return null
+  const birth = new Date(year, month - 1, day)
+  if (Number.isNaN(birth.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - year
+  if (today.getMonth() < month - 1 || (today.getMonth() === month - 1 && today.getDate() < day)) age--
+  return age
+}
+
+const computedAge = computed(() => calculateAge(birthDate.value))
+const validateBirthAge = () => {
+  if (!birthDate.value) {
+    birthDateError.value = ''
+    return false
+  }
+  const age = calculateAge(birthDate.value)
+  if (age === null) {
+    birthDateError.value = 'Please use a valid date (MM/DD/YYYY) and avoid future dates.'
+    return false
+  }
+  if (age < MINIMUM_AGE) {
+    birthDateError.value = `You must be at least ${MINIMUM_AGE} years old to register.`
+    return false
+  }
+  birthDateError.value = ''
+  return true
+}
 
 const PASSWORD_MIN_LENGTH = 8
 const PASSWORD_MAX_LENGTH = 32
@@ -62,6 +93,7 @@ const isCustomerFormComplete = computed(() => {
     lastName.value?.trim() &&
     emailIsValid &&
     birthDate.value &&
+    computedAge.value >= MINIMUM_AGE &&
     PASSWORD_REGEX.test(String(password.value || '')) &&
     String(password.value || '') === String(confirmPassword.value || '') &&
     phoneIsValid &&
@@ -598,6 +630,7 @@ const handleManualBirthInput = (event) => {
     if (parsed) {
       birthDate.value = parsed
       syncCalendarToBirthDate()
+      validateBirthAge()
       return
     }
   }
@@ -625,7 +658,7 @@ const handleManualBirthBlur = () => {
 
   birthDate.value = parsed
   manualBirthDate.value = formatIsoToBirthInput(parsed)
-  birthDateError.value = ''
+  validateBirthAge()
   syncCalendarToBirthDate()
 }
 
@@ -742,7 +775,7 @@ const selectDate = (dayObj) => {
   if (isFutureIsoDate(dayObj?.iso)) return
   birthDate.value = dayObj.iso
   syncManualBirthDate()
-  birthDateError.value = ''
+  validateBirthAge()
   closeCalendar()
 }
 
@@ -1172,16 +1205,8 @@ const register = async () => {
     return
   }
 
-  const birth = new Date(birthDate.value)
-  const today = new Date()
-  let age = today.getFullYear() - birth.getFullYear()
-  const m = today.getMonth() - birth.getMonth()
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-    age--
-  }
-
-  if (age < 18) {
-    toast.error('You must be at least 18 years old to register')
+  if (!validateBirthAge()) {
+    toast.error(`You must be at least ${MINIMUM_AGE} years old to register.`)
     return
   }
 
@@ -1550,6 +1575,7 @@ onBeforeUnmount(() => {
                 </transition>
               </div>
               <p v-if="birthDateError" class="mt-1 text-xs text-red-600">{{ birthDateError }}</p>
+              <p v-else-if="computedAge !== null" class="mt-1 text-xs text-emerald-700">Age verified: {{ computedAge }} years old.</p>
             </div>
 
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
