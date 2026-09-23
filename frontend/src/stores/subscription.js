@@ -95,6 +95,14 @@ const isCustomerRole = (roleValue, userTypeValue) => {
   return roleKey === 'customer' || typeKey === 'customer'
 }
 
+const isNonClinicSubscriptionRole = (roleValue, userTypeValue) => {
+  const roleKey = normalizeRoleKey(roleValue)
+  const typeKey = normalizeRoleKey(userTypeValue)
+  return [roleKey, typeKey].some((value) => [
+    'customer', 'supplier', 'supplieradmin', 'superadmin', 'systemadmin', 'sysadmin'
+  ].includes(value))
+}
+
 const isPermissionDenied = (error) => {
   const code = String(error?.code || '')
   if (code === 'permission-denied') return true
@@ -151,6 +159,14 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       const directPlan = normalizePlanKey(userData.subscriptionPlan || userData.plan)
       const directExpiresAt = toDate(userData.subscriptionExpiresAt)
       return { planKey: directPlan, expiresAt: directExpiresAt, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus }
+    }
+
+    // Customers, suppliers, and system administrators do not belong to a
+    // clinic subscription. Do not fall through to the owner-clinic query for
+    // them: that query is correctly denied by Firestore and was creating
+    // avoidable permission errors during normal sign-in/navigation.
+    if (isNonClinicSubscriptionRole(role, userTypeValue)) {
+      return { planKey: 'free', expiresAt: null, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus }
     }
 
     const branchId = userData.branchId

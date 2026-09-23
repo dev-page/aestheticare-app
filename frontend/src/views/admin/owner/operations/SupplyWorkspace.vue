@@ -35,7 +35,7 @@
             </section>
           </template>
           <template v-else>
-          <section v-if="page === 'requests' && department === 'finance'" class="mb-5 grid gap-3 md:grid-cols-3"><router-link to="/finance/procurement/requests" class="rounded-xl border border-slate-700 bg-slate-800 p-4"><h2 class="font-semibold">Procurement approvals</h2><p class="mt-2 text-sm text-slate-400">Review funding requests and reserve matching budgets.</p></router-link><router-link to="/finance/listing-approvals" class="rounded-xl border border-slate-700 bg-slate-800 p-4"><h2 class="font-semibold">Listing approvals</h2><p class="mt-2 text-sm text-slate-400">Review listing prices and financial terms.</p></router-link><router-link to="/finance/payroll-approval" class="rounded-xl border border-slate-700 bg-slate-800 p-4"><h2 class="font-semibold">Payroll approvals</h2><p class="mt-2 text-sm text-slate-400">Review payroll summaries prepared by HR.</p></router-link></section>
+          <section v-if="page === 'requests' && department === 'finance'" class="mb-5 grid gap-3 md:grid-cols-3"><router-link to="/finance/procurement/requests" class="rounded-xl border border-slate-700 bg-slate-800 p-4"><h2 class="font-semibold">Procurement approvals</h2><p class="mt-2 text-sm text-slate-400">Review funding requests and reserve matching budgets.</p></router-link><router-link to="/finance/listing-approvals" class="rounded-xl border border-slate-700 bg-slate-800 p-4"><h2 class="font-semibold">Listing approvals</h2><p class="mt-2 text-sm text-slate-400">Review listing prices and financial terms.</p></router-link><router-link v-if="canUsePayroll" to="/finance/payroll-approval" class="rounded-xl border border-slate-700 bg-slate-800 p-4"><h2 class="font-semibold">Payroll approvals</h2><p class="mt-2 text-sm text-slate-400">Review HR-prepared payroll summaries.</p></router-link></section>
           <div class="module-actions mb-4">
             <button v-if="page === 'items' && branchId !== 'all' && can('inventory:create')" class="module-action" title="Register item from supplier catalog" @click="openItem()"><span aria-hidden="true">＋</span> Register item</button>
             <button v-if="page === 'requests' && department === 'inventory' && branchId !== 'all' && can('inventory:create')" class="module-action" title="Create inventory request" @click="openForm('request')"><span aria-hidden="true">＋</span> New request</button>
@@ -102,6 +102,7 @@ section.mt-2 > div.rounded-lg dl > div:last-child dt::after {
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { auth } from '@/config/firebaseConfig'
+import { useSubscription } from '@/composables/useSubscription'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
@@ -110,6 +111,8 @@ import Swal from 'sweetalert2'
 import { dashboardCharts, reportDefinitions, exportReportCsv } from '@/utils/supplyReporting'
 
 const route = useRoute()
+const { hasFeature } = useSubscription()
+const canUsePayroll = computed(() => hasFeature('payroll'))
 const supplierView = computed(() => route.path.startsWith('/supplier/'))
 const department = computed(() => supplierView.value ? 'supplier' : route.meta.supplyDepartment || route.params.department || 'inventory')
 const page = computed(() => route.params.page || 'dashboard')

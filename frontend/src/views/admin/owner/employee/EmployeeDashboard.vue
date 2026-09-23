@@ -244,6 +244,11 @@ export default {
     }
 
     const loadTodayShift = async (userId, userData = {}) => {
+      if (!hasFeature('hr')) {
+        todayShiftLabel.value = 'Not included in this plan'
+        todayShiftTime.value = 'Shift and attendance management are available with Premium.'
+        return
+      }
       todayShiftLabel.value = 'No shift assigned'
       todayShiftTime.value = 'Today is unavailable for clock-in until a schedule is assigned.'
       const scheduleSnap = await getDoc(doc(db, 'users', userId, 'schedules', 'recurring'))

@@ -78,6 +78,24 @@ export default {
       return results
     }
 
+    const loadDashboardCollection = async (collectionName, branchIds) => {
+      try {
+        return await fetchByBranchIds(collectionName, branchIds)
+      } catch (error) {
+        const permissionDenied = String(error?.code || '') === 'permission-denied'
+          || String(error?.message || '').includes('Missing or insufficient permissions')
+        // A dashboard card must never prevent a Basic clinic from opening its
+        // operational workspace. The collection remains protected by rules;
+        // unavailable cards simply start empty until their data is accessible.
+        if (permissionDenied) return []
+        throw error
+      }
+    }
+
+    const isPermissionDenied = (error) =>
+      String(error?.code || '') === 'permission-denied'
+      || String(error?.message || '').includes('Missing or insufficient permissions')
+
     const toTimestampDate = (value) => (value?.toDate ? value.toDate() : null)
     const todayKey = () => {
       const today = new Date()
@@ -109,7 +127,17 @@ export default {
           where("ownerId", "==", user.uid)
         )
 
-        const branchSnapshot = await getDocs(branchQuery)
+        let branchSnapshot
+        try {
+          branchSnapshot = await getDocs(branchQuery)
+        } catch (error) {
+          if (isPermissionDenied(error)) {
+            branches.value = []
+            staff.value = []
+            return
+          }
+          throw error
+        }
         const branchData = branchSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
 
         branches.value = branchData
@@ -126,10 +154,14 @@ export default {
               where("branchId", "in", chunk),
               where("userType", "==", "Staff")
             )
-            const staffSnapshot = await getDocs(staffQuery)
-            staffData = staffData.concat(
-              staffSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-            )
+            try {
+              const staffSnapshot = await getDocs(staffQuery)
+              staffData = staffData.concat(
+                staffSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+              )
+            } catch (error) {
+              if (!isPermissionDenied(error)) throw error
+            }
           }
           staffData = staffData.filter((u) => !u.archived)
         }
@@ -138,12 +170,12 @@ export default {
         totalEmployees.value = staff.value.length
 
         const [clientsData, appointmentsData, transactionsData, inventoryData, purchaseRequestData, messageData] = await Promise.all([
-          fetchByBranchIds('clients', branchIds),
-          fetchByBranchIds('appointments', branchIds),
-          fetchByBranchIds('transactions', branchIds),
-          fetchByBranchIds('inventoryItems', branchIds),
-          fetchByBranchIds('purchaseRequests', branchIds),
-          fetchByBranchIds('messages', branchIds)
+          loadDashboardCollection('clients', branchIds),
+          loadDashboardCollection('appointments', branchIds),
+          loadDashboardCollection('transactions', branchIds),
+          loadDashboardCollection('inventoryItems', branchIds),
+          loadDashboardCollection('purchaseRequests', branchIds),
+          loadDashboardCollection('messages', branchIds)
         ])
 
         appointments.value = sortRecordsNewestFirst(appointmentsData)

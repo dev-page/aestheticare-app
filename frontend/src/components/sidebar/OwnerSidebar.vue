@@ -47,13 +47,18 @@ export default {
           currentUserType.value = ''
           return
         }
+        try {
+          const userSnap = await getDoc(doc(db, 'users', user.uid))
+          const userData = userSnap.exists() ? userSnap.data() || {} : {}
+          currentUserType.value = String(userData.userType || '').trim().toLowerCase()
 
-        const userSnap = await getDoc(doc(db, 'users', user.uid))
-        const userData = userSnap.exists() ? userSnap.data() || {} : {}
-        currentUserType.value = String(userData.userType || '').trim().toLowerCase()
-
-        if (currentUserType.value !== 'staff') {
-          await startOwnerModulesListener()
+          if (currentUserType.value !== 'staff') {
+            await startOwnerModulesListener()
+          }
+        } catch (error) {
+          // A sidebar must not create an unhandled Vue error while a user's
+          // permissions are still being resolved after sign-in.
+          console.error('Unable to resolve sidebar access:', error)
         }
       })
     })

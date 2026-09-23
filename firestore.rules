@@ -545,9 +545,14 @@ service cloud.firestore {
     }
 
     match /purchaseRequests/{requestId} {
-      allow read: if isSignedIn() && (get(/databases/$(database)/documents/suppliers/$(resource.data.supplierId)).data.ownerId == request.auth.uid
-        || (resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
-          || (canAccessBranch(resource.data.branchId) && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view') || hasPermission('finance:payables:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
+      allow read: if isSignedIn()
+        && ((resource.data.branchId != null
+          && (isOwnerOfBranch(resource.data.branchId)
+            || (canAccessBranch(resource.data.branchId)
+              && (hasPermission('inventory:view') || hasPermission('orders:view') || hasPermission('procurement:view') || hasPermission('finance:payables:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view')))))
+          || isSuperadmin()
+          || (resource.data.supplierId != null
+            && get(/databases/$(database)/documents/suppliers/$(resource.data.supplierId)).data.ownerId == request.auth.uid));
       // Historical records remain readable for reports. All new procurement writes
       // use the server-authoritative supplyRecords workflow.
       allow create, update, delete: if false;

@@ -6,7 +6,7 @@
       <div class="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Finance Reports</h1>
-          <p class="text-slate-400">Monthly report view for profit, payroll, inventory valuation, and sales mix.</p>
+          <p class="text-slate-400">Monthly operational report for sales, inventory valuation, and purchases<span v-if="hasPayroll">, including payroll</span>.</p>
         </div>
         <div class="flex flex-wrap items-end gap-3">
           <label class="block text-slate-400 text-sm mb-2">Report Month</label>
@@ -21,12 +21,12 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6" :class="hasPayroll ? 'xl:grid-cols-4' : 'xl:grid-cols-3'">
         <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <p class="text-slate-400 text-sm">Revenue</p>
           <p class="text-2xl font-bold text-green-400">{{ formatCurrency(report.revenue) }}</p>
         </div>
-        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+        <div v-if="hasPayroll" class="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <p class="text-slate-400 text-sm">Payroll</p>
           <p class="text-2xl font-bold text-rose-400">{{ formatCurrency(report.payroll) }}</p>
         </div>
@@ -47,7 +47,7 @@
             <span>Revenue</span>
             <span>{{ formatCurrency(report.revenue) }}</span>
           </div>
-          <div class="flex justify-between text-slate-300">
+          <div v-if="hasPayroll" class="flex justify-between text-slate-300">
             <span>Less: Payroll</span>
             <span>- {{ formatCurrency(report.payroll) }}</span>
           </div>
@@ -117,7 +117,7 @@
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
         <h2 class="text-lg font-semibold text-white mb-4">Cost Percentage Analysis</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="bg-slate-700 rounded-lg p-4">
+          <div v-if="hasPayroll" class="bg-slate-700 rounded-lg p-4">
             <p class="text-slate-400 text-xs uppercase tracking-wide">Payroll % of Revenue</p>
             <p class="text-white text-xl font-semibold mt-1">{{ percent(report.payrollPercent) }}</p>
           </div>
@@ -142,6 +142,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import { useSubscription } from '@/composables/useSubscription'
 
 export default {
   name: 'FinanceReports',
@@ -149,6 +150,8 @@ export default {
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const { hasFeature, initSubscription } = useSubscription()
+    const hasPayroll = computed(() => hasFeature('payroll'))
 
     const currentBranchId = ref('')
     const transactions = ref([])
@@ -251,9 +254,12 @@ export default {
 
     const loadData = async () => {
       if (!currentBranchId.value) return
+      const payrollRequest = hasPayroll.value
+        ? getDocs(query(collection(db, 'payrollSummaries'), where('branchId', '==', currentBranchId.value)))
+        : Promise.resolve({ docs: [] })
       const [txSnap, payrollSnap, purchaseSnap, inventorySnap, usersSnap] = await Promise.all([
         getDocs(query(collection(db, 'transactions'), where('branchId', '==', currentBranchId.value))),
-        getDocs(query(collection(db, 'payrollSummaries'), where('branchId', '==', currentBranchId.value))),
+        payrollRequest,
         getDocs(query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value))),
         getDocs(query(collection(db, 'inventoryItems'), where('branchId', '==', currentBranchId.value))),
         getDocs(query(collection(db, 'users'), where('branchId', '==', currentBranchId.value), where('userType', '==', 'Staff')))
@@ -270,7 +276,8 @@ export default {
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
+    onMounted(async () => {
+      await initSubscription()
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
@@ -303,7 +310,7 @@ export default {
       report,
       salesByStaff,
       salesByService,
-      formatCurrency,
+      formatCurrency, hasPayroll,
       percent,
       exportPdf
     }
