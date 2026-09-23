@@ -9,6 +9,7 @@ import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+import { useSubscription } from '@/composables/useSubscription'
 
 export default {
   name: 'Branch Info',
@@ -16,6 +17,7 @@ export default {
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const { hasFeature } = useSubscription()
     const branches = ref([])
     const staffOptions = ref([])
     const showEditModal = ref(false)
@@ -37,6 +39,7 @@ export default {
     })
     const archivedBranches = computed(() => branches.value.filter((branch) => branch.status === 'Inactive'))
     const activeBranches = computed(() => branches.value.filter((branch) => branch.status !== 'Inactive'))
+    const canManageMultipleBranches = computed(() => hasFeature('multi_branch'))
 
     const normalizeRevenue = (value) => {
       const numericValue = Number(value)
@@ -150,6 +153,8 @@ export default {
         ...branch,
         revenue: normalizeRevenue(branch?.revenue),
       }
+      // Basic plans have exactly one branch, which must remain primary.
+      if (!canManageMultipleBranches.value) currentBranch.value.isMainBranch = true
       if (!String(currentBranch.value.branchAdminId || '').trim() && currentBranch.value.isMainBranch) {
         currentBranch.value.branchAdminId = ownerProfile.value.branchAdminId
         currentBranch.value.branchAdminName = ownerProfile.value.branchAdminName
@@ -158,6 +163,10 @@ export default {
     }
 
     const archiveBranch = async (branch) => {
+      if (!canManageMultipleBranches.value) {
+        toast.info('Archiving branches is available with the multi-branch plan.')
+        return
+      }
       if (!branch?.id) {
         toast.error('Invalid branch ID')
         return
@@ -192,6 +201,7 @@ export default {
     }
 
     const unarchiveBranch = async (branch) => {
+      if (!canManageMultipleBranches.value) return
       if (!branch?.id) {
         toast.error('Invalid branch ID')
         return
@@ -226,6 +236,7 @@ export default {
     }
 
     const updateBranch = async () => {
+      if (!canManageMultipleBranches.value) currentBranch.value.isMainBranch = true
       if (!currentBranch.value.clinicBranch || !currentBranch.value.clinicBranch.trim()) {
         toast.error('Branch name is required')
         return
@@ -328,6 +339,10 @@ export default {
     }
 
     const toggleStatus = async (branch) => {
+      if (!canManageMultipleBranches.value) {
+        toast.info('The only branch on a Basic plan must remain active.')
+        return
+      }
       const action = branch.status === 'Active' ? 'deactivate' : 'reactivate'
       const newStatus = branch.status === 'Active' ? 'Inactive' : 'Active'
 
@@ -361,6 +376,7 @@ export default {
       staffOptions,
       activeBranches,
       archivedBranches,
+      canManageMultipleBranches,
       showEditModal,
       currentBranch,
       openEditModal,
@@ -412,9 +428,10 @@ export default {
               <td class="px-2 py-2 sm:px-4 sm:py-3">PHP {{ branch.revenue ? branch.revenue.toLocaleString() : 0 }}</td>
               <td class="px-2 py-2 sm:px-4 sm:py-3">
                 <span
-                  @click="toggleStatus(branch)"
+                  @click="canManageMultipleBranches && toggleStatus(branch)"
                   :class="[
-                    'cursor-pointer rounded-full px-2 py-1 text-xs font-medium sm:px-3 sm:text-sm',
+                    'rounded-full px-2 py-1 text-xs font-medium sm:px-3 sm:text-sm',
+                    canManageMultipleBranches ? 'cursor-pointer' : 'cursor-default',
                     branch.status === 'Active'
                       ? 'bg-green-500/20 text-green-400'
                       : 'bg-yellow-500/20 text-yellow-400'
@@ -431,6 +448,7 @@ export default {
                   Edit
                 </button>
                 <button
+                  v-if="canManageMultipleBranches"
                   @click="archiveBranch(branch)"
                   class="flex-1 rounded bg-red-600 px-3 py-1 text-white transition hover:bg-red-700 sm:flex-none"
                 >
@@ -442,7 +460,7 @@ export default {
         </table>
       </div>
 
-      <div class="mt-8 overflow-x-auto rounded-xl border border-slate-700 bg-slate-800 p-4 sm:p-6">
+      <div v-if="canManageMultipleBranches" class="mt-8 overflow-x-auto rounded-xl border border-slate-700 bg-slate-800 p-4 sm:p-6">
         <div class="mb-4">
           <h2 class="text-lg font-semibold text-white sm:text-xl">Archived Branches</h2>
           <p class="text-sm text-slate-400">Inactive branches archived by the owner.</p>
@@ -542,7 +560,7 @@ export default {
               </select>
             </div>
 
-            <div class="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3">
+            <div v-if="canManageMultipleBranches" class="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3">
               <label class="flex items-center gap-3 text-white">
                 <input
                   v-model="currentBranch.isMainBranch"
@@ -552,6 +570,9 @@ export default {
                 <span>Set as main branch</span>
               </label>
             </div>
+            <p v-else class="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3 text-sm text-slate-300">
+              This is your only branch, so it remains your main branch.
+            </p>
 
             <div>
               <label class="mb-1 block text-slate-400">Branch Admin</label>

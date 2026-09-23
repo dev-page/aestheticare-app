@@ -1453,13 +1453,13 @@ const normalizeRoleKey = (value) => {
 // backups, role administration, and creating additional branches.
 const CLINIC_ADMIN_PERMISSIONS = new Set([
   'branches:view', 'clinic_profile:view',
-  'staff:view', 'staff:create', 'staff:update',
+  'staff:view', 'staff:create', 'staff:update', 'staff:disable',
   'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import',
-  'clients:view', 'clients:create',
-  'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view',
-  'payments:view', 'payments:create', 'inbox:view', 'reports:view',
-  'services:view', 'services:create', 'services:update',
-  'inventory:view', 'inventory:create', 'inventory:review',
+  'clients:view', 'clients:create', 'clients:update', 'clients:disable',
+  'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create',
+  'payments:view', 'payments:create', 'payments:update', 'inbox:view', 'reports:view',
+  'services:view', 'services:create', 'services:update', 'services:disable',
+  'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review',
   'suppliers:create', 'suppliers:update', 'orders:view', 'orders:update',
   'procurement:view', 'procurement:create', 'procurement:review',
   'hr:view', 'hr:create', 'hr:update',
@@ -1533,6 +1533,9 @@ const loadUserContext = async (uid) => {
       ...customRolePermissions,
     ])].filter((permission) => permission !== 'administrator:full_access')
     : [...userPermissions, ...rolePermissions, ...customRolePermissions]
+      // Custom clinic roles may never elevate a staff member to platform-wide
+      // administrator access. Superadmin accounts keep their explicit role.
+      .filter((permission) => roleKey === 'Superadmin' || permission !== 'administrator:full_access')
   return {
     uid,
     roleKey,

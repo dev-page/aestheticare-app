@@ -38,6 +38,7 @@ import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'fi
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { isSignificantActivity } from '@/utils/activityLogger'
+import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -109,54 +110,33 @@ export default {
     const loadActivities = async () => {
       activities.value = []
       try {
-        // Always include activities done by the current user
-        const userActivitiesSnap = await getDocs(query(collection(db, 'activities'), where('actorId', '==', currentUserId.value)))
-        const userActivities = userActivitiesSnap.docs.map((s) => ({ id: s.id, ...s.data() }))
-
-        // Include activities for the current branch (if set)
-        let branchActivities = []
-        if (currentBranchId.value) {
-          const bSnap = await getDocs(query(collection(db, 'activities'), where('branchId', '==', currentBranchId.value)))
-          branchActivities = bSnap.docs.map((s) => ({ id: s.id, ...s.data() }))
-        }
-
-        // If user is an owner/clinic-admin, include activities across all clinics they own
-        let ownerClinicActivities = []
+        // Activity documents are branch-scoped in Firestore. A query by actor
+        // can include a historic global document that this clinic user is not
+        // allowed to read, which denies the entire query. Only query branches
+        // accessible to the signed-in account.
+        let branchIds = []
         const roleValue = String(role.value || '').toLowerCase()
         if (roleValue === 'owner' || roleValue === 'clinic admin' || roleValue === 'clinicadmin') {
-          // find clinics owned by this user
-          const clinicsSnap = await getDocs(query(collection(db, 'clinics'), where('ownerId', '==', currentUserId.value)))
-          const clinicIds = clinicsSnap.docs.map((d) => d.id)
-
-          // For each clinic id, fetch activities for that branch/clinic
-          const fetches = clinicIds.map((cid) => getDocs(query(collection(db, 'activities'), where('branchId', '==', cid))))
-          const results = await Promise.all(fetches)
-          ownerClinicActivities = results.flatMap((snap) => snap.docs.map((s) => ({ id: s.id, ...s.data() })))
-
-          // Also include activities where actorClinicId matches any of the clinics (if such field exists)
-          if (clinicIds.length) {
-            try {
-              const actorQueries = []
-              // Firestore 'in' supports up to 10 elements; chunk if needed
-              const chunkSize = 10
-              for (let i = 0; i < clinicIds.length; i += chunkSize) {
-                const chunk = clinicIds.slice(i, i + chunkSize)
-                actorQueries.push(getDocs(query(collection(db, 'activities'), where('actorClinicId', 'in', chunk))))
-              }
-              const actorResults = await Promise.all(actorQueries)
-              ownerClinicActivities = ownerClinicActivities.concat(actorResults.flatMap((snap) => snap.docs.map((s) => ({ id: s.id, ...s.data() }))))
-            } catch (e) {
-              // Not all deployments have actorClinicId field or 'in' may be unsupported; ignore and rely on branchId fetches
-              console.debug('actorClinicId queries skipped or failed', e)
-            }
-          }
+          const scope = await loadOwnerBranchScope(db, currentUserId.value)
+          branchIds = scope.branchIds || []
+        } else if (currentBranchId.value) {
+          branchIds = [currentBranchId.value]
         }
 
-        // merge and dedupe by id
-        const combined = [...userActivities, ...branchActivities, ...ownerClinicActivities]
+        const uniqueBranchIds = [...new Set(branchIds.map((id) => String(id || '').trim()).filter(Boolean))]
+        const activitySnapshots = await Promise.all(
+          uniqueBranchIds.map((branchId) =>
+            getDocs(query(collection(db, 'activities'), where('branchId', '==', branchId)))
+          )
+        )
+
+        // Merge and deduplicate. Every requested record now matches the
+        // branch-access Firestore rule.
         const map = new Map()
-        combined.forEach((act) => {
-          if (!map.has(act.id)) map.set(act.id, act)
+        activitySnapshots.forEach((snapshot) => {
+          snapshot.docs.forEach((snap) => {
+            if (!map.has(snap.id)) map.set(snap.id, { id: snap.id, ...snap.data() })
+          })
         })
         activities.value = Array.from(map.values()).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
       } catch (err) {

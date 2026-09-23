@@ -651,7 +651,10 @@ import {
 } from '@/config/clinicPermissionRegistry'
 
 const colorPresets = ['#5865F2', '#57F287', '#FEE75C', '#EB459E', '#ED4245', '#3BA55D', '#1ABC9C', '#FAA61A', '#2D7DFA', '#A56EFF']
-const defaultPermissionKeys = new Set([])
+// These account pages are available to every signed-in clinic user. Showing
+// them as optional role grants was misleading because toggling them never
+// changed actual access.
+const defaultPermissionKeys = new Set(['activities:view', 'notifications:view', 'support:view'])
 const ownerOnlyPermissionKeys = new Set(
   permissionGroups.flatMap((group) => group.sections.flatMap((section) =>
     section.permissions.filter((permission) => permission.ownerOnly).map((permission) => permission.key)
@@ -665,11 +668,11 @@ const permissionSuggestionRules = [
   },
   {
     match: ['practitioner', 'doctor', 'dentist', 'nurse', 'therapist', 'clinician'],
-    permissions: ['clients:view', 'appointments:view', 'appointments:create', 'appointments:review', 'consultations:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['clients:view', 'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['hr', 'human resources'],
-    permissions: ['staff:view', 'staff:create', 'staff:update', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:update', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:update', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['finance', 'accounting', 'cashier'],
@@ -677,15 +680,15 @@ const permissionSuggestionRules = [
   },
   {
     match: ['manager', 'operations', 'supervisor'],
-    permissions: ['staff:view', 'staff:update', 'appointments:view', 'appointments:review', 'inventory:view', 'suppliers:create', 'suppliers:update', 'inventory:review', 'orders:view', 'orders:update', 'services:view', 'reports:view', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['staff:view', 'staff:update', 'staff:disable', 'appointments:view', 'appointments:review', 'inventory:view', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'inventory:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'reports:view', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['supply', 'inventory', 'warehouse', 'stock'],
-    permissions: ['inventory:view', 'suppliers:create', 'suppliers:update', 'inventory:create', 'inventory:review', 'orders:view', 'orders:update', 'reports:view', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
+    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'reports:view', 'notifications:view', 'support:view', 'profile:view', 'password:update'],
   },
   {
     match: ['admin', 'owner', 'administrator'],
-    permissions: [fullAccessPermissionKey, 'clinic_profile:view', 'clinic_profile:update', 'branches:view', 'branches:create', 'staff:view', 'staff:create', 'staff:update', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'consultations:view', 'payments:view', 'payments:create', 'reports:view', 'inventory:view', 'suppliers:create', 'suppliers:update', 'inventory:create', 'inventory:review', 'orders:view', 'orders:update', 'services:view', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:view', 'payroll:update', 'subscription:view', 'backup:view', 'profile:view', 'password:update', 'activities:view', 'notifications:view', 'support:view'],
+    permissions: ['clinic_profile:view', 'staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:create', 'clients:update', 'clients:disable', 'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'payments:create', 'payments:update', 'reports:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:view', 'payroll:update', 'profile:view', 'password:update', 'activities:view', 'notifications:view', 'support:view'],
   },
 ]
 
@@ -850,9 +853,10 @@ export default {
 
     const normalizePermissionSet = (permissionList = []) => {
       const permissions = new Set(permissionList)
-      if (permissions.has(fullAccessPermissionKey)) return new Set([fullAccessPermissionKey])
-
       ownerOnlyPermissionKeys.forEach((permissionKey) => permissions.delete(permissionKey))
+      // Full access is a platform-level capability; clinic custom roles can
+      // never delegate it to a staff account.
+      permissions.delete(fullAccessPermissionKey)
 
       const pending = [...permissions]
       while (pending.length) {
@@ -908,7 +912,7 @@ export default {
         }
       }
 
-      return [fullAccessPermissionKey, 'staff:view', 'staff:create', 'staff:update', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'consultations:view', 'payments:view', 'payments:create', 'inventory:view', 'inventory:create', 'inventory:review', 'orders:view', 'orders:update', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:view', 'payroll:update', 'services:view', 'inbox:view', 'subscription:view', 'backup:view', 'profile:view', 'password:update', 'activities:view', 'notifications:view', 'support:view']
+      return ['staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:create', 'clients:update', 'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'payments:create', 'payments:update', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'orders:view', 'orders:update', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:view', 'payroll:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'inbox:view', 'profile:view', 'password:update']
         .filter((permission) => allPermissionKeys.includes(permission))
         .filter((permission) => !selectedPermissions.has(permission))
     })
@@ -1381,7 +1385,7 @@ export default {
             assignedRoleIds.forEach((roleId) => {
               ;(rolePermissionMap.get(roleId) || []).forEach((permission) => permissions.add(permission))
             })
-            batch.update(userDoc.ref, { effectivePermissions: [...permissions] })
+            batch.update(userDoc.ref, { effectivePermissions: [...normalizePermissionSet([...permissions])] })
             batchSize += 1
             if (batchSize >= 450) {
               commits.push(batch.commit())

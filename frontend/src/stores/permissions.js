@@ -12,7 +12,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const defaultPermissionKeys = new Set(['activities:view', 'notifications:view', 'support:view'])
   const fullAccessPermissionKey = 'administrator:full_access'
   const clinicAdminRestrictedPermissions = new Set([
-    'roles:manage', 'branches:create', 'clinic_profile:update', 'subscription:view', 'backup:view',
+    'roles:manage', 'branches:view', 'branches:create', 'clinic_profile:update', 'subscription:view', 'backups:view', 'backups:create',
   ])
   const clinicAdminPermissions = allPermissionKeys.filter((permission) => !clinicAdminRestrictedPermissions.has(permission))
 
@@ -262,6 +262,11 @@ export const usePermissionsStore = defineStore('permissions', () => {
       ...(Array.isArray(rolePermissions.value) ? rolePermissions.value : []),
       ...(Array.isArray(customRolePermissions.value) ? customRolePermissions.value : [])
     ])
+    // Clinic roles are delegated staff roles. Platform full access must never
+    // be honored from a clinic-role document or a denormalized staff field.
+    if (userRole.value !== 'Superadmin') {
+      set.delete(fullAccessPermissionKey)
+    }
     defaultPermissionKeys.forEach((permissionKey) => set.add(permissionKey))
     if (userRole.value === 'Clinic Admin') {
       clinicAdminPermissions.forEach((permissionKey) => set.add(permissionKey))
