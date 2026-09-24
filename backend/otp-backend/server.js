@@ -4129,6 +4129,30 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
   }
 })
 
+// Public clinic catalog reads run through the trusted backend. This prevents a
+// customer-facing page from failing when Firestore rules cannot prove a
+// compound listing query is limited to a published clinic.
+app.get('/public/clinics/:branchId/catalog', async (req, res) => {
+  try {
+    const branchId = String(req.params?.branchId || '').trim()
+    if (!branchId) return res.status(400).json({ success: false, error: 'branchId is required.' })
+    const firestore = admin.firestore()
+    const clinicSnap = await firestore.collection('clinics').doc(branchId).get()
+    const clinic = clinicSnap.exists ? clinicSnap.data() || {} : null
+    if (!clinic || clinic.isPublished !== true || String(clinic.status || '').trim().toLowerCase() === 'inactive') {
+      return res.status(404).json({ success: false, error: 'Center unavailable.' })
+    }
+    const postsSnap = await firestore.collection('productServicePosts').where('branchId', '==', branchId).get()
+    const posts = postsSnap.docs
+      .map((postSnap) => ({ id: postSnap.id, ...postSnap.data() }))
+      .filter((post) => post.financeStatus === 'approved' && post.isPublished === true && post.archived !== true)
+    return res.json({ success: true, posts })
+  } catch (error) {
+    console.error('Public clinic catalog load failed:', error?.message || error)
+    return res.status(500).json({ success: false, error: 'Unable to load this center’s products and services.' })
+  }
+})
+
 // Bookings: create booking record and corresponding appointment (transactional) with availability checks
 app.post('/bookings/create', requireAuth, async (req, res) => {
   const { reservation } = req.body ?? {}

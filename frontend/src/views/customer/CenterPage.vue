@@ -1495,14 +1495,14 @@ const loadBranchData = async (branchId) => {
   await nextTick()
   await initBranchMap()
 
-  const [postSnap] = await Promise.all([
-    getDocs(query(collection(db, 'productServicePosts'), where('branchId', '==', branchId), where('financeStatus', '==', 'approved'), where('isPublished', '==', true))),
-  ])
+  const catalogResponse = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/catalog`)
+  const catalogPayload = await catalogResponse.json().catch(() => ({}))
+  if (!catalogResponse.ok || !catalogPayload?.success) throw new Error(catalogPayload?.error || 'Unable to load center products and services.')
+  const catalogPosts = Array.isArray(catalogPayload.posts) ? catalogPayload.posts : []
 
-  items.value = postSnap.docs.map((snap) => {
-    const post = snap.data() || {}
+  items.value = catalogPosts.map((post) => {
     const packageComponents = Array.isArray(post.packageServiceIds)
-      ? post.packageServiceIds.map((componentId) => postSnap.docs.find((candidate) => candidate.id === componentId)?.data() || {}).filter(Boolean)
+      ? post.packageServiceIds.map((componentId) => catalogPosts.find((candidate) => candidate.id === componentId) || {}).filter(Boolean)
       : []
     const packageConsultation = packageComponents.find((component) => component.postType === 'Consultation')
     const rawConsultationMode = post.consultationMode || packageConsultation?.consultationMode || 'online'
@@ -1529,7 +1529,7 @@ const loadBranchData = async (branchId) => {
       packageServiceIds: Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : [],
       packageServiceNames: Array.isArray(post.packageServiceIds)
         ? post.packageServiceIds.map((componentId) => {
-          const component = postSnap.docs.find((candidate) => candidate.id === componentId)?.data() || {}
+          const component = catalogPosts.find((candidate) => candidate.id === componentId) || {}
           return component.title || component.serviceName || component.consultationName || ''
         }).filter(Boolean)
         : [],
