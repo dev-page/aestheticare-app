@@ -96,7 +96,9 @@ const normalizeRoleKey = (value) => {
   return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
 }
 
-const LOGIN_OTP_ENABLED = true
+// Temporarily disabled. Keep the login-OTP implementation in place so it can
+// be restored by changing this flag back to true.
+const LOGIN_OTP_ENABLED = false
 
 const requiresLoginOtp = (userData) => {
   if (!LOGIN_OTP_ENABLED) return false
