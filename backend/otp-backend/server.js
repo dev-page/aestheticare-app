@@ -4,6 +4,7 @@ import { registerSupplyWorkflow } from './supplyWorkflow.js'
 import { registerFinanceWorkflow } from './financeWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
+import { registerWalkInPayments } from './walkInWorkflow.js'
 import { prepareBooking } from './bookingResources.js'
 import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow } from './bookingWorkflow.js'
 import express from 'express'
@@ -2805,6 +2806,23 @@ app.all('/cron/appointment-reminders', async (req, res) => {
     return res.json({ success: true, reminders: rows.length })
   } catch (error) { return res.status(500).json({ success: false, error: 'Unable to send appointment reminders.' }) }
 })
+registerWalkInPayments(app, {
+  admin, requireAuth, authorizeClinicAction,
+  verifyCheckout: async (sessionId, appointmentId, branchId) => {
+    assertWorkflow(/^cs_[A-Za-z0-9_-]+$/.test(sessionId), 'A valid checkout session is required.', 400)
+    const response = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${sessionId}`, { headers: buildPayMongoHeaders() })
+    const data = (await response.json())?.data?.attributes || {}
+    const payment = (data.payments || []).find(entry => entry.attributes?.status === 'paid')
+    assertWorkflow(response.ok && payment, 'Payment has not been confirmed.')
+    assertWorkflow(data.metadata?.appointmentId === appointmentId && data.metadata?.branchId === branchId && data.metadata?.saleMode === 'appointment', 'This payment belongs to a different appointment.')
+    return { amount: Number(payment.attributes.amount) }
+  },
+  sendReceipt: async (email, receipt) => {
+    if (!postmarkClient || !senderEmail) return false
+    await sendPostmarkMessage({ to: email, from: senderEmail, subject: 'Your walk-in payment receipt', text: `Payment received: PHP ${receipt.total.toFixed(2)}\nService key: ${receipt.serviceKey}` })
+    return true
+  },
+})
 registerListingApproval(app, { admin, requireAuth, loadUserContext })
 
 app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
@@ -4166,8 +4184,18 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     const firestore = admin.firestore()
     const customerId = String(reservation.customerId || '').trim()
     const walkIn = reservation.source === 'walk_in'
-    assertWorkflow(!walkIn, 'Walk-in appointments are not supported. Customers must create a standard booking before service.', 410)
-    if (!customerId || customerId !== String(req.user?.uid || '').trim()) {
+    if (walkIn) {
+      await authorizeClinicAction(req.user.uid, String(reservation.branchId || ''), 'appointments:create')
+      const client = await firestore.collection('clients').doc(String(reservation.clientId || customerId)).get()
+      assertWorkflow(client.exists && client.data().branchId === reservation.branchId, 'Select a walk-in client from this branch.', 403)
+      const data = client.data() || {}
+      reservation.clientId = client.id
+      reservation.customerId = client.id
+      reservation.customerName = data.fullName || `${data.firstName || ''} ${data.lastName || ''}`.trim() || 'Walk-in client'
+      reservation.customerEmail = data.email || ''
+      reservation.customerPhone = data.phone || data.contactNumber || ''
+    }
+    if (!walkIn && (!customerId || customerId !== String(req.user?.uid || '').trim())) {
       return res.status(403).json({ success: false, error: 'Forbidden' })
     }
 
@@ -4352,7 +4380,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         status: 'Pending Approval',
         paymentStatus: 'Pending',
         paymentCoverage: 'pending',
-        source: 'customer_booking_request',
+        source: walkIn ? 'walk_in' : 'customer_booking_request',
         bookingId: bookingRef.id,
         clinicPolicySnapshot,
         policyAcknowledged: reservation.policyAcknowledged === true,
@@ -4363,11 +4391,12 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     await firestore.runTransaction(async (tx) => {
       const prepared = await prepareBooking({ tx, db: firestore, reservation, getBookingRange, rangesOverlap })
       Object.assign(appointmentPayload, prepared.data, {
-        approvalStatus: 'Pending', status: 'Pending Approval', paymentStatus: 'Pending', amountPaid: 0,
+        approvalStatus: walkIn ? 'Approved' : 'Pending', status: walkIn ? 'Unpaid' : 'Pending Approval', paymentStatus: walkIn ? 'Unpaid' : 'Pending', amountPaid: 0,
+        ...(walkIn ? { source: 'walk_in', clientId: reservation.clientId, clientName: reservation.customerName, installmentsAllowed: false, depositPercent: 100, approvedBy: req.user.uid, approvedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
         serviceKey: null, customerKeyVerified: false, workerKeyVerified: false, workerCompleted: false, customerCompleted: false,
       })
       tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-      tx.set(bookingRef, { ...bookingPayload, ...prepared.data, source: 'customer_booking_request', status: 'Pending Approval' })
+      tx.set(bookingRef, { ...bookingPayload, ...prepared.data, source: walkIn ? 'walk_in' : 'customer_booking_request', status: walkIn ? 'Unpaid' : 'Pending Approval' })
       tx.set(appointmentRef, appointmentPayload)
       tx.update(bookingRef, { appointmentId: appointmentRef.id, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
     })
@@ -7382,9 +7411,6 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
   const isCustomerBookingCheckout =
     moduleKey === 'customer_appointment' ||
     moduleKey === 'customer_consultation'
-  if (!isSubscriptionCheckout && !isCustomerOrderCheckout && !isCustomerBookingCheckout) {
-    return res.status(410).json({ success: false, error: 'POS and walk-in payments are not supported. Use the customer checkout flow.' })
-  }
   const reservationId = String(metadata?.reservationId || '').trim()
   const totalServiceDurationMinutes = Math.max(
     30,
@@ -7405,6 +7431,16 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
       approvedProductLines = approvedOrderLines(items, listings, amount)
       orderSnapshot = await prepareOrderSnapshot(admin.firestore(), items, req.user.uid, req.body.delivery, String(referenceNumber || ''))
     } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message }) }
+  }
+
+  if (metadata?.saleMode === 'appointment') {
+    try {
+      const appointment = (await admin.firestore().collection('appointments').doc(String(metadata.appointmentId || '')).get()).data()
+      assertWorkflow(appointment?.source === 'walk_in', 'Select a walk-in appointment.')
+      await authorizeClinicAction(req.user.uid, appointment.branchId, 'payments:create')
+      assertWorkflow(appointment.branchId === metadata.branchId && appointment.status === 'Unpaid', 'This appointment is not ready for payment.')
+      assertWorkflow(Math.round(Number(appointment.totalAmount ?? appointment.amount) * 100) === Number(amount), 'Payment amount does not match the appointment.')
+    } catch (error) { return res.status(error.status || 400).json({ success: false, error: error.message }) }
   }
 
   if (!isSubscriptionCheckout) {

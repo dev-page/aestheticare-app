@@ -21,6 +21,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     children: [
       { type: 'section', label: 'CLIENTS' },
       { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/crm/clients', permission: 'clients:view' },
+      { label: 'Walk-In', icon: 'mdi:walk', to: '/crm/clients/new', permission: 'clients:create' },
       { type: 'section', label: 'APPOINTMENTS' },
       { label: 'Appointments', icon: 'mdi:calendar-month-outline', to: '/crm/appointments', permission: 'appointments:view' },
       { label: 'Treatment Sessions', icon: 'mdi:calendar-sync-outline', to: '/clinical/treatment-sessions', permission: 'appointments:update' },
@@ -28,6 +29,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       { label: 'Booking Availability', icon: 'mdi:calendar-clock-outline', to: '/appointments/booking-availability', feature: 'booking_availability', plans: ['basic'], permission: 'appointments:review' },
       { label: 'Online Consultation', icon: 'mdi:video-outline', to: '/clinical/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
       { type: 'section', label: 'PAYMENTS & MESSAGES' },
+      { label: 'POS', icon: 'mdi:cash-register', to: '/crm/pos', permission: 'payments:create' },
       { label: 'Transactions', icon: 'mdi:receipt-text-outline', to: '/crm/transactions', permission: 'payments:view' },
       { type: 'section', label: 'ORDERS' },
       { label: 'Customer Orders', icon: 'mdi:shopping-outline', to: '/operations/orders', permissionsAny: ['orders:view', 'inventory:view'] },
