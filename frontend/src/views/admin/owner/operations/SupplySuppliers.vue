@@ -144,6 +144,26 @@
         <div class="bg-slate-800 rounded-xl p-8 max-w-3xl w-full mx-auto my-6 border border-slate-700 max-h-[90vh] overflow-y-auto">
           <h2 class="text-2xl font-bold text-white mb-6">Add New Supplier</h2>
           <form @submit.prevent="addSupplier" class="space-y-4">
+            <div class="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+              <label class="block text-slate-200 text-sm font-medium mb-2">Supplier Account Email</label>
+              <div class="flex gap-2">
+                <input
+                  v-model="newSupplier.email"
+                  type="email"
+                  required
+                  maxlength="254"
+                  autocomplete="email"
+                  placeholder="Enter email to check for an existing supplier account"
+                  :class="inputClass(showAddError('email'))"
+                  @input="handleSupplierEmailInput"
+                  @blur="checkExistingSupplierAccount"
+                />
+                <button type="button" :disabled="checkingSupplierAccount || !newSupplier.email" class="shrink-0 rounded-lg border border-amber-400/50 px-4 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-500/10 disabled:opacity-50" @click="checkExistingSupplierAccount">{{ checkingSupplierAccount ? 'Checking…' : 'Check email' }}</button>
+              </div>
+              <p v-if="existingSupplierAccount" class="mt-2 text-xs text-emerald-300">Existing supplier account found. Available details were filled in; review them before adding the supplier to this directory.</p>
+              <p v-else-if="supplierAccountChecked" class="mt-2 text-xs text-slate-400">No supplier account was found. A new supplier account will be created after saving.</p>
+              <p v-if="showAddError('email')" class="mt-1 text-xs text-red-400">{{ addErrors.email }}</p>
+            </div>
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label class="block text-slate-400 text-sm mb-2">Supplier Name</label>
@@ -218,20 +238,6 @@
                   @blur="markTouched('contact')"
                 />
                 <p v-if="showAddError('contact')" class="mt-1 text-xs text-red-400">{{ addErrors.contact }}</p>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-sm mb-2">Email</label>
-                <input
-                  v-model="newSupplier.email"
-                  type="email"
-                  required
-                  maxlength="254"
-                  autocomplete="email"
-                  :class="inputClass(showAddError('email'))"
-                  @input="markTouched('email')"
-                  @blur="markTouched('email')"
-                />
-                <p v-if="showAddError('email')" class="mt-1 text-xs text-red-400">{{ addErrors.email }}</p>
               </div>
               <div>
                 <label class="block text-slate-400 text-sm mb-2">Phone</label>
@@ -453,6 +459,9 @@ export default {
     const newSupplier = ref({
       ...getEmptySupplier()
     })
+    const checkingSupplierAccount = ref(false)
+    const supplierAccountChecked = ref(false)
+    const existingSupplierAccount = ref(null)
     const editSupplier = ref({
       id: '',
       branchId: '',
@@ -525,6 +534,52 @@ export default {
 
     const markTouched = (field) => {
       addTouched.value[field] = true
+    }
+
+    const handleSupplierEmailInput = () => {
+      markTouched('email')
+      supplierAccountChecked.value = false
+      existingSupplierAccount.value = null
+    }
+
+    const checkExistingSupplierAccount = async () => {
+      const normalizedEmail = String(newSupplier.value.email || '').trim().toLowerCase()
+      if (!/^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(normalizedEmail) || !currentBranchId.value || checkingSupplierAccount.value) return
+      checkingSupplierAccount.value = true
+      supplierAccountChecked.value = false
+      existingSupplierAccount.value = null
+      try {
+        const token = await auth.currentUser?.getIdToken()
+        if (!token) throw new Error('Your session has expired. Please sign in again.')
+        const response = await fetch(`${OTP_API_BASE}/supply/suppliers/account-lookup`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ branchId: currentBranchId.value, email: normalizedEmail }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to check the supplier account.')
+        supplierAccountChecked.value = true
+        if (!payload.found || !payload.supplier) return
+        const account = payload.supplier
+        existingSupplierAccount.value = account
+        newSupplier.value = {
+          ...newSupplier.value,
+          name: account.name || newSupplier.value.name,
+          businessType: account.businessType || newSupplier.value.businessType,
+          taxRegistrationNumber: normalizeTinDigits(account.taxRegistrationNumber || newSupplier.value.taxRegistrationNumber),
+          categories: Array.isArray(account.categories) && account.categories.length ? account.categories : newSupplier.value.categories,
+          contact: account.contact || newSupplier.value.contact,
+          email: normalizedEmail,
+          phone: String(account.phone || newSupplier.value.phone || '').replace(/\D/g, '').slice(-10),
+          address: account.address || newSupplier.value.address,
+        }
+        toast.success('Existing supplier account found. Details were filled in.')
+      } catch (error) {
+        console.error(error)
+        toast.error(error?.message || 'Unable to check the supplier account.')
+      } finally {
+        checkingSupplierAccount.value = false
+      }
     }
 
     const inputClass = (hasError) => [
@@ -637,11 +692,13 @@ export default {
         const response = await fetch(`${OTP_API_BASE}/supply/suppliers/account`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ branchId: currentBranchId.value, ...getSupplierPayload(newSupplier.value) }),
+          body: JSON.stringify({ branchId: currentBranchId.value, ...getSupplierPayload(newSupplier.value), existingSupplierUid: existingSupplierAccount.value?.uid || '' }),
         })
         const payload = await response.json().catch(() => null)
         if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to create supplier account.')
-        toast.success('Supplier added. An activation email was sent to the supplier.')
+        if (payload?.data?.alreadyLinked) toast.info('This supplier account is already linked in the directory.')
+        else if (payload?.data?.linkedExistingAccount) toast.success('Existing supplier account linked to the directory.')
+        else toast.success('Supplier added. An activation email was sent to the supplier.')
         showAddModal.value = false
         resetAddForm()
         await loadSuppliers()
@@ -786,6 +843,9 @@ export default {
 
     const resetAddForm = () => {
       newSupplier.value = { ...getEmptySupplier() }
+      checkingSupplierAccount.value = false
+      supplierAccountChecked.value = false
+      existingSupplierAccount.value = null
       submitAttempted.value = false
       addTouched.value = {
         name: false,
@@ -827,8 +887,13 @@ export default {
       handleTinInput,
       handlePhoneInput,
       newSupplier,
+      checkingSupplierAccount,
+      supplierAccountChecked,
+      existingSupplierAccount,
       editSupplier,
       markTouched,
+      handleSupplierEmailInput,
+      checkExistingSupplierAccount,
       showAddError,
       inputClass,
       addSupplier,

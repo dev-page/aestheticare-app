@@ -70,6 +70,7 @@ const ATTENDANCE_FIELDS_PATH = '/attendance/fields'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const SUPPLIER_WELCOME_PATH = '/send-supplier-welcome'
 const SUPPLIER_ACCOUNT_CREATE_PATH = '/supply/suppliers/account'
+const SUPPLIER_ACCOUNT_LOOKUP_PATH = '/supply/suppliers/account-lookup'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
@@ -5921,6 +5922,52 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
 })
 app.post(SUPPLIER_WELCOME_PATH, requireAuth, requirePermission('suppliers:create'), handleAccountWelcome)
 
+// A clinic can link an existing supplier account instead of creating a
+// duplicate Firebase Auth account. Only authorized staff for the requested
+// branch receive the supplier's business contact details.
+app.post(SUPPLIER_ACCOUNT_LOOKUP_PATH, requireAuth, async (req, res) => {
+  try {
+    const branchId = String(req.body?.branchId || '').trim()
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    if (!branchId || !EMAIL_ADDRESS_REGEX.test(email)) return res.status(400).json({ success: false, error: 'A valid branch and email are required.' })
+    const actor = await loadUserContext(String(req.user?.uid || ''))
+    const actorRole = String(actor.roleKey || actor.userData?.role || '').toLowerCase().replace(/[\s_-]+/g, '')
+    const permitted = actor.permissions.has('suppliers:create') || actor.permissions.has('administrator:full_access') || ['owner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
+    if (!permitted || !await resolveBranchAccess(String(req.user?.uid || ''), branchId)) return res.status(403).json({ success: false, error: 'Forbidden' })
+    const firestore = admin.firestore()
+    let authUser
+    try { authUser = await admin.auth().getUserByEmail(email) } catch (error) {
+      if (error?.code === 'auth/user-not-found') return res.json({ success: true, found: false })
+      throw error
+    }
+    const userSnap = await firestore.collection('users').doc(authUser.uid).get()
+    const userData = userSnap.exists ? userSnap.data() || {} : {}
+    const accountKind = String(userData.role || userData.userType || '').trim().toLowerCase()
+    if (accountKind !== 'supplier') return res.json({ success: true, found: false })
+    const supplierSnap = await firestore.collection('suppliers').where('ownerId', '==', authUser.uid).limit(1).get()
+    const supplier = supplierSnap.empty ? {} : supplierSnap.docs[0].data() || {}
+    return res.json({
+      success: true,
+      found: true,
+      linkedSupplierId: supplierSnap.empty ? '' : supplierSnap.docs[0].id,
+      supplier: {
+        uid: authUser.uid,
+        name: String(supplier.name || supplier.businessName || userData.businessName || '').trim(),
+        businessType: String(supplier.businessType || userData.businessType || '').trim(),
+        taxRegistrationNumber: String(supplier.taxRegistrationNumber || supplier.tinNumber || userData.taxRegistrationNumber || '').replace(/\D/g, ''),
+        categories: Array.isArray(supplier.categories) ? supplier.categories : (supplier.category ? [supplier.category] : []),
+        contact: String(supplier.contact || supplier.contactPerson || userData.fullName || authUser.displayName || '').trim(),
+        email,
+        phone: String(supplier.phone || userData.phone || userData.phoneNumber || '').replace(/\D/g, '').replace(/^63/, '').slice(-10),
+        address: String(supplier.address || userData.address || '').trim(),
+      },
+    })
+  } catch (error) {
+    console.error('Supplier account lookup failed:', error?.message || error)
+    return res.status(500).json({ success: false, error: 'Unable to check the supplier account.' })
+  }
+})
+
 // Supplier accounts are external accounts. Creating one requires Firebase Auth
 // Admin privileges, so this operation must never be performed from the browser.
 app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
@@ -5946,6 +5993,7 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
 
   let supplierId = ''
   let supplierUid = ''
+  let usesExistingAccount = false
   try {
     const actor = await loadUserContext(actorId)
     const actorRole = String(actor.roleKey || actor.userData?.role || '').toLowerCase().replace(/[\s_-]+/g, '')
@@ -5958,13 +6006,24 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
     const branchSnap = await firestore.collection('clinics').doc(branchId).get()
     if (!branchSnap.exists) return res.status(404).json({ success: false, error: 'Clinic branch not found.' })
     const branch = branchSnap.data() || {}
+    const existingSupplierUid = String(input.existingSupplierUid || '').trim()
     const temporaryPassword = `${crypto.randomBytes(18).toString('base64url')}Aa1!`
     let authUser
-    try {
-      authUser = await admin.auth().createUser({ email: normalizedEmail, password: temporaryPassword, displayName: contact })
-    } catch (error) {
-      if (String(error?.code || '') === 'auth/email-already-exists') return res.status(409).json({ success: false, error: 'This supplier email already has an account.' })
-      throw error
+    if (existingSupplierUid) {
+      authUser = await admin.auth().getUser(existingSupplierUid)
+      const existingUserSnap = await firestore.collection('users').doc(existingSupplierUid).get()
+      const existingUser = existingUserSnap.exists ? existingUserSnap.data() || {} : {}
+      if (String(authUser.email || '').trim().toLowerCase() !== normalizedEmail || String(existingUser.role || existingUser.userType || '').trim().toLowerCase() !== 'supplier') return res.status(400).json({ success: false, error: 'The selected account is not a matching supplier account.' })
+      const duplicate = await firestore.collection('suppliers').where('ownerId', '==', existingSupplierUid).limit(1).get()
+      if (!duplicate.empty) return res.status(200).json({ success: true, data: { supplierId: duplicate.docs[0].id, uid: existingSupplierUid, alreadyLinked: true } })
+      usesExistingAccount = true
+    } else {
+      try {
+        authUser = await admin.auth().createUser({ email: normalizedEmail, password: temporaryPassword, displayName: contact })
+      } catch (error) {
+        if (String(error?.code || '') === 'auth/email-already-exists') return res.status(409).json({ success: false, error: 'This supplier email already has an account. Search the email first to link it.' })
+        throw error
+      }
     }
     supplierUid = authUser.uid
     const supplierRef = firestore.collection('suppliers').doc()
@@ -5987,10 +6046,10 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
       ownerId: supplierUid,
       supplierUserId: supplierUid,
       sharedAcrossBranches: true,
-      status: 'Pending Activation',
+      status: usesExistingAccount ? 'Active' : 'Pending Activation',
       accreditationStatus: 'Pending Accreditation',
       procurementAccess: 'Online',
-      accountActivated: false,
+      accountActivated: usesExistingAccount,
       offeredItems: [],
       createdBy: actorId,
       createdAt,
@@ -6015,7 +6074,7 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
     }
     const batch = firestore.batch()
     batch.set(supplierRef, supplierData)
-    batch.set(firestore.collection('users').doc(supplierUid), supplierUserData)
+    if (!usesExistingAccount) batch.set(firestore.collection('users').doc(supplierUid), supplierUserData)
     batch.set(firestore.collection('supplyAudit').doc(), {
       branchId,
       recordId: supplierId,
@@ -6030,16 +6089,16 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
       createdAt,
     })
     await batch.commit()
-    const activation = await createAccountActivation({ firestore, uid: supplierUid, email: normalizedEmail, name: contact, req, temporaryPassword })
-    return res.status(201).json({ success: true, data: { supplierId, uid: supplierUid, activationEmailSent: true, devMode: Boolean(activation.delivery?.devMode) } })
+    const activation = usesExistingAccount ? null : await createAccountActivation({ firestore, uid: supplierUid, email: normalizedEmail, name: contact, req, temporaryPassword })
+    return res.status(usesExistingAccount ? 200 : 201).json({ success: true, data: { supplierId, uid: supplierUid, linkedExistingAccount: usesExistingAccount, activationEmailSent: !usesExistingAccount, devMode: Boolean(activation?.delivery?.devMode) } })
   } catch (error) {
     console.error('Supplier account creation failed:', error?.message || error)
     if (supplierId || supplierUid) {
       const firestore = admin.firestore()
       await Promise.all([
         supplierId ? firestore.collection('suppliers').doc(supplierId).delete().catch(() => {}) : Promise.resolve(),
-        supplierUid ? firestore.collection('users').doc(supplierUid).delete().catch(() => {}) : Promise.resolve(),
-        supplierUid ? admin.auth().deleteUser(supplierUid).catch(() => {}) : Promise.resolve(),
+        supplierUid && !usesExistingAccount ? firestore.collection('users').doc(supplierUid).delete().catch(() => {}) : Promise.resolve(),
+        supplierUid && !usesExistingAccount ? admin.auth().deleteUser(supplierUid).catch(() => {}) : Promise.resolve(),
       ])
     }
     return res.status(500).json({ success: false, error: 'Unable to create the supplier account. Please try again.' })
