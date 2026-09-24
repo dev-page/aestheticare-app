@@ -37,7 +37,7 @@
             <span>Supplier account</span>
             <select v-model="supplierId" aria-label="Choose supplier account">
               <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
-                {{ supplier.businessName || supplier.name }}
+                {{ supplier.clinicName || 'Linked clinic' }}
               </option>
             </select>
           </label>
@@ -46,7 +46,7 @@
             <header class="chat-heading">
               <div>
                 <p class="chat-heading-kicker">Conversation</p>
-                <h2>{{ currentSupplier?.businessName || currentSupplier?.name || 'Clinic chat' }}</h2>
+                <h2>{{ currentSupplier?.clinicName || 'Linked clinic' }}</h2>
               </div>
               <span class="chat-connection-badge"><span></span> Clinic communication</span>
             </header>
@@ -80,7 +80,6 @@
                   required
                 ></textarea>
                 <button type="submit" :disabled="sending || !draft">
-                  <span aria-hidden="true">↗</span>
                   {{ sending ? 'Sending…' : 'Send message' }}
                 </button>
               </div>
@@ -197,7 +196,9 @@ const loadWorkspace = async () => {
   error.value = ''
   try {
     const workspace = await api('/workspace')
-    suppliers.value = (workspace.supplierIds || []).map((id) => ({ id, name: id }))
+    suppliers.value = Array.isArray(workspace.supplierAccounts)
+      ? workspace.supplierAccounts
+      : (workspace.supplierIds || []).map((id) => ({ id, clinicName: 'Linked clinic' }))
     supplierId.value = suppliers.value[0]?.id || ''
     await load()
   } catch (loadError) {

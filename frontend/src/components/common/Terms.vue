@@ -4,7 +4,7 @@
       <h1 class="text-3xl font-playfair font-bold text-charcoal-900 mb-6">Terms and Conditions</h1>
       
       <div class="space-y-6 text-charcoal-700 leading-relaxed">
-        <p class="text-sm text-charcoal-500">Last Updated: {{ new Date().toLocaleDateString() }}</p>
+        <p class="text-sm text-charcoal-500">Last Updated: September 24, 2026</p>
         
         <section>
           <h2 class="text-xl font-playfair font-semibold text-gold-700 mb-3">1. Introduction</h2>
@@ -18,7 +18,7 @@
 
         <section>
           <h2 class="text-xl font-playfair font-semibold text-gold-700 mb-3">3. User Accounts</h2>
-          <p>When you create an account, you are responsible for maintaining the security of your account information, including your password. You agree to accept responsibility for all activities that occur under your account. We reserve the right to suspend or terminate accounts that violate these terms.</p>
+          <p>When you create an account, you are responsible for maintaining the security of your account information, including your password. You agree to accept responsibility for activities performed through your account.</p>
         </section>
 
         <section>
@@ -42,17 +42,12 @@
         </section>
 
         <section>
-          <h2 class="text-xl font-playfair font-semibold text-gold-700 mb-3">8. Changes to Terms</h2>
-          <p>We reserve the right to modify these Terms and Conditions at any time. Any changes will be effective immediately upon posting to our platform. Your continued use of AesthetiCare following changes to these terms constitutes your acceptance of the updated terms.</p>
-        </section>
-
-        <section>
-          <h2 class="text-xl font-playfair font-semibold text-gold-700 mb-3">9. Governing Law</h2>
+          <h2 class="text-xl font-playfair font-semibold text-gold-700 mb-3">8. Governing Law</h2>
           <p>These Terms and Conditions shall be governed by and construed in accordance with the laws of the Philippines, without regard to its conflict of law principles. Any legal action or proceeding arising from these terms shall be brought before the appropriate courts of the Philippines.</p>
         </section>
 
         <section>
-          <h2 class="text-xl font-playfair font-semibold text-gold-700 mb-3">10. Contact Information</h2>
+          <h2 class="text-xl font-playfair font-semibold text-gold-700 mb-3">9. Contact Information</h2>
           <p>For questions or concerns about these Terms and Conditions, please contact us at:</p>
           <p class="mt-2 text-gold-700 font-semibold">AesthetiCare Support</p>
           <p>Email: support@aestheticare.online</p>
@@ -65,10 +60,6 @@
     </div>
   </div>
 </template>
-
-<script setup>
-import { ref } from 'vue'
-</script>
 
 <style scoped>
 h1 {

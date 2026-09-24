@@ -298,11 +298,11 @@ const documentLabelMap = {
   secCertificate: 'SEC Certificate of Registration',
   articlesOfIncorporation: 'Articles of Incorporation/Partnership Agreement',
   businessPermit: 'Business Permit/Registration',
-  birRegistration: 'BIR Registration',
+  birRegistration: 'BIR 2303 or Certificate of Registration',
   sanitaryCertificate: 'Sanitary Certificate',
   governmentIdRepresentativeFront: 'Government-Issued ID of Registrant (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
-  dohAccreditation: 'DOH Accreditation',
+  dohAccreditation: 'DOH License to Operate',
   fdaApproval: 'FDA Approval',
   prcIdMedicalDirector: 'PRC ID of Medical Director',
 }
@@ -354,13 +354,6 @@ const documentNumberMap = {
   fdaApproval: ref(''),
   prcIdMedicalDirector: ref(''),
 }
-const birRegistrationType = ref('')
-const birRegistrationTypeOptions = [
-  { value: 'form-2303', label: 'BIR Certificate of Registration (Form 2303)' },
-  { value: 'form-1901', label: 'BIR Form 1901 (Self-employed/Professional)' },
-  { value: 'form-1903', label: 'BIR Form 1903 (Corporation/Partnership)' },
-  { value: 'form-1904', label: 'BIR Form 1904 (One-time taxpayer/EO 98)' },
-]
 const documentNumberRequired = new Set(Object.keys(documentNumberMap))
 const documentNumberPattern = /^[A-Z0-9][A-Z0-9-]{2,39}$/i
 const normalizeDocumentNumber = (value) => String(value || '').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 40)
@@ -1433,7 +1426,6 @@ const applyProfileData = (profile) => {
     fdaApproval: storedDocuments?.fdaApproval || null,
     prcIdMedicalDirector: storedDocuments?.prcIdMedicalDirector || storedDocuments?.prcLicenseMedicalDirector || null,
   }
-  birRegistrationType.value = String(storedDocuments?.birRegistration?.registrationType || '').trim()
   Object.keys(documentNumberMap).forEach((docKey) => {
     documentNumberMap[docKey].value = normalizeDocumentNumber(
       storedDocuments?.[docKey]?.documentNumber || storedDocuments?.[docKey]?.number || ''
@@ -3000,11 +2992,6 @@ const submitDocuments = async () => {
   try {
     // Validate required expiry dates before uploading/submitting
     for (const docKey of requiredDocumentKeys.value) {
-      if (docKey === 'birRegistration' && !birRegistrationType.value) {
-        toast.error('Please select the BIR registration type.')
-        isSubmittingDocuments.value = false
-        return
-      }
       if (documentNumberRequired.has(docKey)) {
         const documentNumber = String(documentNumberMap[docKey]?.value || '').trim()
         if (!documentNumber) {
@@ -3058,7 +3045,6 @@ const submitDocuments = async () => {
       const expiryVal = documentExpiryMap[docKey]?.value || null
       submittedDocumentsPayload[docKey] = {
         ...docPayload,
-        ...(docKey === 'birRegistration' ? { registrationType: birRegistrationType.value } : {}),
         ...(documentNumberRequired.has(docKey)
           ? { documentNumber: String(documentNumberMap[docKey]?.value || '').trim().toUpperCase() }
           : {}),
@@ -3683,19 +3669,6 @@ const handleRegistrationSubmit = () => {
                   class="upload-card"
                 >
                   <p class="upload-label">{{ documentLabelMap[docKey] || docKey }}</p>
-                  <div v-if="docKey === 'birRegistration'" class="mt-2">
-                    <label class="text-xs text-charcoal-600" for="bir-registration-type">BIR registration type</label>
-                    <select
-                      id="bir-registration-type"
-                      v-model="birRegistrationType"
-                      class="mt-1 h-12 w-full rounded-xl border border-gold-200 bg-white/80 px-3 text-sm text-charcoal-700"
-                    >
-                      <option value="" disabled>Select BIR registration type</option>
-                      <option v-for="option in birRegistrationTypeOptions" :key="option.value" :value="option.value">
-                        {{ option.label }}
-                      </option>
-                    </select>
-                  </div>
                   <div v-if="documentNumberRequired.has(docKey)" class="relative mt-2">
                     <input
                       v-model="documentNumberMap[docKey].value"
@@ -3713,11 +3686,11 @@ const handleRegistrationSubmit = () => {
                       docKey === 'businessPermit'
                         ? 'Business Permit No.'
                         : docKey === 'birRegistration'
-                          ? 'BIR Registration No.'
+                          ? 'BIR 2303 / Certificate No.'
                           : docKey === 'sanitaryCertificate'
                             ? 'Sanitary Certificate No.'
                         : docKey === 'dohAccreditation'
-                          ? 'DOH Accreditation Number'
+                          ? 'DOH License to Operate Number'
                           : docKey === 'fdaApproval'
                             ? 'FDA Registration Number'
                             : 'PRC ID No. of Medical Director'

@@ -302,7 +302,7 @@
               <article v-for="docItem in selectedRecord.documents" :key="docItem.key" class="bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <p class="text-sm text-slate-200 mb-3">{{ docItem.label }}</p>
                 <div class="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div v-if="docItem.key !== 'birRegistration'" class="rounded-md bg-slate-900/60 p-2">
+                  <div class="rounded-md bg-slate-900/60 p-2">
                     <span class="text-slate-500">Document number</span>
                     <p class="mt-1 text-slate-200">{{ docItem.documentNumber || '-' }}</p>
                   </div>
@@ -423,9 +423,9 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
     { key: 'governmentIdRepresentativeFront', label: 'Government-Issued ID of Registrant (Front)' },
     { key: 'governmentIdRepresentativeBack', label: 'Government-Issued ID of Registrant (Back)' },
     { key: 'businessPermit', label: 'Business Permit/Registration' },
-    { key: 'dohAccreditation', label: 'DOH Accreditation' },
+    { key: 'dohAccreditation', label: 'DOH License to Operate' },
     { key: 'prcIdMedicalDirector', label: 'PRC ID of Medical Director' },
-    { key: 'birRegistration', label: 'BIR Registration' },
+    { key: 'birRegistration', label: 'BIR 2303 or Certificate of Registration' },
     { key: 'sanitaryCertificate', label: 'Sanitary Certificate' },
   ]
 
@@ -487,9 +487,9 @@ const documentLabel = (key) => ({
   governmentIdRepresentativeFront: 'Government-Issued ID of Registrant (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
   businessPermit: 'Business Permit/Registration',
-  dohAccreditation: 'DOH Accreditation',
+  dohAccreditation: 'DOH License to Operate',
   prcIdMedicalDirector: 'PRC ID of Medical Director',
-  birRegistration: 'BIR Registration',
+  birRegistration: 'BIR 2303 or Certificate of Registration',
   sanitaryCertificate: 'Sanitary Certificate',
 }[key] || key)
 

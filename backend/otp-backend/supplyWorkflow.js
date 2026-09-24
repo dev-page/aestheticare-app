@@ -104,9 +104,21 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const broadRead = internal && ['inventory:view', 'procurement:view', 'orders:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
     const items = broadRead ? (await scopedDocs('inventoryItems')).map(i => ({ ...i, signals: stockSignals(i), availableStock: Math.max(0, Number(i.currentStock || 0) - Number(i.reservedStock || 0)) })) : []
     const suppliers = broadRead ? await scopedDocs('suppliers') : []
+    const supplierAccounts = ctx.supplier
+      ? await Promise.all(ctx.supplierIds.map(async (id) => {
+        const supplier = (await db.collection('suppliers').doc(id).get()).data() || {}
+        const clinic = supplier.branchId
+          ? (await db.collection('clinics').doc(supplier.branchId).get()).data() || {}
+          : {}
+        return {
+          id,
+          clinicName: String(clinic.clinicName || clinic.companyName || clinic.clinicBranch || 'Linked clinic').trim() || 'Linked clinic',
+        }
+      }))
+      : []
     const movements = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('inventoryMovements') : []
     const snapshots = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('supplySnapshots') : []
-    res.json({ success: true, data: { branchId, branches, records, items, suppliers, movements, snapshots, permissions: [...ctx.permissions], roleKey: ctx.roleKey, supplier: ctx.supplier, supplierIds: ctx.supplierIds, uid: ctx.uid } })
+    res.json({ success: true, data: { branchId, branches, records, items, suppliers, supplierAccounts, movements, snapshots, permissions: [...ctx.permissions], roleKey: ctx.roleKey, supplier: ctx.supplier, supplierIds: ctx.supplierIds, uid: ctx.uid } })
   }))
 
   app.post('/supply/catalog', requireAuth, wrap(async (req, res, ctx) => {

@@ -58,7 +58,6 @@
               <span>Page {{ notificationPage }} of {{ notificationPageCount }}</span>
               <button type="button" class="settings-page-button" :disabled="notificationPage === notificationPageCount" @click="notificationPage += 1">Next</button>
             </div>
-            <RouterLink to="/notifications" class="settings-text-link settings-full-notifications-link">Open full notification center</RouterLink>
           </div>
         </section>
 
@@ -523,7 +522,6 @@ onUnmounted(() => {
 .settings-pagination { display: flex; align-items: center; justify-content: center; gap: .75rem; margin-top: 1rem; color: #775743; font-size: .78rem; }
 .settings-page-button { border: 1px solid #d2a879; border-radius: .65rem; padding: .45rem .65rem; color: #6f4329; font-weight: 700; }
 .settings-page-button:disabled { cursor: not-allowed; opacity: .45; }
-.settings-full-notifications-link { display: inline-block; margin-top: 1rem; }
 .settings-inline-button { display: inline-block; text-decoration: none; }
 .settings-action-links { display: flex; flex-direction: column; align-items: flex-end; gap: .65rem; min-width: 10rem; }
 .settings-text-link { color: #8d5a3b; font-size: .8rem; font-weight: 700; text-decoration: underline; }

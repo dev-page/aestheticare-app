@@ -4,11 +4,7 @@
       <h1 class="text-3xl font-playfair font-bold text-charcoal-900 mb-6">Privacy Policy</h1>
 
       <div class="space-y-6 text-charcoal-700 leading-relaxed">
-        <p>
-          The AesthetiCare is committed to protect and respect your personal data privacy. We are at the
-          forefront of not only implementing but also complying with the Data Privacy Act of 2012 (RA No. 10173),
-          and pertinent issuances of the National Privacy Commission (NPC).
-        </p>
+        <p>AesthetiCare collects the information needed to create and manage accounts and to provide the platform's clinic, booking, order, payment, and support features.</p>
 
         <details class="policy-item">
           <summary class="policy-summary">
@@ -21,17 +17,15 @@
               <li>Mobile Number</li>
               <li>Email Address</li>
               <li>Address</li>
-              <li>Sex</li>
               <li>Birth date</li>
             </ul>
             <p class="mt-3">Moreover, if you are registering your clinic, the following documents will be needed for verification of legitimacy:</p>
             <ul class="list-disc pl-6 space-y-1">
               <li>Government-Issued ID</li>
-              <li>SEC Certificate of Registration</li>
-              <li>Articles of Incorporation or Partnership Agreement</li>
               <li>Business Registration or Permit</li>
-              <li>DOH Accreditation</li>
-              <li>FDA Approval Certification</li>
+              <li>BIR 2303 or Certificate of Registration</li>
+              <li>Sanitary Certificate</li>
+              <li>DOH License to Operate</li>
               <li>PRC ID of Medical Director</li>
             </ul>
           </div>
@@ -42,7 +36,7 @@
             <span>2. Why do we need to collect personal information?</span>
           </summary>
           <div class="policy-body">
-            <p>The collected personal information will be utilized in the processing of the applications for registration.</p>
+            <p>The collected personal information is used for account registration, account access, clinic verification, bookings, orders, payments, notifications, support requests, and other platform features you use.</p>
           </div>
         </details>
 
@@ -52,9 +46,8 @@
           </summary>
           <div class="policy-body">
             <p>
-              We collect personal information when a user registers on AesthetiCare to undergo the identity
-              verification process. This is done to validate their identity and ensure they are reachable, which is
-              crucial for registration and compliance purposes.
+              We collect personal information when you create or update an account, submit a clinic registration,
+              place a booking or order, send a support request, or otherwise use a platform feature that requires it.
             </p>
           </div>
         </details>
@@ -65,8 +58,8 @@
           </summary>
           <div class="policy-body">
             <p>
-              We collect, use and process the personal information provided through electronic or automated means to
-              proceed in this registration system.
+              We collect and process information that you provide through the platform, including forms, document uploads,
+              bookings, orders, account settings, and support requests.
             </p>
           </div>
         </details>
@@ -76,24 +69,7 @@
             <span>5. How do we store the data collected?</span>
           </summary>
           <div class="policy-body">
-            <p>
-              AesthetiCare ensures the protection of personal data against accidental or unlawful destruction,
-              alteration, disclosure, and other unlawful processing by implementing appropriate security measures based
-              on the nature of the data.
-            </p>
-            <p class="mt-3">
-              Personal information of clinic owners, employees, and customers is retained only for as long as
-              necessary to fulfill operational, legal, and regulatory requirements of the platform. Such data is
-              securely stored and disposed of in accordance with applicable data protection laws and internal data
-              retention policies.
-            </p>
-            <p class="mt-3">
-              Inactive user accounts, defined as accounts with no login or activity for a continuous period of twelve
-              (12) months, may be subject to deactivation. Personal data associated with such accounts will be retained
-              for up to six (6) months following deactivation to allow for account recovery or compliance requirements.
-              After this retention period, the data will be securely deleted or anonymized unless continued retention
-              is required by law or legitimate business purposes.
-            </p>
+            <p>Account, booking, order, payment, clinic-registration, notification, and support information is stored in the services used to operate AesthetiCare. The platform provides account deactivation, deletion-request, and data-export options in account settings where available.</p>
           </div>
         </details>
 
@@ -102,14 +78,7 @@
             <span>6. How do we dispose of the data collected?</span>
           </summary>
           <div class="policy-body">
-            <p>
-              Once a record has exceeded its retention period and is no longer necessary for operational, legal, or
-              regulatory purposes, all physical and electronic copies of personal data shall be securely disposed of.
-            </p>
-            <p class="mt-3">
-              Electronic records are permanently deleted using secure data deletion methods or anonymized to prevent
-              identification of individuals.
-            </p>
+            <p>The platform provides a request-account-deletion option. Deletion requests are reviewed before an account is closed; records may remain where they are needed for operational, financial, or legal reasons.</p>
           </div>
         </details>
 
@@ -118,24 +87,7 @@
             <span>7. What are the risks involved in processing your personal information?</span>
           </summary>
           <div class="policy-body">
-            <p>
-              Risk refers to the potential for incidents that may harm a data subject or organization, including
-              unauthorized collection, use, disclosure, or access to personal data. It involves threats to the
-              confidentiality, integrity, and availability of personal data or violations of data privacy principles
-              and rights.
-            </p>
-            <p class="mt-3">
-              AesthetiCare implements appropriate physical, technical, and organizational security measures to
-              safeguard personal data processed within the platform. However, despite these safeguards, risks such as
-              cyberattacks, malware, system vulnerabilities, and unauthorized access - whether digital or physical -
-              may still occur.
-            </p>
-            <p class="mt-3">
-              AesthetiCare maintains and enforces internal policies and procedures for detecting, reporting, and
-              managing data security incidents. These measures are aligned with applicable data protection laws,
-              industry best practices, and relevant regulatory guidelines to ensure timely response, mitigation, and
-              protection of affected data subjects.
-            </p>
+            <p>Using an online platform carries risks, including unauthorized access, service interruption, and data transmission or storage risks. Keep your password private and report suspected unauthorized account activity through the platform's support options.</p>
           </div>
         </details>
 
@@ -144,12 +96,7 @@
             <span>8. What are the rights of the data subjects?</span>
           </summary>
           <div class="policy-body">
-            <p>
-              Under the Data Privacy Act of 2012, data subject refers to an individual whose personal information is
-              collected and processed. We are duly bound to observe and respect your privacy rights, including your
-              right to information, right to access, right to correct, right to remove, right to damages and right to
-              data portability.
-            </p>
+            <p>The platform lets you update profile information, export available account data, deactivate an account, and submit a deletion request. You may also use the support options for questions about information associated with your account.</p>
           </div>
         </details>
 
@@ -158,16 +105,7 @@
             <span>9. How can data subjects exercise these rights?</span>
           </summary>
           <div class="policy-body">
-            <p>
-              Data subjects may submit requests, inquiries, or complaints regarding their personal data to
-              AesthetiCare contact information. They may contact system administrators through the official support
-              email address, designated support channels within the platform, or other communication methods provided
-              by AesthetiCare.
-            </p>
-            <p class="mt-3">
-              All requests will be reviewed and addressed within a reasonable timeframe in accordance with
-              applicable data protection laws and internal policies.
-            </p>
+            <p>Submit a support report through the platform or email AesthetiCare Support with your request. Requests are reviewed by the appropriate platform administrator.</p>
           </div>
         </details>
 
@@ -179,7 +117,7 @@
             <p>
               By accessing and using the AesthetiCare platform and by providing your personal data, you hereby
               authorize AesthetiCare to collect, process, and store such information. This may include, but is not
-              limited to, your full name, nationality, email address, mobile number, and other relevant details
+              limited to, your full name, email address, mobile number, and other relevant details
               required for account registration and platform services.
             </p>
             <p class="mt-3">
@@ -205,12 +143,8 @@
               If you have any questions, concerns, requests, or if you wish to exercise your rights under applicable
               data protection laws, you may contact AesthetiCare through the following:
             </p>
-            <p class="mt-3 font-semibold text-gold-700">Email: privacy@aestheticare.com</p>
-            <p>Support: https://yourdomain.com/support</p>
-            <p class="mt-3">
-              Requests will be reviewed and addressed within a reasonable timeframe in accordance with applicable
-              laws and internal policies.
-            </p>
+            <p class="mt-3 font-semibold text-gold-700">Email: support@aestheticare.online</p>
+            <p>Support: Use the Report Issue page while signed in.</p>
           </div>
         </details>
       </div>
