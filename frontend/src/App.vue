@@ -18,6 +18,7 @@
            visible flash before the notification listener reconnects. Other
            routes retain their existing query-driven remount behavior. -->
       <router-view :key="$route.path === '/customer/account-settings' ? $route.path : $route.fullPath" />
+      <Analytics />
       <OnboardingTour
         :is-open="onboardingIsOpen"
         :tour="onboardingTour"
@@ -156,6 +157,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { Analytics } from '@vercel/analytics/vue'
 import { useAuth } from '@/composables/useAuth'
 import { useSubscription } from '@/composables/useSubscription'
 import EmployeeTopbar from '@/components/common/EmployeeTopbar.vue'
