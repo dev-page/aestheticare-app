@@ -163,14 +163,32 @@
   color: var(--supplier-text) !important;
 }
 
-.supplier-theme .exact-right aside {
+.supplier-theme .exact-right aside,
+.supplier-theme .exact-item-card > .exact-pair > aside {
+  display: flex;
+  gap: .75rem;
+  align-items: flex-start;
+  border: 1px solid #35516a !important;
+  border-radius: .75rem;
+  padding: 1rem;
   border-color: #35516a !important;
   background: #172431 !important;
   color: #c4d8e8 !important;
 }
 
-.supplier-theme .exact-right aside span {
+.supplier-theme .exact-right aside b,
+.supplier-theme .exact-item-card > .exact-pair > aside b {
+  color: #e2f1ff !important;
+}
+
+.supplier-theme .exact-right aside span,
+.supplier-theme .exact-item-card > .exact-pair > aside span,
+.supplier-theme .exact-item-card > .exact-pair > label small {
   color: #a9c3d8;
+}
+
+.supplier-theme .exact-item-card > .exact-pair > label {
+  color: #d6a878 !important;
 }
 
 .supplier-theme .exact-image span,
