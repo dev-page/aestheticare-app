@@ -75,13 +75,20 @@ const SUPPLIER_ACCOUNT_LOOKUP_PATH = '/supply/suppliers/account-lookup'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
-const AUTO_VERIFICATION_THRESHOLD = Math.max(0.85, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.85)))
+const AUTO_VERIFICATION_THRESHOLD = Math.max(0.74, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.74)))
+const MANUAL_REVIEW_THRESHOLD = Math.max(0.5, Math.min(AUTO_VERIFICATION_THRESHOLD, Number(process.env.MANUAL_REVIEW_THRESHOLD || 0.5)))
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
   clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate'],
 }
 const DOCUMENT_NUMBER_REQUIREMENTS = new Set([
   'businessPermit',
   'birRegistration',
+  'sanitaryCertificate',
+  'dohAccreditation',
+  'prcIdMedicalDirector',
+])
+const EXPIRY_DATE_REQUIREMENTS = new Set([
+  'businessPermit',
   'sanitaryCertificate',
   'dohAccreditation',
   'prcIdMedicalDirector',
@@ -101,6 +108,23 @@ const getVisionWordConfidence = (annotation) => {
   }
   if (!confidences.length) return null
   return confidences.reduce((sum, confidence) => sum + confidence, 0) / confidences.length
+}
+const extractOcrDates = (text) => {
+  const dates = []
+  const matcher = /\b(\d{4}[-\/]\d{2}[-\/]\d{2}|\d{2}[-\/]\d{2}[-\/]\d{4})\b/g
+  for (const match of String(text || '').matchAll(matcher)) {
+    const raw = match[1]
+    const normalized = /^\d{2}[-\/]/.test(raw)
+      ? `${raw.slice(6, 10)}-${raw.slice(0, 2)}-${raw.slice(3, 5)}`
+      : raw.replaceAll('/', '-')
+    const parsed = new Date(`${normalized}T00:00:00Z`)
+    if (!Number.isNaN(parsed.getTime())) dates.push(normalized)
+  }
+  return [...new Set(dates)]
+}
+const extractOcrDocumentNumber = (text) => {
+  const candidates = String(text || '').toUpperCase().match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]{2,}){1,5}\b|\b\d{6,}\b/g) || []
+  return candidates.find((value) => /\d/.test(value)) || ''
 }
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -1769,6 +1793,96 @@ const loadAttendanceSchedule = async (employeeId, dateKey) => {
   }
 }
 
+const processUploadedRegistrationDocument = async ({ uid, docKey, document, application, user }) => {
+  const storagePath = String(document?.path || document?.storagePath || '').trim()
+  const result = {
+    status: 'rejected',
+    confidence: 0,
+    ocrConfidence: null,
+    storagePath,
+    extractedText: '',
+    detectedDocumentNumber: '',
+    detectedDates: [],
+    checks: { readableText: false, ocrConfidence: null, nameMatch: null, documentNumberDetected: null, expiryValid: null },
+    processedAt: new Date().toISOString(),
+    reason: '',
+  }
+  const expectedPrefix = `clinic-registration/${uid}/${docKey}/`
+  if (!storagePath || !storagePath.startsWith(expectedPrefix)) {
+    result.reason = 'Document storage path is missing or does not belong to this registration.'
+    return result
+  }
+  if (!['application/pdf', 'image/jpeg', 'image/png'].includes(String(document?.type || '').toLowerCase())) {
+    result.reason = 'Unsupported document type. Upload a PDF, PNG, or JPEG file.'
+    return result
+  }
+  if (Number(document?.size || 0) <= 0 || Number(document.size) > 10 * 1024 * 1024) {
+    result.reason = 'Document size is invalid.'
+    return result
+  }
+  const visionClient = createVisionClient()
+  const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
+  if (!visionClient || !bucketName) {
+    result.status = 'manual_review'
+    result.reason = 'Automatic document processing is unavailable. This document requires manual review.'
+    return result
+  }
+  try {
+    const gcsUri = `gs://${bucketName}/${storagePath}`
+    const [visionResult] = await visionClient.documentTextDetection(gcsUri)
+    let annotation = visionResult?.fullTextAnnotation
+    let extractedText = String(annotation?.text || '').trim()
+    if (!extractedText) {
+      const [fallback] = await visionClient.textDetection(gcsUri)
+      extractedText = String(fallback?.textAnnotations?.[0]?.description || '').trim()
+      annotation = fallback?.fullTextAnnotation || annotation
+    }
+    const comparableText = normalizeOcrComparable(extractedText)
+    const nameCandidates = [
+      String(application?.businessName || application?.clinicName || '').trim(),
+      `${String(user?.firstName || application?.firstName || '')} ${String(user?.lastName || application?.lastName || '')}`.trim(),
+    ].map(normalizeOcrComparable).filter((value) => value.length >= 3)
+    const nameMatch = nameCandidates.length ? nameCandidates.some((candidate) => comparableText.includes(candidate)) : null
+    const readableText = extractedText.length >= 30
+    const hasSomeText = extractedText.length > 0
+    const ocrConfidence = getVisionWordConfidence(annotation)
+    const detectedDates = extractOcrDates(extractedText)
+    const detectedDocumentNumber = extractOcrDocumentNumber(extractedText)
+    const requiresNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
+    const requiresExpiry = EXPIRY_DATE_REQUIREMENTS.has(docKey)
+    const expiryDate = detectedDates.find((value) => new Date(`${value}T00:00:00Z`).getTime() >= Date.now()) || ''
+    const expiryValid = requiresExpiry ? Boolean(expiryDate) : null
+    const ocrQuality = ocrConfidence ?? (readableText ? 0.75 : hasSomeText ? 0.4 : 0)
+    const score = Math.min(1, (
+      ocrQuality * 0.35
+      + (readableText ? 1 : hasSomeText ? 0.5 : 0) * 0.15
+      + (nameMatch === true ? 1 : 0) * 0.1
+      + (requiresNumber ? (detectedDocumentNumber ? 1 : 0) : 1) * 0.35
+      + (requiresExpiry ? (expiryValid ? 1 : 0) : 1) * 0.05
+    ))
+    result.confidence = score
+    result.ocrConfidence = ocrConfidence
+    result.extractedText = extractedText.slice(0, 2000)
+    result.detectedDocumentNumber = detectedDocumentNumber
+    result.detectedDates = detectedDates
+    result.checks = { readableText, ocrConfidence, nameMatch, documentNumberDetected: requiresNumber ? Boolean(detectedDocumentNumber) : null, expiryValid }
+    result.status = !readableText || score < MANUAL_REVIEW_THRESHOLD
+      ? 'rejected'
+      : score >= AUTO_VERIFICATION_THRESHOLD ? 'verified' : 'manual_review'
+    result.reason = !readableText
+      ? 'The text is unclear or unreadable. Please upload a clearer, well-lit, uncropped image or readable PDF.'
+      : result.status === 'rejected'
+        ? 'This document did not meet the minimum OCR verification score. Please upload a clearer file.'
+        : result.status === 'verified'
+          ? 'OCR extracted readable text and passed automatic checks.'
+          : 'OCR completed, but this document requires manual review.'
+  } catch (error) {
+    result.status = 'manual_review'
+    result.reason = error?.message || 'OCR could not process this document. It requires manual review.'
+  }
+  return result
+}
+
 const runRegistrationDocumentVerification = async ({ uid, applicantType, processedBy }) => {
   if (String(applicantType || '').trim().toLowerCase() !== 'clinic') {
     throw new Error('Only clinic registration verification is supported.')
@@ -1784,6 +1898,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   const application = applicationSnap.data() || {}
   const user = userSnap.exists ? userSnap.data() || {} : {}
   const documents = application.submittedDocuments || {}
+  const uploadOcrResults = application.draftDocumentOcr || {}
   const requiredKeys = REGISTRATION_DOCUMENT_REQUIREMENTS[normalizedType]
   const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
   const visionClient = createVisionClient()
@@ -1810,6 +1925,12 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       },
       scoreBreakdown: null,
       processedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+
+    const uploadedResult = uploadOcrResults?.[docKey]
+    if (uploadedResult && String(uploadedResult.storagePath || '') === storagePath) {
+      results[docKey] = { ...uploadedResult, processedAt: admin.firestore.FieldValue.serverTimestamp() }
+      continue
     }
 
     if (!storagePath || !storagePath.startsWith(expectedPrefix)) {
@@ -1929,7 +2050,9 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
 
   const allRequiredDocumentsPresent = requiredKeys.every((key) => Boolean(documents?.[key]?.path || documents?.[key]?.storagePath))
   const allVerified = allRequiredDocumentsPresent && requiredKeys.every((key) => results[key]?.status === 'verified')
-  const verificationStatus = allVerified ? 'Automatically Verified' : 'Manual Review Required'
+  const hasRejectedDocument = requiredKeys.some((key) => results[key]?.status === 'rejected')
+  const verificationStatus = allVerified ? 'OCR Verified' : hasRejectedDocument ? 'Rejected' : 'Manual Review Required'
+  const approvalStatus = hasRejectedDocument ? 'Rejected' : 'Pending Approval'
   const verificationPayload = {
     verificationStatus,
     verificationResults: results,
@@ -1937,20 +2060,20 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     verificationProcessedAt: admin.firestore.FieldValue.serverTimestamp(),
     verificationProcessedBy: processedBy || 'automatic_processor',
     // OCR verifies document quality and consistency; it never grants account access.
-    approvalStatus: 'Pending Approval',
+    approvalStatus,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }
 
   const batch = firestore.batch()
   batch.set(applicationRef, verificationPayload, { merge: true })
   batch.set(userRef, {
-    status: 'Pending Approval',
-    approvalStatus: 'Pending Approval',
+    status: approvalStatus,
+    approvalStatus,
     verificationStatus,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true })
   batch.set(applicationRef.collection('verificationHistory').doc(), {
-    action: allVerified ? 'automatically-verified-pending-approval' : 'manual-review-required',
+    action: allVerified ? 'ocr-verified-pending-approval' : hasRejectedDocument ? 'ocr-rejected' : 'manual-review-required',
     applicantType: normalizedType,
     results,
     processedBy: processedBy || 'automatic_processor',
@@ -1963,15 +2086,17 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     type: `${normalizedType}_registration_verification`,
     title: `${notificationLabel} Registration Ready for Review`,
     message: allVerified
-      ? `A ${normalizedType} registration passed automatic verification and is awaiting your approval.`
-      : `A ${normalizedType} registration requires manual document review.`,
+      ? `A ${normalizedType} registration passed OCR verification and is awaiting your approval.`
+      : hasRejectedDocument
+        ? `A ${normalizedType} registration was rejected because one or more documents did not meet the OCR threshold.`
+        : `A ${normalizedType} registration requires manual document review.`,
     link: '/superadmin/clinics/verification',
     read: false,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true })
   await batch.commit()
 
-  return { status: verificationStatus, approvalStatus: 'Pending Approval', allVerified, results }
+  return { status: verificationStatus, approvalStatus, allVerified, hasRejectedDocument, results }
 }
 
 app.post('/registration/auto-verify-documents', requireAuth, async (req, res) => {
@@ -1985,6 +2110,33 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
   } catch (error) {
     console.error('Automatic registration verification failed:', error)
     return res.status(500).json({ success: false, error: error?.message || 'Automatic verification failed' })
+  }
+})
+
+// OCR runs as soon as a registrant uploads a document. The result is retained
+// for final submission, so the system administrator never needs to run OCR.
+app.post('/registration/ocr-document', requireAuth, async (req, res) => {
+  const uid = String(req.body?.uid || '').trim()
+  const docKey = String(req.body?.docKey || '').trim()
+  if (!uid || uid !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
+  if (!REGISTRATION_DOCUMENT_REQUIREMENTS.clinic.includes(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
+  try {
+    const firestore = admin.firestore()
+    const clinicRef = firestore.collection('clinics').doc(uid)
+    const [clinicSnap, userSnap] = await Promise.all([clinicRef.get(), firestore.collection('users').doc(uid).get()])
+    if (!clinicSnap.exists) return res.status(404).json({ success: false, error: 'Registration application not found.' })
+    const clinic = clinicSnap.data() || {}
+    const document = clinic.draftDocuments?.[docKey]
+    if (!document) return res.status(404).json({ success: false, error: 'Upload the document before starting OCR.' })
+    const result = await processUploadedRegistrationDocument({ uid, docKey, document, application: clinic, user: userSnap.data() || {} })
+    await clinicRef.set({
+      [`draftDocumentOcr.${docKey}`]: result,
+      draftDocumentOcrUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true })
+    return res.json({ success: true, data: result })
+  } catch (error) {
+    console.error('Upload-time OCR failed:', error)
+    return res.status(500).json({ success: false, error: error?.message || 'OCR processing failed.' })
   }
 })
 

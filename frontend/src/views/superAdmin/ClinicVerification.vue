@@ -21,41 +21,30 @@
 
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
 
-      <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <section class="bg-slate-800 border border-emerald-700/60 rounded-xl overflow-hidden">
+        <div class="flex items-center justify-between gap-3 px-4 py-4 border-b border-slate-700">
+          <div><h2 class="text-lg font-semibold text-white">OCR Verified</h2><p class="text-sm text-slate-400">Ready for administrator approval.</p></div>
+          <button type="button" class="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs disabled:opacity-50" :disabled="processing || !selectedOcrVerified.length" @click="batchApproveOcrVerified">Batch approve ({{ selectedOcrVerified.length }})</button>
+        </div>
         <table class="w-full text-sm">
           <thead class="border-b border-slate-700">
             <tr>
+              <th class="px-4 py-3"><input type="checkbox" aria-label="Select all OCR verified registrations" :checked="ocrVerifiedClinics.length && selectedOcrVerified.length === ocrVerifiedClinics.length" @change="toggleAllOcrVerified($event.target.checked)" /></th>
               <th class="text-left text-slate-300 px-4 py-3">Full Name</th>
-              <th class="text-left text-slate-300 px-4 py-3">Email</th>
-              <th class="text-left text-slate-300 px-4 py-3">Status</th>
-              <th class="text-left text-slate-300 px-4 py-3">Automatic Verification</th>
-              <th class="text-left text-slate-300 px-4 py-3">Total Resubmissions</th>
               <th class="text-left text-slate-300 px-4 py-3">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td class="px-4 py-3 text-slate-200" colspan="6">Loading pending clinics...</td>
+              <td class="px-4 py-3 text-slate-200" colspan="3">Loading registrations...</td>
             </tr>
-
-            <tr v-else-if="!pendingClinics.length">
-              <td class="px-4 py-3 text-slate-200" colspan="6">No pending clinics.</td>
+            <tr v-else-if="!ocrVerifiedClinics.length">
+              <td class="px-4 py-3 text-slate-400" colspan="3">No OCR-verified registrations.</td>
             </tr>
-
-            <tr v-for="row in pendingClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0">
+            <tr v-for="row in ocrVerifiedClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0">
+              <td class="px-4 py-3"><input type="checkbox" :value="row.id" v-model="selectedOcrVerified" :aria-label="`Select ${row.fullName}`" /></td>
               <td class="px-4 py-3 text-slate-100">{{ row.fullName }}</td>
-              <td class="px-4 py-3 text-slate-300">{{ row.email || '-' }}</td>
-              <td class="px-4 py-3 text-slate-300">
-                <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-300">
-                  {{ row.statusLabel }}
-                </span>
-              </td>
-              <td class="px-4 py-3 text-slate-300">
-                <span class="px-2 py-1 rounded-md text-xs border" :class="row.verificationStatus === 'Automatically Verified' ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300' : 'border-amber-500/40 bg-amber-500/20 text-amber-300'">
-                  {{ row.verificationStatus || 'Not processed' }}
-                </span>
-              </td>
-              <td class="px-4 py-3 text-slate-300">{{ row.resubmissionCount }}</td>
               <td class="px-4 py-3">
                 <button
                   type="button"
@@ -69,6 +58,15 @@
           </tbody>
         </table>
       </section>
+
+      <section class="bg-slate-800 border border-amber-700/60 rounded-xl overflow-hidden">
+        <div class="px-4 py-4 border-b border-slate-700"><h2 class="text-lg font-semibold text-white">Manual Review Required</h2><p class="text-sm text-slate-400">Review document details individually before deciding.</p></div>
+        <table class="w-full text-sm"><thead class="border-b border-slate-700"><tr><th class="text-left text-slate-300 px-4 py-3">Full Name</th><th class="text-left text-slate-300 px-4 py-3">OCR result</th><th class="text-left text-slate-300 px-4 py-3">Action</th></tr></thead>
+          <tbody><tr v-if="loading"><td class="px-4 py-3 text-slate-200" colspan="3">Loading registrations...</td></tr><tr v-else-if="!manualReviewClinics.length"><td class="px-4 py-3 text-slate-400" colspan="3">No registrations need manual review.</td></tr>
+            <tr v-for="row in manualReviewClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0"><td class="px-4 py-3 text-slate-100">{{ row.fullName }}</td><td class="px-4 py-3"><span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-300">{{ row.verificationStatus || 'Not processed' }}</span></td><td class="px-4 py-3"><button type="button" class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs" @click="openDetails(row)">Review</button></td></tr>
+          </tbody></table>
+      </section>
+      </div>
 
       <!-- Verified clinics table placed under pending clinics -->
       <section class="mt-6 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
@@ -236,7 +234,7 @@
             <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 class="text-white font-semibold">Automatic Verification and OCR</h3>
-                <p class="text-xs text-slate-400">Document text extraction and automatic checks run when the applicant submits the documents.</p>
+                <p class="text-xs text-slate-400">Document text extraction and automatic checks ran when the applicant uploaded each file.</p>
               </div>
               <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-200 capitalize">
                 {{ selectedRecord.verificationStatus || 'Not processed' }}
@@ -285,15 +283,6 @@
               </article>
             </div>
             <p v-else class="mt-4 text-xs text-slate-500">No automatic verification result is stored for this registration.</p>
-            <button
-              v-if="isPendingRecord(selectedRecord) && selectedRecord.verificationStatus !== 'Automatically Verified'"
-              type="button"
-              class="mt-4 rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="processing"
-              @click="runClinicVerification"
-            >
-              {{ processing ? 'Processing documents...' : 'Run OCR and automatic verification' }}
-            </button>
           </section>
 
           <section class="mb-6">
@@ -372,7 +361,7 @@
 </template>
 
 <script>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { doc, getDoc, getDocs, collection, onSnapshot, updateDoc, serverTimestamp, query, where } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
@@ -469,7 +458,7 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
   checks: {
     readableText: result.checks?.readableText ?? null,
     nameMatch: result.checks?.nameMatch ?? null,
-    numberMatch: result.checks?.numberMatch ?? null,
+    numberMatch: result.checks?.numberMatch ?? result.checks?.documentNumberDetected ?? null,
     expiryValid: result.checks?.expiryValid ?? null,
   },
   scoreBreakdown: result.scoreBreakdown || null,
@@ -518,6 +507,9 @@ export default {
     const processing = ref(false)
     const error = ref('')
     const pendingClinics = ref([])
+    const selectedOcrVerified = ref([])
+    const ocrVerifiedClinics = computed(() => pendingClinics.value.filter((clinic) => String(clinic.verificationStatus || '').trim().toLowerCase() === 'ocr verified'))
+    const manualReviewClinics = computed(() => pendingClinics.value.filter((clinic) => String(clinic.verificationStatus || '').trim().toLowerCase() !== 'ocr verified'))
     let unsubscribeClinics = null
 
     const showModal = ref(false)
@@ -822,6 +814,7 @@ export default {
         )
 
         pendingClinics.value = sortRecordsNewestFirst(rows)
+        selectedOcrVerified.value = selectedOcrVerified.value.filter((id) => pendingClinics.value.some((clinic) => clinic.id === id && String(clinic.verificationStatus || '').toLowerCase() === 'ocr verified'))
       } catch (err) {
         console.error('Failed to load pending clinic registrations:', err)
         error.value = 'Failed to load clinic verification list. Please try again.'
@@ -845,6 +838,42 @@ export default {
       showModal.value = false
       selectedRecord.value = null
       rejectionRemark.value = ''
+    }
+
+    const toggleAllOcrVerified = (selected) => {
+      selectedOcrVerified.value = selected ? ocrVerifiedClinics.value.map((clinic) => clinic.id) : []
+    }
+
+    const batchApproveOcrVerified = async () => {
+      const selected = ocrVerifiedClinics.value.filter((clinic) => selectedOcrVerified.value.includes(clinic.id))
+      if (!selected.length) return
+      const confirmation = await systemAdminSwal.fire({
+        title: 'Batch approve registrations?',
+        text: `Approve ${selected.length} OCR-verified clinic registration${selected.length === 1 ? '' : 's'}?`,
+        icon: 'question', showCancelButton: true, confirmButtonText: 'Approve selected', cancelButtonText: 'Cancel',
+      })
+      if (!confirmation.isConfirmed) return
+      processing.value = true
+      try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
+        if (!token) throw new Error('Missing authorization token')
+        const reviewer = auth.currentUser?.uid || null
+        for (const clinic of selected) {
+          const response = await fetchFromBackend('/admin/clinic/approve', {
+            method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ uid: clinic.id, reviewer, note: 'Batch-approved after OCR verification.' }),
+          })
+          const payload = await response.json().catch(() => null)
+          if (!response.ok || !payload?.success) throw new Error(payload?.error || `Failed to approve ${clinic.fullName}.`)
+        }
+        selectedOcrVerified.value = []
+        await systemAdminSwal.fire({ title: 'Approved', text: `${selected.length} registration${selected.length === 1 ? '' : 's'} approved.`, icon: 'success' })
+        await Promise.all([loadPendingClinics(), loadVerifiedClinics(true)])
+      } catch (err) {
+        error.value = err?.message || 'Batch approval failed.'
+      } finally {
+        processing.value = false
+      }
     }
 
     const runClinicVerification = async () => {
@@ -1021,6 +1050,9 @@ export default {
       processing,
       error,
       pendingClinics,
+      ocrVerifiedClinics,
+      manualReviewClinics,
+      selectedOcrVerified,
       verifiedClinics,
       isPendingRecord,
       loadingVerifiedClinics,
@@ -1034,6 +1066,8 @@ export default {
       openDetails,
       closeModal,
       approveSelected,
+      toggleAllOcrVerified,
+      batchApproveOcrVerified,
       rejectSelected,
       runClinicVerification,
       formatDateValue,

@@ -323,45 +323,6 @@ const documentInputKeys = ref({
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
 
-// Documents that require an explicit expiry date (ISO string)
-const documentExpiryRequired = {
-  businessPermit: true,
-  birRegistration: false,
-  sanitaryCertificate: true,
-  prcIdMedicalDirector: true,
-  dohAccreditation: true,
-  fdaApproval: true,
-}
-
-// store selected expiry dates per document (ISO yyyy-mm-dd)
-const documentExpiryMap = {
-  secCertificate: ref(''),
-  articlesOfIncorporation: ref(''),
-  businessPermit: ref(''),
-  birRegistration: ref(''),
-  sanitaryCertificate: ref(''),
-  governmentIdRepresentativeFront: ref(''),
-  governmentIdRepresentativeBack: ref(''),
-  dohAccreditation: ref(''),
-  fdaApproval: ref(''),
-  prcIdMedicalDirector: ref(''),
-}
-const documentNumberMap = {
-  businessPermit: ref(''),
-  birRegistration: ref(''),
-  sanitaryCertificate: ref(''),
-  dohAccreditation: ref(''),
-  fdaApproval: ref(''),
-  prcIdMedicalDirector: ref(''),
-}
-const documentNumberRequired = new Set(Object.keys(documentNumberMap))
-const documentNumberPattern = /^[A-Z0-9][A-Z0-9-]{2,39}$/i
-const normalizeDocumentNumber = (value) => String(value || '').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 40)
-const handleDocumentNumberInput = (docKey, event) => {
-  const normalized = normalizeDocumentNumber(event.target.value)
-  documentNumberMap[docKey].value = normalized
-  event.target.value = normalized
-}
 const approvalRedirecting = ref(false)
 const approvalReviewState = ref('pending')
 const approvalReviewMessage = ref('Your registration is under review. Please allow at least 24 hours for admin review.')
@@ -1176,8 +1137,24 @@ const handleDocumentFileChange = async (key, event) => {
       [`draftDocuments.${docKey}`]: uploadedDoc,
       draftDocumentsUpdatedAt: serverTimestamp(),
     })
+    const ocrResult = await requestUploadedDocumentOcr(userUid.value, docKey)
+    if (ocrResult.status === 'rejected') {
+      await updateDoc(doc(db, 'clinics', userUid.value), {
+        [`draftDocuments.${docKey}`]: deleteField(),
+        draftDocumentsUpdatedAt: serverTimestamp(),
+      })
+      existingSubmittedDocuments.value[docKey] = null
+      documentFileMap[docKey].value = null
+      documentInputKeys.value[docKey] = (documentInputKeys.value[docKey] || 0) + 1
+      documentPreviewUrls.value[docKey] = ''
+      documentUploadState.value[docKey] = { uploading: false, progress: 0, error: ocrResult.reason }
+      toast.error(ocrResult.reason || 'This document was rejected by OCR. Please upload a clearer file.')
+      return
+    }
     documentUploadState.value[docKey] = { uploading: false, progress: 100, error: '' }
-    toast.success('Document uploaded. You can safely leave and continue later.')
+    toast.success(ocrResult.status === 'verified'
+      ? 'Document uploaded and OCR verified.'
+      : 'Document uploaded. OCR completed; it will need manual review after submission.')
   } catch (err) {
     console.error(err)
     const errorMessage = err?.message || 'Failed to upload document. Please try again.'
@@ -1426,11 +1403,6 @@ const applyProfileData = (profile) => {
     fdaApproval: storedDocuments?.fdaApproval || null,
     prcIdMedicalDirector: storedDocuments?.prcIdMedicalDirector || storedDocuments?.prcLicenseMedicalDirector || null,
   }
-  Object.keys(documentNumberMap).forEach((docKey) => {
-    documentNumberMap[docKey].value = normalizeDocumentNumber(
-      storedDocuments?.[docKey]?.documentNumber || storedDocuments?.[docKey]?.number || ''
-    )
-  })
   syncAuthorizedRepPositionOption(authorizedRepPosition.value)
   syncExistingDocumentPreviews()
 }
@@ -2016,9 +1988,6 @@ const resetClinicRegistrationFlow = () => {
   dohAccreditationFile.value = null
   fdaApprovalFile.value = null
   prcIdMedicalDirectorFile.value = null
-  Object.keys(documentNumberMap).forEach((docKey) => {
-    documentNumberMap[docKey].value = ''
-  })
   existingSubmittedDocuments.value = {
     secCertificate: null,
     articlesOfIncorporation: null,
@@ -2930,6 +2899,22 @@ const requestAutomaticClinicVerification = async (uid) => {
   return payload.data
 }
 
+const requestUploadedDocumentOcr = async (uid, docKey) => {
+  if (!uid || !docKey) throw new Error('The uploaded document could not be verified.')
+  if (typeof auth.authStateReady === 'function') await auth.authStateReady()
+  const currentUser = auth.currentUser
+  if (!currentUser) throw new Error('Your registration session expired. Please sign in again.')
+  const token = await currentUser.getIdToken(true)
+  const response = await fetch(`${OTP_API_BASE}/registration/ocr-document`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ uid, docKey }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'OCR could not process this document.')
+  return payload.data || {}
+}
+
 const claimPrepaidSubscriptionPayment = async () => {
   let paymentId = String(route.query.paymentId || '').trim()
   if (!paymentId) {
@@ -2990,46 +2975,6 @@ const submitDocuments = async () => {
   isSubmittingDocuments.value = true
 
   try {
-    // Validate required expiry dates before uploading/submitting
-    for (const docKey of requiredDocumentKeys.value) {
-      if (documentNumberRequired.has(docKey)) {
-        const documentNumber = String(documentNumberMap[docKey]?.value || '').trim()
-        if (!documentNumber) {
-          toast.error(`Please provide the document number for ${documentLabelMap[docKey] || docKey}.`)
-          isSubmittingDocuments.value = false
-          return
-        }
-        if (!documentNumberPattern.test(documentNumber)) {
-          toast.error(`The document number for ${documentLabelMap[docKey] || docKey} contains invalid characters.`)
-          isSubmittingDocuments.value = false
-          return
-        }
-      }
-      if (documentExpiryRequired[docKey]) {
-        const expiryVal = documentExpiryMap[docKey]?.value || ''
-        if (!expiryVal) {
-          toast.error(`Please provide expiry date for ${documentLabelMap[docKey] || docKey}.`) 
-          isSubmittingDocuments.value = false
-          return
-        }
-        // basic ISO date validation and not expired
-        const expiryDate = new Date(expiryVal)
-        if (!expiryDate || Number.isNaN(expiryDate.getTime())) {
-          toast.error(`Expiry date for ${documentLabelMap[docKey] || docKey} is invalid.`)
-          isSubmittingDocuments.value = false
-          return
-        }
-        const today = new Date()
-        today.setHours(0,0,0,0)
-        expiryDate.setHours(0,0,0,0)
-        if (expiryDate.getTime() < today.getTime()) {
-          toast.error(`${documentLabelMap[docKey] || docKey} appears to be expired. Please verify the expiry date.`)
-          isSubmittingDocuments.value = false
-          return
-        }
-      }
-    }
-
     const uploads = await Promise.all(
       requiredDocumentKeys.value.map((docKey) =>
         uploadDocumentForClinic(userUid.value, documentFileMap[docKey]?.value, docKey)
@@ -3041,15 +2986,7 @@ const submitDocuments = async () => {
       const fallbackDoc =
         existingSubmittedDocuments.value[docKey] || { name: '', size: 0, type: '', url: '' }
       const docPayload = uploads[index] || fallbackDoc
-      // attach expiry date if provided
-      const expiryVal = documentExpiryMap[docKey]?.value || null
-      submittedDocumentsPayload[docKey] = {
-        ...docPayload,
-        ...(documentNumberRequired.has(docKey)
-          ? { documentNumber: String(documentNumberMap[docKey]?.value || '').trim().toUpperCase() }
-          : {}),
-        ...(docKey === 'birRegistration' ? {} : { expiryDate: expiryVal || null }),
-      }
+      submittedDocumentsPayload[docKey] = { ...docPayload }
     })
 
     const platformAgreementAcceptance = isClinicRegistrationActive.value
@@ -3669,60 +3606,7 @@ const handleRegistrationSubmit = () => {
                   class="upload-card"
                 >
                   <p class="upload-label">{{ documentLabelMap[docKey] || docKey }}</p>
-                  <div v-if="documentNumberRequired.has(docKey)" class="relative mt-2">
-                    <input
-                      v-model="documentNumberMap[docKey].value"
-                      @input="handleDocumentNumberInput(docKey, $event)"
-                      type="text"
-                      maxlength="40"
-                      inputmode="text"
-                      pattern="[A-Za-z0-9\-]+"
-                      placeholder=" "
-                      autocomplete="off"
-                      class="peer input h-14 pt-4 pb-2 px-3"
-                      :aria-label="`${documentLabelMap[docKey]} number`"
-                    />
-                    <label class="floating-label floating-label-raised">{{
-                      docKey === 'businessPermit'
-                        ? 'Business Permit No.'
-                        : docKey === 'birRegistration'
-                          ? 'BIR 2303 / Certificate No.'
-                          : docKey === 'sanitaryCertificate'
-                            ? 'Sanitary Certificate No.'
-                        : docKey === 'dohAccreditation'
-                          ? 'DOH License to Operate Number'
-                          : docKey === 'fdaApproval'
-                            ? 'FDA Registration Number'
-                            : 'PRC ID No. of Medical Director'
-                    }}</label>
-                    <p class="mt-1 text-[11px] text-charcoal-500">
-                      Format example: {{
-                        docKey === 'businessPermit'
-                          ? 'BP-2026-123456'
-                          : docKey === 'birRegistration'
-                            ? 'BIR-REG-2026-123456'
-                            : docKey === 'sanitaryCertificate'
-                              ? 'SAN-2026-123456'
-                          : docKey === 'dohAccreditation'
-                            ? 'DOH-ACC-2026-987654'
-                            : docKey === 'fdaApproval'
-                              ? 'FDA-REG-2026-543210'
-                              : 'MD-2026-789012'
-                      }}
-                    </p>
-                  </div>
                   <input :key="documentInputKeys[docKey]" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange(docKey, $event)" class="upload-input" />
-
-                  <!-- Expiry date input for documents that require it -->
-                  <div v-if="documentExpiryRequired[docKey]" class="mt-2">
-                    <label class="text-xs text-charcoal-600">Expiry Date</label>
-                    <input
-                      type="date"
-                      :aria-label="`Expiry date for ${documentLabelMap[docKey] || docKey}`"
-                      v-model="documentExpiryMap[docKey].value"
-                      class="peer input h-12 pt-2 pb-1 px-2 mt-1"
-                    />
-                  </div>
 
                   <img
                     v-if="documentPreviewUrls[docKey]"
