@@ -461,13 +461,15 @@ export default {
         if (item?.ownerOnly && !isOwnerLike(currentRole)) return false
       const shouldApplySubscriptionRules = isClinicSideRole(currentRole)
       const featureAllowed = !required.length || required.every((feature) => hasFeature(feature))
+      const allowedPlans = Array.isArray(item?.plans) ? item.plans.map((plan) => String(plan || '').trim().toLowerCase()) : []
+      const planAllowed = !allowedPlans.length || allowedPlans.includes(String(activePlan.value || '').trim().toLowerCase())
       const permissionAllowed =
         (!requiredPermissions.all.length || requiredPermissions.all.every((perm) => hasPermission(perm))) &&
         (!requiredPermissions.any.length || requiredPermissions.any.some((perm) => hasPermission(perm)))
       if (!shouldApplySubscriptionRules) {
         return permissionAllowed
       }
-      return featureAllowed && permissionAllowed
+      return featureAllowed && planAllowed && permissionAllowed
     }
 
     const lockTitleForItem = (item) => {

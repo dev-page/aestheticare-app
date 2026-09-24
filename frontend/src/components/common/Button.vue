@@ -2,9 +2,14 @@
   <button
     :class="buttonClasses"
     @click="$emit('click')"
-    :disabled="disabled"
+    :disabled="disabled || loading"
+    :aria-busy="loading"
   >
-    <slot />
+    <span v-if="loading" class="inline-flex items-center gap-2">
+      <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span>
+      {{ loadingLabel || 'Processing...' }}
+    </span>
+    <slot v-else />
   </button>
 </template>
 
@@ -25,6 +30,14 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  loading: {
+    type: Boolean,
+    default: false
+  },
+  loadingLabel: {
+    type: String,
+    default: ''
   }
 })
 
@@ -43,6 +56,6 @@ const buttonClasses = computed(() => {
     large: 'px-6 py-3 text-lg'
   }
 
-  return `${baseClasses} ${variantClasses[props.variant]} ${sizeClasses[props.size]} ${props.disabled ? 'opacity-50 cursor-not-allowed' : ''}`
+  return `${baseClasses} ${variantClasses[props.variant]} ${sizeClasses[props.size]} ${props.disabled || props.loading ? 'opacity-50 cursor-not-allowed' : ''}`
 })
 </script>

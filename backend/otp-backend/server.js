@@ -1448,6 +1448,17 @@ const normalizeRoleKey = (value) => {
   return raw.charAt(0).toUpperCase() + raw.slice(1)
 }
 
+const requiresOperationalLoginOtp = (userData = {}) => {
+  const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+  const accountKinds = new Set([
+    'superadmin', 'systemadmin', 'sysadmin',
+    'owner', 'clinicadmin', 'clinicadministrator',
+    'supplier', 'staff', 'employee',
+  ])
+  // Customer accounts are intentionally excluded from login OTP.
+  return accountKinds.has(normalize(userData.role)) || accountKinds.has(normalize(userData.userType))
+}
+
 // Built-in branch administrator permissions. These cover every operational
 // module while deliberately excluding organization ownership, billing,
 // backups, role administration, and creating additional branches.
@@ -3791,8 +3802,7 @@ app.post(REQUEST_LOGIN_OTP_PATH, requireAuth, async (req, res) => {
     failureStage = 'firestore_account_lookup'
     const userSnap = await admin.firestore().collection('users').doc(requestedUid).get()
     const userData = userSnap.exists ? userSnap.data() || {} : {}
-    const roleKey = normalizeRoleKey(userData.role || userData.userType || '')
-    if (roleKey !== 'Superadmin' && !isOwnerRoleValue(userData.role || userData.userType)) {
+    if (!requiresOperationalLoginOtp(userData)) {
       return res.status(403).json({ success: false, error: 'Login OTP is not required for this account.' })
     }
 
@@ -3847,8 +3857,7 @@ app.post(VERIFY_LOGIN_OTP_PATH, async (req, res) => {
     }
     const userSnap = await firestore.collection('users').doc(normalizedUid).get()
     const userData = userSnap.exists ? userSnap.data() || {} : {}
-    const roleKey = normalizeRoleKey(userData.role || userData.userType || '')
-    if (roleKey !== 'Superadmin' && !isOwnerRoleValue(userData.role || userData.userType)) {
+    if (!requiresOperationalLoginOtp(userData)) {
       return res.status(403).json({ success: false, error: 'Login OTP is not required for this account.' })
     }
 
@@ -4063,23 +4072,25 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
     if (!ownerId) return res.status(404).json({ success: false, error: 'Center unavailable.' })
 
     const rolesSnap = await firestore.collection('clinicRoles').where('ownerId', '==', ownerId).get()
+    const practitionerPermissionKeys = new Set(['appointments:update', 'consultations:view', 'consultations:create'])
     const practitionerRoleIds = new Set(
       rolesSnap.docs
         .filter((roleSnap) => Array.isArray(roleSnap.data()?.permissions)
-          && roleSnap.data().permissions.some((permission) => String(permission || '').trim() === 'consultations:view'))
+          && roleSnap.data().permissions.some((permission) => practitionerPermissionKeys.has(String(permission || '').trim())))
         .map((roleSnap) => roleSnap.id)
     )
-
-    if (!practitionerRoleIds.size) {
-      return res.json({ success: true, practitioners: [], schedules: {}, leaves: {} })
-    }
 
     const staffSnap = await firestore.collection('users').where('branchId', '==', branchId).get()
     const practitioners = staffSnap.docs
       .map((staffSnap) => ({ id: staffSnap.id, ...staffSnap.data() }))
-      .filter((staff) => String(staff.userType || '').trim().toLowerCase() === 'staff'
-        && staff.archived !== true
-        && practitionerRoleIds.has(String(staff.customRoleId || '').trim()))
+      .filter((staff) => {
+        const role = String(staff.role || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+        const directPermissions = [...(Array.isArray(staff.effectivePermissions) ? staff.effectivePermissions : []), ...(Array.isArray(staff.permissions) ? staff.permissions : [])]
+        const type = String(staff.userType || '').trim().toLowerCase()
+        return type !== 'customer' && type !== 'supplier' && staff.archived !== true
+          && !['inactive', 'disabled', 'archived'].includes(String(staff.status || '').trim().toLowerCase())
+          && (role === 'practitioner' || [...(Array.isArray(staff.customRoleIds) ? staff.customRoleIds : []), staff.customRoleId].some((roleId) => practitionerRoleIds.has(String(roleId || '').trim())) || directPermissions.some((permission) => practitionerPermissionKeys.has(String(permission || '').trim())))
+      })
       .map((staff) => ({
         id: staff.id,
         fullName: String(staff.fullName || '').trim()
@@ -4145,6 +4156,33 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     if (!date) return res.status(400).json({ success: false, error: 'date is required' })
 
     await assertClinicPlanFeature(firestore, branchId, 'booking_availability')
+
+    // Never trust a practitioner ID supplied by the customer. The assignee
+    // must belong to this branch and be an actual practitioner by role or by
+    // a role permission that permits practitioner work.
+    const [branchSnap, practitionerSnap] = await Promise.all([
+      firestore.collection('clinics').doc(branchId).get(),
+      firestore.collection('users').doc(practitionerId).get(),
+    ])
+    const branch = branchSnap.exists ? branchSnap.data() || {} : null
+    const practitioner = practitionerSnap.exists ? practitionerSnap.data() || {} : null
+    if (!branch || !practitioner || String(practitioner.branchId || '').trim() !== branchId) {
+      return res.status(400).json({ success: false, error: 'Choose an eligible practitioner from this branch.' })
+    }
+    const practitionerPermissionKeys = new Set(['appointments:update', 'consultations:view', 'consultations:create'])
+    const directPermissions = [...(Array.isArray(practitioner.effectivePermissions) ? practitioner.effectivePermissions : []), ...(Array.isArray(practitioner.permissions) ? practitioner.permissions : [])]
+    const role = String(practitioner.role || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+    let hasEligibleRole = role === 'practitioner' || directPermissions.some((permission) => practitionerPermissionKeys.has(String(permission || '').trim()))
+    const customRoleIds = [...new Set([...(Array.isArray(practitioner.customRoleIds) ? practitioner.customRoleIds : []), practitioner.customRoleId].map((roleId) => String(roleId || '').trim()).filter(Boolean))]
+    if (!hasEligibleRole && branch.ownerId && customRoleIds.length) {
+      const practitionerRoleSnaps = await Promise.all(customRoleIds.map((roleId) => firestore.collection('clinicRoles').doc(roleId).get()))
+      hasEligibleRole = practitionerRoleSnaps.some((practitionerRoleSnap) => practitionerRoleSnap.exists
+        && String(practitionerRoleSnap.data()?.ownerId || '').trim() === String(branch.ownerId || '').trim()
+        && (practitionerRoleSnap.data()?.permissions || []).some((permission) => practitionerPermissionKeys.has(String(permission || '').trim())))
+    }
+    if (!hasEligibleRole || practitioner.archived === true || ['inactive', 'disabled', 'archived'].includes(String(practitioner.status || '').trim().toLowerCase())) {
+      return res.status(400).json({ success: false, error: 'Choose an eligible practitioner from this branch.' })
+    }
 
     if (!walkIn && String(reservation.bookingType || '').toLowerCase() === 'follow-up') {
       const followUpOf = String(reservation.followUpOf || '').trim()

@@ -96,13 +96,17 @@ const normalizeRoleKey = (value) => {
   return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
 }
 
-// Temporarily disabled. Set to true to restore login OTP for administrator roles.
-const LOGIN_OTP_ENABLED = false
+const LOGIN_OTP_ENABLED = true
 
 const requiresLoginOtp = (userData) => {
   if (!LOGIN_OTP_ENABLED) return false
-  const role = normalizeRoleKey(userData?.role || userData?.userType)
-  return role === 'Superadmin' || role === 'Owner' || role === 'Clinic Admin'
+  const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+  const role = normalize(userData?.role)
+  const userType = normalize(userData?.userType)
+  // Customers intentionally retain password-only login. Every operational
+  // account (system admin, owner, staff/employee, or supplier) needs OTP.
+  return ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicadmin', 'clinicadministrator', 'supplier', 'staff', 'employee'].includes(role)
+    || ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicadmin', 'clinicadministrator', 'supplier', 'staff', 'employee'].includes(userType)
 }
 
 const firebaseLoginMessages = {

@@ -19,7 +19,7 @@
                 Add Item
               </button>
               <button type="button" data-onboarding-key="supplier-catalog-save" class="rounded-xl border border-[#d9b38d] bg-[#fff8ef] px-4 py-2 text-sm font-semibold text-[#6f4329] transition hover:bg-[#f7ead8]" :disabled="loading || saving || checkingImage" @click="saveSupplies">
-                Save Supplies
+                {{ saving ? 'Saving supplies…' : 'Save Supplies' }}
               </button>
             </div>
           </div>
@@ -84,7 +84,7 @@
             <div class="exact-pair px-5 pb-5"><label>OTHER CHARGE / UNIT (PHP)<div class="exact-price"><b>₱</b><input v-model.number="item.otherChargePerUnit" type="number" min="0" step="0.01" placeholder="0.00" /></div><small>Recurring handling, packaging, or regulatory charge per unit. It will prefill supplier quotations.</small></label><aside>ⓘ <div><b>Delivery remains order-specific</b><span>Catalog price, VAT, discount, and per-unit charges carry into the quote. Delivery is set for the actual destination.</span></div></aside></div>
             <section v-if="item.tieredDiscounts?.length" class="exact-fda"><h3>Bulk discount tiers</h3><div v-for="(tier, tierIndex) in item.tieredDiscounts" :key="tierIndex" class="exact-pair"><label>MINIMUM QUANTITY<input v-model.number="tier.minQuantity" type="number" min="2" step="1" /></label><label>DISCOUNT RATE (%)<input v-model.number="tier.discountRate" type="number" min="0" max="100" step="0.01" /><button type="button" class="exact-tier" @click="item.tieredDiscounts.splice(tierIndex, 1)">Remove tier</button></label></div></section>
             <section class="exact-fda"><h3>FDA Documentation <span>(optional)</span></h3><p>Upload supporting information when applicable. It is not required for every supply item.</p><div class="exact-pair"><label>FDA REGISTRATION NUMBER<input v-model.trim="item.fdaRegistrationNumber" maxlength="100" placeholder="Optional" /></label><label>FDA DOCUMENT<input v-if="!item.fdaApprovalDocument?.url && !item.fdaApprovalFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif" @change="handleFdaDocumentChange(index, $event)" /><span v-else>{{ item.fdaApprovalFileName || item.fdaApprovalDocument?.name || 'Document attached' }}</span></label></div></section>
-            <footer><button type="button" @click="items = [createEmptyItem()]">Cancel</button><button type="submit">Save Item</button></footer>
+            <footer><button type="button" :disabled="saving" @click="items = [createEmptyItem()]">Cancel</button><button type="submit" :disabled="saving">{{ saving ? 'Saving item…' : 'Save Item' }}</button></footer>
           </article>
         </form>
         <form v-if="false && !loading" data-supplier-catalog-form class="legacy-catalog-form space-y-5" @submit.prevent="saveSupplies">

@@ -761,10 +761,11 @@ import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
+import { onAuthStateChanged } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { addCartItem, readCart } from '@/utils/customerCart'
-import { getScheduleDayWindow } from '@/utils/employeeSchedules'
+import { buildWeekScheduleMap, getScheduleDayWindow } from '@/utils/employeeSchedules'
 import { calculateCommissionAmount, calculateNetAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
@@ -1449,12 +1450,28 @@ const startBookingReservationsListener = async (branchId) => {
 }
 
 const loadPractitioners = async (branchId = activeBranchId.value) => {
-  // Practitioner profiles, role assignments, schedules, and leave records are
-  // private. A customer page must not read them directly from Firestore.
-  // The booking API remains responsible for validating a submitted time slot.
   practitioners.value = []
   practitionerSchedules.value = {}
   practitionerLeaves.value = {}
+  if (!branchId) return
+  const currentUser = auth.currentUser || await new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => { unsubscribe(); resolve(user) })
+  })
+  if (!currentUser) return
+  try {
+    const token = await currentUser.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/practitioners`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(payload?.error || 'Unable to load booking availability.')
+    practitioners.value = Array.isArray(payload.practitioners) ? payload.practitioners : []
+    practitionerSchedules.value = Object.fromEntries(Object.entries(payload.schedules || {}).map(([practitionerId, schedules]) => [practitionerId, buildWeekScheduleMap(Array.isArray(schedules) ? schedules : [])]))
+    practitionerLeaves.value = payload.leaves && typeof payload.leaves === 'object' ? payload.leaves : {}
+  } catch (error) {
+    console.error('Unable to load practitioner availability:', error)
+    toast.error(error?.message || 'Unable to load booking availability.')
+  }
 }
 
 const loadBranchData = async (branchId) => {

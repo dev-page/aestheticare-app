@@ -71,7 +71,7 @@
           <select v-model="form.packageServiceIds" multiple class="min-h-28 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
             <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
           </select>
-          <p class="mt-2 text-xs text-slate-400">A package must include one consultation and at least one service. Customers book and pay for the package as one appointment.</p>
+          <p class="mt-2 text-xs text-slate-400">A package must include at least two services, or one consultation plus at least one service. Customers book and pay for the package as one appointment.</p>
           <label class="mt-4 block text-slate-400">Number of treatment sessions<input v-model.number="form.sessionCount" type="number" min="1" max="50" step="1" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" /><span class="mt-1 block text-xs text-slate-400">Use 1 for a one-time package. For multiple sessions, the clinic schedules each visit separately after approval.</span></label>
         </div>
 
@@ -351,9 +351,9 @@
               <p class="mb-2 text-sm font-semibold">{{ post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft' }}</p>
               <p v-if="post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
               <div class="mb-3 flex flex-wrap gap-2">
-                <button v-if="canManageListingWorkflow && (!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus))" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">Submit to Finance</button>
-                <button v-if="canManageListingWorkflow && post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">Publish</button>
-                <button v-if="canManageListingWorkflow && post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">Unpublish</button>
+                <button v-if="canManageListingWorkflow && (!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus))" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Submitting…' : 'Submit to Finance' }}</button>
+                <button v-if="canManageListingWorkflow && post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Publishing…' : 'Publish' }}</button>
+                <button v-if="canManageListingWorkflow && post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Unpublishing…' : 'Unpublish' }}</button>
               </div>
               <p class="text-sm text-slate-300 mb-1">{{ post.productName || post.serviceName || post.consultationName || post.packageName }}</p>
               <p v-if="post.postType === 'Package'" class="mb-2 text-xs text-amber-200">
@@ -399,21 +399,21 @@
                   :disabled="actionLoadingId === post.id"
                   class="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
                 >
-                  Edit
+                  {{ actionLoadingId === post.id ? 'Processing…' : 'Edit' }}
                 </button>
                 <button
                   @click="archivePost(post)"
                   :disabled="actionLoadingId === post.id"
                   class="px-3 py-1 text-xs rounded bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
                 >
-                  Archive
+                  {{ actionLoadingId === post.id ? 'Archiving…' : 'Archive' }}
                 </button>
                 <button
                   @click="deletePost(post)"
                   :disabled="actionLoadingId === post.id"
                   class="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-50"
                 >
-                  Delete
+                  {{ actionLoadingId === post.id ? 'Deleting…' : 'Delete' }}
                 </button>
               </div>
             </div>
@@ -617,7 +617,7 @@
                 :disabled="loading"
                 class="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
               >
-                Save Changes
+                {{ loading ? 'Saving changes…' : 'Save Changes' }}
               </button>
             </div>
           </div>
@@ -989,11 +989,11 @@ export default {
         const selectedComponents = (form.value.packageServiceIds || [])
           .map((id) => posts.value.find((post) => post.id === id))
           .filter(Boolean)
-        const consultationComponents = selectedComponents.filter((post) => post.postType === 'Consultation')
-        const hasConsultation = consultationComponents.length === 1
-        const hasService = selectedComponents.some((post) => post.postType === 'Service')
-        if (!hasConsultation || !hasService) {
-          toast.error('A package must include exactly one consultation and at least one service.')
+        const consultationCount = selectedComponents.filter((post) => post.postType === 'Consultation').length
+        const serviceCount = selectedComponents.filter((post) => post.postType === 'Service').length
+        const validPackage = consultationCount <= 1 && ((consultationCount === 1 && serviceCount >= 1) || serviceCount >= 2)
+        if (!validPackage) {
+          toast.error('A package must include at least two services, or one consultation plus at least one service.')
           return
         }
         if (Number(form.value.price) <= 0) {
@@ -1215,11 +1215,11 @@ export default {
         const selectedComponents = (editForm.value.packageServiceIds || [])
           .map((id) => posts.value.find((post) => post.id === id))
           .filter(Boolean)
-        const consultationComponents = selectedComponents.filter((post) => post.postType === 'Consultation')
-        const hasConsultation = consultationComponents.length === 1
-        const hasService = selectedComponents.some((post) => post.postType === 'Service')
-        if (!hasConsultation || !hasService) {
-          toast.error('A package must include exactly one consultation and at least one service.')
+        const consultationCount = selectedComponents.filter((post) => post.postType === 'Consultation').length
+        const serviceCount = selectedComponents.filter((post) => post.postType === 'Service').length
+        const validPackage = consultationCount <= 1 && ((consultationCount === 1 && serviceCount >= 1) || serviceCount >= 2)
+        if (!validPackage) {
+          toast.error('A package must include at least two services, or one consultation plus at least one service.')
           return
         }
         if (Number(editForm.value.price) <= 0) {
