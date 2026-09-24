@@ -34,6 +34,16 @@ service firebase.storage {
         && request.resource.size <= 10 * 1024 * 1024;
     }
 
+    function isLeaveAttachmentUpload() {
+      return request.resource != null
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType in [
+          'image/jpeg', 'image/png', 'image/webp', 'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ];
+    }
+
     function isOrderOwner(orderId) {
       return request.auth != null
         && firestore.get(/databases/(default)/documents/customerOrders/$(orderId)).data.customerId == request.auth.uid;
@@ -116,6 +126,14 @@ service firebase.storage {
     match /clinic-registration/{ownerId}/{documentType}/{fileName} {
       allow read: if isSignedIn() && (request.auth.uid == ownerId || isSuperadmin());
       allow create: if request.auth != null && request.auth.uid == ownerId && isDocumentUpload();
+      allow update, delete: if false;
+    }
+
+    // Leave-request attachments are immutable and may only be uploaded by
+    // the employee whose UID is encoded in the path.
+    match /leave-requests/{userId}/{fileName} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId && isLeaveAttachmentUpload();
       allow update, delete: if false;
     }
 
