@@ -413,7 +413,6 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
     { key: 'governmentIdRepresentativeBack', label: 'Government-Issued ID of Registrant (Back)' },
     { key: 'businessPermit', label: 'Business Permit/Registration' },
     { key: 'dohAccreditation', label: 'DOH License to Operate' },
-    { key: 'prcIdMedicalDirector', label: 'PRC ID of Medical Director' },
     { key: 'birRegistration', label: 'BIR 2303 or Certificate of Registration' },
     { key: 'sanitaryCertificate', label: 'Sanitary Certificate' },
   ]
@@ -438,7 +437,6 @@ const verificationDocumentOrder = [
   'governmentIdRepresentativeBack',
   'businessPermit',
   'dohAccreditation',
-  'prcIdMedicalDirector',
   'birRegistration',
   'sanitaryCertificate',
 ]
@@ -477,7 +475,6 @@ const documentLabel = (key) => ({
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
   businessPermit: 'Business Permit/Registration',
   dohAccreditation: 'DOH License to Operate',
-  prcIdMedicalDirector: 'PRC ID of Medical Director',
   birRegistration: 'BIR 2303 or Certificate of Registration',
   sanitaryCertificate: 'Sanitary Certificate',
 }[key] || key)

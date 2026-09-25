@@ -78,20 +78,18 @@ const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = Math.max(0.74, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.74)))
 const MANUAL_REVIEW_THRESHOLD = Math.max(0.5, Math.min(AUTO_VERIFICATION_THRESHOLD, Number(process.env.MANUAL_REVIEW_THRESHOLD || 0.5)))
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
-  clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'prcIdMedicalDirector', 'birRegistration', 'sanitaryCertificate'],
+  clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'birRegistration', 'sanitaryCertificate'],
 }
 const DOCUMENT_NUMBER_REQUIREMENTS = new Set([
   'businessPermit',
   'birRegistration',
   'sanitaryCertificate',
   'dohAccreditation',
-  'prcIdMedicalDirector',
 ])
 const EXPIRY_DATE_REQUIREMENTS = new Set([
   'businessPermit',
   'sanitaryCertificate',
   'dohAccreditation',
-  'prcIdMedicalDirector',
 ])
 const BUSINESS_NAME_REQUIREMENTS = new Set([
   'businessPermit',

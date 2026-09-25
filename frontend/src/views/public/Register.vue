@@ -244,7 +244,6 @@ const governmentIdRepresentativeFrontFile = ref(null)
 const governmentIdRepresentativeBackFile = ref(null)
 const dohAccreditationFile = ref(null)
 const fdaApprovalFile = ref(null)
-const prcIdMedicalDirectorFile = ref(null)
 const existingSubmittedDocuments = ref({
   secCertificate: null,
   articlesOfIncorporation: null,
@@ -255,7 +254,6 @@ const existingSubmittedDocuments = ref({
   governmentIdRepresentativeBack: null,
   dohAccreditation: null,
   fdaApproval: null,
-  prcIdMedicalDirector: null,
 })
 const documentPreviewUrls = ref({
   secCertificate: '',
@@ -267,7 +265,6 @@ const documentPreviewUrls = ref({
   governmentIdRepresentativeBack: '',
   dohAccreditation: '',
   fdaApproval: '',
-  prcIdMedicalDirector: '',
 })
 const isSubmittingDocuments = ref(false)
 const documentUploadState = ref({
@@ -280,7 +277,6 @@ const documentUploadState = ref({
   governmentIdRepresentativeBack: { uploading: false, progress: 0, error: '' },
   dohAccreditation: { uploading: false, progress: 0, error: '' },
   fdaApproval: { uploading: false, progress: 0, error: '' },
-  prcIdMedicalDirector: { uploading: false, progress: 0, error: '' },
 })
 const documentFileMap = {
   secCertificate: secCertificateFile,
@@ -292,7 +288,6 @@ const documentFileMap = {
   governmentIdRepresentativeBack: governmentIdRepresentativeBackFile,
   dohAccreditation: dohAccreditationFile,
   fdaApproval: fdaApprovalFile,
-  prcIdMedicalDirector: prcIdMedicalDirectorFile,
 }
 const documentLabelMap = {
   secCertificate: 'SEC Certificate of Registration',
@@ -304,7 +299,6 @@ const documentLabelMap = {
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
   dohAccreditation: 'DOH License to Operate',
   fdaApproval: 'FDA Approval',
-  prcIdMedicalDirector: 'PRC ID of Medical Director',
 }
 const documentInputKeys = ref({
   secCertificate: 0,
@@ -316,7 +310,6 @@ const documentInputKeys = ref({
   governmentIdRepresentativeBack: 0,
   dohAccreditation: 0,
   fdaApproval: 0,
-  prcIdMedicalDirector: 0,
 })
 
 // File upload rules
@@ -438,7 +431,6 @@ const companyDocumentKeys = [
   'governmentIdRepresentativeFront',
   'governmentIdRepresentativeBack',
   'dohAccreditation',
-  'prcIdMedicalDirector',
 ]
 const requiredDocumentKeys = computed(() => companyDocumentKeys)
 const acceptedGovernmentIdOptions = [
@@ -450,7 +442,6 @@ const acceptedGovernmentIdOptions = [
   'UMID',
   'Postal ID',
   "Voter's ID",
-  'PRC ID',
 ]
 const acceptedGovernmentIdColumns = computed(() => [
   acceptedGovernmentIdOptions.slice(0, 5),
@@ -1394,7 +1385,6 @@ const applyProfileData = (profile) => {
     governmentIdRepresentativeBack: storedDocuments?.governmentIdRepresentativeBack || null,
     dohAccreditation: storedDocuments?.dohAccreditation || null,
     fdaApproval: storedDocuments?.fdaApproval || null,
-    prcIdMedicalDirector: storedDocuments?.prcIdMedicalDirector || storedDocuments?.prcLicenseMedicalDirector || null,
   }
   syncAuthorizedRepPositionOption(authorizedRepPosition.value)
   syncExistingDocumentPreviews()
@@ -1607,7 +1597,6 @@ const verifyRegistrationEmail = async (options = {}) => {
     governmentIdRepresentativeBackFile.value = null
     dohAccreditationFile.value = null
     fdaApprovalFile.value = null
-    prcIdMedicalDirectorFile.value = null
     existingSubmittedDocuments.value = {
       secCertificate: null,
       articlesOfIncorporation: null,
@@ -1616,7 +1605,6 @@ const verifyRegistrationEmail = async (options = {}) => {
       governmentIdRepresentativeBack: null,
       dohAccreditation: null,
       fdaApproval: null,
-      prcIdMedicalDirector: null,
     }
     syncExistingDocumentPreviews()
     pendingApprovalMode.value = false
@@ -1889,7 +1877,6 @@ const handleEmailDraftInput = () => {
     governmentIdRepresentativeBackFile.value = null
     dohAccreditationFile.value = null
     fdaApprovalFile.value = null
-    prcIdMedicalDirectorFile.value = null
     existingSubmittedDocuments.value = {
       secCertificate: null,
       articlesOfIncorporation: null,
@@ -1898,7 +1885,6 @@ const handleEmailDraftInput = () => {
       governmentIdRepresentativeBack: null,
       dohAccreditation: null,
       fdaApproval: null,
-      prcIdMedicalDirector: null,
     }
     syncExistingDocumentPreviews()
     pendingApprovalMode.value = false
@@ -1980,7 +1966,6 @@ const resetClinicRegistrationFlow = () => {
   governmentIdRepresentativeBackFile.value = null
   dohAccreditationFile.value = null
   fdaApprovalFile.value = null
-  prcIdMedicalDirectorFile.value = null
   existingSubmittedDocuments.value = {
     secCertificate: null,
     articlesOfIncorporation: null,
@@ -1991,7 +1976,6 @@ const resetClinicRegistrationFlow = () => {
     governmentIdRepresentativeBack: null,
     dohAccreditation: null,
     fdaApproval: null,
-    prcIdMedicalDirector: null,
   }
   Object.keys(documentPreviewUrls.value).forEach((key) => {
     const currentPreview = documentPreviewUrls.value[key]
@@ -3555,7 +3539,7 @@ const handleRegistrationSubmit = () => {
               <div class="rounded-xl border border-gold-300 bg-gold-50 px-4 py-3 text-sm text-charcoal-700" role="note">
                 <p class="font-semibold text-charcoal-800">Before you upload</p>
                 <ul class="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-charcoal-600">
-                  <li>Your government-issued ID and PRC ID must show the registrant name entered in Step 1.</li>
+                  <li>Your government-issued ID must show the registrant name entered in Step 1.</li>
                   <li>Business Permit, BIR Registration, Sanitary Certificate, and DOH License must show the clinic/business name entered in Step 1.</li>
                   <li>Upload clear, complete, and unexpired documents. Documents with an expiry date must still be valid.</li>
                 </ul>
