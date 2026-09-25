@@ -192,7 +192,9 @@ app.use(cors(corsOptions))
 app.options(/.*/, cors(corsOptions))
 app.use('/supply', express.json({ limit: '8mb' }))
 app.use('/attendance', express.json({ limit: '5mb' }))
-app.use(express.json())
+// Registration OCR preflight receives a document as base64 and never persists
+// image files. Allow enough room for the existing 10 MB document limit.
+app.use(express.json({ limit: '15mb' }))
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && Object.prototype.hasOwnProperty.call(error, 'body')) {
     return res.status(400).json({
@@ -1850,7 +1852,8 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     reason: '',
   }
   const expectedPrefix = `clinic-registration/${uid}/${docKey}/`
-  if (!storagePath || !storagePath.startsWith(expectedPrefix)) {
+  const isInMemoryPreflight = document?.preflight === true && typeof document?.contentBase64 === 'string'
+  if ((!storagePath || !storagePath.startsWith(expectedPrefix)) && !isInMemoryPreflight) {
     result.reason = 'Document storage path is missing or does not belong to this registration.'
     return result
   }
@@ -1870,11 +1873,9 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     return result
   }
   try {
-    const visionRequest = await createRegistrationVisionRequest({
-      bucketName,
-      storagePath,
-      contentType: document.type,
-    })
+    const visionRequest = isInMemoryPreflight
+      ? { image: { content: document.contentBase64 } }
+      : await createRegistrationVisionRequest({ bucketName, storagePath, contentType: document.type })
     const [visionResult] = await visionClient.documentTextDetection(visionRequest)
     const primaryError = getVisionResponseError(visionResult)
     if (primaryError) throw new Error(primaryError)
@@ -2215,6 +2216,35 @@ app.post('/registration/ocr-document', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Upload-time OCR failed:', error)
     return res.status(500).json({ success: false, error: error?.message || 'OCR processing failed.' })
+  }
+})
+
+// Preflight checks an image held in the browser. It deliberately does not
+// write the image or its OCR result to Firebase Storage/Firestore.
+app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
+  const uid = String(req.body?.uid || '').trim()
+  const docKey = String(req.body?.docKey || '').trim()
+  const file = req.body?.file || {}
+  const contentBase64 = String(file.contentBase64 || '').replace(/^data:[^;]+;base64,/, '')
+  if (!uid || uid !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
+  if (!REGISTRATION_DOCUMENT_REQUIREMENTS.clinic.includes(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
+  if (!['image/jpeg', 'image/png'].includes(String(file.type || '').toLowerCase())) {
+    return res.status(400).json({ success: false, error: 'Image preflight supports PNG and JPEG files. PDFs are checked after final submission.' })
+  }
+  const size = Number(file.size || 0)
+  if (!contentBase64 || size <= 0 || size > 10 * 1024 * 1024) return res.status(400).json({ success: false, error: 'Document content is invalid or too large.' })
+  try {
+    const firestore = admin.firestore()
+    const [clinicSnap, userSnap] = await Promise.all([firestore.collection('clinics').doc(uid).get(), firestore.collection('users').doc(uid).get()])
+    if (!clinicSnap.exists) return res.status(404).json({ success: false, error: 'Registration application not found.' })
+    const result = await processUploadedRegistrationDocument({
+      uid, docKey,
+      document: { name: file.name || '', type: file.type, size, preflight: true, contentBase64 },
+      application: clinicSnap.data() || {}, user: userSnap.data() || {},
+    })
+    return res.json({ success: true, data: result })
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error?.message || 'OCR preflight failed.' })
   }
 })
 

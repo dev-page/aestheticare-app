@@ -1121,23 +1121,7 @@ const handleDocumentFileChange = async (key, event) => {
   const docKey = previewKey
   documentUploadState.value[docKey] = { uploading: true, progress: 0, error: '' }
   try {
-    const uploadedDoc = await uploadDocumentForClinic(userUid.value, selectedFile, docKey, (progress) => {
-      documentUploadState.value[docKey] = {
-        ...documentUploadState.value[docKey],
-        uploading: true,
-        progress,
-        error: '',
-      }
-    })
-    if (!uploadedDoc) throw new Error('Upload failed')
-
-    // Persist as a draft document (the expiry date, if supplied, will be submitted later)
-    existingSubmittedDocuments.value[docKey] = uploadedDoc
-    await updateDoc(doc(db, 'clinics', userUid.value), {
-      [`draftDocuments.${docKey}`]: uploadedDoc,
-      draftDocumentsUpdatedAt: serverTimestamp(),
-    })
-    const ocrResult = await requestUploadedDocumentOcr(userUid.value, docKey)
+    const ocrResult = await requestDocumentOcrPreflight(userUid.value, docKey, selectedFile)
     // Temporary diagnostic for registration testing. This is written only to
     // the current browser's developer console, never displayed publicly.
     console.groupCollapsed(`[OCR] ${documentLabelMap[docKey] || docKey}`)
@@ -1152,10 +1136,6 @@ const handleDocumentFileChange = async (key, event) => {
     if (ocrResult.processingError) console.error('OCR processing error:', ocrResult.processingError)
     console.groupEnd()
     if (ocrResult.status === 'rejected') {
-      await updateDoc(doc(db, 'clinics', userUid.value), {
-        [`draftDocuments.${docKey}`]: deleteField(),
-        draftDocumentsUpdatedAt: serverTimestamp(),
-      })
       existingSubmittedDocuments.value[docKey] = null
       documentFileMap[docKey].value = null
       documentInputKeys.value[docKey] = (documentInputKeys.value[docKey] || 0) + 1
@@ -1166,8 +1146,8 @@ const handleDocumentFileChange = async (key, event) => {
     }
     documentUploadState.value[docKey] = { uploading: false, progress: 100, error: '' }
     toast.success(ocrResult.status === 'verified'
-      ? 'Document uploaded and OCR verified.'
-      : 'Document uploaded. OCR completed; it will need manual review after submission.')
+      ? 'Document checked and OCR verified. It will upload when you submit registration.'
+      : 'Document checked. It will upload only when you submit registration and may need manual review.')
   } catch (err) {
     console.error(err)
     const errorMessage = err?.message || 'Failed to upload document. Please try again.'
@@ -2935,6 +2915,31 @@ const requestUploadedDocumentOcr = async (uid, docKey) => {
   return payload.data || {}
 }
 
+const requestDocumentOcrPreflight = async (uid, docKey, file) => {
+  if (!uid || !docKey || !file) throw new Error('Select a document before starting OCR.')
+  if (file.type === 'application/pdf') {
+    // PDFs stay only in the browser until final submission. They are processed
+    // after that upload because Vision requires a private Cloud Storage source.
+    return { status: 'manual_review', confidence: 0.5, reason: 'PDF will be securely checked after final submission.' }
+  }
+  const contentBase64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('The selected image could not be read.'))
+    reader.onload = () => resolve(String(reader.result || '').split(',').pop() || '')
+    reader.readAsDataURL(file)
+  })
+  const currentUser = auth.currentUser
+  if (!currentUser) throw new Error('Your registration session expired. Please sign in again.')
+  const token = await currentUser.getIdToken(true)
+  const response = await fetch(`${OTP_API_BASE}/registration/ocr-preflight`, {
+    method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ uid, docKey, file: { name: file.name, type: file.type, size: file.size, contentBase64 } }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'OCR preflight could not process this image.')
+  return payload.data || {}
+}
+
 const claimPrepaidSubscriptionPayment = async () => {
   let paymentId = String(route.query.paymentId || '').trim()
   if (!paymentId) {
@@ -2997,14 +3002,6 @@ const submitDocuments = async () => {
   try {
     const submittedDocumentsPayload = {}
     for (const docKey of requiredDocumentKeys.value) {
-      // Documents are uploaded and OCR-checked as soon as they are selected.
-      // Reuse that exact object to preserve its OCR result at final submission.
-      const uploadedDoc = existingSubmittedDocuments.value[docKey]
-      if (uploadedDoc?.path) {
-        submittedDocumentsPayload[docKey] = { ...uploadedDoc }
-        continue
-      }
-
       const selectedFile = documentFileMap[docKey]?.value
       const fallbackUpload = await uploadDocumentForClinic(userUid.value, selectedFile, docKey)
       if (!fallbackUpload) throw new Error(`Upload ${docKey.replace(/([A-Z])/g, ' $1').toLowerCase()} before submitting.`)
