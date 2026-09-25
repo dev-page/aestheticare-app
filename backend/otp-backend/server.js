@@ -498,6 +498,22 @@ const createVisionClient = () => {
   })
 }
 
+// Pass Cloud Storage objects to Vision explicitly. A bare string is accepted by
+// the SDK in some cases, but an AnnotateImageRequest keeps the storage source
+// unambiguous and lets us reliably distinguish a provider error from unreadable
+// document content.
+const createVisionGcsImageRequest = (gcsUri) => ({
+  image: {
+    source: { imageUri: gcsUri },
+  },
+})
+
+const getVisionResponseError = (response) => {
+  const error = response?.error
+  if (!error) return ''
+  return String(error?.message || error?.code || 'Vision returned an OCR processing error.').trim()
+}
+
 const formatPhilippineCurrency = (value) =>
   new Intl.NumberFormat('en-PH', {
     style: 'currency',
@@ -1829,11 +1845,16 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
   }
   try {
     const gcsUri = `gs://${bucketName}/${storagePath}`
-    const [visionResult] = await visionClient.documentTextDetection(gcsUri)
+    const visionRequest = createVisionGcsImageRequest(gcsUri)
+    const [visionResult] = await visionClient.documentTextDetection(visionRequest)
+    const primaryError = getVisionResponseError(visionResult)
+    if (primaryError) throw new Error(primaryError)
     let annotation = visionResult?.fullTextAnnotation
     let extractedText = String(annotation?.text || '').trim()
     if (!extractedText) {
-      const [fallback] = await visionClient.textDetection(gcsUri)
+      const [fallback] = await visionClient.textDetection(visionRequest)
+      const fallbackError = getVisionResponseError(fallback)
+      if (fallbackError) throw new Error(fallbackError)
       extractedText = String(fallback?.textAnnotations?.[0]?.description || '').trim()
       annotation = fallback?.fullTextAnnotation || annotation
     }
@@ -1877,8 +1898,14 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
           ? 'OCR extracted readable text and passed automatic checks.'
           : 'OCR completed, but this document requires manual review.'
   } catch (error) {
+    console.warn('Registration document OCR could not be completed:', {
+      uid,
+      docKey,
+      storagePath,
+      error: error?.message || String(error),
+    })
     result.status = 'manual_review'
-    result.reason = error?.message || 'OCR could not process this document. It requires manual review.'
+    result.reason = 'We could not process this document automatically. It has been sent for manual review.'
   }
   return result
 }
@@ -1957,12 +1984,17 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
 
     try {
       const gcsUri = `gs://${bucketName}/${storagePath}`
-      const [visionResult] = await visionClient.documentTextDetection(gcsUri)
+      const visionRequest = createVisionGcsImageRequest(gcsUri)
+      const [visionResult] = await visionClient.documentTextDetection(visionRequest)
+      const primaryError = getVisionResponseError(visionResult)
+      if (primaryError) throw new Error(primaryError)
       let annotation = visionResult?.fullTextAnnotation
       let extractedText = String(annotation?.text || '').trim()
       if (!extractedText) {
         try {
-          const [fallbackResult] = await visionClient.textDetection(gcsUri)
+          const [fallbackResult] = await visionClient.textDetection(visionRequest)
+          const fallbackError = getVisionResponseError(fallbackResult)
+          if (fallbackError) throw new Error(fallbackError)
           const fallbackText = String(fallbackResult?.textAnnotations?.[0]?.description || '').trim()
           if (fallbackText) {
             annotation = fallbackResult?.fullTextAnnotation || annotation
@@ -3387,15 +3419,21 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
     }
     const gcsUri = `gs://${bucketName}/${String(storagePath || '').replace(/^\/+/, '')}`
 
-    // Attempt document OCR (documentTextDetection works for many image/PDF inputs via GCS URI)
+    // Use an explicit Cloud Storage source so provider errors cannot be
+    // mistaken for unreadable document text.
     let fullText = ''
     try {
-      const [result] = await visionClient.documentTextDetection(gcsUri)
+      const visionRequest = createVisionGcsImageRequest(gcsUri)
+      const [result] = await visionClient.documentTextDetection(visionRequest)
+      const primaryError = getVisionResponseError(result)
+      if (primaryError) throw new Error(primaryError)
       fullText = String(result?.fullTextAnnotation?.text || '')
     } catch (visionErr) {
       console.warn('Vision documentTextDetection failed, attempting textDetection as fallback', visionErr?.message || visionErr)
       try {
-        const [result2] = await visionClient.textDetection(gcsUri)
+        const [result2] = await visionClient.textDetection(createVisionGcsImageRequest(gcsUri))
+        const fallbackError = getVisionResponseError(result2)
+        if (fallbackError) throw new Error(fallbackError)
         fullText = String(result2?.textAnnotations?.[0]?.description || '')
       } catch (visionErr2) {
         console.error('Vision OCR failed for', gcsUri, visionErr2?.message || visionErr2)

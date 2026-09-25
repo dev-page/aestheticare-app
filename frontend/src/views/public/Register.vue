@@ -2975,19 +2975,21 @@ const submitDocuments = async () => {
   isSubmittingDocuments.value = true
 
   try {
-    const uploads = await Promise.all(
-      requiredDocumentKeys.value.map((docKey) =>
-        uploadDocumentForClinic(userUid.value, documentFileMap[docKey]?.value, docKey)
-      )
-    )
-
     const submittedDocumentsPayload = {}
-    requiredDocumentKeys.value.forEach((docKey, index) => {
-      const fallbackDoc =
-        existingSubmittedDocuments.value[docKey] || { name: '', size: 0, type: '', url: '' }
-      const docPayload = uploads[index] || fallbackDoc
-      submittedDocumentsPayload[docKey] = { ...docPayload }
-    })
+    for (const docKey of requiredDocumentKeys.value) {
+      // Documents are uploaded and OCR-checked as soon as they are selected.
+      // Reuse that exact object to preserve its OCR result at final submission.
+      const uploadedDoc = existingSubmittedDocuments.value[docKey]
+      if (uploadedDoc?.path) {
+        submittedDocumentsPayload[docKey] = { ...uploadedDoc }
+        continue
+      }
+
+      const selectedFile = documentFileMap[docKey]?.value
+      const fallbackUpload = await uploadDocumentForClinic(userUid.value, selectedFile, docKey)
+      if (!fallbackUpload) throw new Error(`Upload ${docKey.replace(/([A-Z])/g, ' $1').toLowerCase()} before submitting.`)
+      submittedDocumentsPayload[docKey] = fallbackUpload
+    }
 
     const platformAgreementAcceptance = isClinicRegistrationActive.value
       ? {
