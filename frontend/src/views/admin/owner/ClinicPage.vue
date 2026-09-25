@@ -109,16 +109,16 @@
           <div class="mt-6">
             <section v-if="activeTab === 'about'" class="space-y-4">
               <div v-if="isEditing" class="bg-slate-700/60 rounded-xl p-5 border border-slate-600 space-y-4">
-                <h3 class="text-white font-semibold">Edit Branch Page</h3>
+                <div class="flex items-center gap-3">
+                  <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gold-500/40 bg-gold-500/10 text-gold-300"><Icon icon="mdi:pencil-outline" class="h-5 w-5" /></span>
+                  <div><h3 class="text-white font-semibold">Edit Branch Page</h3><p class="mt-0.5 text-xs text-slate-400">Update your public contact details, description, services, and page images.</p></div>
+                </div>
+                <div class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-800/70 p-4 text-sm text-slate-300">
+                  <Icon icon="mdi:lock-outline" class="mt-0.5 h-5 w-5 shrink-0 text-gold-300" />
+                  <p><strong class="text-slate-100">Verified branch details are protected.</strong> The clinic name, registered address, and map pin cannot be changed from this page.</p>
+                </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-slate-300 text-sm mb-1">Clinic Name</label>
-                    <input
-                      v-model="editForm.clinicName"
-                      class="w-full rounded-lg px-3 py-2 bg-slate-800 text-white border border-slate-500 focus:outline-none focus:ring-2 focus:ring-gold-500"
-                    />
-                  </div>
                   <div>
                     <label class="block text-slate-300 text-sm mb-1">Business Email</label>
                     <input
@@ -147,26 +147,8 @@
                 </div>
 
                 <div class="rounded-xl border border-slate-600 bg-slate-800/70 p-4">
-                  <h4 class="text-slate-200 font-medium">Clinic Address and Map Location</h4>
-                  <p class="mt-1 mb-4 text-xs text-slate-400">Search the address, then drag or click the pin to the clinic's exact location before saving.</p>
-                  <LocationPicker
-                    theme="dark"
-                    region="cavite"
-                    title="Select Clinic Location in Cavite"
-                    instruction-title="Cavite only"
-                    instruction-text="The clinic pin must be on land inside Cavite."
-                    search-placeholder="Search the clinic address"
-                    search-hint="Search first, then fine-tune the exact spot by dragging or clicking the pin."
-                    allowed-area-label="Cavite, Philippines"
-                    pinned-address-label="Clinic Address"
-                    :show-actions="false"
-                    :initial-address="editForm.clinicLocationAddress || editForm.clinicLocation"
-                    :initial-lat="editForm.clinicLocationLat"
-                    :initial-lng="editForm.clinicLocationLng"
-                    @selection-change="handleLocationSelection"
-                    @error="locationError = $event"
-                  />
-                  <p v-if="locationError" class="mt-3 text-sm text-amber-300">{{ locationError }}</p>
+                  <div class="flex items-start gap-3"><span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gold-500/40 bg-gold-500/10 text-gold-300"><Icon icon="mdi:clock-outline" class="h-5 w-5" /></span><div><h4 class="font-medium text-white">Operating Hours</h4><p class="mt-1 text-xs text-slate-400">These hours are used for Basic-plan booking availability and shown to customers.</p></div></div>
+                  <div class="mt-4 space-y-3"><div v-for="day in operatingHourDays" :key="day.key" class="grid grid-cols-[minmax(92px,1fr)_auto] items-center gap-3 rounded-lg border border-slate-600 bg-slate-900/60 p-3 sm:grid-cols-[120px_1fr_auto]"><span class="text-sm font-medium text-slate-200">{{ day.label }}</span><div class="flex items-center gap-2" :class="editForm.operatingHours[day.key].closed ? 'pointer-events-none opacity-40' : ''"><input v-model="editForm.operatingHours[day.key].open" type="time" class="min-w-0 rounded-lg border border-slate-500 bg-slate-800 px-2 py-2 text-sm text-white outline-none focus:border-gold-500" :disabled="editForm.operatingHours[day.key].closed" /><span class="text-xs text-slate-500">to</span><input v-model="editForm.operatingHours[day.key].close" type="time" class="min-w-0 rounded-lg border border-slate-500 bg-slate-800 px-2 py-2 text-sm text-white outline-none focus:border-gold-500" :disabled="editForm.operatingHours[day.key].closed" /></div><label class="flex items-center justify-end gap-2 text-xs text-slate-300"><input v-model="editForm.operatingHours[day.key].closed" type="checkbox" /> Closed</label></div></div>
                 </div>
 
                 <div>
@@ -290,6 +272,7 @@
                   <p class="text-slate-300 text-sm">Email: {{ selectedBranch.businessEmail || 'Not set' }}</p>
                   <p class="text-slate-300 text-sm mt-1">Phone: {{ selectedBranch.contactNumber || 'Not set' }}</p>
                 </div>
+                <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600"><div class="flex items-center gap-2"><Icon icon="mdi:clock-outline" class="h-5 w-5 text-gold-300" /><h4 class="text-slate-200 font-medium">Operating Hours</h4></div><div class="mt-3 grid gap-2 sm:grid-cols-2"><div v-for="day in operatingHourDays" :key="`public-${day.key}`" class="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-800/70 px-3 py-2 text-sm"><span class="text-slate-300">{{ day.label }}</span><span class="font-medium text-white">{{ formatOperatingHours(selectedBranch.operatingHours?.[day.key]) }}</span></div></div></div>
                 <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600 space-y-4">
                   <h4 class="text-slate-200 font-medium">Address</h4>
                   <p class="text-slate-300 text-sm leading-relaxed">
@@ -332,16 +315,17 @@
             </section>
 
             <section v-else-if="activeTab === 'policies'" class="space-y-4">
-              <div class="bg-slate-700/60 rounded-xl p-5 border border-slate-600">
-                <h3 class="text-white font-semibold mb-2">Clinic Policies</h3>
-                <p class="text-slate-400 text-sm mb-4">These are the policies currently visible to customers for this branch.</p>
-                <div v-if="visiblePolicies.length" class="space-y-3">
-                  <article v-for="policy in visiblePolicies" :key="policy.key" class="rounded-lg border border-slate-600 bg-slate-800/70 p-4">
-                    <h4 class="text-slate-100 font-medium">{{ policy.label }}</h4>
-                    <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{{ policy.text }}</p>
+              <div class="overflow-hidden rounded-2xl border border-slate-600 bg-slate-700/60">
+                <div class="flex flex-col gap-4 border-b border-slate-600 bg-slate-800/50 p-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div class="flex items-start gap-3"><span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold-500/40 bg-gold-500/10 text-gold-300"><Icon icon="mdi:shield-check-outline" class="h-6 w-6" /></span><div><h3 class="text-lg font-semibold text-white">Clinic Policies</h3><p class="mt-1 text-sm text-slate-400">Customer-facing rules currently active for this branch.</p></div></div>
+                  <span v-if="visiblePolicies.length" class="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300"><Icon icon="mdi:eye-check-outline" class="h-4 w-4" /> {{ visiblePolicies.length }} published</span>
+                </div>
+                <div v-if="visiblePolicies.length" class="grid gap-4 p-5 lg:grid-cols-2">
+                  <article v-for="policy in visiblePolicies" :key="policy.key" class="group rounded-xl border border-slate-600 bg-slate-800/75 p-5 transition hover:border-gold-500/60 hover:bg-slate-800">
+                    <div class="flex items-start gap-3"><span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border" :class="policy.iconClass"><Icon :icon="policy.icon" class="h-5 w-5" /></span><div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><h4 class="font-semibold text-slate-100">{{ policy.label }}</h4><span class="rounded-full border border-slate-600 bg-slate-900/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{{ policy.category }}</span></div><p class="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">{{ policy.text }}</p></div></div>
                   </article>
                 </div>
-                <p v-else class="text-slate-400 text-sm">No clinic policies have been published for this branch.</p>
+                <div v-else class="p-10 text-center"><span class="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-slate-400"><Icon icon="mdi:shield-outline" class="h-6 w-6" /></span><p class="mt-4 font-medium text-slate-200">No published policies yet</p><p class="mt-1 text-sm text-slate-400">Enable and configure policies in Policy Management to show them here.</p></div>
               </div>
             </section>
 
@@ -354,15 +338,16 @@
                 <article
                   v-for="item in products"
                   :key="item.id"
-                  class="bg-slate-700/60 rounded-xl border border-slate-600 overflow-hidden"
+                  class="group overflow-hidden rounded-xl border border-slate-600 bg-slate-700/60 transition hover:-translate-y-0.5 hover:border-gold-500/70 hover:bg-slate-700"
                 >
-                  <div class="h-40 bg-slate-600">
-                    <img v-if="item.imageUrl" :src="item.imageUrl" alt="Service image" class="w-full h-full object-cover" />
+                  <div class="relative h-40 bg-slate-600">
+                    <img v-if="listingImage(item)" :src="listingImage(item)" :alt="listingTitle(item)" class="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
+                    <div v-else class="flex h-full items-center justify-center text-slate-400"><Icon icon="mdi:image-outline" class="h-9 w-9" /></div>
                   </div>
                   <div class="p-4">
-                    <h3 class="text-white font-semibold">{{ item.title || item.productName || 'Untitled Service' }}</h3>
+                    <div class="flex items-start justify-between gap-3"><h3 class="text-white font-semibold">{{ listingTitle(item) }}</h3><span v-if="listingType(item)" class="rounded-full border border-slate-600 bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{{ listingType(item) }}</span></div>
                     <p class="text-slate-300 text-sm mt-2 line-clamp-3">{{ item.description || 'No description.' }}</p>
-                    <p class="text-gold-400 text-sm font-semibold mt-3">{{ formatAmount(item.price) }}</p>
+                    <div class="mt-4 flex items-center justify-between gap-3"><p class="text-gold-400 text-sm font-semibold">{{ formatAmount(item.price) }}</p><button type="button" @click="openListingDetails(item)" class="inline-flex items-center gap-1.5 rounded-lg border border-gold-500/60 px-3 py-1.5 text-xs font-semibold text-gold-200 transition hover:bg-gold-500/15 focus:outline-none focus:ring-2 focus:ring-gold-400"><Icon icon="mdi:information-outline" class="h-4 w-4" /> View Details</button></div>
                   </div>
                 </article>
               </div>
@@ -392,6 +377,13 @@
         </div>
       </div>
     </main>
+
+    <div v-if="selectedListing" class="fixed inset-0 z-50 flex overscroll-contain items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" @click.self="closeListingDetails">
+      <section class="max-h-[90vh] w-full max-w-3xl overscroll-contain overflow-y-auto rounded-2xl border border-slate-600 bg-slate-800 shadow-2xl" role="dialog" aria-modal="true" :aria-labelledby="`listing-details-${selectedListing.id}`">
+        <header class="flex items-start justify-between gap-4 border-b border-slate-600 px-6 py-5"><div><p class="text-xs font-semibold uppercase tracking-[0.16em] text-gold-300">{{ listingType(selectedListing) || 'Product or Service' }}</p><h2 :id="`listing-details-${selectedListing.id}`" class="mt-1 text-xl font-bold text-white">{{ listingTitle(selectedListing) }}</h2></div><button type="button" @click="closeListingDetails" class="rounded-lg p-2 text-slate-400 transition hover:bg-slate-700 hover:text-white" aria-label="Close details"><Icon icon="mdi:close" class="h-5 w-5" /></button></header>
+        <div class="grid md:grid-cols-2"><div class="min-h-64 bg-slate-900"><img v-if="listingImage(selectedListing)" :src="listingImage(selectedListing)" :alt="listingTitle(selectedListing)" class="h-full max-h-96 w-full object-cover" /><div v-else class="flex h-64 items-center justify-center text-slate-500"><Icon icon="mdi:image-outline" class="h-12 w-12" /></div></div><div class="p-6"><p class="text-2xl font-bold text-gold-300">{{ formatAmount(selectedListing.price) }}</p><p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-slate-300">{{ selectedListing.description || 'No description has been provided for this listing.' }}</p><dl v-if="listingDetails(selectedListing).length" class="mt-6 grid gap-3"><div v-for="detail in listingDetails(selectedListing)" :key="detail.label" class="rounded-xl border border-slate-600 bg-slate-900/50 p-3"><dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ detail.label }}</dt><dd class="mt-1 text-sm font-medium text-slate-100">{{ detail.value }}</dd></div></dl><button type="button" @click="closeListingDetails" class="mt-6 w-full rounded-xl border border-gold-500/60 px-4 py-2.5 font-semibold text-gold-200 transition hover:bg-gold-500/10">Close</button></div></div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -404,13 +396,13 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { auth, storage } from '@/config/firebaseConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
-import LocationPicker from '@/components/common/LocationPicker.vue'
+import { Icon } from '@iconify/vue'
 import { toast } from 'vue3-toastify'
 import { useSubscription } from '@/composables/useSubscription'
 
 export default {
   name: 'ClinicPage',
-  components: { OwnerSidebar, OwnerPageSkeleton, LocationPicker },
+  components: { OwnerSidebar, OwnerPageSkeleton, Icon },
   setup() {
     const db = getFirestore(getApp())
     const { isExpired, initSubscription } = useSubscription()
@@ -424,26 +416,38 @@ export default {
     const mapError = ref('')
     const products = ref([])
     const reviews = ref([])
+    const selectedListing = ref(null)
     const clinicPolicy = ref({})
     const ownerEmail = ref('')
     const activeTab = ref('about')
     const isEditing = ref(false)
     const saving = ref(false)
-    const locationError = ref('')
     const contactNumberError = ref('')
+    const operatingHourDays = [
+      { key: 'monday', label: 'Monday' }, { key: 'tuesday', label: 'Tuesday' }, { key: 'wednesday', label: 'Wednesday' }, { key: 'thursday', label: 'Thursday' }, { key: 'friday', label: 'Friday' }, { key: 'saturday', label: 'Saturday' }, { key: 'sunday', label: 'Sunday' }
+    ]
+    const defaultOperatingHours = () => Object.fromEntries(operatingHourDays.map(({ key }) => [key, { open: '09:00', close: '18:00', closed: key === 'sunday' }]))
+    const normalizeOperatingHours = (value) => {
+      const defaults = defaultOperatingHours()
+      operatingHourDays.forEach(({ key }) => {
+        const source = value?.[key] || {}
+        defaults[key] = { open: /^\d{2}:\d{2}$/.test(String(source.open || '')) ? source.open : defaults[key].open, close: /^\d{2}:\d{2}$/.test(String(source.close || '')) ? source.close : defaults[key].close, closed: source.closed === true }
+      })
+      return defaults
+    }
+    const formatOperatingHours = (value) => {
+      if (!value || value.closed === true) return 'Closed'
+      const formatTime = (time) => { const [hours, minutes] = String(time || '').split(':').map(Number); if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return ''; return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' }) }
+      const open = formatTime(value.open); const close = formatTime(value.close)
+      return open && close ? `${open} – ${close}` : 'Not set'
+    }
 
     const editForm = ref({
-      clinicName: '',
       businessEmail: '',
       contactNumber: '',
       description: '',
       services: [],
-      clinicLocation: '',
-      clinicLocationAddress: '',
-      clinicBarangay: '',
-      clinicPostalCode: '',
-      clinicLocationLat: '',
-      clinicLocationLng: '',
+      operatingHours: defaultOperatingHours(),
       profilePicture: '',
       bannerPicture: ''
     })
@@ -491,14 +495,15 @@ export default {
     ]
 
     const policyDefinitions = [
-      { key: 'cancellationPolicy', enabledKey: 'cancellationPolicyEnabled', label: 'Cancellation Policy' },
-      { key: 'reschedulePolicy', enabledKey: 'reschedulePolicyEnabled', label: 'Reschedule Policy' },
-      { key: 'refundPolicy', enabledKey: 'refundPolicyEnabled', label: 'Refund Policy' },
-      { key: 'consultationPolicy', enabledKey: 'consultationPolicyEnabled', label: 'Consultation Policy' },
-      { key: 'serviceTerms', enabledKey: 'serviceTermsEnabled', label: 'Service Terms' },
-      { key: 'productTerms', enabledKey: 'productTermsEnabled', label: 'Product Terms and Returns' },
-      { key: 'deliveryPolicy', enabledKey: 'deliveryPolicyEnabled', label: 'Delivery Policy' },
-      { key: 'paymentPolicy', enabledKey: 'paymentPolicyEnabled', label: 'Payment and Installment Policy' }
+      { key: 'paymentPolicy', enabledKey: 'paymentPolicyEnabled', label: 'Payment Policy', category: 'Services', icon: 'mdi:cash-check', iconClass: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300' },
+      { key: 'cancellationPolicy', enabledKey: 'cancellationPolicyEnabled', label: 'Cancellation Policy', category: 'Services', icon: 'mdi:calendar-remove-outline', iconClass: 'border-rose-500/35 bg-rose-500/10 text-rose-300' },
+      { key: 'reschedulePolicy', enabledKey: 'reschedulePolicyEnabled', label: 'Rescheduling Policy', category: 'Services', icon: 'mdi:calendar-sync-outline', iconClass: 'border-sky-500/35 bg-sky-500/10 text-sky-300' },
+      { key: 'noShowPolicy', enabledKey: 'noShowPolicyEnabled', label: 'No-Show Policy', category: 'Services', icon: 'mdi:account-clock-outline', iconClass: 'border-amber-500/35 bg-amber-500/10 text-amber-300' },
+      { key: 'consultationPolicy', enabledKey: 'consultationPolicyEnabled', label: 'Consultation Policy', category: 'Services', icon: 'mdi:stethoscope', iconClass: 'border-violet-500/35 bg-violet-500/10 text-violet-300' },
+      { key: 'deliveryPolicy', enabledKey: 'deliveryPolicyEnabled', label: 'Pickup & Payment Policy', category: 'Products', icon: 'mdi:shopping-outline', iconClass: 'border-teal-500/35 bg-teal-500/10 text-teal-300' },
+      { key: 'productOrderCancellationPolicy', enabledKey: 'productOrderCancellationPolicyEnabled', label: 'Order Cancellation Policy', category: 'Products', icon: 'mdi:package-variant-remove', iconClass: 'border-orange-500/35 bg-orange-500/10 text-orange-300' },
+      { key: 'productReturnPolicy', enabledKey: 'productReturnPolicyEnabled', label: 'Product Return Policy', category: 'Products', icon: 'mdi:package-variant-closed-return', iconClass: 'border-indigo-500/35 bg-indigo-500/10 text-indigo-300' },
+      { key: 'walkInPolicy', enabledKey: 'walkInPolicyEnabled', label: 'Walk-In Policy', category: 'Walk-In', icon: 'mdi:walk', iconClass: 'border-cyan-500/35 bg-cyan-500/10 text-cyan-300' }
     ]
 
     const visiblePolicies = computed(() => policyDefinitions
@@ -528,10 +533,14 @@ export default {
       return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null
     })
 
+    const organizationClinicName = computed(() => {
+      const ownerBranch = branches.value.find((branch) => branch.id === auth.currentUser?.uid) || branches.value[0]
+      return ownerBranch?.clinicName || ownerBranch?.clinicBranch || ''
+    })
+
     const displayClinicName = computed(() => {
-      if (isEditing.value && editForm.value.clinicName) return editForm.value.clinicName
       if (!selectedBranch.value) return 'Clinic Name'
-      return selectedBranch.value.clinicName || selectedBranch.value.clinicBranch || 'Clinic Name'
+      return organizationClinicName.value || selectedBranch.value.clinicName || selectedBranch.value.clinicBranch || 'Clinic Name'
     })
 
     const clinicInitial = computed(() => {
@@ -543,6 +552,52 @@ export default {
       const numeric = Number(value || 0)
       return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(numeric)
     }
+
+    const listingTitle = (item) => String(item?.title || item?.productName || item?.serviceName || 'Untitled Listing').trim()
+    const listingImage = (item) => String(item?.imageUrl || item?.imageURL || item?.image || '').trim()
+    const listingType = (item) => String(item?.listingType || item?.type || item?.category || '').trim()
+    const listingDetails = (item) => {
+      const details = []
+      const category = String(item?.category || '').trim()
+      const duration = Number(item?.durationMinutes ?? item?.duration ?? 0)
+      const sessions = Number(item?.sessions ?? item?.sessionCount ?? 0)
+      const stock = item?.stockQuantity ?? item?.quantity ?? item?.stock
+      if (category) details.push({ label: 'Category', value: category })
+      if (Number.isFinite(duration) && duration > 0) details.push({ label: 'Duration', value: `${duration} minutes` })
+      if (Number.isFinite(sessions) && sessions > 0) details.push({ label: 'Sessions', value: `${sessions}` })
+      if (stock !== undefined && stock !== null && String(stock).trim() !== '') details.push({ label: 'Availability', value: Number(stock) > 0 ? `${stock} in stock` : 'Currently unavailable' })
+      return details
+    }
+    const openListingDetails = (item) => { selectedListing.value = item }
+    const closeListingDetails = () => { selectedListing.value = null }
+    let previousBodyOverflow = ''
+    let previousDocumentOverflow = ''
+    let previousBodyPosition = ''
+    let previousBodyTop = ''
+    let previousBodyWidth = ''
+    let lockedScrollY = 0
+    watch(selectedListing, (item) => {
+      if (item) {
+        previousBodyOverflow = document.body.style.overflow
+        previousDocumentOverflow = document.documentElement.style.overflow
+        previousBodyPosition = document.body.style.position
+        previousBodyTop = document.body.style.top
+        previousBodyWidth = document.body.style.width
+        lockedScrollY = window.scrollY
+        document.body.style.overflow = 'hidden'
+        document.documentElement.style.overflow = 'hidden'
+        document.body.style.position = 'fixed'
+        document.body.style.top = `-${lockedScrollY}px`
+        document.body.style.width = '100%'
+        return
+      }
+      document.body.style.overflow = previousBodyOverflow
+      document.documentElement.style.overflow = previousDocumentOverflow
+      document.body.style.position = previousBodyPosition
+      document.body.style.top = previousBodyTop
+      document.body.style.width = previousBodyWidth
+      window.scrollTo(0, lockedScrollY)
+    })
 
     const formatDate = (timestamp) => {
       if (!timestamp?.toDate) return 'Unknown date'
@@ -714,35 +769,17 @@ export default {
       bannerImageFile.value = null
 
       editForm.value = {
-        clinicName: selectedBranch.value.clinicName || selectedBranch.value.clinicBranch || '',
         businessEmail: selectedBranch.value.businessEmail || selectedBranch.value.email || '',
         contactNumber: normalizePhilippineMobile(selectedBranch.value.contactNumber || ''),
         description: selectedBranch.value.description || '',
         services: Array.isArray(selectedBranch.value.services)
           ? selectedBranch.value.services.map((entry) => String(entry || '').trim()).filter(Boolean)
           : [],
-        clinicLocation: selectedBranch.value.clinicLocation || '',
-        clinicLocationAddress: selectedBranch.value.clinicLocationAddress || selectedBranch.value.clinicLocation || '',
-        clinicBarangay: selectedBranch.value.clinicBarangay || '',
-        clinicPostalCode: selectedBranch.value.clinicPostalCode || '',
-        clinicLocationLat: selectedBranch.value.clinicLocationLat ?? '',
-        clinicLocationLng: selectedBranch.value.clinicLocationLng ?? '',
+        operatingHours: normalizeOperatingHours(selectedBranch.value.operatingHours),
         profilePicture: selectedBranch.value.profilePicture || '',
         bannerPicture: selectedBranch.value.bannerPicture || ''
       }
       serviceInput.value = ''
-      locationError.value = ''
-    }
-
-    const handleLocationSelection = (selection) => {
-      if (!selection) return
-      editForm.value.clinicLocationAddress = String(selection.address || selection.formattedAddress || '').trim()
-      editForm.value.clinicLocation = String(selection.city || '').trim()
-      editForm.value.clinicBarangay = String(selection.barangay || '').trim()
-      editForm.value.clinicPostalCode = String(selection.postalCode || '').trim()
-      editForm.value.clinicLocationLat = Number(selection.lat)
-      editForm.value.clinicLocationLng = Number(selection.lng)
-      locationError.value = ''
     }
 
     const normalizeService = (value) => String(value || '').replace(/\s+/g, ' ').trim()
@@ -816,6 +853,7 @@ export default {
     const selectBranch = async (branchId) => {
       if (!branchId || selectedBranchId.value === branchId) return
       selectedBranchId.value = branchId
+      closeListingDetails()
       isEditing.value = false
       hydrateEditForm()
       await loadBranchPostsAndReviews(branchId)
@@ -1010,17 +1048,11 @@ export default {
           .filter((entry, index, list) => list.findIndex((item) => item.toLowerCase() === entry.toLowerCase()) === index)
 
         const payload = {
-          clinicName: (editForm.value.clinicName || '').trim(),
           businessEmail: (editForm.value.businessEmail || '').trim(),
           contactNumber: `+63${editForm.value.contactNumber}`,
           description: (editForm.value.description || '').trim(),
           services: uniqueServices,
-          clinicLocation: (editForm.value.clinicLocation || '').trim(),
-          clinicLocationAddress: (editForm.value.clinicLocationAddress || '').trim(),
-          clinicBarangay: (editForm.value.clinicBarangay || '').trim(),
-          clinicPostalCode: (editForm.value.clinicPostalCode || '').trim(),
-          clinicLocationLat: Number(editForm.value.clinicLocationLat),
-          clinicLocationLng: Number(editForm.value.clinicLocationLng),
+          operatingHours: normalizeOperatingHours(editForm.value.operatingHours),
           profilePicture: profilePictureUrl,
           bannerPicture: bannerPictureUrl,
           updatedAt: serverTimestamp()
@@ -1103,6 +1135,11 @@ export default {
       if (branchMarker?.setMap) branchMarker.setMap(null)
       branchMap = null
       branchMarker = null
+      document.body.style.overflow = previousBodyOverflow
+      document.documentElement.style.overflow = previousDocumentOverflow
+      document.body.style.position = previousBodyPosition
+      document.body.style.top = previousBodyTop
+      document.body.style.width = previousBodyWidth
     })
 
     return {
@@ -1112,6 +1149,7 @@ export default {
       branchScopeLabel,
       selectedBranch,
       products,
+      selectedListing,
       reviews,
       visiblePolicies,
       ownerEmail,
@@ -1120,11 +1158,19 @@ export default {
       displayClinicName,
       clinicInitial,
       formatAmount,
+      listingTitle,
+      listingImage,
+      listingType,
+      listingDetails,
+      openListingDetails,
+      closeListingDetails,
       formatDate,
       renderStars,
       isEditing,
       saving,
       editForm,
+      operatingHourDays,
+      formatOperatingHours,
       startEdit,
       cancelEdit,
       saveEdit,
@@ -1140,8 +1186,6 @@ export default {
       removeServiceTag,
       handleProfileUpload,
       handleBannerUpload,
-      handleLocationSelection,
-      locationError,
       isExpired
     }
   }

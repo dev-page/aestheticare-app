@@ -46,8 +46,7 @@ export default {
       clinicLocationAddress: '',
       clinicBarangay: '',
       clinicProvince: '',
-      clinicPostalCode: '',
-      isMainBranch: false
+      clinicPostalCode: ''
     })
     const showLocationModal = ref(false)
     const locationSearchQuery = ref('')
@@ -120,8 +119,7 @@ export default {
         clinicLocationAddress: '',
         clinicBarangay: '',
         clinicProvince: '',
-        clinicPostalCode: '',
-        isMainBranch: false
+        clinicPostalCode: ''
       }
     }
 
@@ -134,8 +132,7 @@ export default {
     const branchNameError = computed(() => {
       const rawName = currentBranch.value.name || ''
       const trimmed = rawName.trim()
-      if (!trimmed) return 'Branch name is required.'
-      if (!/^[A-Za-z][A-Za-z\s'.-]*$/.test(trimmed)) return 'Only letters, spaces, apostrophes, periods, and hyphens are allowed.'
+      if (!trimmed) return 'Select a map location to set the branch city.'
       return ''
     })
 
@@ -148,12 +145,6 @@ export default {
         ? 'Choose a pin within Cavite to continue branch creation.'
         : 'Adjust the pin or try selecting a nearby location again.'
     ))
-
-    const handleBranchNameInput = (event) => {
-      const value = event?.target?.value ?? ''
-      const sanitized = value.replace(/[^A-Za-z\s'.-]/g, '')
-      currentBranch.value.name = sanitized
-    }
 
     const loadMapsScript = (apiKey) =>
       new Promise((resolve, reject) => {
@@ -247,6 +238,7 @@ export default {
       currentBranch.value.clinicLocationLat = String(lat)
       currentBranch.value.clinicLocationLng = String(lng)
       currentBranch.value.location = cityName || fallbackName || ''
+      currentBranch.value.name = cityName || fallbackName || ''
       currentBranch.value.clinicLocationAddress = formattedAddress || fallbackName || ''
       currentBranch.value.clinicBarangay = barangayName || ''
       currentBranch.value.clinicProvince = provinceName || 'Cavite'
@@ -427,6 +419,7 @@ export default {
       currentBranch.value.clinicLocationLng = String(lng || '')
       currentBranch.value.clinicLocationAddress = String(address || '').trim()
       currentBranch.value.location = String(city || currentBranch.value.location || '').trim()
+      currentBranch.value.name = String(city || currentBranch.value.name || currentBranch.value.location || '').trim()
       currentBranch.value.clinicBarangay = String(barangay || currentBranch.value.clinicBarangay || '').trim()
       currentBranch.value.clinicProvince = String(province || currentBranch.value.clinicProvince || 'Cavite').trim() || 'Cavite'
       currentBranch.value.clinicPostalCode = String(postalCode || currentBranch.value.clinicPostalCode || '').trim()
@@ -567,7 +560,7 @@ export default {
           id: created.id,
           ...currentBranch.value,
           clinicBranch: currentBranch.value.name.trim(),
-          clinicName: currentBranch.value.name.trim(),
+          clinicName: String(created.clinicName || currentBranch.value.name).trim(),
           clinicLocation: currentBranch.value.location.trim(),
           clinicLocationLat: currentBranch.value.clinicLocationLat,
           clinicLocationLng: currentBranch.value.clinicLocationLng,
@@ -575,7 +568,6 @@ export default {
           clinicBarangay: currentBranch.value.clinicBarangay,
           clinicProvince: currentBranch.value.clinicProvince,
           clinicPostalCode: currentBranch.value.clinicPostalCode,
-          isMainBranch: Boolean(currentBranch.value.isMainBranch),
           isPublished: true,
           ownerId,
           status: 'Active'
@@ -603,7 +595,6 @@ export default {
       locationErrorTitle,
       locationErrorHint,
       branchNameError,
-      handleBranchNameInput,
       openLocationModal,
       closeLocationModal,
       handleLocationSelection,
@@ -628,18 +619,18 @@ export default {
       <div class="mx-auto max-w-2xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8">
         <form class="space-y-4">
           <div>
-            <label class="mb-1 block text-slate-400">Branch Name</label>
+            <label class="mb-1 block text-slate-400">Branch</label>
             <input
-              v-model="currentBranch.name"
+              :value="currentBranch.name"
               type="text"
-              placeholder="Enter branch name"
-              @input="handleBranchNameInput"
+              readonly
+              placeholder="Select the branch location on the map"
               :class="[
-                'w-full rounded-lg border bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2',
-                branchNameError ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
+                'w-full cursor-not-allowed rounded-lg border bg-slate-900/70 px-3 py-2 text-white',
+                branchNameError ? 'border-red-500' : 'border-slate-700'
               ]"
             />
-            <p v-if="branchNameError" class="mt-1 text-xs text-red-400">{{ branchNameError }}</p>
+            <p class="mt-1 text-xs text-slate-400">Automatically filled with the city or municipality from the selected map location.</p>
           </div>
 
           <div>
@@ -715,18 +706,6 @@ export default {
               readonly
               class="w-full cursor-not-allowed rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white"
             />
-          </div>
-
-          <div class="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3">
-            <label class="flex items-center gap-3 text-white">
-              <input
-                v-model="currentBranch.isMainBranch"
-                type="checkbox"
-                class="h-4 w-4 rounded border-slate-500 bg-slate-800 text-amber-500"
-              />
-              <span>Set this as the main branch</span>
-            </label>
-            <p class="mt-2 text-xs text-slate-400">The main branch can serve as the central branch reference for clinic-wide reporting.</p>
           </div>
 
           <div v-if="locationError" class="rounded-lg border px-4 py-3" :class="isOutsideCaviteLocationError ? 'border-rose-500/40 bg-rose-500/10 text-rose-100' : 'border-amber-500/40 bg-amber-500/10 text-amber-100'">

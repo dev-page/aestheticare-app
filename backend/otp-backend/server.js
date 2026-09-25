@@ -2955,6 +2955,7 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
     assertWorkflow(context.roleKey === 'Owner' || context.permissions.has('administrator:full_access'), 'Only the clinic owner can add a branch.', 403)
     const input = req.body || {}, branches = (await firestore.collection('clinics').where('ownerId', '==', ownerId).get()).docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) }))
     const organization = branches.find(branch => branch.id === ownerId) || branches.find(branch => branch.isMainBranch) || branches[0] || {}
+    const organizationClinicName = String(organization.clinicName || organization.clinicBranch || '').trim()
     const plan = normalizePlanKey(organization.subscriptionPlan || context.userData.subscriptionPlan || context.userData.plan || 'free')
     const activeBranches = branches.filter(branch => String(branch.status || 'Active').toLowerCase() === 'active')
     assertWorkflow(plan === 'premium', 'Adding another branch requires the Premium subscription.', 403)
@@ -2967,11 +2968,13 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
       const currentOrganization = currentBranches.find(branch => branch.id === ownerId) || currentBranches.find(branch => branch.isMainBranch) || currentBranches[0] || {}
       const currentPlan = normalizePlanKey(currentOrganization.subscriptionPlan || context.userData.subscriptionPlan || context.userData.plan || 'free')
       assertWorkflow(currentPlan === 'premium', 'Adding another branch requires the Premium subscription.', 403)
-      if (input.isMainBranch === true) currentBranches.forEach(branch => tx.set(firestore.collection('clinics').doc(branch.id), { isMainBranch: false, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }))
-      tx.set(branchRef, { clinicBranch: name, clinicName: name, clinicLocation: location, clinicLocationLat: String(input.clinicLocationLat || ''), clinicLocationLng: String(input.clinicLocationLng || ''), clinicLocationAddress: String(input.clinicLocationAddress || ''), clinicBarangay: String(input.clinicBarangay || ''), clinicProvince: String(input.clinicProvince || 'Cavite'), clinicPostalCode: String(input.clinicPostalCode || ''), status: 'Active', isMainBranch: input.isMainBranch === true, isPublished: true, ownerId, organizationOwnerId: ownerId, subscriptionPlan: currentPlan, subscriptionExpiresAt: currentOrganization.subscriptionExpiresAt || context.userData.subscriptionExpiresAt || null, createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      // A branch's legal/organizational designation is not changed from this
+      // workflow. New branches inherit the organization without becoming a
+      // user-selectable "main branch".
+      tx.set(branchRef, { clinicBranch: name, clinicName: organizationClinicName || name, clinicLocation: location, clinicLocationLat: String(input.clinicLocationLat || ''), clinicLocationLng: String(input.clinicLocationLng || ''), clinicLocationAddress: String(input.clinicLocationAddress || ''), clinicBarangay: String(input.clinicBarangay || ''), clinicProvince: String(input.clinicProvince || 'Cavite'), clinicPostalCode: String(input.clinicPostalCode || ''), status: 'Active', isPublished: true, ownerId, organizationOwnerId: ownerId, subscriptionPlan: currentPlan, subscriptionExpiresAt: currentOrganization.subscriptionExpiresAt || context.userData.subscriptionExpiresAt || null, createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.set(firestore.collection('activities').doc(), { branchId: branchRef.id, ownerId, action: 'branch-created', details: `Created ${name} under the ${currentPlan} organization subscription.`, createdAt: admin.firestore.FieldValue.serverTimestamp() })
     })
-    return res.json({ success: true, data: { id: branchRef.id, plan, activeBranchCount: activeBranches.length + 1 } })
+    return res.json({ success: true, data: { id: branchRef.id, clinicName: organizationClinicName || name, plan, activeBranchCount: activeBranches.length + 1 } })
   } catch (error) {
     return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Unable to add branch.' })
   }
