@@ -3552,6 +3552,14 @@ const handleRegistrationSubmit = () => {
               <p class="text-sm text-charcoal-600">
                 Upload your required documents for legitimacy checks before approval.
               </p>
+              <div class="rounded-xl border border-gold-300 bg-gold-50 px-4 py-3 text-sm text-charcoal-700" role="note">
+                <p class="font-semibold text-charcoal-800">Before you upload</p>
+                <ul class="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-charcoal-600">
+                  <li>Your government-issued ID and PRC ID must show the registrant name entered in Step 1.</li>
+                  <li>Business Permit, BIR Registration, Sanitary Certificate, and DOH License must show the clinic/business name entered in Step 1.</li>
+                  <li>Upload clear, complete, and unexpired documents. Documents with an expiry date must still be valid.</li>
+                </ul>
+              </div>
               <div class="upload-grid">
                 <div class="upload-row">
                   <details class="upload-row-header">
