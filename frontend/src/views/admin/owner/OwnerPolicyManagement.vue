@@ -56,7 +56,7 @@
       </div>
     </main>
 
-    <div v-if="activeEditor" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4" @click.self="closeEditor">
+    <div v-if="activeEditor" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" @click.self="closeEditor">
       <section class="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl" role="dialog" aria-modal="true" :aria-labelledby="`policy-editor-${activeEditor}`">
         <header class="flex items-start justify-between gap-4 border-b border-slate-700 px-6 py-5">
           <div><p class="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">Services policy</p><h2 :id="`policy-editor-${activeEditor}`" class="mt-1 text-xl font-bold">{{ activePolicy?.title }}</h2></div>
@@ -99,7 +99,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
@@ -140,6 +140,19 @@ const policyFields = { payment: ['fullPayment', 'downpaymentPercentage'], cancel
 const formatDate = (value) => { const date = value?.toDate ? value.toDate() : new Date(value); return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString() }
 const openEditor = (policyId) => { const policy = [...servicePolicies, ...productPolicies].find((item) => item.id === policyId); if (!policy || !form[policy.enabledKey] || !canManagePolicies.value) return; Object.keys(editor).forEach((key) => delete editor[key]); policyFields[policyId].forEach((key) => { editor[key] = form[key] }); activeEditor.value = policyId }
 const closeEditor = () => { activeEditor.value = ''; Object.keys(editor).forEach((key) => delete editor[key]) }
+let previousBodyOverflow = ''
+let previousDocumentOverflow = ''
+watch(activeEditor, (policyId) => {
+  if (policyId) {
+    previousBodyOverflow = document.body.style.overflow
+    previousDocumentOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    return
+  }
+  document.body.style.overflow = previousBodyOverflow
+  document.documentElement.style.overflow = previousDocumentOverflow
+})
 const isPercentage = (value) => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100
 const isNonNegative = (value) => Number.isFinite(Number(value)) && Number(value) >= 0
 const validateEditor = () => {
@@ -174,5 +187,9 @@ const savePolicies = async () => {
   } catch (error) { console.error('Failed to save clinic policies:', error); toast.error(error?.message || 'Could not save services policies.') } finally { saving.value = false }
 }
 onMounted(load)
-onUnmounted(() => stopListening?.())
+onUnmounted(() => {
+  stopListening?.()
+  document.body.style.overflow = previousBodyOverflow
+  document.documentElement.style.overflow = previousDocumentOverflow
+})
 </script>
