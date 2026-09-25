@@ -93,6 +93,12 @@ const EXPIRY_DATE_REQUIREMENTS = new Set([
   'dohAccreditation',
   'prcIdMedicalDirector',
 ])
+const BUSINESS_NAME_REQUIREMENTS = new Set([
+  'businessPermit',
+  'birRegistration',
+  'sanitaryCertificate',
+  'dohAccreditation',
+])
 const normalizeOcrComparable = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 
 // The registrant's legal name is captured in Step 1. OCR identity checks use
@@ -104,6 +110,10 @@ const getRegistrationOwnerNameForOcr = (application = {}, user = {}) => normaliz
   user.lastName || application.lastName,
   user.suffix || application.suffix,
 ].map((part) => String(part || '').trim()).filter(Boolean).join(' '))
+
+const getRegistrationBusinessNameForOcr = (application = {}, user = {}) => normalizeOcrComparable(
+  application.businessName || application.clinicName || application.companyName || user.companyName || ''
+)
 
 const getVisionWordConfidence = (annotation) => {
   const confidences = []
@@ -1889,8 +1899,12 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
       annotation = fallback?.fullTextAnnotation || annotation
     }
     const comparableText = normalizeOcrComparable(extractedText)
+    const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
     const expectedOwnerName = getRegistrationOwnerNameForOcr(application, user)
-    const nameMatch = expectedOwnerName.length >= 3 ? comparableText.includes(expectedOwnerName) : null
+    const expectedBusinessName = getRegistrationBusinessNameForOcr(application, user)
+    const ownerNameMatch = expectedOwnerName.length >= 3 ? comparableText.includes(expectedOwnerName) : null
+    const businessNameMatch = expectedBusinessName.length >= 3 ? comparableText.includes(expectedBusinessName) : null
+    const nameMatch = requiresBusinessName ? businessNameMatch : ownerNameMatch
     const readableText = extractedText.length >= 30
     const hasSomeText = extractedText.length > 0
     const ocrConfidence = getVisionWordConfidence(annotation)
@@ -1913,7 +1927,11 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     result.extractedText = extractedText.slice(0, 2000)
     result.detectedDocumentNumber = detectedDocumentNumber
     result.detectedDates = detectedDates
-    result.checks = { readableText, ocrConfidence, nameMatch, documentNumberDetected: requiresNumber ? Boolean(detectedDocumentNumber) : null, expiryValid }
+    result.checks = {
+      readableText, ocrConfidence, nameMatch, ownerNameMatch, businessNameMatch,
+      nameCheckType: requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
+      documentNumberDetected: requiresNumber ? Boolean(detectedDocumentNumber) : null, expiryValid,
+    }
     // Automatic approval requires the Step 1 registrant name to be found in
     // the extracted text. Documents that have an expiry date also require a
     // valid, non-expired date; a missing match is sent to a human, not called
@@ -1927,7 +1945,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
       : result.status === 'rejected'
         ? 'This document did not meet the minimum OCR verification score. Please upload a clearer file.'
         : nameMatch !== true
-          ? 'OCR completed, but the registrant name from Step 1 could not be matched. This document requires manual review.'
+          ? `OCR completed, but the ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
           : requiresExpiry && !expiryValid
             ? 'OCR completed, but a valid expiry date could not be confirmed. This document requires manual review.'
         : result.status === 'verified'
@@ -2048,8 +2066,12 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         }
       }
       const textComparable = normalizeOcrComparable(extractedText)
+      const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
       const expectedOwnerName = getRegistrationOwnerNameForOcr(application, user)
-      const nameMatch = expectedOwnerName.length >= 3 ? textComparable.includes(expectedOwnerName) : null
+      const expectedBusinessName = getRegistrationBusinessNameForOcr(application, user)
+      const ownerNameMatch = expectedOwnerName.length >= 3 ? textComparable.includes(expectedOwnerName) : null
+      const businessNameMatch = expectedBusinessName.length >= 3 ? textComparable.includes(expectedBusinessName) : null
+      const nameMatch = requiresBusinessName ? businessNameMatch : ownerNameMatch
       const hasReadableText = extractedText.length >= 30
       const hasSomeText = extractedText.length > 0
       const ocrConfidence = getVisionWordConfidence(annotation)
@@ -2079,6 +2101,9 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         readableText: hasReadableText,
         ocrConfidence,
         nameMatch,
+        ownerNameMatch,
+        businessNameMatch,
+        nameCheckType: requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
         numberMatch,
         expiryValid: expiryApplicable ? expiryValid : null,
       }
@@ -2105,7 +2130,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       if (!hasSomeText) {
         result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
       } else if (nameMatch !== true) {
-        result.reason = 'The registrant name from Step 1 could not be matched. This document requires manual review.'
+        result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
       } else if (expiryApplicable && !expiryValid) {
         result.reason = 'A valid expiry date could not be confirmed. This document requires manual review.'
       } else if (!expectedNumber) {
