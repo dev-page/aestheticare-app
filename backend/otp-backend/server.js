@@ -519,6 +519,20 @@ const createVisionGcsImageRequest = (gcsUri) => ({
   },
 })
 
+// Vision can read a gs:// URI directly, but that relies on a separate storage
+// hand-off inside Google Cloud. For registration images, read the already
+// authorization-checked object with Firebase Admin and send its bytes to
+// Vision. This avoids a URI-access failure being mistaken for no OCR text.
+const createRegistrationVisionRequest = async ({ bucketName, storagePath, contentType }) => {
+  const normalizedType = String(contentType || '').toLowerCase()
+  if (normalizedType.startsWith('image/')) {
+    const [content] = await admin.storage().bucket(bucketName).file(storagePath).download()
+    if (!content?.length) throw new Error('The uploaded image could not be read from secure storage.')
+    return { image: { content: content.toString('base64') } }
+  }
+  return createVisionGcsImageRequest(`gs://${bucketName}/${storagePath}`)
+}
+
 const getVisionResponseError = (response) => {
   const error = response?.error
   if (!error) return ''
@@ -1832,6 +1846,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     detectedDates: [],
     checks: { readableText: false, ocrConfidence: null, nameMatch: null, documentNumberDetected: null, expiryValid: null },
     processedAt: new Date().toISOString(),
+    processingError: '',
     reason: '',
   }
   const expectedPrefix = `clinic-registration/${uid}/${docKey}/`
@@ -1855,8 +1870,11 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     return result
   }
   try {
-    const gcsUri = `gs://${bucketName}/${storagePath}`
-    const visionRequest = createVisionGcsImageRequest(gcsUri)
+    const visionRequest = await createRegistrationVisionRequest({
+      bucketName,
+      storagePath,
+      contentType: document.type,
+    })
     const [visionResult] = await visionClient.documentTextDetection(visionRequest)
     const primaryError = getVisionResponseError(visionResult)
     if (primaryError) throw new Error(primaryError)
@@ -1915,13 +1933,17 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
           ? 'OCR extracted readable text and passed automatic checks.'
           : 'OCR completed, but this document requires manual review.'
   } catch (error) {
+    const processingError = String(error?.message || error || 'Unknown OCR processing error.')
     console.warn('Registration document OCR could not be completed:', {
       uid,
       docKey,
       storagePath,
-      error: error?.message || String(error),
+      error: processingError,
     })
     result.status = 'manual_review'
+    // Diagnostic only: shown in the registrant's browser console so an
+    // integration failure can be distinguished from an unreadable document.
+    result.processingError = processingError
     result.reason = 'We could not process this document automatically. It has been sent for manual review.'
   }
   return result
@@ -2000,8 +2022,11 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     }
 
     try {
-      const gcsUri = `gs://${bucketName}/${storagePath}`
-      const visionRequest = createVisionGcsImageRequest(gcsUri)
+      const visionRequest = await createRegistrationVisionRequest({
+        bucketName,
+        storagePath,
+        contentType: document.type,
+      })
       const [visionResult] = await visionClient.documentTextDetection(visionRequest)
       const primaryError = getVisionResponseError(visionResult)
       if (primaryError) throw new Error(primaryError)

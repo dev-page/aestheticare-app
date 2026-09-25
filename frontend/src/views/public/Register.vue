@@ -1149,6 +1149,7 @@ const handleDocumentFileChange = async (key, event) => {
     console.log('Detected dates:', ocrResult.detectedDates || [])
     console.log('Validation checks:', ocrResult.checks || {})
     console.log('Decision:', ocrResult.reason || '')
+    if (ocrResult.processingError) console.error('OCR processing error:', ocrResult.processingError)
     console.groupEnd()
     if (ocrResult.status === 'rejected') {
       await updateDoc(doc(db, 'clinics', userUid.value), {
