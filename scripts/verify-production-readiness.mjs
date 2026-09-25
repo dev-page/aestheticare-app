@@ -44,6 +44,31 @@ const forbiddenSnippets = [
 
 const failures = []
 
+// A Firestore collection used directly by the browser must have a matching
+// root rule. Without one, every request fails with permission-denied and the
+// affected page often appears empty. This static guard catches that class of
+// regression before deployment; role- and branch-level behavior is covered by
+// the staging permission matrix.
+const rulesContent = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8')
+const ruleRoots = new Set(
+  [...rulesContent.matchAll(/match\s+\/([^/{]+)/g)].map((match) => match[1])
+)
+const frontendRoot = path.join(root, 'frontend', 'src')
+const browserCollections = new Set()
+for (const entry of fs.readdirSync(frontendRoot, { recursive: true, withFileTypes: true })) {
+  if (!entry.isFile() || !/\.(js|vue)$/i.test(entry.name)) continue
+  const filePath = entry.parentPath ? path.join(entry.parentPath, entry.name) : path.join(frontendRoot, entry.name)
+  const content = fs.readFileSync(filePath, 'utf8')
+  for (const match of content.matchAll(/collection\(\s*(?:db|getFirestore\(\))\s*,\s*['"]([^'"]+)['"]/g)) {
+    browserCollections.add(match[1])
+  }
+}
+for (const collectionName of browserCollections) {
+  if (!ruleRoots.has(collectionName)) {
+    failures.push(`Frontend collection has no Firestore root rule: ${collectionName}`)
+  }
+}
+
 for (const relativePath of requiredFiles) {
   if (!fs.existsSync(path.join(root, relativePath))) {
     failures.push(`Missing required file: ${relativePath}`)

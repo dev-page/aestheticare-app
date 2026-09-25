@@ -105,15 +105,12 @@ service cloud.firestore {
       // A clinic owner is the authority for their own organization. Individual
       // staff still require explicit permissions, and every caller must pass
       // the surrounding branch-scope check before this helper grants access.
-      return isClinicOwner()
+      return isSuperadmin()
+        || isClinicOwner()
         || (userData().permissions != null && userData().permissions.hasAny([permission]))
         || (userData().effectivePermissions != null && userData().effectivePermissions.hasAny([permission]))
         || (rolePermissions() != null && rolePermissions().hasAny([permission]))
-        || (isSuperadmin() && (
-          (userData().permissions != null && userData().permissions.hasAny(['administrator:full_access']))
-          || (userData().effectivePermissions != null && userData().effectivePermissions.hasAny(['administrator:full_access']))
-          || (rolePermissions() != null && rolePermissions().hasAny(['administrator:full_access']))
-        ));
+        ;
     }
 
 
@@ -377,6 +374,11 @@ service cloud.firestore {
     match /subscriptionPlans/{planId} {
       allow read: if true;
       allow write: if isSignedIn() && isSuperadmin();
+    }
+
+    // System announcements are authored and reviewed only by Super Admins.
+    match /systemAnnouncements/{announcementId} {
+      allow read, create, update, delete: if isSignedIn() && isSuperadmin();
     }
 
     match /planPayments/{paymentId} {
@@ -872,6 +874,15 @@ service cloud.firestore {
         && hasPermission('payroll:update')
         && planAllowsWorkforceManagement(request.resource.data.branchId);
       allow update, delete: if false;
+    }
+
+    // Owner Finance reads historical aggregate snapshots for its own
+    // organization. These records are backend-managed and never writable
+    // from the browser.
+    match /financeHistory/{historyId} {
+      allow read: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid || isSuperadmin());
+      allow create, update, delete: if false;
     }
 
 
