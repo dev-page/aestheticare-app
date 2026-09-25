@@ -3144,7 +3144,11 @@ const handleRegistrationSubmit = () => {
                 <label class="floating-label">Email Address</label>
                 <!-- Keep the status icon centered on the 4rem input, not on
                      this wrapper once validation text expands below it. -->
-                <span class="absolute right-4 top-8 -translate-y-1/2" aria-hidden="true">
+                <span
+                  class="absolute right-4 -translate-y-1/2 transition-all duration-200"
+                  :class="email ? 'top-[0.7rem]' : 'top-8'"
+                  aria-hidden="true"
+                >
                   <span v-if="isCheckingEmail" class="block h-5 w-5 animate-spin rounded-full border-2 border-gold-300 border-t-gold-700"></span>
                   <svg v-else-if="emailAvailability === 'available'" class="h-5 w-5 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M5 12.5 9.5 17 19 7.5" />
@@ -3159,7 +3163,7 @@ const handleRegistrationSubmit = () => {
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M10.3 4.7 3.4 17a2 2 0 0 0 1.7 3h13.8a2 2 0 0 0 1.7-3l-6.9-12.3a2 2 0 0 0-3.4 0Z" />
                   </svg>
                 </span>
-                <p class="mt-1 text-xs text-charcoal-500">
+                <p class="mt-1 px-3 text-xs text-charcoal-500">
                   Have an unfinished registration? Enter the email address you used to continue where you left off.
                 </p>
                 <p v-if="emailError" class="mt-1 text-xs text-red-600">{{ emailError }}</p>
