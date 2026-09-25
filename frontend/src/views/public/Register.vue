@@ -3141,7 +3141,7 @@ const handleRegistrationSubmit = () => {
 <div class="space-y-2 rounded-2xl border border-gold-200/80 bg-cream-50/80 p-4">
               <div class="relative flex-1">
                 <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" @input="handleEmailDraftInput" />
-                <label class="floating-label">Email Address</label>
+                <label class="floating-label floating-label-raised">Email Address</label>
                 <!-- Keep the status icon centered on the 4rem input, not on
                      this wrapper once validation text expands below it. -->
                 <span
