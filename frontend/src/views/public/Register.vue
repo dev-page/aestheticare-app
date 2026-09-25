@@ -843,7 +843,8 @@ onMounted(async () => {
             } else if (resolvedStep === 3) {
               otpVerifiedForRegistration.value = true
               pendingApprovalMode.value = false
-              currentStep.value = 3
+              currentStep.value = auth.currentUser?.uid === userUid.value ? 3 : 1
+              if (currentStep.value === 1) toast.info('Enter your original password to securely resume document upload.')
             } else if (resolvedStep === 2) {
               otpVerifiedForRegistration.value = false
               pendingApprovalMode.value = false
@@ -1305,11 +1306,14 @@ const checkEmailAvailability = async (emailValue) => {
     }
 
     emailAvailability.value = 'resume'
-    emailAvailabilityMessage.value = `Registration found. Continuing from Step ${resolvedStep}.`
+    const needsResumeSignIn = resolvedStep === 3 && auth.currentUser?.uid !== userUid.value
+    emailAvailabilityMessage.value = needsResumeSignIn
+      ? 'Registration found. Enter your original password to resume document upload.'
+      : `Registration found. Continuing from Step ${resolvedStep}.`
     otpVerifiedForRegistration.value = resolvedStep === 3 || resolvedStep === 4
     pendingApprovalMode.value = resolvedStep === 4
-    currentStep.value = resolvedStep
-    syncStepRoute(resolvedStep)
+    currentStep.value = needsResumeSignIn ? 1 : resolvedStep
+    syncStepRoute(currentStep.value)
 
     if (resolvedStep === 2) {
       const lastSentAt = getLastOtpSentAt()
@@ -1646,8 +1650,14 @@ const verifyRegistrationEmail = async (options = {}) => {
       if (resolvedStep === 3) {
         otpVerifiedForRegistration.value = true
         pendingApprovalMode.value = false
-        currentStep.value = 3
-        toast.info('Welcome back. Continue with your document uploads.')
+        if (auth.currentUser?.uid === userUid.value) {
+          currentStep.value = 3
+          toast.info('Welcome back. Continue with your document uploads.')
+        } else {
+          currentStep.value = 1
+          syncStepRoute(1)
+          toast.info('Enter your original password to securely resume document upload.')
+        }
         return
       }
 
@@ -1725,8 +1735,14 @@ if (statusResult.resumeStep === 4) {
           if (statusResult.resumeStep === 3) {
             otpVerifiedForRegistration.value = true
             pendingApprovalMode.value = false
-            currentStep.value = 3
-            toast.info('Welcome back. Continue with your document uploads.')
+            if (auth.currentUser?.uid === userUid.value) {
+              currentStep.value = 3
+              toast.info('Welcome back. Continue with your document uploads.')
+            } else {
+              currentStep.value = 1
+              syncStepRoute(1)
+              toast.info('Enter your original password to securely resume document upload.')
+            }
             return
           }
 
@@ -1814,7 +1830,10 @@ if (statusResult.resumeStep === 4) {
     emailChecked.value = true
     otpVerifiedForRegistration.value = resumeStep === 3 || resumeStep === 4
     pendingApprovalMode.value = resumeStep === 4
-    currentStep.value = resumeStep
+    currentStep.value = resumeStep === 3 && auth.currentUser?.uid !== userUid.value ? 1 : resumeStep
+    if (currentStep.value === 1 && resumeStep === 3) {
+      toast.info('Enter your original password to securely resume document upload.')
+    }
 
     if (resumeStep === 2) {
       const otpResult = await sendOtpEmail(normalizedEmail)
