@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
-import { createUserWithEmailAndPassword, deleteUser, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { createUserWithEmailAndPassword, deleteUser, signInWithCustomToken, signOut } from 'firebase/auth'
 import { collection, deleteField, doc, deleteDoc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
@@ -386,16 +386,11 @@ const otpCountdownLabel = computed(() => {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 })
 const currentStepTitle = computed(() => registrationSteps[currentStep.value - 1] || registrationSteps[0])
-const isResumeSignInRequired = computed(() => Boolean(
-  userUid.value && otpVerifiedForRegistration.value && auth.currentUser?.uid !== userUid.value
-))
 const requiresPasswordForStep1 = computed(() => !userUid.value)
 const isStep1FormComplete = computed(() => {
   const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email.value || '').trim())
   const phoneIsValid = /^9[0-9]{9}$/.test(String(contactNumber.value || '').trim())
-  const passwordIsValid = isResumeSignInRequired.value
-    ? Boolean(password.value)
-    : !requiresPasswordForStep1.value || (
+  const passwordIsValid = !requiresPasswordForStep1.value || (
     PASSWORD_REGEX.test(String(password.value || '')) &&
     String(password.value || '') === String(confirmPassword.value || '')
   )
@@ -841,10 +836,14 @@ onMounted(async () => {
               pendingApprovalMode.value = true
               currentStep.value = 4
             } else if (resolvedStep === 3) {
-              otpVerifiedForRegistration.value = true
+              otpVerifiedForRegistration.value = false
               pendingApprovalMode.value = false
-              currentStep.value = auth.currentUser?.uid === userUid.value ? 3 : 1
-              if (currentStep.value === 1) toast.info('Enter your original password to securely resume document upload.')
+              currentStep.value = 2
+              const otpResult = await sendOtpEmail(email.value)
+              clearOtpInputs()
+              focusOtpInput(0)
+              handleClinicOtpResult(otpResult, 'We found an unfinished registration. A new OTP was sent to continue securely.')
+              syncStepRoute(2)
             } else if (resolvedStep === 2) {
               otpVerifiedForRegistration.value = false
               pendingApprovalMode.value = false
@@ -1306,16 +1305,16 @@ const checkEmailAvailability = async (emailValue) => {
     }
 
     emailAvailability.value = 'resume'
-    const needsResumeSignIn = resolvedStep === 3 && auth.currentUser?.uid !== userUid.value
-    emailAvailabilityMessage.value = needsResumeSignIn
-      ? 'Registration found. Enter your original password to resume document upload.'
+    const requiresResumeOtp = resolvedStep === 3
+    emailAvailabilityMessage.value = requiresResumeOtp
+      ? 'Registration found. Verify a new OTP to continue securely.'
       : `Registration found. Continuing from Step ${resolvedStep}.`
-    otpVerifiedForRegistration.value = resolvedStep === 3 || resolvedStep === 4
+    otpVerifiedForRegistration.value = resolvedStep === 4
     pendingApprovalMode.value = resolvedStep === 4
-    currentStep.value = needsResumeSignIn ? 1 : resolvedStep
+    currentStep.value = requiresResumeOtp ? 2 : resolvedStep
     syncStepRoute(currentStep.value)
 
-    if (resolvedStep === 2) {
+    if (currentStep.value === 2) {
       const lastSentAt = getLastOtpSentAt()
       const canSend = !lastSentAt || (Date.now() - lastSentAt) > (OTP_COOLDOWN_SECONDS * 1000)
       if (canSend) {
@@ -1648,16 +1647,14 @@ const verifyRegistrationEmail = async (options = {}) => {
       }
 
       if (resolvedStep === 3) {
-        otpVerifiedForRegistration.value = true
+        otpVerifiedForRegistration.value = false
         pendingApprovalMode.value = false
-        if (auth.currentUser?.uid === userUid.value) {
-          currentStep.value = 3
-          toast.info('Welcome back. Continue with your document uploads.')
-        } else {
-          currentStep.value = 1
-          syncStepRoute(1)
-          toast.info('Enter your original password to securely resume document upload.')
-        }
+        currentStep.value = 2
+        const otpResult = await sendOtpEmail(normalizedEmail)
+        clearOtpInputs()
+        focusOtpInput(0)
+        handleClinicOtpResult(otpResult, 'We found an unfinished registration. A new OTP was sent to continue securely.')
+        syncStepRoute(2)
         return
       }
 
@@ -1733,16 +1730,14 @@ if (statusResult.resumeStep === 4) {
           }
 
           if (statusResult.resumeStep === 3) {
-            otpVerifiedForRegistration.value = true
+            otpVerifiedForRegistration.value = false
             pendingApprovalMode.value = false
-            if (auth.currentUser?.uid === userUid.value) {
-              currentStep.value = 3
-              toast.info('Welcome back. Continue with your document uploads.')
-            } else {
-              currentStep.value = 1
-              syncStepRoute(1)
-              toast.info('Enter your original password to securely resume document upload.')
-            }
+            currentStep.value = 2
+            const otpResult = await sendOtpEmail(normalizedEmail)
+            clearOtpInputs()
+            focusOtpInput(0)
+            handleClinicOtpResult(otpResult, 'We found an unfinished registration. A new OTP was sent to continue securely.')
+            syncStepRoute(2)
             return
           }
 
@@ -1828,14 +1823,12 @@ if (statusResult.resumeStep === 4) {
     }
 
     emailChecked.value = true
-    otpVerifiedForRegistration.value = resumeStep === 3 || resumeStep === 4
+    const requiresResumeOtp = resumeStep === 3
+    otpVerifiedForRegistration.value = resumeStep === 4
     pendingApprovalMode.value = resumeStep === 4
-    currentStep.value = resumeStep === 3 && auth.currentUser?.uid !== userUid.value ? 1 : resumeStep
-    if (currentStep.value === 1 && resumeStep === 3) {
-      toast.info('Enter your original password to securely resume document upload.')
-    }
+    currentStep.value = requiresResumeOtp ? 2 : resumeStep
 
-    if (resumeStep === 2) {
+    if (currentStep.value === 2) {
       const otpResult = await sendOtpEmail(normalizedEmail)
       clearOtpInputs()
       focusOtpInput(0)
@@ -2526,31 +2519,6 @@ const registerClinic = async () => {
     if (!emailChecked.value || currentStep.value !== 1) return
   }
 
-  if (isResumeSignInRequired.value) {
-    if (!password.value) {
-      toast.error('Enter the password you created for this registration to continue.')
-      return
-    }
-    try {
-      const credential = await signInWithEmailAndPassword(auth, String(email.value).trim(), password.value)
-      if (credential.user.uid !== userUid.value) {
-        await signOut(auth)
-        throw new Error('This password belongs to a different account.')
-      }
-      password.value = ''
-      confirmPassword.value = ''
-      currentStep.value = 3
-      syncStepRoute(3)
-      toast.success('Signed in. You can continue your document upload.')
-      return
-    } catch (error) {
-      toast.error(error?.code === 'auth/invalid-credential' || error?.code === 'auth/wrong-password'
-        ? 'Incorrect password. Please try again or reset your password.'
-        : (error?.message || 'Unable to sign in and resume registration.'))
-      return
-    }
-  }
-
   if (requiresPasswordForStep1.value) {
     if (password.value !== confirmPassword.value) {
       toast.error('Passwords do not match')
@@ -2857,10 +2825,22 @@ const verifyOtp = async () => {
       setStoredRegistrationUid(userUid.value)
     }
 
+    const customToken = String(verifyRes?.data?.data?.customToken || '')
+    if (!customToken) {
+      throw new Error('Could not establish your secure registration session. Please request a new OTP and try again.')
+    }
+
+    const credential = await signInWithCustomToken(auth, customToken)
+    if (credential.user.uid !== userUid.value) {
+      await signOut(auth)
+      throw new Error('The verified registration does not match this session. Please request a new OTP.')
+    }
+
     otpVerifiedForRegistration.value = true
     setStoredOtpRecipientEmail('')
     toast.success('Email verified. Continue to document upload.')
     currentStep.value = 3
+    syncStepRoute(3)
     clearOtpInputs()
   } catch (err) {
     console.error(err)
@@ -3331,11 +3311,11 @@ const handleRegistrationSubmit = () => {
               <p v-else-if="computedAge !== null" class="mt-1 text-xs text-emerald-700">Age verified: {{ computedAge }} years old.</p>
             </div>
 
-            <div v-if="requiresPasswordForStep1 || isResumeSignInRequired" class="relative">
+            <div v-if="requiresPasswordForStep1" class="relative">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="relative">
                   <input :type="passwordVisible ? 'text' : 'password'" v-model="password" required maxlength="32" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @focus="passwordFocused = true" @blur="passwordFocused = false" />
-                  <label class="floating-label">{{ isResumeSignInRequired ? 'Password to Resume' : 'Password' }}</label>
+                  <label class="floating-label">Password</label>
                   <button type="button" @click="togglePassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-rose-500 hover:text-gold-700" tabindex="-1">
                     <svg v-if="!passwordVisible" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.956 9.956 0 012.1-3.592M6.18 6.18A9.956 9.956 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -3364,7 +3344,6 @@ const handleRegistrationSubmit = () => {
                 </div>
               </div>
 
-              <p v-if="isResumeSignInRequired" class="mt-2 text-xs text-charcoal-500">Enter the password you originally created. You do not need to create a new password.</p>
               <transition name="password-guide-fade">
                 <div v-if="requiresPasswordForStep1 && showPasswordRequirements" class="password-guide-popover rounded-xl border border-gold-200/80 bg-cream-50/95 px-4 py-3 shadow-[0_12px_26px_rgba(58,36,22,0.14)]">
                 <p class="text-xs font-semibold uppercase tracking-[0.14em] text-gold-700 mb-2">Password Requirements</p>

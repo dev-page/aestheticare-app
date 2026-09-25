@@ -5103,7 +5103,11 @@ app.post(VERIFY_REGISTRATION_OTP_PATH, async (req, res) => {
       maskedTo: maskEmailAddress(normalizedEmail),
     })
 
-    return res.json({ success: true, data: { uid: resolvedUid } })
+    // OTP is the authentication factor for a resumed registration. Mint a
+    // short-lived Firebase custom-token exchange so the browser receives a
+    // real Auth session before it accesses protected uploads.
+    const customToken = await admin.auth().createCustomToken(resolvedUid)
+    return res.json({ success: true, data: { uid: resolvedUid, customToken } })
   } catch (error) {
     return res.status(400).json({
       success: false,
