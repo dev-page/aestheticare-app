@@ -1937,11 +1937,14 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     // valid, non-expired date; a missing match is sent to a human, not called
     // unreadable and not automatically accepted on score alone.
     const automaticChecksPassed = nameMatch === true && (!requiresExpiry || expiryValid === true)
-    result.status = !readableText || score < MANUAL_REVIEW_THRESHOLD
+    const requiredNameMismatch = nameMatch === false
+    result.status = !readableText || requiredNameMismatch || score < MANUAL_REVIEW_THRESHOLD
       ? 'rejected'
       : score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
     result.reason = !readableText
       ? 'The text is unclear or unreadable. Please upload a clearer, well-lit, uncropped image or readable PDF.'
+      : requiredNameMismatch
+        ? `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} does not match this document. Please upload the correct document.`
       : result.status === 'rejected'
         ? 'This document did not meet the minimum OCR verification score. Please upload a clearer file.'
         : nameMatch !== true
@@ -2124,11 +2127,14 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.confidence = confidence
       result.extractedText = extractedText.slice(0, 2000)
       const automaticChecksPassed = nameMatch === true && (!expiryApplicable || expiryValid)
-      result.status = !hasReadableText || confidence < MANUAL_REVIEW_THRESHOLD
+      const requiredNameMismatch = nameMatch === false
+      result.status = !hasReadableText || requiredNameMismatch || confidence < MANUAL_REVIEW_THRESHOLD
         ? 'rejected'
         : confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
         result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
+      } else if (requiredNameMismatch) {
+        result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} does not match this document. Please upload the correct document.`
       } else if (nameMatch !== true) {
         result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
       } else if (expiryApplicable && !expiryValid) {
