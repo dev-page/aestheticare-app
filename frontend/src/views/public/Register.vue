@@ -1138,6 +1138,18 @@ const handleDocumentFileChange = async (key, event) => {
       draftDocumentsUpdatedAt: serverTimestamp(),
     })
     const ocrResult = await requestUploadedDocumentOcr(userUid.value, docKey)
+    // Temporary diagnostic for registration testing. This is written only to
+    // the current browser's developer console, never displayed publicly.
+    console.groupCollapsed(`[OCR] ${documentLabelMap[docKey] || docKey}`)
+    console.log('Status:', ocrResult.status)
+    console.log('Verification score:', `${Math.round(Number(ocrResult.confidence || 0) * 100)}%`)
+    console.log('OCR confidence:', ocrResult.ocrConfidence == null ? 'Not provided' : `${Math.round(Number(ocrResult.ocrConfidence) * 100)}%`)
+    console.log('Extracted text:', ocrResult.extractedText || '(No text extracted)')
+    console.log('Detected document number:', ocrResult.detectedDocumentNumber || '(None)')
+    console.log('Detected dates:', ocrResult.detectedDates || [])
+    console.log('Validation checks:', ocrResult.checks || {})
+    console.log('Decision:', ocrResult.reason || '')
+    console.groupEnd()
     if (ocrResult.status === 'rejected') {
       await updateDoc(doc(db, 'clinics', userUid.value), {
         [`draftDocuments.${docKey}`]: deleteField(),
@@ -2848,6 +2860,13 @@ const verifyOtp = async () => {
 
 const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () => {}) => {
   if (!file) return null
+  if (typeof auth.authStateReady === 'function') await auth.authStateReady()
+  const sessionUser = auth.currentUser
+  if (!sessionUser || sessionUser.uid !== uid) {
+    throw new Error('Your registration session does not match this application. Please sign in with the registration account, then try uploading again.')
+  }
+  // Refresh before Firebase Storage evaluates request.auth for this upload.
+  await sessionUser.getIdToken(true)
   const safeName = `${Date.now()}-${String(file.name || 'document').replace(/\s+/g, '_')}`
   const filePath = `clinic-registration/${uid}/${documentKey}/${safeName}`
   const fileRef = storageRef(storage, filePath)
