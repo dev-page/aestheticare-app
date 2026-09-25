@@ -3140,11 +3140,12 @@ const handleRegistrationSubmit = () => {
             <section v-if="currentStep === 1" key="step-1" class="registration-step-panel space-y-4">
 <div class="space-y-2 rounded-2xl border border-gold-200/80 bg-cream-50/80 p-4">
               <div class="relative flex-1">
-                <input v-model="email" type="email" required placeholder="Email Address" class="input h-16 px-3 pr-14" @input="handleEmailDraftInput" />
+                <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" @input="handleEmailDraftInput" />
+                <label class="floating-label">Email Address</label>
                 <!-- Keep the status icon centered on the 4rem input, not on
                      this wrapper once validation text expands below it. -->
                 <span
-                  class="absolute right-4 top-1/2 -translate-y-1/2"
+                  class="absolute right-4 top-8 -translate-y-1/2"
                   aria-hidden="true"
                 >
                   <span v-if="isCheckingEmail" class="block h-5 w-5 animate-spin rounded-full border-2 border-gold-300 border-t-gold-700"></span>
