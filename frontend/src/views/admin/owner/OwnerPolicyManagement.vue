@@ -4,147 +4,175 @@
     <main class="min-w-0 flex-1 p-6 md:p-8">
       <div class="mx-auto max-w-5xl">
         <h1 class="text-3xl font-bold">Policy Management</h1>
-        <p class="mt-2 text-slate-400">Set the rules the system applies to bookings, payments, products, and delivery for this branch.</p>
+        <p class="mt-2 text-slate-400">Configure the rules that apply to service appointments, payments, cancellations, rescheduling, and no-shows.</p>
+
         <div class="mt-4 flex flex-col gap-3 rounded-xl border border-amber-700/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between">
-          <p><strong>How this works:</strong> Enable only the policies your clinic offers. Enabled appointment policies control whether customers can request actions such as rescheduling.</p>
+          <p><strong>Services:</strong> Turn on only the policies your clinic will enforce. Use the edit button to set each enabled policy.</p>
           <span class="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold" :class="canManagePolicies ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200' : 'border-slate-500 bg-slate-800 text-slate-300'">{{ canManagePolicies ? 'Editing enabled' : 'View only' }}</span>
         </div>
-        <form class="mt-8 space-y-6" @submit.prevent="savePolicies">
-          <section v-for="group in policyGroups" :key="group.key" class="rounded-2xl border border-slate-700 bg-slate-800 p-6">
-            <h2 class="text-lg font-semibold">{{ group.label }}</h2>
-            <p class="mt-1 text-sm text-slate-400">{{ group.description }}</p>
-            <div class="mt-4 grid gap-4 md:grid-cols-2">
-              <label v-for="field in group.fields" :key="field.key" class="block rounded-xl border border-slate-700 bg-slate-900/60 p-4">
-                <span class="flex items-center justify-between gap-3">
-                  <span class="text-sm text-slate-300">{{ field.label }}</span>
-                  <span class="inline-flex items-center gap-2 text-xs text-slate-400">
-                    <input v-model="form[field.enabledKey]" :disabled="!canManagePolicies" type="checkbox" class="accent-amber-500 disabled:cursor-not-allowed" />
-                    Enable policy
-                  </span>
-                </span>
-                <textarea v-model="form[field.key]" rows="4" :disabled="!canManagePolicies || !form[field.enabledKey]" :placeholder="field.placeholder" class="mt-3 w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-3 text-sm text-white outline-none focus:border-amber-500 disabled:cursor-not-allowed disabled:opacity-50" />
-              </label>
-            </div>
-          </section>
-          <section class="rounded-2xl border border-slate-700 bg-slate-800 p-6">
-            <h2 class="text-lg font-semibold">No-show outcome</h2>
-            <p class="mt-1 text-sm text-slate-400">Choose the default outcome staff applies when a customer does not attend. Staff still review every case.</p>
-            <label class="mt-4 flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-900/60 p-4">
-              <input v-model="form.noShowRescheduleAllowed" :disabled="!canManagePolicies" type="checkbox" class="mt-1 accent-amber-500 disabled:cursor-not-allowed" />
-              <span><span class="block text-sm text-slate-200">Allow staff-approved rescheduling after a no-show</span><span class="mt-1 block text-xs text-slate-400">When disabled, the missed appointment is recorded as forfeited. When enabled, staff may arrange a replacement schedule according to the clinic policy.</span></span>
-            </label>
-          </section>
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-slate-500">Last saved: {{ savedAt ? formatDate(savedAt) : 'Not saved yet' }}</span>
-            <button :disabled="saving || !canManagePolicies" class="rounded-xl bg-amber-600 px-5 py-3 font-semibold hover:bg-amber-500 disabled:opacity-50">{{ saving ? 'Saving...' : canManagePolicies ? 'Save Policies' : 'View-only access' }}</button>
+
+        <section class="mt-8 rounded-2xl border border-slate-700 bg-slate-800 p-6">
+          <h2 class="text-xl font-semibold">Services</h2>
+          <p class="mt-1 text-sm text-slate-400">These settings apply when customers book an appointment for a clinic service.</p>
+          <div class="mt-5 grid gap-4 md:grid-cols-2">
+            <article v-for="policy in servicePolicies" :key="policy.id" class="rounded-2xl border border-slate-700 bg-slate-900/60 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h3 class="font-semibold text-slate-100">{{ policy.title }}</h3>
+                  <p class="mt-1 text-sm text-slate-400">{{ policy.description }}</p>
+                </div>
+                <label class="relative inline-flex shrink-0 cursor-pointer items-center" :title="form[policy.enabledKey] ? 'Disable policy' : 'Enable policy'">
+                  <input v-model="form[policy.enabledKey]" :disabled="!canManagePolicies" type="checkbox" class="peer sr-only" />
+                  <span class="h-6 w-11 rounded-full bg-slate-600 transition peer-checked:bg-amber-500 peer-focus:ring-2 peer-focus:ring-amber-300/70 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-5"></span>
+                </label>
+              </div>
+              <div class="mt-5 flex items-center justify-between gap-3 border-t border-slate-700 pt-4">
+                <span class="text-xs font-medium" :class="form[policy.enabledKey] ? 'text-emerald-300' : 'text-slate-500'">{{ form[policy.enabledKey] ? 'Enabled' : 'Disabled' }}</span>
+                <button v-if="form[policy.enabledKey]" type="button" :disabled="!canManagePolicies" @click="openEditor(policy.id)" class="inline-flex items-center gap-2 rounded-lg border border-amber-500/60 px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"><Icon icon="mdi:pencil" class="h-4 w-4" /> Edit</button>
+                <span v-else class="text-xs text-slate-500">Enable to configure</span>
+              </div>
+            </article>
           </div>
-        </form>
+          <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-5">
+            <span class="text-xs text-slate-500">Last saved: {{ savedAt ? formatDate(savedAt) : 'Not saved yet' }}</span>
+            <button type="button" :disabled="saving || !canManagePolicies" @click="savePolicies" class="rounded-xl bg-amber-600 px-5 py-3 font-semibold transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50">{{ saving ? 'Saving...' : canManagePolicies ? 'Save Services Policies' : 'View-only access' }}</button>
+          </div>
+        </section>
+
+        <section class="mt-6 rounded-2xl border border-slate-700 bg-slate-800 p-6">
+          <h2 class="text-xl font-semibold">Product Orders</h2>
+          <p class="mt-1 text-sm text-slate-400">Configure payment, pickup preparation, cancellation, and return rules for product orders.</p>
+          <div class="mt-5 grid gap-4 md:grid-cols-3">
+            <article v-for="policy in productPolicies" :key="policy.id" class="rounded-2xl border border-slate-700 bg-slate-900/60 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div><h3 class="font-semibold text-slate-100">{{ policy.title }}</h3><p class="mt-1 text-sm text-slate-400">{{ policy.description }}</p></div>
+                <label class="relative inline-flex shrink-0 cursor-pointer items-center" :title="form[policy.enabledKey] ? 'Disable policy' : 'Enable policy'"><input v-model="form[policy.enabledKey]" :disabled="!canManagePolicies" type="checkbox" class="peer sr-only" /><span class="h-6 w-11 rounded-full bg-slate-600 transition peer-checked:bg-amber-500 peer-focus:ring-2 peer-focus:ring-amber-300/70 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-5"></span></label>
+              </div>
+              <div class="mt-5 flex items-center justify-between gap-3 border-t border-slate-700 pt-4"><span class="text-xs font-medium" :class="form[policy.enabledKey] ? 'text-emerald-300' : 'text-slate-500'">{{ form[policy.enabledKey] ? 'Enabled' : 'Disabled' }}</span><button v-if="form[policy.enabledKey]" type="button" :disabled="!canManagePolicies" @click="openEditor(policy.id)" class="inline-flex items-center gap-2 rounded-lg border border-amber-500/60 px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"><Icon icon="mdi:pencil" class="h-4 w-4" /> Edit</button><span v-else class="text-xs text-slate-500">Enable to configure</span></div>
+            </article>
+          </div>
+          <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-5"><span class="text-xs text-slate-500">Last saved: {{ savedAt ? formatDate(savedAt) : 'Not saved yet' }}</span><button type="button" :disabled="saving || !canManagePolicies" @click="savePolicies" class="rounded-xl bg-amber-600 px-5 py-3 font-semibold transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50">{{ saving ? 'Saving...' : canManagePolicies ? 'Save Product Policies' : 'View-only access' }}</button></div>
+        </section>
       </div>
     </main>
+
+    <div v-if="activeEditor" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4" @click.self="closeEditor">
+      <section class="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl" role="dialog" aria-modal="true" :aria-labelledby="`policy-editor-${activeEditor}`">
+        <header class="flex items-start justify-between gap-4 border-b border-slate-700 px-6 py-5">
+          <div><p class="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">Services policy</p><h2 :id="`policy-editor-${activeEditor}`" class="mt-1 text-xl font-bold">{{ activePolicy?.title }}</h2></div>
+          <button type="button" @click="closeEditor" class="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white" aria-label="Close policy editor"><Icon icon="mdi:close" class="h-5 w-5" /></button>
+        </header>
+        <div class="grid lg:grid-cols-2">
+          <form class="space-y-5 p-6" @submit.prevent="applyEditor">
+            <template v-if="activeEditor === 'payment'">
+              <PolicyToggle v-model="editor.fullPayment" label="Full Payment" description="Require the customer to pay the entire service fee at booking." />
+              <NumberField v-model="editor.downpaymentPercentage" label="Downpayment Percentage" suffix="%" :disabled="editor.fullPayment" :min="1" :max="100" required />
+            </template>
+            <template v-else-if="activeEditor === 'cancellation'">
+              <fieldset class="space-y-4 rounded-xl border border-slate-700 p-4"><legend class="px-1 font-semibold text-amber-200">Early Cancellation</legend><NumberField v-model="editor.earlyMinimumHours" label="Minimum Hours" suffix="hours" :min="0" required /><PolicyToggle v-model="editor.earlyNonRefundable" label="Non-refundable" description="Do not refund eligible payment for early cancellations." /><NumberField v-model="editor.earlyRefundPercentage" label="Refund Percentage" suffix="%" :disabled="editor.earlyNonRefundable" :min="0" :max="100" required /></fieldset>
+              <fieldset class="space-y-4 rounded-xl border border-slate-700 p-4"><legend class="px-1 font-semibold text-amber-200">Mid-Window Cancellation</legend><NumberField v-model="editor.midMinimumHours" label="Minimum Hours" suffix="hours" :min="0" required /><NumberField v-model="editor.midMaximumHours" label="Maximum Hours" suffix="hours" :min="0" required /><PolicyToggle v-model="editor.midNonRefundable" label="Non-refundable" description="Do not refund eligible payment for mid-window cancellations." /><NumberField v-model="editor.midRefundPercentage" label="Refund Percentage" suffix="%" :disabled="editor.midNonRefundable" :min="0" :max="100" required /></fieldset>
+              <fieldset class="space-y-4 rounded-xl border border-slate-700 p-4"><legend class="px-1 font-semibold text-amber-200">Late Cancellation</legend><NumberField v-model="editor.lateMaximumHours" label="Maximum Hours" suffix="hours" :min="0" required /><PolicyToggle v-model="editor.lateNonRefundable" label="Non-refundable" description="Do not refund eligible payment for late cancellations." /><NumberField v-model="editor.lateRefundPercentage" label="Refund Percentage" suffix="%" :disabled="editor.lateNonRefundable" :min="0" :max="100" required /></fieldset>
+            </template>
+            <template v-else-if="activeEditor === 'rescheduling'"><NumberField v-model="editor.maximumRescheduleAllowance" label="Maximum Reschedule Allowance" suffix="times" :min="0" required /></template>
+            <template v-else-if="activeEditor === 'noShow'"><NumberField v-model="editor.noShowGracePeriodMinutes" label="Grace Period" suffix="minutes" :min="0" required /><PolicyToggle v-model="editor.noShowNonRefundable" label="Non-refundable" description="Do not refund eligible payment when the customer is classified as a no-show." /><NumberField v-model="editor.noShowRefundPercentage" label="Refund Percentage" suffix="%" :disabled="editor.noShowNonRefundable" :min="0" :max="100" required /></template>
+            <template v-else-if="activeEditor === 'orderDeliveryPayment'"><div class="rounded-xl border border-slate-700 bg-slate-950/40 p-4"><p class="font-medium text-slate-100">Payment First</p><p class="mt-1 text-sm text-slate-400">Full payment is required before an order can be processed.</p></div><div class="rounded-xl border border-slate-700 bg-slate-950/40 p-4"><p class="font-medium text-slate-100">Delivery Method: Pickup</p><p class="mt-1 text-sm text-slate-400">Customers collect their orders from the clinic.</p></div><NumberField v-model="editor.expectedDeliveryPeriodDays" label="Expected Delivery Period" suffix="days" :min="0" required /></template>
+            <template v-else-if="activeEditor === 'orderCancellation'"><PolicyToggle v-model="editor.orderCancellationAllowed" label="Cancellation Allowed" description="Allow customers to cancel a product order through the system." /><NumberField v-model="editor.orderCancellationWindowHours" label="Cancellation Window" suffix="hours" :disabled="!editor.orderCancellationAllowed" :min="0" required /><PolicyToggle v-model="editor.orderCancellationNonRefundable" :disabled="!editor.orderCancellationAllowed" label="Non-refundable" description="Do not refund a cancelled product order." /><NumberField v-model="editor.orderCancellationRefundPercentage" label="Refund Percentage" suffix="%" :disabled="!editor.orderCancellationAllowed || editor.orderCancellationNonRefundable" :min="0" :max="100" required /></template>
+            <template v-else-if="activeEditor === 'orderReturn'"><PolicyToggle v-model="editor.orderReturnsAllowed" label="Returns Allowed" description="Allow customers to submit a product-return request." /><NumberField v-model="editor.orderReturnWindowDays" label="Return Window" suffix="days" :disabled="!editor.orderReturnsAllowed" :min="0" required /><fieldset :disabled="!editor.orderReturnsAllowed" class="space-y-3 rounded-xl border border-slate-700 p-4 disabled:opacity-45"><legend class="px-1 font-semibold text-amber-200">Return Conditions</legend><label v-for="condition in returnConditions" :key="condition.key" class="flex items-center gap-3 text-sm text-slate-200"><input v-model="editor[condition.key]" type="checkbox" class="h-4 w-4 accent-amber-500" />{{ condition.label }}</label></fieldset><fieldset :disabled="!editor.orderReturnsAllowed" class="space-y-3 rounded-xl border border-slate-700 p-4 disabled:opacity-45"><legend class="px-1 font-semibold text-amber-200">Reason for Return</legend><label v-for="reason in returnReasons" :key="reason.key" class="flex items-center gap-3 text-sm text-slate-200"><input v-model="editor[reason.key]" type="checkbox" class="h-4 w-4 accent-amber-500" />{{ reason.label }}</label><label v-if="editor.orderReturnReasonOther" class="block"><span class="mb-1.5 block text-sm font-medium text-slate-200">Other acceptable reason</span><input v-model.trim="editor.orderReturnOtherReason" :disabled="!editor.orderReturnsAllowed" type="text" maxlength="160" class="w-full rounded-xl border border-slate-600 bg-slate-950 px-3 py-3 text-white outline-none focus:border-amber-500 disabled:cursor-not-allowed" placeholder="Specify the additional acceptable reason" /></label></fieldset><div class="rounded-xl border border-slate-700 bg-slate-950/40 p-4"><p class="font-medium text-slate-100">Return Responsibility: Customer</p><p class="mt-1 text-sm text-slate-400">The customer is responsible for returning an approved item to the clinic.</p></div><PolicyToggle v-model="editor.orderReturnNonRefundable" :disabled="!editor.orderReturnsAllowed" label="Non-refundable" description="Do not refund an approved product return." /><NumberField v-model="editor.orderReturnRefundPercentage" label="Refund Percentage" suffix="%" :disabled="!editor.orderReturnsAllowed || editor.orderReturnNonRefundable" :min="0" :max="100" required /><div class="rounded-xl border border-slate-700 bg-slate-950/40 p-4"><p class="font-medium text-slate-100">Refund Method: Original Payment Method</p><p class="mt-1 text-sm text-slate-400">Refunds are processed through PayMongo and returned to the original payment method.</p></div></template>
+            <div class="flex justify-end gap-3 pt-2"><button type="button" @click="closeEditor" class="rounded-xl border border-slate-600 px-4 py-2.5 font-semibold text-slate-200 hover:bg-slate-800">Cancel</button><button type="submit" class="rounded-xl bg-amber-600 px-4 py-2.5 font-semibold text-white hover:bg-amber-500">Apply Changes</button></div>
+          </form>
+          <aside class="border-t border-slate-700 bg-slate-800/70 p-6 lg:border-l lg:border-t-0">
+            <p class="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">Instructions</p>
+            <div class="mt-4 space-y-5 text-sm leading-6 text-slate-300">
+              <template v-if="activeEditor === 'payment'"><p><strong class="text-white">Purpose:</strong> Set how customers are required to pay for a service when booking an appointment.</p><p><strong class="text-white">Full Payment:</strong> When enabled, customers must pay 100% of the service fee. The Downpayment Percentage field is disabled.</p><p><strong class="text-white">Downpayment Percentage:</strong> The percentage of the service fee customers must pay when booking when full payment is not required.</p></template>
+              <template v-else-if="activeEditor === 'cancellation'"><p><strong class="text-white">Purpose:</strong> Define when customers can cancel and how much of their eligible payment is refunded. The system uses the hours remaining before the scheduled appointment.</p><p><strong class="text-white">Early:</strong> Cancellations at or above its minimum-hours value. For example, 48 means 48 hours or more before the appointment.</p><p><strong class="text-white">Mid-window:</strong> Cancellations between the stated minimum and maximum hours. For example, 24 to 48 hours.</p><p><strong class="text-white">Late:</strong> Cancellations below its maximum-hours value. For example, 24 means less than 24 hours before the appointment.</p><p><strong class="text-white">Non-refundable:</strong> When enabled, no refund is due in that period and its Refund Percentage field is disabled. Otherwise, the entered percentage applies.</p></template>
+              <template v-else-if="activeEditor === 'rescheduling'"><p><strong class="text-white">Purpose:</strong> Limit how many times a customer may reschedule an appointment.</p><p><strong class="text-white">Maximum Reschedule Allowance:</strong> The total number of reschedules allowed for one appointment. Set it to 0 to disallow rescheduling.</p></template>
+              <template v-else-if="activeEditor === 'noShow'"><p><strong class="text-white">Purpose:</strong> Define what happens when a customer does not arrive within the allowed waiting period.</p><p><strong class="text-white">Grace Period:</strong> The number of minutes after the appointment start time before the customer can be marked as a no-show. For example, 30 minutes after a 2:00 PM appointment ends at 2:30 PM.</p><p><strong class="text-white">Non-refundable:</strong> When enabled, the payment is forfeited and Refund Percentage is disabled. Otherwise, the entered percentage applies to eligible payment.</p></template>
+              <template v-else-if="activeEditor === 'orderDeliveryPayment'"><p><strong class="text-white">Purpose:</strong> Define how product orders are paid for and how customers receive them.</p><p><strong class="text-white">Payment First:</strong> This fixed setting requires full payment before the clinic processes an order.</p><p><strong class="text-white">Delivery Method:</strong> Pickup is the fixed method. Customers collect their orders from the clinic.</p><p><strong class="text-white">Expected Delivery Period:</strong> The expected number of days after successful payment before the order is ready for pickup. This is an estimate and can vary with preparation requirements.</p></template>
+              <template v-else-if="activeEditor === 'orderCancellation'"><p><strong class="text-white">Purpose:</strong> Determine whether customers may cancel a product order after placing it and how much they may receive as a refund.</p><p><strong class="text-white">Cancellation Allowed:</strong> When off, customers cannot cancel product orders through the system and all cancellation fields are disabled.</p><p><strong class="text-white">Cancellation Window:</strong> The maximum number of hours after order placement in which a cancellation request is allowed.</p><p><strong class="text-white">Non-refundable:</strong> When on, eligible cancellations receive no refund and Refund Percentage is disabled. Otherwise the stated percentage applies.</p></template>
+              <template v-else-if="activeEditor === 'orderReturn'"><p><strong class="text-white">Purpose:</strong> Configure when customers may request a product return and whether an approved return is eligible for a refund.</p><p><strong class="text-white">Return Window:</strong> The maximum number of days after the customer receives the product in which they can request a return.</p><p><strong class="text-white">Conditions and reasons:</strong> Select every requirement and accepted reason the customer must meet. Selecting Others reveals a field for an additional accepted reason.</p><p><strong class="text-white">Return Responsibility:</strong> Customer is fixed; the customer returns an approved product to the clinic.</p><p><strong class="text-white">Refund Method:</strong> Original Payment Method is fixed. PayMongo processes the refund back to the original payment method.</p></template>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { Icon } from '@iconify/vue'
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth, db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
 
-const policyGroups = [
-  { key: 'appointments', label: 'Appointments & Consultations', description: 'Shown during appointment and consultation requests.', fields: [
-    { key: 'cancellationPolicy', enabledKey: 'cancellationPolicyEnabled', label: 'Cancellation policy', placeholder: 'Explain deadlines, fees, and exceptions.' },
-    { key: 'reschedulePolicy', enabledKey: 'reschedulePolicyEnabled', label: 'Reschedule policy', placeholder: 'Explain how customers can request another schedule.' },
-    { key: 'noShowPolicy', enabledKey: 'noShowPolicyEnabled', label: 'No-show policy', placeholder: 'Explain what happens when a customer misses an appointment or treatment session.' },
-    { key: 'refundPolicy', enabledKey: 'refundPolicyEnabled', label: 'Refund policy', placeholder: 'Explain eligibility, processing time, and non-refundable fees.' },
-    { key: 'consultationPolicy', enabledKey: 'consultationPolicyEnabled', label: 'Consultation policy', placeholder: 'Explain consultation requirements and follow-up rules.' },
-  ] },
-  { key: 'commerce', label: 'Products, Services & Delivery', description: 'Shown on listings, packages, and orders.', fields: [
-    { key: 'serviceTerms', enabledKey: 'serviceTermsEnabled', label: 'Service terms', placeholder: 'Explain preparation, duration, inclusions, and customer obligations.' },
-    { key: 'productTerms', enabledKey: 'productTermsEnabled', label: 'Product terms and returns', placeholder: 'Explain product handling, returns, exchanges, and warranty.' },
-    { key: 'deliveryPolicy', enabledKey: 'deliveryPolicyEnabled', label: 'Delivery policy', placeholder: 'Explain delivery areas, fees, lead time, and receiving requirements.' },
-    { key: 'paymentPolicy', enabledKey: 'paymentPolicyEnabled', label: 'Payment and installment policy', placeholder: 'Explain deposits, installments, due dates, and late payments.' },
-  ] },
-]
+const PolicyToggle = defineComponent({
+  props: { modelValue: Boolean, label: String, description: String, disabled: Boolean }, emits: ['update:modelValue'],
+  setup(props, { emit }) { return () => h('label', { class: ['flex items-start justify-between gap-4 rounded-xl border border-slate-700 bg-slate-950/40 p-4', props.disabled ? 'cursor-not-allowed opacity-45' : 'cursor-pointer'] }, [h('span', [h('span', { class: 'block font-medium text-slate-100' }, props.label), h('span', { class: 'mt-1 block text-xs leading-5 text-slate-400' }, props.description)]), h('span', { class: 'relative mt-0.5 inline-flex shrink-0 items-center' }, [h('input', { checked: props.modelValue, disabled: props.disabled, type: 'checkbox', class: 'peer sr-only', onChange: (event) => emit('update:modelValue', event.target.checked) }), h('span', { class: 'h-6 w-11 rounded-full bg-slate-600 transition peer-checked:bg-amber-500 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-5' })])]) },
+})
+const NumberField = defineComponent({
+  props: { modelValue: [Number, String], label: String, suffix: String, disabled: Boolean, min: Number, max: Number, required: Boolean }, emits: ['update:modelValue'],
+  setup(props, { emit }) { return () => h('label', { class: 'block' }, [h('span', { class: 'mb-1.5 block text-sm font-medium text-slate-200' }, props.label), h('span', { class: 'relative block' }, [h('input', { value: props.modelValue, type: 'number', min: props.min, max: props.max, required: props.required, disabled: props.disabled, class: 'w-full rounded-xl border border-slate-600 bg-slate-950 px-3 py-3 pr-20 text-white outline-none transition focus:border-amber-500 disabled:cursor-not-allowed disabled:opacity-45', onInput: (event) => emit('update:modelValue', event.target.value === '' ? '' : Number(event.target.value)) }), h('span', { class: 'pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-slate-500' }, props.suffix)])]) },
+})
 
-const form = reactive(Object.fromEntries(policyGroups.flatMap((group) => group.fields.flatMap((field) => [[field.key, ''], [field.enabledKey, false]]))))
-form.noShowRescheduleAllowed = false
+const servicePolicies = [
+  { id: 'payment', enabledKey: 'servicePaymentPolicyEnabled', title: 'Payment Policy', description: 'Set whether full payment or a downpayment is required at booking.' },
+  { id: 'cancellation', enabledKey: 'serviceCancellationPolicyEnabled', title: 'Cancellation Policy', description: 'Set cancellation windows and refund amounts.' },
+  { id: 'rescheduling', enabledKey: 'serviceReschedulingPolicyEnabled', title: 'Rescheduling Policy', description: 'Set the maximum number of appointment changes.' },
+  { id: 'noShow', enabledKey: 'serviceNoShowPolicyEnabled', title: 'No-Show Policy', description: 'Set the late-arrival grace period and refund outcome.' },
+]
+const productPolicies = [
+  { id: 'orderDeliveryPayment', enabledKey: 'productDeliveryPaymentPolicyEnabled', title: 'Delivery & Payment', description: 'Set the pickup preparation period. Payment first and pickup are fixed.' },
+  { id: 'orderCancellation', enabledKey: 'productCancellationPolicyEnabled', title: 'Order Cancellation', description: 'Set cancellation eligibility, timeframe, and refund outcome.' },
+  { id: 'orderReturn', enabledKey: 'productReturnPolicyEnabled', title: 'Order Returns', description: 'Set return eligibility, conditions, accepted reasons, and refund outcome.' },
+]
+const returnConditions = [{ key: 'orderReturnConditionUnopened', label: 'Unopened' }, { key: 'orderReturnConditionUnused', label: 'Unused' }, { key: 'orderReturnConditionOriginalPackaging', label: 'Original Packaging' }, { key: 'orderReturnConditionContents', label: 'Contents' }]
+const returnReasons = [{ key: 'orderReturnReasonDamaged', label: 'Damaged Product' }, { key: 'orderReturnReasonDefective', label: 'Defective Product' }, { key: 'orderReturnReasonWrongProduct', label: 'Wrong Product Received' }, { key: 'orderReturnReasonExpired', label: 'Expired Product' }, { key: 'orderReturnReasonDescriptionMismatch', label: 'Product Does Not Match Description' }, { key: 'orderReturnReasonOther', label: 'Others' }]
+const form = reactive({ servicePaymentPolicyEnabled: false, fullPayment: false, downpaymentPercentage: 50, serviceCancellationPolicyEnabled: false, earlyMinimumHours: 48, earlyNonRefundable: false, earlyRefundPercentage: 100, midMinimumHours: 24, midMaximumHours: 48, midNonRefundable: false, midRefundPercentage: 50, lateMaximumHours: 24, lateNonRefundable: true, lateRefundPercentage: 0, serviceReschedulingPolicyEnabled: false, maximumRescheduleAllowance: 1, serviceNoShowPolicyEnabled: false, noShowGracePeriodMinutes: 30, noShowNonRefundable: true, noShowRefundPercentage: 0, productDeliveryPaymentPolicyEnabled: false, expectedDeliveryPeriodDays: 3, productCancellationPolicyEnabled: false, orderCancellationAllowed: false, orderCancellationWindowHours: 2, orderCancellationNonRefundable: false, orderCancellationRefundPercentage: 100, productReturnPolicyEnabled: false, orderReturnsAllowed: false, orderReturnWindowDays: 7, orderReturnConditionUnopened: true, orderReturnConditionUnused: true, orderReturnConditionOriginalPackaging: true, orderReturnConditionContents: true, orderReturnReasonDamaged: true, orderReturnReasonDefective: true, orderReturnReasonWrongProduct: true, orderReturnReasonExpired: true, orderReturnReasonDescriptionMismatch: true, orderReturnReasonOther: false, orderReturnOtherReason: '', orderReturnNonRefundable: false, orderReturnRefundPercentage: 100 })
+const editor = reactive({})
+const activeEditor = ref('')
+const activePolicy = computed(() => [...servicePolicies, ...productPolicies].find((policy) => policy.id === activeEditor.value) || null)
 const { hasPermission, isClinicAdminOwner } = usePermissions()
 const canManagePolicies = computed(() => isClinicAdminOwner.value || hasPermission('policies:update'))
-const saving = ref(false)
-const savedAt = ref(null)
-const branchId = ref('')
-let stopListening = null
-
-const formatDate = (value) => {
-  const date = value?.toDate ? value.toDate() : new Date(value)
-  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
+const saving = ref(false); const savedAt = ref(null); const branchId = ref(''); let stopListening = null
+const policyFields = { payment: ['fullPayment', 'downpaymentPercentage'], cancellation: ['earlyMinimumHours', 'earlyNonRefundable', 'earlyRefundPercentage', 'midMinimumHours', 'midMaximumHours', 'midNonRefundable', 'midRefundPercentage', 'lateMaximumHours', 'lateNonRefundable', 'lateRefundPercentage'], rescheduling: ['maximumRescheduleAllowance'], noShow: ['noShowGracePeriodMinutes', 'noShowNonRefundable', 'noShowRefundPercentage'], orderDeliveryPayment: ['expectedDeliveryPeriodDays'], orderCancellation: ['orderCancellationAllowed', 'orderCancellationWindowHours', 'orderCancellationNonRefundable', 'orderCancellationRefundPercentage'], orderReturn: ['orderReturnsAllowed', 'orderReturnWindowDays', 'orderReturnConditionUnopened', 'orderReturnConditionUnused', 'orderReturnConditionOriginalPackaging', 'orderReturnConditionContents', 'orderReturnReasonDamaged', 'orderReturnReasonDefective', 'orderReturnReasonWrongProduct', 'orderReturnReasonExpired', 'orderReturnReasonDescriptionMismatch', 'orderReturnReasonOther', 'orderReturnOtherReason', 'orderReturnNonRefundable', 'orderReturnRefundPercentage'] }
+const formatDate = (value) => { const date = value?.toDate ? value.toDate() : new Date(value); return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString() }
+const openEditor = (policyId) => { const policy = [...servicePolicies, ...productPolicies].find((item) => item.id === policyId); if (!policy || !form[policy.enabledKey] || !canManagePolicies.value) return; Object.keys(editor).forEach((key) => delete editor[key]); policyFields[policyId].forEach((key) => { editor[key] = form[key] }); activeEditor.value = policyId }
+const closeEditor = () => { activeEditor.value = ''; Object.keys(editor).forEach((key) => delete editor[key]) }
+const isPercentage = (value) => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100
+const isNonNegative = (value) => Number.isFinite(Number(value)) && Number(value) >= 0
+const validateEditor = () => {
+  if (activeEditor.value === 'payment' && !editor.fullPayment && (!isPercentage(editor.downpaymentPercentage) || Number(editor.downpaymentPercentage) === 0)) return 'Enter a downpayment percentage from 1 to 100.'
+  if (activeEditor.value === 'rescheduling' && !isNonNegative(editor.maximumRescheduleAllowance)) return 'Maximum Reschedule Allowance cannot be negative.'
+  if (activeEditor.value === 'noShow') { if (!isNonNegative(editor.noShowGracePeriodMinutes)) return 'Grace Period cannot be negative.'; if (!editor.noShowNonRefundable && !isPercentage(editor.noShowRefundPercentage)) return 'Enter a no-show refund percentage from 0 to 100.' }
+  if (activeEditor.value === 'orderDeliveryPayment' && !isNonNegative(editor.expectedDeliveryPeriodDays)) return 'Expected Delivery Period cannot be negative.'
+  if (activeEditor.value === 'orderCancellation' && editor.orderCancellationAllowed) { if (!isNonNegative(editor.orderCancellationWindowHours)) return 'Cancellation Window cannot be negative.'; if (!editor.orderCancellationNonRefundable && !isPercentage(editor.orderCancellationRefundPercentage)) return 'Enter an order-cancellation refund percentage from 0 to 100.' }
+  if (activeEditor.value === 'orderReturn' && editor.orderReturnsAllowed) { if (!isNonNegative(editor.orderReturnWindowDays)) return 'Return Window cannot be negative.'; if (!editor.orderReturnNonRefundable && !isPercentage(editor.orderReturnRefundPercentage)) return 'Enter a return refund percentage from 0 to 100.'; if (editor.orderReturnReasonOther && !String(editor.orderReturnOtherReason || '').trim()) return 'Specify the additional acceptable return reason.' }
+  if (activeEditor.value === 'cancellation') { const hours = ['earlyMinimumHours', 'midMinimumHours', 'midMaximumHours', 'lateMaximumHours']; if (hours.some((key) => !isNonNegative(editor[key]))) return 'Cancellation-hour values cannot be negative.'; if (Number(editor.midMinimumHours) > Number(editor.midMaximumHours)) return 'Mid-Window Minimum Hours cannot be greater than Maximum Hours.'; if (Number(editor.earlyMinimumHours) < Number(editor.midMaximumHours)) return 'Early Cancellation Minimum Hours must be at least the Mid-Window Maximum Hours.'; if (Number(editor.lateMaximumHours) > Number(editor.midMinimumHours)) return 'Late Cancellation Maximum Hours cannot be greater than the Mid-Window Minimum Hours.'; const refunds = [['earlyNonRefundable', 'earlyRefundPercentage'], ['midNonRefundable', 'midRefundPercentage'], ['lateNonRefundable', 'lateRefundPercentage']]; if (refunds.some(([toggle, value]) => !editor[toggle] && !isPercentage(editor[value]))) return 'Each refundable cancellation period needs a percentage from 0 to 100.' }
+  return ''
 }
-
-const load = async () => {
-  const uid = auth.currentUser?.uid
-  if (!uid) return
-  const userSnap = await getDoc(doc(db, 'users', uid))
-  branchId.value = userSnap.exists() ? String(userSnap.data()?.branchId || uid) : uid
-  stopListening?.()
-  stopListening = onSnapshot(doc(db, 'clinicPolicies', branchId.value), (snapshot) => {
-    if (!snapshot.exists()) return
-    const data = snapshot.data() || {}
-    policyGroups.flatMap((group) => group.fields).forEach((field) => {
-      form[field.key] = String(data[field.key] || '')
-      form[field.enabledKey] = Object.prototype.hasOwnProperty.call(data, field.enabledKey)
-        ? data[field.enabledKey] === true
-        : Boolean(form[field.key])
-    })
-    form.noShowRescheduleAllowed = data.noShowRescheduleAllowed === true
-    savedAt.value = data.updatedAt || null
-  }, (error) => {
-    console.error('Failed to listen to clinic policies:', error)
-    toast.error('Clinic policies are unavailable for your current access.', { toastId: 'clinic-policy-access' })
-  })
-}
-
+const applyEditor = () => { const error = validateEditor(); if (error) return toast.error(error); policyFields[activeEditor.value].forEach((key) => { form[key] = editor[key] }); closeEditor(); toast.success('Policy changes are ready to save.') }
+const paymentSummary = () => form.fullPayment ? 'Customers must pay 100% of the service fee when booking.' : `Customers must pay a ${Number(form.downpaymentPercentage)}% downpayment when booking.`
+const refundPhrase = (nonRefundable, percentage) => nonRefundable ? 'non-refundable' : `${Number(percentage)}% refundable`
+const cancellationSummary = () => `Early cancellations (at least ${Number(form.earlyMinimumHours)} hours): ${refundPhrase(form.earlyNonRefundable, form.earlyRefundPercentage)}. Mid-window cancellations (${Number(form.midMinimumHours)}–${Number(form.midMaximumHours)} hours): ${refundPhrase(form.midNonRefundable, form.midRefundPercentage)}. Late cancellations (under ${Number(form.lateMaximumHours)} hours): ${refundPhrase(form.lateNonRefundable, form.lateRefundPercentage)}.`
+const rescheduleSummary = () => `Customers may reschedule an appointment up to ${Number(form.maximumRescheduleAllowance)} time${Number(form.maximumRescheduleAllowance) === 1 ? '' : 's'}.`
+const noShowSummary = () => `Customers are considered a no-show after ${Number(form.noShowGracePeriodMinutes)} minutes. Eligible payment is ${refundPhrase(form.noShowNonRefundable, form.noShowRefundPercentage)}.`
+const productDeliverySummary = () => `Full payment is required before processing. Pickup is the delivery method. Orders are expected to be ready within ${Number(form.expectedDeliveryPeriodDays)} day${Number(form.expectedDeliveryPeriodDays) === 1 ? '' : 's'} after successful payment.`
+const productCancellationSummary = () => !form.orderCancellationAllowed ? 'Product orders cannot be cancelled through the system.' : `Product orders may be cancelled within ${Number(form.orderCancellationWindowHours)} hour${Number(form.orderCancellationWindowHours) === 1 ? '' : 's'} after placement. Eligible payment is ${refundPhrase(form.orderCancellationNonRefundable, form.orderCancellationRefundPercentage)}.`
+const productReturnSummary = () => { if (!form.orderReturnsAllowed) return 'Product returns cannot be requested through the system.'; const conditions = returnConditions.filter(({ key }) => form[key]).map(({ label }) => label).join(', ') || 'no additional conditions'; const reasons = returnReasons.filter(({ key }) => form[key]).map(({ key, label }) => key === 'orderReturnReasonOther' ? String(form.orderReturnOtherReason || '').trim() : label).filter(Boolean).join(', ') || 'no accepted reasons specified'; return `Returns are accepted within ${Number(form.orderReturnWindowDays)} day${Number(form.orderReturnWindowDays) === 1 ? '' : 's'} of receipt. Conditions: ${conditions}. Accepted reasons: ${reasons}. Customer is responsible for return. Eligible payment is ${refundPhrase(form.orderReturnNonRefundable, form.orderReturnRefundPercentage)} via the original payment method.` }
+const load = async () => { const uid = auth.currentUser?.uid; if (!uid) return; const userSnap = await getDoc(doc(db, 'users', uid)); branchId.value = userSnap.exists() ? String(userSnap.data()?.branchId || uid) : uid; stopListening?.(); stopListening = onSnapshot(doc(db, 'clinicPolicies', branchId.value), (snapshot) => { if (!snapshot.exists()) return; const data = snapshot.data() || {}; Object.keys(form).forEach((key) => { if (Object.prototype.hasOwnProperty.call(data, key)) form[key] = data[key] }); if (!Object.prototype.hasOwnProperty.call(data, 'servicePaymentPolicyEnabled')) form.servicePaymentPolicyEnabled = data.paymentPolicyEnabled === true; if (!Object.prototype.hasOwnProperty.call(data, 'serviceCancellationPolicyEnabled')) form.serviceCancellationPolicyEnabled = data.cancellationPolicyEnabled === true; if (!Object.prototype.hasOwnProperty.call(data, 'serviceReschedulingPolicyEnabled')) form.serviceReschedulingPolicyEnabled = data.reschedulePolicyEnabled === true; if (!Object.prototype.hasOwnProperty.call(data, 'serviceNoShowPolicyEnabled')) form.serviceNoShowPolicyEnabled = data.noShowPolicyEnabled === true; if (!Object.prototype.hasOwnProperty.call(data, 'productDeliveryPaymentPolicyEnabled')) form.productDeliveryPaymentPolicyEnabled = data.deliveryPolicyEnabled === true; if (!Object.prototype.hasOwnProperty.call(data, 'productReturnPolicyEnabled')) form.productReturnPolicyEnabled = data.productTermsEnabled === true; savedAt.value = data.updatedAt || null }, (error) => { console.error('Failed to listen to clinic policies:', error); toast.error('Clinic policies are unavailable for your current access.', { toastId: 'clinic-policy-access' }) }) }
 const savePolicies = async () => {
   if (!canManagePolicies.value) return toast.error('You have view-only policy access.')
   if (!branchId.value) return toast.error('Clinic branch could not be identified.')
   saving.value = true
   try {
-    const payload = { ...form, branchId: branchId.value, updatedBy: auth.currentUser.uid, updatedAt: serverTimestamp() }
-    policyGroups.flatMap((group) => group.fields).forEach((field) => {
-      if (!form[field.enabledKey]) payload[field.key] = ''
-    })
+    const payload = { ...form, branchId: branchId.value, updatedBy: auth.currentUser.uid, updatedAt: serverTimestamp(), paymentPolicy: form.servicePaymentPolicyEnabled ? paymentSummary() : '', paymentPolicyEnabled: form.servicePaymentPolicyEnabled, cancellationPolicy: form.serviceCancellationPolicyEnabled ? cancellationSummary() : '', cancellationPolicyEnabled: form.serviceCancellationPolicyEnabled, refundPolicy: form.serviceCancellationPolicyEnabled ? cancellationSummary() : '', refundPolicyEnabled: form.serviceCancellationPolicyEnabled, reschedulePolicy: form.serviceReschedulingPolicyEnabled ? rescheduleSummary() : '', reschedulePolicyEnabled: form.serviceReschedulingPolicyEnabled, noShowPolicy: form.serviceNoShowPolicyEnabled ? noShowSummary() : '', noShowPolicyEnabled: form.serviceNoShowPolicyEnabled, deliveryPolicy: form.productDeliveryPaymentPolicyEnabled ? productDeliverySummary() : '', deliveryPolicyEnabled: form.productDeliveryPaymentPolicyEnabled, productOrderCancellationPolicy: form.productCancellationPolicyEnabled ? productCancellationSummary() : '', productOrderCancellationPolicyEnabled: form.productCancellationPolicyEnabled, productReturnPolicy: form.productReturnPolicyEnabled ? productReturnSummary() : '', productReturnPolicyEnabled: form.productReturnPolicyEnabled, productTerms: form.productReturnPolicyEnabled ? productReturnSummary() : '', productTermsEnabled: form.productReturnPolicyEnabled }
     await setDoc(doc(db, 'clinicPolicies', branchId.value), payload, { merge: true })
-    // Keep appointment approval compatible with the legacy clinic policy fields.
-    await updateDoc(doc(db, 'clinics', branchId.value), {
-      cancellationPolicy: form.cancellationPolicyEnabled ? form.cancellationPolicy : '',
-      cancellationPolicyEnabled: form.cancellationPolicyEnabled,
-      reschedulePolicy: form.reschedulePolicyEnabled ? form.reschedulePolicy : '',
-      reschedulePolicyEnabled: form.reschedulePolicyEnabled,
-      noShowPolicy: form.noShowPolicyEnabled ? form.noShowPolicy : '',
-      noShowPolicyEnabled: form.noShowPolicyEnabled,
-      noShowRescheduleAllowed: form.noShowRescheduleAllowed === true,
-      refundPolicy: form.refundPolicyEnabled ? form.refundPolicy : '',
-      refundPolicyEnabled: form.refundPolicyEnabled,
-      consultationPolicy: form.consultationPolicyEnabled ? form.consultationPolicy : '',
-      consultationPolicyEnabled: form.consultationPolicyEnabled,
-      serviceTerms: form.serviceTermsEnabled ? form.serviceTerms : '',
-      serviceTermsEnabled: form.serviceTermsEnabled,
-      productTerms: form.productTermsEnabled ? form.productTerms : '',
-      productTermsEnabled: form.productTermsEnabled,
-      deliveryPolicy: form.deliveryPolicyEnabled ? form.deliveryPolicy : '',
-      deliveryPolicyEnabled: form.deliveryPolicyEnabled,
-      paymentPolicy: form.paymentPolicyEnabled ? form.paymentPolicy : '',
-      paymentPolicyEnabled: form.paymentPolicyEnabled,
-      policiesUpdatedAt: serverTimestamp(),
-    })
-    toast.success('Clinic policies saved.')
-  } catch (error) {
-    console.error('Failed to save clinic policies:', error)
-    toast.error(error?.message || 'Could not save policies.')
-  } finally { saving.value = false }
+    await updateDoc(doc(db, 'clinics', branchId.value), { paymentPolicy: payload.paymentPolicy, paymentPolicyEnabled: payload.paymentPolicyEnabled, cancellationPolicy: payload.cancellationPolicy, cancellationPolicyEnabled: payload.cancellationPolicyEnabled, refundPolicy: payload.refundPolicy, refundPolicyEnabled: payload.refundPolicyEnabled, reschedulePolicy: payload.reschedulePolicy, reschedulePolicyEnabled: payload.reschedulePolicyEnabled, noShowPolicy: payload.noShowPolicy, noShowPolicyEnabled: payload.noShowPolicyEnabled, deliveryPolicy: payload.deliveryPolicy, deliveryPolicyEnabled: payload.deliveryPolicyEnabled, productOrderCancellationPolicy: payload.productOrderCancellationPolicy, productOrderCancellationPolicyEnabled: payload.productOrderCancellationPolicyEnabled, productReturnPolicy: payload.productReturnPolicy, productReturnPolicyEnabled: payload.productReturnPolicyEnabled, productTerms: payload.productTerms, productTermsEnabled: payload.productTermsEnabled, policiesUpdatedAt: serverTimestamp() })
+    toast.success('Services policies saved.')
+  } catch (error) { console.error('Failed to save clinic policies:', error); toast.error(error?.message || 'Could not save services policies.') } finally { saving.value = false }
 }
-
 onMounted(load)
 onUnmounted(() => stopListening?.())
 </script>
