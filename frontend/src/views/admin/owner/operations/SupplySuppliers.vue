@@ -10,7 +10,7 @@
         </div>
         <button
           v-if="canCreateSuppliers"
-          @click="showAddModal = true"
+          @click="openAddModal"
           class="bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -142,8 +142,12 @@
 
       <div v-if="showAddModal" class="fixed inset-0 bg-black/50 z-50 overflow-y-auto p-4">
         <div class="bg-slate-800 rounded-xl p-8 max-w-3xl w-full mx-auto my-6 border border-slate-700 max-h-[90vh] overflow-y-auto">
-          <h2 class="text-2xl font-bold text-white mb-6">Add New Supplier</h2>
-          <form @submit.prevent="addSupplier" class="space-y-4">
+          <h2 class="text-2xl font-bold text-white mb-4">Add Supplier</h2>
+          <div class="mb-6 flex gap-2 border-b border-slate-700" role="tablist" aria-label="Add supplier options">
+            <button type="button" class="px-4 py-2 text-sm font-semibold" :class="addSupplierTab === 'create' ? 'border-b-2 border-amber-500 text-amber-300' : 'text-slate-400'" @click="addSupplierTab = 'create'">Create Supplier Account</button>
+            <button type="button" class="px-4 py-2 text-sm font-semibold" :class="addSupplierTab === 'existing' ? 'border-b-2 border-amber-500 text-amber-300' : 'text-slate-400'" @click="showExistingSupplierAccounts">Existing Supplier Accounts</button>
+          </div>
+          <form v-if="addSupplierTab === 'create'" @submit.prevent="addSupplier" class="space-y-4">
             <div class="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
               <label class="block text-slate-200 text-sm font-medium mb-2">Supplier Account Email</label>
               <div class="flex gap-2">
@@ -276,6 +280,15 @@
               </button>
             </div>
           </form>
+          <section v-else>
+            <p class="mb-4 text-sm text-slate-400">Link an active supplier account to this clinic's directory. This does not create another supplier login.</p>
+            <input v-model="existingSupplierSearch" type="search" placeholder="Search supplier name, category, or email" class="mb-4 w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white focus:border-amber-500 focus:outline-none" />
+            <p v-if="loadingExistingSupplierAccounts" class="py-8 text-center text-slate-400">Loading supplier accounts…</p>
+            <div v-else class="max-h-[52vh] overflow-auto rounded-lg border border-slate-700">
+              <table class="min-w-full text-left text-sm"><thead class="sticky top-0 bg-slate-900 text-slate-300"><tr><th class="p-3">Supplier</th><th class="p-3">Categories</th><th class="p-3">Contact</th><th class="p-3">Action</th></tr></thead><tbody><tr v-for="supplier in filteredExistingSupplierAccounts" :key="supplier.uid" class="border-t border-slate-700"><td class="p-3"><p class="font-medium text-white">{{ supplier.name }}</p><p class="text-xs text-slate-400">{{ supplier.email }}</p></td><td class="p-3 text-slate-300">{{ supplier.categories?.join(', ') || '—' }}</td><td class="p-3 text-slate-300">{{ supplier.contact || '—' }}</td><td class="p-3"><span v-if="supplier.linked" class="text-xs text-emerald-300">Already added</span><button v-else type="button" :disabled="linkingSupplierUid === supplier.uid" class="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" @click="linkExistingSupplier(supplier)">{{ linkingSupplierUid === supplier.uid ? 'Adding…' : 'Add to My Directory' }}</button></td></tr><tr v-if="!filteredExistingSupplierAccounts.length"><td colspan="4" class="p-6 text-center text-slate-400">No supplier accounts found.</td></tr></tbody></table>
+            </div>
+            <div class="mt-6 flex justify-end"><button type="button" @click="showAddModal = false" class="rounded-lg border border-slate-600 px-6 py-2 text-slate-300 hover:bg-slate-700">Close</button></div>
+          </section>
         </div>
       </div>
 
@@ -410,6 +423,11 @@ export default {
     const { hasPermission, isClinicAdminOwner } = usePermissions()
 
     const showAddModal = ref(false)
+    const addSupplierTab = ref('create')
+    const existingSupplierAccounts = ref([])
+    const existingSupplierSearch = ref('')
+    const loadingExistingSupplierAccounts = ref(false)
+    const linkingSupplierUid = ref('')
     const showEditModal = ref(false)
     const saving = ref(false)
     const searchQuery = ref('')
@@ -436,6 +454,11 @@ export default {
     const categoryOptions = ['Injectables', 'Equipment', 'Skincare', 'Medical Supplies']
     const canCreateSuppliers = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('suppliers:create')))
     const canManageSuppliers = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('suppliers:update')))
+    const filteredExistingSupplierAccounts = computed(() => {
+      const term = existingSupplierSearch.value.trim().toLowerCase()
+      if (!term) return existingSupplierAccounts.value
+      return existingSupplierAccounts.value.filter(supplier => [supplier.name, supplier.email, supplier.contact, ...(supplier.categories || [])].some(value => String(value || '').toLowerCase().includes(term)))
+    })
 
     const statusClass = (status) => {
       if (status === 'Active') return 'bg-green-500/20 text-green-400'
@@ -530,6 +553,38 @@ export default {
         accreditationStatus: supplier.accreditationStatus || 'Pending Accreditation',
         address: supplier.address
       }
+    }
+
+    const openAddModal = () => {
+      addSupplierTab.value = 'create'
+      showAddModal.value = true
+    }
+    const showExistingSupplierAccounts = async () => {
+      addSupplierTab.value = 'existing'
+      if (!currentBranchId.value || loadingExistingSupplierAccounts.value) return
+      loadingExistingSupplierAccounts.value = true
+      try {
+        const token = await auth.currentUser?.getIdToken()
+        if (!token) throw Error('Your session has expired. Please sign in again.')
+        const response = await fetch(`${OTP_API_BASE}/supply/suppliers/account-directory`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ branchId: currentBranchId.value }) })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw Error(payload?.error || 'Unable to load supplier accounts.')
+        existingSupplierAccounts.value = Array.isArray(payload.data) ? payload.data : []
+      } catch (error) { toast.error(error?.message || 'Unable to load supplier accounts.') } finally { loadingExistingSupplierAccounts.value = false }
+    }
+    const linkExistingSupplier = async (supplier) => {
+      if (!currentBranchId.value || linkingSupplierUid.value) return
+      linkingSupplierUid.value = supplier.uid
+      try {
+        const token = await auth.currentUser?.getIdToken()
+        if (!token) throw Error('Your session has expired. Please sign in again.')
+        const response = await fetch(`${OTP_API_BASE}/supply/suppliers/account-link`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ branchId: currentBranchId.value, supplierUid: supplier.uid }) })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw Error(payload?.error || 'Unable to add supplier to this directory.')
+        supplier.linked = true
+        toast.success(payload.data?.alreadyLinked ? 'Supplier is already in this directory.' : 'Supplier added to this directory.')
+        await loadSuppliers()
+      } catch (error) { toast.error(error?.message || 'Unable to add supplier to this directory.') } finally { linkingSupplierUid.value = '' }
     }
 
     const markTouched = (field) => {
@@ -682,6 +737,12 @@ export default {
       }
       if (!currentBranchId.value) {
         toast.error('Your account has no branch assignment.')
+        return
+      }
+      if (existingSupplierAccount.value?.uid) {
+        addSupplierTab.value = 'existing'
+        toast.info('This account already exists. Select it from Existing Supplier Accounts to link it safely.')
+        await showExistingSupplierAccounts()
         return
       }
 
@@ -867,6 +928,14 @@ export default {
 
     return {
       showAddModal,
+      openAddModal,
+      addSupplierTab,
+      existingSupplierSearch,
+      loadingExistingSupplierAccounts,
+      linkingSupplierUid,
+      filteredExistingSupplierAccounts,
+      showExistingSupplierAccounts,
+      linkExistingSupplier,
       showEditModal,
       saving,
       searchQuery,

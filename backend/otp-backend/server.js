@@ -72,6 +72,8 @@ const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const SUPPLIER_WELCOME_PATH = '/send-supplier-welcome'
 const SUPPLIER_ACCOUNT_CREATE_PATH = '/supply/suppliers/account'
 const SUPPLIER_ACCOUNT_LOOKUP_PATH = '/supply/suppliers/account-lookup'
+const SUPPLIER_ACCOUNT_DIRECTORY_PATH = '/supply/suppliers/account-directory'
+const SUPPLIER_ACCOUNT_LINK_PATH = '/supply/suppliers/account-link'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
@@ -6368,6 +6370,78 @@ app.post(SUPPLIER_ACCOUNT_LOOKUP_PATH, requireAuth, async (req, res) => {
   }
 })
 
+// A shared supplier account may be linked to many clinic directories. The
+// directory exposes only business-facing details, never another clinic's POs,
+// invoices, budgets, or payment history.
+app.post(SUPPLIER_ACCOUNT_DIRECTORY_PATH, requireAuth, async (req, res) => {
+  try {
+    const branchId = String(req.body?.branchId || '').trim()
+    const actorId = String(req.user?.uid || '')
+    if (!/^[A-Za-z0-9_-]{1,150}$/.test(branchId)) return res.status(400).json({ success: false, error: 'A valid clinic branch is required.' })
+    const actor = await loadUserContext(actorId)
+    const actorRole = String(actor.roleKey || actor.userData?.role || '').toLowerCase().replace(/[\s_-]+/g, '')
+    const permitted = actor.permissions.has('suppliers:create') || actor.permissions.has('administrator:full_access') || ['owner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
+    if (!permitted || !await resolveBranchAccess(actorId, branchId)) return res.status(403).json({ success: false, error: 'Forbidden' })
+    const rows = (await admin.firestore().collection('suppliers').get()).docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() }))
+    const byAccount = new Map()
+    for (const row of rows) {
+      const uid = String(row.ownerId || row.supplierUserId || '').trim()
+      if (!uid || !['Active', 'Pending Activation'].includes(String(row.status || ''))) continue
+      if (!byAccount.has(uid) || row.branchId === branchId) byAccount.set(uid, row)
+    }
+    const accounts = [...byAccount.entries()].slice(0, 200).map(([uid, supplier]) => ({
+      uid,
+      name: String(supplier.name || supplier.businessName || '').trim(),
+      businessType: String(supplier.businessType || '').trim(),
+      categories: Array.isArray(supplier.categories) ? supplier.categories.filter(Boolean) : (supplier.category ? [supplier.category] : []),
+      contact: String(supplier.contact || supplier.contactPerson || '').trim(),
+      email: String(supplier.email || '').trim(),
+      phone: String(supplier.phone || '').trim(),
+      address: String(supplier.address || '').trim(),
+      status: String(supplier.status || ''),
+      linked: rows.some(row => String(row.branchId || '') === branchId && String(row.ownerId || row.supplierUserId || '') === uid),
+    })).filter(account => account.name)
+    res.json({ success: true, data: accounts })
+  } catch (error) {
+    console.error('Supplier account directory failed:', error?.message || error)
+    res.status(500).json({ success: false, error: 'Unable to load supplier accounts.' })
+  }
+})
+
+app.post(SUPPLIER_ACCOUNT_LINK_PATH, requireAuth, async (req, res) => {
+  try {
+    const branchId = String(req.body?.branchId || '').trim(), supplierUid = String(req.body?.supplierUid || '').trim(), actorId = String(req.user?.uid || '')
+    if (!/^[A-Za-z0-9_-]{1,150}$/.test(branchId) || !supplierUid) return res.status(400).json({ success: false, error: 'A valid clinic branch and supplier account are required.' })
+    const actor = await loadUserContext(actorId), actorRole = String(actor.roleKey || actor.userData?.role || '').toLowerCase().replace(/[\s_-]+/g, '')
+    const permitted = actor.permissions.has('suppliers:create') || actor.permissions.has('administrator:full_access') || ['owner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
+    if (!permitted || !await resolveBranchAccess(actorId, branchId)) return res.status(403).json({ success: false, error: 'Forbidden' })
+    const firestore = admin.firestore(), branchSnap = await firestore.collection('clinics').doc(branchId).get()
+    if (!branchSnap.exists) return res.status(404).json({ success: false, error: 'Clinic branch not found.' })
+    const links = (await firestore.collection('suppliers').where('ownerId', '==', supplierUid).get()).docs
+    const existing = links.find(snapshot => String(snapshot.data()?.branchId || '') === branchId)
+    if (existing) return res.json({ success: true, data: { supplierId: existing.id, alreadyLinked: true } })
+    const source = links.map(snapshot => ({ id: snapshot.id, ...(snapshot.data() || {}) })).find(row => ['Active', 'Pending Activation'].includes(String(row.status || '')))
+    if (!source) return res.status(404).json({ success: false, error: 'The selected supplier account is unavailable.' })
+    const supplierRef = firestore.collection('suppliers').doc(), now = admin.firestore.FieldValue.serverTimestamp(), branch = branchSnap.data() || {}
+    const linkedSupplier = {
+      name: source.name || source.businessName, businessName: source.businessName || source.name, businessType: source.businessType || '', taxRegistrationNumber: source.taxRegistrationNumber || '',
+      categories: Array.isArray(source.categories) ? source.categories : (source.category ? [source.category] : []), category: source.category || source.categories?.[0] || '',
+      contact: source.contact || source.contactPerson || '', contactPerson: source.contactPerson || source.contact || '', email: source.email || '', phone: source.phone || '', address: source.address || '',
+      branchId, clinicOwnerId: String(branch.ownerId || actorId), ownerId: supplierUid, supplierUserId: supplierUid, sourceSupplierId: source.id || '', sharedAcrossBranches: true,
+      status: 'Active', accreditationStatus: source.accreditationStatus || 'Pending Accreditation', procurementAccess: 'Online', accountActivated: true,
+      offeredItems: Array.isArray(source.offeredItems) ? source.offeredItems : [], createdBy: actorId, createdAt: now, updatedAt: now,
+    }
+    const batch = firestore.batch()
+    batch.set(supplierRef, linkedSupplier)
+    batch.set(firestore.collection('supplyAudit').doc(), { branchId, recordId: supplierRef.id, actorId, actorName: actor.userData?.fullName || actor.userData?.email || actorId, role: actor.roleKey, module: 'supplier', action: 'supplier-account-linked', supplierUid, sourceSupplierId: source.id || '', createdAt: now })
+    await batch.commit()
+    res.status(201).json({ success: true, data: { supplierId: supplierRef.id, linked: true } })
+  } catch (error) {
+    console.error('Supplier account link failed:', error?.message || error)
+    res.status(500).json({ success: false, error: 'Unable to link supplier account.' })
+  }
+})
+
 // Supplier accounts are external accounts. Creating one requires Firebase Auth
 // Admin privileges, so this operation must never be performed from the browser.
 app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
@@ -6414,9 +6488,7 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
       const existingUserSnap = await firestore.collection('users').doc(existingSupplierUid).get()
       const existingUser = existingUserSnap.exists ? existingUserSnap.data() || {} : {}
       if (String(authUser.email || '').trim().toLowerCase() !== normalizedEmail || String(existingUser.role || existingUser.userType || '').trim().toLowerCase() !== 'supplier') return res.status(400).json({ success: false, error: 'The selected account is not a matching supplier account.' })
-      const duplicate = await firestore.collection('suppliers').where('ownerId', '==', existingSupplierUid).limit(1).get()
-      if (!duplicate.empty) return res.status(200).json({ success: true, data: { supplierId: duplicate.docs[0].id, uid: existingSupplierUid, alreadyLinked: true } })
-      usesExistingAccount = true
+      return res.status(409).json({ success: false, error: 'Use the existing supplier directory to link an existing supplier account.' })
     } else {
       try {
         authUser = await admin.auth().createUser({ email: normalizedEmail, password: temporaryPassword, displayName: contact })
