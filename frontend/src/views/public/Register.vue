@@ -2622,6 +2622,9 @@ const registerClinic = async () => {
         }),
         updateDoc(doc(db, 'clinics', userUid.value), {
           clinicName: clinicName.value.trim(),
+          clinicBranch: 'Main Branch',
+          ownerId: userUid.value,
+          isMainBranch: true,
           clinicLocation: clinicLocation.value.trim(),
           clinicLocationLat: clinicLocationLat.value,
           clinicLocationLng: clinicLocationLng.value,
@@ -3395,6 +3398,17 @@ const handleRegistrationSubmit = () => {
               </transition>
             </div>
 
+            <section class="rounded-2xl border border-gold-200/80 bg-cream-50/45 p-4 sm:p-5">
+              <div class="mb-4 flex items-start gap-3">
+                <span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold-100 text-gold-800">
+                  <Icon icon="mdi:storefront-outline" class="h-4 w-4" />
+                </span>
+                <div>
+                  <h3 class="font-semibold text-charcoal-800">Clinic and Main Branch</h3>
+                  <p class="mt-0.5 text-xs leading-5 text-charcoal-600">The first clinic location you register is automatically set as your main branch. Additional branches can be added later.</p>
+                </div>
+              </div>
+
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="relative">
                 <input v-model="clinicName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
@@ -3469,6 +3483,8 @@ const handleRegistrationSubmit = () => {
                 </div>
               </div>
             </div>
+
+            </section>
 
             <div class="relative">
               <div class="flex items-center rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/45 focus-within:border-gold-700">

@@ -1,6 +1,6 @@
 <script>
 import { ref, onMounted, computed } from 'vue'
-import { getFirestore, collection, updateDoc, doc, getDoc, getDocs, serverTimestamp, query, where, writeBatch } from 'firebase/firestore'
+import { getFirestore, collection, updateDoc, doc, getDoc, getDocs, serverTimestamp, query, where } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -184,8 +184,6 @@ export default {
         ...branch,
         revenue: normalizeRevenue(branch?.revenue),
       }
-      // Basic plans have exactly one branch, which must remain primary.
-      if (!canManageMultipleBranches.value) currentBranch.value.isMainBranch = true
       if (!String(currentBranch.value.branchAdminId || '').trim() && currentBranch.value.isMainBranch) {
         currentBranch.value.branchAdminId = ownerProfile.value.branchAdminId
         currentBranch.value.branchAdminName = ownerProfile.value.branchAdminName
@@ -299,7 +297,6 @@ export default {
     }
 
     const updateBranch = async () => {
-      if (!canManageMultipleBranches.value) currentBranch.value.isMainBranch = true
       if (!currentBranch.value.clinicBranch || !currentBranch.value.clinicBranch.trim()) {
         toast.error('Branch name is required')
         return
@@ -349,21 +346,6 @@ export default {
           }
 
           const branchRef = doc(db, 'clinics', currentBranch.value.id)
-          // A Basic clinic has one branch, so there is nothing else to
-          // demote. Avoid writing unrelated historical/archived branches
-          // during a simple edit of that one branch.
-          if (canManageMultipleBranches.value && currentBranch.value.isMainBranch) {
-            const ownerBranchesQuery = query(collection(db, 'clinics'), where('ownerId', '==', ownerId))
-            const ownerBranches = await getDocs(ownerBranchesQuery)
-            const batch = writeBatch(db)
-            ownerBranches.docs.forEach((branchDoc) => {
-              if (branchDoc.id !== currentBranch.value.id) {
-                batch.update(branchDoc.ref, { isMainBranch: false, updatedAt: serverTimestamp() })
-              }
-            })
-            await batch.commit()
-          }
-
           await updateDoc(branchRef, {
             clinicBranch: currentBranch.value.clinicBranch.trim(),
             clinicLocation: currentBranch.value.clinicLocation.trim(),
@@ -625,18 +607,12 @@ export default {
               </select>
             </div>
 
-            <div v-if="canManageMultipleBranches" class="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3">
-              <label class="flex items-center gap-3 text-white">
-                <input
-                  v-model="currentBranch.isMainBranch"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-slate-500 bg-slate-800 text-amber-500"
-                />
-                <span>Set as main branch</span>
-              </label>
+            <div v-if="currentBranch.isMainBranch" class="rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              <p class="font-semibold text-amber-200">Main Branch</p>
+              <p class="mt-1">This is the clinic location registered first. Main-branch status is fixed and cannot be changed here.</p>
             </div>
             <p v-else class="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3 text-sm text-slate-300">
-              This is your only branch, so it remains your main branch.
+              This is an additional branch. The main branch is the first clinic location registered.
             </p>
 
             <div>
