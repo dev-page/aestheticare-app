@@ -128,7 +128,7 @@ const routes = [
   { path: "/finance/listing-approvals", name: "finance-listing-approvals", component: () => import("@/views/admin/owner/finance/ListingApprovals.vue"), meta: { requiresAuth: true, requiresPermission: "finance:reports:view" } },
   // Finance reports are plan-aware: Basic users see operational finance only,
   // while Payroll data is added only for plans that include it.
-  { path: "/finance/dashboard", name: "finance-dashboard", component: () => import("@/views/admin/owner/finance/FinanceReports.vue"), meta: { requiresAuth: true, requiresPermission: "finance:reports:view", requiresFeature: "reports" } },
+  { path: "/finance/dashboard", redirect: "/finance/reports" },
   { path: "/finance/sales", name: "finance-sales", component: () => import("@/views/admin/owner/finance/FinanceSales.vue"), meta: { requiresAuth: true, requiresPermission: "finance:sales:view", requiresFeature: "reports" } },
   { path: "/finance/expenses-payments", name: "finance-expenses-payments", component: () => import("@/views/admin/owner/finance/FinanceExpenses.vue"), meta: { requiresAuth: true, requiresPermission: "finance:payables:view", requiresFeature: "reports" } },
   { path: "/finance/refunds", name: "finance-refunds", component: () => import("@/views/admin/owner/finance/FinanceRefunds.vue"), meta: { requiresAuth: true, requiresPermission: "finance:refunds:view", requiresFeature: "reports" } },

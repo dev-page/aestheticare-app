@@ -51,7 +51,10 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     label: 'Inventory Management',
     icon: 'mdi:warehouse',
     moduleKey: 'inventory',
-    children: supplyLinks('inventory', 'inventory:view', [['dashboard', 'Inventory Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Inventory List & DSS', 'mdi:package-variant-closed'], ['requests', 'Inventory Requests', 'mdi:clipboard-plus-outline'], ['reports', 'Inventory Reports', 'mdi:chart-box-outline']])
+    children: [
+      ...supplyLinks('inventory', 'inventory:view', [['items', 'Inventory List & DSS', 'mdi:package-variant-closed'], ['requests', 'Inventory Requests', 'mdi:clipboard-plus-outline']]),
+      { label: 'Delivery Onboarding', icon: 'mdi:package-down', to: '/inventory/onboarding', permission: 'inventory:create' },
+    ]
   },
   {
     key: 'procurement-module',
@@ -60,11 +63,9 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     moduleKey: 'procurement',
     children: [
       { type: 'section', label: 'PROCUREMENT WORKFLOW' },
-      ...supplyLinks('procurement', 'procurement:view', [['dashboard', 'Procurement Dashboard', 'mdi:view-dashboard-outline'], ['requests', 'Procurement Requests', 'mdi:clipboard-text-outline'], ['orders', 'Purchase Orders', 'mdi:cart-check']]),
+      ...supplyLinks('procurement', 'procurement:view', [['requests', 'Procurement Requests', 'mdi:clipboard-text-outline'], ['orders', 'Purchase Orders', 'mdi:cart-check']]),
       { type: 'section', label: 'SUPPLIER MANAGEMENT' },
-      { label: 'Supplier Directory', icon: 'mdi:truck-delivery-outline', to: '/procurement/suppliers/directory', permission: 'inventory:view' },
-      { type: 'section', label: 'REPORTING' },
-      ...supplyLinks('procurement', 'procurement:view', [['reports', 'Procurement Reports', 'mdi:file-chart-outline']])
+      { label: 'Supplier Directory', icon: 'mdi:truck-delivery-outline', to: '/procurement/suppliers', permission: 'inventory:view' },
     ]
   },
   {
@@ -73,12 +74,9 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     icon: 'mdi:finance',
     moduleKey: 'finance',
     children: [
-      { label: 'Dashboard', icon: 'mdi:chart-pie', to: '/finance/dashboard', feature: 'reports', permission: 'finance:reports:view' },
       { label: 'Budget Allocations', icon: 'mdi:bank-outline', to: '/finance/procurement/budgets', permission: 'finance:payables:view' },
-      { label: 'Approvals', icon: 'mdi:clipboard-check-outline', to: '/finance/procurement/requests', permission: 'finance:payables:view' },
-      { label: 'Income', icon: 'mdi:cash-plus', to: '/finance/sales', feature: 'reports', permission: 'finance:sales:view' },
+      { label: 'Purchase Order Approvals', icon: 'mdi:clipboard-check-outline', to: '/finance/procurement/requests', permission: 'finance:payables:view' },
       { label: 'Invoices & Payments', icon: 'mdi:receipt-text-check-outline', to: '/finance/procurement/invoices', permission: 'finance:payables:view' },
-      { label: 'Financial Reports', icon: 'mdi:file-chart-outline', to: '/finance/reports', feature: 'reports', permission: 'finance:reports:view' }
     ]
   },
   {
@@ -86,7 +84,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     label: 'Logistics Management',
     icon: 'mdi:truck-delivery-outline',
     moduleKey: 'inventory',
-    children: supplyLinks('logistics', 'orders:view', [['dashboard', 'Logistics Dashboard', 'mdi:view-dashboard-outline'], ['items', 'Receiving & Inspection', 'mdi:clipboard-check-outline'], ['onboarding', 'Inventory Onboarding', 'mdi:package-down'], ['requests', 'Requests & Discrepancies', 'mdi:alert-box-outline'], ['reports', 'Logistics Reports', 'mdi:file-chart-outline']])
+    children: supplyLinks('logistics', 'orders:view', [['items', 'Receiving & Inspection', 'mdi:clipboard-check-outline'], ['discrepancies', 'Discrepancies', 'mdi:alert-box-outline']])
   },
   {
     key: 'hr-module',
