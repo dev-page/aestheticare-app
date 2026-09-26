@@ -1478,7 +1478,7 @@ const loadBranchData = async (branchId) => {
     const packageConsultation = packageComponents.find((component) => component.postType === 'Consultation')
     const rawConsultationMode = post.consultationMode || packageConsultation?.consultationMode || 'online'
     return {
-      id: snap.id,
+      id: post.id,
       type: post.postType || 'Service',
       name: post.productName || post.serviceName || post.consultationName || post.title || 'Unnamed',
       title: post.title || '',
