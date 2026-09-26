@@ -15,7 +15,7 @@
             <tr v-for="post in visiblePosts" :key="post.id" class="border-t border-slate-700">
               <td class="p-4"><strong>{{ post.title }}</strong><p>{{ post.postType }}</p><details class="mt-2"><summary>View details</summary><p class="my-2 whitespace-pre-wrap">{{ post.description }}</p><p class="whitespace-pre-wrap">{{ post.termsAndConditions || 'No service contract terms provided.' }}</p><p v-if="post.financeReview?.note">Review note: {{ post.financeReview.note }}</p></details></td>
               <td class="p-4">PHP {{ Number(post.price || 0).toFixed(2) }}<p v-if="post.consultationFee">Consultation: PHP {{ Number(post.consultationFee).toFixed(2) }}</p><p v-if="post.discountPercent">Discount: {{ post.discountPercent }}%</p><p v-if="post.discountAmount">Discount: PHP {{ post.discountAmount }}</p></td>
-              <td class="p-4">{{ post.allowInstallments ? `${post.depositPercent}% initial payment; remainder after completion` : 'Full payment' }}</td>
+              <td class="p-4">Governed by the clinic-wide Payment Policy</td>
               <td class="p-4"><div v-if="post.financeStatus === 'pending' && canReviewListings" class="flex flex-wrap gap-2"><button :disabled="!!busy" @click="review(post, 'approve')" class="rounded bg-emerald-700 px-3 py-2 disabled:opacity-50">Approve</button><button :disabled="!!busy" @click="review(post, 'reject')" class="rounded bg-red-800 px-3 py-2 disabled:opacity-50">Request changes</button></div><span v-else>{{ post.financeStatus === 'pending' ? 'Awaiting authorized review' : post.financeStatus }}</span></td>
             </tr>
             <tr v-if="!visiblePosts.length"><td colspan="4" class="p-6 text-slate-400">{{ loading ? 'Loading listings...' : 'No listings with this status.' }}</td></tr>

@@ -8,6 +8,11 @@
         <p class="text-slate-400">Save drafts, submit financial terms to Finance, then publish approved listings. Existing listings also need approval.</p>
       </div>
 
+      <section v-if="applicablePolicies.length" class="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/20 p-4">
+        <div class="flex items-start gap-3"><span class="mt-0.5 text-amber-300">ⓘ</span><div><h2 class="font-semibold text-amber-100">Active clinic policies</h2><p class="mt-1 text-sm text-amber-200/80">These rules are configured in Policy Management and apply automatically when this listing is booked or purchased. They cannot be edited per listing.</p></div></div>
+        <div class="mt-4 grid gap-3 md:grid-cols-2"><article v-for="policy in applicablePolicies" :key="policy.key" class="rounded-lg border border-slate-600 bg-slate-900/60 p-3"><p class="text-sm font-semibold text-white">{{ policy.label }}</p><p class="mt-1 text-xs leading-5 text-slate-300">{{ policy.text }}</p></article></div>
+      </section>
+
       <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <h2 class="text-lg font-semibold mb-4">Create Draft</h2>
 
@@ -209,14 +214,6 @@
               <h3 class="font-semibold text-white">Resources & Payment</h3>
               <p class="mt-1 text-xs text-slate-400">Materials are reserved for each booking. Payment terms require Finance approval before publishing.</p>
             </div>
-            <label class="mb-4 flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-              <input v-model="form.allowInstallments" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
-              <span>
-                <span class="block font-medium text-white">Allow installment payment</span>
-                <span class="block text-xs text-slate-400">Customer pays an initial amount after approval; the balance is due after completion.</span>
-              </span>
-            </label>
-            <label v-if="form.allowInstallments" class="mb-4 block text-slate-400">Initial payment (%)<input v-model.number="form.depositPercent" type="number" min="1" max="99" step="1" required class="mt-1 w-full rounded-lg bg-slate-700 px-3 py-2 text-white" /><span class="mt-1 block text-xs text-slate-400">Use one initial percentage and one final balance—no multi-installment schedules.</span></label>
             <label class="block text-slate-400 mb-1">Required Supplies</label>
             <select v-model="form.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit || 'unit' }})</option>
@@ -231,15 +228,6 @@
           </div>
         </div>
 
-        <div v-if="form.postType === 'Package'" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-          <h3 class="font-semibold text-white">Payment</h3>
-          <p class="mt-1 text-xs text-slate-400">Package payment terms also require Finance approval before publication.</p>
-          <label class="mt-4 flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-800 p-4">
-            <input v-model="form.allowInstallments" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
-            <span><span class="block font-medium text-white">Allow installment payment</span><span class="block text-xs text-slate-400">Use one initial payment and one final balance for the complete package.</span></span>
-          </label>
-          <label v-if="form.allowInstallments" class="mt-4 block text-slate-400">Initial payment (%)<input v-model.number="form.depositPercent" type="number" min="1" max="99" step="1" required class="mt-1 w-full rounded-lg bg-slate-700 px-3 py-2 text-white" /></label>
-        </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="md:col-span-2 border-t border-slate-700 pt-4">
@@ -527,9 +515,6 @@
               <div v-if="editForm.postType === 'Service'" class="md:col-span-2">
                 <label class="block text-slate-400 mb-1">Required Supplies</label>
                 <div class="mb-4 space-y-2">
-              <label class="flex items-center gap-2"><input type="checkbox" v-model="editForm.allowInstallments" /> Allow installment payment</label>
-              <label v-if="editForm.allowInstallments" class="block">Initial payment (%)<input v-model.number="editForm.depositPercent" type="number" min="1" max="99" step="1" required class="w-full rounded-lg bg-slate-700 px-3 py-2" /></label>
-              <p class="text-xs text-slate-400">The remaining balance is due after the worker and customer confirm completion.</p>
             </div><select v-model="editForm.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit || 'unit' }})</option>
                 </select>
@@ -630,7 +615,7 @@
 <script>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { draftListing, financialTermsChanged, updateListingApproval } from '@/utils/listingApproval'
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
+import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, deleteDoc, setDoc, onSnapshot } from 'firebase/firestore'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
@@ -655,6 +640,16 @@ export default {
     const loading = ref(false)
     const currentUserId = ref('')
     const currentBranchId = ref('')
+    const clinicPolicies = ref({})
+    const policyDefinitions = {
+      Product: [['deliveryPolicy', 'Pickup & Payment Policy'], ['productOrderCancellationPolicy', 'Order Cancellation Policy'], ['productReturnPolicy', 'Product Return Policy']],
+      Service: [['paymentPolicy', 'Payment Policy'], ['cancellationPolicy', 'Cancellation Policy'], ['reschedulePolicy', 'Rescheduling Policy'], ['noShowPolicy', 'No-Show Policy']],
+      Consultation: [['paymentPolicy', 'Payment Policy'], ['cancellationPolicy', 'Cancellation Policy'], ['reschedulePolicy', 'Rescheduling Policy'], ['noShowPolicy', 'No-Show Policy']],
+      Package: [['paymentPolicy', 'Payment Policy'], ['cancellationPolicy', 'Cancellation Policy'], ['reschedulePolicy', 'Rescheduling Policy'], ['noShowPolicy', 'No-Show Policy']]
+    }
+    const applicablePolicies = computed(() => (policyDefinitions[form.value.postType] || [])
+      .filter(([key]) => clinicPolicies.value[`${key}Enabled`] === true && String(clinicPolicies.value[key] || '').trim())
+      .map(([key, label]) => ({ key, label, text: String(clinicPolicies.value[key]).trim() })))
 
     const inventoryProducts = ref([])
 
@@ -1060,8 +1055,8 @@ export default {
           fdaRegistrationNumber: postType === 'Product' ? String(selectedProduct?.fdaRegistrationNumber || '').trim() : '',
           fdaApprovalDocument: postType === 'Product' ? (selectedProduct?.fdaApprovalDocument || null) : null,
           termsAndConditions: String(form.value.termsAndConditions || '').trim(),
-          allowInstallments: form.value.allowInstallments === true,
-          depositPercent: form.value.allowInstallments ? Math.min(99, Math.max(1, Number(form.value.depositPercent || 50))) : 100,
+          allowInstallments: false,
+          depositPercent: 100,
           requiredEquipmentIds: [...(form.value.requiredEquipmentIds || [])],
           requiredSupplyIds: postType === 'Service' ? [...(form.value.requiredSupplyIds || [])] : postType === 'Package'
             ? [...new Set((form.value.packageServiceIds || []).flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
@@ -1303,8 +1298,8 @@ export default {
             ? (selectedProduct?.fdaApprovalDocument || currentPost?.fdaApprovalDocument || null)
             : null,
           termsAndConditions: String(editForm.value.termsAndConditions || '').trim(),
-          allowInstallments: editForm.value.allowInstallments === true,
-          depositPercent: editForm.value.allowInstallments ? Math.min(99, Math.max(1, Number(editForm.value.depositPercent || 50))) : 100,
+          allowInstallments: false,
+          depositPercent: 100,
           requiredEquipmentIds: [...(editForm.value.requiredEquipmentIds || [])],
           requiredSupplyIds: editForm.value.postType === 'Service' ? [...(editForm.value.requiredSupplyIds || [])] : editForm.value.postType === 'Package'
             ? [...new Set(editForm.value.packageServiceIds.flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
@@ -1393,6 +1388,7 @@ export default {
     }
 
     let unsubscribeAuth = null
+    let unsubscribePolicies = null
 
     watch(
       () => showEditModal.value,
@@ -1406,6 +1402,9 @@ export default {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
+          clinicPolicies.value = {}
+          unsubscribePolicies?.()
+          unsubscribePolicies = null
           posts.value = []
           return
         }
@@ -1419,6 +1418,11 @@ export default {
           return
         }
 
+        unsubscribePolicies?.()
+        unsubscribePolicies = onSnapshot(doc(db, 'clinicPolicies', currentBranchId.value), (snapshot) => {
+          clinicPolicies.value = snapshot.exists() ? snapshot.data() || {} : {}
+        }, (error) => console.error('Unable to load active clinic policies:', error))
+
         await loadInventoryProducts()
         await loadPosts()
       })
@@ -1426,6 +1430,7 @@ export default {
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
+      unsubscribePolicies?.()
       lockBodyScroll(false)
     })
 
@@ -1434,6 +1439,7 @@ export default {
       canManageListingWorkflow,
       loading,
       form,
+      applicablePolicies,
       posts,
       actionLoadingId,
       showEditModal,

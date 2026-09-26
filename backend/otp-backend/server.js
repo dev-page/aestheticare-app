@@ -2700,7 +2700,9 @@ const buildBookingAppointmentPayload = ({
   const consultationMode = isConsultation
     ? (String(reservation.consultationMode || '').trim().toLowerCase() === 'on-site' ? 'on-site' : 'online')
     : null
-  const installmentsAllowed = reservation.allowInstallments === true || selectedServices.some((service) => service?.allowInstallments === true)
+  // Payment is governed only by the clinic-wide Payment Policy. Listing-level
+  // installment flags are legacy data and must never change a transaction.
+  const installmentsAllowed = false
   // A payment cannot make a booking active until the shop has approved it.
   // This protects the legacy finalize endpoint from bypassing approval.
   const isApproved = normalizeBookingStatus(reservation.approvalStatus) === 'approved' || Boolean(reservation.approvedAt)
@@ -4576,7 +4578,9 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       ['consultationPolicy', 'Consultation policy'],
       ['serviceTerms', 'Service terms'],
       ['paymentPolicy', 'Payment and installment policy'],
+      ['noShowPolicy', 'No-show policy'],
     ]
+    if (walkIn) policyDefinitions.push(['walkInPolicy', 'Walk-in policy'])
     const clinicPolicySnapshot = Object.fromEntries(
       policyDefinitions
         .filter(([key]) => policyData[`${key}Enabled`] === true && String(policyData[key] || '').trim())
