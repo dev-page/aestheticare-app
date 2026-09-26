@@ -1976,20 +1976,16 @@ const ensureChatThread = async () => {
   chatThreadId.value = threadId
 
   const threadRef = doc(db, 'chatThreads', threadId)
-  const threadSnap = await getDoc(threadRef)
-  if (!threadSnap.exists()) {
-    await setDoc(threadRef, {
-      branchId: activeBranchId.value,
-      customerId: user.uid,
-      customerName: profile?.name || 'Customer',
-      customerEmail: profile?.email || '',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      lastMessage: '',
-      lastMessageAt: null,
-      customerLastReadAt: null,
-    })
-  }
+  // A first-time thread does not yet have a resource that Firestore can
+  // authorize for a read. Create it directly (or refresh the customer details
+  // when it already exists) before attaching listeners.
+  await setDoc(threadRef, {
+    branchId: activeBranchId.value,
+    customerId: user.uid,
+    customerName: profile?.name || 'Customer',
+    customerEmail: profile?.email || '',
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
   return threadRef
 }
 
