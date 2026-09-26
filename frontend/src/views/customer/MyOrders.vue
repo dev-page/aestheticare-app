@@ -476,6 +476,7 @@ import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { storage } from '@/config/firebaseConfig'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { getClinicPolicyForBranch } from '@/utils/clinicPolicies'
 
 export default {
   name: 'CustomerOrders',
@@ -583,13 +584,13 @@ export default {
 
     const canCancelOrder = (order) => {
       const policy = getPolicyForOrder(order)
-      if (!policy.cancellationPolicyEnabled || !policy.cancellationPolicy) return false
+      if (!policy.productCancellationPolicyEnabled || !policy.orderCancellationAllowed) return false
       const status = String(order?.status || 'Pending').trim().toLowerCase()
       if (!['pending', 'confirmed', 'preparing', 'packed', 'awaiting stock'].includes(status) || order.cancellationInProgress) return false
       const createdAtMillis = getCreatedAtMillis(order)
       if (!createdAtMillis) return false
       const diffHours = (Date.now() - createdAtMillis) / (1000 * 60 * 60)
-      return diffHours <= 24
+      return diffHours <= Number(policy.orderCancellationWindowHours || 0)
     }
 
     const canMarkReceived = (order) => {
@@ -599,7 +600,7 @@ export default {
 
     const canRequestRefund = (order) => {
       const policy = getPolicyForOrder(order)
-      if (!policy.refundPolicyEnabled || !policy.refundPolicy) return false
+      if (!policy.productReturnPolicyEnabled || !policy.orderReturnsAllowed) return false
       const status = String(order?.status || '').trim().toLowerCase()
       const refundRequestStatus = String(order?.refundRequestStatus || '').trim().toLowerCase()
       if (status !== 'completed') return false
@@ -612,14 +613,13 @@ export default {
       const branchId = String(order?.branchId || order?.items?.find((item) => item?.branchId)?.branchId || '').trim()
       const policy = policiesByBranch.value[branchId] || {}
       return {
-        cancellationPolicy: String(policy.cancellationPolicy || '').trim(),
-        cancellationPolicyEnabled: Object.prototype.hasOwnProperty.call(policy, 'cancellationPolicyEnabled')
-          ? policy.cancellationPolicyEnabled === true
-          : Boolean(String(policy.cancellationPolicy || '').trim()),
-        refundPolicy: String(policy.refundPolicy || '').trim(),
-        refundPolicyEnabled: Object.prototype.hasOwnProperty.call(policy, 'refundPolicyEnabled')
-          ? policy.refundPolicyEnabled === true
-          : Boolean(String(policy.refundPolicy || '').trim()),
+        productCancellationPolicy: String(policy.productOrderCancellationPolicy || '').trim(),
+        productCancellationPolicyEnabled: policy.productCancellationPolicyEnabled === true,
+        orderCancellationAllowed: policy.orderCancellationAllowed === true,
+        orderCancellationWindowHours: Number(policy.orderCancellationWindowHours || 0),
+        productReturnPolicy: String(policy.productReturnPolicy || '').trim(),
+        productReturnPolicyEnabled: policy.productReturnPolicyEnabled === true,
+        orderReturnsAllowed: policy.orderReturnsAllowed === true,
       }
     }
 
@@ -801,7 +801,7 @@ export default {
           branchId: selectedRefundOrder.value.branchId || '',
           branchName: selectedRefundOrder.value.branchName || '',
           amount: paidAmount,
-          refundPolicySnapshot: getPolicyForOrder(selectedRefundOrder.value).refundPolicy,
+          refundPolicySnapshot: getPolicyForOrder(selectedRefundOrder.value).productReturnPolicy,
           issueType: String(refundRequestForm.value.issueType || '').trim(),
           reason: String(refundRequestForm.value.reason || '').trim(),
           proofUrl,
@@ -977,8 +977,7 @@ export default {
             // public. Its optional policy copy must not prevent the customer
             // from reading their own order history.
             try {
-              const policySnap = await getDoc(doc(db, 'clinicPolicies', branchId))
-              return [branchId, policySnap.exists() ? policySnap.data() || {} : {}]
+              return [branchId, await getClinicPolicyForBranch(db, branchId)]
             } catch (_error) {
               return [branchId, {}]
             }

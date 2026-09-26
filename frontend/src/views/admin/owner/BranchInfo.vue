@@ -21,6 +21,11 @@ export default {
     const branches = ref([])
     const staffOptions = ref([])
     const showEditModal = ref(false)
+    const showPolicyModal = ref(false)
+    const activeMenuBranchId = ref('')
+    const policyBranch = ref(null)
+    const clinicPolicies = ref({})
+    const linkedPolicyKeys = ref([])
     const ownerProfile = ref({
       branchAdminId: '',
       branchAdminName: ''
@@ -40,6 +45,19 @@ export default {
     const archivedBranches = computed(() => branches.value.filter((branch) => branch.status === 'Inactive'))
     const activeBranches = computed(() => branches.value.filter((branch) => branch.status !== 'Inactive'))
     const canManageMultipleBranches = computed(() => hasFeature('multi_branch'))
+    const policyDefinitions = [
+      { key: 'paymentPolicy', title: 'Payment Policy', enabledKey: 'servicePaymentPolicyEnabled' },
+      { key: 'cancellationPolicy', title: 'Cancellation Policy', enabledKey: 'serviceCancellationPolicyEnabled' },
+      { key: 'reschedulePolicy', title: 'Rescheduling Policy', enabledKey: 'serviceReschedulingPolicyEnabled' },
+      { key: 'noShowPolicy', title: 'No-Show Policy', enabledKey: 'serviceNoShowPolicyEnabled' },
+      { key: 'deliveryPolicy', title: 'Product Payment & Pickup Policy', enabledKey: 'productDeliveryPaymentPolicyEnabled' },
+      { key: 'productOrderCancellationPolicy', title: 'Product Cancellation Policy', enabledKey: 'productCancellationPolicyEnabled' },
+      { key: 'productReturnPolicy', title: 'Product Return Policy', enabledKey: 'productReturnPolicyEnabled' },
+      { key: 'walkInPolicy', title: 'Walk-In Policy', enabledKey: 'walkInPolicyEnabled' },
+    ]
+    const enabledPolicies = computed(() => policyDefinitions
+      .filter((policy) => clinicPolicies.value[policy.enabledKey] === true || clinicPolicies.value[`${policy.key}Enabled`] === true)
+      .map((policy) => ({ ...policy, details: String(clinicPolicies.value[policy.key] || '').trim() || 'No details have been configured.' })))
 
     const normalizeRevenue = (value) => {
       const numericValue = Number(value)
@@ -99,6 +117,18 @@ export default {
         }
       }))
 
+      const policySnap = await getDoc(doc(db, 'clinicPolicies', currentOwnerId.value))
+      if (policySnap.exists()) {
+        clinicPolicies.value = policySnap.data() || {}
+      } else {
+        // Read an older branch-keyed policy document until the owner next
+        // saves Policy Management, which migrates it to the clinic owner ID.
+        const legacyPolicySnap = branches.value[0]?.id
+          ? await getDoc(doc(db, 'clinicPolicies', branches.value[0].id))
+          : null
+        clinicPolicies.value = legacyPolicySnap?.exists() ? legacyPolicySnap.data() || {} : {}
+      }
+
       const branchIds = branches.value.map((branch) => branch.id).filter(Boolean)
       if (!branchIds.length) {
         staffOptions.value = []
@@ -149,6 +179,7 @@ export default {
     onMounted(loadBranches)
 
     const openEditModal = (branch) => {
+      activeMenuBranchId.value = ''
       currentBranch.value = {
         ...branch,
         revenue: normalizeRevenue(branch?.revenue),
@@ -160,6 +191,38 @@ export default {
         currentBranch.value.branchAdminName = ownerProfile.value.branchAdminName
       }
       showEditModal.value = true
+    }
+
+    const openPolicyModal = (branch) => {
+      activeMenuBranchId.value = ''
+      policyBranch.value = branch
+      // Existing branches enforce all enabled clinic policies until the owner
+      // explicitly saves a narrower selection. This keeps current rules intact.
+      linkedPolicyKeys.value = Array.isArray(branch.enforcedPolicyKeys)
+        ? [...branch.enforcedPolicyKeys]
+        : enabledPolicies.value.map((policy) => policy.key)
+      showPolicyModal.value = true
+    }
+
+    const saveLinkedPolicies = async () => {
+      if (!policyBranch.value?.id) return
+      try {
+        const validKeys = new Set(enabledPolicies.value.map((policy) => policy.key))
+        const enforcedPolicyKeys = linkedPolicyKeys.value.filter((key) => validKeys.has(key))
+        await updateDoc(doc(db, 'clinics', policyBranch.value.id), {
+          enforcedPolicyKeys,
+          policiesLinkedAt: serverTimestamp(),
+          policiesLinkedBy: auth.currentUser?.uid || null,
+          updatedAt: serverTimestamp(),
+        })
+        const index = branches.value.findIndex((branch) => branch.id === policyBranch.value.id)
+        if (index !== -1) branches.value[index] = { ...branches.value[index], enforcedPolicyKeys }
+        showPolicyModal.value = false
+        toast.success('Branch policy links saved.')
+      } catch (error) {
+        console.error('Unable to save branch policy links:', error)
+        toast.error('Could not save the branch policy links.')
+      }
     }
 
     const archiveBranch = async (branch) => {
@@ -373,8 +436,15 @@ export default {
       archivedBranches,
       canManageMultipleBranches,
       showEditModal,
+      showPolicyModal,
+      activeMenuBranchId,
+      policyBranch,
+      enabledPolicies,
+      linkedPolicyKeys,
       currentBranch,
       openEditModal,
+      openPolicyModal,
+      saveLinkedPolicies,
       archiveBranch,
       unarchiveBranch,
       updateBranch,
@@ -435,20 +505,20 @@ export default {
                   {{ branch.status }}
                 </span>
               </td>
-              <td class="flex flex-wrap gap-2 px-2 py-2 sm:px-4 sm:py-3">
+              <td class="relative px-2 py-2 sm:px-4 sm:py-3">
                 <button
-                  @click="openEditModal(branch)"
-                  class="flex-1 rounded bg-yellow-500 px-3 py-1 text-white transition hover:bg-yellow-600 sm:flex-none"
+                  type="button"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-600 text-lg text-slate-200 transition hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200"
+                  :aria-expanded="activeMenuBranchId === branch.id"
+                  aria-label="Branch actions"
+                  @click="activeMenuBranchId = activeMenuBranchId === branch.id ? '' : branch.id"
                 >
-                  Edit
+                  ⋯
                 </button>
-                <button
-                  v-if="canManageMultipleBranches"
-                  @click="archiveBranch(branch)"
-                  class="flex-1 rounded bg-red-600 px-3 py-1 text-white transition hover:bg-red-700 sm:flex-none"
-                >
-                  Archive
-                </button>
+                <div v-if="activeMenuBranchId === branch.id" class="absolute right-3 top-11 z-30 w-40 overflow-hidden rounded-lg border border-slate-600 bg-slate-900 py-1 shadow-2xl">
+                  <button type="button" class="block w-full px-4 py-2 text-left text-sm text-white hover:bg-slate-700" @click="openEditModal(branch)">Edit</button>
+                  <button type="button" class="block w-full px-4 py-2 text-left text-sm text-white hover:bg-slate-700" @click="openPolicyModal(branch)">Link Policy</button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -598,6 +668,44 @@ export default {
             <button @click="updateBranch" class="rounded bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700">
               Update
             </button>
+          </div>
+        </template>
+      </Modal>
+
+      <Modal :isOpen="showPolicyModal" panelClass="bg-slate-800 text-white w-full max-w-5xl" @close="showPolicyModal = false">
+        <template #header>
+          <div>
+            <h2 class="text-xl font-semibold text-white">Link Policies</h2>
+            <p class="mt-1 text-sm text-slate-400">Choose which clinic-wide policies this branch enforces. Policy rules are configured only in Policy Management.</p>
+          </div>
+        </template>
+
+        <template #body>
+          <p class="mb-4 rounded-lg border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+            Branch: <strong>{{ policyBranch?.clinicBranch || 'Selected branch' }}</strong>
+          </p>
+          <div class="overflow-x-auto rounded-xl border border-slate-700">
+            <table class="w-full min-w-[760px] text-left text-sm">
+              <thead class="bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
+                <tr><th class="w-16 px-4 py-3">Link</th><th class="px-4 py-3">Policy title</th><th class="px-4 py-3">Policy details</th><th class="px-4 py-3">Status</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="policy in enabledPolicies" :key="policy.key" class="border-t border-slate-700 align-top">
+                  <td class="px-4 py-4"><input v-model="linkedPolicyKeys" :value="policy.key" type="checkbox" class="h-4 w-4 rounded border-slate-500 bg-slate-700 text-amber-500" /></td>
+                  <td class="px-4 py-4 font-medium text-white">{{ policy.title }}</td>
+                  <td class="max-w-xl px-4 py-4 leading-6 text-slate-300">{{ policy.details }}</td>
+                  <td class="px-4 py-4"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="linkedPolicyKeys.includes(policy.key) ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-700 text-slate-300'">{{ linkedPolicyKeys.includes(policy.key) ? 'Enforced' : 'Not Enforced' }}</span></td>
+                </tr>
+                <tr v-if="!enabledPolicies.length"><td colspan="4" class="px-4 py-8 text-center text-slate-400">No clinic-wide policies are enabled. Configure them in Policy Management first.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
+        <template #footer>
+          <div class="flex justify-end gap-3">
+            <button type="button" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-white hover:bg-slate-700" @click="showPolicyModal = false">Cancel</button>
+            <button type="button" class="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400" @click="saveLinkedPolicies">Save Policy Links</button>
           </div>
         </template>
       </Modal>

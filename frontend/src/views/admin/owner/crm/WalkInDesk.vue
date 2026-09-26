@@ -21,6 +21,7 @@ import { auth, db } from '@/config/firebaseConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { buildWeekScheduleMap, getScheduleDayWindow } from '@/utils/employeeSchedules'
+import { getClinicPolicyForBranch } from '@/utils/clinicPolicies'
 
 const branchId = ref(''), busy = ref(false), error = ref(''), clients = ref([]), services = ref([]), practitioners = ref([]), practitionerSchedules = ref({}), practitionerLeaves = ref({}), operatingHours = ref({}), planTier = ref('basic'), activePolicies = ref([]), showNewClient = ref(false), createdAppointment = ref(null), receipt = ref(null)
 const form = ref({ clientId: '', serviceId: '', practitionerId: '', date: '', time: '', notes: '', policyAcknowledged: false })

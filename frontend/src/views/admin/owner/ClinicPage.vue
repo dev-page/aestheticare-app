@@ -511,7 +511,11 @@ export default {
         ...definition,
         text: String(clinicPolicy.value[definition.key] || '').trim()
       }))
-      .filter((policy) => policy.text && clinicPolicy.value[policy.enabledKey] !== false)
+      .filter((policy) => {
+        const linked = selectedBranch.value?.enforcedPolicyKeys
+        return policy.text && clinicPolicy.value[policy.enabledKey] !== false
+          && (!Array.isArray(linked) || linked.includes(policy.key))
+      })
     )
 
     const isOwnerLikeRole = (role) => {

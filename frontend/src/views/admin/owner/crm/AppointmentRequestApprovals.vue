@@ -240,6 +240,7 @@ import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, wh
 import { getFirestore } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { getClinicPolicyForBranch } from '@/utils/clinicPolicies'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 
 const db = getFirestore(getApp())
@@ -353,14 +354,13 @@ const selectRequest = (request) => {
 const loadRequests = async () => {
   loading.value = true
   try {
-    const [appointmentSnap, clinicSnap, policySnap] = await Promise.all([
+    const [appointmentSnap, clinicSnap] = await Promise.all([
       getDocs(query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))),
       getDoc(doc(db, 'clinics', currentBranchId.value)),
-      getDoc(doc(db, 'clinicPolicies', currentBranchId.value)),
     ])
 
     const clinicData = clinicSnap.exists() ? clinicSnap.data() || {} : {}
-    const policyData = policySnap.exists() ? policySnap.data() || {} : {}
+    const policyData = await getClinicPolicyForBranch(db, currentBranchId.value, clinicData)
     currentBranchName.value = String(clinicData.clinicName || clinicData.clinicBranch || currentBranchName.value || 'Branch').trim()
     currentBranchPolicy.value = {
       cancellationPolicy: String(policyData.cancellationPolicy || clinicData.cancellationPolicy || '').trim(),

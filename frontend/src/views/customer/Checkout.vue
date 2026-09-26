@@ -209,6 +209,7 @@ import { toast } from 'vue3-toastify'
 import { onAuthStateChanged } from 'firebase/auth'
 import Swal from 'sweetalert2'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { getClinicPolicyForBranch } from '@/utils/clinicPolicies'
 
 const router = useRouter()
 const route = useRoute()
@@ -269,7 +270,7 @@ const checkoutPolicyEntries = computed(() => pickupBranches.value.flatMap((branc
     ['refundPolicy', 'Refund policy'],
     ['consultationPolicy', 'Consultation policy'],
     ['serviceTerms', 'Service terms'],
-    ['paymentPolicy', 'Payment and installment policy'],
+    ['paymentPolicy', 'Payment policy'],
   ]
   return definitions
     .filter(([key]) => policyData[`${key}Enabled`] === true && String(policyData[key] || '').trim())
@@ -282,8 +283,7 @@ const checkoutPolicyEntries = computed(() => pickupBranches.value.flatMap((branc
 
 const loadCheckoutPolicies = async () => {
   const entries = await Promise.all(pickupBranches.value.map(async (branch) => {
-    const policySnap = await getDoc(doc(db, 'clinicPolicies', branch.id))
-    return [branch.id, policySnap.exists() ? policySnap.data() || {} : {}]
+    return [branch.id, await getClinicPolicyForBranch(db, branch.id)]
   }))
   checkoutPoliciesByBranch.value = Object.fromEntries(entries)
 }

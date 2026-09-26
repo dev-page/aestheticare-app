@@ -313,7 +313,11 @@ service cloud.firestore {
               'noShowPolicy', 'noShowPolicyEnabled', 'noShowRescheduleAllowed', 'refundPolicy', 'refundPolicyEnabled',
               'consultationPolicy', 'consultationPolicyEnabled', 'serviceTerms', 'serviceTermsEnabled',
               'productTerms', 'productTermsEnabled', 'deliveryPolicy', 'deliveryPolicyEnabled',
-              'paymentPolicy', 'paymentPolicyEnabled', 'policiesUpdatedAt'
+              'paymentPolicy', 'paymentPolicyEnabled', 'productOrderCancellationPolicy',
+              'productOrderCancellationPolicyEnabled', 'productReturnPolicy',
+              'productReturnPolicyEnabled', 'walkInPolicy', 'walkInPolicyEnabled',
+              'enforcedPolicyKeys', 'policiesLinkedAt', 'policiesLinkedBy',
+              'policiesUpdatedAt', 'updatedAt'
             ])));
       allow delete: if isSignedIn() && isSuperadmin();
     }
@@ -694,11 +698,16 @@ service cloud.firestore {
       }
     }
 
-    match /clinicPolicies/{branchId} {
-      allow read: if isSignedIn() && (canAccessBranch(branchId) || isPublicClinic(branchId));
-      allow create, update: if isSignedIn()
-        && (isOwnerOfBranch(branchId)
-          || (canAccessBranch(branchId) && hasPermission('policies:update')));
+    // One policy document belongs to one clinic organization (the clinic
+    // owner's UID), not to an individual branch. Branches inherit it.
+    match /clinicPolicies/{clinicOwnerId} {
+      allow read: if isSignedIn() && (isSuperadmin()
+        || request.auth.uid == clinicOwnerId
+        || isStaffOfOwner(clinicOwnerId));
+      allow create, update: if isSignedIn() && (isSuperadmin()
+        || request.auth.uid == clinicOwnerId
+        || (isStaffOfOwner(clinicOwnerId) && hasPermission('policies:update')))
+        && request.resource.data.ownerId == clinicOwnerId;
       allow delete: if false;
     }
 

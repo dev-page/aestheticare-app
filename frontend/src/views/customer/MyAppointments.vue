@@ -1282,8 +1282,11 @@ const isRequestPending = (appt, kind) => {
 }
 
 const canRequestCancellation = (appointment) => {
+  const clinic = clinicsById.value[appointment?.branchId] || {}
   const status = normalizeAppointmentStatus(appointment?.status)
   return Boolean(appointment?.id)
+    && clinic.cancellationPolicyEnabled === true
+    && Boolean(String(clinic.cancellationPolicy || '').trim())
     && !['cancelled', 'completed'].includes(status)
     && toDateTime(appointment?.date, appointment?.time) >= new Date()
 }

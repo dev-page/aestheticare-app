@@ -1787,6 +1787,48 @@ const resolveBranchAccess = async (uid, branchId) => {
   return assignedBranches.has(String(branchId || '').trim())
 }
 
+// Policies are configured once per clinic organization. A branch retains its
+// own operational data (hours, staff and stock), but inherits this document.
+// The legacy branch-keyed lookup is only a temporary fallback for clinics that
+// have not opened and saved Policy Management since this migration.
+const getClinicPoliciesForBranch = async (firestore, branchId, knownBranch = null) => {
+  const normalizedBranchId = String(branchId || '').trim()
+  if (!normalizedBranchId) return { policy: {}, ownerId: '', branch: {} }
+  let branch = knownBranch || null
+  if (!branch) {
+    const branchSnap = await firestore.collection('clinics').doc(normalizedBranchId).get()
+    branch = branchSnap.exists ? branchSnap.data() || {} : {}
+  }
+  const ownerId = String(branch.ownerId || branch.organizationOwnerId || '').trim()
+  const applyBranchLinks = (sourcePolicy) => {
+    const policy = { ...(sourcePolicy || {}) }
+    // Undefined means a legacy branch that predates explicit linking: preserve
+    // its existing behaviour by enforcing every enabled clinic policy.
+    if (!Array.isArray(branch.enforcedPolicyKeys)) return policy
+    const linked = new Set(branch.enforcedPolicyKeys.map((key) => String(key || '').trim()))
+    const definitions = [
+      ['paymentPolicy', ['paymentPolicyEnabled', 'servicePaymentPolicyEnabled']],
+      ['cancellationPolicy', ['cancellationPolicyEnabled', 'serviceCancellationPolicyEnabled', 'refundPolicyEnabled']],
+      ['reschedulePolicy', ['reschedulePolicyEnabled', 'serviceReschedulingPolicyEnabled']],
+      ['noShowPolicy', ['noShowPolicyEnabled', 'serviceNoShowPolicyEnabled']],
+      ['deliveryPolicy', ['deliveryPolicyEnabled', 'productDeliveryPaymentPolicyEnabled']],
+      ['productOrderCancellationPolicy', ['productOrderCancellationPolicyEnabled', 'productCancellationPolicyEnabled']],
+      ['productReturnPolicy', ['productReturnPolicyEnabled', 'productTermsEnabled']],
+      ['walkInPolicy', ['walkInPolicyEnabled']],
+    ]
+    definitions.forEach(([key, enabledKeys]) => {
+      if (!linked.has(key)) enabledKeys.forEach((enabledKey) => { policy[enabledKey] = false })
+    })
+    return policy
+  }
+  if (ownerId) {
+    const clinicPolicySnap = await firestore.collection('clinicPolicies').doc(ownerId).get()
+    if (clinicPolicySnap.exists) return { policy: applyBranchLinks(clinicPolicySnap.data()), ownerId, branch }
+  }
+  const legacySnap = await firestore.collection('clinicPolicies').doc(normalizedBranchId).get()
+  return { policy: legacySnap.exists ? applyBranchLinks(legacySnap.data()) : {}, ownerId, branch }
+}
+
 const getApprovedLeaveForDate = async (employeeId, dateKey) => {
   const normalizedEmployeeId = String(employeeId || '').trim()
   const normalizedDate = String(dateKey || '').trim()
@@ -3054,7 +3096,7 @@ app.post('/treatment-sessions/:id/no-show', requireAuth, async (req, res) => {
       const session = snap.data() || {}; await authorizeClinicAction(req.user.uid, session.branchId, 'appointments:update')
       assertWorkflow(normalizeBookingStatus(session.status) === 'scheduled', 'Only a scheduled session can be marked as a no-show.')
       assertWorkflow(String(session.date || '') <= new Date().toISOString().slice(0, 10), 'A session cannot be marked as a no-show before its date.')
-      const policySnap = await tx.get(firestore.collection('clinicPolicies').doc(session.branchId)); const eligible = policySnap.exists && policySnap.data()?.noShowRescheduleAllowed === true
+      const { policy } = await getClinicPoliciesForBranch(firestore, session.branchId); const eligible = policy.noShowRescheduleAllowed === true
       const nextStatus = eligible ? 'Reschedule eligible' : 'Forfeited'
       tx.update(ref, { status: nextStatus, noShowAt: admin.firestore.FieldValue.serverTimestamp(), noShowMarkedById: req.user.uid, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action: 'no_show', previousStatus: session.status || '', nextStatus, actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
@@ -4569,15 +4611,14 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     if (!requestedRange) return res.status(400).json({ success: false, error: 'Invalid or missing time/duration for reservation' })
 
     const selectedServices = Array.isArray(reservation.selectedServices) ? reservation.selectedServices : []
-    const policySnap = await firestore.collection('clinicPolicies').doc(branchId).get()
-    const policyData = policySnap.exists ? policySnap.data() || {} : {}
+    const { policy: policyData } = await getClinicPoliciesForBranch(firestore, branchId, branch)
     const policyDefinitions = [
       ['cancellationPolicy', 'Cancellation policy'],
       ['reschedulePolicy', 'Reschedule policy'],
       ['refundPolicy', 'Refund policy'],
       ['consultationPolicy', 'Consultation policy'],
       ['serviceTerms', 'Service terms'],
-      ['paymentPolicy', 'Payment and installment policy'],
+      ['paymentPolicy', 'Payment policy'],
       ['noShowPolicy', 'No-show policy'],
     ]
     if (walkIn) policyDefinitions.push(['walkInPolicy', 'Walk-in policy'])
@@ -7159,8 +7200,7 @@ app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
       return res.status(409).json({ success: false, error: 'An appointment cannot be marked as a no-show before its scheduled date.' })
     }
 
-    const policySnap = await firestore.collection('clinicPolicies').doc(branchId).get()
-    const policy = policySnap.exists ? policySnap.data() || {} : {}
+    const { policy } = await getClinicPoliciesForBranch(firestore, branchId)
     const rescheduleAllowed = policy.noShowRescheduleAllowed === true
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
     const noShowOutcome = rescheduleAllowed ? 'Reschedule eligible' : 'Forfeited'
@@ -8278,20 +8318,9 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
     }
 
     const branchId = String(orderData.branchId || orderData.items?.[0]?.branchId || '').trim()
-    const policySnap = branchId
-      ? await firestore.collection('clinicPolicies').doc(branchId).get()
-      : null
-    const policy = policySnap?.exists ? policySnap.data() || {} : {}
-    const cancellationPolicy = String(policy.cancellationPolicy || '').trim()
-    const refundPolicy = String(policy.refundPolicy || '').trim()
-    const cancellationPolicyEnabled = Object.prototype.hasOwnProperty.call(policy, 'cancellationPolicyEnabled')
-      ? policy.cancellationPolicyEnabled === true
-      : Boolean(cancellationPolicy)
-    const refundPolicyEnabled = Object.prototype.hasOwnProperty.call(policy, 'refundPolicyEnabled')
-      ? policy.refundPolicyEnabled === true
-      : Boolean(refundPolicy)
-    if (!cancellationPolicyEnabled || !cancellationPolicy) {
-      return res.status(400).json({ success: false, error: 'This clinic has not enabled a cancellation policy.' })
+    const { policy } = await getClinicPoliciesForBranch(firestore, branchId)
+    if (policy.productCancellationPolicyEnabled !== true || policy.orderCancellationAllowed !== true) {
+      return res.status(400).json({ success: false, error: 'This clinic does not allow product-order cancellations.' })
     }
 
     const status = String(orderData.status || '').trim().toLowerCase()
@@ -8311,10 +8340,11 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
     }
 
     const diffHours = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60)
-    if (diffHours > 24) {
+    const cancellationWindowHours = Math.max(0, Number(policy.orderCancellationWindowHours || 0))
+    if (diffHours > cancellationWindowHours) {
       return res.status(400).json({
         success: false,
-        error: 'Orders can only be cancelled within 24 hours.',
+        error: `Orders can only be cancelled within ${cancellationWindowHours} hour${cancellationWindowHours === 1 ? '' : 's'} of placement.`,
       })
     }
 
@@ -8325,23 +8355,22 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
       String(orderData.paymentStatus || '').trim().toLowerCase() === 'paid' &&
       Boolean(paymentId)
 
-    if (isPayMongoPaid && (!refundPolicyEnabled || !refundPolicy)) {
-      return res.status(400).json({ success: false, error: 'This clinic has not enabled a refund policy for paid cancellations.' })
-    }
+    const refundPercentage = policy.orderCancellationNonRefundable === true ? 0 : Math.max(0, Math.min(100, Number(policy.orderCancellationRefundPercentage || 0)))
+    const refundableAmount = Math.round(totalAmount * refundPercentage) / 100
 
     await lockOrderCancellation(firestore, orderId, req.user.uid)
     cancellationOrderRef = orderRef
     let refundId = orderData.pendingCancellationRefund?.id || null
     let refundStatus = orderData.pendingCancellationRefund?.status || null
 
-    if (isPayMongoPaid && !refundId) {
+    if (isPayMongoPaid && refundableAmount > 0 && !refundId) {
       const refundResponse = await fetch('https://api.paymongo.com/v1/refunds', {
         method: 'POST',
         headers: buildPayMongoHeaders(),
         body: JSON.stringify({
           data: {
             attributes: {
-              amount: Math.round(totalAmount * 100),
+              amount: Math.round(refundableAmount * 100),
               payment_id: paymentId,
               reason: 'requested_by_customer',
             },
@@ -8369,16 +8398,16 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
       status: 'Cancelled',
       cancelReasonType: reasonType,
       cancelReasonDetails: reasonType === 'Other' ? reasonDetails : '',
-      cancellationPolicySnapshot: cancellationPolicy,
+      cancellationPolicySnapshot: String(policy.productOrderCancellationPolicy || '').trim(),
       cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
 
-    if (isPayMongoPaid) {
+    if (isPayMongoPaid && refundableAmount > 0) {
       updatePayload.paymentStatus = 'Refunded'
       updatePayload.refundType = 'PayMongo'
-      updatePayload.refundReason = 'Order cancelled within 24 hours by customer'
-      updatePayload.refundAmount = totalAmount
+      updatePayload.refundReason = `Order cancellation refund (${refundPercentage}%)`
+      updatePayload.refundAmount = refundableAmount
       updatePayload.paymongoRefundId = refundId
       updatePayload.paymongoRefundStatus = refundStatus
       updatePayload.refundedAt = admin.firestore.FieldValue.serverTimestamp()
@@ -8393,9 +8422,9 @@ app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
         status: 'Cancelled',
         cancelReasonType: reasonType,
         cancelReasonDetails: reasonType === 'Other' ? reasonDetails : '',
-        paymentStatus: isPayMongoPaid ? 'Refunded' : String(orderData.paymentStatus || ''),
-        refundType: isPayMongoPaid ? 'PayMongo' : null,
-        refundAmount: isPayMongoPaid ? totalAmount : 0,
+        paymentStatus: isPayMongoPaid && refundableAmount > 0 ? 'Refunded' : String(orderData.paymentStatus || ''),
+        refundType: isPayMongoPaid && refundableAmount > 0 ? 'PayMongo' : null,
+        refundAmount: isPayMongoPaid ? refundableAmount : 0,
         paymongoRefundId: refundId,
         paymongoRefundStatus: refundStatus,
       },

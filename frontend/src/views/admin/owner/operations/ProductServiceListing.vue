@@ -624,6 +624,7 @@ import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
+import { getClinicPolicyOwnerId } from '@/utils/clinicPolicies'
 
 export default {
   name: 'ProductServiceListing',
@@ -1418,8 +1419,10 @@ export default {
           return
         }
 
+        const currentClinic = await getDoc(doc(db, 'clinics', currentBranchId.value))
+        const policyOwnerId = getClinicPolicyOwnerId(currentClinic.exists() ? currentClinic.data() : null, currentUserId.value)
         unsubscribePolicies?.()
-        unsubscribePolicies = onSnapshot(doc(db, 'clinicPolicies', currentBranchId.value), (snapshot) => {
+        unsubscribePolicies = onSnapshot(doc(db, 'clinicPolicies', policyOwnerId), (snapshot) => {
           clinicPolicies.value = snapshot.exists() ? snapshot.data() || {} : {}
         }, (error) => console.error('Unable to load active clinic policies:', error))
 
