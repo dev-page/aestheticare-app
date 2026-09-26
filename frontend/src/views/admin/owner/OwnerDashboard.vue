@@ -7,6 +7,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { revenueByBranch, revenueTransactionAmount, sumNetRevenue } from '@/utils/revenue'
 
 export default {
   name: 'OwnerDashboard',
@@ -140,10 +141,7 @@ export default {
         }
         const branchData = branchSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
 
-        branches.value = branchData
-        totalBranches.value = branches.value.length
-
-        const branchIds = branches.value.map(b => b.id)
+        const branchIds = branchData.map(b => b.id)
 
         let staffData = []
         if (branchIds.length) {
@@ -180,6 +178,9 @@ export default {
 
         appointments.value = sortRecordsNewestFirst(appointmentsData)
         transactions.value = sortRecordsNewestFirst(transactionsData)
+        const branchRevenue = revenueByBranch(transactions.value)
+        branches.value = branchData.map(branch => ({ ...branch, revenue: branchRevenue[branch.id] || 0 }))
+        totalBranches.value = branches.value.length
         inventoryItems.value = sortRecordsNewestFirst(inventoryData)
         purchaseRequests.value = sortRecordsNewestFirst(purchaseRequestData)
         messages.value = sortRecordsNewestFirst(messageData)
@@ -196,7 +197,7 @@ export default {
             createdAt.getMonth() === now.getMonth() &&
             createdAt.getDate() === now.getDate()
 
-          return isToday ? sum + Number(entry.amount || 0) : sum
+          return isToday ? sum + revenueTransactionAmount(entry) : sum
         }, 0)
         pendingRequests.value = purchaseRequests.value.filter(
           (item) => String(item.status || 'Pending').toLowerCase() === 'pending'
@@ -213,7 +214,7 @@ export default {
           return maxStock > 0 ? stock < maxStock * 0.5 : false
         }).length
 
-        monthlyRevenue.value = branches.value.reduce((sum, b) => sum + (b.revenue || 0), 0)
+        monthlyRevenue.value = sumNetRevenue(transactions.value)
       } catch (error) {
         console.error("Error loading dashboard data:", error)
       } finally {

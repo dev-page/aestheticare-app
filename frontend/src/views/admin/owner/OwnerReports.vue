@@ -73,6 +73,7 @@ import { getApp } from 'firebase/app'
 import { auth } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+import { sumNetRevenue } from '@/utils/revenue'
 
 export default {
   name: 'OwnerReports',
@@ -106,10 +107,15 @@ export default {
 
       branches.value = branchData
       totalBranches.value = branchData.length
-      monthlyRevenue.value = branchData.reduce((sum, b) => sum + Number(b.revenue || 0), 0)
       newInquiries.value = branchData.reduce((sum, b) => sum + Number(b.inquiries || 0), 0)
 
       const branchIds = branchData.map((b) => b.id).filter(Boolean)
+      const transactionRows = []
+      for (const chunk of chunkArray(branchIds)) {
+        const transactionSnapshot = await getDocs(query(collection(db, 'transactions'), where('branchId', 'in', chunk)))
+        transactionRows.push(...transactionSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
+      }
+      monthlyRevenue.value = sumNetRevenue(transactionRows)
       let totalStaff = 0
       if (branchIds.length) {
         const chunks = chunkArray(branchIds)

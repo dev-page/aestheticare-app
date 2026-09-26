@@ -58,11 +58,22 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       }
       records = [...found.values()].filter(r => canRead(ctx, r))
     } else {
-      await branchAccess(ctx, branchId)
-      records = docs(await db.collection('supplyRecords').where('branchId', '==', branchId).get()).filter(r => canRead(ctx, r))
-      if (hasPermission(ctx, 'inventory:view')) for (const item of docs(await db.collection('inventoryItems').where('branchId', '==', branchId).get())) {
-        const signals = stockSignals(item, today)
-        if (signals.length) alerts.push({ id: item.id, branchId, message: `${item.name}: ${signals.join(', ')}`, link: '/inventory/items' })
+      // Workspace refreshes can occur before a branch is selected, or while the
+      // user is viewing every assigned branch. Neither is an invalid reminder
+      // request: resolve the user's available branches instead of rejecting it.
+      const assigned = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
+      if (branchId === 'all') {
+        for (const field of ['ownerId', 'branchAdminId']) for (const clinic of docs(await db.collection('clinics').where(field, '==', ctx.uid).get())) assigned.add(clinic.id)
+        const own = await db.collection('clinics').doc(ctx.uid).get(); if (own.exists) assigned.add(own.id)
+      }
+      const scopes = branchId && branchId !== 'all' ? [branchId] : [...assigned]
+      for (const scope of scopes) {
+        await branchAccess(ctx, scope)
+        records.push(...docs(await db.collection('supplyRecords').where('branchId', '==', scope).get()).filter(r => canRead(ctx, r)))
+        if (hasPermission(ctx, 'inventory:view')) for (const item of docs(await db.collection('inventoryItems').where('branchId', '==', scope).get())) {
+          const signals = stockSignals(item, today)
+          if (signals.length) alerts.push({ id: item.id, branchId: scope, message: `${item.name}: ${signals.join(', ')}`, link: '/inventory/items' })
+        }
       }
     }
     for (const r of records) {

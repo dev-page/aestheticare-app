@@ -10,6 +10,7 @@ import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { useSubscription } from '@/composables/useSubscription'
+import { revenueByBranch } from '@/utils/revenue'
 
 export default {
   name: 'Branch Info',
@@ -35,7 +36,6 @@ export default {
     const currentBranch = ref({
       id: null,
       clinicBranch: '',
-      revenue: 0,
       status: 'Active',
       clinicLocation: '',
       isMainBranch: false,
@@ -58,11 +58,6 @@ export default {
     const enabledPolicies = computed(() => policyDefinitions
       .filter((policy) => clinicPolicies.value[policy.enabledKey] === true || clinicPolicies.value[`${policy.key}Enabled`] === true)
       .map((policy) => ({ ...policy, details: String(clinicPolicies.value[policy.key] || '').trim() || 'No details have been configured.' })))
-
-    const normalizeRevenue = (value) => {
-      const numericValue = Number(value)
-      return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : 0
-    }
 
     const loadOwnerProfile = async (uid) => {
       if (!uid) return { branchAdminId: '', branchAdminName: '' }
@@ -99,6 +94,12 @@ export default {
       currentOwnerId.value = scope.ownerId || user.uid
       const branchDocs = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
       ownerProfile.value = await loadOwnerProfile(currentOwnerId.value)
+      const transactionRows = []
+      for (const branchDoc of branchDocs) {
+        const transactionSnapshot = await getDocs(query(collection(db, 'transactions'), where('branchId', '==', branchDoc.id)))
+        transactionRows.push(...transactionSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
+      }
+      const branchRevenue = revenueByBranch(transactionRows)
       branches.value = sortRecordsNewestFirst(branchDocs.map((branchDoc) => {
         const data = branchDoc || {}
         const rawStatus = String(data.status || '').trim()
@@ -108,7 +109,7 @@ export default {
         return {
           id: branchDoc.id,
           ...data,
-          revenue: normalizeRevenue(data.revenue),
+          revenue: branchRevenue[branchDoc.id] || 0,
           status: rawStatus || 'Active',
           isMainBranch,
           branchAdminId: branchAdminId || (isMainBranch ? ownerProfile.value.branchAdminId : ''),
@@ -182,7 +183,6 @@ export default {
       activeMenuBranchId.value = ''
       currentBranch.value = {
         ...branch,
-        revenue: normalizeRevenue(branch?.revenue),
       }
       if (!String(currentBranch.value.branchAdminId || '').trim() && currentBranch.value.isMainBranch) {
         currentBranch.value.branchAdminId = ownerProfile.value.branchAdminId
@@ -306,11 +306,6 @@ export default {
         toast.error('Branch location is required')
         return
       }
-      if (Number(currentBranch.value.revenue) < 0) {
-        toast.error('Revenue cannot be negative.')
-        return
-      }
-
       try {
         const user = auth.currentUser
         if (!user) {
@@ -320,7 +315,6 @@ export default {
 
         const ownerId = user.uid
         const ownerProfileData = ownerProfile.value.branchAdminId ? ownerProfile.value : await loadOwnerProfile(ownerId)
-        const revenue = normalizeRevenue(currentBranch.value.revenue)
         const shouldUseOwnerAsBranchAdmin =
           Boolean(currentBranch.value.isMainBranch) && !String(currentBranch.value.branchAdminId || '').trim()
         const branchAdminId = shouldUseOwnerAsBranchAdmin
@@ -349,7 +343,6 @@ export default {
           await updateDoc(branchRef, {
             clinicBranch: currentBranch.value.clinicBranch.trim(),
             clinicLocation: currentBranch.value.clinicLocation.trim(),
-            revenue,
             status: currentBranch.value.status,
             isMainBranch: Boolean(currentBranch.value.isMainBranch),
             branchAdminId: branchAdminId || null,
@@ -363,7 +356,6 @@ export default {
               ...currentBranch.value,
               clinicBranch: currentBranch.value.clinicBranch.trim(),
               clinicLocation: currentBranch.value.clinicLocation.trim(),
-              revenue,
               branchAdminId,
               branchAdminName
             }
@@ -584,17 +576,6 @@ export default {
               />
             </div>
 
-            <div>
-              <label class="mb-1 block text-slate-400">Revenue</label>
-              <input
-                v-model.number="currentBranch.revenue"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Revenue"
-                class="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
 
             <div>
               <label class="mb-1 block text-slate-400">Status</label>
