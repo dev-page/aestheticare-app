@@ -515,7 +515,7 @@ export default {
                 >
                   ⋯
                 </button>
-                <div v-if="activeMenuBranchId === branch.id" class="absolute right-3 top-11 z-30 w-40 overflow-hidden rounded-lg border border-slate-600 bg-slate-900 py-1 shadow-2xl">
+                <div v-if="activeMenuBranchId === branch.id" class="absolute bottom-11 right-3 z-30 w-40 overflow-hidden rounded-lg border border-slate-600 bg-slate-900 py-1 shadow-2xl">
                   <button type="button" class="block w-full px-4 py-2 text-left text-sm text-white hover:bg-slate-700" @click="openEditModal(branch)">Edit</button>
                   <button type="button" class="block w-full px-4 py-2 text-left text-sm text-white hover:bg-slate-700" @click="openPolicyModal(branch)">Link Policy</button>
                 </div>
