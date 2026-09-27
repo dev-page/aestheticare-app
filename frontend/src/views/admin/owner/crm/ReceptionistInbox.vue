@@ -1,361 +1,77 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen text-white">
+  <div class="flex min-h-screen module-theme bg-slate-900 text-white">
     <OwnerSidebar />
-
-    <main class="flex-1 p-8 bg-slate-900">
-      <div class="mb-8">
-        <h1 class="text-3xl font-bold text-white mb-2">Inbox</h1>
-        <p class="text-slate-400">Incoming branch messages and requests.</p>
-      </div>
-
-      <div class="space-y-4">
-        <div
-          v-for="message in messages"
-          :key="message.id"
-          class="bg-slate-800 rounded-xl border border-slate-700 p-5"
-          :class="!message.isRead ? 'border-blue-500/40' : ''"
-        >
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <p class="text-white font-semibold">{{ message.subject || 'No Subject' }}</p>
-              <p class="text-slate-400 text-sm mt-1">From: {{ message.senderName || message.senderEmail || 'Unknown' }}</p>
-              <p class="mt-2 inline-flex items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-medium text-cyan-200">
-                Branch: {{ resolveBranchLabel(message) }}
-              </p>
-              <p class="text-slate-300 text-sm mt-3 whitespace-pre-wrap">{{ message.body || 'No message body.' }}</p>
-            </div>
-            <div class="text-right">
-              <p class="text-slate-400 text-xs">{{ formatDate(message.createdAt) }}</p>
-              <button
-                v-if="!message.isRead"
-                @click="markAsRead(message)"
-                class="mt-3 px-3 py-1 rounded bg-blue-500 hover:bg-blue-600 text-white text-xs"
-              >
-                Mark as read
-              </button>
-              <button
-                v-if="message.type === 'chat' && message.threadId"
-                @click="openChat(message)"
-                class="mt-3 ml-2 px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-              >
-                Open chat
-              </button>
-            </div>
+    <main class="min-w-0 flex-1 bg-slate-900 p-4 md:p-8">
+      <div class="mx-auto max-w-6xl">
+        <header class="mb-7"><p class="text-xs font-semibold uppercase tracking-[.18em] text-amber-300">CRM & Clinic</p><h1 class="mt-2 text-3xl font-bold">Inbox</h1><p class="mt-2 text-slate-400">Respond to customer conversations and supplier communications for this branch.</p></header>
+        <section class="overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 shadow-xl shadow-black/10">
+          <div class="flex border-b border-slate-700 px-3 pt-3 sm:px-5">
+            <button type="button" class="inbox-tab" :class="activeTab === 'customers' && 'inbox-tab-active'" @click="activeTab = 'customers'">Customers <span>{{ customerMessages.length }}</span></button>
+            <button type="button" class="inbox-tab" :class="activeTab === 'suppliers' && 'inbox-tab-active'" @click="activeTab = 'suppliers'">Suppliers <span>{{ supplierChats.length }}</span></button>
           </div>
-        </div>
 
-        <div v-if="messages.length === 0" class="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center text-slate-400">
-          No messages in inbox.
-        </div>
+          <div v-if="activeTab === 'customers'" class="space-y-3 p-4 sm:p-5">
+            <article v-for="message in customerMessages" :key="message.id" class="rounded-xl border border-slate-700 bg-slate-900/55 p-4" :class="!message.isRead ? 'border-sky-500/60' : ''">
+              <div class="flex flex-col justify-between gap-4 sm:flex-row"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><h2 class="font-semibold">{{ message.subject || 'Customer message' }}</h2><span v-if="!message.isRead" class="inbox-new">New</span></div><p class="mt-1 text-sm text-slate-400">From {{ message.senderName || message.senderEmail || 'Customer' }}</p><p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-200">{{ message.body || message.lastMessage || 'No message body.' }}</p><p class="mt-3 text-xs text-slate-500">{{ formatDate(message.createdAt) }}</p></div><div class="flex shrink-0 items-start gap-2"><button v-if="!message.isRead" type="button" class="inbox-secondary-action" @click="markAsRead(message)">Mark as read</button><button v-if="message.type === 'chat' && message.threadId" type="button" class="inbox-primary-action" @click="openCustomerChat(message)">Open conversation</button></div></div>
+            </article>
+            <div v-if="!customerMessages.length" class="inbox-empty">No customer messages in this branch inbox.</div>
+          </div>
+
+          <div v-else class="space-y-3 p-4 sm:p-5">
+            <p v-if="supplierError" class="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{{ supplierError }}</p>
+            <article v-for="chat in supplierChats" :key="chat.supplierId" class="rounded-xl border border-slate-700 bg-slate-900/55 p-4"><div class="flex flex-col justify-between gap-4 sm:flex-row"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><h2 class="font-semibold">{{ chat.supplierName }}</h2><span class="inbox-supplier-status" :class="chat.supplierStatus === 'Active' ? 'inbox-supplier-active' : ''">{{ chat.supplierStatus || 'Supplier' }}</span></div><p v-if="chat.supplierEmail" class="mt-1 text-sm text-slate-400">{{ chat.supplierEmail }}</p><p class="mt-2 text-sm leading-6 text-slate-200">{{ chat.lastMessage || 'No messages yet. Start a conversation with this supplier.' }}</p><p v-if="chat.updatedAt" class="mt-3 text-xs text-slate-500">{{ chat.lastSender || 'Conversation' }} · {{ formatDate(chat.updatedAt) }}</p></div><button type="button" class="inbox-primary-action shrink-0 self-start" @click="openSupplierChat(chat)">{{ chat.lastMessage ? 'Open conversation' : 'Message supplier' }}</button></div></article>
+            <div v-if="supplierLoading" class="inbox-empty">Loading supplier conversations…</div><div v-else-if="!supplierChats.length" class="inbox-empty">No suppliers are linked to this branch yet.</div>
+          </div>
+        </section>
       </div>
     </main>
-
-    <div v-if="showChatModal" class="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-4">
-      <div class="w-full max-w-lg rounded-2xl bg-slate-800 border border-slate-700 shadow-xl">
-        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-          <div>
-            <h3 class="text-white font-semibold">Chat with {{ activeChat?.customerName || activeChat?.senderName || 'Customer' }}</h3>
-            <p class="text-xs text-slate-400">Branch: {{ resolveBranchLabel(activeChat) }}</p>
-          </div>
-          <button type="button" class="text-slate-300 hover:text-white" @click="closeChat">
-            ✕
-          </button>
-        </div>
-        <div ref="chatScrollRef" class="px-4 py-4 max-h-[45vh] overflow-y-auto space-y-3">
-          <div v-if="chatMessages.length === 0" class="text-sm text-slate-400 text-center">No messages yet.</div>
-          <div
-            v-for="chatMessage in chatMessages"
-            :key="chatMessage.id"
-            class="flex"
-            :class="chatMessage.senderId === currentUserId ? 'justify-end' : 'justify-start'"
-          >
-            <div
-              class="max-w-[75%] rounded-2xl px-3 py-2 text-sm"
-              :class="chatMessage.senderRole === 'system'
-                ? 'bg-emerald-700 text-white'
-                : chatMessage.senderId === currentUserId
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-slate-700 text-slate-100'"
-            >
-              <p v-if="chatMessage.senderRole === 'system'" class="text-[10px] uppercase tracking-wide text-emerald-100 mb-1">
-                System reply
-              </p>
-              <p class="whitespace-pre-wrap">{{ chatMessage.text }}</p>
-              <p class="mt-1 text-[10px] text-slate-300/80">{{ formatDate(chatMessage.createdAt) }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="px-4 py-3 border-t border-slate-700">
-          <div class="flex items-center gap-2">
-            <input
-              v-model="chatInput"
-              type="text"
-              placeholder="Type your reply..."
-              class="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              type="button"
-              class="px-3 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition"
-              @click="sendChatReply"
-            >
-              Send
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <Modal :isOpen="showChatModal" panelClass="inbox-chat-modal" bodyClass="inbox-chat-modal-body" @close="closeChat">
+      <template #header><div class="min-w-0"><p class="text-xs font-semibold uppercase tracking-[.15em] text-amber-300">{{ isSupplierChat ? 'Supplier conversation' : 'Customer conversation' }}</p><h3 class="mt-1 truncate text-lg font-semibold">{{ activeChatLabel }}</h3></div></template>
+      <template #body><div ref="chatScrollRef" class="max-h-[48vh] space-y-3 overflow-y-auto pr-1"><p v-if="chatLoading" class="py-8 text-center text-sm text-slate-400">Loading conversation…</p><p v-else-if="!chatMessages.length" class="py-8 text-center text-sm text-slate-400">No messages yet. Send the first message below.</p><div v-for="chatMessage in chatMessages" :key="chatMessage.id" class="flex" :class="chatMessage.senderId === currentUserId ? 'justify-end' : 'justify-start'"><div class="max-w-[82%] rounded-2xl px-3 py-2 text-sm" :class="chatMessage.senderId === currentUserId ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-100'"><p class="whitespace-pre-wrap">{{ chatMessage.text }}</p><p class="mt-1 text-[10px] opacity-75">{{ chatMessage.senderLabel }} · {{ formatDate(chatMessage.createdAt) }}</p></div></div></div></template>
+      <template #footer><div class="flex gap-2"><input v-model="chatInput" type="text" maxlength="4000" class="min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-400" :placeholder="isSupplierChat ? 'Write a message to the supplier…' : 'Write a reply to the customer…'" @keyup.enter="sendChatReply" /><button type="button" class="inbox-primary-action" :disabled="sending || !chatInput.trim()" @click="sendChatReply">{{ sending ? 'Sending…' : 'Send' }}</button></div></template>
+    </Modal>
   </div>
 </template>
 
 <script>
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
-import { addDoc, collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, setDoc, where, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { addDoc, collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, setDoc, updateDoc, where, serverTimestamp } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
+import { useRoute } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import Modal from '@/components/common/Modal.vue'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { toast } from 'vue3-toastify'
 
-export default {
-  name: 'ReceptionistInbox',
-  components: { OwnerSidebar },
-  setup() {
-    const db = getFirestore(getApp())
-    const auth = getAuth(getApp())
-
-    const currentBranchId = ref('')
-    const currentBranchLabel = ref('')
-    const messages = ref([])
-    const currentUserId = ref('')
-    const showChatModal = ref(false)
-    const activeChat = ref(null)
-    const chatMessages = ref([])
-    const chatInput = ref('')
-    const chatScrollRef = ref(null)
-    let chatUnsubscribe = null
-    let unsubscribeMessages = null
-
-    const formatDate = (timestamp) => {
-      if (!timestamp?.toDate) return '-'
-      return timestamp.toDate().toLocaleString()
-    }
-
-    const resolveBranchLabel = (message = null) => {
-      const branchName = String(message?.branchName || '').trim()
-      if (branchName) return branchName
-
-      const branchId = String(message?.branchId || activeChat.value?.branchId || currentBranchId.value || '').trim()
-      return currentBranchLabel.value || branchId || 'Unknown branch'
-    }
-
-    const startMessageListener = () => {
-      if (!currentBranchId.value) return
-      if (unsubscribeMessages) unsubscribeMessages()
-      const messageQuery = query(collection(db, 'messages'), where('branchId', '==', currentBranchId.value))
-      unsubscribeMessages = onSnapshot(messageQuery, (snapshot) => {
-        const allMessages = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-        const chatGroups = new Map()
-        const otherMessages = []
-
-        allMessages.forEach((message) => {
-          if (message.type === 'chat' && message.threadId) {
-            const key = message.threadId
-            const group = chatGroups.get(key) || {
-              ...message,
-              unreadCount: 0,
-              isRead: true
-            }
-
-            const currentTime = group.createdAt?.seconds || 0
-            const nextTime = message.createdAt?.seconds || 0
-            const latest = nextTime >= currentTime ? message : group
-
-            const unreadCount = group.unreadCount + (message.isRead ? 0 : 1)
-            chatGroups.set(key, {
-              ...latest,
-              unreadCount,
-              isRead: unreadCount === 0
-            })
-          } else {
-            otherMessages.push(message)
-          }
-        })
-
-        const groupedChats = Array.from(chatGroups.values())
-        messages.value = [...groupedChats, ...otherMessages].sort(
-          (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-        )
-      }, (error) => {
-        console.error('Failed to listen to branch messages:', error)
-        messages.value = []
-        toast.error('Inbox messages are unavailable for your current access.', { toastId: 'inbox-message-access' })
-      })
-    }
-
-    const scrollChatToBottom = async () => {
-      await nextTick()
-      if (chatScrollRef.value) {
-        chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
-      }
-    }
-
-    const startChatListener = (threadId) => {
-      if (!threadId) return
-      if (chatUnsubscribe) chatUnsubscribe()
-      const messageRef = collection(db, 'chatThreads', threadId, 'messages')
-      const messageQuery = query(messageRef)
-      chatUnsubscribe = onSnapshot(messageQuery, (snapshot) => {
-        chatMessages.value = snapshot.docs
-          .map((snap) => ({ id: snap.id, ...snap.data() }))
-          .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0))
-        scrollChatToBottom()
-      }, (error) => {
-        console.error('Failed to listen to chat messages:', error)
-        chatMessages.value = []
-        toast.error('This conversation is unavailable for your current access.', { toastId: 'chat-message-access' })
-      })
-    }
-
-    const stopChatListener = () => {
-      if (chatUnsubscribe) {
-        chatUnsubscribe()
-        chatUnsubscribe = null
-      }
-    }
-
-    const openChat = async (message) => {
-      if (!message?.threadId) {
-        toast.error('Chat thread is missing.')
-        return
-      }
-      activeChat.value = message
-      showChatModal.value = true
-      startChatListener(message.threadId)
-      if (message.unreadCount > 0 || !message.isRead) {
-        await markThreadAsRead(message.threadId)
-      }
-    }
-
-    const closeChat = () => {
-      showChatModal.value = false
-      chatInput.value = ''
-      activeChat.value = null
-      chatMessages.value = []
-      stopChatListener()
-    }
-
-    const sendChatReply = async () => {
-      const threadId = activeChat.value?.threadId
-      if (!threadId) return
-      if (!chatInput.value.trim()) {
-        toast.error('Please enter a reply.')
-        return
-      }
-
-      try {
-        const replyText = chatInput.value.trim()
-        chatInput.value = ''
-
-        const payload = {
-          text: replyText,
-          senderId: currentUserId.value,
-          senderName: 'Receptionist',
-          senderRole: 'receptionist',
-          createdAt: serverTimestamp()
-        }
-
-        await addDoc(collection(db, 'chatThreads', threadId, 'messages'), payload)
-
-        await setDoc(
-          doc(db, 'chatThreads', threadId),
-          {
-            lastMessage: replyText,
-            lastMessageAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          },
-          { merge: true }
-        )
-      } catch (error) {
-        console.error(error)
-        toast.error('Failed to send reply.')
-      }
-    }
-
-    const markAsRead = async (message) => {
-      try {
-        await updateDoc(doc(db, 'messages', message.id), {
-          isRead: true,
-          updatedAt: serverTimestamp()
-        })
-        message.isRead = true
-        toast.success('Message marked as read.')
-      } catch (error) {
-        console.error(error)
-        toast.error('Failed to update message.')
-      }
-    }
-
-    const markThreadAsRead = async (threadId) => {
-      try {
-        const msgSnap = await getDocs(
-          query(
-            collection(db, 'messages'),
-            where('branchId', '==', currentBranchId.value),
-            where('threadId', '==', threadId)
-          )
-        )
-        await Promise.all(
-          msgSnap.docs.map((snap) =>
-            updateDoc(doc(db, 'messages', snap.id), { isRead: true, updatedAt: serverTimestamp() })
-          )
-        )
-      } catch (error) {
-        console.error(error)
-        toast.error('Failed to update messages.')
-      }
-    }
-
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
-        if (!user) return
-
-        const userSnap = await getDoc(doc(db, 'users', user.uid))
-        currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
-        if (currentBranchId.value) {
-          const branchSnap = await getDoc(doc(db, 'clinics', currentBranchId.value))
-          if (branchSnap.exists()) {
-            const branchData = branchSnap.data() || {}
-            currentBranchLabel.value = String(branchData.clinicBranch || branchData.clinicName || currentBranchId.value).trim()
-          } else {
-            currentBranchLabel.value = currentBranchId.value
-          }
-        }
-        currentUserId.value = user.uid
-        startMessageListener()
-      })
-    })
-
-    onUnmounted(() => {
-      if (unsubscribeMessages) unsubscribeMessages()
-      stopChatListener()
-    })
-
-    return {
-      messages,
-      formatDate,
-      resolveBranchLabel,
-      markAsRead,
-      showChatModal,
-      activeChat,
-      chatMessages,
-      chatInput,
-      chatScrollRef,
-      openChat,
-      closeChat,
-      sendChatReply,
-      currentBranchId,
-      currentBranchLabel,
-      currentUserId
-    }
-  }
-}
+export default { name: 'ReceptionistInbox', components: { OwnerSidebar, Modal }, setup() {
+  const db = getFirestore(getApp()), auth = getAuth(getApp())
+  const route = useRoute()
+  const activeTab = ref(route.query.tab === 'suppliers' ? 'suppliers' : 'customers'), currentBranchId = ref(''), customerMessages = ref([]), supplierChats = ref([]), supplierLoading = ref(false), supplierError = ref(''), currentUserId = ref('')
+  const showChatModal = ref(false), activeChat = ref(null), chatMessages = ref([]), chatLoading = ref(false), chatInput = ref(''), sending = ref(false), chatScrollRef = ref(null)
+  let customerMessagesUnsubscribe = null, customerChatUnsubscribe = null, supplierChatPoll = null, authUnsubscribe = null
+  const isSupplierChat = computed(() => activeChat.value?.kind === 'supplier')
+  const activeChatLabel = computed(() => isSupplierChat.value ? activeChat.value?.supplierName || 'Supplier' : activeChat.value?.customerName || activeChat.value?.senderName || activeChat.value?.senderEmail || 'Customer')
+  const formatDate = value => { const date = value?.toDate?.() || (value?._seconds || value?.seconds ? new Date((value._seconds || value.seconds) * 1000) : value ? new Date(value) : null); return date && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date) : 'Just now' }
+  const api = async (path, body = null) => { const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''; if (!token) throw new Error('Sign in to continue.'); let lastError; for (const base of OTP_BACKEND_CANDIDATES) { try { const response = await fetch(`${base}/supply${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }); const payload = await response.json(); if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to complete the request.'); return payload.data } catch (error) { lastError = error } } throw lastError || new Error('Supplier chat is unavailable.') }
+  const scrollChatToBottom = async () => { await nextTick(); if (chatScrollRef.value) chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight }
+  const startCustomerMessagesListener = () => { if (!currentBranchId.value) return; if (customerMessagesUnsubscribe) customerMessagesUnsubscribe(); customerMessagesUnsubscribe = onSnapshot(query(collection(db, 'messages'), where('branchId', '==', currentBranchId.value)), snapshot => { const grouped = new Map(); snapshot.docs.map(snap => ({ id: snap.id, ...snap.data() })).forEach(message => { if (message.type !== 'chat' || !message.threadId) return grouped.set(message.id, message); const previous = grouped.get(message.threadId); const latest = (message.createdAt?.seconds || 0) >= (previous?.createdAt?.seconds || 0) ? message : previous; grouped.set(message.threadId, { ...latest, unreadCount: Number(previous?.unreadCount || 0) + (message.isRead ? 0 : 1), isRead: previous ? Boolean(previous.isRead) && Boolean(message.isRead) : Boolean(message.isRead) }) }); customerMessages.value = [...grouped.values()].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)) }, () => toast.error('Customer messages are unavailable for your current access.', { toastId: 'customer-inbox-access' })) }
+  const loadSupplierChats = async () => { if (!currentBranchId.value) return; supplierLoading.value = true; supplierError.value = ''; try { const result = await api(`/chats?branchId=${encodeURIComponent(currentBranchId.value)}`); supplierChats.value = Array.isArray(result?.chats) ? result.chats : [] } catch (error) { supplierChats.value = []; supplierError.value = error.message || 'Supplier conversations are unavailable for your current access.' } finally { supplierLoading.value = false } }
+  const startCustomerChatListener = threadId => { if (customerChatUnsubscribe) customerChatUnsubscribe(); customerChatUnsubscribe = onSnapshot(query(collection(db, 'chatThreads', threadId, 'messages')), snapshot => { chatMessages.value = snapshot.docs.map(snap => { const message = snap.data() || {}; return { id: snap.id, text: message.text || '', senderId: message.senderId || '', senderLabel: message.senderName || message.senderRole || 'Customer', createdAt: message.createdAt } }).sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0)); scrollChatToBottom() }, () => toast.error('This customer conversation is unavailable.', { toastId: 'customer-chat-access' })) }
+  const loadSupplierChatMessages = async ({ silent = false } = {}) => { const supplierId = activeChat.value?.supplierId; if (!supplierId) return; if (!silent) chatLoading.value = true; try { const result = await api(`/chat?supplierId=${encodeURIComponent(supplierId)}`); chatMessages.value = (result?.messages || []).map(message => ({ id: message.id, text: message.message || '', senderId: message.actorId || '', senderLabel: message.from || 'Supplier', createdAt: message.createdAt })); await scrollChatToBottom() } catch (error) { toast.error(error.message || 'This supplier conversation is unavailable.', { toastId: 'supplier-chat-access' }) } finally { if (!silent) chatLoading.value = false } }
+  const stopChatListeners = () => { if (customerChatUnsubscribe) { customerChatUnsubscribe(); customerChatUnsubscribe = null } if (supplierChatPoll) { clearInterval(supplierChatPoll); supplierChatPoll = null } }
+  const markThreadAsRead = async threadId => { try { const snapshot = await getDocs(query(collection(db, 'messages'), where('branchId', '==', currentBranchId.value), where('threadId', '==', threadId))); await Promise.all(snapshot.docs.map(item => updateDoc(doc(db, 'messages', item.id), { isRead: true, updatedAt: serverTimestamp() }))) } catch (_) {} }
+  const openCustomerChat = async message => { stopChatListeners(); activeChat.value = { ...message, kind: 'customer' }; chatMessages.value = []; chatInput.value = ''; showChatModal.value = true; startCustomerChatListener(message.threadId); if (message.unreadCount > 0 || !message.isRead) await markThreadAsRead(message.threadId) }
+  const openSupplierChat = async chat => { stopChatListeners(); activeChat.value = { ...chat, kind: 'supplier' }; chatMessages.value = []; chatInput.value = ''; showChatModal.value = true; await loadSupplierChatMessages(); supplierChatPoll = setInterval(() => loadSupplierChatMessages({ silent: true }), 15000) }
+  const closeChat = () => { showChatModal.value = false; activeChat.value = null; chatMessages.value = []; chatInput.value = ''; stopChatListeners() }
+  const sendChatReply = async () => { const text = chatInput.value.trim(); if (!text || sending.value || !activeChat.value) return; sending.value = true; try { if (isSupplierChat.value) { await api(`/chat/${activeChat.value.supplierId}/messages`, { message: text }); chatInput.value = ''; await Promise.all([loadSupplierChatMessages({ silent: true }), loadSupplierChats()]) } else { const threadId = activeChat.value.threadId; await addDoc(collection(db, 'chatThreads', threadId, 'messages'), { text, senderId: currentUserId.value, senderName: 'Clinic', senderRole: 'clinic', createdAt: serverTimestamp() }); await setDoc(doc(db, 'chatThreads', threadId), { lastMessage: text, lastMessageAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true }); chatInput.value = '' } } catch (error) { toast.error(error.message || 'Failed to send message.') } finally { sending.value = false } }
+  const markAsRead = async message => { try { await updateDoc(doc(db, 'messages', message.id), { isRead: true, updatedAt: serverTimestamp() }) } catch (_) { toast.error('Failed to update the message.') } }
+  onMounted(() => { authUnsubscribe = onAuthStateChanged(auth, async user => { if (!user) return; currentUserId.value = user.uid; const userSnap = await getDoc(doc(db, 'users', user.uid)); currentBranchId.value = userSnap.exists() ? String(userSnap.data()?.branchId || '') : ''; if (!currentBranchId.value) return toast.error('Your account has no branch assignment.', { toastId: 'inbox-branch-assignment' }); startCustomerMessagesListener(); await loadSupplierChats() }) })
+  onUnmounted(() => { if (authUnsubscribe) authUnsubscribe(); if (customerMessagesUnsubscribe) customerMessagesUnsubscribe(); stopChatListeners() })
+  return { activeTab, customerMessages, supplierChats, supplierLoading, supplierError, currentUserId, showChatModal, activeChatLabel, isSupplierChat, chatMessages, chatLoading, chatInput, sending, chatScrollRef, formatDate, markAsRead, openCustomerChat, openSupplierChat, closeChat, sendChatReply }
+} }
 </script>
+
+<style scoped>
+.inbox-tab{position:relative;padding:.75rem 1rem;color:#94a3b8;font-size:.875rem;font-weight:700}.inbox-tab:hover{color:#e2e8f0}.inbox-tab span{margin-left:.4rem;border-radius:999px;background:#334155;padding:.12rem .45rem;color:#e2e8f0;font-size:.7rem}.inbox-tab-active{color:#fcd34d}.inbox-tab-active:after{position:absolute;right:.75rem;bottom:0;left:.75rem;height:2px;border-radius:999px;background:#fbbf24;content:''}.inbox-new{border-radius:999px;background:rgba(14,165,233,.15);padding:.12rem .45rem;color:#bae6fd;font-size:.68rem;font-weight:700}.inbox-primary-action,.inbox-secondary-action{border-radius:.55rem;padding:.55rem .8rem;font-size:.75rem;font-weight:700;transition:filter .15s ease,opacity .15s ease}.inbox-primary-action{background:#c7843f;color:#fff}.inbox-primary-action:hover:not(:disabled){filter:brightness(1.1)}.inbox-primary-action:disabled{cursor:not-allowed;opacity:.55}.inbox-secondary-action{border:1px solid #475569;color:#dbe4f0}.inbox-secondary-action:hover{background:#334155}.inbox-empty{border:1px dashed #475569;border-radius:.9rem;padding:2.5rem 1rem;color:#94a3b8;text-align:center}.inbox-supplier-status{border:1px solid #475569;border-radius:999px;background:rgba(51,65,85,.5);padding:.12rem .45rem;color:#cbd5e1;font-size:.68rem;font-weight:700}.inbox-supplier-active{border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.1);color:#a7f3d0}:deep(.inbox-chat-modal){width:100%;max-width:42rem;border:1px solid #475569;background:#1e293b;color:#fff}:deep(.inbox-chat-modal-body){background:#1e293b;color:#fff}
+</style>

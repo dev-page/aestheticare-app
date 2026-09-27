@@ -112,7 +112,9 @@
   <Modal
     :isOpen="showNotificationModal"
     :panelClass="isModuleView ? 'notifications-modal-panel notifications-modal-panel-module' : 'notifications-modal-panel'"
-    :panelStyle="isModuleView ? '' : { backgroundColor: '#fffdf6', color: '#4f3527' }"
+    :panelStyle="isModuleView
+      ? { backgroundColor: '#28160e', color: '#fff0e1' }
+      : { backgroundColor: '#fff7e8', color: '#4f3527' }"
     :bodyClass="isModuleView ? 'notifications-modal-body-shell notifications-modal-body-shell-module' : 'notifications-modal-body-shell'"
     @close="closeNotificationModal"
   >
@@ -197,7 +199,7 @@ export default {
       if (roleValue.includes('superadmin')) return 'superadmin'
       if (typeValue === 'supplier' || roleValue.includes('supplier')) return 'supplier'
       if (typeValue === 'staff') return 'employee'
-      if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return 'owner'
+      if (roleValue.includes('clinic admin') || roleValue === 'clinicadmin' || roleValue.includes('owner')) return 'owner'
       return ''
     })
 
@@ -213,7 +215,7 @@ export default {
       if (typeValue === 'customer' || roleValue === 'customer') return CustomerSidebar
       if (typeValue === 'supplier' || roleValue.includes('supplier')) return SupplierSidebar
       if (typeValue === 'staff') return EmployeeSidebar
-      if (roleValue === 'clinic admin' || roleValue === 'clinicadmin' || roleValue === 'owner') return OwnerSidebar
+      if (roleValue.includes('clinic admin') || roleValue === 'clinicadmin' || roleValue.includes('owner')) return OwnerSidebar
       return CustomerSidebar
     })
 

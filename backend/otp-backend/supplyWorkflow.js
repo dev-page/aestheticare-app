@@ -651,11 +651,37 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   // General supplier chat is deliberately separate from RFQ/PO messages. It is
   // branch- and supplier-scoped, while record-specific conversations remain on
   // their respective transaction for auditability.
+  const allowClinicSupplierChat = ctx =>
+    demand(!ctx.supplier && (hasPermission(ctx, 'procurement:create') || hasPermission(ctx, 'inbox:view')), 'Supplier chat access is required.', 403)
+
+  app.get('/supply/chats', requireAuth, wrap(async (req, res, ctx) => {
+    const branchId = cleanId(req.query.branchId)
+    allowClinicSupplierChat(ctx)
+    await branchAccess(ctx, branchId)
+    const [chatSnap, supplierSnap] = await Promise.all([
+      db.collection('supplyChats').where('branchId', '==', branchId).get(),
+      db.collection('suppliers').where('branchId', '==', branchId).get(),
+    ])
+    const chatsBySupplierId = new Map(docs(chatSnap).map(chat => [chat.supplierId, chat]))
+    const chats = docs(supplierSnap)
+      .map(supplier => ({
+        ...(chatsBySupplierId.get(supplier.id) || {}),
+        chatId: chatsBySupplierId.get(supplier.id)?.chatId || `chat-${branchId}-${supplier.id}`,
+        branchId,
+        supplierId: supplier.id,
+        supplierName: String(supplier.businessName || supplier.name || 'Supplier').trim() || 'Supplier',
+        supplierEmail: String(supplier.email || '').trim(),
+        supplierStatus: String(supplier.status || '').trim(),
+      }))
+      .sort((a, b) => (b.updatedAt?._seconds || b.updatedAt?.seconds || 0) - (a.updatedAt?._seconds || a.updatedAt?.seconds || 0))
+    res.json({ success: true, data: { chats } })
+  }))
+
   app.get('/supply/chat', requireAuth, wrap(async (req, res, ctx) => {
     const supplierId = cleanId(req.query.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data()
     demand(supplier, 'Supplier not found.', 404)
     if (ctx.supplier) demand(ctx.supplierIds.includes(supplierId), 'This chat belongs to another supplier.', 403)
-    else { await branchAccess(ctx, supplier.branchId); allow(ctx, 'procurement:create') }
+    else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId) }
     const chatId = `chat-${supplier.branchId}-${supplierId}`, messages = docs(await db.collection('supplyChatMessages').where('chatId', '==', chatId).get()).sort((a, b) => (a.createdAt?._seconds || 0) - (b.createdAt?._seconds || 0))
     res.json({ success: true, data: { chatId, supplierId, branchId: supplier.branchId, messages } })
   }))
@@ -663,13 +689,20 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const supplierId = cleanId(req.params.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data(), message = required(req.body.message, 'Message')
     demand(supplier && supplier.status === 'Active', 'Supplier is unavailable.', 404)
     if (ctx.supplier) demand(ctx.supplierIds.includes(supplierId), 'This chat belongs to another supplier.', 403)
-    else { await branchAccess(ctx, supplier.branchId); allow(ctx, 'procurement:create') }
+    else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId) }
     const clinic = (await db.collection('clinics').doc(supplier.branchId).get()).data() || {}, chatId = `chat-${supplier.branchId}-${supplierId}`, now = stamp(), ref = db.collection('supplyChatMessages').doc()
+    const clinicRecipients = ctx.supplier
+      ? (await Promise.all(docs(await db.collection('users').where('branchId', '==', supplier.branchId).get()).map(async user => {
+          const userContext = await loadUserContext(user.id)
+          return hasPermission(userContext, 'inbox:view') || hasPermission(userContext, 'procurement:create') ? user.id : ''
+        }))).filter(Boolean)
+      : [supplier.ownerId || supplier.supplierUserId].filter(Boolean)
     await db.runTransaction(async tx => {
       tx.set(db.collection('supplyChats').doc(chatId), { branchId: supplier.branchId, supplierId, updatedAt: now, lastMessage: message.slice(0, 240), lastSender: ctx.supplier ? 'Supplier' : 'Clinic' }, { merge: true })
       tx.set(ref, { chatId, branchId: supplier.branchId, supplierId, message, from: ctx.supplier ? 'Supplier' : 'Clinic', actorId: ctx.uid, createdAt: now })
-      const recipient = ctx.supplier ? (clinic.ownerId || clinic.branchAdminId) : (supplier.ownerId || supplier.supplierUserId)
-      if (recipient && recipient !== ctx.uid) tx.set(db.collection('notifications').doc(), { recipientUserId: recipient, branchId: supplier.branchId, title: 'Supplier chat', message: `New message from ${ctx.supplier ? supplier.businessName || supplier.name || 'supplier' : 'your clinic'}.`, link: ctx.supplier ? '/procurement/orders' : '/supplier/chat', read: false, deleted: false, createdAt: now })
+      for (const recipient of new Set(clinicRecipients.filter(id => id && id !== ctx.uid))) {
+        tx.set(db.collection('notifications').doc(), { recipientUserId: recipient, branchId: supplier.branchId, title: 'Supplier chat', message: `New message from ${ctx.supplier ? supplier.businessName || supplier.name || 'supplier' : 'your clinic'}.`, link: ctx.supplier ? '/crm/inbox?tab=suppliers' : '/supplier/chat', read: false, deleted: false, createdAt: now })
+      }
     })
     res.json({ success: true, data: { id: ref.id } })
   }))
