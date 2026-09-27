@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="onboarding-tour-layer pointer-events-none fixed inset-0 z-[10000]" aria-live="polite">
+    <div v-if="isOpen" class="onboarding-tour-layer fixed inset-0 z-[10000]" aria-live="polite">
       <div
         v-if="highlightStyle"
         class="onboarding-spotlight pointer-events-none absolute rounded-xl border-2 border-amber-300"
@@ -62,6 +62,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { lockPageScroll, unlockPageScroll } from '@/utils/scrollLock'
 
 const props = defineProps({
   isOpen: { type: Boolean, default: false },
@@ -91,6 +92,18 @@ let mutationObserver = null
 let refreshFrame = 0
 let syncSequence = 0
 let placementSequence = 0
+let tutorialScrollLocked = false
+
+const lockTutorialScroll = () => {
+  if (tutorialScrollLocked) return
+  lockPageScroll()
+  tutorialScrollLocked = true
+}
+const unlockTutorialScroll = () => {
+  if (!tutorialScrollLocked) return
+  unlockPageScroll()
+  tutorialScrollLocked = false
+}
 
 const close = () => emit('close')
 const next = () => emit('next')
@@ -272,6 +285,9 @@ const syncTarget = async () => {
   const sequence = ++syncSequence
   placementSequence += 1
   positionReady.value = false
+  // A new step may need a controlled scroll to reveal its target. Lock the
+  // page again only after the target and tooltip have been positioned.
+  unlockTutorialScroll()
   await nextTick()
   if (!props.isOpen) {
     targetElement = null
@@ -288,6 +304,7 @@ const syncTarget = async () => {
     tooltipPlacement.value = 'center'
     tooltipPosition.value = { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: `min(92vw, ${TOOLTIP_MAX_WIDTH}px)`, maxHeight: `calc(100vh - ${VIEWPORT_MARGIN * 2}px)` }
     positionReady.value = true
+    lockTutorialScroll()
     return
   }
 
@@ -297,7 +314,10 @@ const syncTarget = async () => {
   tooltipPosition.value = { top: `${VIEWPORT_MARGIN}px`, left: `${VIEWPORT_MARGIN}px`, width: `min(92vw, ${TOOLTIP_MAX_WIDTH}px)`, maxHeight: `calc(100vh - ${VIEWPORT_MARGIN * 2}px)` }
   await nextTick()
   await updateTooltipPosition()
-  if (sequence === syncSequence) positionReady.value = true
+  if (sequence === syncSequence) {
+    positionReady.value = true
+    lockTutorialScroll()
+  }
 }
 
 const refreshPosition = () => {
@@ -354,6 +374,7 @@ onBeforeUnmount(() => {
   if (refreshFrame) window.cancelAnimationFrame(refreshFrame)
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('scroll', refreshPosition, true)
+  unlockTutorialScroll()
 })
 </script>
 
