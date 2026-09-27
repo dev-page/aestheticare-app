@@ -2073,6 +2073,19 @@ const stopChatListener = () => {
   }
 }
 
+const notifyClinicOfCustomerMessage = async (message) => {
+  const user = auth.currentUser
+  if (!user || !activeBranchId.value) return
+  const token = await user.getIdToken()
+  const response = await fetch(`${OTP_API_BASE}/customer-chat-notification`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branchId: activeBranchId.value, message }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to notify the clinic.')
+}
+
 const sendChat = async () => {
   if (!chatInput.value.trim()) {
     toast.error('Please enter a message.')
@@ -2127,6 +2140,11 @@ const sendChat = async () => {
       threadId: chatThreadId.value,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+    })
+    // The message itself has already been sent. A notification failure should
+    // never make the customer believe the message was lost.
+    notifyClinicOfCustomerMessage(messageText).catch((notificationError) => {
+      console.warn('Customer message was sent, but the clinic notification failed:', notificationError)
     })
   } catch (error) {
     console.error(error)

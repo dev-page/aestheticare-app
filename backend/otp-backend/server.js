@@ -1392,6 +1392,54 @@ const requireAuth = async (req, res, next) => {
   }
 }
 
+// Customer chat messages are written to their Firestore thread by the customer.
+// Notification recipients are resolved here so a customer can never choose who
+// receives a clinic notification from the browser.
+app.post('/customer-chat-notification', requireAuth, async (req, res) => {
+  try {
+    const branchId = String(req.body?.branchId || '').trim()
+    const message = String(req.body?.message || '').trim().slice(0, 240)
+    if (!branchId || !message) return res.status(400).json({ success: false, error: 'Branch and message are required.' })
+
+    const firestore = admin.firestore()
+    const [customerSnap, clinicSnap, branchUsers] = await Promise.all([
+      firestore.collection('users').doc(req.user.uid).get(),
+      firestore.collection('clinics').doc(branchId).get(),
+      firestore.collection('users').where('branchId', '==', branchId).get(),
+    ])
+    const customer = customerSnap.data() || {}
+    const customerRole = String(customer.role || customer.roleKey || '').trim().toLowerCase()
+    if (!customerSnap.exists || !['customer', 'client', 'patient'].includes(customerRole)) return res.status(403).json({ success: false, error: 'Only customer accounts can send clinic chat notifications.' })
+    if (!clinicSnap.exists) return res.status(404).json({ success: false, error: 'Clinic branch not found.' })
+
+    const clinic = clinicSnap.data() || {}
+    const recipientCandidates = new Set([clinic.ownerId, clinic.organizationOwnerId, ...branchUsers.docs.map((userSnap) => userSnap.id)].filter(Boolean))
+    const recipientContexts = await Promise.all([...recipientCandidates].map(async (uid) => ({ uid, context: await loadUserContext(uid) })))
+    // The CRM inbox is permission-protected, so message notifications must be
+    // limited to the same people who can actually open that page.
+    const recipients = new Set(recipientContexts
+      .filter(({ context }) => context.permissions.has('inbox:view'))
+      .map(({ uid }) => uid))
+    const senderName = String(customer.fullName || customer.name || customer.displayName || customer.email || 'A customer').trim() || 'A customer'
+    const batch = firestore.batch()
+    recipients.forEach((recipientUserId) => batch.set(firestore.collection('notifications').doc(), {
+      recipientUserId,
+      branchId,
+      title: 'New customer message',
+      message: `${senderName}: ${message}`,
+      link: '/crm/inbox',
+      read: false,
+      deleted: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }))
+    if (recipients.size) await batch.commit()
+    return res.json({ success: true, data: { recipients: recipients.size } })
+  } catch (error) {
+    console.error('Customer chat notification failed:', error?.message || error)
+    return res.status(500).json({ success: false, error: 'Unable to notify the clinic.' })
+  }
+})
+
 const optionalAuth = async (req, res, next) => {
   if (!adminReady) {
     return res.status(500).json({
