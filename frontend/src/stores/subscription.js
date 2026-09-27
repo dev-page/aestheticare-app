@@ -17,6 +17,8 @@ const DEFAULT_FEATURES = {
   free: [
     'subscription',
     'services',
+    'appointments',
+    'booking_availability',
   ],
   basic: [
     'subscription',

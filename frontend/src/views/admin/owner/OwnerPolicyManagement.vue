@@ -157,7 +157,10 @@ const activePolicy = computed(() => [...servicePolicies, ...productPolicies].fin
 const { hasPermission, isClinicAdminOwner } = usePermissions()
 const { activePlan } = useSubscription()
 const isFreePlan = computed(() => String(activePlan.value || 'free').trim().toLowerCase() === 'free')
-const isPolicyAvailable = (policy) => !isFreePlan.value || policy.id === 'walkIn'
+// Free clinics can accept online bookings for their Service listings, so the
+// service rules must remain configurable. Product rules stay unavailable
+// because Free Plan does not offer products.
+const isPolicyAvailable = (policy) => !isFreePlan.value || servicePolicies.some((servicePolicy) => servicePolicy.id === policy.id)
 const canManagePolicies = computed(() => isClinicAdminOwner.value || hasPermission('policies:update'))
 const saving = ref(false); const savedAt = ref(null); const branchId = ref(''); const policyOwnerId = ref(''); let stopListening = null
 const policyFields = { payment: ['fullPayment', 'downpaymentPercentage'], cancellation: ['earlyMinimumHours', 'earlyNonRefundable', 'earlyRefundPercentage', 'midMinimumHours', 'midMaximumHours', 'midNonRefundable', 'midRefundPercentage', 'lateMaximumHours', 'lateNonRefundable', 'lateRefundPercentage'], rescheduling: ['maximumRescheduleAllowance'], noShow: ['noShowGracePeriodMinutes', 'noShowNonRefundable', 'noShowRefundPercentage'], orderDeliveryPayment: ['expectedDeliveryPeriodDays'], orderCancellation: ['orderCancellationAllowed', 'orderCancellationWindowHours', 'orderCancellationNonRefundable', 'orderCancellationRefundPercentage'], orderReturn: ['orderReturnsAllowed', 'orderReturnWindowDays', 'orderReturnConditionUnopened', 'orderReturnConditionUnused', 'orderReturnConditionOriginalPackaging', 'orderReturnConditionContents', 'orderReturnReasonDamaged', 'orderReturnReasonDefective', 'orderReturnReasonWrongProduct', 'orderReturnReasonExpired', 'orderReturnReasonDescriptionMismatch', 'orderReturnReasonOther', 'orderReturnOtherReason', 'orderReturnNonRefundable', 'orderReturnRefundPercentage'] }

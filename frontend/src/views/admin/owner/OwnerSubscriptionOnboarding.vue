@@ -119,6 +119,15 @@ const selectedFreePlan = computed(() => {
 
 const defaultPlans = () => [
   {
+    id: 'free',
+    name: 'Free Plan',
+    price: 0,
+    billingCycle: 'month',
+    description: 'One-branch service listings with direct online booking and no expiry.',
+    features: ['Service listings only', 'Online service bookings', 'One branch', 'Upgrade anytime'],
+    isActive: true,
+  },
+  {
     id: 'basic',
     name: 'Basic',
     price: 999,

@@ -112,7 +112,12 @@ export const buildSubscriptionPlanCatalog = (basePlans = [], snapshotDocs = []) 
         ...basePlan,
         ...dbPlans.get(basePlan.id),
         id: basePlan.id,
-        features: Array.isArray(dbPlans.get(basePlan.id)?.features) ? dbPlans.get(basePlan.id).features : basePlan.features,
+        // Free Plan is a fixed fallback tier. Its feature list must not be
+        // widened by an older plan document (for example, one that still
+        // advertises online consultations or products).
+        features: basePlan.id === 'free'
+          ? basePlan.features
+          : (Array.isArray(dbPlans.get(basePlan.id)?.features) ? dbPlans.get(basePlan.id).features : basePlan.features),
       },
       basePlan,
     ),

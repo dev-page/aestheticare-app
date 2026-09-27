@@ -5,11 +5,11 @@
     <main class="flex-1 p-4 md:p-8 text-white">
       <div class="mb-6">
         <h1 class="text-2xl md:text-3xl font-bold mb-1">Product & Service Listing</h1>
-        <p class="text-slate-400">Save drafts, submit financial terms to Finance, then publish approved listings. Existing listings also need approval.</p>
+        <p class="text-slate-400">{{ isFreePlan ? 'Publish service listings directly for customer booking.' : 'Save drafts, submit financial terms to Finance, then publish approved listings.' }}</p>
       </div>
 
       <div v-if="isFreePlan" class="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/20 p-4 text-sm text-amber-100">
-        Free Plan includes up to <strong>{{ freePlanPostLimit }} listings</strong>. Upgrade to Basic to accept customer bookings and orders.
+        Free Plan includes up to <strong>{{ freePlanPostLimit }} service listings</strong>. Services publish directly and can be booked online. Upgrade to Basic for products, consultations, packages, and Finance workflows.
       </div>
 
       <section v-if="applicablePolicies.length" class="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/20 p-4">
@@ -124,15 +124,15 @@
             <h3 class="font-semibold text-white">{{ form.postType === 'Service' ? 'Booking Rules' : 'Consultation Rules' }}</h3>
             <p class="mt-1 text-xs text-slate-400">{{ form.postType === 'Service' ? 'Set only the rules customers need to know before requesting this service.' : 'Set the fee, duration, and appointment mode for this consultation.' }}</p>
           </div>
-          <label class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+          <label v-if="form.postType !== 'Service' || !isFreePlan" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
             <input
-              v-if="form.postType === 'Service'"
+              v-if="form.postType === 'Service' && !isFreePlan"
               v-model="form.requiresConsultationFirst"
               type="checkbox"
               class="mt-1 h-4 w-4 accent-blue-500"
             />
             <input
-              v-else
+              v-else-if="form.postType === 'Consultation'"
               type="checkbox"
               checked
               disabled
@@ -145,7 +145,7 @@
               <span class="block text-xs text-slate-400">
                 {{ form.postType === 'Consultation'
                   ? 'This consultation can be booked separately.'
-                  : 'Enable this when the service must be assessed before a booking can proceed.' }}
+                  : isFreePlan ? 'Consultations are unavailable on Free Plan.' : 'Enable this when the service must be assessed before a booking can proceed.' }}
               </span>
             </span>
           </label>
@@ -216,7 +216,7 @@
           <div v-if="form.postType === 'Service'" class="md:col-span-2">
             <div class="mb-3 border-t border-slate-700 pt-4">
               <h3 class="font-semibold text-white">Resources & Payment</h3>
-              <p class="mt-1 text-xs text-slate-400">Materials are reserved for each booking. Payment terms require Finance approval before publishing.</p>
+              <p class="mt-1 text-xs text-slate-400">{{ isFreePlan ? 'Materials are reserved for each booking. Free Plan service listings publish without Finance approval.' : 'Materials are reserved for each booking. Payment terms require Finance approval before publishing.' }}</p>
             </div>
             <label class="block text-slate-400 mb-1">Required Supplies</label>
             <select v-model="form.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -305,7 +305,7 @@
           <p v-if="['Service', 'Package'].includes(form.postType)" class="mt-1 text-slate-300">Treatment sessions: {{ Math.max(1, Number(form.sessionCount || 1)) }}</p>
           <p v-if="form.postType === 'Product'" class="mt-2 text-slate-300">Source: selected inventory product</p>
           <p class="mt-1 text-slate-300">Proposed {{ form.postType.toLowerCase() }} price: PHP {{ Number(form.price || form.consultationFee || 0).toFixed(2) }}</p>
-          <p class="mt-1 text-xs text-amber-200">Financial terms, including installment settings, require Finance approval before publication.</p>
+          <p class="mt-1 text-xs text-amber-200">{{ isFreePlan ? 'Free Plan service listings publish directly; Finance approval is not required.' : 'Financial terms, including installment settings, require Finance approval before publication.' }}</p>
         </div>
 
         <div class="flex gap-2">
@@ -340,9 +340,12 @@
                 <span class="text-xs text-slate-400">{{ formatDate(post.createdAt) }}</span>
               </div>
               <h3 class="font-semibold mb-1">{{ post.title }}</h3>
-              <p class="mb-2 text-sm font-semibold">{{ post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft' }}</p>
-              <p v-if="post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
-              <div class="mb-3 flex flex-wrap gap-2">
+              <p class="mb-2 text-sm font-semibold">{{ isFreePlan ? (post.isPublished ? 'Published' : 'Draft') : (post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft') }}</p>
+              <p v-if="!isFreePlan && post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
+              <div v-if="canManageListingWorkflow && isFreePlan && !post.isPublished" class="mb-3 flex flex-wrap gap-2">
+                <button :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">Publish</button>
+              </div>
+              <div v-if="!isFreePlan" class="mb-3 flex flex-wrap gap-2">
                 <button v-if="canManageListingWorkflow && (!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus))" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Submitting…' : 'Submit to Finance' }}</button>
                 <button v-if="canManageListingWorkflow && post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Publishing…' : 'Publish' }}</button>
                 <button v-if="canManageListingWorkflow && post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Unpublishing…' : 'Unpublish' }}</button>
@@ -670,6 +673,17 @@ export default {
     const fdaApprovalFileName = ref('')
     const actionLoadingId = ref('')
 
+    const newListingState = () => {
+      if (!isFreePlan.value) return draftListing()
+      return {
+        financeStatus: 'approved',
+        isPublished: true,
+        financeReview: null,
+        publishedBy: currentUserId.value,
+        publishedAt: serverTimestamp(),
+      }
+    }
+
     const showEditModal = ref(false)
     const editTargetId = ref('')
     const editForm = ref({
@@ -953,6 +967,7 @@ export default {
 
     watch(isFreePlan, (free) => {
       if (free && form.value.postType !== 'Service') resetForm()
+      if (free) form.value.requiresConsultationFirst = false
     }, { immediate: true })
 
     const createPost = async () => {
@@ -972,6 +987,11 @@ export default {
 
       if (isFreePlan.value && postType !== 'Service') {
         toast.error('Free Plan supports service listings only. Upgrade to Basic to list products, consultations, or packages.')
+        return
+      }
+
+      if (isFreePlan.value && form.value.requiresConsultationFirst) {
+        toast.error('Free Plan supports direct service bookings only. Consultations and packages require Basic.')
         return
       }
 
@@ -1039,7 +1059,7 @@ export default {
         const imageUrl = await getDownloadURL(imageRef)
 
         const postPayload = {
-          ...draftListing(),
+          ...newListingState(),
           inventoryItemId: selectedProduct?.id || null,
           postType,
           productName: postType === 'Product' ? selectedName.trim() : '',
@@ -1159,7 +1179,7 @@ export default {
           details: `Created ${postType.toLowerCase()} post: ${form.value.title.trim()}.`
         })
 
-        toast.success('Draft saved. Submit it for Finance review when ready.')
+        toast.success(isFreePlan.value ? 'Service published and ready for online booking.' : 'Draft saved. Submit it for Finance review when ready.')
         resetForm()
         await loadPosts()
       } catch (error) {
@@ -1223,6 +1243,11 @@ export default {
         toast.error('User branch is not available.')
         return
       }
+      if (isFreePlan.value && editForm.value.postType !== 'Service') {
+        toast.error('Free Plan supports service listings only.')
+        return
+      }
+      if (isFreePlan.value) editForm.value.requiresConsultationFirst = false
       if (!editForm.value.title?.trim() || !editForm.value.description?.trim() || !editForm.value.name?.trim()) {
         toast.error('Please complete all required fields.')
         return
@@ -1295,8 +1320,8 @@ export default {
           price: editForm.value.postType === 'Product'
             ? Number(selectedProduct?.unitPrice || editForm.value.price || 0)
             : Number(editForm.value.price || editForm.value.consultationFee || 0),
-          requiresConsultationFirst: editForm.value.postType === 'Service' ? Boolean(editForm.value.requiresConsultationFirst) : false,
-          consultationFee: editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst
+          requiresConsultationFirst: editForm.value.postType === 'Service' && !isFreePlan.value ? Boolean(editForm.value.requiresConsultationFirst) : false,
+          consultationFee: editForm.value.postType === 'Service' && !isFreePlan.value && editForm.value.requiresConsultationFirst
             ? Number(editForm.value.consultationFee || 0)
             : (editForm.value.postType === 'Consultation' ? Number(editForm.value.consultationFee || 0) : null),
           followUpAllowed: editForm.value.postType === 'Service'
@@ -1335,7 +1360,7 @@ export default {
         if (nextImageUrl) payload.imageUrl = nextImageUrl
 
         const existing = posts.value.find((post) => post.id === editTargetId.value) || {}
-        if (financialTermsChanged(existing, { ...existing, ...payload })) Object.assign(payload, draftListing())
+        if (financialTermsChanged(existing, { ...existing, ...payload })) Object.assign(payload, newListingState())
         await updateDoc(doc(db, 'productServicePosts', editTargetId.value), payload)
         await logActivity(db, {
           module: 'Manager',

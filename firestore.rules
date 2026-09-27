@@ -682,14 +682,20 @@ service cloud.firestore {
           'price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount'
         ]);
       }
+      function isFreeServiceListing(data) {
+        return data.get('postType', '') == 'Service'
+          && data.get('financeStatus', '') == 'approved'
+          && data.get('isPublished', false) == true
+          && get(/databases/$(database)/documents/clinics/$(data.branchId)).data.get('subscriptionPlan', 'free') == 'free';
+      }
       allow read: if (isPublicClinic(resource.data.branchId)
           && resource.data.get('financeStatus', '') == 'approved' && resource.data.get('isPublished', false) == true)
         || (isSignedIn() && canAccessBranch(resource.data.branchId));
       allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('services:create') && draft();
+        && hasPermission('services:create') && (draft() || isFreeServiceListing(request.resource.data));
       allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('services:update')
         && request.resource.data.branchId == resource.data.branchId
-        && ((financialChange() && draft()) || (!financialChange()
+        && ((financialChange() && (draft() || isFreeServiceListing(request.resource.data))) || (!financialChange()
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
             'financeStatus', 'financeReview', 'isPublished', 'publishedBy', 'publishedAt', 'submittedBy'
           ])));

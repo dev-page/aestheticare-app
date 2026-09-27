@@ -2669,6 +2669,9 @@ const getEffectiveClinicPlan = (clinic = {}) => {
 }
 
 const PLAN_FEATURES = Object.freeze({
+  // Free clinics can publish and accept bookings for services only. Product,
+  // package, consultation, finance, and workforce features remain paid.
+  free: new Set(['booking_availability']),
   // Basic is a single-clinic operational plan: bookings, consultations,
   // services/packages, orders, inventory and operational finance.
   basic: new Set(['booking_availability', 'online_consultations', 'reports']),
@@ -4916,10 +4919,12 @@ app.get('/public/clinics/:branchId/catalog', async (req, res) => {
     if (!clinic || clinic.isPublished !== true || String(clinic.status || '').trim().toLowerCase() === 'inactive') {
       return res.status(404).json({ success: false, error: 'Center unavailable.' })
     }
+    const isFreePlan = getEffectiveClinicPlan(clinic) === 'free'
     const postsSnap = await firestore.collection('productServicePosts').where('branchId', '==', branchId).get()
     const posts = postsSnap.docs
       .map((postSnap) => ({ id: postSnap.id, ...postSnap.data() }))
       .filter((post) => post.financeStatus === 'approved' && post.isPublished === true && post.archived !== true)
+      .filter((post) => !isFreePlan || post.postType === 'Service')
     return res.json({ success: true, posts })
   } catch (error) {
     console.error('Public clinic catalog load failed:', error?.message || error)
@@ -4978,6 +4983,12 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     if (!branch || !practitioner || String(practitioner.branchId || '').trim() !== branchId) {
       return res.status(400).json({ success: false, error: 'Choose an eligible practitioner from this branch.' })
     }
+    // Free Plan accepts online bookings for its service-only catalog. There is
+    // no Finance or clinic-approval queue in that tier; payment remains due
+    // before the service can proceed.
+    const freePlanDirectBooking = !walkIn && getEffectiveClinicPlan(branch) === 'free'
+    const initialBookingStatus = walkIn || freePlanDirectBooking ? 'Unpaid' : 'Pending Approval'
+    const initialApprovalStatus = walkIn || freePlanDirectBooking ? 'Approved' : 'Pending'
     const practitionerPermissionKeys = new Set(['appointments:update', 'consultations:view', 'consultations:create'])
     const directPermissions = [...(Array.isArray(practitioner.effectivePermissions) ? practitioner.effectivePermissions : []), ...(Array.isArray(practitioner.permissions) ? practitioner.permissions : [])]
     const role = String(practitioner.role || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
@@ -5134,7 +5145,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         ...reservation,
         id: bookingRef.id,
         customerId,
-        status: 'Pending Approval',
+        status: initialBookingStatus,
         paymentStatus: 'Pending',
         paymentCoverage: 'pending',
         source: walkIn ? 'walk_in' : 'customer_booking_request',
@@ -5148,12 +5159,16 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     await firestore.runTransaction(async (tx) => {
       const prepared = await prepareBooking({ tx, db: firestore, reservation, getBookingRange, rangesOverlap })
       Object.assign(appointmentPayload, prepared.data, {
-        approvalStatus: walkIn ? 'Approved' : 'Pending', status: walkIn ? 'Unpaid' : 'Pending Approval', paymentStatus: walkIn ? 'Unpaid' : 'Pending', amountPaid: 0,
-        ...(walkIn ? { source: 'walk_in', clientId: reservation.clientId, clientName: reservation.customerName, installmentsAllowed: false, depositPercent: 100, approvedBy: req.user.uid, approvedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
+        approvalStatus: initialApprovalStatus, status: initialBookingStatus, paymentStatus: 'Pending', amountPaid: 0,
+        ...(walkIn
+          ? { source: 'walk_in', clientId: reservation.clientId, clientName: reservation.customerName, installmentsAllowed: false, depositPercent: 100, approvedBy: req.user.uid, approvedAt: admin.firestore.FieldValue.serverTimestamp() }
+          : freePlanDirectBooking
+            ? { source: 'customer_booking', approvedBy: null, approvedAt: admin.firestore.FieldValue.serverTimestamp() }
+            : {}),
         serviceKey: null, customerKeyVerified: false, workerKeyVerified: false, workerCompleted: false, customerCompleted: false,
       })
       tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-      tx.set(bookingRef, { ...bookingPayload, ...prepared.data, source: walkIn ? 'walk_in' : 'customer_booking_request', status: walkIn ? 'Unpaid' : 'Pending Approval' })
+      tx.set(bookingRef, { ...bookingPayload, ...prepared.data, source: walkIn ? 'walk_in' : (freePlanDirectBooking ? 'customer_booking' : 'customer_booking_request'), status: initialBookingStatus })
       tx.set(appointmentRef, appointmentPayload)
       tx.update(bookingRef, { appointmentId: appointmentRef.id, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
     })
