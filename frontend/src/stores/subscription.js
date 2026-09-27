@@ -4,7 +4,6 @@ import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
-const GRACE_DAYS = 7
 const SUBSCRIPTION_STATUS = Object.freeze({
   ACTIVE: 'active',
   READ_ONLY: 'read_only',
@@ -17,10 +16,6 @@ const PLAN_CACHE_TTL_MS = 5 * 60 * 1000
 const DEFAULT_FEATURES = {
   free: [
     'subscription',
-    'staff_management',
-    'appointments',
-    'pos_payments',
-    'inventory',
     'services',
   ],
   basic: [
@@ -137,8 +132,6 @@ export const useSubscriptionStore = defineStore('subscription', () => {
 
   let initialized = false
   let lastUserId = null
-  let unpublishAttempted = false
-  let lastUnpublishUserId = null
   let unsubscribePlanPermissions = null
   let activePlanKey = ''
 
@@ -523,6 +516,27 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         }
       }
 
+      // Free is the permanent fallback tier. A paid plan that has reached its
+      // end date must immediately behave as Free instead of leaving the clinic
+      // read-only or suspended until a maintenance task runs.
+      if (planKey !== 'free' && resolvedExpiresAt && resolvedExpiresAt.getTime() <= Date.now()) {
+        const expiredPlan = planKey
+        planKey = 'free'
+        paymentStatus = 'free'
+        resolvedExpiresAt = null
+        try {
+          const token = await user.getIdToken()
+          await fetch(`${OTP_API_BASE}/subscription/sync-effective-plan`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        } catch (error) {
+          // The client still uses Free immediately. The next authenticated
+          // request will retry the durable clinic-record downgrade.
+          console.warn(`Could not persist the expired ${expiredPlan} plan fallback.`, error)
+        }
+      }
+
       activePlanKey = planKey
       activePlan.value = planKey
       subscriptionExpiresAt.value = resolvedExpiresAt
@@ -544,42 +558,12 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         // ignore cache errors
       }
 
-      const now = new Date()
       if (resolvedExpiresAt) {
-        const expiresAt = resolvedExpiresAt
-        const graceEnd = new Date(expiresAt.getTime() + GRACE_DAYS * 24 * 60 * 60 * 1000)
-        graceEndsAt.value = graceEnd
-        const expired = now.getTime() >= expiresAt.getTime()
-        const calculatedStatus = !expired
-          ? SUBSCRIPTION_STATUS.ACTIVE
-          : now.getTime() < graceEnd.getTime()
-            ? SUBSCRIPTION_STATUS.READ_ONLY
-            : SUBSCRIPTION_STATUS.SUSPENDED
-        // The timestamp is authoritative so renewal immediately restores access,
-        // even if the maintenance job has not yet copied the new status fields.
-        const nextStatus = calculatedStatus
-        subscriptionStatus.value = nextStatus
-        isExpired.value = expired
-        isReadOnly.value = nextStatus === SUBSCRIPTION_STATUS.READ_ONLY
-        isSuspended.value = nextStatus === SUBSCRIPTION_STATUS.SUSPENDED
-        const roleKey = String(userRole.value || '')
-          .trim()
-          .toLowerCase()
-          .replace(/[\s_-]+/g, '')
-        if (expired && (roleKey === 'owner' || roleKey === 'clinicadmin' || roleKey === 'clinicadministrator')) {
-          const shouldAttempt = !unpublishAttempted || lastUnpublishUserId !== user.uid
-          if (shouldAttempt) {
-            unpublishAttempted = true
-            lastUnpublishUserId = user.uid
-            fetch(`${OTP_API_BASE}/admin/unpublish-expired-clinics`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ ownerId: user.uid })
-            }).catch((error) => {
-              console.error('Failed to request unpublish of expired clinics:', error)
-            })
-          }
-        }
+        graceEndsAt.value = null
+        subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
+        isExpired.value = false
+        isReadOnly.value = false
+        isSuspended.value = false
       } else {
         isExpired.value = false
         isReadOnly.value = false

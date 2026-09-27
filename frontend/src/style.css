@@ -639,6 +639,12 @@ table {
   border-color: #9cc99a !important;
 }
 
+/* SweetAlert uses separate masking pieces behind its success check animation.
+   Set them explicitly so they blend into the dark dialog instead of flashing white. */
+.swal2-popup:not(.swal-logout-popup) .swal2-icon.swal2-success :is(.swal2-success-fix, .swal2-success-circular-line-left, .swal2-success-circular-line-right) {
+  background-color: #1a130d !important;
+}
+
 .swal2-popup:not(.swal-logout-popup) .swal2-icon.swal2-error {
   border-color: #cf776e !important;
   color: #e1948b !important;

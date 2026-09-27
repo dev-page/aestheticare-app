@@ -8,6 +8,36 @@ import { auth, db } from "@/config/firebaseConfig";
 
 const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 
+// The Free Plan is a permanent catalog-and-inquiry tier. These are the only
+// clinic workspace destinations it exposes; paid operations begin on Basic.
+const FREE_PLAN_ROUTE_PREFIXES = [
+  '/clinic/dashboard',
+  '/clinic/branches',
+  '/clinic/profile',
+  '/clinic/page',
+  '/catalog/products-services',
+  '/crm/inbox',
+  '/account/profile',
+  '/account/change-password',
+  '/account/subscription',
+  '/account/plans',
+  '/account/closure',
+  '/notifications',
+  '/support/report',
+  '/subscription-features',
+  '/subscription/checkout',
+]
+
+const isFreePlanRoute = (path) => FREE_PLAN_ROUTE_PREFIXES.some((prefix) =>
+  path === prefix || path.startsWith(`${prefix}/`)
+)
+
+const subscriptionExpiryHasPassed = (value) => {
+  if (!value) return false
+  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
+  return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now()
+}
+
 const routes = [
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
   { path: '/supplier/supply/rfqs', redirect: '/supplier/supply/orders' },
@@ -323,7 +353,6 @@ const isFreeSubscriptionPlan = (value) => {
   return !plan || plan === 'free' || plan === 'free-plan' || plan === 'free-trial' || plan === 'trial'
 }
 
-const isTrueFlag = (value) => value === true || String(value || '').trim().toLowerCase() === 'true'
 
 const isAuthReady = (isLoading) => {
   if (!isLoading.value) return Promise.resolve()
@@ -429,9 +458,6 @@ router.beforeEach(async (to, from, next) => {
 
   const routePath = String(to.path || '').toLowerCase()
   const isOwnerRoute = isOwnerLikeRole(currentUserData, currentUser?.uid)
-  const isRegistrationRoute = routePath === '/register' || routePath.startsWith('/clinic/register')
-  const isSubscriptionOnboardingRoute = routePath === '/clinic/onboarding'
-  const isSubscriptionCheckoutRoute = routePath === '/subscription/checkout'
 
   let clinicSubscriptionData = {}
   if (currentUser && isOwnerRoute) {
@@ -463,6 +489,11 @@ router.beforeEach(async (to, from, next) => {
     || currentUserData.plan
     || clinicSubscriptionData.subscriptionPlan
     || clinicSubscriptionData.plan
+  const subscriptionExpiresAt = currentUserData.subscriptionExpiresAt || clinicSubscriptionData.subscriptionExpiresAt
+  const effectiveSubscriptionPlan = subscriptionExpiryHasPassed(subscriptionExpiresAt)
+    && !isFreeSubscriptionPlan(activeSubscriptionPlan)
+    ? 'free'
+    : activeSubscriptionPlan
   const userStatus = String(currentUserData.status || '').trim().toLowerCase()
   const clinicApprovalStatus = String(
     clinicSubscriptionData.approvalStatus || currentUserData.approvalStatus || ''
@@ -471,13 +502,12 @@ router.beforeEach(async (to, from, next) => {
     && isOwnerRoute
     && userStatus === 'active'
     && clinicApprovalStatus.includes('approved')
-  const needsSubscriptionOnboarding = isApprovedClinicOwner
-    && !isRegistrationRoute
-    && isFreeSubscriptionPlan(activeSubscriptionPlan)
-    && !isTrueFlag(currentUserData.subscriptionOnboardingDismissed)
-
-  if (needsSubscriptionOnboarding && !isSubscriptionOnboardingRoute && !isSubscriptionCheckoutRoute) {
-    return next('/clinic/onboarding')
+  if (
+    isApprovedClinicOwner
+    && isFreeSubscriptionPlan(effectiveSubscriptionPlan)
+    && !isFreePlanRoute(routePath)
+  ) {
+    return next('/account/subscription')
   }
 
   if (currentUser && routePath.startsWith('/superadmin') && !isSuperadminRole(currentUserData)) {

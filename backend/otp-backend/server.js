@@ -2662,6 +2662,12 @@ const PLAN_PRIORITIES = {
   premium: 2,
 }
 
+const getEffectiveClinicPlan = (clinic = {}) => {
+  const plan = normalizePlanKey(clinic.subscriptionPlan || clinic.plan || 'free')
+  const expiresAt = toDateValue(clinic.subscriptionExpiresAt)
+  return plan !== 'free' && expiresAt && expiresAt.getTime() <= Date.now() ? 'free' : plan
+}
+
 const PLAN_FEATURES = Object.freeze({
   // Basic is a single-clinic operational plan: bookings, consultations,
   // services/packages, orders, inventory and operational finance.
@@ -2674,9 +2680,7 @@ const assertClinicPlanFeature = async (firestore, branchId, feature) => {
   const clinicSnap = await firestore.collection('clinics').doc(String(branchId || '').trim()).get()
   assertWorkflow(clinicSnap.exists, 'Clinic branch not found.', 404)
   const clinic = clinicSnap.data() || {}
-  const plan = normalizePlanKey(clinic.subscriptionPlan || clinic.plan || 'free')
-  const expiresAt = toDateValue(clinic.subscriptionExpiresAt)
-  assertWorkflow(!expiresAt || expiresAt.getTime() > Date.now(), 'This clinic subscription is no longer active.', 403)
+  const plan = getEffectiveClinicPlan(clinic)
   const configured = await firestore.collection('planPermissions').doc(plan).get()
   const configuredFeatures = configured.exists && Array.isArray(configured.data()?.permissions)
     ? new Set(configured.data().permissions.map(value => String(value || '').trim()).filter(Boolean))
@@ -3209,7 +3213,7 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
     const input = req.body || {}, branches = (await firestore.collection('clinics').where('ownerId', '==', ownerId).get()).docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) }))
     const organization = branches.find(branch => branch.id === ownerId) || branches.find(branch => branch.isMainBranch) || branches[0] || {}
     const organizationClinicName = String(organization.clinicName || organization.clinicBranch || '').trim()
-    const plan = normalizePlanKey(organization.subscriptionPlan || context.userData.subscriptionPlan || context.userData.plan || 'free')
+    const plan = getEffectiveClinicPlan(organization)
     const activeBranches = branches.filter(branch => String(branch.status || 'Active').toLowerCase() === 'active')
     assertWorkflow(plan === 'premium', 'Adding another branch requires the Premium subscription.', 403)
     const name = String(input.name || input.clinicBranch || '').trim(), location = String(input.location || input.clinicLocation || '').trim()
@@ -3219,7 +3223,7 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
       const current = await tx.get(firestore.collection('clinics').where('ownerId', '==', ownerId))
       const currentBranches = current.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) }))
       const currentOrganization = currentBranches.find(branch => branch.id === ownerId) || currentBranches.find(branch => branch.isMainBranch) || currentBranches[0] || {}
-      const currentPlan = normalizePlanKey(currentOrganization.subscriptionPlan || context.userData.subscriptionPlan || context.userData.plan || 'free')
+      const currentPlan = getEffectiveClinicPlan(currentOrganization)
       assertWorkflow(currentPlan === 'premium', 'Adding another branch requires the Premium subscription.', 403)
       // A branch's legal/organizational designation is not changed from this
       // workflow. New branches inherit the organization without becoming a
@@ -5879,6 +5883,49 @@ app.post('/admin/unpublish-expired-clinics', requireAuth, requireRole(['superadm
   }
 })
 
+// A paid tier expires back into the permanent Free Plan. This endpoint makes
+// that fallback durable for the owner and every branch without deleting any
+// clinic data. The client also applies Free immediately while this sync runs.
+app.post('/subscription/sync-effective-plan', requireAuth, async (req, res) => {
+  try {
+    const firestore = admin.firestore()
+    const ownerId = String(req.user?.uid || '').trim()
+    if (!ownerId) return res.status(401).json({ success: false, error: 'Authentication is required.' })
+
+    const userRef = firestore.collection('users').doc(ownerId)
+    const [userSnap, branchesSnap] = await Promise.all([
+      userRef.get(),
+      firestore.collection('clinics').where('ownerId', '==', ownerId).get(),
+    ])
+    const userData = userSnap.exists ? userSnap.data() || {} : {}
+    const userPlan = getEffectiveClinicPlan(userData)
+    const batch = firestore.batch()
+    let updated = 0
+
+    const downgrade = (ref, data) => {
+      const storedPlan = normalizePlanKey(data.subscriptionPlan || data.plan || 'free')
+      if (storedPlan === 'free' || getEffectiveClinicPlan(data) !== 'free') return
+      batch.set(ref, {
+        subscriptionPlan: 'free',
+        paymentStatus: 'free',
+        subscriptionExpiresAt: null,
+        lastPaidSubscriptionPlan: storedPlan,
+        subscriptionDowngradedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
+      updated += 1
+    }
+
+    downgrade(userRef, userData)
+    branchesSnap.forEach((branchSnap) => downgrade(branchSnap.ref, branchSnap.data() || {}))
+
+    if (updated) await batch.commit()
+    return res.json({ success: true, plan: userPlan, updated })
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error?.message || 'Unable to synchronize the subscription plan.' })
+  }
+})
+
 app.post('/dev/backfill-client-contact-info', requireAuth, requireRole(['superadmin']), async (_req, res) => {
   if (!isDevelopment || String(process.env.ENABLE_DEV_ENDPOINTS || '').toLowerCase() !== 'true') {
     return res.status(404).json({
@@ -7460,6 +7507,7 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
   const normalizedEnd = end !== null && end > start ? end : start + totalServiceDurationMinutes
 
   const firestore = admin.firestore()
+  await assertClinicPlanFeature(firestore, branchId, 'booking_availability')
   const approvedLeave = await getApprovedLeaveForDate(practitionerId, date)
   if (approvedLeave) {
     return res.status(409).json({

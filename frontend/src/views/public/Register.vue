@@ -2678,6 +2678,9 @@ const registerClinic = async () => {
       role: 'Clinic Owner',
       userType: 'Owner',
       status: 'Pending OTP Verification',
+      subscriptionPlan: 'free',
+      paymentStatus: 'free',
+      subscriptionExpiresAt: null,
       createdAt: serverTimestamp(),
     })
 
@@ -2702,6 +2705,9 @@ const registerClinic = async () => {
       branchAdminId: uid,
       branchAdminName: ownerFullName || 'Owner',
       approvalStatus: 'Pending OTP Verification',
+      subscriptionPlan: 'free',
+      paymentStatus: 'free',
+      subscriptionExpiresAt: null,
       createdAt: serverTimestamp(),
     })
 

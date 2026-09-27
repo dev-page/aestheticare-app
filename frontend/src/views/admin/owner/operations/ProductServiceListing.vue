@@ -8,6 +8,10 @@
         <p class="text-slate-400">Save drafts, submit financial terms to Finance, then publish approved listings. Existing listings also need approval.</p>
       </div>
 
+      <div v-if="isFreePlan" class="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/20 p-4 text-sm text-amber-100">
+        Free Plan includes up to <strong>{{ freePlanPostLimit }} listings</strong>. Upgrade to Basic to accept customer bookings and orders.
+      </div>
+
       <section v-if="applicablePolicies.length" class="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/20 p-4">
         <div class="flex items-start gap-3"><span class="mt-0.5 text-amber-300">ⓘ</span><div><h2 class="font-semibold text-amber-100">Active clinic policies</h2><p class="mt-1 text-sm text-amber-200/80">These rules are configured in Policy Management and apply automatically when this listing is booked or purchased. They cannot be edited per listing.</p></div></div>
         <div class="mt-4 grid gap-3 md:grid-cols-2"><article v-for="policy in applicablePolicies" :key="policy.key" class="rounded-lg border border-slate-600 bg-slate-900/60 p-3"><p class="text-sm font-semibold text-white">{{ policy.label }}</p><p class="mt-1 text-xs leading-5 text-slate-300">{{ policy.text }}</p></article></div>
@@ -624,7 +628,10 @@ import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
+import { useSubscription } from '@/composables/useSubscription'
 import { getClinicPolicyOwnerId } from '@/utils/clinicPolicies'
+
+const FREE_PLAN_POST_LIMIT = 5
 
 export default {
   name: 'ProductServiceListing',
@@ -634,6 +641,8 @@ export default {
     const storage = getStorage(getApp())
     const auth = getAuth(getApp())
     const { userRole, isClinicAdminOwner } = usePermissions()
+    const { activePlan } = useSubscription()
+    const isFreePlan = computed(() => String(activePlan.value || 'free').trim().toLowerCase() === 'free')
     const canManageListingWorkflow = computed(() =>
       isClinicAdminOwner.value || String(userRole.value || '').trim().toLowerCase() === 'manager'
     )
@@ -956,6 +965,12 @@ export default {
         ? (form.value.packageServiceIds || []).map((id) => posts.value.find((post) => post.id === id)).filter(Boolean)
         : []
       const packageFollowUpComponents = packageComponents.filter((post) => post.followUpAllowed === true)
+
+      const postsCreated = postType === 'Service' && form.value.requiresConsultationFirst ? 3 : 1
+      if (isFreePlan.value && posts.value.length + postsCreated > FREE_PLAN_POST_LIMIT) {
+        toast.error(`Free Plan allows up to ${FREE_PLAN_POST_LIMIT} listings. Archive a listing or upgrade to Basic to add more.`)
+        return
+      }
 
       if (!selectedName?.trim() || !form.value.title?.trim() || !form.value.description?.trim()) {
         toast.error('Please complete all required fields.')
@@ -1443,6 +1458,8 @@ export default {
       loading,
       form,
       applicablePolicies,
+      isFreePlan,
+      freePlanPostLimit: FREE_PLAN_POST_LIMIT,
       posts,
       actionLoadingId,
       showEditModal,
