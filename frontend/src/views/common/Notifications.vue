@@ -113,7 +113,7 @@
     :isOpen="showNotificationModal"
     :panelClass="isModuleView ? 'notifications-modal-panel notifications-modal-panel-module' : 'notifications-modal-panel'"
     :panelStyle="isModuleView ? '' : { backgroundColor: '#fffdf6', color: '#4f3527' }"
-    bodyClass="notifications-modal-body-shell"
+    :bodyClass="isModuleView ? 'notifications-modal-body-shell notifications-modal-body-shell-module' : 'notifications-modal-body-shell'"
     @close="closeNotificationModal"
   >
     <template #header>
@@ -826,6 +826,11 @@ export default {
   background: #fffdf6;
   color: #4f3527;
   padding: 0;
+}
+
+:deep(.notifications-modal-body-shell-module) {
+  background: #21140e;
+  color: #fff1e3;
 }
 
 .notifications-modal-label {

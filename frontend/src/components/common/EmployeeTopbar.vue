@@ -46,25 +46,26 @@
 
   <Modal
     :isOpen="showNotificationModal"
-    panelClass="bg-slate-800 text-white w-full max-w-xl"
+    :panelClass="isCustomerNotificationTheme ? 'employee-notification-modal-panel employee-notification-modal-panel-customer' : 'employee-notification-modal-panel employee-notification-modal-panel-staff'"
+    :bodyClass="isCustomerNotificationTheme ? 'employee-notification-modal-body employee-notification-modal-body-customer' : 'employee-notification-modal-body employee-notification-modal-body-staff'"
     @close="closeNotificationModal"
   >
     <template #header>
-      <h2 class="text-lg font-semibold">Notification</h2>
+      <h2 :class="isCustomerNotificationTheme ? 'employee-notification-modal-heading employee-notification-modal-heading-customer' : 'employee-notification-modal-heading employee-notification-modal-heading-staff'">Notification</h2>
     </template>
     <template #body>
-      <div v-if="selectedNotification" class="space-y-3 text-sm">
+      <div v-if="selectedNotification" :class="isCustomerNotificationTheme ? 'employee-notification-detail employee-notification-detail-customer' : 'employee-notification-detail employee-notification-detail-staff'">
         <div>
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Title</p>
-          <p class="text-white mt-1">{{ selectedNotification.title || 'Notification' }}</p>
+          <p class="employee-notification-modal-label">Title</p>
+          <p class="employee-notification-modal-text mt-1">{{ selectedNotification.title || 'Notification' }}</p>
         </div>
         <div>
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Description</p>
-          <p class="text-white mt-1 whitespace-pre-line">{{ selectedNotification.message || '-' }}</p>
+          <p class="employee-notification-modal-label">Description</p>
+          <p class="employee-notification-modal-text mt-1 whitespace-pre-line">{{ selectedNotification.message || '-' }}</p>
         </div>
         <div>
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Date</p>
-          <p class="text-white mt-1">{{ selectedNotification.createdLabel }}</p>
+          <p class="employee-notification-modal-label">Date</p>
+          <p class="employee-notification-modal-text mt-1">{{ selectedNotification.createdLabel }}</p>
         </div>
       </div>
     </template>
@@ -167,6 +168,7 @@ const showNotifications = ref(false)
 const latestNotifications = ref([])
 const loading = ref(false)
 const roleValue = ref('')
+const userTypeValue = ref('')
 const userId = ref('')
 const showNotificationModal = ref(false)
 const selectedNotification = ref(null)
@@ -174,6 +176,11 @@ let unsubscribeAuth = null
 let unsubscribeUser = null
 let unsubscribeRole = null
 let resizeHandler = null
+
+const isCustomerNotificationTheme = computed(() =>
+  String(userTypeValue.value || '').trim().toLowerCase() === 'customer'
+  || String(roleValue.value || '').trim().toLowerCase() === 'customer'
+)
 
 const formatDate = (value) => {
   if (!value) return '-'
@@ -303,6 +310,7 @@ onMounted(() => {
     userId.value = user.uid
     const userSnap = await getDoc(doc(db, 'users', user.uid))
     const data = userSnap.exists() ? userSnap.data() : {}
+    userTypeValue.value = String(data.userType || '').trim()
     const rawRole = String(data.role || '').trim().toLowerCase()
     if (rawRole.includes('superadmin')) {
       roleValue.value = 'Superadmin'
@@ -492,6 +500,74 @@ onUnmounted(() => {
 
 .notifications-more:hover {
   background: rgba(84, 49, 33, 0.95);
+}
+
+:deep(.employee-notification-modal-panel) {
+  width: 100%;
+  max-width: 36rem;
+  border-radius: 1rem;
+}
+
+:deep(.employee-notification-modal-panel-customer) {
+  background: #fff7e8;
+  color: #4f3527;
+  border: 1px solid #e8c99a;
+}
+
+:deep(.employee-notification-modal-panel-staff) {
+  background: #28160e;
+  color: #fff0e1;
+  border: 1px solid rgba(164, 102, 61, 0.62);
+}
+
+:deep(.employee-notification-modal-body) {
+  padding: 1rem;
+}
+
+:deep(.employee-notification-modal-body-customer) {
+  background: #fff7e8;
+  color: #4f3527;
+}
+
+:deep(.employee-notification-modal-body-staff) {
+  background: #28160e;
+  color: #fff0e1;
+}
+
+.employee-notification-modal-heading {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.employee-notification-modal-heading-customer,
+.employee-notification-detail-customer .employee-notification-modal-text {
+  color: #4f3527;
+}
+
+.employee-notification-modal-heading-staff,
+.employee-notification-detail-staff .employee-notification-modal-text {
+  color: #fff0e1;
+}
+
+.employee-notification-detail {
+  display: grid;
+  gap: 0.9rem;
+  font-size: 0.875rem;
+}
+
+.employee-notification-modal-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.employee-notification-detail-customer .employee-notification-modal-label {
+  color: #89684d;
+}
+
+.employee-notification-detail-staff .employee-notification-modal-label {
+  color: #d9b99c;
 }
 
 .employee-topbar-btn {
