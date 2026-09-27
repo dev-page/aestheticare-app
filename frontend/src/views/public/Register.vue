@@ -212,6 +212,7 @@ const emailAvailabilityMessage = ref('')
 const recoveryLoginAvailable = ref(false)
 const otpVerifiedForRegistration = ref(false)
 const pendingApprovalMode = ref(false)
+const resubmissionReason = ref('')
 
 const otpDigits = ref(Array(6).fill(''))
 const userUid = ref('')
@@ -1368,6 +1369,7 @@ const applyProfileData = (profile) => {
   clinicStreetNameEnabled.value = Boolean(clinicStreetName.value)
   authorizedRepPosition.value = safe(profile.authorizedRepPosition) || authorizedRepPosition.value
   companyType.value = safe(profile.companyType) || companyType.value
+  resubmissionReason.value = safe(profile.resubmissionReason) || resubmissionReason.value
 
   if (profile.birthDate) {
     const birth = new Date(profile.birthDate)
@@ -1813,6 +1815,7 @@ if (statusResult.resumeStep === 4) {
       clinicPostalCode: clinicData.clinicPostalCode,
       submittedDocuments: clinicData.submittedDocuments,
       draftDocuments: clinicData.draftDocuments,
+      resubmissionReason: clinicData.resubmissionReason,
     })
 
     const resumeStep = mapRegistrationStepFromStatus(existingUser.status, clinicData.approvalStatus)
@@ -3043,6 +3046,7 @@ const submitDocuments = async () => {
       draftDocuments: deleteField(),
       draftDocumentsUpdatedAt: deleteField(),
     })
+    resubmissionReason.value = ''
 
     let automaticVerification = null
     try {
@@ -3587,6 +3591,11 @@ const handleRegistrationSubmit = () => {
               <p class="text-sm text-charcoal-600">
                 Upload your required documents for legitimacy checks before approval.
               </p>
+              <div v-if="resubmissionReason" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-charcoal-700" role="alert">
+                <p class="font-semibold text-charcoal-800">Document changes requested</p>
+                <p class="mt-1">{{ resubmissionReason }}</p>
+                <p class="mt-2 text-xs text-charcoal-600">Upload a complete replacement set of the required documents, then submit them for review again.</p>
+              </div>
               <div class="rounded-xl border border-gold-300 bg-gold-50 px-4 py-3 text-sm text-charcoal-700" role="note">
                 <p class="font-semibold text-charcoal-800">Before you upload</p>
                 <ul class="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-charcoal-600">

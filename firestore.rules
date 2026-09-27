@@ -74,8 +74,10 @@ service cloud.firestore {
     // document-draft fields while the backend has the clinic in its document
     // submission stage; it cannot change approval or verification data.
     function applicantCanSaveClinicDocumentDraft() {
-      return resource.data.approvalStatus == 'Pending Document Submission'
-        && request.resource.data.approvalStatus == 'Pending Document Submission'
+      return (resource.data.approvalStatus == 'Pending Document Submission'
+          || resource.data.approvalStatus == 'Pending Documents')
+        && (request.resource.data.approvalStatus == 'Pending Document Submission'
+          || request.resource.data.approvalStatus == 'Pending Documents')
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'draftDocuments', 'draftDocumentsUpdatedAt'
         ]);

@@ -323,11 +323,11 @@
           </section>
 
           <section v-if="isPendingRecord(selectedRecord)" class="mb-4">
-            <label class="block text-xs text-slate-400 mb-1">Rejection Remark (required when rejecting)</label>
+            <label class="block text-xs text-slate-400 mb-1">Review remark (required for resubmission or rejection)</label>
             <textarea
               v-model="rejectionRemark"
               rows="3"
-              placeholder="Enter reason for rejection..."
+              placeholder="Explain what the applicant needs to correct..."
               class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-slate-500"
             ></textarea>
           </section>
@@ -342,6 +342,14 @@
               {{ processing ? 'Processing...' : 'Approve' }}
             </button>
 
+            <button
+              type="button"
+              class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white"
+              :disabled="processing"
+              @click="requestResubmission"
+            >
+              {{ processing ? 'Processing...' : 'Request Resubmission' }}
+            </button>
             <button
               type="button"
               class="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white"
@@ -973,7 +981,67 @@ export default {
       }
     }
 
-        const rejectSelected = async () => {
+    const requestResubmission = async () => {
+      if (!selectedRecord.value) return
+      const remark = String(rejectionRemark.value || '').trim()
+      if (!remark) {
+        await systemAdminSwal.fire({
+          title: 'Remark Required',
+          text: 'Explain what the applicant must correct before requesting resubmission.',
+          icon: 'warning',
+        })
+        return
+      }
+
+      const result = await systemAdminSwal.fire({
+        title: 'Request Document Resubmission?',
+        text: `Return ${selectedRecord.value.fullName} to document upload while keeping the registration active?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Request resubmission',
+        cancelButtonText: 'Cancel',
+      })
+      if (!result.isConfirmed) return
+
+      processing.value = true
+      try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
+        if (!token) throw new Error('Missing authorization token')
+        const response = await fetchFromBackend('/admin/request-clinic-resubmission', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            uid: selectedRecord.value.id,
+            resubmissionReason: remark,
+            reviewedBy: auth.currentUser?.uid || null,
+          }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error || 'Failed to request document resubmission.')
+        }
+
+        await systemAdminSwal.fire({
+          title: 'Resubmission Requested',
+          text: payload.data?.emailSent
+            ? 'The applicant can continue the registration, verify their email again, and upload replacement documents.'
+            : 'The account is ready for replacement documents, but the email could not be sent. Contact the applicant manually.',
+          icon: 'success',
+        })
+        closeModal()
+        await loadPendingClinics()
+      } catch (err) {
+        console.error('Failed to request clinic document resubmission:', err)
+        error.value = 'Failed to request document resubmission. Please try again.'
+      } finally {
+        processing.value = false
+      }
+    }
+
+    const rejectSelected = async () => {
       if (!selectedRecord.value) return
       const remark = String(rejectionRemark.value || '').trim()
       if (!remark) {
@@ -1065,6 +1133,7 @@ export default {
       approveSelected,
       toggleAllOcrVerified,
       batchApproveOcrVerified,
+      requestResubmission,
       rejectSelected,
       runClinicVerification,
       formatDateValue,

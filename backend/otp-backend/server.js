@@ -2261,6 +2261,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     verificationProcessedBy: processedBy || 'automatic_processor',
     // OCR verifies document quality and consistency; it never grants account access.
     approvalStatus,
+    resubmissionRequired: false,
+    resubmissionReason: admin.firestore.FieldValue.delete(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }
 
@@ -3558,6 +3560,102 @@ app.delete('/admin/system-admin/:uid', requireAuth, requireRole(['superadmin']),
   }
 })
 
+app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['superadmin']), requirePermission('system:clinics:verify'), async (req, res) => {
+  const uid = String(req.body?.uid || '').trim()
+  const resubmissionReason = String(req.body?.resubmissionReason || '').trim()
+  const reviewedBy = String(req.body?.reviewedBy || '').trim() || null
+
+  if (!uid) return res.status(400).json({ success: false, error: 'uid is required' })
+  if (!resubmissionReason) return res.status(400).json({ success: false, error: 'A resubmission reason is required' })
+
+  try {
+    const firestore = admin.firestore()
+    const userRef = firestore.collection('users').doc(uid)
+    const clinicRef = firestore.collection('clinics').doc(uid)
+    const [userSnapshot, clinicSnapshot] = await Promise.all([userRef.get(), clinicRef.get()])
+    if (!userSnapshot.exists || !clinicSnapshot.exists) {
+      return res.status(404).json({ success: false, error: 'Clinic registration account was not found' })
+    }
+
+    const userData = userSnapshot.data() || {}
+    const clinicData = clinicSnapshot.data() || {}
+    const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
+    const applicantName = String(userData.firstName || clinicData.ownerFirstName || '').trim() || 'Applicant'
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const resubmissionCount = Number(clinicData.resubmissionCount || 0) + 1
+
+    await firestore.runTransaction(async (transaction) => {
+      transaction.set(userRef, {
+        status: 'Pending Documents',
+        approvalStatus: 'Pending Documents',
+        resubmissionRequired: true,
+        resubmissionReason,
+        resubmissionRequestedAt: timestamp,
+        reviewedBy,
+        updatedAt: timestamp,
+      }, { merge: true })
+      transaction.set(clinicRef, {
+        approvalStatus: 'Pending Documents',
+        verificationStatus: 'Resubmission Required',
+        resubmissionRequired: true,
+        resubmissionReason,
+        resubmissionRequestedAt: timestamp,
+        resubmissionCount,
+        reviewedBy,
+        submittedDocuments: {},
+        documentsSubmittedAt: admin.firestore.FieldValue.delete(),
+        updatedAt: timestamp,
+      }, { merge: true })
+      transaction.set(firestore.collection('notifications').doc(), {
+        recipientUserId: uid,
+        branchId: uid,
+        title: 'Clinic registration changes requested',
+        message: `Please correct and resubmit your clinic documents. Reason: ${resubmissionReason}`,
+        link: '/clinic/register',
+        read: false,
+        deleted: false,
+        createdAt: timestamp,
+      })
+    })
+
+    await writeSystemAdminActivity(req, {
+      action: 'Requested clinic registration resubmission',
+      module: 'Clinic Verification',
+      details: `Requested corrected documents from ${applicantName}. Reason: ${resubmissionReason}`,
+      targetId: uid,
+      targetName: applicantName,
+    })
+
+    let emailSent = false
+    if (recipient && postmarkClient && senderEmail) {
+      try {
+        const registrationUrl = `${EMAIL_WEBSITE_URL}/clinic/register`
+        const subject = 'AesthetiCare - Documents Need Revision'
+        const htmlReason = resubmissionReason
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\n/g, '<br>')
+        await sendPostmarkMessage({
+          to: recipient,
+          from: senderEmail,
+          subject,
+          text: `Hi ${applicantName},\n\nYour clinic registration needs revised documents before it can be approved.\n\nReason provided by the system administrator:\n${resubmissionReason}\n\nReturn to your registration, enter the email you used, complete the email verification, and upload the corrected documents:\n${registrationUrl}\n\nRegards,\nThe AesthetiCare Team`,
+          html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${applicantName},</p><p>Your clinic registration needs revised documents before it can be approved.</p><p><strong>Reason provided by the system administrator:</strong></p><p>${htmlReason}</p><p>Return to your registration, enter the email you used, complete the email verification, and upload the corrected documents:</p><p><a href="${registrationUrl}">${registrationUrl}</a></p><p>Regards,<br>The AesthetiCare Team</p></div>`,
+        })
+        emailSent = true
+      } catch (emailError) {
+        console.warn('Failed to send clinic resubmission email:', emailError?.message || emailError)
+      }
+    }
+
+    return res.json({ success: true, data: { uid, emailSent, resubmissionCount } })
+  } catch (error) {
+    console.error('Failed to request clinic document resubmission:', error)
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to request document resubmission' })
+  }
+})
+
 app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superadmin']), requirePermission('system:clinics:verify'), async (req, res) => {
 
   const uid = String(req.body?.uid || '').trim()
@@ -3829,6 +3927,8 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
       await clinicRef.set({
         approvalStatus: 'Approved',
         approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        resubmissionRequired: false,
+        resubmissionReason: admin.firestore.FieldValue.delete(),
         subscriptionOnboardingRequired: true,
       }, { merge: true })
       await userRef.set({
@@ -3934,6 +4034,8 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
         clinicRef.set({
           approvalStatus: 'Approved',
           approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+          resubmissionRequired: false,
+          resubmissionReason: admin.firestore.FieldValue.delete(),
           subscriptionOnboardingRequired: true,
         }, { merge: true }),
         userRef.set({
@@ -4040,6 +4142,8 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
         approvalStatus: 'Approved',
         approvedAt: admin.firestore.FieldValue.serverTimestamp(),
         approvedBy: reviewer || null,
+        resubmissionRequired: false,
+        resubmissionReason: admin.firestore.FieldValue.delete(),
         subscriptionOnboardingRequired: true,
       }, { merge: true }),
       userRef.set({
