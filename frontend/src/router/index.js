@@ -517,7 +517,16 @@ router.beforeEach(async (to, from, next) => {
     return next('/clinic/onboarding')
   }
 
-  if (isApprovedClinicOwner && isFreeSubscriptionPlan(effectiveSubscriptionPlan) && !isFreePlanRoute(routePath)) {
+  // The onboarding page is the required entry point for a Free owner who has
+  // not dismissed the plan prompt. It must remain reachable; otherwise this
+  // check redirects onboarding to the subscription page while the preceding
+  // check redirects it straight back, leaving the user in a redirect loop.
+  if (
+    isApprovedClinicOwner
+    && isFreeSubscriptionPlan(effectiveSubscriptionPlan)
+    && !isSubscriptionOnboardingRoute
+    && !isFreePlanRoute(routePath)
+  ) {
     return next('/account/subscription')
   }
 

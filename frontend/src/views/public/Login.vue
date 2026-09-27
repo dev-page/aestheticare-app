@@ -209,9 +209,15 @@ const setProcessLoading = (active, label) => {
 const startRedirectFlow = (redirectPath) => {
   setProcessLoading(true, 'Redirecting to your panel...')
   if (redirectTimeout) clearTimeout(redirectTimeout)
-  redirectTimeout = setTimeout(async () => {
-    await router.push(redirectPath)
+  redirectTimeout = setTimeout(() => {
+    // Do not leave the full-screen loader active while route guards and lazy
+    // components resolve. A guard redirect (such as Free-plan onboarding)
+    // must never make a successful sign-in appear stuck.
     setProcessLoading(false)
+    router.push(redirectPath).catch((error) => {
+      console.error('Unable to open the account workspace after sign-in:', error)
+      toast.error('Unable to open your workspace. Please try again.')
+    })
   }, REDIRECT_DELAY)
 }
 
