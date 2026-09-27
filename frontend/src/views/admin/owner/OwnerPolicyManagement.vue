@@ -15,20 +15,20 @@
           <h2 class="text-xl font-semibold">Services</h2>
           <p class="mt-1 text-sm text-slate-400">These settings apply when customers book an appointment for a clinic service.</p>
           <div class="mt-5 grid gap-4 md:grid-cols-2">
-            <article v-for="policy in servicePolicies" :key="policy.id" class="rounded-2xl border border-slate-700 bg-slate-900/60 p-5">
+            <article v-for="policy in servicePolicies" :key="policy.id" class="rounded-2xl border border-slate-700 bg-slate-900/60 p-5" :class="!isPolicyAvailable(policy) ? 'opacity-55' : ''">
               <div class="flex items-start justify-between gap-4">
                 <div>
                   <h3 class="font-semibold text-slate-100">{{ policy.title }}</h3>
                   <p class="mt-1 text-sm text-slate-400">{{ policy.description }}</p>
                 </div>
-                <label class="relative inline-flex shrink-0 cursor-pointer items-center" :title="form[policy.enabledKey] ? 'Disable policy' : 'Enable policy'">
-                  <input v-model="form[policy.enabledKey]" :disabled="!canManagePolicies" type="checkbox" class="peer sr-only" />
+                <label class="relative inline-flex shrink-0 cursor-pointer items-center" :title="isPolicyAvailable(policy) ? (form[policy.enabledKey] ? 'Disable policy' : 'Enable policy') : 'Available with Basic or Premium'">
+                  <input v-model="form[policy.enabledKey]" :disabled="!canManagePolicies || !isPolicyAvailable(policy)" type="checkbox" class="peer sr-only" />
                   <span class="relative h-6 w-11 rounded-full border-2 border-amber-400/80 bg-slate-800 shadow-inner transition peer-checked:border-amber-300 peer-checked:bg-amber-500 peer-focus:ring-2 peer-focus:ring-amber-300/70 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-5"></span>
                 </label>
               </div>
               <div class="mt-5 flex items-center justify-between gap-3 border-t border-slate-700 pt-4">
-                <span class="text-xs font-medium" :class="form[policy.enabledKey] ? 'text-emerald-300' : 'text-slate-500'">{{ form[policy.enabledKey] ? 'Enabled' : 'Disabled' }}</span>
-                <button v-if="form[policy.enabledKey]" type="button" :disabled="!canManagePolicies" @click="openEditor(policy.id)" class="inline-flex items-center gap-2 rounded-lg border border-amber-500/60 px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"><Icon icon="mdi:pencil" class="h-4 w-4" /> Edit</button>
+                <span class="text-xs font-medium" :class="isPolicyAvailable(policy) && form[policy.enabledKey] ? 'text-emerald-300' : 'text-slate-500'">{{ isPolicyAvailable(policy) ? (form[policy.enabledKey] ? 'Enabled' : 'Disabled') : 'Basic or Premium required' }}</span>
+                <button v-if="form[policy.enabledKey]" type="button" :disabled="!canManagePolicies || !isPolicyAvailable(policy)" @click="openEditor(policy.id)" class="inline-flex items-center gap-2 rounded-lg border border-amber-500/60 px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"><Icon icon="mdi:pencil" class="h-4 w-4" /> Edit</button>
                 <span v-else class="text-xs text-slate-500">Enable to configure</span>
               </div>
             </article>
@@ -43,10 +43,10 @@
           <h2 class="text-xl font-semibold">Product Orders</h2>
           <p class="mt-1 text-sm text-slate-400">Configure payment, pickup preparation, cancellation, and return rules for product orders.</p>
           <div class="mt-5 grid gap-4 md:grid-cols-3">
-            <article v-for="policy in productPolicies" :key="policy.id" class="rounded-2xl border border-slate-700 bg-slate-900/60 p-5">
+            <article v-for="policy in productPolicies" :key="policy.id" class="rounded-2xl border border-slate-700 bg-slate-900/60 p-5" :class="!isPolicyAvailable(policy) ? 'opacity-55' : ''">
               <div class="flex items-start justify-between gap-4">
                 <div><h3 class="font-semibold text-slate-100">{{ policy.title }}</h3><p class="mt-1 text-sm text-slate-400">{{ policy.description }}</p></div>
-                <label class="relative inline-flex shrink-0 cursor-pointer items-center" :title="form[policy.enabledKey] ? 'Disable policy' : 'Enable policy'"><input v-model="form[policy.enabledKey]" :disabled="!canManagePolicies" type="checkbox" class="peer sr-only" /><span class="relative h-6 w-11 rounded-full border-2 border-amber-400/80 bg-slate-800 shadow-inner transition peer-checked:border-amber-300 peer-checked:bg-amber-500 peer-focus:ring-2 peer-focus:ring-amber-300/70 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-5"></span></label>
+                <label class="relative inline-flex shrink-0 cursor-pointer items-center" :title="isPolicyAvailable(policy) ? (form[policy.enabledKey] ? 'Disable policy' : 'Enable policy') : 'Available with Basic or Premium'"><input v-model="form[policy.enabledKey]" :disabled="!canManagePolicies || !isPolicyAvailable(policy)" type="checkbox" class="peer sr-only" /><span class="relative h-6 w-11 rounded-full border-2 border-amber-400/80 bg-slate-800 shadow-inner transition peer-checked:border-amber-300 peer-checked:bg-amber-500 peer-focus:ring-2 peer-focus:ring-amber-300/70 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-5"></span></label>
               </div>
               <div class="mt-5 flex items-center justify-between gap-3 border-t border-slate-700 pt-4"><span class="text-xs font-medium" :class="form[policy.enabledKey] ? 'text-emerald-300' : 'text-slate-500'">{{ form[policy.enabledKey] ? 'Enabled' : 'Disabled' }}</span><button v-if="form[policy.enabledKey]" type="button" :disabled="!canManagePolicies" @click="openEditor(policy.id)" class="inline-flex items-center gap-2 rounded-lg border border-amber-500/60 px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"><Icon icon="mdi:pencil" class="h-4 w-4" /> Edit</button><span v-else class="text-xs text-slate-500">Enable to configure</span></div>
             </article>
@@ -126,6 +126,7 @@ import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth, db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
+import { useSubscription } from '@/composables/useSubscription'
 
 const PolicyToggle = defineComponent({
   props: { modelValue: Boolean, label: String, description: String, disabled: Boolean }, emits: ['update:modelValue'],
@@ -154,11 +155,14 @@ const editor = reactive({})
 const activeEditor = ref('')
 const activePolicy = computed(() => [...servicePolicies, ...productPolicies].find((policy) => policy.id === activeEditor.value) || null)
 const { hasPermission, isClinicAdminOwner } = usePermissions()
+const { activePlan } = useSubscription()
+const isFreePlan = computed(() => String(activePlan.value || 'free').trim().toLowerCase() === 'free')
+const isPolicyAvailable = (policy) => !isFreePlan.value || policy.id === 'walkIn'
 const canManagePolicies = computed(() => isClinicAdminOwner.value || hasPermission('policies:update'))
 const saving = ref(false); const savedAt = ref(null); const branchId = ref(''); const policyOwnerId = ref(''); let stopListening = null
 const policyFields = { payment: ['fullPayment', 'downpaymentPercentage'], cancellation: ['earlyMinimumHours', 'earlyNonRefundable', 'earlyRefundPercentage', 'midMinimumHours', 'midMaximumHours', 'midNonRefundable', 'midRefundPercentage', 'lateMaximumHours', 'lateNonRefundable', 'lateRefundPercentage'], rescheduling: ['maximumRescheduleAllowance'], noShow: ['noShowGracePeriodMinutes', 'noShowNonRefundable', 'noShowRefundPercentage'], orderDeliveryPayment: ['expectedDeliveryPeriodDays'], orderCancellation: ['orderCancellationAllowed', 'orderCancellationWindowHours', 'orderCancellationNonRefundable', 'orderCancellationRefundPercentage'], orderReturn: ['orderReturnsAllowed', 'orderReturnWindowDays', 'orderReturnConditionUnopened', 'orderReturnConditionUnused', 'orderReturnConditionOriginalPackaging', 'orderReturnConditionContents', 'orderReturnReasonDamaged', 'orderReturnReasonDefective', 'orderReturnReasonWrongProduct', 'orderReturnReasonExpired', 'orderReturnReasonDescriptionMismatch', 'orderReturnReasonOther', 'orderReturnOtherReason', 'orderReturnNonRefundable', 'orderReturnRefundPercentage'] }
 const formatDate = (value) => { const date = value?.toDate ? value.toDate() : new Date(value); return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString() }
-const openEditor = (policyId) => { const policy = [...servicePolicies, ...productPolicies].find((item) => item.id === policyId); if (!policy || !form[policy.enabledKey] || !canManagePolicies.value) return; Object.keys(editor).forEach((key) => delete editor[key]); policyFields[policyId].forEach((key) => { editor[key] = form[key] }); activeEditor.value = policyId }
+const openEditor = (policyId) => { const policy = [...servicePolicies, ...productPolicies].find((item) => item.id === policyId); if (!policy || !isPolicyAvailable(policy) || !form[policy.enabledKey] || !canManagePolicies.value) return; Object.keys(editor).forEach((key) => delete editor[key]); policyFields[policyId].forEach((key) => { editor[key] = form[key] }); activeEditor.value = policyId }
 const closeEditor = () => { activeEditor.value = ''; Object.keys(editor).forEach((key) => delete editor[key]) }
 let previousBodyOverflow = ''
 let previousDocumentOverflow = ''

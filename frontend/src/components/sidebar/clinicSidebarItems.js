@@ -10,7 +10,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       { label: 'Branch Info', icon: 'mdi:map-marker-outline', to: '/clinic/branches', permission: 'branches:view', ownerOnly: true },
       { label: 'Add Branch', icon: 'mdi:office-building-plus-outline', to: '/clinic/branches/new', feature: 'multi_branch', permission: 'branches:create', ownerOnly: true },
       { label: 'Clinic Page', icon: 'mdi:web', to: '/clinic/page', permission: 'clinic_profile:update', ownerOnly: true },
-      { label: 'Policy Management', icon: 'mdi:file-document-outline', to: '/clinic/policies', feature: 'appointments', permissionsAny: ['policies:view', 'policies:update'] }
+      { label: 'Policy Management', icon: 'mdi:file-document-outline', to: '/clinic/policies', permissionsAny: ['policies:view', 'policies:update'] }
     ]
   },
   {
@@ -20,8 +20,8 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     moduleKey: 'crm',
     children: [
       { type: 'section', label: 'CLIENTS' },
-      { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/crm/clients', feature: 'appointments', permission: 'clients:view' },
-      { label: 'Walk-In', icon: 'mdi:walk', to: '/crm/clients/new', feature: 'appointments', permission: 'clients:create' },
+      { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/crm/clients', permission: 'clients:view' },
+      { label: 'Walk-In', icon: 'mdi:walk', to: '/crm/clients/new', permission: 'clients:create' },
       { type: 'section', label: 'APPOINTMENTS' },
       { label: 'Appointments', icon: 'mdi:calendar-month-outline', to: '/crm/appointments', feature: 'appointments', permission: 'appointments:view' },
       { label: 'Treatment Sessions', icon: 'mdi:calendar-sync-outline', to: '/clinical/treatment-sessions', feature: 'appointments', permission: 'appointments:update' },

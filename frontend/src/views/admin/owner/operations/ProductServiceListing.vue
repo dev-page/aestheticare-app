@@ -27,10 +27,10 @@
               v-model="form.postType"
               class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="Product">Product</option>
+              <option v-if="!isFreePlan" value="Product">Product</option>
               <option value="Service">Service</option>
-              <option value="Consultation">Consultation</option>
-              <option value="Package">Service Package</option>
+              <option v-if="!isFreePlan" value="Consultation">Consultation</option>
+              <option v-if="!isFreePlan" value="Package">Service Package</option>
             </select>
           </div>
 
@@ -778,7 +778,7 @@ export default {
 
     const resetForm = () => {
       form.value = {
-        postType: 'Product',
+        postType: isFreePlan.value ? 'Service' : 'Product',
         productName: '',
       serviceName: '',
       consultationName: '',
@@ -858,7 +858,7 @@ export default {
       const snapshot = await getDocs(postQuery)
       posts.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
-        .filter((post) => post.archived !== true)
+        .filter((post) => post.archived !== true && (!isFreePlan.value || post.postType === 'Service'))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
     }
 
@@ -951,6 +951,10 @@ export default {
       }
     )
 
+    watch(isFreePlan, (free) => {
+      if (free && form.value.postType !== 'Service') resetForm()
+    }, { immediate: true })
+
     const createPost = async () => {
       const postType = form.value.postType
       const selectedName = postType === 'Product'
@@ -965,6 +969,11 @@ export default {
         ? (form.value.packageServiceIds || []).map((id) => posts.value.find((post) => post.id === id)).filter(Boolean)
         : []
       const packageFollowUpComponents = packageComponents.filter((post) => post.followUpAllowed === true)
+
+      if (isFreePlan.value && postType !== 'Service') {
+        toast.error('Free Plan supports service listings only. Upgrade to Basic to list products, consultations, or packages.')
+        return
+      }
 
       const postsCreated = postType === 'Service' && form.value.requiresConsultationFirst ? 3 : 1
       if (isFreePlan.value && posts.value.length + postsCreated > FREE_PLAN_POST_LIMIT) {

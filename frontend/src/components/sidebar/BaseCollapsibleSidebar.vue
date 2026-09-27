@@ -454,12 +454,33 @@ export default {
         return ['owner', 'clinicadmin', 'clinicadministrator'].includes(compactRole)
       }
 
+      const isFreePlanDestination = (path) => [
+        '/clinic/dashboard',
+        '/clinic/branches',
+        '/clinic/profile',
+        '/clinic/page',
+        '/clinic/policies',
+        '/catalog/products-services',
+        '/crm/clients',
+        '/crm/clients/new',
+        '/crm/inbox',
+        '/account/profile',
+        '/account/change-password',
+        '/account/subscription',
+        '/account/plans',
+        '/account/closure',
+        '/notifications',
+        '/support/report',
+      ].some((allowedPath) => path === allowedPath || path.startsWith(`${allowedPath}/`))
+
       const isItemAllowed = (item) => {
       const required = getItemFeatures(item)
         const requiredPermissions = getItemPermissions(item)
         const currentRole = String(userRole.value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
         if (item?.ownerOnly && !isOwnerLike(currentRole)) return false
       const shouldApplySubscriptionRules = isClinicSideRole(currentRole)
+      const isFreeClinicOwner = isOwnerLike(currentRole) && String(activePlan.value || '').trim().toLowerCase() === 'free'
+      if (isFreeClinicOwner && item?.to && !isFreePlanDestination(item.to)) return false
       const featureAllowed = !required.length || required.every((feature) => hasFeature(feature))
       const allowedPlans = Array.isArray(item?.plans) ? item.plans.map((plan) => String(plan || '').trim().toLowerCase()) : []
       const planAllowed = !allowedPlans.length || allowedPlans.includes(String(activePlan.value || '').trim().toLowerCase())
