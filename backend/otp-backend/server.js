@@ -241,8 +241,16 @@ const getOcrExpiryValidation = (text, requiresExpiry) => {
   return { valid: !expired && (startMs === null || startMs <= now), expired, invalidRange: false, ...context }
 }
 const extractOcrDocumentNumber = (text) => {
-  const candidates = String(text || '').toUpperCase().match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]{2,}){1,5}\b|\b\d{6,}\b/g) || []
-  return candidates.find((value) => /\d/.test(value)) || ''
+  const source = String(text || '').toUpperCase()
+  const labelled = source.match(/\b(?:LTO|LICENSE|PERMIT|REGISTRATION|CERTIFICATE|TIN|TAXPAYER\s*(?:ID|NUMBER))\s*(?:NO\.?|NUMBER|#|:)?\s*((?:[A-Z0-9]{2,}(?:-[A-Z0-9]{2,}){1,5}|[A-Z0-9]{4,}))\b/i)
+  if (labelled?.[1] && /\d/.test(labelled[1])) return labelled[1]
+
+  const candidates = source.match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]{2,}){1,5}\b|\b\d{6,}\b/g) || []
+  return candidates.find((value) => {
+    // A date such as 02-28-2024 is not a document number.
+    if (/^\d{2}-\d{2}-\d{4}$/.test(value) || /^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    return /\d/.test(value)
+  }) || ''
 }
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -2213,7 +2221,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       storagePath,
       reason: '',
       numberMatch: null,
-      expectedDocumentNumber: String(document.documentNumber || document.number || '').trim(),
+      detectedDocumentNumber: '',
       checks: {
         readableText: false,
         ocrConfidence: null,
@@ -2304,14 +2312,16 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       const expiryValidation = getOcrExpiryValidation(extractedText, expiryApplicable)
       const expiryValid = expiryValidation.valid
       const requiresDocumentNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
-      const expectedNumber = normalizeOcrComparable(document.documentNumber || document.number)
-      const numberMatch = requiresDocumentNumber
-        ? Boolean(expectedNumber && textComparable.includes(expectedNumber))
-        : null
+      const detectedDocumentNumber = extractOcrDocumentNumber(extractedText)
+      const documentNumberDetected = requiresDocumentNumber ? Boolean(detectedDocumentNumber) : null
+      // Registration does not ask applicants to type document numbers. OCR
+      // therefore verifies that a number is readable; it does not falsely
+      // report a mismatch against a non-existent applicant-entered value.
+      const numberMatch = null
       const ocrQuality = ocrConfidence ?? (hasReadableText ? 0.75 : hasSomeText ? 0.4 : 0)
       const readabilityScore = hasReadableText ? 1 : hasSomeText ? 0.5 : 0
       const identityScore = nameMatch ? 1 : 0
-      const numberScore = requiresDocumentNumber ? (numberMatch ? 1 : 0) : 1
+      const numberScore = requiresDocumentNumber ? (documentNumberDetected ? 1 : 0) : 1
       const expiryScore = expiryValid ? 1 : 0
       const confidence = Math.min(1, (
         ocrQuality * 0.35
@@ -2321,6 +2331,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         + expiryScore * 0.05
       ))
       result.numberMatch = numberMatch
+      result.detectedDocumentNumber = detectedDocumentNumber
       result.ocrConfidence = ocrConfidence
       result.checks = {
         readableText: hasReadableText,
@@ -2332,6 +2343,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         expectedBirthDate,
         nameCheckType: requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
         numberMatch,
+        documentNumberDetected,
         expiryValid: expiryApplicable ? expiryValid : null,
         expiryDate: expiryValidation.validTo,
         expiryValidationType: expiryValidation.type,
@@ -2378,13 +2390,9 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = 'OCR completed, but the birth date on the government-issued ID could not be matched. This document requires manual review.'
       } else if (expiryApplicable && expiryValid !== true) {
         result.reason = 'A labelled validity period or expiry date could not be confirmed. This document requires manual review.'
-      } else if (!expectedNumber) {
-        result.reason = requiresDocumentNumber
-          ? 'The required document number was not provided for comparison.'
-          : (result.status === 'verified' ? 'Passed automatic consistency checks.' : 'The document needs manual review because its weighted score is below the threshold.')
-      } else if (!numberMatch) {
-        result.reason = 'The document number does not match the number entered during registration.'
-      } else if (!expiryValid) {
+      } else if (requiresDocumentNumber && !documentNumberDetected) {
+        result.reason = 'A document number could not be read clearly. This document requires manual review.'
+      } else if (expiryApplicable && expiryValid === false) {
         result.reason = 'The document expiry date is invalid or expired.'
       } else {
         result.reason = result.status === 'verified'
