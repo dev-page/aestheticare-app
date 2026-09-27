@@ -38,6 +38,8 @@ const subscriptionExpiryHasPassed = (value) => {
   return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now()
 }
 
+const isTrueFlag = (value) => value === true || String(value || '').trim().toLowerCase() === 'true'
+
 const routes = [
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
   { path: '/supplier/supply/rfqs', redirect: '/supplier/supply/orders' },
@@ -458,6 +460,8 @@ router.beforeEach(async (to, from, next) => {
 
   const routePath = String(to.path || '').toLowerCase()
   const isOwnerRoute = isOwnerLikeRole(currentUserData, currentUser?.uid)
+  const isSubscriptionOnboardingRoute = routePath === '/clinic/onboarding'
+  const isSubscriptionCheckoutRoute = routePath === '/subscription/checkout'
 
   let clinicSubscriptionData = {}
   if (currentUser && isOwnerRoute) {
@@ -502,11 +506,15 @@ router.beforeEach(async (to, from, next) => {
     && isOwnerRoute
     && userStatus === 'active'
     && clinicApprovalStatus.includes('approved')
-  if (
-    isApprovedClinicOwner
+  const needsFreePlanAcknowledgement = isApprovedClinicOwner
     && isFreeSubscriptionPlan(effectiveSubscriptionPlan)
-    && !isFreePlanRoute(routePath)
-  ) {
+    && !isTrueFlag(currentUserData.subscriptionOnboardingDismissed)
+
+  if (needsFreePlanAcknowledgement && !isSubscriptionOnboardingRoute && !isSubscriptionCheckoutRoute) {
+    return next('/clinic/onboarding')
+  }
+
+  if (isApprovedClinicOwner && isFreeSubscriptionPlan(effectiveSubscriptionPlan) && !isFreePlanRoute(routePath)) {
     return next('/account/subscription')
   }
 
