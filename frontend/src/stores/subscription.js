@@ -142,6 +142,13 @@ export const useSubscriptionStore = defineStore('subscription', () => {
   let unsubscribePlanPermissions = null
   let activePlanKey = ''
 
+  const stopPlanPermissionsListener = () => {
+    if (unsubscribePlanPermissions) {
+      unsubscribePlanPermissions()
+      unsubscribePlanPermissions = null
+    }
+  }
+
   const resolveSubscriptionForUser = async (userId) => {
     const userSnap = await getDoc(doc(db, 'users', userId))
     if (!userSnap.exists()) {
@@ -299,11 +306,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
   }
 
   const startPlanPermissionsListener = (planKey) => {
-    if (!planKey) return
-    if (unsubscribePlanPermissions) {
-      unsubscribePlanPermissions()
-      unsubscribePlanPermissions = null
-    }
+    if (!planKey || !auth.currentUser) return
+    stopPlanPermissionsListener()
 
     unsubscribePlanPermissions = onSnapshot(
       doc(db, 'planPermissions', planKey),
@@ -334,6 +338,12 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         activeFeatures.value = DEFAULT_FEATURES[planKey] || DEFAULT_FEATURES.free
       },
       (error) => {
+        // Registration deliberately signs the applicant out once documents
+        // are submitted. Do not keep a protected listener alive after that.
+        if (!auth.currentUser && isPermissionDenied(error)) {
+          stopPlanPermissionsListener()
+          return
+        }
         console.error('Failed to listen to plan permissions:', error)
       }
     )
@@ -346,6 +356,8 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     try {
       const user = auth.currentUser
       if (!user) {
+        stopPlanPermissionsListener()
+        activePlanKey = ''
         try {
           Object.keys(localStorage).forEach((key) => {
             if (key.startsWith(PLAN_CACHE_KEY) || key.startsWith(PLAN_FEATURES_CACHE_PREFIX)) {
@@ -409,6 +421,9 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         }
         throw error
       }
+      // Auth can change while the Firestore reads above are in flight (for
+      // example, after document submission signs the registrant out).
+      if (auth.currentUser?.uid !== user.uid) return
       const isCustomer = isCustomerRole(subscriptionMeta.role, subscriptionMeta.userType)
       if (isCustomer) {
         if (unsubscribePlanPermissions) {
@@ -515,7 +530,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       userType.value = subscriptionMeta.userType || ''
       const permissions = await loadPlanPermissions(planKey)
       activeFeatures.value = permissions
-      startPlanPermissionsListener(planKey)
+      if (auth.currentUser?.uid === user.uid) startPlanPermissionsListener(planKey)
       try {
         localStorage.setItem(
           `${PLAN_CACHE_KEY}:${user.uid}`,

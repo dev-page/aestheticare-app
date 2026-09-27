@@ -211,7 +211,7 @@ const normalizeOcrDateToken = (value) => {
 
 const extractOcrExpiryContext = (text) => {
   const source = String(text || '').toLowerCase().replace(/\s+/g, ' ')
-  const rangePattern = new RegExp(`(?:valid(?:ity)?(?:\\s+period)?(?:\\s+from)?|effective(?:\\s+date)?)\\s*[:\\-]?\\s*(${OCR_DATE_TOKEN_PATTERN})\\s*(?:to|until|through|thru|[-–—])\\s*(${OCR_DATE_TOKEN_PATTERN})`, 'i')
+  const rangePattern = new RegExp(`(?:valid(?:ity)?(?:\\s+period)?(?:\\s+from)?|effective(?:\\s+date)?|authorized\\s+to\\s+operate(?:\\s+from)?)\\s*[:\\-]?\\s*(${OCR_DATE_TOKEN_PATTERN})\\s*(?:to|until|through|thru|[-–—])\\s*(${OCR_DATE_TOKEN_PATTERN})`, 'i')
   const range = source.match(rangePattern)
   if (range) {
     return {
@@ -230,14 +230,15 @@ const extractOcrExpiryContext = (text) => {
 }
 
 const getOcrExpiryValidation = (text, requiresExpiry) => {
-  if (!requiresExpiry) return { valid: null, expired: false, ...extractOcrExpiryContext('') }
+  if (!requiresExpiry) return { valid: null, expired: false, invalidRange: false, ...extractOcrExpiryContext('') }
   const context = extractOcrExpiryContext(text)
-  if (!context.validTo) return { valid: null, expired: false, ...context }
+  if (!context.validTo) return { valid: null, expired: false, invalidRange: false, ...context }
   const endMs = new Date(`${context.validTo}T23:59:59.999Z`).getTime()
   const startMs = context.validFrom ? new Date(`${context.validFrom}T00:00:00Z`).getTime() : null
   const now = Date.now()
+  if (startMs !== null && endMs < startMs) return { valid: false, expired: false, invalidRange: true, ...context }
   const expired = endMs < now
-  return { valid: !expired && (startMs === null || startMs <= now), expired, ...context }
+  return { valid: !expired && (startMs === null || startMs <= now), expired, invalidRange: false, ...context }
 }
 const extractOcrDocumentNumber = (text) => {
   const candidates = String(text || '').toUpperCase().match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]{2,}){1,5}\b|\b\d{6,}\b/g) || []
@@ -2138,7 +2139,8 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     const requiredNameMismatch = requiresName && nameMatch === false
     const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
     const expiredDocument = requiresExpiry && expiryValidation.expired
-    result.status = !readableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || score < MANUAL_REVIEW_THRESHOLD
+    const invalidValidityRange = requiresExpiry && expiryValidation.invalidRange
+    result.status = !readableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || invalidValidityRange || score < MANUAL_REVIEW_THRESHOLD
       ? 'rejected'
       : score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
     result.reason = !readableText
@@ -2149,6 +2151,8 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
         ? 'The birth date on the government-issued ID does not match the birth date entered in Step 1. Please upload the correct ID.'
       : expiredDocument
         ? `This document expired on ${expiryDate}. Please upload a current document.`
+      : invalidValidityRange
+        ? 'The document has an invalid validity range: its end date is earlier than its start date. Please upload a correct, current document.'
       : result.status === 'rejected'
         ? 'This document did not meet the minimum OCR verification score. Please upload a clearer file.'
         : requiresName && nameMatch !== true
@@ -2354,7 +2358,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       const requiredNameMismatch = requiresName && nameMatch === false
       const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
       const expiredDocument = expiryApplicable && expiryValidation.expired
-      result.status = !hasReadableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || confidence < MANUAL_REVIEW_THRESHOLD
+      const invalidValidityRange = expiryApplicable && expiryValidation.invalidRange
+      result.status = !hasReadableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || invalidValidityRange || confidence < MANUAL_REVIEW_THRESHOLD
         ? 'rejected'
         : confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
@@ -2365,6 +2370,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = 'The birth date on the government-issued ID does not match the birth date entered in Step 1. Please upload the correct ID.'
       } else if (expiredDocument) {
         result.reason = `This document expired on ${expiryValidation.validTo}. Please upload a current document.`
+      } else if (invalidValidityRange) {
+        result.reason = 'The document has an invalid validity range: its end date is earlier than its start date. Please upload a correct, current document.'
       } else if (requiresName && nameMatch !== true) {
         result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
       } else if (requiresBirthDate && birthDateMatch !== true) {

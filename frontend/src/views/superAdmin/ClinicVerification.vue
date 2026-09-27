@@ -258,28 +258,26 @@
               </div>
             </div>
             <div v-if="selectedRecord.verificationResults?.length" class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <article v-for="result in selectedRecord.verificationResults" :key="result.key" class="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+              <article v-for="result in selectedRecord.verificationResults" :key="result.key" class="rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-sm">
                 <div class="flex items-start justify-between gap-3">
-                  <p class="text-sm text-slate-200">{{ documentLabel(result.key) }}</p>
-                  <span class="text-xs capitalize" :class="result.status === 'verified' ? 'text-emerald-300' : 'text-amber-300'">{{ result.status }}</span>
+                  <p class="text-sm font-medium text-slate-100">{{ documentLabel(result.key) }}</p>
+                  <span class="rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize" :class="result.status === 'verified' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'">{{ result.status }}</span>
                 </div>
-                <p class="mt-1 text-xs text-slate-400">Document score: {{ result.confidence }}%</p>
-                <div v-if="result.checks" class="mt-2 grid grid-cols-2 gap-1 text-[11px] text-slate-400">
-                  <span>OCR engine: {{ result.ocrConfidence === null ? 'Unavailable' : `${result.ocrConfidence}%` }}</span>
-                  <span>Readable text: {{ result.checks.readableText === null ? 'Unavailable' : result.checks.readableText ? 'Passed' : 'Needs review' }}</span>
-                  <span>Document number: {{ result.checks.numberMatch === null ? 'Not applicable' : result.checks.numberMatch ? 'Matched' : 'Not matched' }}</span>
-                  <span>Clinic/owner name: {{ result.checks.nameMatch === null ? 'Unavailable' : result.checks.nameMatch ? 'Matched' : 'Not matched' }}</span>
-                  <span>Expiry: {{ result.checks.expiryValid === null ? 'Not applicable' : result.checks.expiryValid ? 'Valid' : 'Invalid' }}</span>
+                <div class="mt-4 flex items-end justify-between gap-3">
+                  <div>
+                    <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Document score</p>
+                    <p class="mt-1 text-2xl font-semibold text-white">{{ result.confidence }}<span class="text-base text-slate-400">%</span></p>
+                  </div>
+                  <div class="w-24 pb-1">
+                    <div class="h-2 overflow-hidden rounded-full bg-slate-700">
+                      <div
+                        class="h-full rounded-full transition-all"
+                        :class="result.status === 'verified' ? 'bg-emerald-500' : 'bg-amber-400'"
+                        :style="{ width: `${Math.min(100, Math.max(0, result.confidence))}%` }"
+                      ></div>
+                    </div>
+                  </div>
                 </div>
-                <p v-if="result.scoreBreakdown" class="mt-1 text-[11px] text-slate-500">
-                  Calculation: OCR {{ result.scoreBreakdown.ocrQuality }}% x 35%, text {{ result.scoreBreakdown.readability }}% x 15%, identity {{ result.scoreBreakdown.identityMatch }}% x 10%, number {{ result.scoreBreakdown.documentNumberMatch }}% x 35%, expiry {{ result.scoreBreakdown.expiryValidity }}% x 5%.
-                </p>
-                <p v-else class="mt-1 text-[11px] text-slate-500">Detailed checks were not stored for this older verification run. Run verification again to calculate them.</p>
-                <p class="mt-1 text-xs text-slate-300">{{ result.reason }}</p>
-                <details v-if="result.extractedText" class="mt-2">
-                  <summary class="cursor-pointer text-xs text-sky-300">View extracted text</summary>
-                  <pre class="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[11px] text-slate-400">{{ result.extractedText }}</pre>
-                </details>
               </article>
             </div>
             <p v-else class="mt-4 text-xs text-slate-500">No automatic verification result is stored for this registration.</p>
@@ -290,16 +288,6 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <article v-for="docItem in selectedRecord.documents" :key="docItem.key" class="bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <p class="text-sm text-slate-200 mb-3">{{ docItem.label }}</p>
-                <div class="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div class="rounded-md bg-slate-900/60 p-2">
-                    <span class="text-slate-500">Document number</span>
-                    <p class="mt-1 text-slate-200">{{ docItem.documentNumber || '-' }}</p>
-                  </div>
-                  <div class="rounded-md bg-slate-900/60 p-2">
-                    <span class="text-slate-500">Expiry date</span>
-                    <p class="mt-1 text-slate-200">{{ formatDateValue(docItem.expiryDate) }}</p>
-                  </div>
-                </div>
                 <div v-if="docItem.url">
                   <img
                     v-if="docItem.isImage"
