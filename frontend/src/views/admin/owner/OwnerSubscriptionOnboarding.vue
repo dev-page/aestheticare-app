@@ -174,7 +174,10 @@ const continueWithSelectedPlan = async () => {
         // Storage may be unavailable in a privacy-restricted browser. The
         // route still remains safe because Free feature restrictions apply.
       }
-      await router.push('/clinic/dashboard')
+      await router.push({
+        path: '/clinic/dashboard',
+        query: { freeOnboarding: 'continue' },
+      })
       return
     }
 

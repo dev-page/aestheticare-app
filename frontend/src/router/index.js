@@ -474,6 +474,10 @@ router.beforeEach(async (to, from, next) => {
   const isOwnerRoute = isOwnerLikeRole(currentUserData, currentUser?.uid)
   const isSubscriptionOnboardingRoute = routePath === '/clinic/onboarding'
   const isSubscriptionCheckoutRoute = routePath === '/subscription/checkout'
+  // This query marker is only created by the Free Plan Continue action. It
+  // makes that one navigation resilient when browser session storage is
+  // unavailable (for example, restrictive privacy settings).
+  const continuedFromFreePlanOnboarding = String(to.query?.freeOnboarding || '').trim().toLowerCase() === 'continue'
 
   let clinicSubscriptionData = {}
   if (currentUser && isOwnerRoute) {
@@ -522,6 +526,7 @@ router.beforeEach(async (to, from, next) => {
     && isFreeSubscriptionPlan(effectiveSubscriptionPlan)
     && !isTrueFlag(currentUserData.subscriptionOnboardingDismissed)
     && !hasFreePlanOnboardingSessionAccess(currentUser?.uid)
+    && !continuedFromFreePlanOnboarding
 
   if (needsFreePlanAcknowledgement && !isSubscriptionOnboardingRoute && !isSubscriptionCheckoutRoute) {
     return next('/clinic/onboarding')
