@@ -319,6 +319,8 @@ const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
 
 const approvalRedirecting = ref(false)
 const approvalRedirectSeconds = ref(5)
+const pendingApprovalRedirecting = ref(false)
+const pendingApprovalRedirectSeconds = ref(5)
 const APPROVAL_REDIRECT_DURATION_SECONDS = 5
 const approvalReviewState = ref('pending')
 const approvalReviewMessage = ref('Your registration is under review. Please allow at least 24 hours for admin review.')
@@ -331,6 +333,8 @@ let unsubscribeApprovalUser = null
 let unsubscribeApprovalClinic = null
 let approvalRedirectTimer = null
 let approvalRedirectInterval = null
+let pendingApprovalRedirectTimer = null
+let pendingApprovalRedirectInterval = null
 
 const clearApprovalRedirect = () => {
   if (approvalRedirectTimer) clearTimeout(approvalRedirectTimer)
@@ -352,6 +356,28 @@ const startApprovalRedirect = () => {
 
 const approvalRedirectProgress = computed(() =>
   ((APPROVAL_REDIRECT_DURATION_SECONDS - approvalRedirectSeconds.value) / APPROVAL_REDIRECT_DURATION_SECONDS) * 100
+)
+
+const clearPendingApprovalRedirect = () => {
+  if (pendingApprovalRedirectTimer) clearTimeout(pendingApprovalRedirectTimer)
+  if (pendingApprovalRedirectInterval) clearInterval(pendingApprovalRedirectInterval)
+  pendingApprovalRedirectTimer = null
+  pendingApprovalRedirectInterval = null
+  pendingApprovalRedirecting.value = false
+  pendingApprovalRedirectSeconds.value = APPROVAL_REDIRECT_DURATION_SECONDS
+}
+
+const startPendingApprovalRedirect = () => {
+  clearPendingApprovalRedirect()
+  pendingApprovalRedirecting.value = true
+  pendingApprovalRedirectInterval = setInterval(() => {
+    pendingApprovalRedirectSeconds.value = Math.max(0, pendingApprovalRedirectSeconds.value - 1)
+  }, 1000)
+  pendingApprovalRedirectTimer = setTimeout(() => router.push('/login'), APPROVAL_REDIRECT_DURATION_SECONDS * 1000)
+}
+
+const pendingApprovalRedirectProgress = computed(() =>
+  ((APPROVAL_REDIRECT_DURATION_SECONDS - pendingApprovalRedirectSeconds.value) / APPROVAL_REDIRECT_DURATION_SECONDS) * 100
 )
 
 const togglePassword = () => passwordVisible.value = !passwordVisible.value
@@ -893,6 +919,7 @@ onBeforeUnmount(() => {
   stopOtpCountdown()
   stopApprovalCheck()
   clearApprovalRedirect()
+  clearPendingApprovalRedirect()
   Object.values(documentPreviewUrls.value).forEach((previewUrl) => {
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl)
   })
@@ -3100,6 +3127,7 @@ const submitDocuments = async () => {
       : 'Your registration is under review. Some documents require system administrator review.'
 
     currentStep.value = 4
+    startPendingApprovalRedirect()
     setStoredOtpRecipientEmail('')
     stopOtpCountdown()
     toast.success('Documents submitted. Please wait for approval.')
@@ -3813,7 +3841,12 @@ const handleRegistrationSubmit = () => {
               </div>
 
               <div v-if="isApprovalUnderReview" class="rounded-2xl border border-gold-200 bg-white/70 p-4 text-sm text-charcoal-600">
-                Your registration is being reviewed. An email will be sent to you regarding your registration.
+                <template v-if="pendingApprovalRedirecting">
+                  <div class="flex items-center justify-between gap-3"><span>Your registration is being reviewed.</span><strong class="text-gold-800">Redirecting to login</strong></div>
+                  <div class="mt-4 flex items-center gap-3"><span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 border-gold-300 bg-gold-50 text-lg font-bold tabular-nums text-gold-800">{{ pendingApprovalRedirectSeconds }}</span><span class="text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">seconds remaining</span></div>
+                  <div class="mt-3 h-2 overflow-hidden rounded-full bg-gold-100" role="progressbar" aria-label="Redirecting to login" :aria-valuenow="pendingApprovalRedirectProgress" aria-valuemin="0" aria-valuemax="100"><div class="h-full rounded-full bg-gold-600 transition-all duration-1000" :style="{ width: `${pendingApprovalRedirectProgress}%` }"></div></div>
+                </template>
+                <template v-else>Your registration is being reviewed. An email will be sent to you regarding your registration.</template>
               </div>
 
               <div v-else-if="isApprovalApproved" class="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-800">
