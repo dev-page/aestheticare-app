@@ -54,9 +54,13 @@
           type="button"
           class="continue-button"
           :disabled="loading || submitting || !selectedPlan"
-          @click="continueToCheckout"
+          @click="continueWithSelectedPlan"
         >
-          {{ submitting ? 'Preparing checkout...' : 'Continue to payment' }}
+          {{
+            submitting
+              ? (selectedFreePlan ? 'Opening your portal...' : 'Preparing checkout...')
+              : (selectedFreePlan ? 'Continue' : 'Continue to payment')
+          }}
         </button>
       </div>
 
@@ -75,13 +79,19 @@
         {{ savingDismissal ? 'Saving...' : 'Continue to dashboard' }}
       </button>
 
-      <p class="onboarding-note">Your account details will be filled in automatically on the payment page.</p>
+      <p class="onboarding-note">
+        {{
+          selectedFreePlan
+            ? 'You can upgrade your plan at any time.'
+            : 'Your account details will be filled in automatically on the payment page.'
+        }}
+      </p>
     </section>
   </main>
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
@@ -100,6 +110,12 @@ const selectedPlan = ref('')
 const dontShowAgain = ref(false)
 const savingDismissal = ref(false)
 let unsubscribePlans = null
+
+const selectedFreePlan = computed(() => {
+  const selected = plans.value.find((plan) => plan.id === selectedPlan.value)
+  const planId = String(selected?.id || selectedPlan.value || '').trim().toLowerCase()
+  return planId === 'free' || planId === 'free-plan' || Number(selected?.price) === 0
+})
 
 const defaultPlans = () => [
   {
@@ -141,13 +157,22 @@ const loadPlans = () => {
   )
 }
 
-const continueToCheckout = async () => {
+const continueWithSelectedPlan = async () => {
   if (!selectedPlan.value) return
   submitting.value = true
-  await router.push({
-    path: '/subscription/checkout',
-    query: { plan: selectedPlan.value, from: 'owner', onboarding: '1' },
-  })
+  try {
+    if (selectedFreePlan.value) {
+      await router.push('/clinic/dashboard')
+      return
+    }
+
+    await router.push({
+      path: '/subscription/checkout',
+      query: { plan: selectedPlan.value, from: 'owner', onboarding: '1' },
+    })
+  } finally {
+    submitting.value = false
+  }
 }
 
 const saveDismissalPreference = async () => {
