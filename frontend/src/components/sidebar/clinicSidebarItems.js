@@ -1,11 +1,17 @@
 const supplyPath = (department, page) => ({ finance: `/finance/procurement/${page}`, management: `/management/supply/${page}` })[department] || `/${department}/${page}`
 const supplyLinks = (department, permission, entries) => entries.map(([page, label, icon]) => ({ label, icon, to: supplyPath(department, page), permission }))
 export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isEmployee = false } = {}) => [
-  { label: 'Dashboard', icon: 'dashboard', to: dashboardTo },
+  {
+    label: 'Dashboard',
+    icon: 'dashboard',
+    to: dashboardTo,
+    tourKey: isEmployee ? 'employee-dashboard-nav' : 'owner-dashboard-nav',
+  },
   {
     key: 'clinic-setup',
     label: 'Clinic Setup',
     icon: 'mdi:hospital-building',
+    tourKey: 'clinic-setup',
     children: [
       { label: 'Branch Info', icon: 'mdi:map-marker-outline', to: '/clinic/branches', permission: 'branches:view', ownerOnly: true },
       { label: 'Add Branch', icon: 'mdi:office-building-plus-outline', to: '/clinic/branches/new', feature: 'multi_branch', permission: 'branches:create', ownerOnly: true },
