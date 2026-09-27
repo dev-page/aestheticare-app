@@ -119,6 +119,25 @@ test('Supplier catalog commercial terms are validated and audited on the server'
   assert.equal(invalid.status, 400)
   const foreign = await f.call('competitor', '/supply/catalog', { supplierId: 'vendor', items: [valid] })
   assert.equal(foreign.status, 403)
+  const fees = await f.call('supplier', '/supply/delivery-fees', { supplierId: 'vendor', deliveryFees: [{ city: 'Imus', amount: 250 }] })
+  assert.equal(fees.status, 200, JSON.stringify(fees)); assert.deepEqual(f.store.get('suppliers/vendor').deliveryFees, [{ city: 'Imus', amount: 250 }])
+  const foreignFees = await f.call('competitor', '/supply/delivery-fees', { supplierId: 'vendor', deliveryFees: [{ city: 'Imus', amount: 250 }] })
+  assert.equal(foreignFees.status, 403)
+})
+
+test('A supplier delivery fee is selected from the clinic branch city before Finance approval', async () => {
+  const f = fixture(), date = '2099-12-31'
+  f.seed('clinics', 'clinic', { ownerId: 'owner', clinicLocation: 'Imus' })
+  const supplier = f.store.get('suppliers/vendor')
+  f.seed('suppliers', 'vendor', { ...supplier, deliveryFees: [{ city: 'Imus', amount: 250 }, { city: 'Bacoor', amount: 400 }] })
+  const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date })
+  const procurement = f.read(request).procurementId
+  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true, category: 'Materials', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes' })
+  const po = f.read(f.read(procurement).purchaseOrderId)
+  assert.equal(po.delivery, 25000)
+  assert.equal(po.deliveryFeeCity, 'Imus')
+  assert.equal(po.deliveryFeeConfigured, true)
+  assert.equal(po.total, 35000)
 })
 
 test('Procurement creates a catalog-priced purchase order for Finance approval without an RFQ', async () => {

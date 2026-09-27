@@ -3,6 +3,25 @@ import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMa
 
 const docs = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }))
 const cleanId = value => { const id = String(value || ''); demand(/^[A-Za-z0-9_-]{1,150}$/.test(id), 'Invalid record identifier.', 400); return id }
+const CAVITE_CITIES = ['Bacoor', 'Cavite City', 'Dasmarinas City', 'General Trias', 'Imus', 'Tagaytay', 'Trece Martires', 'Alfonso', 'Amadeo', 'Carmona', 'General Emilio Aguinaldo', 'General Mariano Alvarez', 'Indang', 'Kawit', 'Magallanes', 'Maragondon', 'Mendez', 'Naic', 'Noveleta', 'Rosario', 'Silang', 'Tanza', 'Ternate']
+const cityKey = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/^city of\s+/, '').replace(/\s+(city|municipality)$/, '').replace(/[^a-z0-9]/g, '')
+const deliveryFees = raw => {
+  const entries = Array.isArray(raw) ? raw : []
+  demand(entries.length <= CAVITE_CITIES.length, 'Too many delivery-fee locations.', 400)
+  const seen = new Set()
+  return entries.map(entry => {
+    const city = CAVITE_CITIES.find(option => cityKey(option) === cityKey(entry?.city))
+    demand(city, 'Choose a valid Cavite city or municipality.', 400)
+    demand(!seen.has(cityKey(city)), 'Each delivery location can be listed only once.', 400)
+    seen.add(cityKey(city))
+    return { city, amount: money(entry?.amount) / 100 }
+  })
+}
+const deliveryFeeForBranch = (supplier, clinic) => {
+  const branchCity = CAVITE_CITIES.find(city => cityKey(city) === cityKey(clinic?.clinicLocation || clinic?.location || clinic?.clinicBranch || '')) || ''
+  const entry = (Array.isArray(supplier?.deliveryFees) ? supplier.deliveryFees : []).find(fee => cityKey(fee?.city) === cityKey(branchCity))
+  return { city: branchCity, amount: entry ? money(entry.amount) : 0, configured: Boolean(entry) }
+}
 // Older workflow records did not always include relationship links.
 const linksOf = record => Array.isArray(record?.links) ? record.links.filter(Boolean) : []
 const names = { request: 'IR', procurement: 'PR', rfq: 'RFQ', quotation: 'QT', evaluation: 'EV', budget: 'BD', budgetRequest: 'BR', financeApproval: 'FA', budgetAllocation: 'BA', po: 'PO', supplierConfirmation: 'PC', receiving: 'RC', inspection: 'INSP', discrepancy: 'DS', invoice: 'INV', threeWayMatch: 'MT', payment: 'PAY' }
@@ -114,7 +133,20 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const internal = !ctx.supplier
     const broadRead = internal && ['inventory:view', 'procurement:view', 'orders:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
     const items = broadRead ? (await scopedDocs('inventoryItems')).map(i => ({ ...i, signals: stockSignals(i), availableStock: Math.max(0, Number(i.currentStock || 0) - Number(i.reservedStock || 0)) })) : []
-    const suppliers = broadRead ? await scopedDocs('suppliers') : []
+    let suppliers = broadRead ? await scopedDocs('suppliers') : []
+    // Historical POs can reference a supplier record that was later relinked
+    // to another branch. Include only the supplier documents already named by
+    // records the caller is authorized to read, so the UI can show its business
+    // name instead of exposing an internal document ID.
+    if (broadRead) {
+      const known = new Set(suppliers.map(supplier => supplier.id))
+      const referencedIds = [...new Set(records.map(record => String(record.supplierId || '')).filter(Boolean))]
+      const referenced = await Promise.all(referencedIds.filter(id => !known.has(id)).map(async id => {
+        const snapshot = await db.collection('suppliers').doc(id).get()
+        return snapshot.exists ? { id, ...(snapshot.data() || {}) } : null
+      }))
+      suppliers = [...suppliers, ...referenced.filter(Boolean)]
+    }
     const supplierAccounts = ctx.supplier
       ? await Promise.all(ctx.supplierIds.map(async (id) => {
         const supplier = (await db.collection('suppliers').doc(id).get()).data() || {}
@@ -148,6 +180,20 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       tx.set(db.collection('supplyAudit').doc(), { branchId: supplier.branchId || '', recordId: supplierId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: 'supplierCatalog', action: 'catalog-updated', itemCount: items.length, ...ctx.auditContext, createdAt: stamp() })
     })
     res.json({ success: true, data: { items } })
+  }))
+
+  app.post('/supply/delivery-fees', requireAuth, wrap(async (req, res, ctx) => {
+    demand(ctx.supplier, 'Supplier access is required.', 403)
+    const supplierId = cleanId(req.body.supplierId), fees = deliveryFees(req.body.deliveryFees)
+    const ref = db.collection('suppliers').doc(supplierId)
+    await db.runTransaction(async tx => {
+      const snapshot = await tx.get(ref); demand(snapshot.exists, 'Supplier profile not found.', 404)
+      const supplier = snapshot.data() || {}
+      demand(supplier.ownerId === ctx.uid || supplier.supplierUserId === ctx.uid, 'This delivery-fee profile belongs to another supplier.', 403)
+      tx.set(ref, { deliveryFees: fees, deliveryFeesUpdatedAt: stamp(), updatedAt: stamp() }, { merge: true })
+      tx.set(db.collection('supplyAudit').doc(), { branchId: supplier.branchId || '', recordId: supplierId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: 'supplierDeliveryFees', action: 'delivery-fees-updated', deliveryFees: fees, ...ctx.auditContext, createdAt: stamp() })
+    })
+    res.json({ success: true, data: { deliveryFees: fees } })
   }))
 
   app.post('/supply/items', requireAuth, wrap(async (req, res, ctx) => {
@@ -216,12 +262,12 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     res.json({ success: true, data: await mutate(ctx, r.branchId, req.body || {}, id) })
   }))
   const mutate = async (ctx, branchId, input, targetId) => db.runTransaction(async tx => {
-    const [recordSnap, itemSnap, supplierSnap, staffSnap, documentSnap, lotSnap] = await Promise.all([
+    const [recordSnap, itemSnap, supplierSnap, staffSnap, documentSnap, lotSnap, clinicSnap] = await Promise.all([
       tx.get(db.collection('supplyRecords').where('branchId', '==', branchId)), tx.get(db.collection('inventoryItems').where('branchId', '==', branchId)),
       tx.get(db.collection('suppliers').where('branchId', '==', branchId)), tx.get(db.collection('users').where('branchId', '==', branchId)), tx.get(db.collection('supplyDocuments').where('branchId', '==', branchId)),
-      tx.get(db.collection('supplyLots').where('branchId', '==', branchId)),
+      tx.get(db.collection('supplyLots').where('branchId', '==', branchId)), tx.get(db.collection('clinics').doc(branchId)),
     ])
-    const records = docs(recordSnap), items = docs(itemSnap), suppliers = docs(supplierSnap), documents = docs(documentSnap)
+    const records = docs(recordSnap), items = docs(itemSnap), suppliers = docs(supplierSnap), documents = docs(documentSnap), clinic = clinicSnap.data() || {}
     const writes = [], financialWrites = [], now = stamp()
     const get = (id, kind) => { const r = records.find(r => r.id === id && r.kind === kind); demand(r, `${kind} record not found.`, 404); return r }
     const set = (r, patch) => { writes.push([db.collection('supplyRecords').doc(r.id), patch, true]); return { ...r, ...patch } }
@@ -405,10 +451,11 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           const pricedLines = lines.map(line => ({ ...line, total: Number(line.quantity) * Number(line.unitPrice) }))
           const subtotal = pricedLines.reduce((sum, line) => sum + line.total, 0)
           const catalogTerms = catalogCommercialTerms({ ...r, lines }, { lines: pricedLines })
-          const totals = { lines: pricedLines, subtotal, tax: catalogTerms.tax, delivery: 0, otherCharges: catalogTerms.otherCharges, discount: catalogTerms.discount }
+          const deliveryFee = deliveryFeeForBranch(selectedSupplier, clinic)
+          const totals = { lines: pricedLines, subtotal, tax: catalogTerms.tax, delivery: deliveryFee.amount, otherCharges: catalogTerms.otherCharges, discount: catalogTerms.discount }
           totals.total = totals.subtotal + totals.tax + totals.delivery + totals.otherCharges - totals.discount
           demand(totals.total > 0, 'The supplier catalog total must be positive.', 400)
-          const po = create('po', { status: 'For Finance Approval', mode: 'Online', directSupplierCatalog: true, supplierId, procurementId: r.id, department: r.department, category: String(input.category || r.lines[0]?.category || 'Procurement'), lines: totals.lines, subtotal: totals.subtotal, tax: totals.tax, delivery: totals.delivery, otherCharges: totals.otherCharges, discount: totals.discount, total: totals.total, requestedAmount: totals.total, warranty: String(input.warranty || ''), deliveryDate: dateKey(input.deliveryDate || r.requiredDate), deliveryLocation: String(input.deliveryLocation || r.lines[0]?.location || 'Clinic branch'), terms: String(input.terms || 'Per approved inventory request'), catalogPricingVerifiedBy: ctx.uid, catalogPricingVerifiedAt: now, committedAmount: 0, paidAmount: 0, accepted: {}, links: [...linksOf(r), r.id] }, `po-${r.id}`)
+          const po = create('po', { status: 'For Finance Approval', mode: 'Online', directSupplierCatalog: true, supplierId, supplierBusinessName: String(selectedSupplier.businessName || selectedSupplier.name || selectedSupplier.companyName || 'Supplier').trim() || 'Supplier', procurementId: r.id, department: r.department, category: String(input.category || r.lines[0]?.category || 'Procurement'), lines: totals.lines, subtotal: totals.subtotal, tax: totals.tax, delivery: totals.delivery, deliveryFeeCity: deliveryFee.city, deliveryFeeConfigured: deliveryFee.configured, otherCharges: totals.otherCharges, discount: totals.discount, total: totals.total, requestedAmount: totals.total, warranty: String(input.warranty || ''), deliveryDate: dateKey(input.deliveryDate || r.requiredDate), deliveryLocation: String(input.deliveryLocation || r.lines[0]?.location || 'Clinic branch'), terms: String(input.terms || 'Per approved inventory request'), catalogPricingVerifiedBy: ctx.uid, catalogPricingVerifiedAt: now, committedAmount: 0, paidAmount: 0, accepted: {}, links: [...linksOf(r), r.id] }, `po-${r.id}`)
           result = set(r, { status: 'For Finance Approval', supplierId, verifiedBy: ctx.uid, verifiedAt: now, purchaseOrderId: po.id, checklist: { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true } })
         } else if (action === 'return') {
           demand(r.status === 'Received', 'Only newly received requests can be returned.')

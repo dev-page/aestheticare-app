@@ -40,6 +40,26 @@
           </div>
         </div>
 
+        <section v-if="!loading" class="rounded-[2rem] border border-[#e4c7a1] bg-white/90 p-6 shadow-sm">
+          <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#9a6848]">Order delivery</p>
+              <h2 class="mt-2 text-xl font-bold text-[#40261a]">Delivery Fees by City</h2>
+              <p class="mt-2 max-w-3xl text-sm leading-6 text-[#6f503d]">Set the fixed fee for each Cavite city or municipality you serve. When Procurement creates a purchase order, the fee for the clinic branch's city is added automatically before Finance approval.</p>
+            </div>
+            <button type="button" class="rounded-xl border border-[#d9b38d] bg-[#fff8ef] px-4 py-2 text-sm font-semibold text-[#6f4329] transition hover:bg-[#f7ead8]" :disabled="deliveryFeeSaving || deliveryFees.length >= caviteCities.length" @click="addDeliveryFee">Add City</button>
+          </div>
+          <div v-if="deliveryFees.length" class="mt-5 grid gap-3 md:grid-cols-2">
+            <div v-for="(fee, index) in deliveryFees" :key="`${fee.city}-${index}`" class="flex items-end gap-3 rounded-xl border border-[#ead1b0] bg-[#fffaf4] p-4">
+              <label class="min-w-0 flex-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#806047]">Destination city<select v-model="fee.city" class="mt-2 w-full rounded-lg border border-[#dfb98d] bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-[#40261a]"><option value="">Select city</option><option v-for="city in availableCitiesFor(fee.city)" :key="city" :value="city">{{ city }}</option></select></label>
+              <label class="w-32 text-xs font-semibold uppercase tracking-[0.12em] text-[#806047]">Fee (PHP)<input v-model.number="fee.amount" type="number" min="0" step="0.01" class="mt-2 w-full rounded-lg border border-[#dfb98d] bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-[#40261a]" placeholder="0.00" /></label>
+              <button type="button" class="rounded-lg px-2 py-2 text-sm font-semibold text-[#8d5a3b] transition hover:bg-[#f3e3cf]" aria-label="Remove delivery city" @click="removeDeliveryFee(index)">Remove</button>
+            </div>
+          </div>
+          <p v-else class="mt-5 rounded-xl border border-dashed border-[#dfb98d] bg-[#fffaf4] px-4 py-3 text-sm text-[#6f503d]">No delivery fees have been set. Orders to unlisted cities will have a PHP 0 delivery fee.</p>
+          <div class="mt-5 flex justify-end"><button type="button" class="rounded-xl bg-[#8d5a3b] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6f4329] disabled:cursor-not-allowed disabled:opacity-60" :disabled="deliveryFeeSaving" @click="saveDeliveryFees">{{ deliveryFeeSaving ? 'Saving...' : 'Save Delivery Fees' }}</button></div>
+        </section>
+
         <div v-if="loading" class="grid gap-4">
           <div v-for="index in 2" :key="index" class="h-56 rounded-[2rem] border border-[#e4c7a1] bg-white/70 animate-pulse"></div>
         </div>
@@ -79,9 +99,9 @@
 
         <form v-if="!loading" data-supplier-catalog-form class="exact-catalog-form" @click="handleCatalogClick" @submit.prevent="saveSupplies">
           <article v-for="(item, index) in items" :key="`exact-${item.id}`" class="exact-item-card">
-            <header class="exact-item-header"><div><p>ITEM {{ index + 1 }}</p><h2>{{ item.name || 'Add New Item' }}</h2><span>Provide the item details, pricing, and tax information. Order-level charges (e.g., delivery, handling) will be added during procurement requests.</span></div><button type="button" @click="removeItemRow(index)">♜ <b>Remove</b></button></header>
-            <div class="exact-item-content"><section class="exact-left"><div class="exact-image"><img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.name || 'Item image'" /><template v-else><strong>▧＋</strong><b>No item image yet</b><span>Upload a clear photo of the product (PNG, JPG, WebP, or GIF, max 25 MB).</span></template><label>↥ &nbsp; Upload Item Photo<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" @change="handleItemImageChange(index, $event)" /></label></div><label>ITEM NAME <em>*</em><input v-model="item.name" placeholder="Enter item name (e.g., Disposable Gloves)" /></label><label>ITEM CATEGORY <em>*</em><select v-model="item.category"><option value="">Select category</option><option v-for="option in categoryOptions" :key="option" :value="option">{{ option }}</option></select></label><label v-if="item.category === 'Others'">CUSTOM CATEGORY<input v-model="item.customCategory" placeholder="Enter custom category" /></label><label>DESCRIPTION<textarea v-model="item.description" rows="5" placeholder="Describe the item, including key features, brand, or intended use."></textarea></label><div class="exact-pair"><label>UNIT OF MEASUREMENT <em>*</em><select v-model="item.measurementUnit"><option value="">Select unit (e.g., box, vial, pc)</option><option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option></select></label><label>MINIMUM ORDER QUANTITY<input v-model.number="item.minOrderQuantity" type="number" min="0" placeholder="Optional" /></label></div></section><section class="exact-right"><label>QUANTITY (STOCK AVAILABLE)<input :value="item.quantity" inputmode="numeric" @beforeinput="blockInvalidNumberInput($event)" @input="item.quantity = readNumberInput($event, item.quantity)" placeholder="0" /></label><small>Current available quantity in your inventory (optional).</small><div class="exact-package"><b>▣ &nbsp; Package details (optional)</b><span>Record the amount contained in one selling unit. For example: enter “10” and select “mL” for a 10 mL vial, or enter “5” and select “pcs” for a box of 5 pieces.</span><button type="button" @click="item.showMeasurement = true">＋ Add Package Details</button><div v-if="item.showMeasurement" class="exact-pair"><input v-model="item.measurementValue" placeholder="e.g., 10" /><select v-model="item.measurementUnit"><option value="">Select unit</option><option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option></select></div></div><label>SPECIFICATIONS / DETAILS<textarea v-model="item.specifications" rows="5" placeholder="Example: sterile, 10 mL per vial, 5 pcs per box, 2 kg equipment, 15x20 cm dimensions."></textarea></label><div class="exact-pair"><label>UNIT PRICE (PHP) <em>*</em><div class="exact-price"><b>₱</b><input :value="item.price" @beforeinput="blockInvalidNumberInput($event, true)" @input="item.price = readNumberInput($event, item.price, true)" @blur="formatPrice(item)" placeholder="0.00" /></div></label><label>TAX TREATMENT <em>*</em><select v-model="item.taxTreatment" @change="applyTaxTreatment(item)"><option value="vat-inclusive">12% VAT — price inclusive</option><option value="vat-exclusive">12% VAT — added to price</option><option value="zero-rated">Zero-rated VAT</option><option value="vat-exempt">VAT exempt</option></select></label></div><p class="exact-tax-note">ⓘ Select how VAT applies to this item. This will be used when the item is added to a procurement request.</p><div class="exact-pair"><label>ITEM DISCOUNT RATE (%)<input v-model.number="item.discountRate" type="number" min="0" max="100" placeholder="0" /></label><div><label>BULK DISCOUNT</label><button type="button" class="exact-tier">＋ Add Tiered Pricing (Optional)</button></div></div><aside>ⓘ <div><b>Order-level charges are not set here</b><span>Delivery fees, handling fees, and other charges will be added per procurement request, as they depend on the order destination and quantity.</span></div></aside></section></div>
-            <div class="exact-pair px-5 pb-5"><label>OTHER CHARGE / UNIT (PHP)<div class="exact-price"><b>₱</b><input v-model.number="item.otherChargePerUnit" type="number" min="0" step="0.01" placeholder="0.00" /></div><small>Recurring handling, packaging, or regulatory charge per unit. It will prefill supplier quotations.</small></label><aside>ⓘ <div><b>Delivery remains order-specific</b><span>Catalog price, VAT, discount, and per-unit charges carry into the quote. Delivery is set for the actual destination.</span></div></aside></div>
+            <header class="exact-item-header"><div><p>ITEM {{ index + 1 }}</p><h2>{{ item.name || 'Add New Item' }}</h2><span>Provide the item details, pricing, and tax information. Delivery fees are configured separately by destination city.</span></div><button type="button" @click="removeItemRow(index)">♜ <b>Remove</b></button></header>
+            <div class="exact-item-content"><section class="exact-left"><div class="exact-image"><img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.name || 'Item image'" /><template v-else><strong>▧＋</strong><b>No item image yet</b><span>Upload a clear photo of the product (PNG, JPG, WebP, or GIF, max 25 MB).</span></template><label>↥ &nbsp; Upload Item Photo<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" @change="handleItemImageChange(index, $event)" /></label></div><label>ITEM NAME <em>*</em><input v-model="item.name" placeholder="Enter item name (e.g., Disposable Gloves)" /></label><label>ITEM CATEGORY <em>*</em><select v-model="item.category"><option value="">Select category</option><option v-for="option in categoryOptions" :key="option" :value="option">{{ option }}</option></select></label><label v-if="item.category === 'Others'">CUSTOM CATEGORY<input v-model="item.customCategory" placeholder="Enter custom category" /></label><label>DESCRIPTION<textarea v-model="item.description" rows="5" placeholder="Describe the item, including key features, brand, or intended use."></textarea></label><div class="exact-pair"><label>UNIT OF MEASUREMENT <em>*</em><select v-model="item.measurementUnit"><option value="">Select unit (e.g., box, vial, pc)</option><option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option></select></label><label>MINIMUM ORDER QUANTITY<input v-model.number="item.minOrderQuantity" type="number" min="0" placeholder="Optional" /></label></div></section><section class="exact-right"><label>QUANTITY (STOCK AVAILABLE)<input :value="item.quantity" inputmode="numeric" @beforeinput="blockInvalidNumberInput($event)" @input="item.quantity = readNumberInput($event, item.quantity)" placeholder="0" /></label><small>Current available quantity in your inventory (optional).</small><div class="exact-package"><b>▣ &nbsp; Package details (optional)</b><span>Record the amount contained in one selling unit. For example: enter “10” and select “mL” for a 10 mL vial, or enter “5” and select “pcs” for a box of 5 pieces.</span><button type="button" @click="item.showMeasurement = true">＋ Add Package Details</button><div v-if="item.showMeasurement" class="exact-pair"><input v-model="item.measurementValue" placeholder="e.g., 10" /><select v-model="item.measurementUnit"><option value="">Select unit</option><option v-for="unit in measurementOptions" :key="unit" :value="unit">{{ unit }}</option></select></div></div><label>SPECIFICATIONS / DETAILS<textarea v-model="item.specifications" rows="5" placeholder="Example: sterile, 10 mL per vial, 5 pcs per box, 2 kg equipment, 15x20 cm dimensions."></textarea></label><div class="exact-pair"><label>UNIT PRICE (PHP) <em>*</em><div class="exact-price"><b>₱</b><input :value="item.price" @beforeinput="blockInvalidNumberInput($event, true)" @input="item.price = readNumberInput($event, item.price, true)" @blur="formatPrice(item)" placeholder="0.00" /></div></label><label>TAX TREATMENT <em>*</em><select v-model="item.taxTreatment" @change="applyTaxTreatment(item)"><option value="vat-inclusive">12% VAT — price inclusive</option><option value="vat-exclusive">12% VAT — added to price</option><option value="zero-rated">Zero-rated VAT</option><option value="vat-exempt">VAT exempt</option></select></label></div><p class="exact-tax-note">ⓘ Select how VAT applies to this item. This will be used when the item is added to a procurement request.</p><div class="exact-pair"><label>ITEM DISCOUNT RATE (%)<input v-model.number="item.discountRate" type="number" min="0" max="100" placeholder="0" /></label><div><label>BULK DISCOUNT</label><button type="button" class="exact-tier">＋ Add Tiered Pricing (Optional)</button></div></div></section></div>
+            <div class="exact-pair px-5 pb-5"><label>OTHER CHARGE / UNIT (PHP)<div class="exact-price"><b>₱</b><input v-model.number="item.otherChargePerUnit" type="number" min="0" step="0.01" placeholder="0.00" /></div><small>Recurring handling, packaging, or regulatory charge per unit. It is included in the purchase order total.</small></label></div>
             <section v-if="item.tieredDiscounts?.length" class="exact-fda"><h3>Bulk discount tiers</h3><div v-for="(tier, tierIndex) in item.tieredDiscounts" :key="tierIndex" class="exact-pair"><label>MINIMUM QUANTITY<input v-model.number="tier.minQuantity" type="number" min="2" step="1" /></label><label>DISCOUNT RATE (%)<input v-model.number="tier.discountRate" type="number" min="0" max="100" step="0.01" /><button type="button" class="exact-tier" @click="item.tieredDiscounts.splice(tierIndex, 1)">Remove tier</button></label></div></section>
             <section class="exact-fda"><h3>FDA Documentation <span>(optional)</span></h3><p>Upload supporting information when applicable. It is not required for every supply item.</p><div class="exact-pair"><label>FDA REGISTRATION NUMBER<input v-model.trim="item.fdaRegistrationNumber" maxlength="100" placeholder="Optional" /></label><label>FDA DOCUMENT<input v-if="!item.fdaApprovalDocument?.url && !item.fdaApprovalFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif" @change="handleFdaDocumentChange(index, $event)" /><span v-else>{{ item.fdaApprovalFileName || item.fdaApprovalDocument?.name || 'Document attached' }}</span></label></div></section>
             <footer><button type="button" :disabled="saving" @click="items = [createEmptyItem()]">Cancel</button><button type="submit" :disabled="saving">{{ saving ? 'Saving item…' : 'Save Item' }}</button></footer>
@@ -302,6 +322,8 @@ const supplierDocId = ref('')
 const businessName = ref('')
 const items = ref([])
 const savedCatalog = ref([])
+const deliveryFees = ref([])
+const deliveryFeeSaving = ref(false)
 const currentPage = ref(1)
 const selectedItem = ref(null)
 let stopCatalogListener = null
@@ -313,6 +335,43 @@ const availableQuantity = (item) => Math.max(0, Number(item?.quantity || 0) - Nu
 
 const categoryOptions = ['Injectables', 'Skincare', 'Equipment', 'Medical Supplies', 'Others']
 const measurementOptions = ['mL', 'L', 'mg', 'g', 'kg', 'pcs', 'box', 'pack', 'set', 'unit', 'pair', 'cm', 'mm', 'dimensions', 'custom']
+const caviteCities = ['Bacoor', 'Cavite City', 'Dasmarinas City', 'General Trias', 'Imus', 'Tagaytay', 'Trece Martires', 'Alfonso', 'Amadeo', 'Carmona', 'General Emilio Aguinaldo', 'General Mariano Alvarez', 'Indang', 'Kawit', 'Magallanes', 'Maragondon', 'Mendez', 'Naic', 'Noveleta', 'Rosario', 'Silang', 'Tanza', 'Ternate']
+const addDeliveryFee = () => deliveryFees.value.push({ city: '', amount: 0 })
+const removeDeliveryFee = (index) => deliveryFees.value.splice(index, 1)
+const availableCitiesFor = (selectedCity = '') => caviteCities.filter(city => city === selectedCity || !deliveryFees.value.some(fee => fee.city === city))
+
+const saveDeliveryFees = async () => {
+  const user = auth.currentUser
+  if (!user || deliveryFeeSaving.value) return
+  const entries = deliveryFees.value.map(fee => ({ city: String(fee.city || '').trim(), amount: Number(fee.amount) }))
+  if (entries.some(fee => !fee.city || !Number.isFinite(fee.amount) || fee.amount < 0)) {
+    toast.error('Choose a city and enter a valid non-negative delivery fee for every row.')
+    return
+  }
+  if (new Set(entries.map(fee => fee.city)).size !== entries.length) {
+    toast.error('Each city can have only one delivery fee.')
+    return
+  }
+  deliveryFeeSaving.value = true
+  try {
+    const token = await user.getIdToken()
+    let result
+    for (const base of OTP_BACKEND_CANDIDATES) {
+      const response = await fetch(`${base}/supply/delivery-fees`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ supplierId: supplierDocId.value || user.uid, deliveryFees: entries }) })
+      result = await response.json()
+      if (response.ok && result.success) break
+      if (!response.ok) throw new Error(result.error || 'Unable to save delivery fees.')
+    }
+    if (!result?.success) throw new Error(result?.error || 'Delivery-fee service is unavailable.')
+    deliveryFees.value = result.data.deliveryFees || []
+    toast.success('Delivery fees saved.')
+  } catch (error) {
+    console.error('Failed to save delivery fees:', error)
+    toast.error(error.message || 'Failed to save delivery fees.')
+  } finally {
+    deliveryFeeSaving.value = false
+  }
+}
 
 const createEmptyItem = () => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -386,6 +445,7 @@ const loadSupplies = async (user) => {
 
     const currentItems = Array.isArray(supplierData.offeredItems) ? supplierData.offeredItems : []
     savedCatalog.value = currentItems.map((item) => ({ ...item, id: item.id || crypto.randomUUID() }))
+    deliveryFees.value = Array.isArray(supplierData.deliveryFees) ? supplierData.deliveryFees.map((fee) => ({ city: String(fee.city || ''), amount: Number(fee.amount || 0) })) : []
     currentPage.value = 1
     items.value = [createEmptyItem()]
     stopCatalogListener?.()
@@ -393,6 +453,8 @@ const loadSupplies = async (user) => {
       if (!snapshot.exists() || saving.value) return
       const liveItems = snapshot.data()?.offeredItems
       if (Array.isArray(liveItems)) savedCatalog.value = liveItems.map((item) => ({ ...item, id: item.id || crypto.randomUUID() }))
+      const liveFees = snapshot.data()?.deliveryFees
+      if (Array.isArray(liveFees) && !deliveryFeeSaving.value) deliveryFees.value = liveFees.map((fee) => ({ city: String(fee.city || ''), amount: Number(fee.amount || 0) }))
     }, (error) => {
       console.error('Failed to listen to supplier catalog:', error)
       toast.error('Your supplier catalog is unavailable for your current access.', { toastId: 'supplier-catalog-access' })
