@@ -575,6 +575,7 @@ table {
 }
 
 .swal2-popup.swal2-show:not(.swal-logout-popup) {
+  --swal2-background: #1a130d;
   width: min(92vw, 32rem);
   padding: 2rem 2.1rem 1.8rem;
   overflow: hidden;

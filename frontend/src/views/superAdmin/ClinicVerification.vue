@@ -22,33 +22,45 @@
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
 
       <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-      <section class="bg-slate-800 border border-emerald-700/60 rounded-xl overflow-hidden">
-        <div class="flex items-center justify-between gap-3 px-4 py-4 border-b border-slate-700">
-          <div><h2 class="text-lg font-semibold text-white">OCR Verified</h2><p class="text-sm text-slate-400">Ready for administrator approval.</p></div>
-          <button type="button" class="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs disabled:opacity-50" :disabled="processing || !selectedOcrVerified.length" @click="batchApproveOcrVerified">Batch approve ({{ selectedOcrVerified.length }})</button>
+      <section class="overflow-hidden rounded-xl border border-emerald-700/60 bg-slate-800 shadow-sm">
+        <div class="flex flex-col gap-3 border-b border-slate-700 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-white">OCR Verified</h2>
+            <p class="mt-0.5 text-sm text-slate-400">Ready for administrator approval.</p>
+          </div>
+          <button type="button" class="inline-flex min-h-9 items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="processing || !selectedOcrVerified.length" @click="batchApproveOcrVerified">Batch approve ({{ selectedOcrVerified.length }})</button>
         </div>
-        <table class="w-full text-sm">
-          <thead class="border-b border-slate-700">
+        <div class="overflow-x-auto">
+        <table class="w-full min-w-[620px] table-fixed text-sm">
+          <colgroup>
+            <col class="w-14" />
+            <col />
+            <col />
+            <col class="w-24" />
+          </colgroup>
+          <thead class="border-b border-slate-700 bg-slate-900/40">
             <tr>
-              <th class="px-4 py-3"><input type="checkbox" aria-label="Select all OCR verified registrations" :checked="ocrVerifiedClinics.length && selectedOcrVerified.length === ocrVerifiedClinics.length" @change="toggleAllOcrVerified($event.target.checked)" /></th>
-              <th class="text-left text-slate-300 px-4 py-3">Full Name</th>
-              <th class="text-left text-slate-300 px-4 py-3">Action</th>
+              <th class="px-4 py-3 text-center"><input type="checkbox" aria-label="Select all OCR verified registrations" :checked="ocrVerifiedClinics.length && selectedOcrVerified.length === ocrVerifiedClinics.length" @change="toggleAllOcrVerified($event.target.checked)" /></th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Full Name</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Email</th>
+              <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-400">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td class="px-4 py-3 text-slate-200" colspan="3">Loading registrations...</td>
+              <td class="px-4 py-5 text-center text-slate-300" colspan="4">Loading registrations...</td>
             </tr>
             <tr v-else-if="!ocrVerifiedClinics.length">
-              <td class="px-4 py-3 text-slate-400" colspan="3">No OCR-verified registrations.</td>
+              <td class="px-4 py-5 text-center text-slate-400" colspan="4">No OCR-verified registrations.</td>
             </tr>
-            <tr v-for="row in ocrVerifiedClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0">
-              <td class="px-4 py-3"><input type="checkbox" :value="row.id" v-model="selectedOcrVerified" :aria-label="`Select ${row.fullName}`" /></td>
-              <td class="px-4 py-3 text-slate-100">{{ row.fullName }}</td>
-              <td class="px-4 py-3">
+            <tr v-for="row in ocrVerifiedClinics" :key="row.id" class="border-b border-slate-700/50 transition-colors last:border-b-0 hover:bg-slate-700/25">
+              <td class="px-4 py-3 text-center"><input type="checkbox" :value="row.id" v-model="selectedOcrVerified" :aria-label="`Select ${row.fullName}`" /></td>
+              <td class="truncate px-4 py-3 font-medium text-slate-100" :title="row.fullName">{{ row.fullName }}</td>
+              <td class="truncate px-4 py-3 text-slate-300" :title="row.email || 'No email available'">{{ row.email || '—' }}</td>
+              <td class="px-4 py-3 text-right">
                 <button
                   type="button"
-                  class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs"
+                  class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500"
                   @click="openDetails(row)"
                 >
                   View
@@ -57,6 +69,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
       </section>
 
       <section class="bg-slate-800 border border-amber-700/60 rounded-xl overflow-hidden">
