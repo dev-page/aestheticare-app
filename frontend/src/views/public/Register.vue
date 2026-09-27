@@ -318,6 +318,8 @@ const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
 
 const approvalRedirecting = ref(false)
+const approvalRedirectSeconds = ref(5)
+const APPROVAL_REDIRECT_DURATION_SECONDS = 5
 const approvalReviewState = ref('pending')
 const approvalReviewMessage = ref('Your registration is under review. Please allow at least 24 hours for admin review.')
 const approvalReviewReason = ref('')
@@ -327,6 +329,30 @@ const approvalUserStatus = ref('')
 const approvalClinicStatus = ref('')
 let unsubscribeApprovalUser = null
 let unsubscribeApprovalClinic = null
+let approvalRedirectTimer = null
+let approvalRedirectInterval = null
+
+const clearApprovalRedirect = () => {
+  if (approvalRedirectTimer) clearTimeout(approvalRedirectTimer)
+  if (approvalRedirectInterval) clearInterval(approvalRedirectInterval)
+  approvalRedirectTimer = null
+  approvalRedirectInterval = null
+  approvalRedirectSeconds.value = APPROVAL_REDIRECT_DURATION_SECONDS
+}
+
+const startApprovalRedirect = () => {
+  clearApprovalRedirect()
+  approvalRedirecting.value = true
+  approvalRedirectSeconds.value = APPROVAL_REDIRECT_DURATION_SECONDS
+  approvalRedirectInterval = setInterval(() => {
+    approvalRedirectSeconds.value = Math.max(0, approvalRedirectSeconds.value - 1)
+  }, 1000)
+  approvalRedirectTimer = setTimeout(() => router.push('/login'), APPROVAL_REDIRECT_DURATION_SECONDS * 1000)
+}
+
+const approvalRedirectProgress = computed(() =>
+  ((APPROVAL_REDIRECT_DURATION_SECONDS - approvalRedirectSeconds.value) / APPROVAL_REDIRECT_DURATION_SECONDS) * 100
+)
 
 const togglePassword = () => passwordVisible.value = !passwordVisible.value
 const toggleConfirmPassword = () => confirmPasswordVisible.value = !confirmPasswordVisible.value
@@ -866,6 +892,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', onWindowClick)
   stopOtpCountdown()
   stopApprovalCheck()
+  clearApprovalRedirect()
   Object.values(documentPreviewUrls.value).forEach((previewUrl) => {
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl)
   })
@@ -1463,9 +1490,8 @@ const updateApprovalReviewState = () => {
     approvalReviewMessage.value = 'Your registration has been approved. Redirecting you to the login page now.'
     approvalReviewReason.value = ''
     if (!approvalRedirecting.value) {
-      approvalRedirecting.value = true
       stopApprovalCheck()
-      setTimeout(() => router.push('/login'), 1800)
+      startApprovalRedirect()
     }
     return
   }
@@ -1479,6 +1505,7 @@ const updateApprovalReviewState = () => {
     approvalReviewState.value = 'rejected'
     approvalReviewMessage.value = 'Your registration was rejected by the platform admin. Please contact support if you need help or submit a new application.'
     approvalRedirecting.value = false
+    clearApprovalRedirect()
     return
   }
 
@@ -1486,6 +1513,7 @@ const updateApprovalReviewState = () => {
   approvalReviewMessage.value = 'Your registration is under review. Please allow at least 24 hours for admin review.'
   approvalReviewReason.value = ''
   approvalRedirecting.value = false
+  clearApprovalRedirect()
 }
 
 // Draft save functions removed — no longer needed
@@ -3118,7 +3146,14 @@ const handleRegistrationSubmit = () => {
               <div class="w-[90%] max-w-md rounded-2xl border border-gold-200/80 bg-white/90 p-6 text-center shadow-2xl">
                 <div class="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-gold-600 border-t-transparent"></div>
                 <h3 class="text-lg font-semibold text-charcoal-700">Registration approved</h3>
-                <p class="mt-2 text-sm text-charcoal-600">Redirecting you to the login page...</p>
+                <p class="mt-2 text-sm text-charcoal-600">Redirecting to login</p>
+                <div class="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-full border-4 border-gold-300 bg-gold-50 text-2xl font-bold tabular-nums text-gold-800" :aria-label="`${approvalRedirectSeconds} seconds remaining`">
+                  {{ approvalRedirectSeconds }}
+                </div>
+                <p class="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-700">seconds remaining</p>
+                <div class="mt-4 h-2 overflow-hidden rounded-full bg-gold-100" role="progressbar" aria-label="Redirecting to login" :aria-valuenow="approvalRedirectProgress" aria-valuemin="0" aria-valuemax="100">
+                  <div class="h-full rounded-full bg-gold-600 transition-all duration-1000" :style="{ width: `${approvalRedirectProgress}%` }"></div>
+                </div>
               </div>
             </div>
               <div class="intro-block mb-6">
@@ -3782,7 +3817,13 @@ const handleRegistrationSubmit = () => {
               </div>
 
               <div v-else-if="isApprovalApproved" class="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-800">
-                Your clinic has been approved. You will be redirected to the login page shortly.
+                <div class="flex items-center justify-between gap-3">
+                  <span>Your clinic has been approved.</span>
+                  <strong>Redirecting to login in {{ approvalRedirectSeconds }}s</strong>
+                </div>
+                <div class="mt-3 h-2 overflow-hidden rounded-full bg-emerald-200" role="progressbar" aria-label="Redirecting to login" :aria-valuenow="approvalRedirectProgress" aria-valuemin="0" aria-valuemax="100">
+                  <div class="h-full rounded-full bg-emerald-600 transition-all duration-1000" :style="{ width: `${approvalRedirectProgress}%` }"></div>
+                </div>
               </div>
 
               <div v-else-if="isApprovalRejected" class="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-800 space-y-2">
