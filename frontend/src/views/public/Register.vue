@@ -3772,7 +3772,7 @@ const handleRegistrationSubmit = () => {
               </div>
 
               <div v-if="isApprovalUnderReview" class="rounded-2xl border border-gold-200 bg-white/70 p-4 text-sm text-charcoal-600">
-                We are still waiting on the platform admin. You do not need to refresh this page, and this step will update automatically once a decision is made.
+                Your registration is being reviewed. An email will be sent to you regarding your registration.
               </div>
 
               <div v-else-if="isApprovalApproved" class="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-800">
