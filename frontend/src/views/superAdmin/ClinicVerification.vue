@@ -278,6 +278,10 @@
                     </div>
                   </div>
                 </div>
+                <div class="mt-4 border-t border-slate-800 pt-3">
+                  <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Assessment</p>
+                  <p class="mt-1 text-xs leading-relaxed text-slate-300">{{ result.reason }}</p>
+                </div>
               </article>
             </div>
             <p v-else class="mt-4 text-xs text-slate-500">No automatic verification result is stored for this registration.</p>
