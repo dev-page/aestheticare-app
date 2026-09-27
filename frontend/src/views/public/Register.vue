@@ -3600,6 +3600,7 @@ const handleRegistrationSubmit = () => {
                 <p class="font-semibold text-charcoal-800">Before you upload</p>
                 <ul class="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-charcoal-600">
                   <li>Your government-issued ID must show the registrant name entered in Step 1.</li>
+                  <li>The front of your government-issued ID must clearly show the same name and birth date entered in Step 1.</li>
                   <li>Business Permit, BIR Registration, Sanitary Certificate, and DOH License must show the clinic/business name entered in Step 1.</li>
                   <li>Upload clear, complete, and unexpired documents. Documents with an expiry date must still be valid.</li>
                 </ul>

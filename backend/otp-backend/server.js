@@ -99,20 +99,40 @@ const BUSINESS_NAME_REQUIREMENTS = new Set([
   'sanitaryCertificate',
   'dohAccreditation',
 ])
+const GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS = new Set(['governmentIdRepresentativeFront'])
 const normalizeOcrComparable = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 
 // The registrant's legal name is captured in Step 1. OCR identity checks use
 // that name only; a clinic or business name must never substitute for the
 // government-ID holder's name.
-const getRegistrationOwnerNameForOcr = (application = {}, user = {}) => normalizeOcrComparable([
-  user.firstName || application.firstName,
-  user.midName || user.middleName || application.midName || application.middleName,
-  user.lastName || application.lastName,
-  user.suffix || application.suffix,
-].map((part) => String(part || '').trim()).filter(Boolean).join(' '))
+const getRegistrationOwnerNameTokensForOcr = (application = {}, user = {}) => {
+  const firstName = normalizeOcrComparable(user.firstName || application.firstName)
+  const lastName = normalizeOcrComparable(user.lastName || application.lastName)
+  const middleName = normalizeOcrComparable(user.midName || user.middleName || application.midName || application.middleName)
+  // IDs often print the surname first and may abbreviate or omit the middle
+  // name. Requiring first and last name still gives a reliable identity check.
+  return [firstName, lastName, middleName].filter((token, index) => token.length >= 2 && (index < 2 || token.length >= 3))
+}
+
+const doesOcrTextMatchRegistrationOwner = (textComparable, application = {}, user = {}) => {
+  const tokens = getRegistrationOwnerNameTokensForOcr(application, user)
+  if (tokens.length < 2) return null
+  return tokens.slice(0, 2).every((token) => textComparable.includes(token))
+}
 
 const getRegistrationBusinessNameForOcr = (application = {}, user = {}) => normalizeOcrComparable(
   application.businessName || application.clinicName || application.companyName || user.companyName || ''
+)
+
+const normalizeRegistrationDateForOcr = (value) => {
+  if (!value) return ''
+  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString().slice(0, 10)
+}
+
+const getRegistrationBirthDateForOcr = (application = {}, user = {}) => normalizeRegistrationDateForOcr(
+  user.birthDate || application.birthDate
 )
 
 const getVisionWordConfidence = (annotation) => {
@@ -132,15 +152,31 @@ const getVisionWordConfidence = (annotation) => {
 }
 const extractOcrDates = (text) => {
   const dates = []
+  const addDate = (year, month, day) => {
+    const normalized = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    const parsed = new Date(`${normalized}T00:00:00Z`)
+    if (!Number.isNaN(parsed.getTime())
+      && parsed.getUTCFullYear() === Number(year)
+      && parsed.getUTCMonth() + 1 === Number(month)
+      && parsed.getUTCDate() === Number(day)) dates.push(normalized)
+  }
   const matcher = /\b(\d{4}[-\/]\d{2}[-\/]\d{2}|\d{2}[-\/]\d{2}[-\/]\d{4})\b/g
   for (const match of String(text || '').matchAll(matcher)) {
     const raw = match[1]
-    const normalized = /^\d{2}[-\/]/.test(raw)
-      ? `${raw.slice(6, 10)}-${raw.slice(0, 2)}-${raw.slice(3, 5)}`
-      : raw.replaceAll('/', '-')
-    const parsed = new Date(`${normalized}T00:00:00Z`)
-    if (!Number.isNaN(parsed.getTime())) dates.push(normalized)
+    const parts = raw.split(/[-\/]/).map(Number)
+    if (/^\d{2}[-\/]/.test(raw)) addDate(parts[2], parts[0], parts[1])
+    else addDate(parts[0], parts[1], parts[2])
   }
+  const monthNames = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+  }
+  const normalizedText = String(text || '').toLowerCase()
+  const monthPattern = Object.keys(monthNames).join('|')
+  const monthFirst = new RegExp(`\\b(${monthPattern})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?[,]?\\s+(\\d{4})\\b`, 'g')
+  const dayFirst = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${monthPattern})\\.?[,]?\\s+(\\d{4})\\b`, 'g')
+  for (const match of normalizedText.matchAll(monthFirst)) addDate(match[3], monthNames[match[1]], match[2])
+  for (const match of normalizedText.matchAll(dayFirst)) addDate(match[3], monthNames[match[2]], match[1])
   return [...new Set(dates)]
 }
 const extractOcrDocumentNumber = (text) => {
@@ -1946,7 +1982,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     extractedText: '',
     detectedDocumentNumber: '',
     detectedDates: [],
-    checks: { readableText: false, ocrConfidence: null, nameMatch: null, documentNumberDetected: null, expiryValid: null },
+    checks: { readableText: false, ocrConfidence: null, nameMatch: null, birthDateMatch: null, documentNumberDetected: null, expiryValid: null },
     processedAt: new Date().toISOString(),
     processingError: '',
     reason: '',
@@ -1990,15 +2026,21 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     }
     const comparableText = normalizeOcrComparable(extractedText)
     const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
-    const expectedOwnerName = getRegistrationOwnerNameForOcr(application, user)
+    const requiresRegistrantName = docKey === 'governmentIdRepresentativeFront'
     const expectedBusinessName = getRegistrationBusinessNameForOcr(application, user)
-    const ownerNameMatch = expectedOwnerName.length >= 3 ? comparableText.includes(expectedOwnerName) : null
+    const ownerNameMatch = doesOcrTextMatchRegistrationOwner(comparableText, application, user)
     const businessNameMatch = expectedBusinessName.length >= 3 ? comparableText.includes(expectedBusinessName) : null
-    const nameMatch = requiresBusinessName ? businessNameMatch : ownerNameMatch
+    const requiresName = requiresBusinessName || requiresRegistrantName
+    const nameMatch = requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : null
     const readableText = extractedText.length >= 30
     const hasSomeText = extractedText.length > 0
     const ocrConfidence = getVisionWordConfidence(annotation)
     const detectedDates = extractOcrDates(extractedText)
+    const requiresBirthDate = GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS.has(docKey)
+    const expectedBirthDate = getRegistrationBirthDateForOcr(application, user)
+    const birthDateMatch = requiresBirthDate && expectedBirthDate
+      ? detectedDates.includes(expectedBirthDate)
+      : null
     const detectedDocumentNumber = extractOcrDocumentNumber(extractedText)
     const requiresNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
     const requiresExpiry = EXPIRY_DATE_REQUIREMENTS.has(docKey)
@@ -2018,7 +2060,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     result.detectedDocumentNumber = detectedDocumentNumber
     result.detectedDates = detectedDates
     result.checks = {
-      readableText, ocrConfidence, nameMatch, ownerNameMatch, businessNameMatch,
+      readableText, ocrConfidence, nameMatch, ownerNameMatch, businessNameMatch, birthDateMatch, expectedBirthDate,
       nameCheckType: requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
       documentNumberDetected: requiresNumber ? Boolean(detectedDocumentNumber) : null, expiryValid,
     }
@@ -2026,19 +2068,26 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     // the extracted text. Documents that have an expiry date also require a
     // valid, non-expired date; a missing match is sent to a human, not called
     // unreadable and not automatically accepted on score alone.
-    const automaticChecksPassed = nameMatch === true && (!requiresExpiry || expiryValid === true)
-    const requiredNameMismatch = nameMatch === false
-    result.status = !readableText || requiredNameMismatch || score < MANUAL_REVIEW_THRESHOLD
+    const automaticChecksPassed = (!requiresName || nameMatch === true)
+      && (!requiresBirthDate || birthDateMatch === true)
+      && (!requiresExpiry || expiryValid === true)
+    const requiredNameMismatch = requiresName && nameMatch === false
+    const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
+    result.status = !readableText || requiredNameMismatch || requiredBirthDateMismatch || score < MANUAL_REVIEW_THRESHOLD
       ? 'rejected'
       : score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
     result.reason = !readableText
       ? 'The text is unclear or unreadable. Please upload a clearer, well-lit, uncropped image or readable PDF.'
       : requiredNameMismatch
         ? `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} does not match this document. Please upload the correct document.`
+      : requiredBirthDateMismatch
+        ? 'The birth date on the government-issued ID does not match the birth date entered in Step 1. Please upload the correct ID.'
       : result.status === 'rejected'
         ? 'This document did not meet the minimum OCR verification score. Please upload a clearer file.'
-        : nameMatch !== true
+        : requiresName && nameMatch !== true
           ? `OCR completed, but the ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
+          : requiresBirthDate && birthDateMatch !== true
+            ? 'OCR completed, but the birth date on the government-issued ID could not be matched. This document requires manual review.'
           : requiresExpiry && !expiryValid
             ? 'OCR completed, but a valid expiry date could not be confirmed. This document requires manual review.'
         : result.status === 'verified'
@@ -2098,6 +2147,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         readableText: false,
         ocrConfidence: null,
         nameMatch: false,
+        birthDateMatch: null,
         numberMatch: null,
         expiryValid: null,
       },
@@ -2160,16 +2210,22 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       }
       const textComparable = normalizeOcrComparable(extractedText)
       const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
-      const expectedOwnerName = getRegistrationOwnerNameForOcr(application, user)
+      const requiresRegistrantName = docKey === 'governmentIdRepresentativeFront'
       const expectedBusinessName = getRegistrationBusinessNameForOcr(application, user)
-      const ownerNameMatch = expectedOwnerName.length >= 3 ? textComparable.includes(expectedOwnerName) : null
+      const ownerNameMatch = doesOcrTextMatchRegistrationOwner(textComparable, application, user)
       const businessNameMatch = expectedBusinessName.length >= 3 ? textComparable.includes(expectedBusinessName) : null
-      const nameMatch = requiresBusinessName ? businessNameMatch : ownerNameMatch
+      const requiresName = requiresBusinessName || requiresRegistrantName
+      const nameMatch = requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : null
       const hasReadableText = extractedText.length >= 30
       const hasSomeText = extractedText.length > 0
       const ocrConfidence = getVisionWordConfidence(annotation)
       const expiryApplicable = EXPIRY_DATE_REQUIREMENTS.has(docKey)
       const detectedDates = extractOcrDates(extractedText)
+      const requiresBirthDate = GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS.has(docKey)
+      const expectedBirthDate = getRegistrationBirthDateForOcr(application, user)
+      const birthDateMatch = requiresBirthDate && expectedBirthDate
+        ? detectedDates.includes(expectedBirthDate)
+        : null
       const expiryValid = !expiryApplicable || detectedDates.some((value) => new Date(`${value}T00:00:00Z`).getTime() >= Date.now())
       const requiresDocumentNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
       const expectedNumber = normalizeOcrComparable(document.documentNumber || document.number)
@@ -2196,6 +2252,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         nameMatch,
         ownerNameMatch,
         businessNameMatch,
+        birthDateMatch,
+        expectedBirthDate,
         nameCheckType: requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
         numberMatch,
         expiryValid: expiryApplicable ? expiryValid : null,
@@ -2216,17 +2274,24 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       }
       result.confidence = confidence
       result.extractedText = extractedText.slice(0, 2000)
-      const automaticChecksPassed = nameMatch === true && (!expiryApplicable || expiryValid)
-      const requiredNameMismatch = nameMatch === false
-      result.status = !hasReadableText || requiredNameMismatch || confidence < MANUAL_REVIEW_THRESHOLD
+      const automaticChecksPassed = (!requiresName || nameMatch === true)
+        && (!requiresBirthDate || birthDateMatch === true)
+        && (!expiryApplicable || expiryValid)
+      const requiredNameMismatch = requiresName && nameMatch === false
+      const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
+      result.status = !hasReadableText || requiredNameMismatch || requiredBirthDateMismatch || confidence < MANUAL_REVIEW_THRESHOLD
         ? 'rejected'
         : confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
         result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
       } else if (requiredNameMismatch) {
         result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} does not match this document. Please upload the correct document.`
-      } else if (nameMatch !== true) {
+      } else if (requiredBirthDateMismatch) {
+        result.reason = 'The birth date on the government-issued ID does not match the birth date entered in Step 1. Please upload the correct ID.'
+      } else if (requiresName && nameMatch !== true) {
         result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
+      } else if (requiresBirthDate && birthDateMatch !== true) {
+        result.reason = 'OCR completed, but the birth date on the government-issued ID could not be matched. This document requires manual review.'
       } else if (expiryApplicable && !expiryValid) {
         result.reason = 'A valid expiry date could not be confirmed. This document requires manual review.'
       } else if (!expectedNumber) {
