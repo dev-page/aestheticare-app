@@ -113,7 +113,14 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       const branchIds = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
       for (const field of ['ownerId', 'branchAdminId']) for (const clinic of docs(await db.collection('clinics').where(field, '==', ctx.uid).get())) branchIds.add(clinic.id)
       const own = await db.collection('clinics').doc(ctx.uid).get(); if (own.exists) branchIds.add(own.id)
-      branches = await Promise.all([...branchIds].map(async id => { const c = (await db.collection('clinics').doc(id).get()).data() || {}; return { id, name: c.clinicBranch || c.clinicName || id } }))
+      branches = await Promise.all([...branchIds].map(async id => {
+        const c = (await db.collection('clinics').doc(id).get()).data() || {}
+        const address = [c.clinicLocationAddress, c.clinicBarangay, c.clinicLocation, c.clinicProvince, c.clinicPostalCode]
+          .map(value => String(value || '').trim())
+          .filter((value, index, values) => value && values.indexOf(value) === index)
+          .join(', ')
+        return { id, name: c.clinicBranch || c.clinicName || id, address, latitude: String(c.clinicLocationLat || ''), longitude: String(c.clinicLocationLng || '') }
+      }))
     }
     const requestedScope = String(req.query.branchId || branches[0]?.id || '')
     const allBranches = !ctx.supplier && requestedScope === 'all'
@@ -251,7 +258,9 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   // Read the branch's workflow records inside each transaction. Stage writes so all
   // validation and reads happen before Firestore writes, including notifications.
   app.post('/supply/records', requireAuth, wrap(async (req, res, ctx) => {
-    const input = req.body || {}, branchId = cleanId(input.branchId)
+    const input = req.body || {}, rawBranchId = String(input.branchId || '').trim()
+    demand(/^[A-Za-z0-9_-]{1,150}$/.test(rawBranchId), 'Select a valid assigned clinic branch before sending this request.', 400)
+    const branchId = rawBranchId
     if (!ctx.supplier) await branchAccess(ctx, branchId)
     const result = await mutate(ctx, branchId, input, null)
     res.json({ success: true, data: result })

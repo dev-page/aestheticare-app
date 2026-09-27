@@ -714,15 +714,7 @@ export default {
             <p class="mt-2 text-xs text-slate-300">{{ locationErrorHint }}</p>
           </div>
 
-          <div class="flex justify-end space-x-2 pt-4">
-            <button
-              type="reset"
-              :disabled="isFormEmpty"
-              @click="resetForm"
-              class="rounded bg-slate-600 px-4 py-2 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Cancel
-            </button>
+          <div class="flex justify-end pt-4">
             <button
               type="button"
               @click="saveBranch"

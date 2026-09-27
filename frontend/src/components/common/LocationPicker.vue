@@ -5,7 +5,7 @@
       <p class="mt-1 leading-relaxed">{{ instructionText }}</p>
     </div>
 
-    <div :class="['rounded-2xl border p-4 space-y-3', theme === 'dark' ? 'border-[#6c432c] bg-[#2d1a10]' : 'border-gold-200/80 bg-cream-100']">
+    <div v-if="!readonly" :class="['rounded-2xl border p-4 space-y-3', theme === 'dark' ? 'border-[#6c432c] bg-[#2d1a10]' : 'border-gold-200/80 bg-cream-100']">
       <label :class="['block text-xs font-semibold uppercase tracking-[0.14em]', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700']">Search location</label>
       <div class="flex flex-col gap-3 sm:flex-row">
         <input
@@ -75,7 +75,7 @@
         <p :class="['text-xs font-semibold uppercase tracking-[0.14em]', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700']">{{ pinnedAddressLabel }}</p>
         <p :class="['mt-1 text-sm', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ displayAddress }}</p>
       </div>
-      <div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+      <div v-if="!readonly" class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
         <div>
           <p class="text-xs uppercase tracking-wide text-gold-700/80">Latitude</p>
           <p :class="['mt-1', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ lat || '-' }}</p>
@@ -149,6 +149,7 @@ const props = defineProps({
   showClose: { type: Boolean, default: true },
   showConfirm: { type: Boolean, default: true },
   autoSelect: { type: Boolean, default: true },
+  readonly: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close', 'confirm', 'selection-change', 'error'])
@@ -807,6 +808,8 @@ const initMap = async () => {
       streetViewControl: false,
       fullscreenControl: false,
       mapTypeControl: false,
+      gestureHandling: props.readonly ? 'none' : 'auto',
+      clickableIcons: false,
       mapId: import.meta.env.VITE_GOOGLE_MAP_ID,
     })
   } else {
@@ -843,13 +846,13 @@ const initMap = async () => {
     marker = new AdvancedMarkerElement({
       map,
       position: center,
-      gmpDraggable: true,
+      gmpDraggable: !props.readonly,
     })
   } else if (window.google?.maps?.Marker) {
     marker = new window.google.maps.Marker({
       map,
       position: center,
-      draggable: true,
+      draggable: !props.readonly,
     })
   }
 
@@ -870,17 +873,18 @@ const initMap = async () => {
     return reverseGeocodeLocation(nextLat, nextLng, searchQuery.value || displayAddress.value)
   }
 
-  markerDragHandler = (event) =>
-      handlePosition(event?.latLng || marker?.position).then((ok) => {
-        if (!ok) revertMarker()
-      })
-  if (AdvancedMarkerElement && marker?.addEventListener) {
-    marker.addEventListener('gmp-dragend', markerDragHandler)
-  } else if (marker?.addListener) {
-    markerDragListener = marker.addListener('dragend', markerDragHandler)
-  }
+  if (!props.readonly) {
+    markerDragHandler = (event) =>
+        handlePosition(event?.latLng || marker?.position).then((ok) => {
+          if (!ok) revertMarker()
+        })
+    if (AdvancedMarkerElement && marker?.addEventListener) {
+      marker.addEventListener('gmp-dragend', markerDragHandler)
+    } else if (marker?.addListener) {
+      markerDragListener = marker.addListener('dragend', markerDragHandler)
+    }
 
-  mapClickListener = map.addListener?.('click', (event) => {
+    mapClickListener = map.addListener?.('click', (event) => {
     if (!event?.latLng) return
     const nextLat = event.latLng.lat()
     const nextLng = event.latLng.lng()
@@ -894,7 +898,8 @@ const initMap = async () => {
         setMarkerPosition({ lat: nextLat, lng: nextLng })
       }
     })
-  })
+    })
+  }
 
   if (hasInitialCoords) {
     const initialSelection = {
