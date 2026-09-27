@@ -7,4 +7,6 @@ test('appointment reminder cron accepts Vercel GET requests and requires CRON_SE
   assert.match(source, /app\.all\('\/cron\/appointment-reminders'/)
   assert.match(source, /req\.get\('authorization'\).*Bearer \$\{secret\}/)
   assert.match(source, /appointment-reminder-\$\{row\.id\}-\$\{tomorrow\}/)
+  assert.match(source, /online-consultation-practitioner-reminder-\$\{row\.id\}-\$\{tomorrow\}/)
+  assert.match(source, /Online Consultation to prepare or join the call/)
 })

@@ -69,7 +69,13 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
           const transition = req.body?.action
           if (transition === 'start') {
             check(worker, 'Only the assigned worker can start the service.', 403)
-            check((status === 'ready to start' || (walkIn && status === 'paid')) && appointment.workerKeyVerified && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment), 'The practitioner must verify the customer service key after payment and signing.')
+            const onlineConsultation = normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online'
+            const serviceIsReady = onlineConsultation
+              ? ['paid', 'ready to start', 'scheduled'].includes(status) && appointment.approvalStatus === 'Approved' && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment)
+              : (status === 'ready to start' || (walkIn && status === 'paid')) && appointment.workerKeyVerified && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment)
+            check(serviceIsReady, onlineConsultation
+              ? 'Clinic approval, the signed consultation contract, and the required payment are needed before starting the online consultation.'
+              : 'The practitioner must verify the customer service key after payment and signing.')
             const resourceRefs = (appointment.resources || []).filter((r) => r.kind === 'material').map((r) => ({ ...r, ref: db.collection('inventoryItems').doc(r.id) }))
             const stocks = []
             for (const resource of resourceRefs) stocks.push({ resource, snapshot: await tx.get(resource.ref) })

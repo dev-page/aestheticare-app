@@ -98,6 +98,25 @@
                     >
                       Join Call
                     </button>
+                    <button
+                      v-if="canStartConsultation(appointment)"
+                      type="button"
+                      class="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs hover:bg-violet-500 disabled:opacity-60"
+                      :disabled="startingId === appointment.id"
+                      @click="startConsultation(appointment)"
+                    >
+                      {{ startingId === appointment.id ? 'Starting...' : 'Start Consultation' }}
+                    </button>
+                    <button
+                      v-if="appointment.status === 'Ongoing'"
+                      type="button"
+                      class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-500 disabled:opacity-60"
+                      :disabled="finishingId === appointment.id"
+                      @click="completeConsultation(appointment)"
+                    >
+                      {{ finishingId === appointment.id ? 'Completing...' : 'Mark Consultation Done' }}
+                    </button>
+                    <span v-else-if="appointment.status === 'Ongoing'" class="text-xs font-medium text-emerald-300">Consultation in progress</span>
                     <p v-if="meetLinkGateReason(appointment)" class="w-full text-xs text-amber-300">
                       {{ meetLinkGateReason(appointment) }}
                     </p>
@@ -120,7 +139,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, setDoc, serverTimestamp, addDoc, deleteField } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, serverTimestamp, addDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
@@ -144,6 +163,8 @@ export default {
     const dateFilter = ref('')
     const appointments = ref([])
     const creatingId = ref('')
+    const startingId = ref('')
+    const finishingId = ref('')
     const isSeedingDemo = ref(false)
 
     const fetchFromBackend = async (path, options = {}) => {
@@ -287,22 +308,6 @@ export default {
         const meetLink = String(payload?.data?.meetLink || '').trim()
         if (!meetLink) throw new Error('Google Meet link is empty.')
 
-        await updateDoc(doc(db, 'appointments', appointment.id), {
-          consultationMode: 'online',
-          meetLink: deleteField(),
-          meetEventId: deleteField(),
-          meetCreatedAt: deleteField(),
-          meetCreatedBy: deleteField(),
-        })
-        await setDoc(doc(db, 'appointmentMeetings', appointment.id), {
-          meetLink,
-          meetEventId: payload?.data?.eventId || '',
-          meetCreatedAt: serverTimestamp(),
-          meetCreatedBy: currentUserId.value || '',
-          customerId: appointment.customerId || '',
-          practitionerId: appointment.practitionerId || appointment.assignedPractitionerId || '',
-        })
-
         appointment.meetLink = meetLink
         appointment.consultationMode = 'online'
         appointment.meetEventId = payload?.data?.eventId || ''
@@ -319,6 +324,61 @@ export default {
       const url = String(meetLink || '').trim()
       if (!url) return
       window.open(url, '_blank', 'noopener,noreferrer')
+    }
+
+    const canStartConsultation = (appointment) => {
+      if (!appointment?.meetLink || isExpiredAppointment(appointment) || isCancelledAppointment(appointment)) return false
+      if (String(appointment.consultationMode || '').trim().toLowerCase() !== 'online') return false
+      if (meetLinkGateReason(appointment)) return false
+      return ['Paid', 'Ready to Start', 'Scheduled'].includes(String(appointment.status || '').trim())
+    }
+
+    const startConsultation = async (appointment) => {
+      if (!canStartConsultation(appointment)) return
+      startingId.value = appointment.id
+      try {
+        const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'start' }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error || 'Failed to start the online consultation.')
+        }
+        appointment.status = payload?.data?.status || 'Ongoing'
+        appointment.startedAt = new Date().toISOString()
+        toast.success('Online consultation started.')
+        joinCall(appointment.meetLink)
+      } catch (error) {
+        console.error('Failed to start online consultation:', error)
+        toast.error(error?.message || 'Failed to start the online consultation.')
+      } finally {
+        startingId.value = ''
+      }
+    }
+
+    const completeConsultation = async (appointment) => {
+      if (!appointment?.id || String(appointment.status || '').trim() !== 'Ongoing') return
+      finishingId.value = appointment.id
+      try {
+        const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'worker_complete' }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error || 'Failed to complete the online consultation.')
+        }
+        appointment.status = payload?.data?.status || 'Awaiting Customer Confirmation'
+        toast.success('Consultation marked done. The customer can now confirm completion.')
+      } catch (error) {
+        console.error('Failed to complete online consultation:', error)
+        toast.error(error?.message || 'Failed to complete the online consultation.')
+      } finally {
+        finishingId.value = ''
+      }
     }
 
     const copyMeetLink = async (meetLink) => {
@@ -431,12 +491,17 @@ export default {
       assignedAppointments,
       filteredAppointments,
       creatingId,
+      startingId,
+      finishingId,
       currentBranchId,
       currentUserId,
       isSeedingDemo,
       createMeetLink,
       meetLinkGateReason,
       joinCall,
+      canStartConsultation,
+      startConsultation,
+      completeConsultation,
       copyMeetLink,
       seedDemoConsultation,
       isExpiredAppointment,

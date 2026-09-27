@@ -3137,9 +3137,49 @@ app.all('/cron/appointment-reminders', async (req, res) => {
       .filter(row => ['scheduled', 'ready to start', 'paid'].includes(normalizeBookingStatus(row.status)))
     await Promise.all(rows.map(async row => {
       const reminderRef = firestore.collection('notifications').doc(`appointment-reminder-${row.id}-${tomorrow}`)
-      const existing = await reminderRef.get(); if (existing.exists) return
-      await reminderRef.set({ recipientUserId: row.customerId, branchId: row.branchId, title: 'Appointment reminder', message: `Reminder: ${row.service || 'your appointment'} is tomorrow at ${row.time || 'the scheduled time'}.`, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
-      if (postmarkClient && senderEmail && row.customerEmail) await postmarkClient.sendEmail({ From: senderEmail, To: row.customerEmail, Subject: 'AesthetiCare appointment reminder', TextBody: `Reminder: your ${row.service || 'appointment'} is tomorrow at ${row.time || 'the scheduled time'}.` })
+      const existing = await reminderRef.get()
+      if (!existing.exists) {
+        await reminderRef.set({ recipientUserId: row.customerId, branchId: row.branchId, title: 'Appointment reminder', message: `Reminder: ${row.service || 'your appointment'} is tomorrow at ${row.time || 'the scheduled time'}.`, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+        if (postmarkClient && senderEmail && row.customerEmail) await postmarkClient.sendEmail({ From: senderEmail, To: row.customerEmail, Subject: 'AesthetiCare appointment reminder', TextBody: `Reminder: your ${row.service || 'appointment'} is tomorrow at ${row.time || 'the scheduled time'}.` })
+      }
+
+      const isOnlineConsultation = normalizeBookingStatus(row.type) === 'consultation' && normalizeBookingStatus(row.consultationMode) === 'online'
+      const practitionerId = String(row.practitionerId || row.assignedPractitionerId || row.staffId || row.assignedTo || '').trim()
+      if (!isOnlineConsultation || !practitionerId) return
+
+      const practitionerReminderRef = firestore.collection('notifications').doc(`online-consultation-practitioner-reminder-${row.id}-${tomorrow}`)
+      const practitionerReminder = await practitionerReminderRef.get()
+      if (practitionerReminder.exists) return
+
+      const practitionerSnap = await firestore.collection('users').doc(practitionerId).get()
+      const practitioner = practitionerSnap.exists ? practitionerSnap.data() || {} : {}
+      const clientName = String(row.clientName || row.customerName || row.patientName || 'Customer').trim()
+      const consultationName = String(row.service || 'online consultation').trim()
+      const schedule = `${row.date || 'tomorrow'}${row.time ? ` at ${row.time}` : ''}`
+      const message = `Reminder: ${consultationName} with ${clientName} is scheduled for ${schedule}. Open Online Consultation to prepare or join the call.`
+      await practitionerReminderRef.set({
+        recipientUserId: practitionerId,
+        branchId: row.branchId,
+        title: 'Online consultation reminder',
+        message,
+        link: '/clinical/consultations/online',
+        read: false,
+        deleted: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+      const practitionerEmail = String(practitioner.email || row.practitionerEmail || '').trim().toLowerCase()
+      if (postmarkClient && senderEmail && practitionerEmail) {
+        try {
+          await postmarkClient.sendEmail({
+            From: senderEmail,
+            To: practitionerEmail,
+            Subject: 'AesthetiCare online consultation reminder',
+            TextBody: `${message}\n\nOpen Online Consultation: ${EMAIL_WEBSITE_URL}/clinical/consultations/online`,
+          })
+        } catch (emailError) {
+          console.warn('Failed to email online consultation practitioner reminder:', emailError?.message || emailError)
+        }
+      }
     }))
     return res.json({ success: true, reminders: rows.length })
   } catch (error) { return res.status(500).json({ success: false, error: 'Unable to send appointment reminders.' }) }
@@ -3357,6 +3397,63 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
       })
     }
 
+    const firestore = admin.firestore()
+    const customerId = String(appointment.customerId || appointment.clientId || '').trim()
+    const customerEmail = String(appointment.clientEmail || appointment.customerEmail || appointment.email || '').trim().toLowerCase()
+    const customerName = String(appointment.clientName || appointment.customerName || appointment.patientName || 'Customer').trim()
+    const consultationLabel = String(appointment.service || appointment.type || 'online consultation').trim()
+    const schedule = [String(appointment.date || '').trim(), String(appointment.time || '').trim()].filter(Boolean).join(' at ')
+
+    // Persist the link in trusted backend code so a successful creation always gives
+    // the customer a secure in-system path to join, even if the practitioner closes
+    // their browser immediately afterwards.
+    await Promise.all([
+      firestore.collection('appointments').doc(cleanAppointmentId).set({
+        consultationMode: 'online',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }),
+      firestore.collection('appointmentMeetings').doc(cleanAppointmentId).set({
+        meetLink,
+        meetEventId: data.id || '',
+        meetCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        meetCreatedBy: req.user.uid,
+        customerId,
+        practitionerId: appointment.practitionerId || appointment.assignedPractitionerId || '',
+      }, { merge: true }),
+    ])
+
+    let inSystemNotification = { skipped: true, reason: 'Missing customer id' }
+    try {
+      inSystemNotification = await createAppointmentNotification({
+        firestore,
+        customerId,
+        title: 'Your online consultation link is ready',
+        message: `${consultationLabel}${schedule ? ` is scheduled for ${schedule}.` : ''} Open My Appointments to join the call.`,
+      })
+    } catch (notificationError) {
+      console.warn('Failed to create online consultation notification:', notificationError?.message || notificationError)
+    }
+
+    let emailNotification = { skipped: true, reason: 'Email service is not configured or the customer email is missing' }
+    if (customerEmail && postmarkClient && senderEmail) {
+      const appointmentsUrl = `${EMAIL_WEBSITE_URL}/customer/appointments`
+      try {
+        const subject = 'Your AesthetiCare online consultation link is ready'
+        const timingLine = schedule ? `Scheduled for: ${schedule}\n\n` : ''
+        await sendPostmarkMessage({
+          to: customerEmail,
+          from: senderEmail,
+          subject,
+          text: `Hi ${customerName},\n\nYour ${consultationLabel} meeting link is ready.\n${timingLine}For your privacy, sign in to My Appointments to join the call:\n${appointmentsUrl}\n\nAesthetiCare`,
+          html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${customerName},</p><p>Your <strong>${consultationLabel}</strong> meeting link is ready.</p>${schedule ? `<p><strong>Scheduled for:</strong> ${schedule}</p>` : ''}<p>For your privacy, sign in to <a href="${appointmentsUrl}">My Appointments</a> to join the call.</p><p>AesthetiCare</p></div>`,
+        })
+        emailNotification = { skipped: false }
+      } catch (emailError) {
+        console.warn('Failed to email online consultation notification:', emailError?.message || emailError)
+        emailNotification = { skipped: true, reason: 'Email delivery failed' }
+      }
+    }
+
     return res.json({
       success: true,
       data: {
@@ -3364,6 +3461,8 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
         meetLink,
         htmlLink: data.htmlLink || '',
         calendarId: googleCalendarId,
+        inSystemNotification,
+        emailNotification,
       },
     })
   } catch (error) {

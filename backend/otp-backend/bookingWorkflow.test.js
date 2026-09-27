@@ -83,6 +83,22 @@ for (const installmentsAllowed of [false, true]) {
   })
 }
 
+test('Assigned practitioner can start a paid, approved online consultation without a service key', async () => {
+  const appointment = {
+    ...fixture(false),
+    type: 'Consultation',
+    consultationMode: 'online',
+    status: 'Paid',
+    amountPaid: 1000,
+    contract: { terms: 'Consultation terms', status: 'signed' },
+  }
+  const h = harness(appointment)
+  assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 200)
+  assert.equal(h.current().status, 'Ongoing')
+  assert.ok(h.current().startedAt)
+  assert.equal(h.records.get('inventoryItems/material').currentStock, 4)
+})
+
 test('Materials reserve stock; reusable equipment reserves overlapping slots only', () => {
   const inventory = [{ id: 'm', currentStock: 1, name: 'Material' }, { id: 'e', currentStock: 1, name: 'Machine' }]
   const requirements = [{ id: 'm', kind: 'material', quantity: 1 }, { id: 'e', kind: 'equipment', quantity: 1 }]
