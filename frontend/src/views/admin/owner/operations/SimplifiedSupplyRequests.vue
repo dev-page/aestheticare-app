@@ -1,26 +1,38 @@
 <template>
-  <div class="min-h-screen bg-slate-900 text-slate-100">
+  <div class="module-theme flex min-h-screen bg-slate-900 text-slate-100">
     <OwnerSidebar />
-    <main class="ml-0 p-5 md:ml-64 md:p-8">
-      <h1 class="text-2xl font-bold">{{ title }}</h1>
-      <p class="mt-1 text-sm text-slate-400">{{ intro }}</p>
-      <p v-if="error" class="mt-4 rounded border border-red-500 p-3 text-red-200">{{ error }}</p>
+    <main class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+      <div class="mx-auto max-w-6xl">
+      <header class="border-b border-slate-700/80 pb-5">
+        <p class="text-xs font-bold tracking-[0.16em] text-amber-400">{{ mode.toUpperCase() }} MANAGEMENT</p>
+        <h1 class="mt-1 text-2xl font-bold text-white sm:text-3xl">{{ title }}</h1>
+        <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-400">{{ intro }}</p>
+      </header>
+      <p v-if="error" class="mt-5 rounded-xl border border-red-500/70 bg-red-950/40 p-4 text-sm text-red-100">{{ error }}</p>
 
-      <section v-if="mode === 'inventory'" class="mt-6 max-w-3xl rounded-xl border border-slate-700 bg-slate-800 p-5">
-        <h2 class="font-semibold">New inventory request</h2>
-        <p class="mt-1 text-sm text-slate-400">Describe what is needed. Procurement will select the supplier and exact catalog item.</p>
-        <form class="mt-5 grid gap-3 sm:grid-cols-2" @submit.prevent="createRequest">
-          <input v-model.trim="draft.name" placeholder="Supply name" required />
-          <input v-model.trim="draft.category" placeholder="Category" required />
-          <input v-model.number="draft.quantity" type="number" min="1" placeholder="Quantity" required />
-          <input v-model="draft.requiredDate" type="date" required />
-          <textarea v-model.trim="draft.reason" class="sm:col-span-2" placeholder="Reason for request" required />
-          <button class="sm:col-span-2 rounded bg-amber-500 px-4 py-2 font-semibold text-slate-950 disabled:opacity-60" :disabled="busy">Send to Procurement</button>
+      <section v-if="mode === 'inventory'" class="mt-6 rounded-2xl border border-slate-700 bg-slate-800/80 shadow-xl shadow-slate-950/20">
+        <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-700 px-5 py-5 sm:px-6">
+          <div><p class="text-xs font-bold tracking-[0.14em] text-amber-400">NEW REQUEST</p><h2 class="mt-1 text-lg font-semibold text-white">Request clinic supplies</h2><p class="mt-1 max-w-2xl text-sm leading-6 text-slate-400">Describe the supply your clinic needs. Procurement will select the supplier and the matching catalog item before preparing the purchase order.</p></div>
+          <span class="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-200">Inventory starts the request</span>
+        </div>
+        <form class="p-5 sm:p-6" @submit.prevent="createRequest">
+          <div class="grid gap-5 md:grid-cols-2">
+            <label class="form-field"><span>Supply or item name <b>*</b></span><input v-model.trim="draft.name" placeholder="e.g. Surgical gloves" required /><small>Use a general item description. It does not need to match a supplier's exact product name.</small></label>
+            <label class="form-field"><span>Category <b>*</b></span><input v-model.trim="draft.category" placeholder="e.g. Medical supplies" required /><small>Group similar supplies to make the request easier to review.</small></label>
+            <label class="form-field"><span>Quantity requested <b>*</b></span><input v-model.number="draft.quantity" type="number" min="1" required /><small>Enter the number of units the clinic needs.</small></label>
+            <label class="form-field"><span>Required by <b>*</b></span><input v-model="draft.requiredDate" type="date" required /><small>Choose the date when this supply is needed.</small></label>
+            <label class="form-field"><span>Delivery location <b>*</b></span><input v-model.trim="draft.location" placeholder="e.g. Main Branch - Storage Room" required /><small>State where Logistics should deliver supplies after receiving them.</small></label>
+            <label class="form-field"><span>Priority <b>*</b></span><select v-model="draft.priority" required><option>Low</option><option>Normal</option><option>High</option><option>Urgent</option></select><small>Use urgent only when operations would be affected without the supply.</small></label>
+            <label class="form-field md:col-span-2"><span>Reason for request <b>*</b></span><textarea v-model.trim="draft.reason" placeholder="Explain why this supply is needed and how it will be used." required /><small>This helps Procurement and Finance assess the request.</small></label>
+          </div>
+          <div class="mt-6 flex flex-col gap-4 border-t border-slate-700 pt-5 sm:flex-row sm:items-center sm:justify-between"><p class="max-w-2xl text-sm leading-6 text-slate-400"><span class="font-semibold text-slate-200">Next step:</span> Procurement will be notified to choose a supplier and catalog item for this request.</p><button class="rounded-lg bg-amber-500 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60" :disabled="busy">{{ busy ? 'Sending request…' : 'Send to Procurement' }}</button></div>
         </form>
       </section>
 
-      <section class="mt-6 space-y-3">
-        <article v-for="record in records" :key="record.id" class="rounded-xl border border-slate-700 bg-slate-800 p-4">
+      <section class="mt-6">
+        <div class="mb-4"><h2 class="text-lg font-semibold text-white">{{ mode === 'inventory' ? 'Your requests' : 'Records requiring action' }}</h2><p class="mt-1 text-sm text-slate-400">{{ mode === 'inventory' ? 'Track the requests you have sent to Procurement.' : 'Review the information below and complete the next workflow step.' }}</p></div>
+        <div class="space-y-3">
+        <article v-for="record in records" :key="record.id" class="rounded-xl border border-slate-700 bg-slate-800/80 p-4 sm:p-5">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 class="font-semibold">{{ record.number }}</h2>
@@ -30,33 +42,35 @@
           </div>
 
           <div v-if="mode === 'procurement' && record.kind === 'procurement' && record.status === 'Received'" class="mt-4 space-y-3">
-            <label class="block text-sm font-medium">Supplier
+            <label class="form-field">Supplier business <b>*</b>
               <select v-model="supplierByRecord[record.id]" class="mt-1 w-full" @change="ensureSelectionMap(record.id)">
-                <option value="">Select supplier</option>
+                <option value="">Choose supplier business</option>
                 <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">{{ supplier.name || supplier.businessName }}</option>
               </select>
             </label>
             <div v-for="line in record.lines" :key="line.itemId" class="rounded-lg border border-slate-700 p-3">
               <p class="text-sm font-medium">Match “{{ line.name }}” ({{ line.quantity }} {{ line.unit || 'units' }})</p>
-              <label class="mt-2 block text-xs text-slate-400">Supplier catalog item
+              <label class="form-field mt-3">Matching supplier catalog item <b>*</b>
                 <select v-model="catalogSelectionsByRecord[record.id][line.itemId]" class="mt-1 w-full" :disabled="!supplierByRecord[record.id]">
-                  <option value="">Select the matching item</option>
+                  <option value="">Choose the matching catalog item</option>
                   <option v-for="item in catalogItems(record.id)" :key="item.id" :value="item.id">{{ catalogLabel(item) }}</option>
                 </select>
               </label>
               <p v-if="supplierByRecord[record.id] && !catalogItems(record.id).length" class="mt-2 text-xs text-amber-300">This supplier has no active catalog items to match. Select another supplier.</p>
             </div>
-            <button class="rounded bg-amber-500 px-3 py-2 font-semibold text-slate-950 disabled:opacity-60" :disabled="!readyForFinance(record) || busy" @click="sendForApproval(record)">Send to Finance</button>
+            <button class="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-60" :disabled="!readyForFinance(record) || busy" @click="sendForApproval(record)">Send to Finance for approval</button>
           </div>
 
-          <div v-if="mode === 'finance' && record.kind === 'po' && record.status === 'For Finance Approval'" class="mt-4 flex flex-wrap gap-3">
-            <select v-model="budgetByRecord[record.id]"><option value="">Select matching budget</option><option v-for="budget in budgets" :key="budget.id" :value="budget.id">{{ budget.category }}</option></select>
-            <button class="rounded bg-emerald-600 px-3 py-2 font-semibold disabled:opacity-60" :disabled="!budgetByRecord[record.id] || busy" @click="approve(record)">Approve</button>
+          <div v-if="mode === 'finance' && record.kind === 'po' && record.status === 'For Finance Approval'" class="mt-4 flex flex-wrap items-end gap-3">
+            <label class="form-field min-w-64 flex-1">Inventory budget <b>*</b><select v-model="budgetByRecord[record.id]"><option value="">Choose an approved inventory budget</option><option v-for="budget in budgets" :key="budget.id" :value="budget.id">{{ budget.category }}</option></select></label>
+            <button class="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold disabled:opacity-60" :disabled="!budgetByRecord[record.id] || busy" @click="approve(record)">Approve purchase order</button>
           </div>
           <button v-if="mode === 'finance' && record.kind === 'po' && record.status === 'Approved'" class="mt-4 rounded bg-amber-500 px-3 py-2 font-semibold text-slate-950" @click="action(record, 'issue')">Send purchase order to supplier</button>
         </article>
-        <p v-if="!records.length" class="text-slate-400">No records currently need your action.</p>
+        <p v-if="!records.length" class="rounded-xl border border-dashed border-slate-700 px-5 py-8 text-center text-sm text-slate-400">No records currently need your action.</p>
+        </div>
       </section>
+      </div>
     </main>
   </div>
 </template>
@@ -77,7 +91,7 @@ const catalogSelectionsByRecord = ref({})
 const budgetByRecord = ref({})
 const mode = computed(() => route.path.startsWith('/inventory') ? 'inventory' : route.path.startsWith('/procurement') ? 'procurement' : 'finance')
 const title = computed(() => mode.value === 'inventory' ? 'Inventory Requests' : mode.value === 'procurement' ? 'Procurement Requests' : 'Purchase Order Approvals')
-const intro = computed(() => mode.value === 'inventory' ? 'Request clinic supplies.' : mode.value === 'procurement' ? 'Choose a supplier, match every request to a catalog item, and prepare the purchase order.' : 'Review and approve purchase orders prepared by Procurement.')
+const intro = computed(() => mode.value === 'inventory' ? 'Create and track supply needs for your clinic. Procurement selects the supplier and matching catalog items.' : mode.value === 'procurement' ? 'Choose a supplier, match every request to a catalog item, and prepare the purchase order.' : 'Review and approve purchase orders prepared by Procurement.')
 const branchId = computed(() => data.value.branchId || data.value.branches?.[0]?.id || '')
 const suppliers = computed(() => data.value.suppliers.filter(supplier => supplier.status === 'Active'))
 const budgets = computed(() => data.value.records.filter(record => record.kind === 'budget' && record.status === 'Active'))
@@ -126,7 +140,11 @@ onMounted(load)
 </script>
 
 <style scoped>
-input, select, textarea { border: 1px solid rgb(71 85 105); border-radius: .5rem; background: rgb(15 23 42); padding: .65rem .75rem; color: white; }
-textarea { min-height: 5rem; }
+.form-field { display: flex; flex-direction: column; gap: .42rem; color: rgb(226 232 240); font-size: .875rem; font-weight: 600; }
+.form-field b { color: rgb(251 191 36); }
+.form-field small { color: rgb(148 163 184); font-size: .75rem; font-weight: 400; line-height: 1.25rem; }
+input, select, textarea { width: 100%; border: 1px solid rgb(71 85 105); border-radius: .5rem; background: rgb(15 23 42); padding: .7rem .8rem; color: white; font-weight: 400; }
+input:focus, select:focus, textarea:focus { border-color: rgb(245 158 11); box-shadow: 0 0 0 3px rgb(245 158 11 / .15); outline: none; }
+textarea { min-height: 6.5rem; resize: vertical; }
 select:disabled { cursor: not-allowed; opacity: .55; }
 </style>
