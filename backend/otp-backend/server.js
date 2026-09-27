@@ -179,6 +179,66 @@ const extractOcrDates = (text) => {
   for (const match of normalizedText.matchAll(dayFirst)) addDate(match[3], monthNames[match[2]], match[1])
   return [...new Set(dates)]
 }
+
+const OCR_DATE_TOKEN_PATTERN = '(?:\\d{4}[-\\/]\\d{1,2}[-\\/]\\d{1,2}|\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{4}|(?:january|february|march|april|may|june|july|august|september|october|november|december)\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?[,]?\\s+\\d{4}|\\d{1,2}(?:st|nd|rd|th)?\\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\\.?[,]?\\s+\\d{4})'
+
+const normalizeOcrDateToken = (value) => {
+  const raw = String(value || '').trim().toLowerCase().replace(/[,]/g, '')
+  const numeric = raw.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$|^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
+  const months = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+  }
+  let year = 0
+  let month = 0
+  let day = 0
+  if (numeric) {
+    if (numeric[1]) [year, month, day] = [Number(numeric[1]), Number(numeric[2]), Number(numeric[3])]
+    else [year, month, day] = [Number(numeric[6]), Number(numeric[4]), Number(numeric[5])]
+  } else {
+    const monthFirst = raw.match(/^(january|february|march|april|may|june|july|august|september|october|november|december)\.?\s+(\d{1,2})(?:st|nd|rd|th)?\s+(\d{4})$/)
+    const dayFirst = raw.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)\.?\s+(\d{4})$/)
+    if (monthFirst) [year, month, day] = [Number(monthFirst[3]), months[monthFirst[1]], Number(monthFirst[2])]
+    if (dayFirst) [year, month, day] = [Number(dayFirst[3]), months[dayFirst[2]], Number(dayFirst[1])]
+  }
+  if (!year || !month || !day) return ''
+  const normalized = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  const parsed = new Date(`${normalized}T00:00:00Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.getUTCFullYear() === year && parsed.getUTCMonth() + 1 === month && parsed.getUTCDate() === day
+    ? normalized
+    : ''
+}
+
+const extractOcrExpiryContext = (text) => {
+  const source = String(text || '').toLowerCase().replace(/\s+/g, ' ')
+  const rangePattern = new RegExp(`(?:valid(?:ity)?(?:\\s+period)?(?:\\s+from)?|effective(?:\\s+date)?)\\s*[:\\-]?\\s*(${OCR_DATE_TOKEN_PATTERN})\\s*(?:to|until|through|thru|[-–—])\\s*(${OCR_DATE_TOKEN_PATTERN})`, 'i')
+  const range = source.match(rangePattern)
+  if (range) {
+    return {
+      type: 'validity_range',
+      validFrom: normalizeOcrDateToken(range[1]),
+      validTo: normalizeOcrDateToken(range[2]),
+    }
+  }
+  const expiryPattern = new RegExp(`(?:valid(?:ity)?\\s*(?:until|through|thru|to)|valid\\s+up\\s+to|(?:date\\s+of\\s+)?expiry(?:\\s+date)?|(?:date\\s+of\\s+)?expiration(?:\\s+date)?|expires?(?:\\s+on)?)\\s*[:\\-]?\\s*(${OCR_DATE_TOKEN_PATTERN})`, 'i')
+  const expiry = source.match(expiryPattern)
+  return {
+    type: expiry ? 'expiry_date' : 'not_found',
+    validFrom: '',
+    validTo: expiry ? normalizeOcrDateToken(expiry[1]) : '',
+  }
+}
+
+const getOcrExpiryValidation = (text, requiresExpiry) => {
+  if (!requiresExpiry) return { valid: null, expired: false, ...extractOcrExpiryContext('') }
+  const context = extractOcrExpiryContext(text)
+  if (!context.validTo) return { valid: null, expired: false, ...context }
+  const endMs = new Date(`${context.validTo}T23:59:59.999Z`).getTime()
+  const startMs = context.validFrom ? new Date(`${context.validFrom}T00:00:00Z`).getTime() : null
+  const now = Date.now()
+  const expired = endMs < now
+  return { valid: !expired && (startMs === null || startMs <= now), expired, ...context }
+}
 const extractOcrDocumentNumber = (text) => {
   const candidates = String(text || '').toUpperCase().match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]{2,}){1,5}\b|\b\d{6,}\b/g) || []
   return candidates.find((value) => /\d/.test(value)) || ''
@@ -2044,8 +2104,9 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     const detectedDocumentNumber = extractOcrDocumentNumber(extractedText)
     const requiresNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
     const requiresExpiry = EXPIRY_DATE_REQUIREMENTS.has(docKey)
-    const expiryDate = detectedDates.find((value) => new Date(`${value}T00:00:00Z`).getTime() >= Date.now()) || ''
-    const expiryValid = requiresExpiry ? Boolean(expiryDate) : null
+    const expiryValidation = getOcrExpiryValidation(extractedText, requiresExpiry)
+    const expiryDate = expiryValidation.validTo
+    const expiryValid = expiryValidation.valid
     const ocrQuality = ocrConfidence ?? (readableText ? 0.75 : hasSomeText ? 0.4 : 0)
     const score = Math.min(1, (
       ocrQuality * 0.35
@@ -2062,7 +2123,10 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     result.checks = {
       readableText, ocrConfidence, nameMatch, ownerNameMatch, businessNameMatch, birthDateMatch, expectedBirthDate,
       nameCheckType: requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
-      documentNumberDetected: requiresNumber ? Boolean(detectedDocumentNumber) : null, expiryValid,
+      documentNumberDetected: requiresNumber ? Boolean(detectedDocumentNumber) : null,
+      expiryValid,
+      expiryDate,
+      expiryValidationType: expiryValidation.type,
     }
     // Automatic approval requires the Step 1 registrant name to be found in
     // the extracted text. Documents that have an expiry date also require a
@@ -2073,7 +2137,8 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
       && (!requiresExpiry || expiryValid === true)
     const requiredNameMismatch = requiresName && nameMatch === false
     const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
-    result.status = !readableText || requiredNameMismatch || requiredBirthDateMismatch || score < MANUAL_REVIEW_THRESHOLD
+    const expiredDocument = requiresExpiry && expiryValidation.expired
+    result.status = !readableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || score < MANUAL_REVIEW_THRESHOLD
       ? 'rejected'
       : score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
     result.reason = !readableText
@@ -2082,14 +2147,16 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
         ? `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} does not match this document. Please upload the correct document.`
       : requiredBirthDateMismatch
         ? 'The birth date on the government-issued ID does not match the birth date entered in Step 1. Please upload the correct ID.'
+      : expiredDocument
+        ? `This document expired on ${expiryDate}. Please upload a current document.`
       : result.status === 'rejected'
         ? 'This document did not meet the minimum OCR verification score. Please upload a clearer file.'
         : requiresName && nameMatch !== true
           ? `OCR completed, but the ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
           : requiresBirthDate && birthDateMatch !== true
             ? 'OCR completed, but the birth date on the government-issued ID could not be matched. This document requires manual review.'
-          : requiresExpiry && !expiryValid
-            ? 'OCR completed, but a valid expiry date could not be confirmed. This document requires manual review.'
+          : requiresExpiry && expiryValid !== true
+            ? 'OCR completed, but a labelled validity period or expiry date could not be confirmed. This document requires manual review.'
         : result.status === 'verified'
           ? 'OCR extracted readable text and passed automatic checks.'
           : 'OCR completed, but this document requires manual review.'
@@ -2156,7 +2223,11 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     }
 
     const uploadedResult = uploadOcrResults?.[docKey]
-    if (uploadedResult && String(uploadedResult.storagePath || '') === storagePath) {
+    const requiresFreshComplianceCheck = EXPIRY_DATE_REQUIREMENTS.has(docKey)
+      || GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS.has(docKey)
+    if (uploadedResult
+      && !requiresFreshComplianceCheck
+      && String(uploadedResult.storagePath || '') === storagePath) {
       results[docKey] = { ...uploadedResult, processedAt: admin.firestore.FieldValue.serverTimestamp() }
       continue
     }
@@ -2226,7 +2297,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       const birthDateMatch = requiresBirthDate && expectedBirthDate
         ? detectedDates.includes(expectedBirthDate)
         : null
-      const expiryValid = !expiryApplicable || detectedDates.some((value) => new Date(`${value}T00:00:00Z`).getTime() >= Date.now())
+      const expiryValidation = getOcrExpiryValidation(extractedText, expiryApplicable)
+      const expiryValid = expiryValidation.valid
       const requiresDocumentNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
       const expectedNumber = normalizeOcrComparable(document.documentNumber || document.number)
       const numberMatch = requiresDocumentNumber
@@ -2257,6 +2329,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         nameCheckType: requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
         numberMatch,
         expiryValid: expiryApplicable ? expiryValid : null,
+        expiryDate: expiryValidation.validTo,
+        expiryValidationType: expiryValidation.type,
       }
       result.scoreBreakdown = {
         ocrQuality: Math.round(ocrQuality * 100),
@@ -2279,7 +2353,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         && (!expiryApplicable || expiryValid)
       const requiredNameMismatch = requiresName && nameMatch === false
       const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
-      result.status = !hasReadableText || requiredNameMismatch || requiredBirthDateMismatch || confidence < MANUAL_REVIEW_THRESHOLD
+      const expiredDocument = expiryApplicable && expiryValidation.expired
+      result.status = !hasReadableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || confidence < MANUAL_REVIEW_THRESHOLD
         ? 'rejected'
         : confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
@@ -2288,12 +2363,14 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} does not match this document. Please upload the correct document.`
       } else if (requiredBirthDateMismatch) {
         result.reason = 'The birth date on the government-issued ID does not match the birth date entered in Step 1. Please upload the correct ID.'
+      } else if (expiredDocument) {
+        result.reason = `This document expired on ${expiryValidation.validTo}. Please upload a current document.`
       } else if (requiresName && nameMatch !== true) {
         result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
       } else if (requiresBirthDate && birthDateMatch !== true) {
         result.reason = 'OCR completed, but the birth date on the government-issued ID could not be matched. This document requires manual review.'
-      } else if (expiryApplicable && !expiryValid) {
-        result.reason = 'A valid expiry date could not be confirmed. This document requires manual review.'
+      } else if (expiryApplicable && expiryValid !== true) {
+        result.reason = 'A labelled validity period or expiry date could not be confirmed. This document requires manual review.'
       } else if (!expectedNumber) {
         result.reason = requiresDocumentNumber
           ? 'The required document number was not provided for comparison.'
