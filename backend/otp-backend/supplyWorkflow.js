@@ -578,11 +578,44 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       const supplierBefore = supplierCatalog ? suppliers.find(s => s.id === ref.id) : null
       tx.set(db.collection('supplyAudit').doc(), { branchId, recordId: ref.id, parentActionRecordId: result.id, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: changed.kind || (supplierCatalog ? 'supplierCatalog' : 'system'), action: supplierCatalog ? `catalog-stock-${action}` : action, previousStatus: previous?.status || '', newStatus: changed.status || '', before: supplierBefore || previous || null, after: changed, details: input, ...ctx.auditContext, createdAt: now })
       if (!changed.kind) continue
-      const recipients = staffContexts.filter(u => (permissionsByKind[changed.kind] || []).some(p => hasPermission(u, p))).map(u => u.uid)
-      for (const s of suppliers.filter(s => s.id === changed.supplierId || changed.supplierIds?.includes(s.id))) if (changed.mode === 'Online' && ['rfq', 'po', 'invoice', 'payment', 'quotation'].includes(changed.kind) && changed.status !== 'Draft') recipients.push(s.ownerId || s.supplierUserId)
-      const department = ['budget', 'budgetRequest', 'invoice', 'payment'].includes(changed.kind) ? 'finance' : ['receiving', 'discrepancy'].includes(changed.kind) || changed.kind === 'po' && changed.status === 'Claimed by Logistics' ? 'logistics' : changed.kind === 'request' ? 'inventory' : 'procurement'
-      const clinicLink = department === 'finance' ? '/finance/procurement/dashboard' : `/${department}/dashboard`
-      for (const uid of new Set(recipients.filter(Boolean))) tx.set(db.collection('notifications').doc(), { recipientUserId: uid, branchId, title: `${names[changed.kind]} updated`, message: `${changed.number}: ${changed.status}`, link: suppliers.some(s => s.ownerId === uid || s.supplierUserId === uid) ? '/supplier/supply' : clinicLink, read: false, deleted: false, createdAt: now })
+      // Supply alerts are handoffs, not general record-change broadcasts. This
+      // keeps each team focused on the action that has just reached its queue.
+      const staffWith = permission => staffContexts.filter(user => hasPermission(user, permission)).map(user => user.uid)
+      const supplierRecipient = supplierId => {
+        const supplier = suppliers.find(item => item.id === supplierId)
+        return changed.mode === 'Online' ? String(supplier?.ownerId || supplier?.supplierUserId || '').trim() : ''
+      }
+      let recipients = [], title = '', message = '', link = ''
+      if (changed.kind === 'procurement' && changed.status === 'Received') {
+        recipients = staffWith('procurement:review'); title = 'Inventory request awaiting procurement'; message = `${changed.number} was sent by Inventory. Select the supplier and prepare the purchase order.`; link = '/procurement/requests'
+      } else if (changed.kind === 'procurement' && changed.status === 'Returned to Inventory') {
+        recipients = [changed.requesterId]; title = 'Inventory request returned'; message = `${changed.number} needs revision before Procurement can continue.`; link = '/inventory/requests'
+      } else if (changed.kind === 'po' && changed.status === 'For Finance Approval') {
+        recipients = staffWith('finance:payables:approve'); title = 'Purchase order awaiting Finance approval'; message = `${changed.number} is ready for budget and financial approval.`; link = '/finance/procurement/requests'
+      } else if (changed.kind === 'po' && changed.status === 'Sent to Supplier') {
+        recipients = [supplierRecipient(changed.supplierId)]; title = 'New purchase order'; message = `${changed.number} has been sent for your confirmation.`; link = '/supplier/supply/orders'
+      } else if (changed.kind === 'po' && changed.status === 'Supplier Confirmed') {
+        recipients = staffWith('orders:update'); title = 'Supplier-confirmed order awaiting Logistics'; message = `${changed.number} was confirmed by the supplier and is ready to be claimed.`; link = '/logistics/items'
+      } else if (changed.kind === 'po' && ['Returned to Procurement', 'Rejected', 'Clarification Requested'].includes(changed.status)) {
+        recipients = staffWith('procurement:review'); title = 'Purchase order needs Procurement action'; message = `${changed.number}: ${changed.status}. Review the supplier or Finance remarks.`; link = '/procurement/orders'
+      } else if (changed.kind === 'receiving' && changed.status === 'Inspected') {
+        recipients = staffWith('inventory:create'); title = 'Inspected delivery awaiting Inventory onboarding'; message = `${changed.number} has been inspected. Onboard accepted stock into Inventory.`; link = '/inventory/onboarding'
+      } else if (changed.kind === 'discrepancy' && changed.status === 'Open') {
+        recipients = staffWith('procurement:review'); title = 'Delivery discrepancy needs resolution'; message = `${changed.number} contains rejected or discrepant delivery items.`; link = '/logistics/discrepancies'
+      } else if (changed.kind === 'invoice' && changed.status === 'Submitted') {
+        recipients = staffWith('finance:payables:approve'); title = 'Supplier invoice awaiting verification'; message = `${changed.number} was submitted and needs three-way matching.`; link = '/finance/procurement/invoices'
+      } else if (changed.kind === 'invoice' && changed.status === 'Approved for Payment') {
+        recipients = staffWith('finance:payables:settle'); title = 'Supplier invoice ready for payment'; message = `${changed.number} was approved and is ready for payment processing.`; link = '/finance/procurement/invoices'
+      } else if (changed.kind === 'payment' && changed.status === 'Pending') {
+        recipients = staffWith('finance:payables:approve'); title = 'Supplier payment awaiting review'; message = `${changed.number} was prepared and needs Finance review.`; link = '/finance/procurement/invoices'
+      } else if (changed.kind === 'payment' && changed.status === 'Approved') {
+        recipients = staffWith('finance:payables:settle'); title = 'Supplier payment ready to process'; message = `${changed.number} was approved. Record the payment after it is made externally.`; link = '/finance/procurement/invoices'
+      } else if (changed.kind === 'payment' && changed.status === 'Paid') {
+        recipients = [supplierRecipient(changed.supplierId)]; title = 'Supplier payment recorded'; message = `Payment for ${changed.number} has been recorded by the clinic.`; link = '/supplier/supply/invoices'
+      }
+      for (const uid of new Set(recipients.filter(uid => uid && uid !== ctx.uid))) {
+        tx.set(db.collection('notifications').doc(), { recipientUserId: uid, branchId, title, message, link, read: false, deleted: false, createdAt: now })
+      }
     }
     for (const [ref, value, merge] of financialWrites) tx.set(ref, { ...value, updatedAt: now }, { merge })
     return { id: result.id, status: result.status }
