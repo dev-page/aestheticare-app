@@ -2734,7 +2734,11 @@ const isOwnerRoleValue = (value) => {
     .trim()
     .toLowerCase()
     .replace(/[\s_-]+/g, '')
-  return normalized === 'owner' || normalized === 'clinicadmin' || normalized === 'clinicadministrator'
+  // Clinic registrations persist the owner-facing role as "Clinic Owner".
+  // Keep that canonical registration role accepted wherever an owner changes
+  // or pays for a subscription; otherwise a newly activated owner is rejected
+  // before their plan selection can be evaluated.
+  return normalized === 'owner' || normalized === 'clinicowner' || normalized === 'clinicadmin' || normalized === 'clinicadministrator'
 }
 
 const loadOwnerSubscriptionContext = async (firestore, ownerUid) => {
