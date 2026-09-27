@@ -249,6 +249,15 @@ const handleLogin = async () => {
       const userCredentials = await signInWithEmailAndPassword(auth, email.value.trim(), password.value)
       await userCredentials.user.reload()
 
+      // A Free-plan "Continue" action only grants access for the active
+      // browser session. Start every new sign-in with a fresh onboarding
+      // decision unless the owner has explicitly chosen "Don't show again".
+      try {
+        window.sessionStorage.removeItem(`free-plan-onboarding-continued:${userCredentials.user.uid}`)
+      } catch {
+        // Session storage is optional; routing still enforces the Free plan.
+      }
+
       const userRef = doc(db, 'users', userCredentials.user.uid)
       const userSnap = await getDoc(userRef)
 

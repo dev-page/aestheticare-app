@@ -43,6 +43,15 @@ const subscriptionExpiryHasPassed = (value) => {
 
 const isTrueFlag = (value) => value === true || String(value || '').trim().toLowerCase() === 'true'
 
+const hasFreePlanOnboardingSessionAccess = (uid) => {
+  if (!uid || typeof window === 'undefined') return false
+  try {
+    return window.sessionStorage.getItem(`free-plan-onboarding-continued:${uid}`) === 'true'
+  } catch {
+    return false
+  }
+}
+
 const routes = [
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
   { path: '/supplier/supply/rfqs', redirect: '/supplier/supply/orders' },
@@ -512,6 +521,7 @@ router.beforeEach(async (to, from, next) => {
   const needsFreePlanAcknowledgement = isApprovedClinicOwner
     && isFreeSubscriptionPlan(effectiveSubscriptionPlan)
     && !isTrueFlag(currentUserData.subscriptionOnboardingDismissed)
+    && !hasFreePlanOnboardingSessionAccess(currentUser?.uid)
 
   if (needsFreePlanAcknowledgement && !isSubscriptionOnboardingRoute && !isSubscriptionCheckoutRoute) {
     return next('/clinic/onboarding')

@@ -162,6 +162,18 @@ const continueWithSelectedPlan = async () => {
   submitting.value = true
   try {
     if (selectedFreePlan.value) {
+      // Let the owner enter the Free workspace for this browser session. This
+      // does not set the persistent dismissal preference, so the plan screen
+      // is still shown again on a future sign-in unless they opt out below.
+      try {
+        window.sessionStorage.setItem(
+          `free-plan-onboarding-continued:${auth.currentUser?.uid || ''}`,
+          'true',
+        )
+      } catch {
+        // Storage may be unavailable in a privacy-restricted browser. The
+        // route still remains safe because Free feature restrictions apply.
+      }
       await router.push('/clinic/dashboard')
       return
     }
