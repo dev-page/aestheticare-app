@@ -14,7 +14,8 @@ const buildActorName = (userData, fallbackEmail) => {
 
 const buildActorRole = (userData) => {
   const role = String(userData?.role || '').trim().toLowerCase()
-  if (['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(role)) return 'Clinic Admin'
+  if (['owner', 'clinic owner', 'clinicowner'].includes(role)) return 'Clinic Owner'
+  if (['clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(role)) return 'Clinic Admin'
   if (role === 'superadmin' || role === 'system admin' || role === 'systemadmin') return 'System Admin'
   return String(userData?.customRoleName || userData?.role || userData?.userType || 'Unknown').trim()
 }

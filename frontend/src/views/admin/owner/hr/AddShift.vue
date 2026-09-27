@@ -32,7 +32,7 @@ export default {
     const shiftTypes = ['Morning', 'Afternoon', 'Evening']
     const isOwnerLikeRole = (role) => {
       const normalized = String(role || '').trim().toLowerCase()
-      return ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized)
+      return ['owner', 'clinic owner', 'clinicowner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized)
     }
 
     const chunkArray = (items, size = 10) => {

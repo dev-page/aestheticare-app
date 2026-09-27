@@ -35,7 +35,7 @@ const recoveryEndsAt = ref(null)
 const asDate = (value) => typeof value?.toDate === 'function' ? value.toDate() : new Date(value || 0)
 const isOwner = (data = {}, uid = '') => {
   const value = String(data.role || data.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
-  return ['owner', 'clinicadmin', 'clinicadministrator'].includes(value) || (Boolean(uid) && String(data.branchId || '').trim() === uid)
+  return ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(value) || (Boolean(uid) && String(data.branchId || '').trim() === uid)
 }
 const eligible = (data = {}, uid = '') => {
   const end = asDate(data.accountRecoveryEndsAt)

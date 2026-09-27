@@ -368,7 +368,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { usePermissions } from '@/composables/usePermissions'
 
-const OWNER_ROLES = new Set(['owner', 'clinicadmin', 'clinicadministrator'])
+const OWNER_ROLES = new Set(['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'])
 
 export default {
   name: 'FinanceRefunds',

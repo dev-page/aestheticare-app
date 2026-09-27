@@ -62,7 +62,7 @@ const hasCustomerDeletionWindow = (userData = {}) => {
 
 const hasOwnerRecoveryWindow = (userData = {}, uid = '') => {
   const role = String(userData.role || userData.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
-  const isOwner = ['owner', 'clinicadmin', 'clinicadministrator'].includes(role)
+  const isOwner = ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(role)
     || (Boolean(uid) && String(userData.branchId || '').trim() === uid)
   return isOwner
     && String(userData.status || '').trim().toLowerCase() === 'inactive'
@@ -88,6 +88,7 @@ const normalizeRoleKey = (value) => {
 
   if (!compact) return 'Customer'
   if (compact === 'crm') return 'CRM'
+  if (compact === 'clinicowner' || compact === 'owner') return 'Owner'
   if (compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Clinic Admin'
   if (compact === 'supplier') return 'Supplier'
   if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') {
@@ -107,8 +108,8 @@ const requiresLoginOtp = (userData) => {
   const userType = normalize(userData?.userType)
   // Customers intentionally retain password-only login. Every operational
   // account (system admin, owner, staff/employee, or supplier) needs OTP.
-  return ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicadmin', 'clinicadministrator', 'supplier', 'staff', 'employee'].includes(role)
-    || ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicadmin', 'clinicadministrator', 'supplier', 'staff', 'employee'].includes(userType)
+  return ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicowner', 'clinicadmin', 'clinicadministrator', 'supplier', 'staff', 'employee'].includes(role)
+    || ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicowner', 'clinicadmin', 'clinicadministrator', 'supplier', 'staff', 'employee'].includes(userType)
 }
 
 const firebaseLoginMessages = {

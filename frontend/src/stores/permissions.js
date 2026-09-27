@@ -83,7 +83,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     // Legacy clinic registrants used the "Clinic Admin" label. Their main
     // branch was created with their UID, which keeps them owners after the
     // role split without elevating branch-admin employees.
-    return userType === 'owner' || role === 'owner' || (
+    return userType === 'owner' || role === 'owner' || role === 'clinicowner' || (
       ['clinicadmin', 'clinicadministrator'].includes(role) &&
       Boolean(uid) && String(data.branchId || '').trim() === uid
     )

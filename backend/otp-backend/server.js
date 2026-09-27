@@ -1684,7 +1684,7 @@ const requiresOperationalLoginOtp = (userData = {}) => {
   const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
   const accountKinds = new Set([
     'superadmin', 'systemadmin', 'sysadmin',
-    'owner', 'clinicadmin', 'clinicadministrator',
+    'owner', 'clinicowner', 'clinicadmin', 'clinicadministrator',
     'supplier', 'staff', 'employee',
   ])
   // Customer accounts are intentionally excluded from login OTP.
@@ -5315,7 +5315,7 @@ app.post('/auth/check-registration-status', async (req, res) => {
       String(userData.businessType || clinicData.businessType || '').trim()
     const normalizedRole = String(userData.role || userData.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
     const recoveryEndsAt = getTimestampDate(userData.accountRecoveryEndsAt)
-    const ownerRecoveryEligible = ['owner', 'clinicadmin', 'clinicadministrator'].includes(normalizedRole)
+    const ownerRecoveryEligible = ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(normalizedRole)
       && userStatus === 'inactive'
       && userData.archived === true
       && userData.accountClosed === true
@@ -6808,7 +6808,7 @@ app.post(SUPPLIER_ACCOUNT_LOOKUP_PATH, requireAuth, async (req, res) => {
     if (!branchId || !EMAIL_ADDRESS_REGEX.test(email)) return res.status(400).json({ success: false, error: 'A valid branch and email are required.' })
     const actor = await loadUserContext(String(req.user?.uid || ''))
     const actorRole = String(actor.roleKey || actor.userData?.role || '').toLowerCase().replace(/[\s_-]+/g, '')
-    const permitted = actor.permissions.has('suppliers:create') || actor.permissions.has('administrator:full_access') || ['owner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
+    const permitted = actor.permissions.has('suppliers:create') || actor.permissions.has('administrator:full_access') || ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
     if (!permitted || !await resolveBranchAccess(String(req.user?.uid || ''), branchId)) return res.status(403).json({ success: false, error: 'Forbidden' })
     const firestore = admin.firestore()
     let authUser
@@ -6854,7 +6854,7 @@ app.post(SUPPLIER_ACCOUNT_DIRECTORY_PATH, requireAuth, async (req, res) => {
     if (!/^[A-Za-z0-9_-]{1,150}$/.test(branchId)) return res.status(400).json({ success: false, error: 'A valid clinic branch is required.' })
     const actor = await loadUserContext(actorId)
     const actorRole = String(actor.roleKey || actor.userData?.role || '').toLowerCase().replace(/[\s_-]+/g, '')
-    const permitted = actor.permissions.has('suppliers:create') || actor.permissions.has('administrator:full_access') || ['owner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
+    const permitted = actor.permissions.has('suppliers:create') || actor.permissions.has('administrator:full_access') || ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
     if (!permitted || !await resolveBranchAccess(actorId, branchId)) return res.status(403).json({ success: false, error: 'Forbidden' })
     const rows = (await admin.firestore().collection('suppliers').get()).docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() }))
     const byAccount = new Map()
@@ -6887,7 +6887,7 @@ app.post(SUPPLIER_ACCOUNT_LINK_PATH, requireAuth, async (req, res) => {
     const branchId = String(req.body?.branchId || '').trim(), supplierUid = String(req.body?.supplierUid || '').trim(), actorId = String(req.user?.uid || '')
     if (!/^[A-Za-z0-9_-]{1,150}$/.test(branchId) || !supplierUid) return res.status(400).json({ success: false, error: 'A valid clinic branch and supplier account are required.' })
     const actor = await loadUserContext(actorId), actorRole = String(actor.roleKey || actor.userData?.role || '').toLowerCase().replace(/[\s_-]+/g, '')
-    const permitted = actor.permissions.has('suppliers:create') || actor.permissions.has('administrator:full_access') || ['owner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
+    const permitted = actor.permissions.has('suppliers:create') || actor.permissions.has('administrator:full_access') || ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
     if (!permitted || !await resolveBranchAccess(actorId, branchId)) return res.status(403).json({ success: false, error: 'Forbidden' })
     const firestore = admin.firestore(), branchSnap = await firestore.collection('clinics').doc(branchId).get()
     if (!branchSnap.exists) return res.status(404).json({ success: false, error: 'Clinic branch not found.' })
@@ -6947,7 +6947,7 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
     const actorRole = String(actor.roleKey || actor.userData?.role || '').toLowerCase().replace(/[\s_-]+/g, '')
     const permitted = actor.permissions.has('suppliers:create')
       || actor.permissions.has('administrator:full_access')
-      || ['owner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
+      || ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(actorRole)
     if (!permitted || !await resolveBranchAccess(actorId, branchId)) return res.status(403).json({ success: false, error: 'Forbidden' })
 
     const firestore = admin.firestore()

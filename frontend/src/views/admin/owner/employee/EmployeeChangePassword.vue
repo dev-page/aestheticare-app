@@ -218,7 +218,7 @@ export default {
         const userData = updatedUserSnap.exists() ? updatedUserSnap.data() || {} : {}
         const userType = String(userData.userType || '').trim().toLowerCase()
         const rawRole = String(userData.role || userData.customRoleName || userData.userType || '').trim().toLowerCase()
-        const isClinicAdmin = rawRole === 'clinic admin' || rawRole === 'clinicadmin' || rawRole === 'clinic administrator' || rawRole === 'owner'
+        const isClinicAdmin = rawRole === 'clinic owner' || rawRole === 'clinicowner' || rawRole === 'clinic admin' || rawRole === 'clinicadmin' || rawRole === 'clinic administrator' || rawRole === 'owner'
         const redirectPath = userType === 'staff'
           ? '/workspace/dashboard'
           : isClinicAdmin

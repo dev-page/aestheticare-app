@@ -56,7 +56,8 @@ export default {
 
     const formatActorRole = (activity) => {
       const value = String(activity?.actorRole || '').trim().toLowerCase()
-      if (['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(value)) return 'Clinic Admin'
+      if (['owner', 'clinic owner', 'clinicowner'].includes(value)) return 'Clinic Owner'
+      if (['clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(value)) return 'Clinic Admin'
       return String(activity?.actorRole || activity?.actorUserType || 'Unknown role').trim()
     }
 

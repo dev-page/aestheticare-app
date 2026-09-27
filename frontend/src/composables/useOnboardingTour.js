@@ -51,7 +51,7 @@ const getAccountTourKey = (userData = {}) => {
   if (roles.some((role) => ['supplier', 'supplieradmin'].includes(role))) return 'supplier'
   if (roles.includes('customer')) return 'customer'
   if (roles.some((role) => ['superadmin', 'systemadmin', 'sysadmin'].includes(role))) return 'superadmin'
-  if (roles.some((role) => ['owner', 'clinicadmin', 'clinicadministrator'].includes(role))) return 'owner'
+  if (roles.some((role) => ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(role))) return 'owner'
   if (roles.some((role) => ['staff', 'employee'].includes(role))) return 'employee'
   return ''
 }

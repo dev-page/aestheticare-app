@@ -451,7 +451,7 @@ export default {
 
       const isOwnerLike = (roleValue) => {
         const compactRole = String(roleValue || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
-        return ['owner', 'clinicadmin', 'clinicadministrator'].includes(compactRole)
+        return ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(compactRole)
       }
 
       const isFreePlanDestination = (path) => [

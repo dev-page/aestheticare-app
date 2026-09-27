@@ -28,7 +28,7 @@ const normalizeRole = (value) =>
 
 const isClinicAdminRole = (value) => {
   const role = normalizeRole(value)
-  return role === 'clinicadmin' || role === 'owner' || role === 'clinicadministrator'
+  return role === 'clinicadmin' || role === 'owner' || role === 'clinicowner' || role === 'clinicadministrator'
 }
 
 const normalizePlan = (value) => {

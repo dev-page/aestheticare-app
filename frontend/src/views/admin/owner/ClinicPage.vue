@@ -520,7 +520,7 @@ export default {
 
     const isOwnerLikeRole = (role) => {
       const normalized = String(role || '').trim().toLowerCase()
-      return ['owner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized)
+      return ['owner', 'clinic owner', 'clinicowner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized)
     }
 
     const selectedBranch = computed(() =>
