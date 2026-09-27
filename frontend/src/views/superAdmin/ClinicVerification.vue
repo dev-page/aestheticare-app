@@ -28,7 +28,17 @@
             <h2 class="text-lg font-semibold text-white">OCR Verified</h2>
             <p class="mt-0.5 text-sm text-slate-400">Ready for administrator approval.</p>
           </div>
-          <button type="button" class="inline-flex min-h-9 items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="processing || !selectedOcrVerified.length" @click="batchApproveOcrVerified">Batch approve ({{ selectedOcrVerified.length }})</button>
+          <button
+            type="button"
+            class="inline-flex min-h-9 items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed"
+            :class="selectedOcrVerified.length
+              ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+              : 'border border-slate-600 bg-slate-900/60 text-slate-500'"
+            :disabled="processing || !selectedOcrVerified.length"
+            @click="batchApproveOcrVerified"
+          >
+            {{ selectedOcrVerified.length ? `Batch approve (${selectedOcrVerified.length})` : 'Select registrations to approve' }}
+          </button>
         </div>
         <div class="overflow-x-auto">
         <table class="w-full min-w-[620px] table-fixed text-sm">
@@ -166,7 +176,7 @@
           <div class="flex items-start justify-between gap-4 mb-6">
             <div>
               <h2 class="text-2xl text-white font-semibold">Clinic Registration Details</h2>
-              <p class="text-slate-400 text-sm">{{ isPendingRecord(selectedRecord) ? 'Review and approve/reject this clinic owner registration.' : 'View the approved clinic registration and its verification record.' }}</p>
+              <p class="text-slate-400 text-sm">{{ isAwaitingResubmission(selectedRecord) ? 'Waiting for the applicant to submit replacement documents.' : isPendingRecord(selectedRecord) ? 'Review and approve/reject this clinic owner registration.' : 'View the approved clinic registration and its verification record.' }}</p>
             </div>
             <button class="text-slate-300 hover:text-white" @click="closeModal">Close</button>
           </div>
@@ -327,6 +337,10 @@
             </div>
           </section>
 
+          <div v-if="isAwaitingResubmission(selectedRecord)" class="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            Resubmission was requested. Verification actions will be available again after the applicant submits replacement documents.
+          </div>
+
           <section v-if="isPendingRecord(selectedRecord)" class="mb-4">
             <label class="block text-xs text-slate-400 mb-1">Review remark (required for resubmission or rejection)</label>
             <textarea
@@ -340,8 +354,8 @@
           <div v-if="isPendingRecord(selectedRecord)" class="flex flex-col sm:flex-row gap-3 sm:justify-end">
             <button
               type="button"
-              class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white"
-              :disabled="processing"
+              class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="processing || isAwaitingResubmission(selectedRecord)"
               @click="approveSelected"
             >
               {{ processing ? 'Processing...' : 'Approve' }}
@@ -349,16 +363,16 @@
 
             <button
               type="button"
-              class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white"
-              :disabled="processing"
+              class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="processing || isAwaitingResubmission(selectedRecord)"
               @click="requestResubmission"
             >
               {{ processing ? 'Processing...' : 'Request Resubmission' }}
             </button>
             <button
               type="button"
-              class="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white"
-              :disabled="processing"
+              class="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="processing || isAwaitingResubmission(selectedRecord)"
               @click="rejectSelected"
             >
               {{ processing ? 'Processing...' : 'Reject' }}
@@ -399,6 +413,11 @@ const normalizeStatusLabel = (clinicStatus, userStatus) => {
 const isPendingRecord = (record) => {
   const status = String(record?.approvalStatus || record?.status || '').trim().toLowerCase()
   return status.includes('pending approval') || status.includes('manual review') || status.includes('pending')
+}
+
+const isAwaitingResubmission = (record) => {
+  const status = String(record?.approvalStatus || record?.status || '').trim().toLowerCase()
+  return Boolean(record?.resubmissionRequired) && status.includes('pending documents')
 }
 
 const formatApplicantName = (user = {}, fallback = {}) => {
@@ -788,6 +807,7 @@ export default {
             return {
               id: clinic.id,
               approvalStatus: clinic.approvalStatus || 'Pending Approval',
+              resubmissionRequired: Boolean(clinic.resubmissionRequired),
               fullName,
               email: normalizedEmail,
               resubmissionCount,
@@ -1125,6 +1145,7 @@ export default {
       selectedOcrVerified,
       verifiedClinics,
       isPendingRecord,
+      isAwaitingResubmission,
       loadingVerifiedClinics,
       hasMoreVerified,
       loadMoreVerifiedClinics,
