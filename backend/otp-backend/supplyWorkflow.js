@@ -135,7 +135,22 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         for (const r of docs(await db.collection('supplyRecords').where('supplierId', '==', id).get())) found.set(r.id, r)
         for (const r of docs(await db.collection('supplyRecords').where('supplierIds', 'array-contains', id).get())) found.set(r.id, r)
       }
-      records = [...found.values()].filter(r => canRead(ctx, r)).map(supplierProjection)
+      const supplierRecords = [...found.values()].filter(r => canRead(ctx, r)).map(supplierProjection)
+      // Suppliers receive only the clinic identity and delivery branch details
+      // for purchase orders they are already authorized to view. This avoids
+      // exposing opaque Firestore IDs in their order list.
+      const branchIds = [...new Set(supplierRecords.map(record => String(record.branchId || '')).filter(Boolean))]
+      const clinicEntries = await Promise.all(branchIds.map(async id => {
+        const snapshot = await db.collection('clinics').doc(id).get()
+        const clinic = snapshot.data() || {}
+        const location = [clinic.clinicLocationAddress, clinic.clinicBarangay, clinic.clinicLocation, clinic.clinicProvince, clinic.clinicPostalCode]
+          .map(value => String(value || '').trim())
+          .filter((value, index, values) => value && values.indexOf(value) === index)
+          .join(', ')
+        return [id, { clinicName: String(clinic.clinicName || clinic.companyName || '').trim(), branchName: String(clinic.clinicBranch || '').trim(), branchLocation: location }]
+      }))
+      const clinicByBranch = new Map(clinicEntries)
+      records = supplierRecords.map(record => ({ ...record, ...(clinicByBranch.get(record.branchId) || {}) }))
     } else records = (await scopedDocs('supplyRecords')).filter(r => canRead(ctx, r))
     const internal = !ctx.supplier
     const broadRead = internal && ['inventory:view', 'procurement:view', 'orders:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
