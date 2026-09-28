@@ -22,6 +22,7 @@ export default {
       {
         label: 'My care',
         icon: 'calendar',
+        tourKey: 'customer-care',
         children: [
           { label: 'Appointments', icon: 'calendar', to: '/customer/appointments', tourKey: 'customer-appointments' },
           { label: 'Payments due', icon: 'card', to: '/customer/unpaid-appointments', tourKey: 'customer-unpaid-appointments' },
@@ -30,6 +31,7 @@ export default {
       {
         label: 'Shop',
         icon: 'cart',
+        tourKey: 'customer-shop',
         children: [
           { label: 'My cart', icon: 'cart', to: '/customer/cart', tourKey: 'customer-cart' },
           { label: 'Orders & pickup', icon: 'clipboard', to: '/customer/orders', tourKey: 'customer-orders' },
@@ -38,6 +40,7 @@ export default {
       {
         label: 'My account',
         icon: 'settings',
+        tourKey: 'customer-account',
         children: [
           { label: 'Profile', icon: 'profile', to: '/customer/account-settings?tab=profile', tourKey: 'customer-profile' },
           { label: 'Notifications', icon: 'bell', to: '/customer/account-settings?tab=notifications', tourKey: 'customer-notifications' },

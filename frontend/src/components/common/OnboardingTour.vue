@@ -105,8 +105,17 @@ const unlockTutorialScroll = () => {
   tutorialScrollLocked = false
 }
 
-const close = () => emit('close')
-const next = () => emit('next')
+const close = () => {
+  unlockTutorialScroll()
+  emit('close')
+}
+const next = () => {
+  // The final action must release the tutorial lock immediately. The parent
+  // then removes the overlay while any preference save happens in the
+  // background.
+  if (props.isLastStep) unlockTutorialScroll()
+  emit('next')
+}
 const previous = () => emit('previous')
 
 const highlightStyle = computed(() => {

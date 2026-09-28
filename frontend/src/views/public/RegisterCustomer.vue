@@ -1567,7 +1567,7 @@ onBeforeUnmount(() => {
               <p v-else-if="computedAge !== null" class="mt-1 text-xs text-emerald-700">Age verified: {{ computedAge }} years old.</p>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="w-full">
               <div class="relative">
                 <div class="flex items-center overflow-hidden rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/55 focus-within:border-gold-700 focus-within:bg-white/75 focus-within:shadow-[0_0_0_3px_rgba(201,162,77,0.16)]">
                   <span class="inline-flex h-16 items-center border-r border-[rgba(232,167,58,0.22)] bg-cream-100/80 px-3 text-sm font-semibold tracking-[0.08em] text-charcoal-700 select-none sm:px-4">

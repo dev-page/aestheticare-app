@@ -11,9 +11,9 @@ const tourCatalog = {
     title: 'Your customer space',
     steps: [
       { title: 'Discover clinics', text: 'Search verified clinics, compare treatments, save favorites, and open a clinic to book a service or consultation.', selector: '[data-onboarding-key="customer-home"]', path: '/customer/home' },
-      { title: 'My care', text: 'Keep track of appointment requests, confirmed schedules, consultation progress, signed contracts, and payments due.', selector: '[data-onboarding-key="customer-appointments"]', path: '/customer/appointments' },
-      { title: 'Shop', text: 'Review products in your cart, complete checkout, and track orders or pickup updates in one place.', selector: '[data-onboarding-key="customer-cart"]', path: '/customer/cart' },
-      { title: 'My account', text: 'Update your profile and manage notifications, privacy, password, support, and account access settings.', selector: '[data-onboarding-key="customer-profile"]', path: '/customer/account-settings?tab=profile' },
+      { title: 'My care', text: 'Keep track of appointment requests, confirmed schedules, consultation progress, signed contracts, and payments due.', selector: '[data-onboarding-key="customer-care"]', path: '/customer/appointments' },
+      { title: 'Shop', text: 'Review products in your cart, complete checkout, and track orders or pickup updates in one place.', selector: '[data-onboarding-key="customer-shop"]', path: '/customer/cart' },
+      { title: 'My account', text: 'Update your profile and manage notifications, privacy, password, support, and account access settings.', selector: '[data-onboarding-key="customer-account"]', path: '/customer/account-settings?tab=profile' },
     ],
   },
   owner: {
@@ -154,9 +154,18 @@ export const useOnboardingTour = ({ route, user }) => {
     isOpen.value = true
   }
 
-  const close = async () => {
-    if (dontShowAgain.value && tourKey.value) await persistPreference(tourKey.value, true)
+  const close = () => {
+    const key = tourKey.value
+    const shouldDisable = dontShowAgain.value && Boolean(key)
+
+    // Always remove the full-screen tutorial layer first. Persisting a
+    // preference can depend on a slow or unavailable Firestore connection;
+    // it must never leave the page unable to receive clicks on the final step.
     isOpen.value = false
+
+    if (shouldDisable) {
+      void persistPreference(key, true)
+    }
   }
 
   const next = async () => {
