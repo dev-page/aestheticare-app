@@ -4846,12 +4846,26 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
     const firestore = admin.firestore()
     const clinicSnap = await firestore.collection('clinics').doc(branchId).get()
     const clinic = clinicSnap.exists ? clinicSnap.data() || {} : null
-    if (!clinic || clinic.isPublished !== true || String(clinic.status || '').trim().toLowerCase() === 'inactive') {
+    if (!clinic || String(clinic.status || '').trim().toLowerCase() === 'inactive') {
       return res.status(404).json({ success: false, error: 'Center unavailable.' })
     }
 
     const ownerId = String(clinic.ownerId || '').trim()
     if (!ownerId) return res.status(404).json({ success: false, error: 'Center unavailable.' })
+
+    // Customers may only retrieve availability for public clinics. Internal
+    // clinic users also use this endpoint from the Walk-In Desk, where an
+    // unpublished clinic must still be able to schedule its own clients.
+    const requesterSnap = await firestore.collection('users').doc(req.user.uid).get()
+    const requester = requesterSnap.exists ? requesterSnap.data() || {} : {}
+    const requesterRole = String(requester.role || requester.userType || '').trim().toLowerCase()
+    const isClinicOwner = req.user.uid === ownerId
+      || ['owner', 'clinic owner', 'clinicowner'].includes(requesterRole)
+    const isBranchStaff = String(requester.branchId || '').trim() === branchId
+      && !['customer', 'supplier'].includes(requesterRole)
+    if (clinic.isPublished !== true && !isClinicOwner && !isBranchStaff) {
+      return res.status(404).json({ success: false, error: 'Center unavailable.' })
+    }
 
     const rolesSnap = await firestore.collection('clinicRoles').where('ownerId', '==', ownerId).get()
     const practitionerPermissionKeys = new Set(['appointments:update', 'consultations:view', 'consultations:create'])
