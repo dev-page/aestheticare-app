@@ -42,7 +42,37 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   }
   const canRead = (ctx, r) => ctx.supplier ? supplierCanRead(r, ctx.supplierIds) : hasPermission(ctx, 'reports:view') || (permissionsByKind[r.kind] || []).some(p => hasPermission(ctx, p))
   const ensureRead = async (ctx, r) => { demand(r && canRead(ctx, r), 'Record not available to this account.', 403); if (!ctx.supplier) await branchAccess(ctx, r.branchId) }
-  const wrap = handler => async (req, res) => { try { const ctx = await identity(req); ctx.auditContext = { ipAddress: String(req.ip || req.socket?.remoteAddress || '').slice(0, 128), device: String(req.get?.('user-agent') || req.headers?.['user-agent'] || '').slice(0, 500) }; await handler(req, res, ctx) } catch (e) { if (!e.status) console.error('Unhandled supply workflow error', { message: e?.message, stack: e?.stack, path: req.originalUrl || req.url || '' }); res.status(e.status || 500).json({ success: false, error: e.status ? e.message : 'Supply operation failed. Please try again.' }) } }
+  const wrap = handler => async (req, res) => {
+    let ctx
+    try {
+      ctx = await identity(req)
+      ctx.auditContext = { ipAddress: String(req.ip || req.socket?.remoteAddress || '').slice(0, 128), device: String(req.get?.('user-agent') || req.headers?.['user-agent'] || '').slice(0, 500) }
+      await handler(req, res, ctx)
+    } catch (e) {
+      const unexpected = !e.status
+      if (unexpected) console.error('Unhandled supply workflow error', {
+        request: {
+          method: req.method,
+          path: req.originalUrl || req.url || '',
+          recordId: String(req.params?.id || ''),
+          action: String(req.body?.action || ''),
+          branchId: String(req.body?.branchId || ''),
+          userId: ctx?.uid || req.user?.uid || '',
+          role: ctx?.roleKey || '',
+        },
+        error: {
+          name: e?.name || 'Error',
+          message: e?.message || String(e),
+          code: e?.code || '',
+          status: e?.status || '',
+          details: e?.details || '',
+          cause: e?.cause ? { name: e.cause.name, message: e.cause.message, code: e.cause.code } : null,
+          stack: e?.stack || '',
+        },
+      })
+      res.status(e.status || 500).json({ success: false, error: e.status ? e.message : 'Supply operation failed. Please try again.' })
+    }
+  }
   const supplierOwns = (ctx, r) => ctx.supplier && ctx.supplierIds.includes(r.supplierId)
   const allow = (ctx, permission) => demand(!ctx.supplier && hasPermission(ctx, permission), 'You do not have permission for this action.', 403)
   const catalogItem = raw => {

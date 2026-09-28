@@ -134,7 +134,7 @@ const api = async (path, body) => {
   for (const base of OTP_BACKEND_CANDIDATES) {
     let response
     try { response = await fetch(base + '/supply' + path, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }) } catch (e) { last = e; continue }
-    const result = await response.json(); if (!response.ok || !result.success) throw Error(result.error || 'Unable to complete action.'); return result.data
+    const result = await response.json(); if (!response.ok || !result.success) { console.error('Supply API request failed', { path, status: response.status, statusText: response.statusText, recordId: path.match(/\/records\/([^/]+)/)?.[1] || '', action: body?.action || '', branchId: body?.branchId || '', response: result }); throw Error(result.error || 'Unable to complete action.') }; return result.data
   }
   throw last || Error('Backend is unavailable.')
 }
