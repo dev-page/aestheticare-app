@@ -81,11 +81,19 @@
         </section>
 
         <template v-if="!isUnpaidAppointmentsPage">
-        <section v-if="treatmentSessions.length" class="appointments-panel">
+        <nav class="appointments-tabs" aria-label="Appointment sections">
+          <button type="button" :class="['appointments-tab', { 'appointments-tab-active': activeAppointmentTab === 'upcoming' }]" @click="activeAppointmentTab = 'upcoming'">Upcoming <span>{{ activeUpcomingAppointments.length }}</span></button>
+          <button type="button" :class="['appointments-tab', { 'appointments-tab-active': activeAppointmentTab === 'online' }]" @click="activeAppointmentTab = 'online'">Online consultations <span>{{ upcomingOnlineConsultations.length }}</span></button>
+          <button type="button" :class="['appointments-tab', { 'appointments-tab-active': activeAppointmentTab === 'sessions' }]" @click="activeAppointmentTab = 'sessions'">Treatment sessions <span>{{ treatmentSessions.length }}</span></button>
+          <button type="button" :class="['appointments-tab', { 'appointments-tab-active': activeAppointmentTab === 'history' }]" @click="activeAppointmentTab = 'history'">History <span>{{ pastRecords.length }}</span></button>
+        </nav>
+
+        <section v-if="activeAppointmentTab === 'sessions'" class="appointments-panel">
           <div class="panel-head"><div><p class="panel-kicker">Treatment Plan</p><h2 class="panel-title">My Treatment Sessions</h2></div><p class="panel-note">{{ treatmentSessions.length }} session{{ treatmentSessions.length === 1 ? '' : 's' }}</p></div>
-          <div class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Status</th></tr></thead><tbody><tr v-for="session in treatmentSessions" :key="session.id"><td>Session {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.date ? `${session.date} ${session.time || ''}` : 'The clinic will schedule this visit.' }}</td><td>{{ session.status }}</td></tr></tbody></table></div>
+          <div v-if="treatmentSessions.length" class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Status</th></tr></thead><tbody><tr v-for="session in treatmentSessions" :key="session.id"><td>Session {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.date ? `${session.date} ${session.time || ''}` : 'The clinic will schedule this visit.' }}</td><td>{{ session.status }}</td></tr></tbody></table></div>
+          <div v-else class="state-panel">No treatment sessions have been scheduled yet.</div>
         </section>
-        <section class="appointments-panel">
+        <section v-if="activeAppointmentTab === 'online'" class="appointments-panel">
           <div class="panel-head">
             <div>
               <p class="panel-kicker">Virtual Visits</p>
@@ -165,7 +173,7 @@
           </div>
         </section>
 
-        <section class="appointments-panel">
+        <section v-if="activeAppointmentTab === 'upcoming'" class="appointments-panel">
           <div class="panel-head">
             <div>
               <p class="panel-kicker">Active Bookings</p>
@@ -262,7 +270,7 @@
           </div>
         </section>
 
-        <section class="appointments-panel">
+        <section v-if="activeAppointmentTab === 'history'" class="appointments-panel">
           <div class="panel-head">
             <div>
               <p class="panel-kicker">History</p>
@@ -543,6 +551,7 @@ const loading = ref(true)
 const router = useRouter()
 const route = useRoute()
 const isUnpaidAppointmentsPage = computed(() => route.name === 'customer-unpaid-appointments')
+const activeAppointmentTab = ref('upcoming')
 const upcomingAppointments = ref([])
 const pastAppointments = ref([])
 const onlineConsultations = ref([])
@@ -1827,6 +1836,37 @@ onUnmounted(() => {
   font-size: 0.84rem;
   font-weight: 700;
 }
+
+.appointments-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+  padding: .65rem;
+  border: 1px solid rgba(230, 193, 150, 0.8);
+  border-radius: 1.2rem;
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: 0 12px 30px rgba(87, 56, 35, 0.06);
+}
+
+.appointments-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  border: 1px solid transparent;
+  border-radius: .85rem;
+  padding: .7rem .85rem;
+  background: transparent;
+  color: #765942;
+  font-size: .82rem;
+  font-weight: 700;
+  transition: background-color .16s ease, color .16s ease, transform .16s ease;
+}
+
+.appointments-tab:hover { background: #f7ead8; color: #4e301f; }
+.appointments-tab-active { border-color: rgba(141, 90, 59, .42); background: #8d5a3b; color: #fffaf3; box-shadow: 0 5px 14px rgba(87, 56, 35, .16); }
+.appointments-tab-active:hover { background: #75452e; color: #fffaf3; }
+.appointments-tab span { min-width: 1.35rem; border-radius: 999px; padding: .08rem .38rem; background: rgba(94, 59, 39, .1); font-size: .7rem; text-align: center; }
+.appointments-tab-active span { background: rgba(255, 250, 243, .22); }
 
 .appointments-kicker,
 .panel-kicker,
