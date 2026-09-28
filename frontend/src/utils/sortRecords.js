@@ -4,6 +4,13 @@ const toMillis = (value) => {
     const date = value.toDate()
     return date instanceof Date && !Number.isNaN(date.getTime()) ? date.getTime() : 0
   }
+  // API responses serialize Firestore Timestamp instances as plain objects.
+  // The Admin SDK uses `_seconds`, while SDK/browser payloads may use
+  // `seconds`; both must retain the same newest-first ordering.
+  if (typeof value === 'object') {
+    const seconds = value.seconds ?? value._seconds
+    if (Number.isFinite(Number(seconds))) return Number(seconds) * 1000
+  }
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? 0 : value.getTime()
   }
