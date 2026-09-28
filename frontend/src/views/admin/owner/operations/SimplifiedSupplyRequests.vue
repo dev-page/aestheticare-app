@@ -8,6 +8,9 @@
         <h1 class="mt-1 text-2xl font-bold text-white sm:text-3xl">{{ title }}</h1>
         <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-400">{{ intro }}</p>
       </header>
+      <nav v-if="mode === 'finance'" class="mt-6 flex gap-1 border-b border-slate-700" aria-label="Procurement finance sections">
+        <router-link v-for="tab in financeTabs" :key="tab.to" :to="tab.to" class="relative px-4 py-3 text-sm font-semibold text-slate-400 transition hover:text-slate-100" :class="route.path === tab.to ? 'text-amber-300 after:absolute after:inset-x-3 after:bottom-[-1px] after:h-0.5 after:bg-amber-400' : ''">{{ tab.label }}</router-link>
+      </nav>
       <p v-if="error" class="mt-5 rounded-xl border border-red-500/70 bg-red-950/40 p-4 text-sm text-red-100">{{ error }}</p>
 
       <section v-if="mode === 'inventory'" class="mt-6 rounded-2xl border border-slate-700 bg-slate-800/80 shadow-xl shadow-slate-950/20">
@@ -115,6 +118,11 @@ const catalogSelectionsByRecord = ref({})
 const budgetByRecord = ref({})
 const selectedDeliveryBranchId = ref('')
 const selectedProcurementRecord = ref(null)
+const financeTabs = [
+  { label: 'Budget Allocations', to: '/finance/procurement/budgets' },
+  { label: 'Purchase Order Approvals', to: '/finance/procurement/requests' },
+  { label: 'Invoices & Payments', to: '/finance/procurement/invoices' },
+]
 const mode = computed(() => route.path.startsWith('/inventory') ? 'inventory' : route.path.startsWith('/procurement') ? 'procurement' : 'finance')
 const title = computed(() => mode.value === 'inventory' ? 'Inventory Requests' : mode.value === 'procurement' ? 'Procurement Requests' : 'Purchase Order Approvals')
 const intro = computed(() => mode.value === 'inventory' ? 'Create and track supply needs for your clinic. Procurement selects the supplier and matching catalog items.' : mode.value === 'procurement' ? 'Choose a supplier, match every request to a catalog item, and prepare the purchase order.' : 'Review and approve purchase orders prepared by Procurement.')
