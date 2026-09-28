@@ -120,7 +120,7 @@ const routes = [
   //{ path: "/hr/schedule", name: "hr-schedule", component: () => import("@/views/clinic/hr/HRSchedule.vue"), meta: { requiresAuth: true } },
   { path: "/hr/add-shift", name: "hr-add-shift", component: () => import("@/views/admin/owner/hr/AddShift.vue"), meta: { requiresAuth: true, requiresPermission: "hr:create", requiresFeature: "hr" } },
   { path: "/hr/schedule-assignment", name: "hr-schedule-assignment", component: () => import("@/views/admin/owner/hr/ScheduleAssignment.vue"), meta: { requiresAuth: true, requiresPermission: "hr:update", requiresFeature: "hr" } },
-  { path: "/appointments/booking-availability", name: "booking-availability", component: () => import("@/views/admin/owner/BookingAvailability.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:review", requiresFeature: "booking_availability" } },
+  { path: "/appointments/booking-availability", name: "booking-availability", component: () => import("@/views/admin/owner/BookingAvailability.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:review", requiresFeature: "booking_availability", allowedPlans: ['basic'] } },
   { path: "/hr/leave-request", name: "hr-leave-request", component: () => import("@/views/admin/owner/hr/LeaveRequest.vue"), meta: { requiresAuth: true, requiresPermission: "leave:create", requiresFeature: "hr" } },
   { path: "/hr/leave-management", name: "hr-leave-management", component: () => import("@/views/admin/owner/hr/LeaveManagement.vue"), meta: { requiresAuth: true, requiresPermission: "leave:review", requiresFeature: "hr" } },
   { path: "/hr/overtime", name: "hr-overtime", component: () => import("@/views/admin/owner/hr/Overtime.vue"), meta: { requiresAuth: true, requiresPermission: "overtime:view", requiresFeature: "hr" } },
@@ -407,7 +407,7 @@ router.beforeEach(async (to, from, next) => {
 
   const { user, isLoading, initAuth } = useAuth();
   const { hasPermission } = usePermissions();
-  const { hasFeature } = useSubscription();
+  const { hasFeature, activePlan, initSubscription } = useSubscription();
 
   initAuth();
 
@@ -614,6 +614,16 @@ router.beforeEach(async (to, from, next) => {
   // Feature-required routes
   if (to.meta.requiresFeature && !hasFeature(to.meta.requiresFeature)) {
     return next("/subscription-features");
+  }
+
+  // Some features are intentionally exclusive to one plan rather than being
+  // cumulative. Booking Availability is Basic-only; Premium clinics use HR
+  // shift scheduling instead.
+  if (Array.isArray(to.meta.allowedPlans) && to.meta.allowedPlans.length) {
+    if (!activePlan.value && currentUser) await initSubscription()
+    const currentPlan = String(activePlan.value || '').trim().toLowerCase()
+    const allowedPlans = to.meta.allowedPlans.map((plan) => String(plan || '').trim().toLowerCase())
+    if (!allowedPlans.includes(currentPlan)) return next('/clinic/dashboard')
   }
 
   next();

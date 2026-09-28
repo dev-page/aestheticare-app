@@ -3435,7 +3435,12 @@ registerWalkInPayments(app, {
   },
   sendReceipt: async (email, receipt) => {
     if (!postmarkClient || !senderEmail) return false
-    await sendPostmarkMessage({ to: email, from: senderEmail, subject: 'Your walk-in payment receipt', text: `Payment received: PHP ${receipt.total.toFixed(2)}\nService key: ${receipt.serviceKey}` })
+    await sendPostmarkMessage({
+      to: email,
+      from: senderEmail,
+      subject: 'Your walk-in appointment service key',
+      text: `Hi ${receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}.\nWhen: ${[receipt.date, receipt.time].filter(Boolean).join(' at ')}\nAmount paid: PHP ${receipt.total.toFixed(2)}\n\nYour service key is: ${receipt.serviceKey}\n\nKeep this key private and bring it on the appointment day. The practitioner will ask for it to verify your appointment before starting the service.`,
+    })
     return true
   },
 })
@@ -4991,8 +4996,9 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       reservation.clientId = client.id
       reservation.customerId = client.id
       reservation.customerName = data.fullName || `${data.firstName || ''} ${data.lastName || ''}`.trim() || 'Walk-in client'
-      reservation.customerEmail = data.email || ''
+      reservation.customerEmail = String(data.email || '').trim().toLowerCase()
       reservation.customerPhone = data.phone || data.contactNumber || ''
+      assertWorkflow(EMAIL_ADDRESS_REGEX.test(reservation.customerEmail), 'A valid client email is required for walk-in bookings. Booking details and the service key are sent to this address.', 400)
     }
     if (!walkIn && (!customerId || customerId !== String(req.user?.uid || '').trim())) {
       return res.status(403).json({ success: false, error: 'Forbidden' })
@@ -5211,7 +5217,21 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       tx.update(bookingRef, { appointmentId: appointmentRef.id, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
     })
 
-    return res.json({ success: true, data: { bookingId: bookingRef.id, appointmentId: appointmentRef.id } })
+    let bookingEmailSent = false
+    if (walkIn && postmarkClient && senderEmail) {
+      try {
+        await sendPostmarkMessage({
+          to: reservation.customerEmail,
+          subject: 'Your AesthetiCare walk-in appointment is booked',
+          text: `Hi ${reservation.customerName},\n\nYour booking at ${branch.clinicName || branch.clinicBranch || 'the clinic'} is confirmed.\nService: ${reservation.service || 'Appointment'}\nWhen: ${[reservation.date, reservation.time].filter(Boolean).join(' at ')}\n\nAfter payment is recorded, we will send your six-digit service key to this email. Please bring it on the appointment day; the practitioner uses it to verify the appointment before starting your service.`,
+        })
+        bookingEmailSent = true
+      } catch (emailError) {
+        console.error('Walk-in booking email failed:', emailError)
+      }
+    }
+
+    return res.json({ success: true, data: { bookingId: bookingRef.id, appointmentId: appointmentRef.id, bookingEmailSent } })
   } catch (error) {
     console.error('bookings/create error:', error)
     return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to create booking' })

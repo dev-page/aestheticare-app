@@ -470,20 +470,29 @@ export default {
 
     const normalizePhilippineMobile = (value) => {
       let digits = String(value || '').replace(/\D/g, '')
-      if (digits.startsWith('63')) digits = digits.slice(2)
+      // The form displays +63 separately, but accept the common ways a
+      // Philippine mobile number may have been entered or stored.
+      if (digits.startsWith('0063')) digits = digits.slice(4)
+      else if (digits.startsWith('63') && digits.length >= 12) digits = digits.slice(2)
       if (digits.startsWith('0')) digits = digits.slice(1)
       return digits.slice(0, 10)
     }
 
     const validateContactNumber = () => {
-      contactNumberError.value = /^9\d{9}$/.test(String(editForm.value.contactNumber || '').trim())
+      const contactNumber = normalizePhilippineMobile(editForm.value.contactNumber)
+      editForm.value.contactNumber = contactNumber
+      contactNumberError.value = /^9\d{9}$/.test(contactNumber)
         ? ''
         : 'Enter exactly 10 digits starting with 9.'
       return !contactNumberError.value
     }
 
     const handleContactNumberInput = (event) => {
-      editForm.value.contactNumber = normalizePhilippineMobile(event?.target?.value)
+      const contactNumber = normalizePhilippineMobile(event?.target?.value)
+      editForm.value.contactNumber = contactNumber
+      // Keep the input element and the reactive form value in sync even when
+      // a browser autofill pastes +63 or a leading zero into this field.
+      if (event?.target) event.target.value = contactNumber
       if (contactNumberError.value) validateContactNumber()
     }
 
