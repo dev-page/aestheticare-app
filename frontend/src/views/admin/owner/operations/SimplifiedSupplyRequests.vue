@@ -84,6 +84,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import LocationPicker from '@/components/common/LocationPicker.vue'
 import { auth } from '@/config/firebaseConfig'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
+import { toast } from 'vue3-toastify'
 
 const route = useRoute()
 const data = ref({ records: [], suppliers: [], branches: [] })
@@ -139,15 +140,31 @@ const createRequest = async () => {
     await api('/records', { kind: 'request', branchId: requestBranchId.value, department: 'Inventory', lines: [requestDraft], ...requestDraft })
     draft.value = { ...draft.value, name: '', category: '', quantity: 1, reason: '' }
     await load()
-  } catch (caught) { error.value = caught.message === 'Invalid record identifier.' ? 'Your assigned clinic branch could not be identified. Refresh the page and try again.' : caught.message } finally { busy.value = false }
+    toast.success('Inventory request sent to Procurement.')
+  } catch (caught) {
+    error.value = caught.message === 'Invalid record identifier.' ? 'Your assigned clinic branch could not be identified. Refresh the page and try again.' : caught.message
+    toast.error(error.value)
+  } finally { busy.value = false }
 }
 const ensureSelectionMap = recordId => { if (!catalogSelectionsByRecord.value[recordId]) catalogSelectionsByRecord.value[recordId] = {} }
 const catalogItems = recordId => suppliers.value.find(item => item.id === supplierByRecord.value[recordId])?.offeredItems || []
 const catalogLabel = item => `${item.name || item.itemName || item.productName || 'Unnamed item'}${item.measurementUnit || item.unit ? ` · ${item.measurementUnit || item.unit}` : ''}${item.price != null ? ` · PHP ${Number(item.price).toLocaleString()}` : ''}`
 const readyForFinance = record => Boolean(supplierByRecord.value[record.id]) && record.lines?.every(line => catalogSelectionsByRecord.value[record.id]?.[line.itemId])
+const actionSuccessMessage = actionName => ({
+  confirm: 'Purchase order sent to Finance for approval.',
+  approve: 'Purchase order approved. Finance can now send it to the supplier.',
+  issue: 'Purchase order sent to the supplier.',
+}[actionName] || 'Supply workflow updated.')
 const action = async (record, actionName, extra = {}) => {
   busy.value = true
-  try { await api(`/records/${record.id}/actions`, { action: actionName, ...extra }); await load() } catch (caught) { error.value = caught.message } finally { busy.value = false }
+  try {
+    await api(`/records/${record.id}/actions`, { action: actionName, ...extra })
+    await load()
+    toast.success(actionSuccessMessage(actionName))
+  } catch (caught) {
+    error.value = caught.message
+    toast.error(error.value)
+  } finally { busy.value = false }
 }
 const sendForApproval = record => action(record, 'confirm', { supplierId: supplierByRecord.value[record.id], catalogSelections: catalogSelectionsByRecord.value[record.id], productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true })
 const approve = record => action(record, 'approve', { budgetId: budgetByRecord.value[record.id], approvedAmount: record.requestedAmount / 100, remarks: 'Approved' })

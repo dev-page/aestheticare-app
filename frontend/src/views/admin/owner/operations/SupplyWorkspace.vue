@@ -109,6 +109,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 import SupplierDirectory from '@/views/admin/owner/operations/SupplySuppliers.vue'
 import Swal from 'sweetalert2'
+import { toast } from 'vue3-toastify'
 import { dashboardCharts, reportDefinitions, exportReportCsv } from '@/utils/supplyReporting'
 
 const route = useRoute()
@@ -145,6 +146,24 @@ const load = async (silent = false) => {
   catch (e) { error.value = e.message } finally { loading.value = false }
 }
 const label = key => String(key).replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())
+const workflowToastMessage = (action, record = {}) => ({
+  submitDraft: 'Inventory request sent to Procurement.',
+  prepareFunding: 'Purchase order prepared and sent to Finance for approval.',
+  approve: record.kind === 'po' ? 'Purchase order approved.' : record.kind === 'invoice' ? 'Invoice approved for payment.' : 'Finance approval recorded.',
+  issue: 'Purchase order sent to the supplier.',
+  confirm: record.kind === 'po' ? 'Order confirmed. Logistics has been notified.' : 'Supply workflow updated.',
+  claimOrder: 'Order claimed by Logistics for receiving.',
+  receiving: 'Delivery inspection recorded. Inventory can now onboard accepted supplies.',
+  onboard: 'Accepted supplies were added to inventory.',
+  invoice: 'Supplier invoice submitted to Finance.',
+  startVerification: 'Invoice verification started.',
+  verify: 'Three-way matching completed.',
+  preparePayment: 'Payment record prepared for Finance.',
+  approvePayment: 'Payment approved for external processing.',
+  startPayment: 'External payment processing started.',
+  settlePayment: 'External payment recorded as completed.',
+  resolve: 'Discrepancy resolved.',
+}[action] || 'Supply workflow updated.')
 const currency = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(cents || 0) / 100)
 const branchName = id => data.value.branches.find(branch => branch.id === id)?.name || id || 'Unassigned branch'
 const budgetAvailable = budget => Math.max(0, Number(budget.total || 0) - Number(budget.committed || 0) - Number(budget.spent || 0))
@@ -385,9 +404,9 @@ const runAction=async(action,target)=>{
   if(['editBudget','cancelBudget','editRequest','editRfq','resource','message','rfq','quotation','revise','reviseInvoice','select','receiving','invoice','pay','return','reject','resubmit','confirm','decline','clarify','resend','cancel','resolve','approvePayment','rejectPayment','resubmitPayment','verifyRequest','prepareFunding','returnInventory'].includes(action)||(action==='approve'&&['budgetRequest','po'].includes(target.kind))||(action==='submit'&&target.status==='Returned'))return openForm(action,target)
   const answer=await Swal.fire({title:label(action)+' '+target.number+'?',text:'This action updates the linked workflow records.',icon:'question',showCancelButton:true,confirmButtonText:'Confirm'})
   if(!answer.isConfirmed)return
-  busy.value=true;try{await api(`/records/${target.id}/actions`,{action});notice.value='Record updated.';await load(true);if(selected.value)await view(selected.value)}catch(e){error.value=e.message}finally{busy.value=false}
+  busy.value=true;try{await api(`/records/${target.id}/actions`,{action});notice.value=workflowToastMessage(action,target);toast.success(notice.value);await load(true);if(selected.value)await view(selected.value)}catch(e){error.value=e.message;toast.error(error.value)}finally{busy.value=false}
 }
-const saveForm=async()=>{if(formKind.value==='request'&&!form.value.lines?.length){formError.value='Add at least one supply before submitting.';return}busy.value=true;formError.value='';try{const kind=formKind.value,target=formTarget.value;let path='/records',body={...form.value,kind,branchId:kind==='budget' ? form.value.branchId : target?.branchId||branchId.value};if(kind==='request')body.action=requestSubmission.value==='draft'?'saveDraft':'create';if(kind==='returnInventory'&&form.value.returnReason==='Other')body.returnReason=form.value.otherReturnReason;if(kind==='message'){path='/records/'+target.id+'/messages';body={...form.value}}else if(kind==='supplier'){path='/suppliers'}else if(kind==='item'){path='/items';body={...form.value,branchId:branchId.value,...(target?{id:target.id}:{})}}else if(['rfq','quotation','receiving','invoice'].includes(kind)){body[kind==='rfq'?'procurementId':kind==='quotation'?'rfqId':'poId']=target.id}else if(!['request','budget'].includes(kind)){path=`/records/${target.id}/actions`;body={...form.value,action:['verifyRequest','prepareFunding'].includes(kind)?'confirm':kind==='returnInventory'?'return':kind}}await api(path,body);formKind.value='';notice.value=kind==='request'?(requestSubmission.value==='draft'?'Request saved as a private draft.':'Request sent to Procurement.'):kind==='receiving'?'Delivery inspected. Inventory must onboard the accepted quantities before stock changes.':'Saved. Open Details to view related records and the next action.';await load(true);if(selected.value)await view(selected.value)}catch(e){formError.value=e.message}finally{busy.value=false}}
+const saveForm=async()=>{if(formKind.value==='request'&&!form.value.lines?.length){formError.value='Add at least one supply before submitting.';toast.error(formError.value);return}busy.value=true;formError.value='';try{const kind=formKind.value,target=formTarget.value;let path='/records',body={...form.value,kind,branchId:kind==='budget' ? form.value.branchId : target?.branchId||branchId.value};if(kind==='request')body.action=requestSubmission.value==='draft'?'saveDraft':'create';if(kind==='returnInventory'&&form.value.returnReason==='Other')body.returnReason=form.value.otherReturnReason;if(kind==='message'){path='/records/'+target.id+'/messages';body={...form.value}}else if(kind==='supplier'){path='/suppliers'}else if(kind==='item'){path='/items';body={...form.value,branchId:branchId.value,...(target?{id:target.id}:{})}}else if(['rfq','quotation','receiving','invoice'].includes(kind)){body[kind==='rfq'?'procurementId':kind==='quotation'?'rfqId':'poId']=target.id}else if(!['request','budget'].includes(kind)){path=`/records/${target.id}/actions`;body={...form.value,action:['verifyRequest','prepareFunding'].includes(kind)?'confirm':kind==='returnInventory'?'return':kind}}await api(path,body);formKind.value='';notice.value=kind==='request'?(requestSubmission.value==='draft'?'Request saved as a private draft.':'Request sent to Procurement.'):kind==='receiving'?'Delivery inspected. Inventory must onboard the accepted quantities before stock changes.':workflowToastMessage(kind,target);toast.success(notice.value);await load(true);if(selected.value)await view(selected.value)}catch(e){formError.value=e.message;toast.error(formError.value)}finally{busy.value=false}}
 const upload=async event=>{const file=event.target.files?.[0];if(!file)return;if(file.size>5*1024*1024){error.value='File must be 5 MB or smaller.';return}busy.value=true;try{const base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file)});await api(`/records/${selected.value.id}/documents`,{name:file.name,contentType:file.type,data:base64,visibility:shareDocument.value?'supplier':'internal'});await view(selected.value)}catch(e){error.value=e.message}finally{busy.value=false;event.target.value=''}}
 const download=async document=>{try{const result=await api('/documents/'+document.id);window.open(result.url,'_blank','noopener,noreferrer')}catch(e){error.value=e.message}}
 const exportCsv=()=>{const url=URL.createObjectURL(new Blob([exportReportCsv(filteredRows.value)],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download=department.value+"-"+page.value+"-"+today()+".csv";a.click();URL.revokeObjectURL(url)}
