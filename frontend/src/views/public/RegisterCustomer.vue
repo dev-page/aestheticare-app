@@ -1136,7 +1136,7 @@ const checkCustomerEmailAvailability = async (emailValue) => {
       emailAvailability.value = 'recovery'
       recoveryLoginAvailable.value = true
       emailAvailabilityMessage.value = statusResult.deletionRecoveryEligible
-        ? 'This account has a pending deletion request. Sign in to cancel it during the recovery period.'
+        ? 'This account is pending deletion. Sign in to cancel it during the recovery period.'
         : 'This account is temporarily deactivated. Sign in to reactivate it during the recovery period.'
       return
     }

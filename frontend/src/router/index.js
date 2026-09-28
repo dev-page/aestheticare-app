@@ -283,7 +283,6 @@ const routes = [
   { path: "/superadmin/accounts/users", name: "superadmin-accounts-users", component: () => import("@/views/superAdmin/AccountManagement.vue"), meta: { requiresAuth: true, requiresPermission: "system:accounts:view" } },
   { path: "/superadmin/activity-logs", name: "superadmin-activity-logs", component: () => import("@/views/superAdmin/ActivityLogs.vue"), meta: { requiresAuth: true, requiresPermission: "system:logs:view" } },
   { path: "/superadmin/account-settings", name: "superadmin-account-settings", component: () => import("@/views/superAdmin/AccountSettings.vue"), meta: { requiresAuth: true } },
-  { path: "/superadmin/account-closure-requests", name: "superadmin-account-closure-requests", component: () => import("@/views/superAdmin/AccountClosureRequests.vue"), meta: { requiresAuth: true, requiresPermission: "system:closures:manage" } },
   { path: "/superadmin/tickets", name: "superadmin-tickets", component: () => import("@/views/superAdmin/UserTickets.vue"), meta: { requiresAuth: true, requiresPermission: "system:tickets:manage" } },
   // Unknown URLs must never expose an unhandled route or blank protected view.
   { path: "/:pathMatch(.*)*", redirect: "/" },
@@ -431,6 +430,10 @@ router.beforeEach(async (to, from, next) => {
       const accountStatus = String(userData.status || '').trim().toLowerCase();
       const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
       if (accountClosed) {
+        if (hasCustomerDeletionWindow(userData)) {
+          if (to.path === '/customer/account-recovery') return next()
+          return next('/customer/account-recovery')
+        }
         if (hasCustomerRecoveryWindow(userData)) {
           if (to.path === '/customer/account-recovery') return next()
           return next('/customer/account-recovery')

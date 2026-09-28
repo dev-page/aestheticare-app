@@ -88,12 +88,12 @@
 
             <article class="settings-card settings-card-danger">
               <div>
-                <p class="settings-card-kicker">Permanent request</p>
-                <h2 class="settings-card-title">Request account deletion</h2>
-                <p class="settings-copy">Deletion is sent to the System Administrator for review. This prevents accidental loss of records and supports retention requirements.</p>
+                <p class="settings-card-kicker">Permanent deletion</p>
+                <h2 class="settings-card-title">Delete account</h2>
+                <p class="settings-copy">Start deletion yourself. Your information is held for 30 days, and signing in during that period cancels deletion.</p>
               </div>
               <button type="button" class="settings-button settings-button-danger" :disabled="busy || deletionRequested" @click="requestDeletion">
-                {{ busy && action === 'delete' ? 'Submitting...' : deletionRequested ? 'Request Submitted' : 'Request Deletion' }}
+                {{ busy && action === 'delete' ? 'Starting...' : deletionRequested ? 'Deletion Pending' : 'Delete Account' }}
               </button>
             </article>
           </div>
@@ -115,7 +115,7 @@
           <div>
             <p class="settings-card-kicker">Privacy & Data</p>
             <h2 class="settings-card-title">Your information and records</h2>
-            <p class="settings-copy">Your profile, appointment, order, and support records are retained to provide the service and resolve disputes. Account deletion requests are reviewed before any account closure action is taken.</p>
+            <p class="settings-copy">Your profile, appointment, order, and support records are retained while you use the service. Account deletion has a 30-day recovery period before permanent removal.</p>
               <p class="settings-copy">For a copy of your information or a privacy question, submit a report through the Report Issue page.</p>
               <button type="button" class="settings-button settings-button-primary" :disabled="exporting" @click="exportAccountData">
                 {{ exporting ? 'Preparing export...' : 'Export My Data' }}
@@ -134,7 +134,7 @@
         <div class="flex items-start justify-between gap-4">
           <div>
             <p class="settings-card-kicker">Account Access</p>
-            <h2 id="account-action-title" class="settings-card-title">{{ accountAction === 'deactivate' ? 'Deactivate account' : 'Request account deletion' }}</h2>
+            <h2 id="account-action-title" class="settings-card-title">{{ accountAction === 'deactivate' ? 'Deactivate account' : 'Delete account' }}</h2>
           </div>
           <button type="button" class="settings-modal-close" aria-label="Close" @click="closeAccountAction">&times;</button>
         </div>
@@ -154,16 +154,15 @@
             <li>Deactivation is not the same as permanent deletion.</li>
           </ul>
           <ul v-else class="settings-terms-list">
-            <li>Your request will be reviewed by the System Administrator.</li>
-            <li>If approved, your account will enter a 30-day pending deletion period.</li>
-            <li>You may contact support during that period to cancel the deletion request.</li>
-            <li>Some records may be retained for legal, financial, and operational requirements.</li>
+            <li>Your account enters a 30-day pending-deletion period immediately.</li>
+            <li>You will be signed out, but may sign in during that period to cancel deletion.</li>
+            <li>After 30 days, deletion becomes permanent.</li>
           </ul>
         </div>
         <div class="mt-5 flex justify-end gap-3">
           <button type="button" class="settings-button settings-button-secondary" @click="closeAccountAction">Cancel</button>
           <button type="button" :class="['settings-button', accountAction === 'deactivate' ? 'settings-button-warning' : 'settings-button-danger']" :disabled="busy || !combinedReason.trim()" @click="submitAccountAction">
-            {{ busy ? 'Processing...' : accountAction === 'deactivate' ? 'Confirm Deactivation' : 'Submit Deletion Request' }}
+            {{ busy ? 'Processing...' : accountAction === 'deactivate' ? 'Confirm Deactivation' : 'Start Deletion' }}
           </button>
         </div>
       </section>
@@ -174,7 +173,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import { auth, db } from '@/config/firebaseConfig'
@@ -371,33 +370,20 @@ const submitAccountAction = async () => {
     }
 
     const currentUser = auth.currentUser
+    if (!currentUser) throw new Error('Your session has ended. Please sign in again.')
     const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-    await addDoc(collection(db, 'accountClosureRequests'), {
-      requestType: 'customer_account_deletion', ownerId: currentUser.uid,
-      ownerName: currentUser.displayName || 'Customer', ownerEmail: currentUser.email || '',
-      action: 'delete', actionLabel: 'Customer account deletion', reason: combinedReason.value,
-      clinicCount: 0, branchIds: [], branchNames: [], deletionGraceDays: 30,
-      deletionScheduledFor: Timestamp.fromDate(deletionDate), status: 'pending', reviewStatus: 'Pending',
-      requestedAt: serverTimestamp(), createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-    })
     await updateDoc(doc(db, 'users', currentUser.uid), {
+      status: 'Inactive',
       accountDeletionRequested: true,
       accountDeletionRequestedAt: serverTimestamp(),
       accountDeletionReason: combinedReason.value,
       accountDeletionScheduledFor: Timestamp.fromDate(deletionDate),
+      accountRecoveryEndsAt: Timestamp.fromDate(deletionDate),
       updatedAt: serverTimestamp(),
     })
-    await addDoc(collection(db, 'notifications'), {
-      recipientRole: 'Superadmin', senderId: currentUser.uid, type: 'customer_account_deletion_request',
-      title: 'Customer Account Deletion Request', message: `${currentUser.email || 'A customer'} requested account deletion.`,
-      link: '/superadmin/account-closure-requests', read: false, deleted: false, createdAt: serverTimestamp(),
-    })
     deletionRequested.value = true
-    message.value = 'Your deletion request was submitted for review.'
-    toast.success(message.value)
-    accountAction.value = ''
-    actionReason.value = ''
-    reasonPreset.value = ''
+    await signOut(auth)
+    window.location.assign('/login?deletionPending=1')
   } catch (error) {
     console.error(error)
     errorMessage.value = 'Unable to complete this account action right now.'

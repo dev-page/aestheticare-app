@@ -78,7 +78,7 @@
             <span>6. How do we dispose of the data collected?</span>
           </summary>
           <div class="policy-body">
-            <p>The platform provides a request-account-deletion option. Deletion requests are reviewed before an account is closed; records may remain where they are needed for operational, financial, or legal reasons.</p>
+            <p>The platform lets customers start account deletion directly. Account data is held for 30 days so deletion can be cancelled by signing in; after that period, the account and associated records are permanently deleted.</p>
           </div>
         </details>
 
@@ -96,7 +96,7 @@
             <span>8. What are the rights of the data subjects?</span>
           </summary>
           <div class="policy-body">
-            <p>The platform lets you update profile information, export available account data, deactivate an account, and submit a deletion request. You may also use the support options for questions about information associated with your account.</p>
+            <p>The platform lets you update profile information, export available account data, deactivate an account, or start account deletion. You may also use the support options for questions about information associated with your account.</p>
           </div>
         </details>
 

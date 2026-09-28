@@ -300,7 +300,7 @@ const handleLogin = async () => {
         }
 
         if (hasCustomerDeletionWindow(userData)) {
-          toast.info('Your account has a pending deletion request. You can cancel it during the 30-day recovery period.')
+          toast.info('Your account is pending deletion. You can cancel it during the 30-day recovery period.')
           clearFormFields()
           startRedirectFlow('/customer/account-recovery')
           return

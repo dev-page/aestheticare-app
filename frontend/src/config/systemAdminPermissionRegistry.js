@@ -36,7 +36,6 @@ export const systemAdminPermissionGroups = [
     label: 'Support and Account Requests',
     permissions: [
       { key: 'system:tickets:manage', label: 'Manage Support Tickets' },
-      { key: 'system:closures:manage', label: 'Manage Account Closure Requests' },
     ],
   },
 ]
@@ -65,7 +64,7 @@ export const systemAdminRoleTemplates = [
   {
     key: 'support_admin',
     label: 'Support Administrator',
-    description: 'Handles support tickets and account closure requests.',
+    description: 'Handles support tickets.',
     permissions: ['system:dashboard:view', ...systemAdminPermissionGroups.find((group) => group.key === 'support').permissions.map((permission) => permission.key)],
   },
   {

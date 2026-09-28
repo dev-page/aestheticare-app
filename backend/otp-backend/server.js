@@ -6148,6 +6148,179 @@ app.post('/owner/subscription/schedule-plan-change', requireAuth, async (req, re
   }
 })
 
+const OWNER_CLOSURE_RECOVERY_MS = 30 * DAY_MS
+
+const getOwnerClosureClinics = async (firestore, ownerUid) => {
+  const [mainClinicSnap, ownedClinicsSnap] = await Promise.all([
+    firestore.collection('clinics').doc(ownerUid).get(),
+    firestore.collection('clinics').where('ownerId', '==', ownerUid).get(),
+  ])
+  const clinics = new Map()
+  if (mainClinicSnap.exists) clinics.set(mainClinicSnap.id, mainClinicSnap)
+  ownedClinicsSnap.forEach((clinicSnap) => clinics.set(clinicSnap.id, clinicSnap))
+  return [...clinics.values()]
+}
+
+const commitOwnerClosureWrites = async (firestore, writes) => {
+  for (let index = 0; index < writes.length; index += 450) {
+    const batch = firestore.batch()
+    writes.slice(index, index + 450).forEach(({ ref, payload }) => batch.set(ref, payload, { merge: true }))
+    await batch.commit()
+  }
+}
+
+// Closing a clinic is the owner's decision. Data is held for a 30-day recovery
+// period, after which the scheduled Firebase cleanup removes it permanently.
+app.post('/owner/account/close', requireAuth, async (req, res) => {
+  const ownerUid = String(req.user?.uid || '').trim()
+  if (!ownerUid) return res.status(401).json({ success: false, error: 'Unauthorized' })
+
+  try {
+    const firestore = admin.firestore()
+    const userRef = firestore.collection('users').doc(ownerUid)
+    const userSnap = await userRef.get()
+    const owner = userSnap.exists ? userSnap.data() || {} : {}
+    if (!isOwnerRoleValue(owner.role || owner.userType)) return res.status(403).json({ success: false, error: 'Forbidden' })
+
+    const clinics = await getOwnerClosureClinics(firestore, ownerUid)
+    if (!clinics.length) return res.status(404).json({ success: false, error: 'No clinic is linked to this owner account.' })
+    const branchIds = clinics.map((clinicSnap) => clinicSnap.id)
+    const staffSnapshots = await Promise.all(branchIds.map((branchId) => firestore.collection('users').where('branchId', '==', branchId).get()))
+    const staff = new Map()
+    staffSnapshots.forEach((snapshot) => snapshot.forEach((staffSnap) => {
+      const staffData = staffSnap.data() || {}
+      const userType = String(staffData.userType || '').trim().toLowerCase()
+      if (staffSnap.id !== ownerUid && ['staff', 'employee'].includes(userType)) staff.set(staffSnap.id, staffSnap)
+    }))
+
+    const now = new Date()
+    const recoveryEndsAt = new Date(now.getTime() + OWNER_CLOSURE_RECOVERY_MS)
+    const writes = [{
+      ref: userRef,
+      payload: {
+        status: 'Inactive', archived: true, accountClosed: true, accountClosureAction: 'deactivate',
+        accountClosedAt: now, accountRecoveryEndsAt: recoveryEndsAt, accountDeletionScheduledFor: recoveryEndsAt,
+        clinicClosurePendingDeletion: true, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+    }]
+
+    clinics.forEach((clinicSnap) => {
+      const clinic = clinicSnap.data() || {}
+      writes.push({
+        ref: clinicSnap.ref,
+        payload: {
+          isPublished: false,
+          wasPublishedBeforeOwnerClosure: clinic.isPublished === true,
+          ownerClosurePendingDeletion: true,
+          ownerClosureStartedAt: now,
+          ownerClosureRecoveryEndsAt: recoveryEndsAt,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      })
+    })
+
+    staff.forEach((staffSnap) => {
+      const employee = staffSnap.data() || {}
+      writes.push({
+        ref: staffSnap.ref,
+        payload: {
+          status: 'Inactive', archived: true, ownerClosureLocked: true,
+          statusBeforeOwnerClosure: String(employee.status || 'Active'),
+          archivedBeforeOwnerClosure: employee.archived === true,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      })
+    })
+
+    await commitOwnerClosureWrites(firestore, writes)
+    await Promise.all([...staff.keys()].map((uid) => admin.auth().updateUser(uid, { disabled: true }).catch(() => undefined)))
+    await admin.auth().revokeRefreshTokens(ownerUid).catch(() => undefined)
+
+    return res.json({ success: true, data: { recoveryEndsAt: recoveryEndsAt.toISOString(), clinicCount: clinics.length, employeeCount: staff.size } })
+  } catch (error) {
+    console.error('Owner account closure failed:', error)
+    return res.status(500).json({ success: false, error: error?.message || 'Unable to close this clinic account.' })
+  }
+})
+
+app.post('/owner/account/restore', requireAuth, async (req, res) => {
+  const ownerUid = String(req.user?.uid || '').trim()
+  if (!ownerUid) return res.status(401).json({ success: false, error: 'Unauthorized' })
+
+  try {
+    const firestore = admin.firestore()
+    const userRef = firestore.collection('users').doc(ownerUid)
+    const userSnap = await userRef.get()
+    const owner = userSnap.exists ? userSnap.data() || {} : {}
+    const recoveryEndsAt = toDateValue(owner.accountRecoveryEndsAt)
+    const canRestore = isOwnerRoleValue(owner.role || owner.userType)
+      && String(owner.status || '').trim().toLowerCase() === 'inactive'
+      && owner.accountClosed === true
+      && String(owner.accountClosureAction || '').trim().toLowerCase() === 'deactivate'
+      && recoveryEndsAt && recoveryEndsAt.getTime() > Date.now()
+    if (!canRestore) return res.status(409).json({ success: false, error: 'This account can no longer be restored.' })
+
+    const clinics = await getOwnerClosureClinics(firestore, ownerUid)
+    const branchIds = clinics.map((clinicSnap) => clinicSnap.id)
+    const staffSnapshots = await Promise.all(branchIds.map((branchId) => firestore.collection('users').where('branchId', '==', branchId).get()))
+    const staff = new Map()
+    staffSnapshots.forEach((snapshot) => snapshot.forEach((staffSnap) => {
+      const staffData = staffSnap.data() || {}
+      const userType = String(staffData.userType || '').trim().toLowerCase()
+      if (staffSnap.id !== ownerUid && ['staff', 'employee'].includes(userType) && staffData.ownerClosureLocked === true) staff.set(staffSnap.id, staffSnap)
+    }))
+
+    const writes = [{
+      ref: userRef,
+      payload: {
+        status: 'Active', archived: false, accountClosed: false, accountClosureAction: null,
+        accountRecoveryEndsAt: null, accountDeletionScheduledFor: null, clinicClosurePendingDeletion: false,
+        accountReactivatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+    }]
+    clinics.forEach((clinicSnap) => {
+      const clinic = clinicSnap.data() || {}
+      writes.push({
+        ref: clinicSnap.ref,
+        payload: {
+          isPublished: clinic.wasPublishedBeforeOwnerClosure === true,
+          wasPublishedBeforeOwnerClosure: admin.firestore.FieldValue.delete(),
+          ownerClosurePendingDeletion: false,
+          ownerClosureStartedAt: admin.firestore.FieldValue.delete(),
+          ownerClosureRecoveryEndsAt: admin.firestore.FieldValue.delete(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      })
+    })
+    staff.forEach((staffSnap) => {
+      const employee = staffSnap.data() || {}
+      const previousStatus = String(employee.statusBeforeOwnerClosure || 'Active')
+      writes.push({
+        ref: staffSnap.ref,
+        payload: {
+          status: previousStatus, archived: employee.archivedBeforeOwnerClosure === true,
+          ownerClosureLocked: false,
+          statusBeforeOwnerClosure: admin.firestore.FieldValue.delete(),
+          archivedBeforeOwnerClosure: admin.firestore.FieldValue.delete(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      })
+    })
+    await commitOwnerClosureWrites(firestore, writes)
+    await Promise.all([...staff.entries()].map(([uid, staffSnap]) => {
+      const employee = staffSnap.data() || {}
+      return String(employee.statusBeforeOwnerClosure || 'Active').toLowerCase() === 'active'
+        ? admin.auth().updateUser(uid, { disabled: false }).catch(() => undefined)
+        : Promise.resolve()
+    }))
+
+    return res.json({ success: true, data: { clinicCount: clinics.length, employeeCount: staff.size } })
+  } catch (error) {
+    console.error('Owner account restoration failed:', error)
+    return res.status(500).json({ success: false, error: error?.message || 'Unable to restore this clinic account.' })
+  }
+})
+
 app.post('/owner/backup', requireAuth, requirePermission('backups:create'), async (req, res) => {
 
   const ownerId = String(req.body?.ownerId || '').trim()

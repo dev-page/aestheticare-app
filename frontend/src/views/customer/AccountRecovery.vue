@@ -2,15 +2,15 @@
   <main class="recovery-page">
     <section class="recovery-card" aria-labelledby="recovery-title">
       <p class="recovery-kicker">Account recovery</p>
-      <h1 id="recovery-title">{{ mode === 'deletion' ? 'Your deletion request is pending' : 'Your account is temporarily deactivated' }}</h1>
+      <h1 id="recovery-title">{{ mode === 'deletion' ? 'Your account is pending deletion' : 'Your account is temporarily deactivated' }}</h1>
       <p class="recovery-copy">
-        Your profile and records are still protected. {{ mode === 'deletion' ? 'Cancel the deletion request before' : 'Reactivate before' }}
+        Your profile and records are still protected. {{ mode === 'deletion' ? 'Cancel deletion before' : 'Reactivate before' }}
         <strong>{{ recoveryEndsLabel }}</strong> to return to AesthetiCare.
       </p>
 
       <div class="recovery-note">
         <strong>{{ mode === 'deletion' ? 'Changed your mind?' : 'Ready to come back?' }}</strong>
-        <span>{{ mode === 'deletion' ? 'Canceling the request keeps your account and records active. Nothing is deleted.' : 'Reactivation restores your customer account immediately. Nothing is deleted.' }}</span>
+        <span>{{ mode === 'deletion' ? 'Canceling deletion keeps your account and records active. Nothing is deleted.' : 'Reactivation restores your customer account immediately. Nothing is deleted.' }}</span>
       </div>
 
       <p v-if="error" class="recovery-error" role="alert">{{ error }}</p>
@@ -20,7 +20,7 @@
           Stay deactivated
         </button>
         <button type="button" class="recovery-primary" :disabled="busy" @click="recover">
-          {{ busy ? 'Saving…' : mode === 'deletion' ? 'Cancel deletion request' : 'Reactivate account' }}
+          {{ busy ? 'Saving…' : mode === 'deletion' ? 'Cancel deletion' : 'Reactivate account' }}
         </button>
       </div>
     </section>
@@ -31,7 +31,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { collection, getDocs, query, where } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
 
@@ -83,25 +82,13 @@ const recover = async () => {
     const snapshot = await getDoc(userRef)
     const data = snapshot.exists() ? snapshot.data() || {} : {}
     if (hasDeletionWindow(data)) {
-      const requests = await getDocs(query(
-        collection(db, 'accountClosureRequests'),
-        where('ownerId', '==', currentUser.uid),
-        where('requestType', '==', 'customer_account_deletion'),
-      ))
-      await Promise.all(requests.docs
-        .filter((request) => ['pending', 'approved'].includes(String(request.data()?.status || '').toLowerCase()))
-        .map((request) => updateDoc(request.ref, {
-          status: 'cancelled',
-          reviewStatus: 'Cancelled by customer',
-          cancellationReason: 'Customer signed in and cancelled the deletion request during the recovery period.',
-          cancelledAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })))
       await updateDoc(userRef, {
+        status: 'Active',
         accountDeletionRequested: false,
         accountDeletionRequestedAt: null,
         accountDeletionReason: null,
         accountDeletionScheduledFor: null,
+        accountRecoveryEndsAt: null,
         accountDeletionCancelledAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })

@@ -4,12 +4,12 @@
       <p class="owner-recovery-kicker">Owner access recovery</p>
       <h1 id="owner-recovery-title">Restore your clinic-owner access</h1>
       <p class="owner-recovery-copy">
-        Your owner-only closure is still recoverable. Restore access before
-        <strong>{{ recoveryEndsLabel }}</strong> and your clinic branches and staff will remain unchanged.
+        Your clinic closure is still recoverable. Restore access before
+        <strong>{{ recoveryEndsLabel }}</strong> to bring your clinic back online and re-enable affected employee accounts.
       </p>
       <div class="owner-recovery-note">
-        <strong>This does not reverse ownership transfers or clinic shutdowns.</strong>
-        <span>Those actions require a System Administrator because they affect other people and business records.</span>
+        <strong>No information has been deleted yet.</strong>
+        <span>Restoring the account cancels the pending deletion and returns the clinic to its previous publication state.</span>
       </div>
       <p v-if="error" class="owner-recovery-error" role="alert">{{ error }}</p>
       <div class="owner-recovery-actions">
@@ -23,9 +23,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { doc, getDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
+import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 
 const router = useRouter()
 const busy = ref(false)
@@ -50,18 +51,30 @@ const recoveryEndsLabel = computed(() => {
   return Number.isNaN(date.getTime()) ? 'the end of the recovery period' : new Intl.DateTimeFormat('en-PH', { month: 'long', day: 'numeric', year: 'numeric' }).format(date)
 })
 const leaveClosed = async () => { await signOut(auth); router.replace('/login') }
+const callBackend = async (path, options) => {
+  let lastError = null
+  for (const baseUrl of OTP_API_BASE_CANDIDATES) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, options)
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to restore this account.')
+      return payload
+    } catch (cause) { lastError = cause }
+  }
+  throw lastError || new Error('Unable to reach the account service.')
+}
 const restoreAccess = async () => {
   const currentUser = auth.currentUser
   if (!currentUser) return router.replace('/login')
   busy.value = true; error.value = ''
   try {
-    const userRef = doc(db, 'users', currentUser.uid)
-    const snapshot = await getDoc(userRef)
+    const snapshot = await getDoc(doc(db, 'users', currentUser.uid))
     const data = snapshot.exists() ? snapshot.data() || {} : {}
-    if (!eligible(data, currentUser.uid)) throw new Error('This recovery period is no longer available. Please contact the System Administrator.')
-    await updateDoc(userRef, {
-      status: 'Active', archived: false, accountClosed: false, accountClosureAction: null,
-      accountRecoveryEndsAt: null, accountReactivatedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    if (!eligible(data, currentUser.uid)) throw new Error('This recovery period is no longer available.')
+    const token = await currentUser.getIdToken()
+    await callBackend('/owner/account/restore', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     })
     await router.replace('/clinic/dashboard')
   } catch (cause) {
@@ -76,6 +89,9 @@ onMounted(async () => {
   const data = snapshot.exists() ? snapshot.data() || {} : {}
   if (!eligible(data, currentUser.uid)) return leaveClosed()
   recoveryEndsAt.value = data.accountRecoveryEndsAt
+  // Signing in during the hold is the owner's explicit decision to keep the
+  // clinic. Restore immediately so employees can sign in again right away.
+  await restoreAccess()
 })
 </script>
 

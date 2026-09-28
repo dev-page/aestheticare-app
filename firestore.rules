@@ -29,6 +29,8 @@ service cloud.firestore {
       return isSignedIn()
         && (userData().role == 'Owner'
           || userData().role == 'owner'
+          || userData().role == 'Clinic Owner'
+          || userData().role == 'clinic owner'
           || userData().role == 'Clinic Admin'
           || userData().role == 'clinicadmin'
           || userData().role == 'Clinic Administrator'
@@ -216,6 +218,19 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'status', 'accountDeactivationRequested', 'accountDeactivationReason', 'accountDeactivatedAt', 'accountRecoveryEndsAt', 'updatedAt'
             ]))
+          // Customer deletion starts directly and has a 30-day recovery
+          // window. It does not require administrator review.
+          || (request.auth.uid == userId
+            && isCustomer()
+            && resource.data.status == 'Active'
+            && request.resource.data.status == 'Inactive'
+            && request.resource.data.accountDeletionRequested == true
+            && request.resource.data.accountDeletionScheduledFor != null
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'accountDeletionRequested', 'accountDeletionRequestedAt',
+              'accountDeletionReason', 'accountDeletionScheduledFor',
+              'accountRecoveryEndsAt', 'updatedAt'
+            ]))
           // A customer who deactivated their own account may restore it only
           // during the recorded 30-day recovery window. This deliberately
           // does not apply to administrator-closed, rejected, or archived
@@ -230,9 +245,21 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'status', 'accountDeactivationRequested', 'accountDeactivationReason', 'accountRecoveryEndsAt', 'accountReactivatedAt', 'updatedAt'
             ]))
-          // Only an owner-only closure can be restored by its owner. Clinic
-          // shutdowns and ownership transfers require an administrator,
-          // because they can affect branches, staff, and ownership records.
+          || (request.auth.uid == userId
+            && isCustomer()
+            && resource.data.status == 'Inactive'
+            && resource.data.accountDeletionRequested == true
+            && resource.data.accountDeletionScheduledFor != null
+            && request.time < resource.data.accountDeletionScheduledFor
+            && request.resource.data.status == 'Active'
+            && request.resource.data.accountDeletionRequested == false
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'accountDeletionRequested', 'accountDeletionRequestedAt',
+              'accountDeletionReason', 'accountDeletionScheduledFor',
+              'accountRecoveryEndsAt', 'accountDeletionCancelledAt', 'updatedAt'
+            ]))
+          // Owner closure recovery is limited to the 30-day hold. The trusted
+          // backend restores the clinic branches and employee access together.
           || (request.auth.uid == userId
             && isClinicOwner()
             && resource.data.status == 'Inactive'
@@ -327,19 +354,6 @@ service cloud.firestore {
     match /rolePermissions/{roleId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && isSuperadmin();
-    }
-
-    match /accountClosureRequests/{requestId} {
-      allow read: if isSignedIn()
-        && (isSuperadmin() || resource.data.ownerId == request.auth.uid);
-      allow create: if isSignedIn()
-        && request.resource.data.ownerId == request.auth.uid
-        && ((isCustomer() && request.resource.data.requestType == 'customer_account_deletion')
-          || (isClinicOwner() && !('requestType' in request.resource.data)));
-      allow update: if isSignedIn()
-        && (isSuperadmin()
-          || (resource.data.ownerId == request.auth.uid && (isCustomer() || isClinicOwner())));
-      allow delete: if isSuperadmin();
     }
 
     match /clinicRoles/{roleId} {
