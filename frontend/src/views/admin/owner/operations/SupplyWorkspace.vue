@@ -141,7 +141,7 @@ const api = async (path, body) => {
 }
 const load = async (silent = false) => {
   if (!silent) loading.value = true
-  try { const result = await api('/workspace' + (branchId.value ? '?branchId=' + encodeURIComponent(branchId.value) : '')); data.value = result; branchId.value = result.branchId || ''; error.value = ''; const reminderScope = branchId.value; if (result.supplier || (reminderScope && reminderScope !== 'all')) api('/reminders', result.supplier ? {} : { branchId: reminderScope }).catch(() => {}); if (selected.value) selected.value = [...result.records, ...result.items, ...result.suppliers].find(r => r.id === selected.value.id) || null }
+  try { const result = await api('/workspace' + (branchId.value ? '?branchId=' + encodeURIComponent(branchId.value) : '')); const clean = list => Array.isArray(list) ? list.filter(entry => entry && typeof entry === 'object') : []; data.value = { ...result, records: clean(result.records), items: clean(result.items), suppliers: clean(result.suppliers), branches: clean(result.branches), movements: clean(result.movements), permissions: Array.isArray(result.permissions) ? result.permissions : [] }; branchId.value = result.branchId || ''; error.value = ''; const reminderScope = branchId.value; if (result.supplier || (reminderScope && reminderScope !== 'all')) api('/reminders', result.supplier ? {} : { branchId: reminderScope }).catch(() => {}); if (selected.value) selected.value = [...data.value.records, ...data.value.items, ...data.value.suppliers].find(r => r.id === selected.value.id) || null }
   catch (e) { error.value = e.message } finally { loading.value = false }
 }
 const label = key => String(key).replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())
