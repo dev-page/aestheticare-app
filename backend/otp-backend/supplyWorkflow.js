@@ -330,6 +330,10 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     ])
     const records = docs(recordSnap), items = docs(itemSnap), suppliers = docs(supplierSnap), documents = docs(documentSnap), clinic = clinicSnap.data() || {}
     const writes = [], financialWrites = [], now = stamp()
+    // FieldValue.serverTimestamp() cannot be used inside an array element.
+    // Supplier catalog entries are stored in `offeredItems`, so their audit
+    // timestamps need a concrete Firestore Timestamp (or Date in tests).
+    const catalogEventAt = admin.firestore.Timestamp?.now?.() || new Date()
     const get = (id, kind) => { const r = records.find(r => r.id === id && r.kind === kind); demand(r, `${kind} record not found.`, 404); return r }
     // Some records created before the current workflow did not retain every
     // parent link. A missing parent must not prevent the record that is in
@@ -603,7 +607,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
               const index = supplierCatalogIndexForLine(catalog, line); demand(index >= 0, `The supplier catalog no longer contains ${line.name}.`)
               const product = catalog[index], onHand = quantity(product.quantity, true), reserved = quantity(product.reservedQuantity || 0, true)
               demand(onHand - reserved >= line.quantity, `Insufficient available supplier stock for ${line.name}.`)
-              catalog[index] = { ...product, reservedQuantity: reserved + line.quantity, lastReservedAt: now, lastReservedPoId: r.id }
+              catalog[index] = { ...product, reservedQuantity: reserved + line.quantity, lastReservedAt: catalogEventAt, lastReservedPoId: r.id }
             }
             writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
           }
@@ -613,7 +617,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         else if (action === 'cancel') { allow(ctx, 'procurement:review'); demand(!['Cancelled', 'Completed'].includes(r.status) && !records.some(x => x.poId === r.id && ['receiving', 'invoice', 'payment'].includes(x.kind)), 'Received or invoiced orders cannot be cancelled here.'); const budget = get(r.budgetId, 'budget'); set(budget, { committed: budget.committed - r.committedAmount }); if (r.budgetAllocationId) set(get(r.budgetAllocationId, 'budgetAllocation'), { status: 'Released', releasedAmount: r.committedAmount, releasedBy: ctx.uid, releasedAt: now });
           if (['Supplier Confirmed', 'Claimed by Logistics'].includes(r.status)) {
             const stockSupplier = supplier(r.supplierId), catalog = [...(stockSupplier.offeredItems || [])]
-            for (const line of r.lines) { const index = supplierCatalogIndexForLine(catalog, line); if (index >= 0) { const product = catalog[index], reserved = quantity(product.reservedQuantity, true); catalog[index] = { ...product, reservedQuantity: Math.max(0, reserved - line.quantity), lastReleasedAt: now, lastReleasedPoId: r.id } } }
+            for (const line of r.lines) { const index = supplierCatalogIndexForLine(catalog, line); if (index >= 0) { const product = catalog[index], reserved = quantity(product.reservedQuantity, true); catalog[index] = { ...product, reservedQuantity: Math.max(0, reserved - line.quantity), lastReleasedAt: catalogEventAt, lastReleasedPoId: r.id } } }
             writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
           }
           result = set(r, { status: 'Cancelled', committedAmount: 0, remarks: required(input.remarks, 'Cancellation reason') }); set(get(r.procurementId, 'procurement'), { status: 'Cancelled' }) }
@@ -636,7 +640,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           // their reservation lets existing transactions complete without creating negative stock.
           const reserved = Object.hasOwn(catalogItem, 'reservedQuantity') ? quantity(catalogItem.reservedQuantity, true) : line.accepted
           demand(onHand >= line.accepted && reserved >= line.accepted, `Supplier stock is insufficient to complete receipt for ${ordered.name}.`)
-          catalog[catalogIndex] = { ...catalogItem, quantity: onHand - line.accepted, reservedQuantity: reserved - line.accepted, lastFulfilledAt: now, lastFulfilledPoId: po.id }
+          catalog[catalogIndex] = { ...catalogItem, quantity: onHand - line.accepted, reservedQuantity: reserved - line.accepted, lastFulfilledAt: catalogEventAt, lastFulfilledPoId: po.id }
           if (line.serialNumber) { demand(line.accepted === 1, 'Receive serialized equipment one unit per receiving record.'); demand(!docs(lotSnap).some(l => l.serialNumber === line.serialNumber && l.itemId === item.id), 'This equipment serial number has already been received.') }
           writes.push([db.collection('supplyLots').doc(`${r.id}-${item.id}`), { branchId, itemId: item.id, receivingId: r.id, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', receivedQuantity: line.accepted, remainingQuantity: line.accepted, lot: line.lot || '', manufacturingDate: line.manufacturingDate || '', expiryDate: line.expiryDate || '', serialNumber: line.serialNumber || '', modelNumber: line.modelNumber || '', warranty: line.warranty || '', condition: line.condition, location: po.deliveryLocation, unitCost: ordered.unitPrice, receivedAt: now }, false])
           writes.push([db.collection('inventoryItems').doc(item.id), { ...item, currentStock: Number(item.currentStock || 0) + line.accepted, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || item.supplierCatalogItemId || '', receivedAt: now, updatedAt: now, createdAt: isFirstReceipt ? now : item.createdAt || now, manufacturingDate: line.manufacturingDate || item.manufacturingDate || '', expiryDate: Number(item.currentStock || 0) > 0 && item.expiryDate ? [item.expiryDate, line.expiryDate].filter(Boolean).sort()[0] : line.expiryDate || '', serialNumber: line.serialNumber || item.serialNumber || '', modelNumber: line.modelNumber || item.modelNumber || '', warranty: line.warranty || item.warranty || '', condition: line.condition, location: ordered.location || po.deliveryLocation, costPrice: ordered.unitPrice / 100 }, true])
