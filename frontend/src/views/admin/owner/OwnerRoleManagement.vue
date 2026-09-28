@@ -7,7 +7,7 @@
         <section class="rounded-[2rem] border border-[#5a3927] bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.08),_transparent_42%),linear-gradient(180deg,_rgba(58,36,23,0.98),_rgba(42,24,15,0.98))] p-6 shadow-[0_24px_60px_rgba(20,12,8,0.45)]">
           <div class="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.28em] text-[#d2b7a6]">Clinic Owner</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.28em] text-[#d2b7a6]">Clinic Administration</p>
               <h1 class="mt-2 text-3xl font-bold tracking-tight text-[#f3e7e0]">Role Management</h1>
               <p class="mt-3 max-w-3xl text-sm leading-6 text-[#e2c7b6]">
                 Start with protected built-in roles, customize their permissions, or create clinic-owned roles for your staff.
@@ -578,7 +578,7 @@
                                   v-else-if="isPermissionLocked(permission.key)"
                                   class="text-right text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]"
                                 >
-                                  {{ isOwnerOnlyPermission(permission.key) ? 'Clinic owner only' : 'Locked by current plan' }}
+                                  {{ isOwnerOnlyPermission(permission.key) ? 'System administrator only' : 'Locked by current plan' }}
                                 </div>
                               </div>
                             </div>
@@ -688,7 +688,7 @@ const permissionSuggestionRules = [
   },
   {
     match: ['admin', 'owner', 'administrator'],
-    permissions: ['clinic_profile:view', 'staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:update', 'clients:disable', 'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'reports:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:view', 'payroll:update', 'profile:view', 'password:update', 'activities:view', 'notifications:view'],
+    permissions: ['branches:view', 'branches:create', 'clinic_profile:view', 'clinic_profile:update', 'staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:update', 'clients:disable', 'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'reports:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:view', 'payroll:update', 'roles:manage', 'subscription:view', 'backups:view', 'backups:create', 'profile:view', 'password:update', 'activities:view', 'notifications:view'],
   },
 ]
 
@@ -738,7 +738,7 @@ const builtInRoleTemplates = [
   {
     key: 'clinic-admin',
     name: 'Clinic Admin',
-    description: 'Full operational access to one assigned branch. Clinic Owner settings and other branches remain restricted.',
+    description: 'Operational access is determined by the permissions assigned to this role.',
     color: '#d09a61',
     suggestion: 'admin',
   },
@@ -747,14 +747,7 @@ const builtInRoleTemplates = [
 const getTemplatePermissions = (suggestion) => {
   const rule = permissionSuggestionRules.find((entry) => entry.match.includes(suggestion))
   if (!rule) return []
-  const branchAdminRestricted = new Set([
-    fullAccessPermissionKey,
-    'roles:manage',
-    'branches:create',
-    'clinic_profile:update',
-    'subscription:view',
-    'backup:view',
-  ])
+  const branchAdminRestricted = new Set([fullAccessPermissionKey])
   return [...new Set(rule.permissions)].filter((permission) =>
     suggestion === 'admin' ? !branchAdminRestricted.has(permission) : true
   )

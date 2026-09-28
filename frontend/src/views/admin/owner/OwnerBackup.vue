@@ -152,7 +152,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { auth, db, storage } from '@/config/firebaseConfig'
-import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef } from 'firebase/storage'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
@@ -163,6 +163,7 @@ const creating = ref(false)
 const error = ref('')
 const success = ref('')
 const backups = ref([])
+const backupOwnerId = ref('')
 const downloadingId = ref('')
 const menuState = ref({ visible: false, x: 0, y: 0, backup: null })
 let unsubscribe = null
@@ -173,6 +174,23 @@ const backupMonthlyDay = Number(import.meta.env.VITE_BACKUP_MONTHLY_DAY || 1)
 const nowTick = ref(Date.now())
 
 const canCreate = computed(() => true)
+
+const resolveBackupOwnerId = async (user) => {
+  const profileSnap = await getDoc(doc(db, 'users', user.uid))
+  const profile = profileSnap.exists() ? profileSnap.data() || {} : {}
+  const role = String(profile.role || profile.userType || '').trim().toLowerCase()
+  if (role === 'owner' || role === 'clinic owner') return user.uid
+
+  const assignedBranches = [
+    profile.branchId,
+    ...(Array.isArray(profile.branchIds) ? profile.branchIds : [])
+  ].map((value) => String(value || '').trim()).filter(Boolean)
+  if (!assignedBranches.length) return user.uid
+
+  const clinicSnap = await getDoc(doc(db, 'clinics', assignedBranches[0]))
+  const clinic = clinicSnap.exists() ? clinicSnap.data() || {} : {}
+  return String(clinic.ownerId || user.uid).trim()
+}
 
 const formatDate = (value) => {
   if (!value) return '-'
@@ -267,9 +285,18 @@ const refreshBackups = async () => {
   error.value = ''
   if (unsubscribe) unsubscribe()
 
+  try {
+    backupOwnerId.value = await resolveBackupOwnerId(user)
+  } catch (err) {
+    console.error('Failed to resolve backup organization:', err)
+    error.value = 'Unable to determine the clinic organization for backups.'
+    loading.value = false
+    return
+  }
+
   const backupQuery = query(
     collection(db, 'backups'),
-    where('ownerId', '==', user.uid)
+    where('ownerId', '==', backupOwnerId.value)
   )
 
   unsubscribe = onSnapshot(
@@ -316,7 +343,7 @@ const createBackup = async () => {
         'content-type': 'application/json',
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ ownerId: user.uid })
+      body: JSON.stringify({ ownerId: backupOwnerId.value || await resolveBackupOwnerId(user) })
     })
 
     const contentType = String(response.headers.get('content-type') || '')
@@ -422,7 +449,7 @@ const downloadZip = async (backup) => {
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({
-        ownerId: user.uid,
+        ownerId: backupOwnerId.value || await resolveBackupOwnerId(user),
         storagePath: backup.storagePath,
         fileName: backup.fileName || 'backup'
       })

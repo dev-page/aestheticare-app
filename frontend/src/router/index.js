@@ -128,7 +128,7 @@ const routes = [
   { path: "/hr/employees/new", name: "hr-employees-new", component: () => import("@/views/admin/owner/AddStaff.vue"), meta: { requiresAuth: true, requiresPermission: "staff:create", requiresFeature: "staff_management" } },
   { path: "/hr/employees/archived", name: "hr-employees-archived", component: () => import("@/views/admin/owner/ArchivedEmployees.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view", requiresFeature: "staff_management" } },
   { path: "/hr/attendance", name: "hr-attendance", component: () => import("@/views/admin/owner/Attendance.vue"), meta: { requiresAuth: true, requiresNonEmployee: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
-  { path: "/hr/roles", name: "hr-roles", component: () => import("@/views/admin/owner/OwnerRoleManagement.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "roles:manage", requiresFeature: "staff_management" } },
+  { path: "/hr/roles", name: "hr-roles", component: () => import("@/views/admin/owner/OwnerRoleManagement.vue"), meta: { requiresAuth: true, requiresPermission: "roles:manage", requiresFeature: "staff_management" } },
   { path: "/hr/reports", name: "hr-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
   { path: "/hr/base-pay", name: "hr-base-pay", component: () => import("@/views/admin/owner/hr/BasePay.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
   { path: "/hr/payroll", name: "hr-payroll", component: () => import("@/views/admin/owner/hr/Payroll.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
@@ -140,14 +140,14 @@ const routes = [
   { path: "/clinic/dashboard", name: "clinic-dashboard", component: () => import("@/views/admin/owner/OwnerDashboard.vue"), meta: { requiresAuth: true, requiresOwner: true } },
   // Every clinic owner can view their primary branch. Only adding/managing
   // additional branches is a Premium multi-branch feature.
-  { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/BranchInfo.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "branches:view" } },
-  { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/AddBranch.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
+  { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/BranchInfo.vue"), meta: { requiresAuth: true, requiresPermission: "branches:view" } },
+  { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/AddBranch.vue"), meta: { requiresAuth: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
   { path: "/clinic/profile", name: "clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:view" } },
-  { path: "/clinic/page", name: "clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "clinic_profile:update" } },
+  { path: "/clinic/page", name: "clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:update" } },
   { path: "/clinic/policies", name: "clinic-policies", component: () => import("@/views/admin/owner/OwnerPolicyManagement.vue"), meta: { requiresAuth: true, requiresPermission: "policies:view" } },
   { path: "/management/reports", name: "management-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
   { path: "/account/closure", name: "account-closure", component: () => import("@/views/admin/owner/OwnerAccountClosure.vue"), meta: { requiresAuth: true, requiresOwner: true } },
-  { path: "/account/backup", name: "account-backup", component: () => import("@/views/admin/owner/OwnerBackup.vue"), meta: { requiresAuth: true, requiresOwner: true, requiresPermission: "backups:view" } },
+  { path: "/account/backup", name: "account-backup", component: () => import("@/views/admin/owner/OwnerBackup.vue"), meta: { requiresAuth: true, requiresPermission: "backups:view" } },
   { path: "/account/subscription", name: "account-subscription", component: () => import("@/views/admin/owner/OwnerSubscription.vue"), meta: { requiresAuth: true, requiresPermission: "subscription:view" } },
   { path: "/account/plans", name: "account-plans", component: () => import("@/views/admin/owner/OwnerPlanSelection.vue"), meta: { requiresAuth: true, requiresOwner: true } },
 

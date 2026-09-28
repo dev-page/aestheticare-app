@@ -164,6 +164,12 @@ service cloud.firestore {
           || (userData().customRoleIds != null && userData().customRoleIds.hasAny([roleId])));
     }
 
+    function canManageClinicRoles(ownerId) {
+      return isSuperadmin()
+        || (isClinicOwner() && ownerId == request.auth.uid)
+        || (isStaffOfOwner(ownerId) && hasPermission('roles:manage'));
+    }
+
     function isPublicClinic(clinicId) {
       return exists(/databases/$(database)/documents/clinics/$(clinicId))
         && clinicDoc(clinicId).data.isPublished == true;
@@ -336,6 +342,8 @@ service cloud.firestore {
               || applicantCanSubmitClinicDocuments()))
           || (isOwnerOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
             && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields())
+          || (isStaffOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
+            && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields())
           || (isStaffOfBranch(clinicId) && hasPermission('policies:update')
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'cancellationPolicy', 'cancellationPolicyEnabled', 'reschedulePolicy', 'reschedulePolicyEnabled',
@@ -363,13 +371,10 @@ service cloud.firestore {
           || isAssignedClinicRole(roleId)
           || isStaffOfOwner(resource.data.ownerId));
       allow create: if isSignedIn()
-        && (isSuperadmin()
-          || (isClinicOwner() && request.resource.data.ownerId == request.auth.uid));
+        && canManageClinicRoles(request.resource.data.ownerId);
       allow update, delete: if isSignedIn()
-        && (isSuperadmin()
-          || (isClinicOwner()
-            && resource.data.ownerId == request.auth.uid
-            && (request.method == 'delete' || request.resource.data.ownerId == resource.data.ownerId)));
+        && canManageClinicRoles(resource.data.ownerId)
+        && (request.method == 'delete' || request.resource.data.ownerId == resource.data.ownerId);
     }
 
     match /ownerModuleSettings/{ownerId} {

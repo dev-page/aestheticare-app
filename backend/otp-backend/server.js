@@ -1695,7 +1695,7 @@ const requiresOperationalLoginOtp = (userData = {}) => {
 // module while deliberately excluding organization ownership, billing,
 // backups, role administration, and creating additional branches.
 const CLINIC_ADMIN_PERMISSIONS = new Set([
-  'branches:view', 'clinic_profile:view',
+  'branches:view', 'branches:create', 'clinic_profile:view', 'clinic_profile:update',
   'staff:view', 'staff:create', 'staff:update', 'staff:disable',
   'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import',
   'clients:view', 'clients:update', 'clients:disable',
@@ -1710,7 +1710,7 @@ const CLINIC_ADMIN_PERMISSIONS = new Set([
   'payroll:view', 'payroll:update', 'payroll:approve',
   'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle',
   'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view',
-  'policies:view', 'policies:update', 'activities:view', 'notifications:view',
+  'policies:view', 'policies:update', 'roles:manage', 'subscription:view', 'backups:view', 'backups:create', 'activities:view', 'notifications:view',
   'profile:view', 'password:update',
 ])
 
@@ -3215,8 +3215,28 @@ const authorizeClinicAction = async (uid, branchId, permission) => {
 // branches. The new branch inherits its organization's subscription state.
 app.post('/owner/branches', requireAuth, async (req, res) => {
   try {
-    const firestore = admin.firestore(), ownerId = req.user.uid, context = await loadUserContext(ownerId)
-    assertWorkflow(context.roleKey === 'Owner' || context.permissions.has('administrator:full_access'), 'Only the clinic owner can add a branch.', 403)
+    const firestore = admin.firestore(), actorId = req.user.uid, context = await loadUserContext(actorId)
+    assertWorkflow(
+      context.permissions.has('branches:create') || context.permissions.has('administrator:full_access'),
+      'You do not have permission to add a branch.',
+      403
+    )
+
+    // A delegated staff member may create a branch only for the organization
+    // that owns one of their assigned branches. Never use the staff UID as
+    // the organization owner ID, otherwise the new branch would be orphaned.
+    let ownerId = actorId
+    if (context.roleKey !== 'Owner') {
+      const assignedBranches = [
+        context.userData?.branchId,
+        ...(Array.isArray(context.userData?.branchIds) ? context.userData.branchIds : []),
+      ].map((value) => String(value || '').trim()).filter(Boolean)
+      assertWorkflow(assignedBranches.length, 'Assign this user to a clinic branch before granting branch creation.', 403)
+      const assignedClinicSnap = await firestore.collection('clinics').doc(assignedBranches[0]).get()
+      const assignedClinic = assignedClinicSnap.exists ? assignedClinicSnap.data() || {} : {}
+      ownerId = String(assignedClinic.ownerId || context.userData?.organizationOwnerId || '').trim()
+      assertWorkflow(ownerId, 'The assigned branch is not linked to a clinic organization.', 403)
+    }
     const input = req.body || {}, branches = (await firestore.collection('clinics').where('ownerId', '==', ownerId).get()).docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) }))
     const organization = branches.find(branch => branch.id === ownerId) || branches.find(branch => branch.isMainBranch) || branches[0] || {}
     const organizationClinicName = String(organization.clinicName || organization.clinicBranch || '').trim()
@@ -6335,6 +6355,22 @@ app.post('/owner/account/restore', requireAuth, async (req, res) => {
   }
 })
 
+const authorizeOwnerBackupAccess = async (req, ownerId) => {
+  const actorId = String(req.user?.uid || '').trim()
+  assertWorkflow(actorId, 'Unauthorized backup request', 401)
+  if (actorId === ownerId || req.userContext?.permissions?.has('administrator:full_access')) return
+
+  const context = req.userContext || await loadUserContext(actorId)
+  const assignedBranches = [
+    context.userData?.branchId,
+    ...(Array.isArray(context.userData?.branchIds) ? context.userData.branchIds : []),
+  ].map((value) => String(value || '').trim()).filter(Boolean)
+  assertWorkflow(assignedBranches.length, 'You are not assigned to this clinic organization.', 403)
+  const branchSnaps = await Promise.all(assignedBranches.map((branchId) => admin.firestore().collection('clinics').doc(branchId).get()))
+  const belongsToOwner = branchSnaps.some((snap) => snap.exists && String(snap.data()?.ownerId || '').trim() === ownerId)
+  assertWorkflow(belongsToOwner, 'You are not allowed to access this clinic backup.', 403)
+}
+
 app.post('/owner/backup', requireAuth, requirePermission('backups:create'), async (req, res) => {
 
   const ownerId = String(req.body?.ownerId || '').trim()
@@ -6346,14 +6382,9 @@ app.post('/owner/backup', requireAuth, requirePermission('backups:create'), asyn
   }
 
   try {
-    if (!req.user?.uid || req.user.uid !== ownerId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Unauthorized backup request',
-      })
-    }
+    await authorizeOwnerBackupAccess(req, ownerId)
 
-    const result = await generateOwnerBackup({ ownerId, kind: 'manual', triggeredBy: 'owner' })
+    const result = await generateOwnerBackup({ ownerId, kind: 'manual', triggeredBy: req.user.uid === ownerId ? 'owner' : 'delegated-staff' })
     return res.json({ success: true, data: result })
   } catch (error) {
     return res.status(500).json({
@@ -6384,12 +6415,7 @@ app.post('/owner/backup/zip', requireAuth, requirePermission('backups:view'), as
   }
 
   try {
-    if (!req.user?.uid || req.user.uid !== ownerId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Unauthorized backup request',
-      })
-    }
+    await authorizeOwnerBackupAccess(req, ownerId)
 
     const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
     if (!bucketName) {

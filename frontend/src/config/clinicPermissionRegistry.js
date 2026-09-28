@@ -11,8 +11,8 @@ export const permissionGroups = [
         label: 'Branches',
         description: 'View and create clinic branches.',
         permissions: [
-          { key: 'branches:view', label: 'View Branches', description: 'Open branch information pages.', icon: 'mdi:source-branch', ownerOnly: true },
-          { key: 'branches:create', label: 'Create Branches', description: 'Add and configure clinic branches.', icon: 'mdi:map-marker-plus-outline', ownerOnly: true },
+          { key: 'branches:view', label: 'View Branches', description: 'Open branch information pages.', icon: 'mdi:source-branch' },
+          { key: 'branches:create', label: 'Create Branches', description: 'Add and configure clinic branches.', icon: 'mdi:map-marker-plus-outline' },
         ],
       },
       {
@@ -21,7 +21,7 @@ export const permissionGroups = [
         description: 'Manage the public clinic profile and page.',
         permissions: [
           { key: 'clinic_profile:view', label: 'View Clinic Profile', description: 'Open clinic profile management.', icon: 'mdi:domain' },
-          { key: 'clinic_profile:update', label: 'Update Clinic Profile', description: 'Edit clinic page and public presentation.', icon: 'mdi:file-document-edit-outline', ownerOnly: true },
+          { key: 'clinic_profile:update', label: 'Update Clinic Profile', description: 'Edit clinic page and public presentation.', icon: 'mdi:file-document-edit-outline' },
         ],
       },
     ],
@@ -40,7 +40,7 @@ export const permissionGroups = [
           { key: 'staff:create', label: 'Create Staff', description: 'Add employee accounts under the clinic.', icon: 'mdi:account-plus-outline' },
           { key: 'staff:update', label: 'Update Staff', description: 'Edit staff details and role assignments.', icon: 'mdi:account-edit-outline' },
           { key: 'staff:disable', label: 'Archive Staff', description: 'Archive employee accounts.', icon: 'mdi:account-off-outline' },
-          { key: 'roles:manage', label: 'Manage Roles', description: 'Create roles and manage clinic role permissions.', icon: 'mdi:shield-account-outline', ownerOnly: true },
+          { key: 'roles:manage', label: 'Manage Roles', description: 'Create roles and manage clinic role permissions.', icon: 'mdi:shield-account-outline' },
         ],
       },
       {
@@ -218,9 +218,9 @@ export const permissionGroups = [
         description: 'Core account controls.',
         permissions: [
           { key: fullAccessPermissionKey, label: 'Administrator Full Access', description: 'Reserved for system administrators and cannot be delegated through clinic roles.', icon: 'mdi:key-star', ownerOnly: true },
-          { key: 'subscription:view', label: 'View Subscription', description: 'Open the clinic subscription plan screen.', icon: 'mdi:card-outline', ownerOnly: true },
-          { key: 'backups:view', label: 'View Backups', description: 'Access database backup history and downloads.', icon: 'mdi:file-download-outline', ownerOnly: true },
-          { key: 'backups:create', label: 'Create Backups', description: 'Generate a database backup.', icon: 'mdi:database-plus-outline', ownerOnly: true },
+          { key: 'subscription:view', label: 'View Subscription', description: 'Open the clinic subscription plan screen.', icon: 'mdi:card-outline' },
+          { key: 'backups:view', label: 'View Backups', description: 'Access database backup history and downloads.', icon: 'mdi:file-download-outline' },
+          { key: 'backups:create', label: 'Create Backups', description: 'Generate a database backup.', icon: 'mdi:database-plus-outline' },
           { key: 'profile:view', label: 'View Profile', description: 'Open employee profile pages.', icon: 'mdi:card-account-details-outline' },
           { key: 'password:update', label: 'Change Password', description: 'Access password reset and change screens.', icon: 'mdi:shield-key-outline' },
         ],

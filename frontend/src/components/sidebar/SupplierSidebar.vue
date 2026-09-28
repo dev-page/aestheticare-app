@@ -63,9 +63,9 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     icon: 'mdi:hospital-building',
     tourKey: 'clinic-setup',
     children: [
-      { label: 'Branch Info', icon: 'mdi:map-marker-outline', to: '/clinic/branches', permission: 'branches:view', ownerOnly: true },
-      { label: 'Add Branch', icon: 'mdi:office-building-plus-outline', to: '/clinic/branches/new', feature: 'multi_branch', permission: 'branches:create', ownerOnly: true },
-      { label: 'Clinic Page', icon: 'mdi:web', to: '/clinic/page', permission: 'clinic_profile:update', ownerOnly: true },
+      { label: 'Branch Info', icon: 'mdi:map-marker-outline', to: '/clinic/branches', permission: 'branches:view' },
+      { label: 'Add Branch', icon: 'mdi:office-building-plus-outline', to: '/clinic/branches/new', feature: 'multi_branch', permission: 'branches:create' },
+      { label: 'Clinic Page', icon: 'mdi:web', to: '/clinic/page', permission: 'clinic_profile:update' },
       { label: 'Policy Management', icon: 'mdi:file-document-outline', to: '/clinic/policies', permissionsAny: ['policies:view', 'policies:update'] }
     ]
   },
@@ -154,7 +154,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       { label: 'Archived Employees', icon: 'mdi:account-off-outline', to: '/hr/employees/archived', feature: 'staff_management', permission: 'staff:view' },
       { label: 'Attendance', icon: 'mdi:calendar-check-outline', to: '/hr/attendance', feature: 'attendance', permission: 'attendance:view' },
       { type: 'section', label: 'ROLES & REPORTING' },
-      { label: 'Roles', icon: 'mdi:shield-account-outline', to: '/hr/roles', feature: 'staff_management', permission: 'roles:manage', ownerOnly: true },
+      { label: 'Roles', icon: 'mdi:shield-account-outline', to: '/hr/roles', feature: 'staff_management', permission: 'roles:manage' },
       { label: 'HR Reports', icon: 'mdi:chart-box-outline', to: '/hr/reports', feature: 'reports', permission: 'reports:view' },
       { type: 'section', label: 'SHIFTS' },
       { label: 'Add Shift', icon: 'mdi:clock-plus-outline', to: '/hr/add-shift', feature: 'hr', permission: 'hr:create' },
@@ -175,11 +175,11 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     children: [
       { label: 'Profile', icon: 'profile', to: isEmployee ? '/account/profile' : '/clinic/profile' },
       { label: 'Change Password', icon: 'key', to: '/account/change-password' },
+      { label: 'Subscription Plan', icon: 'mdi:card-account-details-star-outline', to: '/account/subscription', permission: 'subscription:view' },
+      { label: 'Backup Database', icon: 'mdi:database-export-outline', to: '/account/backup', permission: 'backups:view' },
+      { label: 'Activities', icon: 'mdi:clipboard-text-clock-outline', to: '/activities', permission: 'activities:view' },
       ...(!isEmployee ? [
-        { label: 'Subscription Plan', icon: 'mdi:card-account-details-star-outline', to: '/account/subscription', permission: 'subscription:view' },
         { label: 'Account Access', icon: 'account-off', to: '/account/closure', permission: 'subscription:view' },
-        { label: 'Backup Database', icon: 'mdi:database-export-outline', to: '/account/backup', permission: 'backups:view', ownerOnly: true },
-        { label: 'Activities', icon: 'mdi:clipboard-text-clock-outline', to: '/activities', permission: 'activities:view' },
       ] : []),
       { label: 'Notifications', icon: 'bell', to: '/notifications' },
       { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' }
