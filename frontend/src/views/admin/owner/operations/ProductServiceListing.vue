@@ -89,11 +89,6 @@
             <p class="text-sm font-medium text-white">Inventory Details</p>
             <p class="mt-1 text-xs text-slate-400">These optional details help customers identify the selected inventory product.</p>
           </div>
-          <div v-if="form.postType === 'Service'" class="md:col-span-2">
-            <label class="block text-slate-400 mb-1">Number of Treatment Sessions</label>
-            <input v-model.number="form.sessionCount" type="number" min="1" max="50" step="1" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <p class="text-xs text-slate-400 mt-1">Use 1 for a one-time service. A multi-session plan tracks the total sessions; the clinic schedules each next visit to match availability.</p>
-          </div>
           <div>
             <label class="block text-slate-400 mb-1">Quantity / Volume</label>
             <input
@@ -112,6 +107,12 @@
               class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+        </div>
+
+        <div v-if="form.postType === 'Service'" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+          <label class="block text-slate-400 mb-1">Number of Treatment Sessions</label>
+          <input v-model.number="form.sessionCount" type="number" min="1" max="50" step="1" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p class="text-xs text-slate-400 mt-1">Use 1 for a one-time service. For multiple sessions, the customer or clinic staff can schedule each next visit based on availability.</p>
         </div>
 
         <div v-if="form.postType === 'Product'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
@@ -508,6 +509,11 @@
                   :disabled="!editForm.followUpAllowed"
                   class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
                 />
+              </div>
+              <div v-if="['Service', 'Package'].includes(editForm.postType)" class="md:col-span-2">
+                <label class="block text-slate-400 mb-1">Number of Treatment Sessions</label>
+                <input v-model.number="editForm.sessionCount" type="number" min="1" max="50" step="1" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <p class="mt-1 text-xs text-slate-400">Use 1 for a one-time treatment or package.</p>
               </div>
               <div class="md:col-span-2">
                 <label class="block text-slate-400 mb-1">{{ editForm.postType === 'Consultation' ? 'Consultation Duration (minutes)' : 'Service Duration (minutes)' }}</label>
@@ -1203,6 +1209,7 @@ export default {
         consultationMode: normalizeConsultationMode(post.consultationMode),
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
+        sessionCount: Math.min(50, Math.max(1, Number(post.sessionCount || 1))),
         durationMinutes: Number(post.durationMinutes || 60)
         , productVolume: String(post.productVolume || '').trim()
         , productUnit: String(post.productUnit || '').trim()
@@ -1334,6 +1341,9 @@ export default {
             : editForm.value.postType === 'Package' && editPackageFollowUpComponents.length
               ? Math.min(...editPackageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
+          sessionCount: ['Service', 'Package'].includes(editForm.value.postType)
+            ? Math.min(50, Math.max(1, Number(editForm.value.sessionCount || 1)))
+            : 1,
           durationMinutes: editForm.value.postType === 'Product'
             ? null
             : editForm.value.postType === 'Package'
