@@ -643,6 +643,7 @@ export default {
       locationError,
       branchScopeLabel,
       clinicDisplayName,
+      buildLocationSearchQuery,
       locationSearchQuery,
       searchLocation,
       exporting,
