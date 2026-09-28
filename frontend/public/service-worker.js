@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aestheticare-v2'
+const CACHE_NAME = 'aestheticare-v3'
 const APP_SHELL = [
   '/',
   '/manifest.json',
@@ -20,6 +20,26 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+// Cache Storage cannot store partial (206) responses. Media requests and some
+// browser revalidations use a Range header, so always leave those to the
+// network. Cache only complete, same-origin responses and swallow a cache
+// write failure so it never becomes an unhandled service-worker promise.
+const canCacheResponse = (request, response) => (
+  !request.headers.has('range') &&
+  response &&
+  response.status === 200 &&
+  response.type === 'basic' &&
+  !response.headers.has('content-range')
+)
+
+const cacheResponse = (key, request, response) => {
+  if (!canCacheResponse(request, response)) return Promise.resolve()
+
+  return caches.open(CACHE_NAME)
+    .then((cache) => cache.put(key, response.clone()))
+    .catch(() => undefined)
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
@@ -30,8 +50,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put('/', copy))
+          void cacheResponse('/', request, response)
           return response
         })
         .catch(() => caches.match('/')),
@@ -40,12 +59,14 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (response.ok) {
-        const copy = response.clone()
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
-      }
-      return response
-    })),
+    caches.match(request).then((cached) => {
+      if (request.headers.has('range')) return fetch(request)
+      if (cached) return cached
+
+      return fetch(request).then((response) => {
+        void cacheResponse(request, request, response)
+        return response
+      })
+    }),
   )
 })
