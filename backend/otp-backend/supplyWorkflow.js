@@ -279,6 +279,10 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const records = docs(recordSnap), items = docs(itemSnap), suppliers = docs(supplierSnap), documents = docs(documentSnap), clinic = clinicSnap.data() || {}
     const writes = [], financialWrites = [], now = stamp()
     const get = (id, kind) => { const r = records.find(r => r.id === id && r.kind === kind); demand(r, `${kind} record not found.`, 404); return r }
+    // Some records created before the current workflow did not retain every
+    // parent link. A missing parent must not prevent the record that is in
+    // front of the user from progressing.
+    const linked = (id, kind) => records.find(r => r.id === id && r.kind === kind) || null
     const set = (r, patch) => { writes.push([db.collection('supplyRecords').doc(r.id), patch, true]); return { ...r, ...patch } }
     const create = (kind, data, id = crypto.randomUUID()) => {
       demand(!records.some(r => r.id === id), 'This linked record already exists.')
@@ -526,13 +530,15 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             const approval = create('financeApproval', { status: 'Approved', poId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...linksOf(r), r.id] }, `approval-${r.id}`)
             const allocation = create('budgetAllocation', { status: 'Committed', poId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...linksOf(approval), approval.id] }, `allocation-${r.id}`)
             result = set(r, { status: 'Sent to Supplier', budgetId: budget.id, committedAmount: approvedAmount, approvedAmount, approvedBy: ctx.uid, approvedAt: now, sentBy: ctx.uid, sentAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
-            set(get(r.procurementId, 'procurement'), { status: 'Ordered' })
+            const procurement = linked(r.procurementId, 'procurement')
+            if (procurement) set(procurement, { status: 'Ordered' })
           } else {
             const remarks = required(input.remarks, 'Decision reason')
             result = set(r, { status: action === 'reject' ? 'Rejected' : 'Returned to Procurement', remarks, reviewedBy: ctx.uid, reviewedAt: now })
-            set(get(r.procurementId, 'procurement'), { status: action === 'reject' ? 'Rejected by Finance' : 'Received', financeDecision: action, financeRemarks: remarks })
+            const procurement = linked(r.procurementId, 'procurement')
+            if (procurement) set(procurement, { status: action === 'reject' ? 'Rejected by Finance' : 'Received', financeDecision: action, financeRemarks: remarks })
           }
-        } else if (action === 'issue') { allow(ctx, 'finance:payables:approve'); demand(['Approved', 'Sent to Supplier'].includes(r.status), 'Finance approval is required before sending the PO to the supplier.'); if (r.status === 'Approved') { if (r.mode === 'Manual') evidence(r, 'Upload the manual PO first.'); result = set(r, { status: 'Sent to Supplier', sentBy: ctx.uid, sentAt: now }); set(get(r.procurementId, 'procurement'), { status: 'Ordered' }) } else result = r }
+        } else if (action === 'issue') { allow(ctx, 'finance:payables:approve'); demand(['Approved', 'Sent to Supplier'].includes(r.status), 'Finance approval is required before sending the PO to the supplier.'); if (r.status === 'Approved') { if (r.mode === 'Manual') evidence(r, 'Upload the manual PO first.'); result = set(r, { status: 'Sent to Supplier', sentBy: ctx.uid, sentAt: now }); const procurement = linked(r.procurementId, 'procurement'); if (procurement) set(procurement, { status: 'Ordered' }) } else result = r }
         else if (['confirm', 'decline', 'clarify'].includes(action)) { manualOrSupplier(r, 'procurement:review'); demand(r.status === 'Sent to Supplier', 'PO is not awaiting supplier confirmation.'); const response = action === 'confirm' ? 'Accepted' : action === 'decline' ? 'Rejected' : 'Clarification Requested'; const reason = required(input.remarks, 'Supplier response'), confirmationId = `confirmation-${r.id}`, oldConfirmation = records.find(x => x.id === confirmationId && x.kind === 'supplierConfirmation'), confirmationData = { status: response, poId: r.id, supplierId: r.supplierId, response, reason, confirmedDeliveryDate: action === 'confirm' ? dateKey(input.deliveryDate) : r.deliveryDate, respondedBy: ctx.uid, respondedAt: now, links: [...linksOf(r), r.id] }
           if (action === 'confirm') {
             const stockSupplier = supplier(r.supplierId), catalog = [...(stockSupplier.offeredItems || [])]
@@ -628,7 +634,10 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       } else demand(false, 'This action is not allowed for the record.')
     }
     demand(result, 'No action was performed.')
-    const staffContexts = await Promise.all(docs(staffSnap).filter(u => u.id !== ctx.uid).map(u => loadUserContext(u.id)))
+    // Notification recipients are best-effort. A legacy or deactivated staff
+    // account must never turn a completed supply action into a server error.
+    const staffResults = await Promise.allSettled(docs(staffSnap).filter(u => u.id !== ctx.uid).map(u => loadUserContext(u.id)))
+    const staffContexts = staffResults.filter(result => result.status === 'fulfilled').map(result => result.value)
     for (const [ref, value, merge] of writes) {
       tx.set(ref, { ...value, updatedAt: now }, { merge })
       const previous = records.find(r => r.id === ref.id), supplierCatalog = ref.parent.id === 'suppliers', changed = { ...previous, ...value }

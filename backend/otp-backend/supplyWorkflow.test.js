@@ -176,6 +176,15 @@ test('A legacy purchase order without links can still be confirmed by its suppli
   assert.deepEqual(f.read('confirmation-legacy-po').links, ['legacy-po'])
 })
 
+test('A legacy purchase order without its Procurement parent can still be approved by Finance', async () => {
+  const f = fixture()
+  const budget = await f.create('finance', 'budget', { category: 'Legacy inventory', total: 100 })
+  f.seed('supplyRecords', 'legacy-finance-po', { id: 'legacy-finance-po', kind: 'po', mode: 'Online', branchId: 'clinic', supplierId: 'vendor', status: 'For Finance Approval', department: 'Inventory', total: 5000, requestedAmount: 5000, lines: [{ itemId: 'item', name: 'Gloves', quantity: 10 }] })
+  await f.act('finance', 'legacy-finance-po', 'approve', { budgetId: budget, approvedAmount: 50, remarks: 'Approved legacy order' })
+  assert.equal(f.read('legacy-finance-po').status, 'Sent to Supplier')
+  assert.equal(f.read(budget).committed, 5000)
+})
+
 test('Invoice corrections cannot bypass matching or overwrite an approved invoice', async () => {
   const f = fixture()
   f.seed('supplyRecords', 'po', { id: 'po', kind: 'po', mode: 'Online', branchId: 'clinic', supplierId: 'vendor', status: 'Delivered' })
