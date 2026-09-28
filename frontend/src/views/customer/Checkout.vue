@@ -224,12 +224,6 @@ const PENDING_PAYMONGO_KEY = 'customer_checkout_pending_paymongo'
 
 const delivery = ref({
   fullName: '',
-  address: '',
-  addressCity: '',
-  addressBarangay: '',
-  addressPostalCode: '',
-  addressLat: '',
-  addressLng: '',
   phone: '',
 })
 const deliveryPhoneError = ref('')
@@ -609,7 +603,6 @@ const startPayMongoCheckout = async () => {
       fulfillmentType: 'pickup',
       pickupBranchId: pickupBranch?.id || '',
       pickupBranchName: pickupBranch?.name || '',
-      address: '',
     }
     const { session, referenceNumber } = await createPayMongoCheckoutSession()
     savePendingPayMongoState({
@@ -634,14 +627,6 @@ const startPayMongoCheckout = async () => {
     saving.value = false
   }
 }
-
-watch(
-  () => [delivery.value.addressLat, delivery.value.addressLng],
-  async () => {
-    await nextTick()
-    await initDeliveryMap()
-  }
-)
 
 const finalizeSuccessfulOrder = async (pending) => {
   await workflowApi('/customer/orders/record-payment', { checkoutSessionId: pending.checkoutSessionId })
@@ -716,16 +701,8 @@ const prefillDeliveryInfo = async (user) => {
       const data = userSnap.data() || {}
       const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim()
       if (!delivery.value.fullName && fullName) delivery.value.fullName = fullName
-      if (!delivery.value.address && data.address) delivery.value.address = String(data.address || '')
-      if (!delivery.value.addressCity && data.addressCity) delivery.value.addressCity = String(data.addressCity || '')
-      if (!delivery.value.addressBarangay && data.addressBarangay) delivery.value.addressBarangay = String(data.addressBarangay || '')
-      if (!delivery.value.addressPostalCode && data.addressPostalCode) delivery.value.addressPostalCode = String(data.addressPostalCode || '')
-      if (!delivery.value.addressLat && data.addressLat) delivery.value.addressLat = String(data.addressLat || '')
-      if (!delivery.value.addressLng && data.addressLng) delivery.value.addressLng = String(data.addressLng || '')
       if (!delivery.value.phone && data.contactNumber) delivery.value.phone = normalizePhilippineMobile(data.contactNumber)
     }
-    await nextTick()
-    await initDeliveryMap()
   } catch (error) {
     console.error(error)
   }

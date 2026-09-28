@@ -7,7 +7,6 @@ import { createUserWithEmailAndPassword, deleteUser, signOut } from 'firebase/au
 import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
-import LocationPicker from '@/components/common/LocationPicker.vue'
 import Terms from '@/components/common/Terms.vue'
 import PrivacyPolicy from '@/components/common/PrivacyPolicy.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
@@ -97,9 +96,6 @@ const isCustomerFormComplete = computed(() => {
     PASSWORD_REGEX.test(String(password.value || '')) &&
     String(password.value || '') === String(confirmPassword.value || '') &&
     phoneIsValid &&
-    String(address.value || '').trim() &&
-    addressLat.value &&
-    addressLng.value &&
     termsAccepted.value &&
     emailAvailability.value !== 'used' &&
     emailAvailability.value !== 'recovery' &&
@@ -1195,10 +1191,6 @@ const register = async () => {
     return
   }
 
-  if (!String(address.value || '').trim() || !addressLat.value || !addressLng.value) {
-    toast.error('Please select your address using the map.')
-    return
-  }
 
   if (!termsAccepted.value) {
     toast.error('You must agree to the terms and conditions and privacy policy')
@@ -1233,16 +1225,6 @@ const register = async () => {
       email: normalizedEmail,
       birthDate: birthDate.value ? new Date(birthDate.value) : null,
       contactNumber: `+63${String(contactNumber.value || '').trim()}`,
-      address: String(address.value || '').trim(),
-      addressBuildingNumber: addressBuildingNumberEnabled.value ? addressBuildingNumber.value.trim() : '',
-      addressStreetName: addressStreetNameEnabled.value ? addressStreetName.value.trim() : '',
-      addressStreet: String(addressStreet.value || '').trim(),
-      addressBarangay: String(addressBarangay.value || '').trim(),
-      addressCity: String(addressCity.value || '').trim(),
-      addressProvince: String(addressProvince.value || '').trim(),
-      addressPostalCode: String(addressPostalCode.value || '').trim(),
-      addressLat: addressLat.value,
-      addressLng: addressLng.value,
       role: 'Customer',
       status: 'Pending',
       createdAt: serverTimestamp(),
@@ -1601,7 +1583,7 @@ onBeforeUnmount(() => {
                 <label class="floating-label floating-label-prefix">Mobile Number</label>
               </div>
 
-              <div class="relative">
+              <div v-if="false" class="relative">
                 <label for="customer-address" class="floating-label floating-label-raised">City / Municipality</label>
                 <button
                   id="customer-address"
@@ -1619,7 +1601,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div v-if="false" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="registration-optional-field">
                   <div class="relative flex-1 min-w-0">
                     <label class="registration-field-checkbox">
@@ -1640,7 +1622,7 @@ onBeforeUnmount(() => {
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div v-if="false" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="relative">
                 <input :value="addressStreet || ''" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
                 <label class="floating-label floating-label-raised">Full Address</label>
@@ -1842,7 +1824,7 @@ onBeforeUnmount(() => {
 
 <Modal
         panelClass="bg-cream-50 border border-gold-200/80 w-[92vw] max-w-5xl shadow-2xl shadow-gold-900/15"
-        :isOpen="showLocationModal"
+        :isOpen="false"
         :title="'Select Address in Cavite'"
         @close="closeLocationModal"
         :showConfirm="false"
