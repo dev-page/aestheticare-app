@@ -70,7 +70,14 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           stack: e?.stack || '',
         },
       })
-      res.status(e.status || 500).json({ success: false, error: e.status ? e.message : 'Supply operation failed. Please try again.' })
+      res.status(e.status || 500).json({
+        success: false,
+        error: e.status ? e.message : 'Supply operation failed. Please try again.',
+        // The client already requires authentication. Keep this concise enough
+        // to diagnose an unexpected production error without exposing a stack
+        // trace or any record contents in the browser.
+        diagnostic: unexpected ? { name: e?.name || 'Error', message: e?.message || String(e), code: e?.code || '', recordId: String(req.params?.id || ''), action: String(req.body?.action || '') } : undefined,
+      })
     }
   }
   const supplierOwns = (ctx, r) => ctx.supplier && ctx.supplierIds.includes(r.supplierId)
