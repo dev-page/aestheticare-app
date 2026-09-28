@@ -11,6 +11,13 @@ import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 
 const router = useRouter()
 const route = useRoute()
+const props = defineProps({
+  customerApp: {
+    type: Boolean,
+    default: false,
+  },
+})
+const customerAppLoginPath = '/customer-app/login'
 const step = ref(1)
 const email = ref('')
 const otpDigits = ref(Array(6).fill(''))
@@ -28,7 +35,7 @@ const cancelReset = () => {
   const isSafeInternalPath = requestedReturnPath.startsWith('/') && !requestedReturnPath.startsWith('//') && requestedReturnPath !== '/forgot-password'
   // Replace the reset page instead of pushing another history entry. This
   // keeps the page that opened password recovery as the chevron destination.
-  router.replace(isSafeInternalPath ? requestedReturnPath : '/login')
+  router.replace(isSafeInternalPath ? requestedReturnPath : (props.customerApp ? customerAppLoginPath : '/login'))
 }
 
 const PASSWORD_MIN_LENGTH = 8
@@ -192,7 +199,7 @@ const resetPassword = async () => {
     clearOtpInputs()
     generatedOtp.value = ''
     setTimeout(() => {
-      router.push('/login?reset=success')
+      router.push(`${props.customerApp ? customerAppLoginPath : '/login'}?reset=success`)
     }, 2000)
   } catch (err) {
     console.error(err)

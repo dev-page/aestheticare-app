@@ -13,8 +13,15 @@ import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import axios from 'axios'
 
 const router = useRouter()
+const props = defineProps({
+  customerApp: {
+    type: Boolean,
+    default: false,
+  },
+})
+const customerAppLoginPath = '/customer-app/login'
 const goToRegisterChooser = async () => {
-  await router.replace({ name: 'register' })
+  await router.replace(props.customerApp ? customerAppLoginPath : { name: 'register' })
 }
 
 const firstName = ref('')
@@ -1341,7 +1348,7 @@ const verifyOtp = async () => {
     resetOtpState()
 
     setTimeout(() => {
-      router.push('/login')
+      router.push(props.customerApp ? customerAppLoginPath : '/login')
     }, 3000)
   } catch (err) {
     console.error(err)
@@ -1420,7 +1427,7 @@ onBeforeUnmount(() => {
                   'text-gold-700': emailAvailability === 'resume' || emailAvailability === 'recovery',
                 'text-amber-700': emailAvailability === 'error' || emailAvailability === 'invalid'
                 }">{{ emailAvailabilityMessage }}</p>
-                <button v-if="recoveryLoginAvailable" type="button" class="mt-2 inline-flex items-center rounded-lg bg-gold-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-gold-800" @click="router.push('/login')">Sign in to recover</button>
+                <button v-if="recoveryLoginAvailable" type="button" class="mt-2 inline-flex items-center rounded-lg bg-gold-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-gold-800" @click="router.push(props.customerApp ? customerAppLoginPath : '/login')">Sign in to recover</button>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1739,7 +1746,7 @@ onBeforeUnmount(() => {
             </button>
 
             <div class="text-center text-sm">
-              <router-link to="/login" class="text-gold-700 hover:text-gold-800 font-montserrat">
+              <router-link :to="props.customerApp ? customerAppLoginPath : '/login'" class="text-gold-700 hover:text-gold-800 font-montserrat">
                 Already have an account?
                 <span class="underline underline-offset-4">Sign in here</span>
               </router-link>

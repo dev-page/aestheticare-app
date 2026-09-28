@@ -68,6 +68,9 @@ const routes = [
     ? [{ path: "/", redirect: "/login" }]
     : [{ path: "/", name: "home", component: () => import("@/views/public/Home.vue") }]),
   { path: "/login", name: "login", component: () => import("@/views/public/Login.vue"), meta: { guestOnly: true } },
+  { path: "/customer-app/login", name: "customer-app-login", component: () => import("@/views/customer-app/CustomerLogin.vue"), meta: { guestOnly: true } },
+  { path: "/customer-app/register", name: "customer-app-register", component: () => import("@/views/customer-app/CustomerRegister.vue"), meta: { guestOnly: true } },
+  { path: "/customer-app/forgot-password", name: "customer-app-forgot-password", component: () => import("@/views/customer-app/CustomerForgotPass.vue"), meta: { guestOnly: true } },
   { path: "/activate-account", name: "activate-account", component: () => import("@/views/public/ActivateAccount.vue") },
   { path: "/register", name: "register", component: () => import("@/views/public/Register.vue") },
   { path: "/forgot-password", name: "forgot-password", component: () => import("@/views/public/ForgotPassword.vue") },

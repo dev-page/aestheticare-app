@@ -17,6 +17,12 @@ import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const router = useRouter()
 const route = useRoute()
+const props = defineProps({
+  customerApp: {
+    type: Boolean,
+    default: false,
+  },
+})
 
 const email = ref('')
 const password = ref('')
@@ -79,6 +85,10 @@ const roleRoutes = {
   Supplier: "/supplier/supplies",
   Customer: "/customer/home"
 }
+
+const customerAppLoginPath = '/customer-app/login'
+const customerAppRegisterPath = '/customer-app/register'
+const customerAppForgotPasswordPath = '/customer-app/forgot-password'
 
 const normalizeRoleKey = (value) => {
   const compact = String(value || '')
@@ -265,6 +275,13 @@ const handleLogin = async () => {
       if (userSnap.exists()) {
         const userData = userSnap.data()
 
+        if (props.customerApp && normalizeRoleKey(userData.role || userData.customRoleName || userData.userType) !== 'Customer') {
+          await signOut(auth)
+          toast.error('This sign-in page is for customer accounts only.')
+          isSubmitting.value = false
+          return
+        }
+
         const accountStatus = String(userData.status || '').trim().toLowerCase()
         const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated', 'rejected'].includes(accountStatus)
         if (accountClosed) {
@@ -424,7 +441,10 @@ onBeforeUnmount(() => {
             backdrop-blur-md border-b border-gold-200/70 shadow-[0_6px_18px_rgba(54,34,22,0.08)]">
       <div class="relative max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
 
-      <router-link to="/" class="flex items-center gap-2 text-charcoal-700 hover:text-gold-700 transition-colors rounded-md px-2 py-1 hover:bg-gold-100/70">
+      <div v-if="props.customerApp" class="flex h-10 w-10 items-center justify-center rounded-full border border-gold-200 bg-white/90 p-1 shadow-sm" title="AesthetiCare">
+        <img src="/icons/AesthetiCareIcon.png" alt="AesthetiCare" class="h-8 w-8 object-contain" />
+      </div>
+      <router-link v-else to="/" class="flex items-center gap-2 text-charcoal-700 hover:text-gold-700 transition-colors rounded-md px-2 py-1 hover:bg-gold-100/70">
         <svg class="hidden lg:block w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M15 19l-7-7 7-7"
@@ -571,7 +591,7 @@ onBeforeUnmount(() => {
                 <input type="checkbox" v-model="isRememberMe" class="accent-gold-700" />
                 Remember me
               </label>
-              <router-link :to="{ path: '/forgot-password', query: { returnTo: '/login' } }" class="text-gold-700 hover:underline text-xs">Forgot password?</router-link>
+              <router-link :to="{ path: props.customerApp ? customerAppForgotPasswordPath : '/forgot-password', query: { returnTo: props.customerApp ? customerAppLoginPath : '/login' } }" class="text-gold-700 hover:underline text-xs">Forgot password?</router-link>
             </div>
             <button type="button" class="text-left text-xs text-gold-700 hover:underline" @click="resendActivationEmail">
               Resend activation email
@@ -600,7 +620,7 @@ onBeforeUnmount(() => {
 
             <div class="text-center text-sm">
               <router-link
-                to="/register"
+                :to="props.customerApp ? customerAppRegisterPath : '/register'"
                 class="text-gold-700 hover:text-gold-800 font-montserrat"
               >
                 Don't have an account?
