@@ -55,18 +55,18 @@
     </template>
     <template #body>
       <div v-if="selectedNotification" :class="isCustomerNotificationTheme ? 'employee-notification-detail employee-notification-detail-customer' : 'employee-notification-detail employee-notification-detail-staff'">
-        <div>
+        <section class="employee-notification-field">
           <p class="employee-notification-modal-label">Title</p>
           <p class="employee-notification-modal-text mt-1">{{ selectedNotification.title || 'Notification' }}</p>
-        </div>
-        <div>
+        </section>
+        <section class="employee-notification-field">
           <p class="employee-notification-modal-label">Description</p>
           <p class="employee-notification-modal-text mt-1 whitespace-pre-line">{{ selectedNotification.message || '-' }}</p>
-        </div>
-        <div>
+        </section>
+        <section class="employee-notification-field employee-notification-field-date">
           <p class="employee-notification-modal-label">Date</p>
           <p class="employee-notification-modal-text mt-1">{{ selectedNotification.createdLabel }}</p>
-        </div>
+        </section>
       </div>
     </template>
   </Modal>
@@ -569,6 +569,62 @@ onUnmounted(() => {
 .employee-notification-detail-staff .employee-notification-modal-label {
   color: #d9b99c;
 }
+
+/* Modal teleports to body, outside this component's scoped-style boundary.
+   These global rules keep notification details opaque and readable for every
+   portal theme. */
+:global(.employee-notification-modal-panel) {
+  width: min(92vw, 36rem) !important;
+  max-width: 36rem !important;
+  overflow: hidden;
+  border-radius: 1.25rem !important;
+  box-shadow: 0 24px 64px rgba(25, 13, 7, .34) !important;
+}
+
+:global(.employee-notification-modal-panel > div:first-child) {
+  min-height: 4.5rem;
+  padding: 1.1rem 1.25rem !important;
+}
+
+:global(.employee-notification-modal-panel > div:first-child button) {
+  border-radius: .7rem;
+  padding: .35rem;
+}
+
+:global(.employee-notification-modal-panel-customer),
+:global(.employee-notification-modal-panel-customer > div:first-child),
+:global(.employee-notification-modal-body-customer) {
+  border-color: #e6c196 !important;
+  background: #fff8ed !important;
+  color: #4b3021 !important;
+}
+
+:global(.employee-notification-modal-panel-customer > div:first-child button) {
+  color: #7c563e !important;
+}
+
+:global(.employee-notification-modal-panel-staff),
+:global(.employee-notification-modal-panel-staff > div:first-child),
+:global(.employee-notification-modal-body-staff) {
+  border-color: rgba(166, 106, 44, .72) !important;
+  background: #26160f !important;
+  color: #f8eee5 !important;
+}
+
+:global(.employee-notification-modal-panel-staff > div:first-child button) {
+  color: #e7c5a8 !important;
+}
+
+:global(.employee-notification-modal-body) {
+  padding: 1.25rem !important;
+}
+
+.employee-notification-detail { gap: .75rem; }
+.employee-notification-field { border: 1px solid rgba(181, 127, 92, .28); border-radius: .9rem; padding: .9rem 1rem; }
+.employee-notification-field-date { width: fit-content; min-width: 12rem; }
+.employee-notification-modal-text { margin-bottom: 0; line-height: 1.55; }
+.employee-notification-detail-customer .employee-notification-field { background: #fffdf8; }
+.employee-notification-detail-staff .employee-notification-field { border-color: rgba(166, 106, 44, .45); background: #1c110c; }
 
 .employee-topbar-btn {
   height: 40px;
