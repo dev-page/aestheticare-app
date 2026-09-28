@@ -54,6 +54,8 @@ for (const mode of ['Online']) test(`${mode}: catalog-priced request to funded P
   await f.act('competitor', po, 'confirm', { remarks: 'Wrong supplier', deliveryDate: date }, 403)
   await f.act(mode === 'Online' ? 'supplier' : 'procurement', po, 'confirm', { remarks: 'Confirmed', deliveryDate: date })
   assert.equal(f.read(`confirmation-${po}`).status, 'Accepted')
+  await f.act('supplier', po, 'ship', { shippedDate: date, trackingNumber: 'DISPATCH-1' })
+  assert.equal(f.read(po).status, 'Shipped')
   await f.act('logistics', po, 'claimOrder')
   assert.equal(f.read(po).status, 'Claimed by Logistics')
   const first = await f.create('logistics', 'receiving', { poId: po, reference: 'DR1', deliveryDate: date, lines: [{ itemId: 'item', delivered: 65, accepted: 60, rejected: 5, condition: 'Good', reason: 'Five damaged boxes' }] })
