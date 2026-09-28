@@ -359,7 +359,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           }
           break
         }
-        case 'budget': { allow(ctx, 'finance:payables:approve'); const category = required(input.category, 'Category'), knownCategories = new Set([...items.map(item => item.category), ...records.filter(record => ['budget', 'budgetRequest'].includes(record.kind)).map(record => record.category), ...suppliers.flatMap(supplier => (supplier.offeredItems || []).map(item => item.category || item.categoryGroup || item.customCategory))].map(value => String(value || '').trim()).filter(Boolean)); demand(knownCategories.size === 0 || knownCategories.has(category), 'Choose a budget category from the approved catalog categories.', 400); result = create('budget', { status: 'Active', department: 'Inventory', category, period: input.period ? String(input.period).slice(0, 7) : '', notes: String(input.notes || '').slice(0, 4000), total: money(input.total), committed: 0, spent: 0 }); break }
+        case 'budget': { allow(ctx, 'finance:payables:approve'); const category = required(input.category, 'Purpose'); result = create('budget', { status: 'Active', department: 'Inventory', category, period: input.period ? String(input.period).slice(0, 7) : '', notes: String(input.notes || '').slice(0, 4000), total: money(input.total), committed: 0, spent: 0 }); break }
         case 'rfq': {
           demand(false, 'RFQs are no longer used. Procurement sends the catalog-priced request directly to Finance.', 410)
           allow(ctx, 'procurement:create'); const p = get(input.procurementId, 'procurement'); demand(['Received', 'Verified'].includes(p.status) && !p.rfqId, 'This procurement already has an active sourcing process.')
@@ -501,7 +501,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         else { allow(ctx, 'finance:payables:approve'); const ownerSelfApproval = ctx.roleKey === 'Owner' && r.createdBy === ctx.uid; demand(r.createdBy !== ctx.uid || ownerSelfApproval, 'Finance approval must be performed by another user.'); demand(r.status === 'Submitted', 'Budget request is not awaiting a decision.')
           if (action === 'approve') {
             demand((r.quotationId || r.directSupplierCatalog || r.directSupplierQuote) && Array.isArray(r.lines) && r.lines.length, 'Funding requests must include Procurement’s verified supplier catalog terms.', 400)
-            const budget = get(input.budgetId, 'budget'); demand(budget.department === r.department && budget.category === r.category, 'Budget department/category must match the request.')
+            const budget = get(input.budgetId, 'budget'); demand(budget.department === r.department, 'Budget department must match the request.')
             const approvedAmount = money(input.approvedAmount); demand(approvedAmount >= r.requestedAmount && approvedAmount <= budget.total - budget.committed - budget.spent, 'Insufficient available budget, or approved amount is below the quotation.')
             set(budget, { committed: budget.committed + approvedAmount })
             const remarks = required(input.remarks, 'Approval remarks')
@@ -518,20 +518,21 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           demand(r.createdBy !== ctx.uid || ownerSelfApproval, 'Finance approval must be performed by another user.')
           if (action === 'approve') {
             const budget = get(input.budgetId, 'budget')
-            demand(budget.department === r.department && budget.category === r.category, 'Budget department/category must match the purchase order.')
+            demand(budget.department === r.department, 'Budget department must match the purchase order.')
             const approvedAmount = money(input.approvedAmount)
             demand(approvedAmount >= r.total && approvedAmount <= budget.total - budget.committed - budget.spent, 'Insufficient available budget, or approved amount is below the purchase order.')
             const remarks = required(input.remarks, 'Approval remarks')
             set(budget, { committed: budget.committed + approvedAmount })
             const approval = create('financeApproval', { status: 'Approved', poId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...linksOf(r), r.id] }, `approval-${r.id}`)
             const allocation = create('budgetAllocation', { status: 'Committed', poId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...linksOf(approval), approval.id] }, `allocation-${r.id}`)
-            result = set(r, { status: 'Approved', budgetId: budget.id, committedAmount: approvedAmount, approvedAmount, approvedBy: ctx.uid, approvedAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
+            result = set(r, { status: 'Sent to Supplier', budgetId: budget.id, committedAmount: approvedAmount, approvedAmount, approvedBy: ctx.uid, approvedAt: now, sentBy: ctx.uid, sentAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
+            set(get(r.procurementId, 'procurement'), { status: 'Ordered' })
           } else {
             const remarks = required(input.remarks, 'Decision reason')
             result = set(r, { status: action === 'reject' ? 'Rejected' : 'Returned to Procurement', remarks, reviewedBy: ctx.uid, reviewedAt: now })
             set(get(r.procurementId, 'procurement'), { status: action === 'reject' ? 'Rejected by Finance' : 'Received', financeDecision: action, financeRemarks: remarks })
           }
-        } else if (action === 'issue') { allow(ctx, 'finance:payables:approve'); demand(r.status === 'Approved', 'Finance approval is required before sending the PO to the supplier.'); if (r.mode === 'Manual') evidence(r, 'Upload the manual PO first.'); result = set(r, { status: 'Sent to Supplier', sentBy: ctx.uid, sentAt: now }); set(get(r.procurementId, 'procurement'), { status: 'Ordered' }) }
+        } else if (action === 'issue') { allow(ctx, 'finance:payables:approve'); demand(['Approved', 'Sent to Supplier'].includes(r.status), 'Finance approval is required before sending the PO to the supplier.'); if (r.status === 'Approved') { if (r.mode === 'Manual') evidence(r, 'Upload the manual PO first.'); result = set(r, { status: 'Sent to Supplier', sentBy: ctx.uid, sentAt: now }); set(get(r.procurementId, 'procurement'), { status: 'Ordered' }) } else result = r }
         else if (['confirm', 'decline', 'clarify'].includes(action)) { manualOrSupplier(r, 'procurement:review'); demand(r.status === 'Sent to Supplier', 'PO is not awaiting supplier confirmation.'); const response = action === 'confirm' ? 'Accepted' : action === 'decline' ? 'Rejected' : 'Clarification Requested'; const reason = required(input.remarks, 'Supplier response'), confirmationId = `confirmation-${r.id}`, oldConfirmation = records.find(x => x.id === confirmationId && x.kind === 'supplierConfirmation'), confirmationData = { status: response, poId: r.id, supplierId: r.supplierId, response, reason, confirmedDeliveryDate: action === 'confirm' ? dateKey(input.deliveryDate) : r.deliveryDate, respondedBy: ctx.uid, respondedAt: now, links: [...linksOf(r), r.id] }
           if (action === 'confirm') {
             const stockSupplier = supplier(r.supplierId), catalog = [...(stockSupplier.offeredItems || [])]
