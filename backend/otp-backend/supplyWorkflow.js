@@ -42,7 +42,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   }
   const canRead = (ctx, r) => ctx.supplier ? supplierCanRead(r, ctx.supplierIds) : hasPermission(ctx, 'reports:view') || (permissionsByKind[r.kind] || []).some(p => hasPermission(ctx, p))
   const ensureRead = async (ctx, r) => { demand(r && canRead(ctx, r), 'Record not available to this account.', 403); if (!ctx.supplier) await branchAccess(ctx, r.branchId) }
-  const wrap = handler => async (req, res) => { try { const ctx = await identity(req); ctx.auditContext = { ipAddress: String(req.ip || req.socket?.remoteAddress || '').slice(0, 128), device: String(req.get?.('user-agent') || req.headers?.['user-agent'] || '').slice(0, 500) }; await handler(req, res, ctx) } catch (e) { res.status(e.status || 500).json({ success: false, error: e.status ? e.message : 'Supply operation failed. Please try again.' }) } }
+  const wrap = handler => async (req, res) => { try { const ctx = await identity(req); ctx.auditContext = { ipAddress: String(req.ip || req.socket?.remoteAddress || '').slice(0, 128), device: String(req.get?.('user-agent') || req.headers?.['user-agent'] || '').slice(0, 500) }; await handler(req, res, ctx) } catch (e) { if (!e.status) console.error('Unhandled supply workflow error', { message: e?.message, stack: e?.stack, path: req.originalUrl || req.url || '' }); res.status(e.status || 500).json({ success: false, error: e.status ? e.message : 'Supply operation failed. Please try again.' }) } }
   const supplierOwns = (ctx, r) => ctx.supplier && ctx.supplierIds.includes(r.supplierId)
   const allow = (ctx, permission) => demand(!ctx.supplier && hasPermission(ctx, permission), 'You do not have permission for this action.', 403)
   const catalogItem = raw => {
@@ -307,6 +307,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const evidence = (r, message) => demand(documents.some(d => d.recordId === r.id), message || 'Upload supporting documents before continuing.')
     const supplier = id => { const s = suppliers.find(s => s.id === id); demand(s && s.status === 'Active', 'Select an active supplier assigned to this branch.'); return s }
     const supplierCanProvideLine = (s, line) => (Array.isArray(s.offeredItems) ? s.offeredItems : []).some(product => {
+      if (!product || typeof product !== 'object' || !line || typeof line !== 'object') return false
       const catalogMatch = s.id === line.supplierId && String(product.id || '') === String(line.supplierCatalogItemId || '')
       const nameMatch = String(product.name || product.itemName || product.productName || '').trim().toLowerCase() === String(line.name || '').trim().toLowerCase()
       const productCategory = String(product.category || product.categoryGroup || product.customCategory || '').trim().toLowerCase()
@@ -314,6 +315,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       return catalogMatch || nameMatch && categoryMatch
     })
     const supplierCatalogIndexForLine = (items, line) => items.findIndex(product => {
+      if (!product || typeof product !== 'object' || !line || typeof line !== 'object') return false
       const catalogMatch = String(product.id || '') === String(line.supplierCatalogItemId || '')
       const nameMatch = String(product.name || product.itemName || product.productName || '').trim().toLowerCase() === String(line.name || '').trim().toLowerCase()
       const productCategory = String(product.category || product.categoryGroup || product.customCategory || '').trim().toLowerCase()
