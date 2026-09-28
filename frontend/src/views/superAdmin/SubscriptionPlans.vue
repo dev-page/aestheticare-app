@@ -253,7 +253,7 @@ const defaultPlans = () => [
     description: 'Essential tools for daily clinic operations.',
     trialDays: 0,
     isActive: true,
-    features: ['Scheduling & billing', 'Staff management', 'Reports'],
+    features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
   },
   {
     id: 'premium',
@@ -264,7 +264,7 @@ const defaultPlans = () => [
     description: 'Advanced features and priority support.',
     trialDays: 0,
     isActive: true,
-    features: ['Everything in Basic', 'Advanced analytics', 'Priority support'],
+    features: ['Everything in Basic', 'Multi-branch operations', 'HR, attendance & payroll', 'Advanced reports & priority support'],
   },
 ]
 

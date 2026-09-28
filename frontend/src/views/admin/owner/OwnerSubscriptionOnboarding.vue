@@ -133,7 +133,7 @@ const defaultPlans = () => [
     price: 999,
     billingCycle: 'month',
     description: 'Essential features for daily clinic operations.',
-    features: ['Scheduling & billing', 'Staff management', 'Manual payroll & payslips', 'Single-branch operations'],
+    features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
     isActive: true,
   },
   {
@@ -142,7 +142,7 @@ const defaultPlans = () => [
     price: 2499,
     billingCycle: 'month',
     description: 'Advanced features and priority support for growing clinics.',
-    features: ['Everything in Basic', 'Multi-branch operations', 'Advanced reports & analytics', 'Priority support'],
+    features: ['Everything in Basic', 'Multi-branch operations', 'HR, attendance & payroll', 'Advanced reports & priority support'],
     isActive: true,
   },
 ]
