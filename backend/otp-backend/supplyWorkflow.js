@@ -556,8 +556,11 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         } else if (action === 'issue') { allow(ctx, 'finance:payables:approve'); demand(['Approved', 'Sent to Supplier'].includes(r.status), 'Finance approval is required before sending the PO to the supplier.'); if (r.status === 'Approved') { if (r.mode === 'Manual') evidence(r, 'Upload the manual PO first.'); result = set(r, { status: 'Sent to Supplier', sentBy: ctx.uid, sentAt: now }); const procurement = linked(r.procurementId, 'procurement'); if (procurement) set(procurement, { status: 'Ordered' }) } else result = r }
         else if (['confirm', 'decline', 'clarify'].includes(action)) { manualOrSupplier(r, 'procurement:review'); demand(r.status === 'Sent to Supplier', 'PO is not awaiting supplier confirmation.'); const response = action === 'confirm' ? 'Accepted' : action === 'decline' ? 'Rejected' : 'Clarification Requested'; const reason = required(input.remarks, 'Supplier response'), confirmationId = `confirmation-${r.id}`, oldConfirmation = records.find(x => x.id === confirmationId && x.kind === 'supplierConfirmation'), confirmationData = { status: response, poId: r.id, supplierId: r.supplierId, response, reason, confirmedDeliveryDate: action === 'confirm' ? dateKey(input.deliveryDate) : r.deliveryDate, respondedBy: ctx.uid, respondedAt: now, links: [...linksOf(r), r.id] }
           if (action === 'confirm') {
-            const stockSupplier = supplier(r.supplierId), catalog = [...(stockSupplier.offeredItems || [])]
-            for (const line of r.lines) {
+            const stockSupplier = supplier(r.supplierId), catalog = Array.isArray(stockSupplier.offeredItems) ? [...stockSupplier.offeredItems] : []
+            const lines = Array.isArray(r.lines) ? r.lines : []
+            demand(lines.length, 'This purchase order has no order lines to confirm.', 409)
+            for (const line of lines) {
+              demand(line && typeof line === 'object', 'This purchase order contains an invalid order line.', 409)
               const index = supplierCatalogIndexForLine(catalog, line); demand(index >= 0, `The supplier catalog no longer contains ${line.name}.`)
               const product = catalog[index], onHand = quantity(product.quantity, true), reserved = quantity(product.reservedQuantity || 0, true)
               demand(onHand - reserved >= line.quantity, `Insufficient available supplier stock for ${line.name}.`)
