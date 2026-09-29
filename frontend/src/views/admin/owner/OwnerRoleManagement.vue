@@ -664,7 +664,7 @@ const ownerOnlyPermissionKeys = new Set(
 const permissionSuggestionRules = [
   {
     match: ['reception', 'front desk', 'frontdesk', 'receptionist', 'desk'],
-    permissions: ['clients:view', 'appointments:view', 'appointments:review', 'payments:view', 'inbox:view', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
+    permissions: ['clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'payments:view', 'payments:create', 'inbox:view', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['practitioner', 'doctor', 'dentist', 'nurse', 'therapist', 'clinician'],
@@ -703,7 +703,7 @@ const builtInRoleTemplates = [
   {
     key: 'receptionist',
     name: 'Receptionist',
-    description: 'Handles customer booking requests, appointment records, transaction history, inbox messages, and notifications.',
+    description: 'Handles walk-ins, customer booking requests, appointment records, payments, inbox messages, and notifications.',
     color: '#c58b5c',
     suggestion: 'reception',
   },

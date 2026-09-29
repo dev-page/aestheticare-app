@@ -67,6 +67,7 @@ export const permissionGroups = [
         description: 'Client records and profiles.',
         permissions: [
           { key: 'clients:view', label: 'View Clients', description: 'Access client records and profiles.', icon: 'mdi:account-heart-outline' },
+          { key: 'clients:create', label: 'Register Walk-In Clients', description: 'Create client records during a walk-in booking.', icon: 'mdi:account-plus-outline' },
           { key: 'clients:update', label: 'Update Clients', description: 'Edit client records and profiles.', icon: 'mdi:account-edit-outline' },
           { key: 'clients:disable', label: 'Archive Clients', description: 'Archive client records.', icon: 'mdi:account-off-outline' },
         ],
@@ -77,6 +78,7 @@ export const permissionGroups = [
         description: 'Scheduling, requests, and online consultations.',
         permissions: [
           { key: 'appointments:view', label: 'View Appointments', description: 'See appointment listings and schedules.', icon: 'mdi:calendar-month-outline' },
+          { key: 'appointments:create', label: 'Create Walk-In Appointments', description: 'Book appointments for clients at the clinic.', icon: 'mdi:calendar-plus-outline' },
           { key: 'appointments:update', label: 'Update Appointments', description: 'Record permitted practitioner updates, follow-ups, and appointment changes.', icon: 'mdi:calendar-edit-outline' },
           { key: 'appointments:review', label: 'Review Appointment Requests', description: 'Approve or reject appointment requests.', icon: 'mdi:calendar-check-outline' },
           { key: 'consultations:view', label: 'View Online Consultations', description: 'Access online consultation screens.', icon: 'mdi:video-outline' },
@@ -89,6 +91,7 @@ export const permissionGroups = [
         description: 'Customer transaction history and messaging access.',
         permissions: [
           { key: 'payments:view', label: 'View Transactions', description: 'Open transaction history and sales records.', icon: 'mdi:cash-multiple' },
+          { key: 'payments:create', label: 'Record Walk-In Payments', description: 'Record payment for a walk-in booking or counter transaction.', icon: 'mdi:cash-register' },
           { key: 'inbox:view', label: 'View Inbox', description: 'Access branch inbox and messages.', icon: 'mdi:inbox-outline' },
         ],
       },
