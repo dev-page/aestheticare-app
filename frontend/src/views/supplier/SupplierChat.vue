@@ -34,8 +34,8 @@
 
         <template v-else>
           <label v-if="suppliers.length > 1" class="chat-account-field">
-            <span>Supplier account</span>
-            <select v-model="supplierId" aria-label="Choose supplier account">
+            <span>Clinic</span>
+            <select v-model="supplierId" aria-label="Choose clinic">
               <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
                 {{ supplier.clinicName || 'Linked clinic' }}
               </option>
