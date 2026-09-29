@@ -304,8 +304,22 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && (request.auth.uid == userId
           || isSuperadmin()
-          || resource.data.recurring == true
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)));
+          // A newly hired employee has no schedule document yet. Authorize
+          // the HR schedule manager from the employee's parent profile, not
+          // from fields that do not exist on that first schedule document.
+          || (exists(/databases/$(database)/documents/users/$(userId))
+            && get(/databases/$(database)/documents/users/$(userId)).data.branchId != null
+            && canAccessBranch(get(/databases/$(database)/documents/users/$(userId)).data.branchId)
+            && (hasPermission('hr:view') || hasPermission('hr:update'))
+            && planAllowsWorkforceManagement(get(/databases/$(database)/documents/users/$(userId)).data.branchId))
+          // Basic-plan booking availability only needs the employee's
+          // recurring schedule; it does not grant access to HR scheduling.
+          || (scheduleId == 'recurring'
+            && exists(/databases/$(database)/documents/users/$(userId))
+            && get(/databases/$(database)/documents/users/$(userId)).data.branchId != null
+            && canAccessBranch(get(/databases/$(database)/documents/users/$(userId)).data.branchId)
+            && hasPermission('appointments:review')
+            && planAllowsBookingAvailability(get(/databases/$(database)/documents/users/$(userId)).data.branchId)));
       allow create: if isSignedIn()
         && request.resource.data.branchId != null
         && canAccessBranch(request.resource.data.branchId)
