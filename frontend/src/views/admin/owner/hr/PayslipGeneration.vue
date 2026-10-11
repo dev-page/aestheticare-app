@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 4, sections: 2 }" class="flex-1 p-4 md:p-8">
       <div class="mb-6">
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Payslip Generation</h1>
         <p class="text-slate-400 text-sm md:text-base">View the latest payslip of employees in your branch.</p>
@@ -95,6 +95,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, orderBy, where, doc, getDoc, limit } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -109,6 +111,8 @@ export default {
   name: 'PayslipGeneration',
   components: { OwnerSidebar, PageSectionSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
 
     const loading = ref(false)
@@ -185,7 +189,7 @@ export default {
       return `${baseLabel} (${suffixParts.join(', ')})`
     }
 
-    const loadStaff = async () => {
+    const loadStaff = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         staffList.value = []
         return
@@ -222,9 +226,9 @@ export default {
         selectedStaffId.value = ''
         payslip.value = null
       }
-    }
+    })
 
-    const loadPayslip = async () => {
+    const loadPayslip = trackPageLoad(async () => {
       if (!selectedStaffId.value) {
         payslip.value = null
         return
@@ -247,14 +251,14 @@ export default {
       } finally {
         loading.value = false
       }
-    }
+    })
 
     const printPayslip = () => window.print()
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
@@ -276,13 +280,14 @@ export default {
 
         await loadStaff()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
     })
 
     return {
+      pageLoading,
       loading,
       staffList,
       selectedStaffId,

@@ -1,6 +1,7 @@
 import { resolveWeekAssignments } from './employeeSchedules.js'
 
 const BLOCKING_STATUSES = new Set([
+  'checked in',
   'unpaid',
   'scheduled',
   'approved',

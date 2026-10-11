@@ -1,8 +1,8 @@
 ﻿<template>
-  <div class="orders-shell">
+  <div class="orders-shell customer-theme">
     <CustomerSidebar />
 
-    <main class="orders-main">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 7, rows: 5 }" class="orders-main">
       <div class="orders-content">
         <div class="orders-header">
           <div>
@@ -464,6 +464,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { addDoc, getDoc, getFirestore, collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -476,18 +478,18 @@ import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { storage } from '@/config/firebaseConfig'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
-import { getClinicPolicyForBranch } from '@/utils/clinicPolicies'
 
 export default {
   name: 'CustomerOrders',
   components: { CustomerSidebar, Modal, PageSectionSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const loading = ref(true)
     const search = ref('')
     const orders = ref([])
-    const policiesByBranch = ref({})
     const showModal = ref(false)
     const selectedOrder = ref(null)
     const showReceiveModal = ref(false)
@@ -534,7 +536,7 @@ export default {
 
     const getDisplayOrderId = (order) => String(order?.orderNumber || order?.referenceNumber || order?.id || '').trim()
 
-    const fetchFromBackend = async (path, options = {}) => {
+    const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
       const baseUrl = String(OTP_API_BASE || '').trim()
       if (!baseUrl) {
         throw new Error('VITE_OTP_API_BASE_URL is not set.')
@@ -548,7 +550,7 @@ export default {
         throw new Error(`Non-JSON response from ${baseUrl}`)
       }
       return response
-    }
+    })
 
     const buildAuthHeaders = async (headers = {}) => {
       const user = auth.currentUser
@@ -582,46 +584,15 @@ export default {
       return parsed.getTime()
     }
 
-    const canCancelOrder = (order) => {
-      const policy = getPolicyForOrder(order)
-      if (!policy.productCancellationPolicyEnabled || !policy.orderCancellationAllowed) return false
-      const status = String(order?.status || 'Pending').trim().toLowerCase()
-      if (!['pending', 'confirmed', 'preparing', 'packed', 'awaiting stock'].includes(status) || order.cancellationInProgress) return false
-      const createdAtMillis = getCreatedAtMillis(order)
-      if (!createdAtMillis) return false
-      const diffHours = (Date.now() - createdAtMillis) / (1000 * 60 * 60)
-      return diffHours <= Number(policy.orderCancellationWindowHours || 0)
-    }
+    const canCancelOrder = () => false
 
     const canMarkReceived = (order) => {
       const status = String(order?.status || '').trim().toLowerCase()
       return ['ready for pickup', 'received'].includes(status)
     }
 
-    const canRequestRefund = (order) => {
-      const policy = getPolicyForOrder(order)
-      if (!policy.productReturnPolicyEnabled || !policy.orderReturnsAllowed) return false
-      const status = String(order?.status || '').trim().toLowerCase()
-      const refundRequestStatus = String(order?.refundRequestStatus || '').trim().toLowerCase()
-      if (status !== 'completed') return false
-      if (order?.refundVoucherId) return false
-      if (order?.refundRequestId && refundRequestStatus !== 'rejected') return false
-      return refundRequestStatus !== 'approved' && refundRequestStatus !== 'pending'
-    }
+    const canRequestRefund = () => false
 
-    const getPolicyForOrder = (order) => {
-      const branchId = String(order?.branchId || order?.items?.find((item) => item?.branchId)?.branchId || '').trim()
-      const policy = policiesByBranch.value[branchId] || {}
-      return {
-        productCancellationPolicy: String(policy.productOrderCancellationPolicy || '').trim(),
-        productCancellationPolicyEnabled: policy.productCancellationPolicyEnabled === true,
-        orderCancellationAllowed: policy.orderCancellationAllowed === true,
-        orderCancellationWindowHours: Number(policy.orderCancellationWindowHours || 0),
-        productReturnPolicy: String(policy.productReturnPolicy || '').trim(),
-        productReturnPolicyEnabled: policy.productReturnPolicyEnabled === true,
-        orderReturnsAllowed: policy.orderReturnsAllowed === true,
-      }
-    }
 
     const handleProofFileChange = (event) => {
       const file = event?.target?.files?.[0] || null
@@ -801,7 +772,6 @@ export default {
           branchId: selectedRefundOrder.value.branchId || '',
           branchName: selectedRefundOrder.value.branchName || '',
           amount: paidAmount,
-          refundPolicySnapshot: getPolicyForOrder(selectedRefundOrder.value).productReturnPolicy,
           issueType: String(refundRequestForm.value.issueType || '').trim(),
           reason: String(refundRequestForm.value.reason || '').trim(),
           proofUrl,
@@ -949,8 +919,8 @@ export default {
       }
 
       const ordersQuery = query(collection(db, 'customerOrders'), where('customerId', '==', userId))
-      unsubscribeOrders = onSnapshot(
-        ordersQuery,
+      unsubscribeOrders = pageListener(
+        onSnapshot, ordersQuery,
         async (snapshot) => {
           orders.value = snapshot.docs
             .map((snap) => ({ id: snap.id, ...snap.data() }))
@@ -968,21 +938,6 @@ export default {
             })
             order.orderNumber = orderNumber
           }))
-          const branchIds = Array.from(new Set(orders.value.flatMap((order) => [
-            order.branchId,
-            ...(Array.isArray(order.items) ? order.items.map((item) => item?.branchId) : []),
-          ]).map((value) => String(value || '').trim()).filter(Boolean)))
-          const policyEntries = await Promise.all(branchIds.map(async (branchId) => {
-            // A historical order can belong to a clinic that is no longer
-            // public. Its optional policy copy must not prevent the customer
-            // from reading their own order history.
-            try {
-              return [branchId, await getClinicPolicyForBranch(db, branchId)]
-            } catch (_error) {
-              return [branchId, {}]
-            }
-          }))
-          policiesByBranch.value = Object.fromEntries(policyEntries)
           loading.value = false
         },
         (error) => {
@@ -1014,8 +969,8 @@ export default {
       selectedOrder.value = null
     }
 
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           orders.value = []
           loading.value = false
@@ -1023,13 +978,14 @@ export default {
         }
         await loadOrders(user.uid)
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeOrders) unsubscribeOrders()
     })
 
     return {
+      pageLoading,
       loading,
       search,
       filteredOrders,

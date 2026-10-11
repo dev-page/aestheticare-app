@@ -1,5 +1,7 @@
 <script>
-import { ref, onMounted } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { ref, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, updateDoc, doc, query, where } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { auth } from '@/config/firebaseConfig'
@@ -12,11 +14,15 @@ import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchSc
 export default {
   name: 'OwnerArchivedEmployees',
   components: { OwnerSidebar },
+  props: { embedded: { type: Boolean, default: false } },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const archivedStaff = ref([])
     const ownerBranchIds = ref([])
     const currentOwnerId = ref('')
+    let unsubscribeAuth = null
     const getRoleLabel = (staff) => String(staff?.customRoleName || staff?.role || 'Staff').trim()
 
     const chunkArray = (items, size = 10) => {
@@ -27,14 +33,14 @@ export default {
       return chunks
     }
 
-    const loadBranches = async (userId) => {
+    const loadBranches = trackPageLoad(async (userId) => {
       const scope = await loadOwnerBranchScope(db, userId)
       currentOwnerId.value = scope.ownerId || userId
       const branchDocs = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
       ownerBranchIds.value = branchDocs.map((docSnap) => docSnap.id).filter(Boolean)
-    }
+    })
 
-    const loadArchivedStaff = async () => {
+    const loadArchivedStaff = trackPageLoad(async () => {
       if (!ownerBranchIds.value.length) {
         archivedStaff.value = []
         return
@@ -55,7 +61,7 @@ export default {
 
       archivedStaff.value = results
         .sort((a, b) => (b.archivedAt?.seconds || 0) - (a.archivedAt?.seconds || 0))
-    }
+    })
 
     const unarchiveStaff = async (staff) => {
       const fullName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.email || 'Employee'
@@ -80,8 +86,8 @@ export default {
       }
     }
 
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           ownerBranchIds.value = []
           archivedStaff.value = []
@@ -91,9 +97,12 @@ export default {
         await loadBranches(user.uid)
         await loadArchivedStaff()
       })
-    })
+    }))
+
+    onUnmounted(() => unsubscribeAuth?.())
 
     return {
+      pageLoading,
       archivedStaff,
       getRoleLabel,
       unarchiveStaff
@@ -103,11 +112,11 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex flex-row owner-theme w-full" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="flex-1 p-4 md:p-8">
-      <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Archived Employees</h1>
+    <component v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" :is="embedded ? 'div' : 'main'" class="flex-1" :class="embedded ? '' : 'p-4 md:p-8'">
+      <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Archived Accounts</h1>
       <p class="text-slate-400 mb-6">Previously disabled employee accounts under your branches.</p>
 
       <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 overflow-x-auto">
@@ -147,6 +156,6 @@ export default {
           </tbody>
         </table>
       </div>
-    </main>
+    </component>
   </div>
 </template>

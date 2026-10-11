@@ -2,7 +2,7 @@
   <div class="flex owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-6 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'settings', sections: 2, fields: 4 }" class="flex-1 p-6 md:p-8">
       <div class="max-w-4xl">
         <div class="mb-8">
           <h1 class="text-3xl font-bold text-white mb-2">Module Access</h1>
@@ -62,10 +62,14 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, ref, watch } from 'vue'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { useOwnerModules } from '@/composables/useOwnerModules'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const { enabledModules, startOwnerModulesListener, saveOwnerModules, defaultModules } = useOwnerModules()
 
@@ -107,7 +111,7 @@ const saveModules = async () => {
   }
 }
 
-onMounted(async () => {
+onMounted(trackPageLoad(async () => {
   await startOwnerModulesListener()
-})
+}))
 </script>

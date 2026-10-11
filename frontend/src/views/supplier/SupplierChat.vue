@@ -2,7 +2,7 @@
   <div class="supplier-theme supplier-chat-page flex min-h-screen">
     <SupplierSidebar />
 
-    <main class="min-w-0 flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'chat', rows: 5 }" class="min-w-0 flex-1 p-4 md:p-8">
       <div class="mx-auto max-w-4xl space-y-6">
         <header class="supplier-page-header">
           <p class="supplier-eyebrow">Supplier Portal</p>
@@ -93,12 +93,16 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import './supplierTheme.css'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 import { auth } from '@/config/firebaseConfig'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const loading = ref(true)
 const sending = ref(false)
@@ -157,7 +161,7 @@ const scrollToLatest = async () => {
   thread.value?.scrollTo({ top: thread.value.scrollHeight, behavior: 'smooth' })
 }
 
-const load = async ({ showLoading = true } = {}) => {
+const load = trackPageLoad(async ({ showLoading = true } = {}) => {
   if (!supplierId.value) {
     messages.value = []
     return
@@ -174,7 +178,7 @@ const load = async ({ showLoading = true } = {}) => {
   } finally {
     if (showLoading) loading.value = false
   }
-}
+})
 
 const send = async () => {
   if (!supplierId.value || !draft.value || sending.value) return
@@ -191,7 +195,7 @@ const send = async () => {
   }
 }
 
-const loadWorkspace = async () => {
+const loadWorkspace = trackPageLoad(async () => {
   loading.value = true
   error.value = ''
   try {
@@ -206,7 +210,7 @@ const loadWorkspace = async () => {
   } finally {
     loading.value = false
   }
-}
+})
 
 onMounted(loadWorkspace)
 

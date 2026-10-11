@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'plan', cards: 3 }" class="flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Setup Plans</h1>
@@ -24,7 +24,7 @@
             :disabled="loading"
             @click="loadPlans"
           >
-            {{ loading ? 'Refreshing...' : 'Refresh' }}
+            <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
           </button>
         </div>
       </div>
@@ -226,6 +226,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { onMounted, onUnmounted, ref } from 'vue'
 import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
@@ -321,6 +323,8 @@ export default {
   name: 'SuperAdminSubscriptionPlans',
   components: { SuperAdminSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const loading = ref(false)
     const error = ref('')
     const savingId = ref('')
@@ -530,7 +534,7 @@ export default {
       if (unsubscribePlans) unsubscribePlans()
       loading.value = true
       error.value = ''
-      unsubscribePlans = onSnapshot(collection(db, 'subscriptionPlans'), (snapshot) => {
+      unsubscribePlans = pageListener(onSnapshot, collection(db, 'subscriptionPlans'), (snapshot) => {
         const dbPlans = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
         const basePlans = defaultPlans()
           .map((plan) => mergePlan(plan, dbPlans.get(plan.id) || {}))
@@ -646,6 +650,7 @@ export default {
     onUnmounted(() => unsubscribePlans?.())
 
     return {
+      pageLoading,
       loading,
       error,
       savingId,

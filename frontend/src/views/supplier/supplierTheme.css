@@ -302,3 +302,72 @@
     transform: none;
   }
 }
+
+/* Supplier pages use the same light landing-page system as every other role. */
+.supplier-theme {
+  --supplier-bg: #fff8eb;
+  --supplier-surface: rgba(255, 251, 244, .92);
+  --supplier-surface-raised: #f8e5bd;
+  --supplier-border: rgba(198, 148, 108, .34);
+  --supplier-text: #473223;
+  --supplier-muted: #795c46;
+  --supplier-accent: #2d1b13;
+  --supplier-accent-hover: #473223;
+  color: var(--supplier-text);
+  background: linear-gradient(155deg, #fff8eb, #fdf3e2 52%, #f3dfbf) !important;
+}
+
+.supplier-theme main,
+.supplier-theme main [class*="bg-white"],
+.supplier-theme main [class*="bg-[#fff"],
+.supplier-theme main [class*="bg-amber-50"],
+.supplier-theme main [class*="bg-amber-100"],
+.supplier-theme .exact-item-card,
+.supplier-theme .chat-shell {
+  color: var(--supplier-text) !important;
+  background: rgba(255, 251, 244, .92) !important;
+  border-color: var(--supplier-border) !important;
+  box-shadow: 0 16px 38px rgba(85, 51, 27, .10) !important;
+}
+
+.supplier-theme main h1,
+.supplier-theme main h2,
+.supplier-theme main h3,
+.supplier-theme main strong { color: var(--supplier-text) !important; }
+
+.supplier-theme main input:not([type="file"]),
+.supplier-theme main select,
+.supplier-theme main textarea,
+.supplier-theme .exact-left input,
+.supplier-theme .exact-left select,
+.supplier-theme .exact-left textarea,
+.supplier-theme .exact-right input,
+.supplier-theme .exact-right select,
+.supplier-theme .exact-right textarea,
+.supplier-theme .exact-price,
+.supplier-theme .profile-input,
+.supplier-theme .phone-input-shell {
+  color: var(--supplier-text) !important;
+  background: #fffdf9 !important;
+  border-color: rgba(181, 127, 92, .54) !important;
+}
+
+.supplier-theme .exact-item-header,
+.supplier-theme .chat-heading,
+.supplier-theme .chat-compose,
+.supplier-theme .exact-price b,
+.supplier-theme .exact-package,
+.supplier-theme .exact-image,
+.supplier-theme .chat-thread,
+.supplier-theme .chat-thread .theirs {
+  color: var(--supplier-text) !important;
+  background: #fdf3e2 !important;
+  border-color: var(--supplier-border) !important;
+}
+
+.supplier-theme .chat-compose button,
+.supplier-theme .exact-item-card footer button[type="submit"] {
+  background: var(--supplier-accent) !important;
+  border-color: var(--supplier-accent) !important;
+  color: #fffaf4 !important;
+}

@@ -9,7 +9,7 @@
           </span>
         </router-link>
 
-        <ul class="hidden lg:flex items-center gap-6 lg:gap-10 text-[11px] tracking-[0.2em] uppercase text-charcoal-600">
+        <ul class="hidden lg:flex items-center gap-4 xl:gap-7 text-[11px] tracking-[0.2em] uppercase text-charcoal-600">
           <li>
             <button @click="scrollToSection('features')" class="relative text-charcoal-700 uppercase hover:text-gold-700 hover:font-bold transition-all duration-300
                       before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
@@ -31,6 +31,16 @@
                       before:transition-all before:duration-300 hover:before:w-full">
               Pricing
             </router-link>
+          </li>
+          <li>
+            <button @click="scrollToSection('faq')" class="relative text-charcoal-700 uppercase hover:text-gold-700 hover:font-bold transition-all duration-300
+                      before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
+                      before:transition-all before:duration-300 hover:before:w-full">FAQ</button>
+          </li>
+          <li>
+            <button @click="scrollToSection('contact')" class="relative whitespace-nowrap text-charcoal-700 uppercase hover:text-gold-700 hover:font-bold transition-all duration-300
+                      before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
+                      before:transition-all before:duration-300 hover:before:w-full">Contact Us</button>
           </li>
           <li>
             <router-link to="/centers"
@@ -111,6 +121,8 @@
               <button @click="scrollToSection('features'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">Features</button>
               <button @click="scrollToSection('solutions'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">Solutions</button>
               <router-link to="/subscription-features" @click="closeMobileMenu" class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Pricing</router-link>
+              <button @click="scrollToSection('faq'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">FAQ</button>
+              <button @click="scrollToSection('contact'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">Contact Us</button>
               <router-link to="/centers" @click="closeMobileMenu" class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Centers</router-link>
             </div>
 
@@ -468,6 +480,49 @@
 
     <!-- CTA + Footer -->
     <section class="footer-cta-section">
+      <section id="faq-section" class="support-section max-w-7xl mx-auto px-4 sm:px-6 md:px-8 pt-8 sm:pt-10 pb-16" aria-labelledby="faq-heading">
+        <div class="text-center mb-10">
+          <p class="solutions-kicker">A little clarity</p>
+          <h2 id="faq-heading" class="solutions-title">Frequently Asked Questions</h2>
+          <p class="mt-4 text-sm text-charcoal-600">Everything you need to know to get started.</p>
+        </div>
+        <div class="faq-list">
+          <details v-for="(faq, index) in faqs" :key="faq.question" class="faq-item">
+            <summary class="faq-question">
+              <span class="faq-number" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
+              <span class="flex-1">{{ faq.question }}</span>
+              <span class="faq-toggle" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14" /><path class="faq-toggle-vertical" d="M12 5v14" /></svg></span>
+            </summary>
+            <div class="faq-answer"><p>{{ faq.answer }}</p></div>
+          </details>
+        </div>
+      </section>
+
+      <section id="contact-section" class="support-section max-w-7xl mx-auto px-4 sm:px-6 md:px-8 pb-16" aria-labelledby="contact-heading">
+        <div class="grid gap-8 lg:grid-cols-2 rounded-3xl border border-gold-300/50 bg-cream-50 p-6 sm:p-10">
+          <div>
+            <p class="solutions-kicker">We're here to help</p>
+            <h2 id="contact-heading" class="solutions-title mb-4">Contact the Admins</h2>
+            <p class="text-charcoal-600 text-sm leading-relaxed">Have a question about AesthetiCare, need help getting started, or want to share feedback? Send our platform administrators a message.</p>
+            <p class="mt-4 text-charcoal-600 text-sm leading-relaxed">For treatment advice or changes to a clinic appointment, please contact the clinic directly. Please avoid including passwords, payment details, or medical information.</p>
+          </div>
+          <form @submit.prevent="submitContact" class="contact-form space-y-4" :aria-busy="contactSending">
+            <fieldset :disabled="contactSending" class="space-y-4">
+              <div class="grid sm:grid-cols-2 gap-4">
+                <label class="block text-sm font-medium">Your name<input v-model.trim="contact.name" name="name" autocomplete="name" required maxlength="100" class="contact-input" /></label>
+                <label class="block text-sm font-medium">Email address<input v-model.trim="contact.email" name="email" type="email" autocomplete="email" required maxlength="254" class="contact-input" /></label>
+              </div>
+              <label class="block text-sm font-medium">Subject<input v-model.trim="contact.subject" name="subject" required maxlength="160" class="contact-input" /></label>
+              <label class="block text-sm font-medium">Message<textarea v-model.trim="contact.message" name="message" required maxlength="5000" rows="5" class="contact-input"></textarea></label>
+              <div class="contact-honeypot" aria-hidden="true"><label>Website<input v-model="contact.website" name="website" tabindex="-1" autocomplete="off" /></label></div>
+              <p class="text-xs text-charcoal-600">Your name, email, and message will be shared with platform administrators so they can handle your inquiry.</p>
+              <button type="submit" class="footer-primary-btn disabled:opacity-60">{{ contactSending ? 'Sending…' : 'Send Message' }}</button>
+            </fieldset>
+            <p v-if="contactError" role="alert" class="text-sm text-red-700">{{ contactError }}</p>
+            <p v-if="contactSuccess" role="status" class="text-sm text-green-800">Your message has been sent to the administrators. Thank you for reaching out.</p>
+          </form>
+        </div>
+      </section>
       <div class="footer-cta-shell">
         <div class="footer-cta-card">
           <div class="footer-cta-copy">
@@ -577,6 +632,7 @@
 <script>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAuth } from "@/composables/useAuth";
+import { OTP_API_BASE } from '@/utils/runtimeConfig';
 import bg from '@/assets/bg.jpg'
 import appointmentLanding from '@/assets/apointment_landing.jpg'
 import inventoryLanding from '@/assets/inventory_landing.jpg'
@@ -588,6 +644,39 @@ export default {
   setup() {
     const { user, isLoading, initAuth } = useAuth();
     const isMobileMenuOpen = ref(false);
+    const faqs = [
+      { question: 'What is AesthetiCare?', answer: 'AesthetiCare connects aesthetic clinics and their clients, with tools for appointments, client records, staff, inventory, and clinic operations.' },
+      { question: 'How do I get started as a client?', answer: 'Create an account using Register, then explore Centers to find a clinic and view its available services.' },
+      { question: 'How can I register my clinic?', answer: 'Choose Register Clinic in the footer to begin clinic registration. Complete the required information and verification steps before setting up your clinic.' },
+      { question: 'Is there a free plan?', answer: 'A Free Plan is available for clinic catalog and inquiry features. Visit Pricing to compare the features included in each subscription plan.' },
+      { question: 'Who should I contact about my appointment?', answer: 'Contact the clinic handling your booking for scheduling, treatment, cancellation, or payment questions. Use the contact form below for questions about the platform.' },
+      { question: 'Do I need an account to contact the administrators?', answer: 'No. You can use the contact form below without signing in. Include your email address so administrators have a way to contact you.' },
+    ];
+    const contact = ref({ name: '', email: '', subject: '', message: '', website: '' });
+    const contactSending = ref(false);
+    const contactError = ref('');
+    const contactSuccess = ref(false);
+    const submitContact = async () => {
+      if (contactSending.value) return;
+      contactSending.value = true;
+      contactError.value = '';
+      contactSuccess.value = false;
+      try {
+        const response = await fetch(`${OTP_API_BASE}/public/contact`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(contact.value), signal: AbortSignal.timeout(20000),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.error || 'We could not send your message. Please try again.');
+        contactSuccess.value = true;
+        contact.value = { name: '', email: '', subject: '', message: '', website: '' };
+      } catch (error) {
+        contactError.value = error instanceof TypeError || error.name === 'TimeoutError' || error instanceof SyntaxError
+          ? 'Unable to reach the server. Please try again shortly.' : error.message;
+      } finally {
+        contactSending.value = false;
+      }
+    };
     const showHeroVideo = ref(false);
     const currentCapabilityIndex = ref(3);
     const miniStartIndex = ref(3);
@@ -627,7 +716,7 @@ export default {
     };
 
     const scrollToSection = (section) => {
-      const sectionId = section === "solutions" ? "solutions-section" : "features-section";
+      const sectionId = `${section}-section`;
       document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
     };
 
@@ -789,6 +878,7 @@ export default {
     });
 
     return {
+      faqs, contact, contactSending, contactError, contactSuccess, submitContact,
       bg,
       capabilities,
       currentCapability,
@@ -819,6 +909,26 @@ export default {
 </script>
 
 <style scoped>
+.public-glass-nav :is(a, button):not(.public-brand-cluster) {
+  font-family: "Playfair Display", serif;
+}
+.support-section { scroll-margin-top: 90px; }
+.faq-list { max-width: 900px; margin: 0 auto; display: grid; gap: 14px; }
+.faq-item { border: 1px solid var(--color-gold-300, #d7aa7d); border-radius: 18px; background: rgba(255, 255, 255, 0.65); box-shadow: 0 4px 16px rgba(54, 34, 22, 0.035); transition: border-color 200ms, background 200ms, box-shadow 200ms; }
+.faq-item:hover { border-color: var(--color-gold-500, #bd926b); box-shadow: 0 8px 24px rgba(54, 34, 22, 0.07); }
+.faq-item[open] { background: var(--color-cream-50, #fffaf5); border-color: var(--color-gold-500, #bd926b); }
+.faq-question { display: flex; align-items: center; gap: 18px; padding: 22px 24px; cursor: pointer; list-style: none; font-size: 16px; font-weight: 600; line-height: 1.5; color: var(--color-charcoal-800, #352a25); border-radius: 18px; }
+.faq-question::-webkit-details-marker { display: none; }
+.faq-number { font-size: 12px; letter-spacing: 0.12em; font-weight: 400; color: var(--color-gold-700, #91643f); }
+.faq-toggle { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border: 1px solid var(--color-gold-300, #d7aa7d); border-radius: 50%; color: var(--color-gold-700, #91643f); transition: background 200ms, color 200ms; }
+.faq-item[open] .faq-toggle { background: var(--color-gold-700, #91643f); color: white; border-color: transparent; }
+.faq-item[open] .faq-toggle-vertical { display: none; }
+.faq-answer { margin: 0 24px 0 60px; padding: 18px 0 24px; border-top: 1px solid var(--color-gold-200, #ead6c3); font-size: 14px; line-height: 1.85; color: var(--color-charcoal-600, #65564d); }
+@media (max-width: 640px) { .faq-question { padding: 18px 16px; gap: 12px; font-size: 15px; } .faq-answer { margin-left: 16px; margin-right: 16px; padding-bottom: 20px; } }
+@media (prefers-reduced-motion: reduce) { .faq-item, .faq-toggle { transition: none; } }
+.contact-input { display: block; width: 100%; margin-top: 8px; padding: 12px 14px; border: 1px solid var(--color-gold-300, #d7aa7d); border-radius: 12px; background: white; color: var(--color-charcoal-800, #352a25); font-weight: 400; }
+.contact-input:focus-visible, .faq-item summary:focus-visible { outline: 2px solid var(--color-gold-700, #91643f); outline-offset: 3px; }
+.contact-honeypot { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .home-page {
   font-family: "Playfair Display", serif;
 }
@@ -1364,7 +1474,7 @@ export default {
 .footer-cta-section {
   position: relative;
   background: linear-gradient(180deg, #f8eedf 0%, #f4e4cf 48%, #eed7bc 100%);
-  padding: clamp(3.5rem, 8vw, 5.5rem) 0 0;
+  padding: 0;
 }
 
 .footer-cta-shell {

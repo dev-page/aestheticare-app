@@ -1,11 +1,11 @@
 <template>
-  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex flex-row owner-theme min-w-0" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="flex-1 p-6 md:p-8 text-white">
+    <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, header: !embedded, blocks: [{ variant: 'form', fields: 4, sections: 1 }, { variant: 'cards', cards: 7, cardStyle: 'summary' }] }" class="flex-1 min-w-0 text-white" :class="embedded ? '' : 'p-6 md:p-8'">
       <div class="max-w-6xl mx-auto">
         <div class="mb-8">
-          <h1 class="text-3xl font-bold text-white">Schedule Assignment</h1>
+          <h1 v-if="!embedded" class="text-3xl font-bold text-white">Shift Assignment</h1>
           <p class="mt-2 text-slate-400">
             Assign recurring schedules to practitioners and staff. Customer booking availability follows the assigned practitioner schedule saved here.
           </p>
@@ -212,11 +212,15 @@
           </section>
         </div>
       </div>
-    </main>
+    </component>
   </div>
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
+defineProps({ embedded: { type: Boolean, default: false } })
+
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import {
@@ -243,6 +247,8 @@ import {
   parseShiftDurationHours,
   normalizeAssignments,
 } from '@/utils/employeeSchedules'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const db = getFirestore(getApp())
 const auth = getAuth(getApp())
@@ -617,7 +623,7 @@ const hydrateBranchShifts = async () => {
     })
 }
 
-const loadAssignments = async () => {
+const loadAssignments = trackPageLoad(async () => {
   if (!selectedEmployeeId.value) {
     assignments.value = emptyAssignments()
     loadedAssignments.value = emptyAssignments()
@@ -635,9 +641,9 @@ const loadAssignments = async () => {
 
   assignments.value = { ...nextAssignments }
   loadedAssignments.value = { ...nextAssignments }
-}
+})
 
-const loadScheduleContext = async (user) => {
+const loadScheduleContext = trackPageLoad(async (user) => {
   if (!user) {
     branches.value = []
     customRoles.value = []
@@ -656,7 +662,7 @@ const loadScheduleContext = async (user) => {
     await Promise.all([hydrateEmployees(), hydrateBranchShifts(), hydrateCustomRoles()])
   }
   await loadAssignments()
-}
+})
 
 const resetAssignments = () => {
   assignments.value = { ...loadedAssignments.value }
@@ -796,12 +802,12 @@ watch([selectedEmployeeId, selectedWeekStart], async () => {
   await loadAssignments()
 })
 
-onMounted(() => {
+onMounted(trackPageLoad(() => {
   selectedWeekStart.value = getMondayDate()
-  unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+  unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
     await loadScheduleContext(user)
   })
-})
+}))
 
 onBeforeUnmount(() => {
   if (typeof unsubscribeAuth === 'function') {

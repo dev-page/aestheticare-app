@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 6, panels: 2 }" class="flex-1 p-8">
       <DashboardSkeleton v-if="loading" />
       <div v-else>
       <div class="mb-8 flex items-start justify-between gap-4">
@@ -16,7 +16,7 @@
           :disabled="loading"
           @click="loadDashboard"
         >
-          {{ loading ? 'Refreshing...' : 'Refresh' }}
+          <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
         </button>
       </div>
 
@@ -71,6 +71,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { collection, getDocs, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
@@ -116,6 +118,8 @@ export default {
   name: 'SuperAdminDashboard',
   components: { SuperAdminSidebar, DashboardSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const loading = ref(false)
     const error = ref('')
 
@@ -170,7 +174,7 @@ export default {
       ]
     })
 
-    const loadPaymentRevenue = async () => {
+    const loadPaymentRevenue = trackPageLoad(async () => {
       const paymentCollections = ['planPayments']
       let total = 0
 
@@ -183,9 +187,9 @@ export default {
       }
 
       return total
-    }
+    })
 
-    const loadPlanPaymentCounts = async () => {
+    const loadPlanPaymentCounts = trackPageLoad(async () => {
       const snapshot = await safeGetDocs('planPayments')
       let basic = 0
       let premium = 0
@@ -198,7 +202,7 @@ export default {
       })
 
       return { basic, premium }
-    }
+    })
 
     const safeGetDocs = async (collectionName) => {
       try {
@@ -214,7 +218,7 @@ export default {
       }
     }
 
-    const loadDashboard = async () => {
+    const loadDashboard = trackPageLoad(async () => {
       loading.value = true
       error.value = ''
 
@@ -265,7 +269,7 @@ export default {
       } finally {
         loading.value = false
       }
-    }
+    })
 
     const scheduleDashboardRefresh = () => {
       if (refreshTimer) clearTimeout(refreshTimer)
@@ -277,24 +281,25 @@ export default {
 
     const startRealtimeDashboard = () => {
       realtimeCollections.forEach((collectionName) => {
-        realtimeUnsubscribers.push(onSnapshot(
-          collection(db, collectionName),
+        realtimeUnsubscribers.push(pageListener(
+          onSnapshot, collection(db, collectionName),
           scheduleDashboardRefresh,
           (err) => console.error(`Failed to listen to ${collectionName}:`, err)
         ))
       })
     }
 
-    onMounted(() => {
+    onMounted(trackPageLoad(() => {
       loadDashboard()
       startRealtimeDashboard()
-    })
+    }))
     onUnmounted(() => {
       realtimeUnsubscribers.forEach((unsubscribe) => unsubscribe())
       if (refreshTimer) clearTimeout(refreshTimer)
     })
 
     return {
+      pageLoading,
       loading,
       error,
       totalClinics,

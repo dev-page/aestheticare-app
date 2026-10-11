@@ -2,9 +2,10 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5 }" class="flex-1 p-8">
       <h1 class="text-3xl font-bold text-white mb-2">Approved Clinics</h1>
       <p class="text-slate-400 mb-6">List of clinics that have been approved and verified.</p>
+      <input v-model.trim="search" type="search" placeholder="Filter clinic, owner, plan, or status..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <table class="w-full text-sm">
@@ -25,9 +26,10 @@
             <tr v-else-if="!verifiedClinics.length">
               <td class="px-4 py-3 text-slate-200" colspan="6">No approved clinics yet.</td>
             </tr>
+            <tr v-else-if="!filteredClinics.length"><td class="px-4 py-3 text-slate-200" colspan="6">No clinics match the filter.</td></tr>
             <tr
               v-else
-              v-for="clinic in verifiedClinics"
+              v-for="clinic in paginatedClinics"
               :key="clinic.id"
               class="border-b border-slate-700/60 last:border-b-0"
             >
@@ -57,24 +59,33 @@
             </tr>
           </tbody>
         </table>
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredClinics.length" />
       </section>
     </main>
   </div>
 </template>
 
 <script>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'SuperAdminVerifiedClinics',
-  components: { SuperAdminSidebar },
+  components: { SuperAdminSidebar, TablePagination },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const loading = ref(false)
     const verifiedClinics = ref([])
+    const search = ref('')
+    const currentPage = ref(1)
+    const pageSize = ref(10)
     let unsubscribeClinics = null
 
     const normalizePlanLabel = (value) => {
@@ -96,7 +107,7 @@ export default {
     const loadVerifiedClinics = () => {
       if (unsubscribeClinics) unsubscribeClinics()
       loading.value = true
-      unsubscribeClinics = onSnapshot(collection(db, 'clinics'), async (clinicsSnap) => {
+      unsubscribeClinics = pageListener(onSnapshot, collection(db, 'clinics'), async (clinicsSnap) => {
         const approvedClinics = clinicsSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
           .filter((clinic) => {
@@ -153,12 +164,28 @@ export default {
       })
     }
 
+    const filteredClinics = computed(() => {
+      const keyword = search.value.toLowerCase()
+      if (!keyword) return verifiedClinics.value
+      return verifiedClinics.value.filter((clinic) => [clinic.clinicName, clinic.clinicLocation, clinic.ownerName, clinic.ownerEmail, clinic.planLabel, clinic.centerStatus].join(' ').toLowerCase().includes(keyword))
+    })
+    const paginatedClinics = computed(() => filteredClinics.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+    const totalPages = computed(() => Math.max(1, Math.ceil(filteredClinics.value.length / pageSize.value)))
+    watch([search, pageSize], () => { currentPage.value = 1 })
+    watch(totalPages, (count) => { if (currentPage.value > count) currentPage.value = count })
+
     onMounted(loadVerifiedClinics)
     onUnmounted(() => unsubscribeClinics?.())
 
     return {
+      pageLoading,
       loading,
       verifiedClinics,
+      search,
+      filteredClinics,
+      paginatedClinics,
+      currentPage,
+      pageSize,
       statusClass: (value) => {
         const normalized = String(value || '').trim().toLowerCase()
         if (normalized.includes('review')) {

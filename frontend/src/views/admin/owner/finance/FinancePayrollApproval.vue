@@ -1,13 +1,18 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
+  <div class="flex module-theme finance-page bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-6">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'cards', cardStyle: 'stat', cards: 3 }, { variant: 'table', columns: 9, rows: 5 }] }" class="flex-1 p-6">
       <div class="mb-6">
-        <h1 class="text-2xl font-semibold text-white mb-1">Payroll Summary Approval</h1>
+        <h1 class="text-2xl font-semibold text-white mb-1">Payroll Approval</h1>
         <p class="text-slate-400 text-sm">Review monthly payroll summaries and approve them for payslip generation.</p>
       </div>
 
+      <div class="finance-summary">
+        <article><span>Monthly summaries</span><strong>{{ summaries.length }}</strong></article>
+        <article><span>Pending approval</span><strong>{{ summaries.filter(summary => formatStatus(summary.status) === 'Pending').length }}</strong></article>
+        <article><span>Approved</span><strong>{{ summaries.filter(summary => formatStatus(summary.status) === 'Approved').length }}</strong></article>
+      </div>
       <section class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <div class="px-5 py-3 border-b border-slate-700 text-sm text-slate-400">
           Monthly Summaries
@@ -106,7 +111,7 @@
               </p>
             </div>
             <button
-              class="text-slate-400 hover:text-white text-xl leading-none"
+              aria-label="Close payroll details" class="text-slate-400 hover:text-white text-xl leading-none"
               @click="showSummaryModal = false"
             >
               &times;
@@ -178,6 +183,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { workflowApi } from '@/utils/workflowApi'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
@@ -192,6 +199,8 @@ export default {
   name: 'FinancePayrollApproval',
   components: { OwnerSidebar, PageSectionSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const currentBranchId = ref('')
     const currentUserId = ref('')
     const currentUserName = ref('')
@@ -254,7 +263,7 @@ export default {
         collection(db, 'payrollSummaries'),
         where('branchId', '==', currentBranchId.value)
       )
-      unsubscribeSummaries = onSnapshot(summariesQuery, (snapshot) => {
+      unsubscribeSummaries = pageListener(onSnapshot, summariesQuery, (snapshot) => {
         summaries.value = snapshot.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
           .sort((a, b) => String(b.monthKey || '').localeCompare(String(a.monthKey || '')))
@@ -363,8 +372,8 @@ export default {
       }
     }
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
         currentUserId.value = user.uid
         const userSnap = await getDoc(doc(db, 'users', user.uid))
@@ -374,7 +383,7 @@ export default {
         currentUserName.value = `${data.firstName || ''} ${data.lastName || ''}`.trim()
         subscribeSummaries()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
@@ -382,6 +391,7 @@ export default {
     })
 
     return {
+      pageLoading,
       summaries,
       loading,
       processingId,

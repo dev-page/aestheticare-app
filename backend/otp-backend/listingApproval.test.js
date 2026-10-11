@@ -1,8 +1,41 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { listingTransition, financialTermsChanged, draftListing, approvedOrderLines, registerListingApproval } from './listingApproval.js'
+import { listingTransition, financialTermsChanged, draftListing, approvedOrderLines, registerListingApproval, validateListingNumbers } from './listingApproval.js'
+import { transactionDb } from './testTransactionDb.js'
 
 const listing = () => ({ ...draftListing(), title: 'Treatment', price: 1000, allowInstallments: true, depositPercent: 30 })
+
+test('Prices and treatment session counts reject negative, empty, and invalid values before publication', () => {
+  const post = { ...listing(), postType: 'Service', sessionCount: 1, financeStatus: 'approved' }
+  assert.equal(validateListingNumbers({ ...post, price: 0 }), '')
+  assert.equal(validateListingNumbers({ ...post, price: 100.25, sessionCount: 50 }), '')
+  for (const price of [-1, '', null, NaN, Infinity]) assert.match(validateListingNumbers({ ...post, price }), /valid price/)
+  for (const sessionCount of [-1, 0, '', null, 1.5, 51, NaN, Infinity]) {
+    assert.match(validateListingNumbers({ ...post, sessionCount }), /whole number/)
+    assert.throws(() => listingTransition({ ...post, sessionCount }, 'publish', 'Owner', 'owner'), /whole number/)
+  }
+})
+
+test('Publishing a consultation-required service needs a published consultation from its branch', async () => {
+  const h = transactionDb()
+  h.seed('clinics', 'clinic', { ownerId: 'owner', subscriptionPlan: 'basic' })
+  h.seed('productServicePosts', 'service', { ...listing(), postType: 'Service', branchId: 'clinic', financeStatus: 'approved', requiresConsultationFirst: true, linkedConsultationId: 'assessment' })
+  let handler
+  registerListingApproval({ post: (path, auth, callback) => { handler = callback } }, { admin: h.admin, requireAuth() {}, loadUserContext: async () => ({ roleKey: 'Owner', userData: {} }) })
+  const call = async () => {
+    const result = { code: 200 }
+    await handler({ params: { id: 'service' }, body: { action: 'publish' }, user: { uid: 'owner' } }, { status(code) { result.code = code; return this }, json(body) { result.body = body } })
+    return result
+  }
+  assert.equal((await call()).code, 409)
+  h.seed('productServicePosts', 'assessment', { branchId: 'other', postType: 'Consultation', isPublished: true, financeStatus: 'approved' })
+  assert.equal((await call()).code, 409)
+  h.seed('productServicePosts', 'assessment', { branchId: 'clinic', postType: 'Consultation', isPublished: false, financeStatus: 'approved' })
+  assert.equal((await call()).code, 409)
+  h.seed('productServicePosts', 'assessment', { branchId: 'clinic', postType: 'Consultation', isPublished: true, financeStatus: 'approved' })
+  assert.equal((await call()).code, 200)
+  assert.equal(h.records.get('productServicePosts/service').isPublished, true)
+})
 test('Draft requires Finance or clinic-owner approval before publication', () => {
   let post = listing()
   assert.throws(() => listingTransition(post, 'publish', 'Owner', 'owner'), /Finance must approve/)
@@ -23,7 +56,7 @@ test('Rejected financial terms require a reason and can be resubmitted', () => {
   post = { ...post, ...listingTransition(post, 'reject', 'Owner', 'owner', 'Reduce the deposit.') }
   assert.equal(post.financeStatus, 'rejected')
   assert.equal(listingTransition(post, 'submit', 'Manager', 'm').financeStatus, 'pending')
-  assert.throws(() => listingTransition({ ...listing(), price: -1 }, 'submit', 'Manager', 'm'), /valid positive price/)
+  assert.throws(() => listingTransition({ ...listing(), price: -1 }, 'submit', 'Manager', 'm'), /valid.*price/)
   assert.throws(() => listingTransition({ ...listing(), depositPercent: 100 }, 'submit', 'Manager', 'm'), /between 1% and 99%/)
 })
 test('Only financial changes require a fresh review', () => {

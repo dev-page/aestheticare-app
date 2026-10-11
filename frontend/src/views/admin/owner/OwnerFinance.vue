@@ -1,4 +1,6 @@
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue';
 import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import Chart from 'chart.js/auto';
@@ -10,6 +12,8 @@ export default {
   name: 'OwnerFinance',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp());
     const totalPayroll = ref(0);
     const revenue = ref(0);
@@ -78,7 +82,7 @@ export default {
       return chunks
     }
 
-    const loadFinanceData = async () => {
+    const loadFinanceData = trackPageLoad(async () => {
       const user = auth.currentUser
       if (!user) {
         branches.value = []
@@ -136,7 +140,7 @@ export default {
         lastMonthPayroll.value = 0;
         lastMonthRevenue.value = 0;
       }
-    }
+    })
 
     // Payroll by branch chart
     const renderPayrollChart = () => {
@@ -214,12 +218,12 @@ export default {
       });
     };
 
-    onMounted(async () => {
+    onMounted(trackPageLoad(async () => {
       await loadFinanceData();
       await nextTick(); // Ensure DOM is updated before rendering charts
       renderPayrollChart();
       renderFinanceChart();
-    });
+    }));
 
     // Update chart if branch data changes
     watch(branches, async () => { 
@@ -228,6 +232,7 @@ export default {
     }, { deep: true });
 
     return {
+      pageLoading,
       totalPayroll, revenue, payrollPercentage,
       branches, payrollChart, financeChart, reports, editReport,
       revenueGrowth, payrollGrowth, revenueGrowthClass, payrollGrowthClass, healthyRangeText
@@ -240,7 +245,7 @@ export default {
   <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-4 md:p-8 overflow-x-hidden">
+    <main v-page-loading="{ active: pageLoading, variant: 'report', cards: 4 }" class="flex-1 p-4 md:p-8 overflow-x-hidden">
       <!-- Page Header -->
       <div class="mb-6 md:mb-8">
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Finance Overview</h1>

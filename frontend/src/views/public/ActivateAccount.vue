@@ -1,10 +1,10 @@
 <template>
-  <main class="flex min-h-screen items-center justify-center bg-[#21150f] px-6 text-[#fff8ef]">
-    <section class="w-full max-w-lg rounded-3xl border border-[#8d5a3b] bg-[#302016] p-8 text-center shadow-2xl">
+  <main class="flex min-h-screen items-center justify-center bg-gradient-to-br from-cream-50 via-cream-100 to-gold-100 px-6 text-charcoal-800">
+    <section class="w-full max-w-lg rounded-3xl border border-gold-200 bg-white/90 p-8 text-center shadow-2xl shadow-charcoal-900/10 backdrop-blur">
       <h1 class="text-3xl font-semibold">{{ loading ? 'Activating account' : success ? 'Account activated' : 'Activation unavailable' }}</h1>
-      <p class="mt-4 text-[#e6cdb4]">{{ message }}</p>
-      <button v-if="success" type="button" class="mt-8 rounded-xl bg-[#8d5a3b] px-5 py-3 font-semibold text-white hover:bg-[#6f4329]" @click="router.push('/login')">Go to Login</button>
-      <button v-else-if="!loading" type="button" class="mt-8 rounded-xl border border-[#c99563] px-5 py-3 font-semibold text-[#f7dfc6] hover:bg-[#4a2d20]" @click="router.push('/login')">Return to Login</button>
+      <p class="mt-4 text-charcoal-600">{{ message }}</p>
+      <button v-if="success" type="button" class="mt-8 rounded-xl bg-charcoal-900 px-5 py-3 font-semibold text-cream-50 shadow-lg shadow-charcoal-900/15 hover:bg-charcoal-700" @click="router.push('/login')">Go to Login</button>
+      <button v-else-if="!loading" type="button" class="mt-8 rounded-xl border border-gold-600 px-5 py-3 font-semibold text-charcoal-800 hover:bg-gold-100" @click="router.push('/login')">Return to Login</button>
     </section>
   </main>
 </template>

@@ -10,3 +10,12 @@ test('appointment reminder cron accepts Vercel GET requests and requires CRON_SE
   assert.match(source, /online-consultation-practitioner-reminder-\$\{row\.id\}-\$\{tomorrow\}/)
   assert.match(source, /Online Consultation to prepare or join the call/)
 })
+
+test('online consultation timeout cron closes only overdue active consultations', async () => {
+  const source = await readFile(new URL('./server.js', import.meta.url), 'utf8')
+  assert.match(source, /app\.all\('\/cron\/online-consultation-timeouts'/)
+  assert.match(source, /await closeExpiredConsultations\(admin\)/)
+  const windowSource = await readFile(new URL('./consultationWindows.js', import.meta.url), 'utf8')
+  assert.match(windowSource, /consultationEndedByTimer: true/)
+  assert.match(windowSource, /Awaiting Customer Confirmation/)
+})

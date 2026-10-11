@@ -1,18 +1,23 @@
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, updateDoc, getDoc } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '@/config/firebaseConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { toast } from 'vue3-toastify'
 import { logActivity } from '@/utils/activityLogger'
 
 export default {
   name: 'BasePay',
-  components: { OwnerSidebar, PageSectionSkeleton },
+  components: { OwnerSidebar, PageSectionSkeleton, ContractAppearanceSelect },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const currentUserId = ref('')
     const currentBranchId = ref('')
@@ -21,7 +26,7 @@ export default {
     const savingId = ref('')
     const basePayErrors = ref({})
 
-    const loadStaff = async () => {
+    const loadStaff = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         staffList.value = []
         return
@@ -42,6 +47,8 @@ export default {
             id: staff.id,
             fullName: `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.email || 'Unnamed',
             role: String(staff.customRoleName || staff.role || 'Staff').trim(),
+            basePayModel: staff.basePayModel || 'hourly',
+            monthlyBaseHours: Number(staff.monthlyBaseHours || 176),
             basePay: staff.basePay == null || staff.basePay === '' ? '' : Number(staff.basePay)
           }))
       } catch (error) {
@@ -50,21 +57,23 @@ export default {
       } finally {
         loading.value = false
       }
-    }
+    })
 
     const saveBasePay = async (staff) => {
       if (!staff) return
       const rawValue = String(staff.basePay ?? '').trim()
       const basePayValue = Number(rawValue)
       let validationMessage = ''
-      if (!rawValue) {
-        validationMessage = 'Enter the employee\'s hourly base pay.'
+      if (!['hourly', 'daily', 'monthly-retainer'].includes(staff.basePayModel) || !Number.isFinite(Number(staff.monthlyBaseHours)) || staff.monthlyBaseHours < 1 || staff.monthlyBaseHours > 744) {
+        validationMessage = 'Choose a valid pay model and monthly hour divisor.'
+      } else if (!rawValue) {
+        validationMessage = 'Enter the employee\'s base pay.'
       } else if (!Number.isFinite(basePayValue)) {
         validationMessage = 'Base pay must be a valid number.'
       } else if (basePayValue <= 0) {
         validationMessage = 'Base pay must be greater than PHP 0.00.'
       } else if (basePayValue > 1000000) {
-        validationMessage = 'Base pay cannot exceed PHP 1,000,000.00 per hour.'
+        validationMessage = 'Base pay cannot exceed PHP 1,000,000.00 for this pay model.'
       } else if (!/^\d+(\.\d{1,2})?$/.test(rawValue)) {
         validationMessage = 'Base pay may contain up to two decimal places.'
       }
@@ -79,7 +88,9 @@ export default {
       savingId.value = staff.id
       try {
         await updateDoc(doc(db, 'users', staff.id), {
-          basePay: Number(basePayValue.toFixed(2))
+          basePay: Number(basePayValue.toFixed(2)),
+          basePayModel: staff.basePayModel,
+          monthlyBaseHours: Number(staff.monthlyBaseHours || 176)
         })
 
         await logActivity(db, {
@@ -107,8 +118,8 @@ export default {
     }
 
     let unsubscribeAuth = null
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
@@ -128,13 +139,14 @@ export default {
 
         await loadStaff()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
     })
 
     return {
+      pageLoading,
       staffList,
       loading,
       savingId,
@@ -150,7 +162,7 @@ export default {
   <div class="flex flex-col md:flex-row module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-4 md:p-8 text-white">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="flex-1 p-4 md:p-8 text-white">
       <div class="mb-6">
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Base Pay</h1>
         <p class="text-slate-400 text-sm md:text-base">
@@ -162,12 +174,13 @@ export default {
         <div v-if="loading" class="py-2">
           <PageSectionSkeleton variant="table" :rows="6" :columns="4" />
         </div>
+        <p class="mb-4 text-sm text-slate-400">Hourly pay uses worked hours; daily pay uses completed attendance days. A fixed monthly retainer pays the full agreed monthly amount without automatic proration. Configure its agreed monthly hours for the hourly equivalent.</p>
         <table class="w-full text-left min-w-[900px] border-collapse">
           <thead>
             <tr class="text-slate-400 uppercase text-xs sm:text-sm border-b border-slate-700">
               <th class="py-2 px-3 sm:py-3 sm:px-4">Employee</th>
               <th class="py-2 px-3 sm:py-3 sm:px-4">Role</th>
-              <th class="py-2 px-3 sm:py-3 sm:px-4">Base Pay (PHP/hr)</th>
+              <th class="py-2 px-3 sm:py-3 sm:px-4">Base Pay (PHP)</th>
               <th class="py-2 px-3 sm:py-3 sm:px-4">Action</th>
             </tr>
           </thead>

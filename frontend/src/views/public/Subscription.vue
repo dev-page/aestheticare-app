@@ -21,7 +21,7 @@
 
       <p v-if="error" class="popup-error">{{ error }}</p>
 
-      <div class="plan-grid">
+      <div class="plan-grid" v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'plan', cards: 3, header: false }">
         <article
           v-for="plan in plans"
           :key="plan.id"
@@ -65,6 +65,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { collection, onSnapshot } from "firebase/firestore";
@@ -73,6 +75,8 @@ import {
   buildSubscriptionPlanCatalog,
   filterActiveSubscriptionPlans,
 } from "@/utils/subscriptionPlans";
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const router = useRouter();
 
@@ -115,15 +119,15 @@ const defaultPlans = () => [
   },
 ];
 
-const loadPlans = async () => {
+const loadPlans = trackPageLoad(async () => {
   error.value = "";
   try {
     if (unsubscribePlans) {
       unsubscribePlans();
       unsubscribePlans = null;
     }
-    unsubscribePlans = onSnapshot(
-      collection(db, "subscriptionPlans"),
+    unsubscribePlans = pageListener(
+      onSnapshot, collection(db, "subscriptionPlans"),
       (snapshot) => {
         const merged = buildSubscriptionPlanCatalog(defaultPlans(), snapshot.docs);
         plans.value = filterActiveSubscriptionPlans(merged);
@@ -140,7 +144,7 @@ const loadPlans = async () => {
     error.value = "Unable to load latest plans right now.";
     plans.value = filterActiveSubscriptionPlans(buildSubscriptionPlanCatalog(defaultPlans(), []));
   }
-};
+});
 
 const maybeLater = () => {
   router.push({ path: "/" });

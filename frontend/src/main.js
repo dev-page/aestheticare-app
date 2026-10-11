@@ -4,10 +4,13 @@ import './style.css'
 import './assets/customer-portal.css'
 import App from './App.vue'
 import router from './router'
+import pageLoading from '@/directives/pageLoading'
 import Vue3Toastify from 'vue3-toastify'
 import 'vue3-toastify/dist/index.css'
 import VueSweetalert2 from 'vue-sweetalert2'
 import 'sweetalert2/dist/sweetalert2.min.css'
+import './assets/app-design-system.css'
+import './assets/finance-pages.css'
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -17,6 +20,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 }
 
 createApp(App)
+.directive('page-loading', pageLoading)
 .use(createPinia())
 .use(router)
 .use(Vue3Toastify, {

@@ -2,7 +2,7 @@
   <div class="supplier-theme flex min-h-screen">
     <SupplierSidebar />
 
-    <main data-onboarding-key="supplier-catalog" class="supplier-catalog-page flex-1 p-6 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" data-onboarding-key="supplier-catalog" class="supplier-catalog-page flex-1 p-6 md:p-8">
       <section class="mx-auto max-w-7xl space-y-6">
         <div class="rounded-[2rem] border border-[#e4c7a1] bg-white/85 p-6 shadow-[0_18px_44px_rgba(77,52,31,0.08)] backdrop-blur">
           <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -299,6 +299,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import './supplierTheme.css'
 import { blockInvalidNumberInput, readNumberInput } from '@/utils/numericInput'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
@@ -310,6 +312,8 @@ import { db } from '@/config/firebaseConfig'
 import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const auth = getAuth()
 const storage = getStorage()
@@ -427,7 +431,7 @@ const resolveSupplierDocument = async (uid) => {
   return {}
 }
 
-const loadSupplies = async (user) => {
+const loadSupplies = trackPageLoad(async (user) => {
   if (!user) return
   loading.value = true
   try {
@@ -449,7 +453,7 @@ const loadSupplies = async (user) => {
     currentPage.value = 1
     items.value = [createEmptyItem()]
     stopCatalogListener?.()
-    stopCatalogListener = onSnapshot(doc(db, 'suppliers', supplierDocId.value || user.uid), (snapshot) => {
+    stopCatalogListener = pageListener(onSnapshot, doc(db, 'suppliers', supplierDocId.value || user.uid), (snapshot) => {
       if (!snapshot.exists() || saving.value) return
       const liveItems = snapshot.data()?.offeredItems
       if (Array.isArray(liveItems)) savedCatalog.value = liveItems.map((item) => ({ ...item, id: item.id || crypto.randomUUID() }))
@@ -462,7 +466,7 @@ const loadSupplies = async (user) => {
   } finally {
     loading.value = false
   }
-}
+})
 
 const scrollToCatalogForm = () => window.setTimeout(() => document.querySelector('[data-supplier-catalog-form]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
 const addItemRow = () => {
@@ -768,15 +772,15 @@ onBeforeUnmount(() => {
   })
 })
 
-onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
+onMounted(trackPageLoad(() => {
+  pageListener(onAuthStateChanged, auth, (user) => {
     if (!user) {
       loading.value = false
       return
     }
     loadSupplies(user)
   })
-})
+}))
 </script>
 
 <style scoped>

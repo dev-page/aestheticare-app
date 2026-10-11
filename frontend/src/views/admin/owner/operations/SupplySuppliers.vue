@@ -2,7 +2,7 @@
   <div :class="embedded ? 'module-theme' : 'flex module-theme bg-slate-900 min-h-screen'">
     <OwnerSidebar v-if="!embedded" />
 
-    <div :class="embedded ? '' : 'flex-1 p-8'">
+    <div v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'stat', cards: 4 }" :class="embedded ? '' : 'flex-1 p-8'">
       <div class="mb-8 flex items-center justify-between">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Supplier Directory</h1>
@@ -396,6 +396,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { getFirestore, collection, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -418,6 +420,8 @@ export default {
   components: { OwnerSidebar },
   props: { embedded: { type: Boolean, default: false } },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasPermission, isClinicAdminOwner } = usePermissions()
@@ -514,7 +518,7 @@ export default {
       if (event?.target) event.target.value = digits
     }
 
-    const loadSuppliers = async () => {
+    const loadSuppliers = trackPageLoad(async () => {
       if (!currentOwnerId.value && !currentBranchIds.value.length) {
         suppliers.value = []
         return
@@ -526,7 +530,7 @@ export default {
         currentBranchIds.value,
         { scopeMode: currentScopeMode.value }
       )
-    }
+    })
 
     const filteredSuppliers = computed(() => {
       return suppliers.value.filter((supplier) => {
@@ -878,8 +882,8 @@ export default {
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
           currentOwnerId.value = ''
@@ -896,7 +900,7 @@ export default {
         currentScopeMode.value = scope.scopeMode || 'owner'
         await loadSuppliers()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
@@ -927,6 +931,7 @@ export default {
     })
 
     return {
+      pageLoading,
       showAddModal,
       openAddModal,
       addSupplierTab,

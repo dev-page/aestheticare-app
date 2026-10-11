@@ -4,7 +4,7 @@
       <h1 class="text-3xl font-playfair font-bold text-charcoal-900 mb-6">Privacy Policy</h1>
 
       <div class="space-y-6 text-charcoal-700 leading-relaxed">
-        <p>AesthetiCare collects the information needed to create and manage accounts and to provide the platform's clinic, booking, order, payment, and support features.</p>
+        <p>AesthetiCare collects the information needed to create and manage accounts and to provide the platform's clinic, booking, payment, and support features.</p>
 
         <details class="policy-item">
           <summary class="policy-summary">
@@ -36,7 +36,7 @@
             <span>2. Why do we need to collect personal information?</span>
           </summary>
           <div class="policy-body">
-            <p>The collected personal information is used for account registration, account access, clinic verification, bookings, orders, payments, notifications, support requests, and other platform features you use.</p>
+            <p>The collected personal information is used for account registration, account access, clinic verification, bookings, payments, notifications, support requests, and other platform features you use.</p>
           </div>
         </details>
 
@@ -47,7 +47,7 @@
           <div class="policy-body">
             <p>
               We collect personal information when you create or update an account, submit a clinic registration,
-              place a booking or order, send a support request, or otherwise use a platform feature that requires it.
+              place a booking, send a support request, or otherwise use a platform feature that requires it.
             </p>
           </div>
         </details>
@@ -59,7 +59,7 @@
           <div class="policy-body">
             <p>
               We collect and process information that you provide through the platform, including forms, document uploads,
-              bookings, orders, account settings, and support requests.
+              bookings, account settings, and support requests.
             </p>
           </div>
         </details>
@@ -69,7 +69,7 @@
             <span>5. How do we store the data collected?</span>
           </summary>
           <div class="policy-body">
-            <p>Account, booking, order, payment, clinic-registration, notification, and support information is stored in the services used to operate AesthetiCare. The platform provides account deactivation, deletion-request, and data-export options in account settings where available.</p>
+            <p>Account, booking, payment, clinic-registration, notification, and support information is stored in the services used to operate AesthetiCare. The platform provides account deactivation, deletion-request, and data-export options in account settings where available.</p>
           </div>
         </details>
 

@@ -2,7 +2,7 @@
   <div class="flex owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 flex items-center justify-center p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 6, sections: 2 }" class="flex-1 flex items-center justify-center p-8">
       <!-- Centered Card -->
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 w-full max-w-3xl">
         <div v-if="branchScopeLabel" class="mb-4 inline-flex rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold text-gold-200">
@@ -108,6 +108,8 @@
 
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue';
 import { ref, onMounted, computed } from 'vue';
 import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, query, where } from 'firebase/firestore';
@@ -122,6 +124,8 @@ export default {
   name: 'ClinicProfile',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp());
     const clinic = ref({
       clinicName: '',
@@ -198,7 +202,7 @@ export default {
         .filter(Boolean)
         .join(', ') || clinicDisplayName.value || '';
 
-    const loadOwnerInfo = async (user) => {
+    const loadOwnerInfo = trackPageLoad(async (user) => {
       if (!user) return;
       const userRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userRef);
@@ -208,7 +212,7 @@ export default {
         clinic.value.contactNumber = normalizePhilippineMobile(data.contactNumber);
         tutorialEnabled.value = data.preferences?.onboarding?.owner?.disabled !== true;
       }
-    };
+    });
 
     const saveTutorialPreference = async () => {
       const user = auth.currentUser;
@@ -408,8 +412,8 @@ export default {
       );
     };
 
-    const loadClinicProfile = async () => {
-      onAuthStateChanged(auth, async (user) => {
+    const loadClinicProfile = trackPageLoad(async () => {
+      pageListener(onAuthStateChanged, auth, async (user) => {
         if (user) {
           const userSnap = await getDoc(doc(db, 'users', user.uid));
           const userData = userSnap.exists() ? userSnap.data() || {} : {};
@@ -458,7 +462,7 @@ export default {
           await initLocationMap();
         }
       });
-    };
+    });
 
     const loadMapsScript = () => {
       if (window.google?.maps?.Map || window.google?.maps?.importLibrary) return Promise.resolve();
@@ -634,6 +638,7 @@ export default {
     onMounted(loadClinicProfile);
 
     return {
+      pageLoading,
       clinic,
       contactNumberError,
       handleContactNumberInput,

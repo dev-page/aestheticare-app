@@ -60,15 +60,13 @@ export default {
 
 <style scoped>
 :deep(.customer-sidebar aside) {
-  border-color: #4a2d1c;
-  background:
-    radial-gradient(circle at 10% 0%, rgba(170, 103, 53, .20), transparent 30%),
-    linear-gradient(180deg, #21130c, #170d08 100%);
+  border-color: #ead2b2;
+  background: linear-gradient(180deg, #fffaf1, #f8ead4 100%);
 }
 
 :deep(.customer-sidebar aside > div:first-child) {
   padding-top: 1.35rem;
-  border-bottom-color: rgba(134, 82, 47, .45);
+  border-bottom-color: #ead2b2;
 }
 
 :deep(.customer-sidebar aside h2) { font-family: Georgia, 'Times New Roman', serif; letter-spacing: -.02em; }

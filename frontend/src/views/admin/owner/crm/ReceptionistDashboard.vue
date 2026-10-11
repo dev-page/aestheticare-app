@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 6, panels: 2 }" class="flex-1 p-8">
       <DashboardSkeleton v-if="loading" />
       <div v-else>
       <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
@@ -107,6 +107,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, onSnapshot, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -121,6 +123,8 @@ export default {
   name: 'ReceptionistDashboard',
   components: { OwnerSidebar, DashboardSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -189,7 +193,7 @@ export default {
       return `${yyyy}-${mm}-${dd}`
     }
 
-    const loadCurrentUserShift = async (profile = {}, userId = '') => {
+    const loadCurrentUserShift = trackPageLoad(async (profile = {}, userId = '') => {
       const fallbackShift =
         String(profile.shiftStart || '').trim() && String(profile.shiftEnd || '').trim()
           ? `${profile.shiftStart} - ${profile.shiftEnd}`
@@ -212,9 +216,9 @@ export default {
         weeklyShiftAssignments.value = daysOfWeek.map((day) => ({ day, shift: 'Off' }))
         todayShiftLabel.value = fallbackShift
       }
-    }
+    })
 
-    const loadDashboardData = async () => {
+    const loadDashboardData = trackPageLoad(async () => {
       if (!currentBranchId.value) return
 
       const [clientSnap, appointmentSnap, inboxSnap, transactionSnap] = await Promise.all([
@@ -228,13 +232,13 @@ export default {
       appointments.value = sortRecordsNewestFirst(appointmentSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
       messages.value = sortRecordsNewestFirst(inboxSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
       transactions.value = sortRecordsNewestFirst(transactionSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
-    }
+    })
 
     const startMessageListener = () => {
       if (!currentBranchId.value) return
       if (unsubscribeMessages) unsubscribeMessages()
       const messageQuery = query(collection(db, 'messages'), where('branchId', '==', currentBranchId.value))
-      unsubscribeMessages = onSnapshot(messageQuery, (snapshot) => {
+      unsubscribeMessages = pageListener(onSnapshot, messageQuery, (snapshot) => {
         messages.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
       }, (error) => {
         console.error('Failed to listen to branch messages:', error)
@@ -245,8 +249,8 @@ export default {
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
@@ -272,7 +276,7 @@ export default {
         startMessageListener()
         loading.value = false
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
@@ -280,6 +284,7 @@ export default {
     })
 
     return {
+      pageLoading,
       loading,
       totalClients,
       todayAppointments,

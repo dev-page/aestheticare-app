@@ -1,8 +1,8 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
+  <div class="flex module-theme finance-page bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'report', cards: 3 }" class="flex-1 p-8">
       <div class="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Payroll Summary</h1>
@@ -109,6 +109,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, orderBy, limit } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -120,6 +122,8 @@ export default {
   name: 'FinancePayrollSummary',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -359,7 +363,7 @@ export default {
         .sort((a, b) => (a.monthKey < b.monthKey ? 1 : -1))
     })
 
-    const loadPayrollData = async () => {
+    const loadPayrollData = trackPageLoad(async () => {
       if (!currentBranchId.value) return
 
       const [payrollSnap, usersSnap, txSnap] = await Promise.all([
@@ -373,12 +377,12 @@ export default {
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .filter((user) => !user.archived)
       transactions.value = txSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-    }
+    })
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
           payrolls.value = []
@@ -397,13 +401,14 @@ export default {
 
         await loadPayrollData()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
     })
 
     return {
+      pageLoading,
       payrolls,
       selectedMonth,
       monthlyPayrollRows,

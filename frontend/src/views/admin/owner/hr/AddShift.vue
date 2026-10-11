@@ -1,4 +1,6 @@
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, addDoc, getDocs, query, where, doc, getDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -11,8 +13,11 @@ import { logActivity } from '@/utils/activityLogger'
 
 export default {
   name: 'AddShift',
+  props: { embedded: { type: Boolean, default: false } },
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const branches = ref([])
     const shifts = ref([])
@@ -43,7 +48,7 @@ export default {
       return chunks
     }
 
-    const loadBranches = async (user) => {
+    const loadBranches = trackPageLoad(async (user) => {
       try {
         if (!user) {
           branches.value = []
@@ -115,9 +120,9 @@ export default {
       } catch (err) {
         console.error('Error loading branches:', err)
       }
-    }
+    })
 
-    const loadShifts = async () => {
+    const loadShifts = trackPageLoad(async () => {
       shiftsLoading.value = true
       try {
         const branchIds = branches.value.map((branch) => branch.id).filter(Boolean)
@@ -150,15 +155,15 @@ export default {
       } finally {
         shiftsLoading.value = false
       }
-    }
+    })
 
     let unsubscribeAuth = null
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         await loadBranches(user)
         await loadShifts()
       })
-    })
+    }))
 
     const resetForm = () => {
       editingShiftId.value = ''
@@ -389,6 +394,7 @@ export default {
     })
 
     return {
+      pageLoading,
       currentShift,
       branches,
       shiftTypes,
@@ -408,11 +414,11 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-col md:flex-row module-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex flex-col md:flex-row module-theme min-w-0" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="flex-1 p-6 md:p-10 text-white">
-      <h1 class="text-2xl font-bold mb-6">Add Shift</h1>
+    <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, header: !embedded, blocks: [{ variant: 'form', fields: 6, sections: 1 }, { variant: 'table', columns: 6, rows: 4 }] }" class="flex-1 min-w-0 text-white" :class="embedded ? '' : 'p-6 md:p-10'">
+      <h1 v-if="!embedded" class="text-2xl font-bold mb-6">Add Shift</h1>
 
       <div class="bg-slate-800 rounded-xl shadow-lg p-6 md:p-8 border border-slate-700 max-w-2xl mx-auto">
         <form class="space-y-4">
@@ -554,6 +560,6 @@ export default {
           </table>
         </div>
       </div>
-    </main>
+    </component>
   </div>
 </template>

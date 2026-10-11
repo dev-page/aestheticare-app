@@ -1,4 +1,22 @@
+import { basePayForPeriod } from '../../shared/practitionerTeam.js'
 const check = (condition, message, status = 409) => { if (!condition) throw Object.assign(new Error(message), { status }) }
+export const validatePayrollStaffEarnings = (entries, earnings, summaryId) => {
+  const used = new Set()
+  for (const snapshot of entries) {
+    const entry = snapshot.data(), ids = entry.staffEarningIds || []
+    check(Array.isArray(ids) && new Set(ids).size === ids.length, 'Duplicate staff earnings in payroll.')
+    const available = earnings.filter(row => { const item = row.data(); return item.employeeId === entry.employeeId && item.branchId === entry.branchId && item.monthKey === payrollMonth(entry) && item.status === 'Approved' && (!item.payrollSummaryId || item.payrollSummaryId === summaryId) }).map(row => row.id)
+    check(available.length === ids.length && available.every(id => ids.includes(id)), 'Staff earnings changed or an adjustment was omitted. Regenerate payroll before approval.')
+    let cents = 0
+    for (const id of ids) {
+      const earning = earnings.find(row => row.id === id)?.data()
+      check(!used.has(id) && earning && earning.employeeId === entry.employeeId && earning.branchId === entry.branchId && earning.monthKey === payrollMonth(entry) && earning.status === 'Approved' && (!earning.payrollSummaryId || earning.payrollSummaryId === summaryId), 'A staff earning is missing, already claimed, or belongs to another employee or period.')
+      used.add(id); cents += Math.round(Number(earning.amount) * 100)
+    }
+    check(cents === Math.round(Number(entry.commission || 0) * 100), 'Payroll commission must equal the selected Finance-approved staff earnings. Regenerate payroll.')
+  }
+  return [...used]
+}
 export const payrollMonth = (entry) => {
   if (entry.payPeriodMonthKey) return entry.payPeriodMonthKey
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).formatToParts(entry.createdAt?.toDate?.() || new Date(entry.createdAt))
@@ -30,6 +48,8 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     const entries = snapshots.docs.filter((d) => payrollEntryIds.includes(d.id) && payrollMonth(d.data()) === monthKey)
     check(entries.length === new Set(payrollEntryIds).size && new Set(entries.map((d) => d.data().employeeId)).size === entries.length, 'Payroll entries are missing, duplicated or belong to another month.')
     const staff = await tx.get(db.collection('users').where('branchId', '==', branchId))
+    const earnings = await tx.get(db.collection('staffEarnings').where('branchId', '==', branchId))
+    validatePayrollStaffEarnings(entries, earnings.docs, ref.id)
     const staffById = new Map(staff.docs.map((snapshot) => [snapshot.id, snapshot.data() || {}]))
     const totals = { totalPayroll: 0, totalNetPay: 0, totalDeductions: 0 }
     for (const d of entries) {
@@ -45,7 +65,14 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
       // archived after the period closed. When the profile still exists, its
       // current base pay must match the generated payroll snapshot.
       check(!employee || !employee.archived, 'An archived employee payroll entry must be corrected before submission.')
-      if (employee) check(Math.round(Number(employee.basePay || 0) * 100) === Math.round(Number(data.hourlyRate || 0) * 100), `Base pay changed for ${data.employeeName || 'an employee'}. Regenerate payroll before submission.`)
+      if (employee) {
+        check(Math.round(Number(employee.basePay || 0) * 100) === Math.round(Number(data.baseRate ?? data.hourlyRate ?? 0) * 100) && (employee.basePayModel || 'hourly') === (data.basePayModel || 'hourly'), `Base pay changed for ${data.employeeName || 'an employee'}. Regenerate payroll before submission.`)
+        if (data.basePayModel === 'monthly-retainer') check(Number(employee.monthlyBaseHours || 176) === Number(data.monthlyBaseHours), 'The monthly hourly-equivalent divisor changed. Regenerate payroll.')
+        if (data.basePayAmount != null) {
+          const base = basePayForPeriod({ model: data.basePayModel || 'hourly', rate: Number(employee.basePay || 0), hours: Number(data.hoursWorked || 0), days: Number(data.workedDays || 0), monthlyHours: Number(employee.monthlyBaseHours || 176) })
+          check(Math.round(base.amount * 100) === Math.round(Number(data.basePayAmount) * 100) && Math.round(Number(data.totalPay) * 100) === Math.round((base.amount + Number(data.overtimePay || 0) + Number(data.commission || 0)) * 100), 'Payroll base pay or service earnings do not agree with the saved pay model.')
+        }
+      }
       check(Math.abs(Number(data.totalPay || 0) - Number(data.totalDeductions || 0) - Number(data.netPay || 0)) < 0.011, 'Payroll earnings, deductions, and net pay do not agree.')
     }
     const now = timestamp()
@@ -76,6 +103,8 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     check(entries.length > 0 && entries.length <= 400, 'Payroll must contain between 1 and 400 entries.')
     check(new Set(entries.map((d) => d.data().employeeId)).size === entries.length, 'Resolve duplicate employee payroll entries before approval.')
     const approvedEntries = Object.fromEntries(entries.map((d) => [d.id, d.data()]))
+    const earnings = await tx.get(db.collection('staffEarnings').where('branchId', '==', summary.branchId))
+    const claimedEarnings = validatePayrollStaffEarnings(entries, earnings.docs, ref.id)
     const totalNetPay = entries.reduce((sum, d) => sum + Number(d.data().netPay), 0)
     check(entries.every((d) => Number.isFinite(Number(d.data().totalPay)) && Number.isFinite(Number(d.data().totalDeductions)) && Math.abs(Number(d.data().totalPay) - Number(d.data().totalDeductions) - Number(d.data().netPay)) < 0.011), 'Payroll earnings, deductions and net pay do not agree.')
     check(Number.isFinite(totalNetPay) && entries.every((d) => Number(d.data().netPay) >= 0), 'Payroll amounts are invalid.')
@@ -86,6 +115,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     const expenseRef = db.collection('financialRecords').doc(`payroll-${ref.id}`)
     const existingExpense = await tx.get(expenseRef)
     tx.update(ref, { status: 'approved', approvedEntries, approvedBy: req.user.uid, approvedByName: context.userData.fullName || 'Finance', approvedAt, updatedAt: timestamp() })
+    for (const id of claimedEarnings) tx.update(db.collection('staffEarnings').doc(id), { payrollSummaryId: ref.id, payrollApprovedAt: approvedAt })
     if (!existingExpense.exists) tx.set(expenseRef, { branchId: summary.branchId, kind: 'payrollExpense', sourceId: ref.id, category: 'Payroll', description: `Payroll ${summary.monthKey}`, amount: Math.round(totalNetPay * 100), paidAmount: 0, outstandingAmount: Math.round(totalNetPay * 100), status: 'Unpaid', payrollPeriod: summary.monthKey, createdBy: req.user.uid, createdAt: approvedAt, updatedAt: timestamp() })
     if (summary.updatedBy) tx.set(db.collection('notifications').doc(), { recipientUserId: summary.updatedBy, branchId: summary.branchId, title: 'Payroll approved', message: `Payroll for ${summary.monthKey} is ready for payslip release.`, link: '/hr/payroll', read: false, deleted: false, createdAt: timestamp() })
     return { status: 'approved' }
@@ -101,7 +131,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     const slipRef = db.collection('payslips').doc(entryRef.id), slip = await tx.get(slipRef)
     if (slip.exists) return { id: entryRef.id, alreadyRecorded: true }
     const now = timestamp()
-    const payload = { employeeId: approved.employeeId, employeeName: approved.employeeName || '', branchId: approved.branchId, payrollEntryId: entryRef.id, payPeriodMonthKey: month, payPeriod: month, earnings: { hoursWorked: Number(approved.hoursWorked || 0), hourlyRate: Number(approved.hourlyRate || 0), overtimePay: Number(approved.overtimePay || 0), commission: Number(approved.commission || 0), total: Number(approved.totalPay || 0) }, deductions: approved.deductions || {}, totalEarnings: Number(approved.totalPay || 0), totalDeductions: Number(approved.totalDeductions || 0), netPay: Number(approved.netPay || 0), createdBy: req.user.uid, createdAt: now, dateGenerated: now, paymentStatus: 'Unpaid' }
+    const payload = { employeeId: approved.employeeId, employeeName: approved.employeeName || '', branchId: approved.branchId, payrollEntryId: entryRef.id, payPeriodMonthKey: month, payPeriod: month, earnings: { hoursWorked: Number(approved.hoursWorked || 0), hourlyRate: Number(approved.hourlyRate || 0), basePayModel: approved.basePayModel || 'hourly', baseRate: Number(approved.baseRate ?? approved.hourlyRate ?? 0), basePayAmount: approved.basePayAmount ?? null, workedDays: approved.workedDays ?? null, overtimePay: Number(approved.overtimePay || 0), commission: Number(approved.commission || 0), total: Number(approved.totalPay || 0) }, deductions: approved.deductions || {}, totalEarnings: Number(approved.totalPay || 0), totalDeductions: Number(approved.totalDeductions || 0), netPay: Number(approved.netPay || 0), createdBy: req.user.uid, createdAt: now, dateGenerated: now, paymentStatus: 'Unpaid' }
     tx.set(slipRef, payload)
     tx.set(db.collection('users').doc(approved.employeeId).collection('payslips').doc(entryRef.id), payload)
     const releasedCount = Number(summary.releasedCount || 0) + 1
@@ -146,6 +176,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
       tx.update(slipRefs[index], paymentUpdate)
       tx.update(db.collection('users').doc(slipData.employeeId).collection('payslips').doc(entryIds[index]), paymentUpdate)
       tx.update(db.collection('payrolls').doc(entryIds[index]), { paymentStatus: 'Paid', paidAt: now, paidBy: req.user.uid, paymentReference, updatedAt: now })
+      for (const earningId of summary.approvedEntries[entryIds[index]].staffEarningIds || []) tx.update(db.collection('staffEarnings').doc(earningId), { payrollPaidAt: now, payrollPaymentReference: paymentReference })
     }
     const expenseRef = db.collection('financialRecords').doc(`payroll-${summaryRef.id}`)
     const expenseSnap = await tx.get(expenseRef)

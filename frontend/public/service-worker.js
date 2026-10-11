@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aestheticare-v3'
+const CACHE_NAME = 'aestheticare-v4'
 const APP_SHELL = [
   '/',
   '/manifest.json',
@@ -45,6 +45,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url)
 
   if (request.method !== 'GET' || url.origin !== self.location.origin) return
+
+  // Account and operational data must always come from the authenticated API.
+  // Cache keys do not distinguish users by their Authorization header.
+  if (url.pathname === '/api' || url.pathname.startsWith('/api/') || request.headers.has('authorization')) return
 
   if (request.mode === 'navigate') {
     event.respondWith(

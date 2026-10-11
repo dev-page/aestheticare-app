@@ -2,7 +2,7 @@
   <div class="flex owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'plan', cards: 3 }" class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Choose Your Plan</h1>
         <p class="text-slate-400">Select the plan you want to avail or upgrade to before continuing to checkout.</p>
@@ -101,6 +101,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore'
@@ -113,6 +115,8 @@ import {
   getSubscriptionPlanPriority,
 } from '@/utils/subscriptionPlans'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const router = useRouter()
 const route = useRoute()
@@ -193,7 +197,7 @@ const selectPlan = (planId) => {
   selectedPlan.value = planId
 }
 
-const loadPlans = async () => {
+const loadPlans = trackPageLoad(async () => {
   error.value = ''
   loading.value = true
   try {
@@ -223,8 +227,8 @@ const loadPlans = async () => {
       unsubscribePlans = null
     }
 
-    unsubscribePlans = onSnapshot(
-      collection(db, 'subscriptionPlans'),
+    unsubscribePlans = pageListener(
+      onSnapshot, collection(db, 'subscriptionPlans'),
       (snapshot) => {
         const merged = buildSubscriptionPlanCatalog(defaultPlans(), snapshot.docs)
         allPlans.value = merged
@@ -252,19 +256,19 @@ const loadPlans = async () => {
     plans.value = filterActiveSubscriptionPlans(allPlans.value)
     loading.value = false
   }
-}
+})
 
 const getCurrentUser = async () => {
   if (auth.currentUser) return auth.currentUser
   return new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = pageListener(onAuthStateChanged, auth, (user) => {
       unsubscribe()
       resolve(user)
     })
   })
 }
 
-const fetchBackendJson = async (path, options = {}) => {
+const fetchBackendJson = trackPageLoad(async (path, options = {}) => {
   let lastError = null
 
   for (const baseUrl of OTP_API_BASE_CANDIDATES) {
@@ -294,7 +298,7 @@ const fetchBackendJson = async (path, options = {}) => {
   }
 
   throw lastError || new Error('Unable to reach the subscription backend.')
-}
+})
 
 onBeforeUnmount(() => {
   if (unsubscribePlans) {

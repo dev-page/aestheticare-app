@@ -32,6 +32,11 @@ async function saveTemplate() { await attempt(async () => { await attendanceApi(
 <template>
   <section>
     <h2>Import Attendance</h2>
+    <aside class="import-account-note" aria-label="Employee account requirement">
+      <strong>Before you import</strong>
+      <p>Every employee listed in your file must already have an account on the platform. Use their registered email address or employee ID to match each attendance record to the correct account.</p>
+      <p>If an employee does not have an account yet, create it in Employee Management first. Importing attendance does not create employee accounts.</p>
+    </aside>
     <div class="steps"><span v-for="(label,i) in ['Upload','Map Columns','Validate','Confirm']" :key="label" :class="{ active: step === i + 1 }">{{ i + 1 }}. {{ label }}</span></div>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
     <div class="panel">
@@ -61,5 +66,8 @@ async function saveTemplate() { await attempt(async () => { await attendanceApi(
   </section>
 </template>
 <style scoped>
+.import-account-note { margin: 16px 0 20px; padding: 16px 20px; border: 1px solid #ead2b2; border-left: 3px solid #b78055; border-radius: 10px; background: #fff8ee; color: #5d4536; }
+.import-account-note strong { display: block; margin-bottom: 6px; color: #4f3526; font-size: 14px; }
+.import-account-note p { margin: 6px 0 0; color: #735039; font-size: 13px; line-height: 1.65; }
 .panel{border:1px solid #27272a;border-radius:12px;padding:20px;margin:16px 0}h2,h3{font-weight:600;margin-bottom:12px}p{font-size:13px;color:#a1a1aa;margin:10px 0}.steps{display:flex;gap:6px;font-size:12px}.steps span{border-radius:20px;background:#27272a;padding:3px 8px}.steps .active{background:#172554;color:#93c5fd}label{display:block;margin:12px 0;font-size:13px}select,input:not([type=checkbox]){display:block;background:#09090b;border:1px solid #3f3f46;border-radius:8px;padding:8px;width:100%;margin-top:5px}button{border:1px solid #52525b;border-radius:20px;padding:6px 16px;font-size:13px}button:disabled{opacity:.4}.buttons{display:flex;justify-content:space-between;gap:12px}.overflow{overflow:auto;max-height:300px}th,td{padding:8px;border-bottom:1px solid #27272a;text-align:left;white-space:nowrap;font-size:12px}.error{color:#fca5a5}li{font-size:13px;color:#fcd34d;margin:6px 0}
 </style>

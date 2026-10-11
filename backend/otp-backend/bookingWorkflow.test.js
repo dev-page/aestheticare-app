@@ -10,6 +10,7 @@ const fixture = (installmentsAllowed) => ({ customerId: 'customer', practitioner
 
 const harness = (appointment) => {
   const records = new Map([['appointments/a', appointment], ['inventoryItems/material', { currentStock: 5 }]])
+  records.set('users/worker', { branchId: 'clinic', status: 'Active', role: 'Practitioner' })
   const handlers = new Map()
   let sequence = 0
   const firestore = () => ({
@@ -27,7 +28,7 @@ const harness = (appointment) => {
     },
   })
   firestore.FieldValue = { serverTimestamp: () => new Date() }
-  registerBookingMilestones({ post: (path, auth, handler) => handlers.set(path, handler) }, { admin: { firestore }, requireAuth() {} })
+  registerBookingMilestones({ post: (path, auth, handler) => handlers.set(path, handler) }, { admin: { firestore }, requireAuth() {}, authorizeClinicAction: async uid => { assertWorkflow(['receptionist', 'worker'].includes(uid), 'Check-in permission required.', 403) } })
   const call = async (path, uid, body = {}) => {
     const result = { code: 200 }
     await handlers.get(`/appointments/:id/${path}`)({ params: { id: 'a' }, user: { uid, email: `${uid}@test.invalid` }, body }, { status(code) { result.code = code; return this }, json(body) { result.body = body } })
@@ -59,8 +60,9 @@ for (const installmentsAllowed of [false, true]) {
     const serviceKey = h.current().serviceKey
     await h.call('verify-service-key', 'customer', { serviceKey })
     assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 409)
-    await h.call('verify-service-key', 'worker', { serviceKey })
-    assert.equal(h.current().status, 'Ready to Start')
+    await h.call('verify-service-key', 'receptionist', { serviceKey })
+    assert.equal(h.current().status, 'Checked in')
+    assert.equal(h.current().checkedInById, 'receptionist')
     assert.equal((await h.call('transition', 'customer', { action: 'start' })).code, 403)
     await h.call('transition', 'worker', { action: 'start' })
     assert.equal(h.current().status, 'Ongoing')
@@ -83,7 +85,7 @@ for (const installmentsAllowed of [false, true]) {
   })
 }
 
-test('Assigned practitioner can start a paid, approved online consultation without a service key', async () => {
+test('Online consultation requires both waiting-room entries and a system meeting before start', async () => {
   const appointment = {
     ...fixture(false),
     type: 'Consultation',
@@ -91,12 +93,33 @@ test('Assigned practitioner can start a paid, approved online consultation witho
     status: 'Paid',
     amountPaid: 1000,
     contract: { terms: 'Consultation terms', status: 'signed' },
+    date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()),
+    time: new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()),
+    consultationDurationMinutes: 30,
   }
   const h = harness(appointment)
+  h.records.set('appointmentMeetings/a', { meetLink: 'https://meet.google.com/test-meeting' })
+  assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 409)
+  assert.equal((await h.call('transition', 'customer', { action: 'join_consultation' })).code, 200)
+  assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 409)
+  assert.equal((await h.call('transition', 'worker', { action: 'join_consultation' })).code, 200)
   assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 200)
   assert.equal(h.current().status, 'Ongoing')
   assert.ok(h.current().startedAt)
   assert.equal(h.records.get('inventoryItems/material').currentStock, 4)
+})
+
+test('Reception check-in requires an authorized actor, identity evidence, and an unused code', async () => {
+  const h = harness({ ...fixture(false), amountPaid: 1000, status: 'Paid', contract: { status: 'signed' }, serviceKey: '123456' })
+  assert.equal((await h.call('verify-service-key', 'stranger', { serviceKey: '123456' })).code, 403)
+  assert.equal((await h.call('verify-service-key', 'receptionist', { serviceKey: '654321' })).code, 403)
+  assert.equal((await h.call('transition', 'receptionist', { action: 'manual_check_in', reason: 'ID' })).code, 400)
+  assert.equal((await h.call('transition', 'receptionist', { action: 'manual_check_in', reason: 'Verified attendee photo ID; their email was unavailable.' })).code, 200)
+  assert.equal(h.current().status, 'Checked in')
+  assert.match(h.current().manualCheckInReason, /photo ID/)
+  assert.equal((await h.call('verify-service-key', 'receptionist', { serviceKey: '123456' })).code, 409)
+  assert.equal((await h.call('transition', 'receptionist', { action: 'start' })).code, 403)
+  assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 200)
 })
 
 test('Materials reserve stock; reusable equipment reserves overlapping slots only', () => {
@@ -165,7 +188,7 @@ test('Booking availability uses clinic prices, weekly shifts, stock and worker c
   const { prepareBooking } = await import('./bookingResources.js')
   const records = new Map([
     ['productServicePosts/service', { branchId: 'clinic', postType: 'Service', isPublished: true, financeStatus: 'approved', price: 1200, durationMinutes: 60, termsAndConditions: 'Clinic agreement', requiredSupplyIds: ['m'], requiredEquipmentIds: ['e'], allowInstallments: true, depositPercent: 25 }],
-    ['users/worker', { branchId: 'clinic', status: 'Active' }],
+    ['users/worker', { branchId: 'clinic', status: 'Active', role: 'Practitioner' }],
     ['inventoryItems/m', { branchId: 'clinic', currentStock: 2 }],
     ['inventoryItems/e', { branchId: 'clinic', currentStock: 1 }],
   ])

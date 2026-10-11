@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="flex-1 p-8">
       <div class="mb-8 flex items-center justify-between">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Client List</h1>
@@ -152,6 +152,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -164,6 +166,8 @@ export default {
   name: 'ReceptionistClientList',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -421,8 +425,8 @@ export default {
         unsubscribeClients = null
       }
 
-      unsubscribeClients = onSnapshot(
-        query(collection(db, 'clients'), where('branchId', '==', currentBranchId.value)),
+      unsubscribeClients = pageListener(
+        onSnapshot, query(collection(db, 'clients'), where('branchId', '==', currentBranchId.value)),
         (snapshot) => {
           branchClientRecords.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
         },
@@ -441,8 +445,8 @@ export default {
         unsubscribeAppointments = null
       }
 
-      unsubscribeAppointments = onSnapshot(
-        query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
+      unsubscribeAppointments = pageListener(
+        onSnapshot, query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
         (snapshot) => {
           appointmentRecords.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
         },
@@ -455,8 +459,8 @@ export default {
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
 
         const userSnap = await getDoc(doc(db, 'users', user.uid))
@@ -469,7 +473,7 @@ export default {
         startClientsListener()
         startAppointmentsListener()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeClients) unsubscribeClients()
@@ -478,6 +482,7 @@ export default {
     })
 
     return {
+      pageLoading,
       searchQuery,
       clients,
       filteredClients,

@@ -1,5 +1,5 @@
 <template>
-  <main class="owner-recovery-page">
+  <main v-page-loading="{ active: pageLoading, variant: 'settings', sections: 1, fields: 2 }" class="owner-recovery-page owner-theme">
     <section class="owner-recovery-card" aria-labelledby="owner-recovery-title">
       <p class="owner-recovery-kicker">Owner access recovery</p>
       <h1 id="owner-recovery-title">Restore your clinic-owner access</h1>
@@ -21,12 +21,16 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { doc, getDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const router = useRouter()
 const busy = ref(false)
@@ -82,7 +86,7 @@ const restoreAccess = async () => {
     error.value = cause?.message || 'We could not restore owner access right now.'
   } finally { busy.value = false }
 }
-onMounted(async () => {
+onMounted(trackPageLoad(async () => {
   const currentUser = auth.currentUser
   if (!currentUser) return router.replace('/login')
   const snapshot = await getDoc(doc(db, 'users', currentUser.uid))
@@ -92,18 +96,18 @@ onMounted(async () => {
   // Signing in during the hold is the owner's explicit decision to keep the
   // clinic. Restore immediately so employees can sign in again right away.
   await restoreAccess()
-})
+}))
 </script>
 
 <style scoped>
-.owner-recovery-page { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; background: radial-gradient(circle at top, #563323, #24160f 58%, #160d09); color: #f3e7e0; }
-.owner-recovery-card { width: min(100%, 36rem); padding: 2.25rem; border: 1px solid #71472f; border-radius: 1.5rem; background: rgba(42, 24, 15, .97); box-shadow: 0 1.5rem 3.5rem rgba(0, 0, 0, .35); }
-.owner-recovery-kicker { margin: 0 0 .65rem; color: #d8a47c; font-size: .72rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.owner-recovery-page { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; background: radial-gradient(circle at top, #f4d8b5, #fff8eb 58%, #fdf3e2); color: #342419; }
+.owner-recovery-card { width: min(100%, 36rem); padding: 2.25rem; border: 1px solid #ead2b2; border-radius: 1.5rem; background: rgba(255, 253, 249, .96); box-shadow: 0 1.5rem 3.5rem rgba(72, 42, 23, .14); }
+.owner-recovery-kicker { margin: 0 0 .65rem; color: #956344; font-size: .72rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
 h1 { margin: 0; font-family: Georgia, serif; font-size: clamp(2rem, 6vw, 2.7rem); line-height: 1.08; }
-.owner-recovery-copy { margin: 1rem 0 1.5rem; color: #e2c7b6; line-height: 1.65; }
-.owner-recovery-note { display: grid; gap: .35rem; padding: 1rem; border: 1px solid #6d452f; border-radius: .9rem; background: #351e12; color: #d9bca9; font-size: .92rem; }
-.owner-recovery-note strong { color: #f3e7e0; }.owner-recovery-error { margin: 1rem 0 0; color: #ff9d92; font-size: .9rem; }
+.owner-recovery-copy { margin: 1rem 0 1.5rem; color: #624733; line-height: 1.65; }
+.owner-recovery-note { display: grid; gap: .35rem; padding: 1rem; border: 1px solid #ead2b2; border-radius: .9rem; background: #fff7ec; color: #624733; font-size: .92rem; }
+.owner-recovery-note strong { color: #342419; }.owner-recovery-error { margin: 1rem 0 0; color: #a13f38; font-size: .9rem; }
 .owner-recovery-actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1.75rem; }.owner-recovery-actions button { border-radius: .75rem; padding: .78rem 1rem; font-weight: 700; cursor: pointer; }
-.owner-recovery-primary { border: 1px solid #b8794f; background: #8d5a3b; color: #fff; }.owner-recovery-secondary { border: 1px solid #70452f; background: transparent; color: #f3e7e0; }.owner-recovery-actions button:disabled { cursor: wait; opacity: .65; }
+.owner-recovery-primary { border: 1px solid #2d1b13; background: #2d1b13; color: #fffaf3; }.owner-recovery-secondary { border: 1px solid #cf9f78; background: transparent; color: #2d1b13; }.owner-recovery-actions button:disabled { cursor: wait; opacity: .65; }
 @media (max-width: 28rem) { .owner-recovery-card { padding: 1.5rem; }.owner-recovery-actions { align-items: stretch; flex-direction: column-reverse; } }
 </style>

@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="flex-1 p-8">
       <div class="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">{{ pageTitle }}</h1>
@@ -36,6 +36,7 @@
               <option value="">All</option>
               <option value="Unpaid">Unpaid</option>
               <option value="Paid">Paid</option>
+              <option value="Checked in">Checked in</option>
               <option value="Completed">Completed</option>
               <option value="Scheduled">Scheduled</option>
               <option value="Ongoing">Ongoing</option>
@@ -76,13 +77,14 @@
                                   <div class="flex items-center gap-2">
                                     <button @click="openContractModal(appointment)" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-500">{{ appointment.source === 'walk_in' ? (appointment.contract?.status === 'signed' ? 'View signed contract' : 'Client review & e-sign') : 'Manage Contract' }}</button>
                                     <button
-                                      v-if="appointment.serviceKey && !appointment.workerKeyVerified"
+                                      v-if="appointment.serviceKey && !appointment.workerKeyVerified && ['Paid', 'Scheduled', 'Ready to Start'].includes(appointment.status) && !(appointment.type === 'Consultation' && appointment.consultationMode === 'online')"
                                       @click="verifyServiceKey(appointment)"
                                       type="button"
                                       class="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs hover:bg-amber-500"
                                     >
-                                      Verify Key
+                                      Verify code &amp; check in
                                     </button>
+                                    <button v-if="!appointment.workerKeyVerified && ['Paid', 'Scheduled', 'Ready to Start'].includes(appointment.status) && !(appointment.type === 'Consultation' && appointment.consultationMode === 'online')" type="button" class="px-3 py-1.5 rounded-lg border border-amber-600 text-xs" :disabled="serviceKeyVerifying" @click="manualCheckIn(appointment)">Code unavailable</button>
                                   </div>
                                 </td>
               </tr>
@@ -110,6 +112,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, onSnapshot, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -126,6 +130,8 @@ export default {
   name: 'ReceptionistAppointmentList',
   components: { OwnerSidebar, BookingContractModal, ServiceKeyVerificationModal },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasPermission } = usePermissions()
@@ -187,7 +193,7 @@ export default {
       return 'px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400'
     }
 
-    const loadAppointments = async (providedSnapshot = null) => {
+    const loadAppointments = trackPageLoad(async (providedSnapshot = null) => {
       if (!currentBranchId.value) return
       const snapshot = providedSnapshot || await getDocs(
         query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
@@ -253,7 +259,7 @@ export default {
           || clientNameMap.get(String(appt.clientId))
           || '',
       })))
-    }
+    })
 
     const verifyServiceKey = (appointment) => {
       selectedServiceKeyAppointment.value = appointment
@@ -285,7 +291,7 @@ export default {
         if (!response?.ok || !payload?.success) throw new Error(payload?.error || 'Unable to verify service key.')
         appointment.status = payload.data.status
         appointment.workerKeyVerified = true
-        toast.success('Service key verified.')
+        toast.success('Customer checked in. The assigned practitioner can now start the service.')
         closeServiceKeyModal()
       } catch (error) {
         console.error(error)
@@ -295,11 +301,30 @@ export default {
       }
     }
 
+    const manualCheckIn = async appointment => {
+      const reason = window.prompt('Verify the attendee identity, then explain the identity check and why their code is unavailable (at least 10 characters):')
+      if (!reason) return
+      serviceKeyVerifying.value = true
+      try {
+        const token = await auth.currentUser.getIdToken()
+        let response
+        for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+          response = await fetch(`${baseUrl}/appointments/${appointment.id}/transition`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ action: 'manual_check_in', reason }) })
+          if (response.status !== 404) break
+        }
+        const payload = await response?.json()
+        if (!response?.ok || !payload?.success) throw Error(payload?.error || 'Unable to check in the attendee.')
+        appointment.status = payload.data.status
+        appointment.workerKeyVerified = true
+        toast.success('Customer checked in. The identity-check reason was recorded.')
+      } catch (error) { toast.error(error.message) } finally { serviceKeyVerifying.value = false }
+    }
+
     let unsubscribeAuth = null
     let unsubscribeAppointments = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
 
         currentUserId.value = user.uid
@@ -312,8 +337,8 @@ export default {
           return
         }
         if (unsubscribeAppointments) unsubscribeAppointments()
-        unsubscribeAppointments = onSnapshot(
-          query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
+        unsubscribeAppointments = pageListener(
+          onSnapshot, query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
           (snapshot) => loadAppointments(snapshot),
           (error) => {
             console.error('Failed to subscribe to appointment updates:', error)
@@ -321,7 +346,7 @@ export default {
           }
         )
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
@@ -345,6 +370,7 @@ export default {
     }
 
     return {
+      pageLoading,
       pageTitle,
       pageSubtitle,
       searchQuery,
@@ -354,6 +380,7 @@ export default {
       filteredAppointments,
       statusClass,
       verifyServiceKey,
+      manualCheckIn,
       showServiceKeyModal,
       serviceKeyVerifying,
       closeServiceKeyModal,

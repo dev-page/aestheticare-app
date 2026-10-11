@@ -1,19 +1,19 @@
 <template>
-  <div class="flex module-theme min-h-screen bg-slate-900">
-    <OwnerSidebar />
+  <div class="flex module-theme min-w-0" :class="embedded ? '' : 'min-h-screen bg-slate-900'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="flex-1 p-8">
+    <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 class="mb-2 text-3xl font-bold text-white">Booking Request Approvals</h1>
-          <p class="text-slate-400">Review new booking requests, cancellations, and reschedules before they affect the shop schedule.</p>
+          <h1 v-if="!embedded" class="mb-2 text-3xl font-bold text-white">Online Booking Requests</h1>
+          <p class="text-slate-400">Review online booking requests, cancellations, and reschedules before they affect the clinic schedule.</p>
         </div>
         <button
           type="button"
           class="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-white transition hover:bg-slate-700"
           @click="loadRequests"
         >
-          Refresh
+          <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
         </button>
       </div>
 
@@ -228,11 +228,15 @@
           </div>
         </aside>
       </div>
-    </main>
+    </component>
   </div>
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+const props = defineProps({ embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' } })
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
@@ -242,6 +246,8 @@ import { toast } from 'vue3-toastify'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { getClinicPolicyForBranch } from '@/utils/clinicPolicies'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const db = getFirestore(getApp())
 const auth = getAuth(getApp())
@@ -264,7 +270,7 @@ let unsubscribeAuth = null
 const formatCurrency = (value) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
 
-const fetchFromBackend = async (path, options = {}) => {
+const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
   const baseUrl = String(OTP_API_BASE || '').trim()
   if (!baseUrl) {
     throw new Error('VITE_OTP_API_BASE_URL is not set.')
@@ -277,7 +283,7 @@ const fetchFromBackend = async (path, options = {}) => {
   }
 
   return response
-}
+})
 
 const buildAuthHeaders = async (headers = {}) => {
   const user = auth.currentUser
@@ -351,7 +357,7 @@ const selectRequest = (request) => {
   selectedRequestId.value = request?.id || ''
 }
 
-const loadRequests = async () => {
+const loadRequests = trackPageLoad(async () => {
   loading.value = true
   try {
     const [appointmentSnap, clinicSnap] = await Promise.all([
@@ -372,6 +378,7 @@ const loadRequests = async () => {
       .map((snap) => {
         const data = snap.data() || {}
         const status = String(data.status || '').toLowerCase()
+        if (status === 'pending approval' && (data.isGroupRecipient || (data.bookingOrderId && !data.isBookingOrderParent))) return null
         const requestType = status.includes('cancellation requested')
           ? 'cancel'
           : status.includes('reschedule requested')
@@ -428,7 +435,7 @@ const loadRequests = async () => {
   } finally {
     loading.value = false
   }
-}
+})
 
 const approveSelectedRequest = async () => {
   const request = selectedRequest.value
@@ -545,14 +552,15 @@ const rejectSelectedRequest = async () => {
   }
 }
 
-onMounted(() => {
-  unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+onMounted(trackPageLoad(() => {
+  unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
     if (!user) return
     currentUserId.value = user.uid
 
     const userSnap = await getDoc(doc(db, 'users', user.uid))
     const userData = userSnap.exists() ? userSnap.data() || {} : {}
-    currentBranchId.value = String(userData.branchId || '').trim()
+    const scope = await loadOwnerBranchScope(db, user.uid)
+    currentBranchId.value = props.branchId || scope.branchId
     currentUserName.value =
       String(userData.fullName || '').trim() ||
       `${String(userData.firstName || '').trim()} ${String(userData.lastName || '').trim()}`.trim() ||
@@ -567,7 +575,7 @@ onMounted(() => {
 
     await loadRequests()
   })
-})
+}))
 
 onUnmounted(() => {
   if (unsubscribeAuth) unsubscribeAuth()

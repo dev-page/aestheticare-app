@@ -1,4 +1,6 @@
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, nextTick, computed } from 'vue'
 import { auth } from '@/config/firebaseConfig'
 import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore'
@@ -13,6 +15,8 @@ export default {
   name: 'OwnerDashboard',
   components: { OwnerSidebar, DashboardSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const loading = ref(true)
 
@@ -25,6 +29,13 @@ export default {
     const todaysRevenue = ref(0)
     const pendingRequests = ref(0)
     const lowStockCount = ref(0)
+    const operationsSummary = computed(() => [
+      { label: "Today's appointments", count: todayAppointments.value, color: '#bd875e' },
+      { label: 'Unread messages', count: unreadMessages.value, color: '#d2a675' },
+      { label: 'Pending purchase requests', count: pendingRequests.value, color: '#977352' },
+      { label: 'Low-stock items', count: lowStockCount.value, color: '#b45e49' },
+    ])
+    const operationsMaximum = computed(() => Math.max(1, ...operationsSummary.value.map(item => item.count)))
 
     const branches = ref([])
     const staff = ref([])
@@ -41,7 +52,7 @@ export default {
     let chartModulePromise = null
     let chartModule = null
 
-    const loadChartModule = async () => {
+    const loadChartModule = trackPageLoad(async () => {
       if (chartModule) return chartModule
       if (!chartModulePromise) {
         chartModulePromise = import('chart.js').then((module) => {
@@ -51,7 +62,7 @@ export default {
         })
       }
       return chartModulePromise
-    }
+    })
 
     const chunkArray = (items, size = 10) => {
       const chunks = []
@@ -61,7 +72,7 @@ export default {
       return chunks
     }
 
-    const fetchByBranchIds = async (collectionName, branchIds) => {
+    const fetchByBranchIds = trackPageLoad(async (collectionName, branchIds) => {
       if (!branchIds.length) return []
 
       const chunks = chunkArray(branchIds)
@@ -77,9 +88,9 @@ export default {
       }
 
       return results
-    }
+    })
 
-    const loadDashboardCollection = async (collectionName, branchIds) => {
+    const loadDashboardCollection = trackPageLoad(async (collectionName, branchIds) => {
       try {
         return await fetchByBranchIds(collectionName, branchIds)
       } catch (error) {
@@ -91,7 +102,7 @@ export default {
         if (permissionDenied) return []
         throw error
       }
-    }
+    })
 
     const isPermissionDenied = (error) =>
       String(error?.code || '') === 'permission-denied'
@@ -117,7 +128,7 @@ export default {
       return Number(item.currentStock || 0)
     }
 
-    const loadDashboardData = async () => {
+    const loadDashboardData = trackPageLoad(async () => {
       loading.value = true
       try {
         const user = auth.currentUser
@@ -221,11 +232,9 @@ export default {
         loading.value = false
         await nextTick()
         renderRevenueChart()
-        if (branches.value.length > 0) {
-          renderEmployeeChart()
-        }
+        renderEmployeeChart()
       }
-    }
+    })
     const renderRevenueChart = () => {
       if(!revenueChartRef.value) return
 
@@ -258,13 +267,13 @@ export default {
             title: {
               display: true,
               text: 'Branch Performance',
-              color: '#f7e8de',
+              color: '#342419',
               font: { size: 16, weight: '700' },
               padding: { bottom: 16 }
             },
             legend: {
               labels: {
-                color: '#e7d4c5',
+                color: '#624733',
                 boxWidth: 14,
                 boxHeight: 14
               }
@@ -272,13 +281,13 @@ export default {
           },
           scales: {
             x: {
-              ticks: { color: '#d7c0ad' },
+              ticks: { color: '#624733' },
               grid: { display: false }
             },
             y: {
               beginAtZero: true,
-              ticks: { color: '#d7c0ad' },
-              grid: { color: 'rgba(241,212,170,0.1)' }
+              ticks: { color: '#624733' },
+              grid: { color: 'rgba(207,159,120,.22)' }
             }
           }
         }
@@ -339,14 +348,14 @@ const renderEmployeeChart = () => {
         title: {
           display: true,
           text: 'Employees Distribution by Role',
-          color: '#f7e8de',
+          color: '#342419',
           font: { size: 16, weight: '700' },
           padding: { bottom: 16 }
         },
         legend: {
           position: 'top',
           labels: {
-            color: '#e7d4c5',
+            color: '#624733',
             boxWidth: 14,
             boxHeight: 14
           }
@@ -363,16 +372,17 @@ const renderEmployeeChart = () => {
         }
       }
     }
-  })
+})
+
 }
 
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
         await loadChartModule()
         await loadDashboardData()
       })
-    })
+    }))
 
     const upcomingAppointments = computed(() =>
       [...appointments.value]
@@ -581,6 +591,7 @@ const renderEmployeeChart = () => {
     }
 
     return {
+      pageLoading,
       loading,
       totalBranches,
       totalEmployees,
@@ -595,6 +606,8 @@ const renderEmployeeChart = () => {
       staff,
       revenueChartRef,
       employeeChartRef,
+      operationsSummary,
+      operationsMaximum,
       upcomingAppointments,
       recentTransactions,
       lowStockItems,
@@ -612,8 +625,8 @@ const renderEmployeeChart = () => {
   <div class="flex owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
-      <DashboardSkeleton v-if="loading" />
+    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 8, panels: 3 }" class="flex-1 p-8">
+      <DashboardSkeleton v-if="loading" :cards="8" :panels="3" />
       <div v-else class="owner-dashboard-shell">
         <section class="dashboard-hero">
           <div class="dashboard-hero-copy">
@@ -780,6 +793,24 @@ const renderEmployeeChart = () => {
               <canvas ref="employeeChartRef"></canvas>
             </div>
           </article>
+
+          <article class="dashboard-card">
+            <div class="dashboard-card-head">
+              <div>
+                <p class="dashboard-card-kicker">Clinic overview</p>
+                <h2 class="dashboard-card-title">Appointments & Open Tasks</h2>
+              </div>
+            </div>
+            <div class="chart-frame">
+              <div class="operations-bars" role="group" aria-label="Appointment and open task counts">
+                <div v-for="item in operationsSummary" :key="item.label" class="operations-bar-row">
+                  <div class="operations-bar-label"><span>{{ item.label }}</span><strong>{{ item.count }}</strong></div>
+                  <div class="operations-bar-track" aria-hidden="true"><div class="operations-bar-fill" :style="{ width: `${item.count / operationsMaximum * 100}%`, backgroundColor: item.color }"></div></div>
+                </div>
+              </div>
+            </div>
+            <p class="operations-chart-note">Appointments are for today. Other counts show currently open items across your branches.</p>
+          </article>
         </section>
 
         <section class="dashboard-content-grid">
@@ -894,6 +925,12 @@ const renderEmployeeChart = () => {
 </template>
 
 <style scoped>
+.operations-bars { display: grid; align-content: center; gap: 20px; height: 100%; padding: 18px 16px; }
+.operations-bar-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 12px; line-height: 1.4; color: #624733; }
+.operations-bar-label strong { flex-shrink: 0; font-size: 15px; font-variant-numeric: tabular-nums; color: #342419; }
+.operations-bar-track { height: 9px; background: #f0e1ce; border-radius: 999px; overflow: hidden; }
+.operations-bar-fill { height: 100%; border-radius: inherit; }
+.operations-chart-note { margin-top: 12px; color: #786354; font-size: 11px; line-height: 1.6; }
 .owner-dashboard-shell {
   display: grid;
   gap: 1.35rem;
@@ -1241,6 +1278,44 @@ const renderEmployeeChart = () => {
   margin: 0;
   color: #bca28e;
   font-size: 0.86rem;
+}
+
+/* Owner workspaces use the landing page's warm cream surfaces. These rules
+   deliberately sit after the original dashboard definitions so every card,
+   chart frame, tooltip, and data row follows the same visual system. */
+.dashboard-hero {
+  border-color: #e6c196;
+  background: radial-gradient(circle at top right, rgba(230, 193, 150, .46), transparent 30%), linear-gradient(145deg, #fffdf9, #fff8eb 64%, #f8e5bd);
+  box-shadow: 0 20px 48px rgba(72, 42, 23, .12);
+}
+.dashboard-kicker, .dashboard-card-kicker { color: #956344; }
+.dashboard-title, .dashboard-card-title, .metric-value, .insight-value, .dashboard-list-title { color: #342419; }
+.dashboard-subtitle, .metric-label, .insight-label, .dashboard-list-copy, .dashboard-list-meta, .dashboard-list-value, .dashboard-empty { color: #624733; }
+.dashboard-action-btn { border-color: #cf9f78; background: #fffdf9; color: #7b4f37; }
+.dashboard-action-btn:hover { background: #f8e5bd; }
+.dashboard-action-btn-primary { border-color: #956344; background: #956344; color: #fffaf3; }
+.metric-card, .insight-card, .dashboard-card { border-color: #ead2b2; background: linear-gradient(180deg, #fffdf9, #fff8eb); box-shadow: 0 14px 34px rgba(72, 42, 23, .08); }
+.metric-card-accent { background: radial-gradient(circle at top right, rgba(241, 212, 170, .52), transparent 30%), linear-gradient(180deg, #fffdf9, #fff8eb); }
+.metric-card-positive { background: radial-gradient(circle at top right, rgba(57, 115, 74, .16), transparent 28%), linear-gradient(180deg, #fffdf9, #fff8eb); }
+.metric-pill { border-color: #e6c196; background: #f8ead4; color: #956344; }
+.card-info-trigger { border-color: #e6c196; background: #fff8eb; color: #956344; }
+.card-info:hover .card-info-trigger, .card-info:focus-within .card-info-trigger { border-color: #cf9f78; background: #f8e5bd; color: #7b4f37; }
+.card-tooltip { border-color: #e6c196; background: linear-gradient(145deg, #fffdf9, #fdf3e2); box-shadow: 0 16px 34px rgba(72, 42, 23, .16); color: #473223; }
+.chart-frame { border-color: #ead2b2; background: #fffaf4; }
+.dashboard-list-row { border-color: #ead2b2; background: #fffaf4; }
+.insight-value-warn, .dashboard-list-value-alert { color: #8a5b18; }
+.insight-value-alert { color: #a13f38; }
+.dashboard-list-value-positive { color: #39734a; }
+.dashboard-status-neutral { border-color: #ead2b2; background: #fff7ec; color: #624733; }
+
+/* Dashboards are visual summaries. The detailed source data remains available
+   in its dedicated modules and exports, while this page focuses on charts. */
+.dashboard-metrics,
+.dashboard-spotlight-grid,
+.dashboard-content-grid { display: none; }
+
+@media (min-width: 1280px) {
+  .dashboard-chart-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (min-width: 768px) {

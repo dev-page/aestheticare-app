@@ -2,14 +2,14 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-6 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 6, sections: 2 }" class="flex-1 p-6 md:p-8">
       <div class="mx-auto max-w-4xl">
         <div class="mb-8">
           <h1 class="text-3xl font-bold text-white mb-2">Employee Profile</h1>
           <p class="text-slate-400">View and update your personal employee information.</p>
         </div>
 
-        <DashboardSkeleton v-if="loading" />
+        <DashboardSkeleton v-if="loading" variant="profile" />
 
         <div v-else class="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
           <section class="rounded-3xl border border-slate-800 bg-slate-800/80 p-6 shadow-lg">
@@ -141,6 +141,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -154,6 +156,8 @@ export default {
   name: 'EmployeeProfileSelf',
   components: { OwnerSidebar, DashboardSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const loading = ref(true)
@@ -219,7 +223,7 @@ export default {
 
       const branchId = String(userData.branchId || userData.clinicBranch || '').trim()
       if (branchId) {
-        unsubscribeBranch = onSnapshot(doc(db, 'clinics', branchId), (clinicSnap) => {
+        unsubscribeBranch = pageListener(onSnapshot, doc(db, 'clinics', branchId), (clinicSnap) => {
           if (!clinicSnap.exists()) {
             profile.value.branchId = branchId
             profile.value.branchLabel = branchId || '-'
@@ -234,8 +238,8 @@ export default {
         return
       }
 
-      unsubscribeBranch = onSnapshot(
-        query(collection(db, 'clinics'), where('branchAdminId', '==', uid)),
+      unsubscribeBranch = pageListener(
+        onSnapshot, query(collection(db, 'clinics'), where('branchAdminId', '==', uid)),
         (snapshot) => {
           if (snapshot.empty) {
             profile.value.branchId = ''
@@ -252,7 +256,7 @@ export default {
       )
     }
 
-    const loadProfile = async (uid, email, userData = {}) => {
+    const loadProfile = trackPageLoad(async (uid, email, userData = {}) => {
       tutorialEnabled.value = userData.preferences?.onboarding?.employee?.disabled !== true
       const branchId = String(userData.branchId || userData.clinicBranch || '').trim()
       if (branchId) {
@@ -276,7 +280,7 @@ export default {
         status: String(userData.status || '').trim(),
         profilePicture: String(userData.profilePicture || '').trim(),
       }
-    }
+    })
 
     const handleProfilePictureChange = (event) => {
       const file = event.target.files?.[0]
@@ -388,8 +392,8 @@ export default {
       }
     }
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           loading.value = false
           if (unsubscribeProfile) {
@@ -405,7 +409,7 @@ export default {
           unsubscribeProfile = null
         }
 
-        unsubscribeProfile = onSnapshot(doc(db, 'users', user.uid), async () => {
+        unsubscribeProfile = pageListener(onSnapshot, doc(db, 'users', user.uid), async () => {
           try {
             const userSnap = await getDoc(doc(db, 'users', user.uid))
             const userData = userSnap.exists() ? userSnap.data() || {} : {}
@@ -420,7 +424,7 @@ export default {
         })
         profilePictureFile.value = null
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) {
@@ -433,6 +437,7 @@ export default {
     })
 
     return {
+      pageLoading,
       fullName,
       handlePhoneInput,
       loading,

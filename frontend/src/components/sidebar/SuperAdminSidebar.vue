@@ -28,6 +28,7 @@ export default {
         ]
       },
       { label: 'Clinic Verification', icon: 'shield', to: '/superadmin/clinics/verification' },
+      { label: 'Supplier Verification', icon: 'shield', to: '/superadmin/suppliers/verification' },
       {
         key: 'subscription',
         label: 'Subscription',

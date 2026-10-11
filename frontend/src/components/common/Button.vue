@@ -42,12 +42,12 @@ const props = defineProps({
 })
 
 const buttonClasses = computed(() => {
-  const baseClasses = 'font-medium rounded focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors'
+  const baseClasses = 'app-button focus:outline-none transition-colors'
 
   const variantClasses = {
-    primary: 'bg-brown text-white hover:bg-opacity-90 focus:ring-brown',
-    secondary: 'bg-light text-gray-900 hover:bg-opacity-90 focus:ring-light',
-    danger: 'bg-pink text-white hover:bg-opacity-90 focus:ring-pink'
+    primary: 'app-button--primary',
+    secondary: 'app-button--secondary',
+    danger: 'app-button--danger'
   }
 
   const sizeClasses = {

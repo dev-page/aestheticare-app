@@ -49,7 +49,7 @@ service cloud.firestore {
 
     function applicantCannotChangeVerificationFields() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'status', 'approvalStatus', 'verificationStatus', 'verificationResults',
+        'status', 'approvalStatus', 'registrationStatus', 'verificationStatus', 'verificationResults',
         'verificationProcessedAt', 'verificationProcessedBy', 'approvedAt',
         'approvedBy', 'rejectedAt', 'rejectionReason', 'reviewedBy', 'reviewedAt',
         'subscriptionPlan', 'plan', 'paymentStatus', 'paymentId',
@@ -63,11 +63,17 @@ service cloud.firestore {
     }
 
     function applicantCanSubmitClinicDocuments() {
-      return request.resource.data.approvalStatus == 'Pending Approval'
+      return resource.data.approvalStatus in ['Pending Document Submission', 'Pending Documents', 'Pending Approval']
+        && request.resource.data.approvalStatus == 'Pending Approval'
+        && request.resource.data.registrationStatus == 'Pending Review'
+        && (!('expiryResubmissionExpiresAt' in resource.data)
+          || request.time <= resource.data.expiryResubmissionExpiresAt)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'approvalStatus', 'documentsSubmittedAt', 'submittedDocuments',
+          'approvalStatus', 'registrationStatus', 'documentsSubmittedAt', 'submittedDocuments',
           'draftDocuments', 'draftDocumentsUpdatedAt',
-          'platformAgreementAcceptance'
+          'platformAgreementAcceptance', 'permitHolderIsRegistrant',
+          'permitHolderName', 'permitHolderRelationship',
+          'authorizationReviewRequired'
         ]);
     }
 
@@ -80,13 +86,20 @@ service cloud.firestore {
           || resource.data.approvalStatus == 'Pending Documents')
         && (request.resource.data.approvalStatus == 'Pending Document Submission'
           || request.resource.data.approvalStatus == 'Pending Documents')
+        && (!('expiryResubmissionExpiresAt' in resource.data)
+          || request.time <= resource.data.expiryResubmissionExpiresAt)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'draftDocuments', 'draftDocumentsUpdatedAt'
         ]);
     }
 
     function customerCanRequestAppointmentChange() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      return resource.data.get('isGroupParent', false) != true
+        && resource.data.get('isBookingOrderParent', false) != true
+        && resource.data.get('checkedInAt', null) == null
+        && resource.data.get('startedAt', null) == null
+        && resource.data.status in ['Paid', 'Scheduled', 'Awaiting Payment', 'Contract Pending', 'Ready to Start']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'status', 'cancellationReason', 'cancellationRequestedAt',
         'cancellationPolicySnapshot', 'refundRequestedAmount',
         'refundCommissionAmount', 'refundStatus', 'requestedDate',
@@ -217,6 +230,7 @@ service cloud.firestore {
           // prevents a browser from choosing another organization's branch.
           );
       allow update: if isSignedIn()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['practitionerType'])
         && ((request.auth.uid == userId && applicantCannotChangeVerificationFields() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'userType', 'branchId', 'branchIds', 'organizationOwnerId', 'clinicId', 'permissions', 'effectivePermissions', 'customRoleIds', 'customRoleId', 'adminRole']))
           || (request.auth.uid == userId
             && isCustomer()
@@ -436,12 +450,16 @@ service cloud.firestore {
         && (resource.data.customerId == request.auth.uid
           || (resource.data.branchId != null && isOwnerOfBranch(resource.data.branchId))
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-            && (hasPermission('appointments:view') || hasPermission('finance:refunds:view')))
+            && (hasPermission('appointments:view') || hasPermission('appointments:update') || hasPermission('appointments:review')
+              || (resource.data.get('type', '') == 'Consultation' && hasPermission('consultations:view'))
+              || hasPermission('finance:refunds:view')))
           || isSuperadmin());
       // Customer bookings are created by the API after availability and policy checks.
       allow create: if isSignedIn()
+        && request.resource.data.get('bookingWorkflowVersion', 0) != 2
         && request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('appointments:create');
       allow update: if isSignedIn()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['treatmentTeam', 'staffingRequirements', 'teamAssignedBy', 'staffEarningsStatus', 'staffEarningsApprovedBy', 'staffEarningsReviewNote'])
         && ((resource.data.customerId == request.auth.uid && customerCanRequestAppointmentChange())
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')
             && (resource.data.get('bookingWorkflowVersion', 0) != 2
@@ -449,7 +467,19 @@ service cloud.firestore {
                 'bookingWorkflowVersion', 'status', 'approvalStatus', 'amount', 'totalAmount', 'amountPaid', 'balance',
                 'paymentStatus', 'installmentsAllowed', 'depositPercent', 'contract', 'contractRequired',
                 'serviceKey', 'customerKeyVerified', 'workerKeyVerified', 'workerCompleted', 'customerCompleted',
+                'treatmentTeam', 'staffingRequirements', 'staffEarningsStatus', 'staffEarningsApprovedBy', 'staffEarningsReviewNote', 'teamAssignedBy',
                 'resources', 'materialsConsumed', 'startedAt', 'completedAt', 'recordedPaymentSessions'
+                , 'checkedInAt', 'checkedInById', 'manualCheckInReason', 'clientJoinedAt', 'practitionerJoinedAt',
+                'workerCompletedAt', 'workerCompletedById', 'customerCompletedAt', 'consultationEndedAt',
+                'consultationEndedById', 'consultationActualDurationSeconds', 'treatmentNotes', 'aftercareInstructions',
+                'consultationClientEndedAt', 'consultationNeedsReview', 'consultationWindowEndedAt', 'consultationEndedByTimer',
+                'consultationWindowStartAt', 'consultationWindowEndAt', 'consultationDurationMinutes', 'workerKeyVerifiedAt',
+                'customerId', 'customerEmail', 'branchId', 'date', 'time', 'endTime', 'practitionerId', 'assignedPractitionerId',
+                'parentAppointmentId', 'groupBookingId', 'groupBooking', 'isGroupRecipient', 'paymentManagedByOrganizer',
+                'refundProcessing', 'refundProcessingAt', 'refundProcessingById', 'paymongoRefundId', 'paymongoRefundStatus',
+                'paymongoPaymentId', 'paymongoPaidAt', 'paymongoCheckoutSessionId', 'commissionAmount', 'commissionPercent', 'merchantNetAmount',
+                'sessionNumber', 'treatmentSessionId', 'selectedServiceIds', 'selectedServices', 'serviceIds', 'type',
+                'treatmentPlan', 'treatmentPlanAppointmentId', 'bookingOrderId', 'isBookingOrderParent', 'isGroupParent', 'appointmentIds'
               ])))
           // Practitioners can record only their own clinical follow-up and meeting-link metadata.
           // Workflow and financial fields remain restricted to the server workflow or appointment managers.
@@ -484,6 +514,14 @@ service cloud.firestore {
           || isSuperadmin());
       allow write: if false;
     }
+    match /groupBookings/{groupId} {
+      allow read: if isSignedIn() && (resource.data.organizerId == request.auth.uid || isSuperadmin()
+        || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+          && (hasPermission('appointments:view') || hasPermission('appointments:update'))));
+      allow write: if false;
+    }
+    match /groupConsentInvitations/{token} { allow read, write: if false; }
+    match /bookingCustomerDayLocks/{id} { allow read, write: if false; }
 
     match /treatmentSessionAudit/{auditId} {
       allow read: if isSignedIn()
@@ -650,20 +688,24 @@ service cloud.firestore {
         && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
           && (hasPermission('inventory:view') || hasPermission('finance:purchases:view'))) || isSuperadmin());
       allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'));
+        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'))
+        && !request.resource.data.keys().hasAny(['verificationStatus']);
       allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:update'));
+        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:update'))
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verificationStatus']);
       allow delete: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
     }
 
     match /supplierApplications/{supplierId} {
       allow read: if isSignedIn() && (request.auth.uid == supplierId || isSuperadmin());
-      allow create: if isSignedIn() && request.auth.uid == supplierId;
-      allow update: if isSignedIn()
-        && ((request.auth.uid == supplierId && applicantCannotChangeVerificationFields()) || isSuperadmin());
-      allow delete: if isSignedIn() && (request.auth.uid == supplierId || isSuperadmin());
+      allow create: if isSignedIn() && request.auth.uid == supplierId && !request.resource.data.keys().hasAny(['verificationStatus', 'reviewedById', 'reviewedAt', 'documents']);
+      allow update: if isSignedIn() && request.auth.uid == supplierId && applicantCannotChangeVerificationFields()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verificationStatus', 'reviewedById', 'reviewedAt', 'documents', 'revisionReason']);
+      allow delete: if false;
     }
+    match /supplierVerificationAudit/{id} { allow read: if isSuperadmin(); allow write: if false; }
+    match /appointmentAudit/{id} { allow read: if isSignedIn() && (isSuperadmin() || (canAccessBranch(resource.data.branchId) && hasPermission('appointments:view'))); allow write: if false; }
 
     match /purchaseRequests/{requestId} {
       allow read: if isSignedIn()
@@ -771,6 +813,12 @@ service cloud.firestore {
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('procurement:view')));
       allow create, update, delete: if false;
     }
+
+    // Staff agreements and earning snapshots are private and server-managed.
+    match /practitionerProfiles/{id} { allow read, write: if false; }
+    match /appointmentStaffTerms/{id} { allow read, write: if false; }
+    match /practitionerProfileAudit/{id} { allow read, write: if false; }
+    match /staffEarnings/{id} { allow read, write: if false; }
 
     match /commissionContracts/{contractId} {
       allow read: if isSignedIn()

@@ -16,7 +16,7 @@
 
     <div class="flex flex-1 min-w-0">
       <component :is="sidebarComponent" v-if="sidebarComponent" />
-      <main :class="isModuleView ? 'support-main support-main-module' : 'support-main'">
+      <main v-page-loading="{ active: pageLoading, variant: 'form', sections: 2, fields: 4 }" :class="isModuleView ? 'support-main support-main-module' : 'support-main'">
         <div class="support-content">
           <div :class="isModuleView ? 'support-header support-header-module' : 'support-header'">
             <p :class="isModuleView ? 'support-eyebrow support-eyebrow-module' : 'support-eyebrow'">
@@ -176,6 +176,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getFirestore, addDoc, collection, doc, getDoc, getDocs, query, setDoc, serverTimestamp, where } from 'firebase/firestore'
@@ -202,6 +204,8 @@ export default {
     SupplierSidebar
   },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const router = useRouter()
     const { activePlan, isExpired, initSubscription } = useSubscription()
@@ -329,7 +333,7 @@ export default {
       clearProof()
     }
 
-    const loadClinicOptions = async () => {
+    const loadClinicOptions = trackPageLoad(async () => {
       try {
         const snapshot = await getDocs(query(collection(db, 'clinics'), where('isPublished', '==', true)))
         clinicOptions.value = snapshot.docs
@@ -343,7 +347,7 @@ export default {
       } catch (error) {
         console.error('Failed to load clinic options for report:', error)
       }
-    }
+    })
 
     const submitReport = async () => {
       if (!subject.value || !category.value || !description.value) {
@@ -443,7 +447,7 @@ export default {
 
     let sidebarHandler = null
     let unsubscribeAuth = null
-    onMounted(() => {
+    onMounted(trackPageLoad(() => {
       initSubscription()
       syncSidebarCollapsed()
       sidebarHandler = (event) => {
@@ -454,7 +458,7 @@ export default {
       }
       window.addEventListener('sidebar-collapsed-change', sidebarHandler)
 
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
         reporterEmail.value = user.email || ''
 
@@ -483,7 +487,7 @@ export default {
           router.replace('/superadmin/tickets')
         }
       })
-    })
+    }))
 
     watch(panelKey, () => {
       syncSidebarCollapsed()
@@ -498,6 +502,7 @@ export default {
     })
 
     return {
+      pageLoading,
       reporterName,
       reporterEmail,
       branchId,

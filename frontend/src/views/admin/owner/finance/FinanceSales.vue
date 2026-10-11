@@ -1,8 +1,8 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
+  <div class="flex module-theme finance-page bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'cards', cardStyle: 'stat', cards: 4 }, { variant: 'table', columns: 6, rows: 5 }] }" class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Finance Sales</h1>
         <p class="text-slate-400">Track transaction accuracy, refunds, package sales, and daily reconciliation.</p>
@@ -137,6 +137,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -148,6 +150,8 @@ export default {
   name: 'FinanceSales',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -256,7 +260,7 @@ export default {
       )
     })
 
-    const loadSalesData = async () => {
+    const loadSalesData = trackPageLoad(async () => {
       if (!currentBranchId.value) return
 
       const [txSnap, staffSnap] = await Promise.all([
@@ -272,12 +276,12 @@ export default {
           id: staff.id,
           label: `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.email || staff.id
         }))
-    }
+    })
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
           transactions.value = []
@@ -295,13 +299,14 @@ export default {
 
         await loadSalesData()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
     })
 
     return {
+      pageLoading,
       transactions,
       staffOptions,
       dateFrom,

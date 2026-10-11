@@ -412,23 +412,23 @@ onMounted(async () => {
 }
 
 .password-shell.password-theme-supplier {
-  background: #140f0b;
+  background: linear-gradient(145deg, #fff8eb, #fdf3e2 58%, #f3dfbf);
 }
 
 .password-shell.password-theme-supplier nav {
-  border-color: rgba(74, 51, 34, .9);
-  background: rgba(26, 19, 13, .96);
+  border-color: rgba(198, 148, 108, .34);
+  background: rgba(255, 251, 244, .9);
 }
 
 .password-shell.password-theme-supplier > div.relative.z-10 > div {
-  border-color: #4a3322;
-  background: rgba(36, 24, 15, .97);
+  border-color: rgba(198, 148, 108, .34);
+  background: rgba(255, 253, 249, .94);
 }
 
 .password-shell.password-theme-supplier .input {
-  border-color: #6a4c33;
-  background: #1a130d;
-  color: #f2e2d2;
+  border-color: rgba(181, 127, 92, .54);
+  background: #fffdf9;
+  color: #473223;
 }
 
 .password-back-button { border-radius: .4rem; padding: .25rem .5rem; color: #4f3527; transition: color .2s, background .2s; }

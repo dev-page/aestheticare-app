@@ -1,313 +1,39 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
+  <div class="flex module-theme service-listings-page bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-4 md:p-8 text-white">
-      <div class="mb-6">
-        <h1 class="text-2xl md:text-3xl font-bold mb-1">Product & Service Listing</h1>
+    <main v-page-loading="{ active: pageLoading, variant: activeListingTab === 'create' ? 'form' : 'cards', cards: 6, fields: 8 }" class="min-w-0 flex-1 p-4 md:p-8 text-white">
+      <div class="listing-page-heading mb-6">
+        <div><p class="listing-eyebrow">Clinic services</p>
+        <h1 class="text-2xl md:text-3xl font-bold mb-1">Service Listings</h1>
         <p class="text-slate-400">{{ isFreePlan ? 'Publish service listings directly for customer booking.' : 'Save drafts, submit financial terms to Finance, then publish approved listings.' }}</p>
+        </div><button v-if="activeListingTab === 'listings'" type="button" class="listing-primary-button" @click="activeListingTab = 'create'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg><span>Create listing</span></button>
       </div>
 
-      <div v-if="isFreePlan" class="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/20 p-4 text-sm text-amber-100">
-        Free Plan includes up to <strong>{{ freePlanPostLimit }} service listings</strong>. Services publish directly and can be booked online. Upgrade to Basic for products, consultations, packages, and Finance workflows.
+      <div v-if="activeListingTab === 'listings'" class="listing-overview"><article><span>Total listings</span><strong>{{ posts.length }}</strong></article><article><span>Published</span><strong>{{ posts.filter(post => post.isPublished).length }}</strong></article><article><span>Unpublished</span><strong>{{ posts.filter(post => !post.isPublished).length }}</strong></article></div>
+      <nav class="listing-tabs" aria-label="Service listing sections"><button type="button" :class="{ 'is-active': activeListingTab === 'listings' }" :aria-pressed="activeListingTab === 'listings'" @click="activeListingTab = 'listings'">Listings</button><button type="button" :class="{ 'is-active': activeListingTab === 'create' }" :aria-pressed="activeListingTab === 'create'" @click="activeListingTab = 'create'">Create Listing</button></nav>
+
+      <div v-if="activeListingTab === 'listings' && isFreePlan" class="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/20 p-4 text-sm text-amber-100">
+        Free Plan includes up to <strong>{{ freePlanPostLimit }} service listings</strong>. Services publish directly and can be booked online. Upgrade to Basic for consultations, packages, and Finance workflows.
       </div>
 
-      <section v-if="applicablePolicies.length" class="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/20 p-4">
-        <div class="flex items-start gap-3"><span class="mt-0.5 text-amber-300">ⓘ</span><div><h2 class="font-semibold text-amber-100">Active clinic policies</h2><p class="mt-1 text-sm text-amber-200/80">These rules are configured in Policy Management and apply automatically when this listing is booked or purchased. They cannot be edited per listing.</p></div></div>
-        <div class="mt-4 grid gap-3 md:grid-cols-2"><article v-for="policy in applicablePolicies" :key="policy.key" class="rounded-lg border border-slate-600 bg-slate-900/60 p-3"><p class="text-sm font-semibold text-white">{{ policy.label }}</p><p class="mt-1 text-xs leading-5 text-slate-300">{{ policy.text }}</p></article></div>
+      <details v-if="activeListingTab === 'listings' && applicablePolicies.length" class="listing-policy-panel">
+        <summary class="listing-disclosure-trigger"><span>Applicable branch policies <small>{{ applicablePolicies.length }} enabled</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
+        <div class="listing-policy-content"><p class="listing-policy-description">These rules are configured in Policy &amp; Contract Management and apply automatically when this listing is booked. Branch policy links determine which rules apply. They cannot be edited per listing.</p>
+        <div class="listing-policy-grid"><article v-for="policy in applicablePolicies" :key="policy.key"><h3>{{ policy.label }}</h3><p>{{ policy.text }}</p></article></div></div>
+      </details>
+
+      <section v-if="activeListingTab === 'listings'" class="listing-client-contract">
+        <h2>Client Contract</h2>
+        <p v-if="hasClientContract">Your clinic's saved Client Contract applies automatically to services, consultations, and packages booked online or as walk-ins. Each booking includes the applicable branch policies, additional clinic terms, and saved appearance. You do not need to create a separate contract for each listing.</p>
+        <p v-else>Save a Client Contract in Policy &amp; Contract Management to apply it automatically to online and walk-in bookings for your listings.</p>
+        <details v-if="hasClientContract" class="listing-contract-disclosure"><summary class="listing-disclosure-trigger"><span>Preview applied contract</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary><div class="listing-contract-preview-body"><p class="listing-contract-preview-note">This preview uses this branch's linked policies. The Walk-In Policy applies to walk-ins. The booked service details are added to each customer's agreement. Existing agreements retain their saved content and design.</p><ClientContractDocument :document="listingContractPreview" /></div></details>
       </section>
 
-      <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
-        <h2 class="text-lg font-semibold mb-4">Create Draft</h2>
+      <div v-show="activeListingTab === 'create'" class="listing-create-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
+        <h2 class="text-lg font-semibold mb-2">Create listing</h2><p class="listing-section-description">Add the service details, booking rules, and resources needed for each appointment.</p>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label class="block text-slate-400 mb-1">Post Type</label>
-            <select
-              v-model="form.postType"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option v-if="!isFreePlan" value="Product">Product</option>
-              <option value="Service">Service</option>
-              <option v-if="!isFreePlan" value="Consultation">Consultation</option>
-              <option v-if="!isFreePlan" value="Package">Service Package</option>
-            </select>
-          </div>
-
-          <div v-if="form.postType === 'Product'">
-            <label class="block text-slate-400 mb-1">Product</label>
-            <select
-              v-model="form.productName"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="" disabled>
-                {{ inventoryProducts.length === 0 ? 'No inventory items available yet' : 'Select product from inventory' }}
-              </option>
-              <option v-for="item in inventoryProducts" :key="item.id" :value="item.name">{{ item.name }}</option>
-            </select>
-          </div>
-
-          <div v-else-if="form.postType === 'Service'">
-            <label class="block text-slate-400 mb-1">Service Name</label>
-            <input
-              type="text"
-              v-model="form.serviceName"
-              placeholder="Enter service name"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div v-else-if="form.postType === 'Consultation'">
-            <label class="block text-slate-400 mb-1">Consultation Name</label>
-            <input
-              type="text"
-              v-model="form.consultationName"
-              placeholder="Enter consultation name"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-
-        <div class="mb-4 border-b border-slate-700 pb-3">
-          <h3 class="font-semibold text-white">{{ form.postType === 'Product' ? 'Product Information' : form.postType === 'Consultation' ? 'Consultation Information' : form.postType === 'Package' ? 'Package Information' : 'Service Information' }}</h3>
-          <p class="mt-1 text-xs text-slate-400">Complete the details required for this {{ form.postType.toLowerCase() }} before adding its customer-facing listing information.</p>
-        </div>
-
-        <div v-if="form.postType === 'Package'" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-          <label class="block text-slate-400 mb-1">Package Name</label>
-          <input v-model="form.packageName" type="text" placeholder="Consultation + service package" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
-          <label class="block text-slate-400 mt-4 mb-1">Included services and consultations</label>
-          <select v-model="form.packageServiceIds" multiple class="min-h-28 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
-            <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
-          </select>
-          <p class="mt-2 text-xs text-slate-400">A package must include at least two services, or one consultation plus at least one service. Customers book and pay for the package as one appointment.</p>
-          <label class="mt-4 block text-slate-400">Number of treatment sessions<input v-model.number="form.sessionCount" type="number" min="1" max="50" step="1" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" /><span class="mt-1 block text-xs text-slate-400">Use 1 for a one-time package. For multiple sessions, the clinic schedules each visit separately after approval.</span></label>
-        </div>
-
-        <div v-if="form.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div class="md:col-span-2">
-            <p class="text-sm font-medium text-white">Inventory Details</p>
-            <p class="mt-1 text-xs text-slate-400">These optional details help customers identify the selected inventory product.</p>
-          </div>
-          <div>
-            <label class="block text-slate-400 mb-1">Quantity / Volume</label>
-            <input
-              v-model="form.productVolume"
-              type="text"
-              placeholder="e.g. 30 mL or 1 L"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label class="block text-slate-400 mb-1">Unit</label>
-            <input
-              v-model="form.productUnit"
-              type="text"
-              placeholder="e.g. bottle, box, piece"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-
-        <div v-if="form.postType === 'Service'" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-          <label class="block text-slate-400 mb-1">Number of Treatment Sessions</label>
-          <input v-model.number="form.sessionCount" type="number" min="1" max="50" step="1" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <p class="text-xs text-slate-400 mt-1">Use 1 for a one-time service. For multiple sessions, the customer or clinic staff can schedule each next visit based on availability.</p>
-        </div>
-
-        <div v-if="form.postType === 'Product'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
-          <p class="mb-3 font-medium text-amber-200">FDA product documentation</p>
-          <p class="text-xs leading-5 text-slate-400">FDA details are supplied by the selected supplier and are copied from inventory when this product is published. Update them from the supplier catalog, not here.</p>
-        </div>
-
-        <div v-if="form.postType === 'Service' || form.postType === 'Consultation'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div class="md:col-span-2 border-b border-slate-700 pb-2">
-            <h3 class="font-semibold text-white">{{ form.postType === 'Service' ? 'Booking Rules' : 'Consultation Rules' }}</h3>
-            <p class="mt-1 text-xs text-slate-400">{{ form.postType === 'Service' ? 'Set only the rules customers need to know before requesting this service.' : 'Set the fee, duration, and appointment mode for this consultation.' }}</p>
-          </div>
-          <label v-if="form.postType !== 'Service' || !isFreePlan" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-            <input
-              v-if="form.postType === 'Service' && !isFreePlan"
-              v-model="form.requiresConsultationFirst"
-              type="checkbox"
-              class="mt-1 h-4 w-4 accent-blue-500"
-            />
-            <input
-              v-else-if="form.postType === 'Consultation'"
-              type="checkbox"
-              checked
-              disabled
-              class="mt-1 h-4 w-4 accent-blue-500"
-            />
-            <span>
-              <span class="block font-medium text-white">
-                {{ form.postType === 'Consultation' ? 'Standalone consultation post' : 'Requires consultation first' }}
-              </span>
-              <span class="block text-xs text-slate-400">
-                {{ form.postType === 'Consultation'
-                  ? 'This consultation can be booked separately.'
-                  : isFreePlan ? 'Consultations are unavailable on Free Plan.' : 'Enable this when the service must be assessed before a booking can proceed.' }}
-              </span>
-            </span>
-          </label>
-          <div v-if="form.postType === 'Consultation' || form.requiresConsultationFirst" class="md:col-span-2">
-            <label class="block text-slate-400 mb-1">Consultation Fee (PHP)</label>
-            <input
-              v-model.number="form.consultationFee"
-              type="number"
-              min="0.01"
-              step="0.01"
-              placeholder="0.00"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <p class="text-xs text-slate-400 mt-1">
-              {{ form.postType === 'Consultation' ? 'Required for consultation posts.' : 'Required when consultation is enabled.' }}
-            </p>
-          </div>
-          <label v-if="form.postType === 'Service'" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-            <input v-model="form.followUpAllowed" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
-            <span>
-              <span class="block font-medium text-white">Allow follow-ups</span>
-              <span class="block text-xs text-slate-400">Mark this when customers may book a follow-up after the initial service.</span>
-            </span>
-          </label>
-          <div v-if="form.postType === 'Service'" class="md:col-span-2">
-            <label class="block text-slate-400 mb-1">Follow-up Window (days)</label>
-            <input
-              v-model.number="form.followUpWindowDays"
-              type="number"
-              min="1"
-              step="1"
-              :disabled="!form.followUpAllowed"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
-            />
-            <p class="text-xs text-slate-400 mt-1">How many days after the service a follow-up can be scheduled.</p>
-          </div>
-          <div class="md:col-span-2">
-            <label class="block text-slate-400 mb-1">{{ form.postType === 'Consultation' ? 'Consultation Duration (minutes)' : 'Service Duration (minutes)' }}</label>
-            <input
-              v-model.number="form.durationMinutes"
-              type="number"
-              min="1"
-              step="1"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <p class="text-xs text-slate-400 mt-1">
-              {{ form.postType === 'Consultation'
-                ? 'How long the consultation usually takes to complete.'
-                : 'How long the service usually takes to complete.' }}
-            </p>
-          </div>
-          <div v-if="form.postType === 'Consultation'" class="md:col-span-2">
-            <label class="block text-slate-400 mb-1">Consultation Mode</label>
-            <select v-model="form.consultationMode" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="on-site">On-site consultation</option>
-              <option value="online">Online consultation</option>
-            </select>
-            <p class="mt-1 text-xs text-slate-400">Choose one mode for this consultation. Packages inherit the mode of their included consultation.</p>
-          </div>
-          <div v-if="form.postType === 'Service' && form.requiresConsultationFirst" class="md:col-span-2">
-            <label class="block text-slate-400 mb-1">Required Consultation Mode</label>
-            <select v-model="form.consultationMode" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600">
-              <option value="on-site">On-site consultation</option>
-              <option value="online">Online consultation</option>
-            </select>
-            <p class="mt-1 text-xs text-slate-400">The automatically created package will use this consultation mode.</p>
-          </div>
-          <div v-if="form.postType === 'Service'" class="md:col-span-2">
-            <div class="mb-3 border-t border-slate-700 pt-4">
-              <h3 class="font-semibold text-white">Resources & Payment</h3>
-              <p class="mt-1 text-xs text-slate-400">{{ isFreePlan ? 'Materials are reserved for each booking. Free Plan service listings publish without Finance approval.' : 'Materials are reserved for each booking. Payment terms require Finance approval before publishing.' }}</p>
-            </div>
-            <label class="block text-slate-400 mb-1">Required Supplies</label>
-            <select v-model="form.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit || 'unit' }})</option>
-            </select>
-            <p class="mt-1 text-xs text-slate-400">One unit of each selected material is reserved per booking and deducted when the service starts.</p>
-            <label class="block text-slate-400 mt-3 mb-1">Required equipment (reusable)</label>
-            <select v-model="form.requiredEquipmentIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
-              <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }}</option>
-            </select>
-            <p class="text-xs text-slate-400">One unit of each is reserved for the appointment time, then becomes available again.</p>
-            <p class="mt-1 text-xs text-slate-400">Select every material or supply needed to perform this service.</p>
-          </div>
-        </div>
-
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div class="md:col-span-2 border-t border-slate-700 pt-4">
-            <h3 class="font-semibold text-white">Customer-Facing Listing</h3>
-            <p class="mt-1 text-xs text-slate-400">This is the information customers see when choosing the {{ form.postType.toLowerCase() }}.</p>
-          </div>
-          <div>
-            <label class="block text-slate-400 mb-1">Title</label>
-            <input
-              type="text"
-              v-model="form.title"
-              placeholder="Post title"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label class="block text-slate-400 mb-1">Price (PHP)</label>
-            <input
-              type="number"
-              v-model.number="form.price"
-              min="0"
-              step="0.01"
-              placeholder="0.00"
-              :readonly="form.postType === 'Product'"
-              class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <p v-if="form.postType === 'Product'" class="text-xs text-slate-400 mt-1">
-              Product price comes from inventory unit price.
-            </p>
-          </div>
-        </div>
-
-        <div class="mb-4">
-          <label class="block text-slate-400 mb-1">Description</label>
-          <textarea
-            v-model="form.description"
-            rows="3"
-            placeholder="Write post description"
-            class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          ></textarea>
-        </div>
-
-        <div class="mb-4">
-          <label class="block text-slate-400 mb-1">{{ form.postType === 'Product' ? 'Product Terms and Conditions' : 'Service Contract Terms and Conditions' }}</label>
-          <textarea
-            v-model="form.termsAndConditions"
-            rows="3"
-            :placeholder="form.postType === 'Product' ? 'Add product-specific terms, usage instructions, or return conditions' : 'Add the terms the customer must accept before booking this service'"
-            class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          ></textarea>
-        </div>
-
-        <div class="mb-4">
-          <label class="block text-slate-400 mb-1">Image (1 file only)</label>
-          <input
-            type="file"
-            accept="image/*"
-            @change="handleImageUpload"
-            class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-blue-600 file:text-white"
-          />
-          <p v-if="imageFileName" class="text-xs text-slate-400 mt-1">Selected: {{ imageFileName }}</p>
-        </div>
-
-        <div class="mb-4 rounded-xl border border-slate-700 bg-slate-900/40 p-4 text-sm">
-          <p class="font-semibold text-white">{{ form.postType === 'Product' ? 'Listing Summary' : 'Booking Summary' }}</p>
-          <p v-if="form.postType === 'Service'" class="mt-2 text-slate-300">Consultation: {{ form.requiresConsultationFirst ? 'Required before booking' : 'Not required' }}</p>
-          <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Follow-up: {{ form.followUpAllowed ? `Available within ${form.followUpWindowDays || 14} days` : 'Not available' }}</p>
-          <p v-if="form.postType === 'Consultation'" class="mt-2 text-slate-300">Mode: {{ form.consultationMode === 'on-site' ? 'On-site consultation' : 'Online consultation' }}</p>
-          <p v-if="form.postType === 'Package'" class="mt-2 text-slate-300">Included appointments: {{ form.packageServiceIds.length }}</p>
-          <p v-if="['Service', 'Package'].includes(form.postType)" class="mt-1 text-slate-300">Treatment sessions: {{ Math.max(1, Number(form.sessionCount || 1)) }}</p>
-          <p v-if="form.postType === 'Product'" class="mt-2 text-slate-300">Source: selected inventory product</p>
-          <p class="mt-1 text-slate-300">Proposed {{ form.postType.toLowerCase() }} price: PHP {{ Number(form.price || form.consultationFee || 0).toFixed(2) }}</p>
-          <p class="mt-1 text-xs text-amber-200">{{ isFreePlan ? 'Free Plan service listings publish directly; Finance approval is not required.' : 'Financial terms, including installment settings, require Finance approval before publication.' }}</p>
-        </div>
+        <ServiceListingFields :model="form" :disabled="loading" :is-free-plan="isFreePlan" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
 
         <div class="flex gap-2">
           <button
@@ -327,21 +53,22 @@
         </div>
       </div>
 
-      <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700">
-        <h2 class="text-lg font-semibold mb-4">My Posts</h2>
+      <div v-show="activeListingTab === 'listings'" class="listing-records-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700">
+        <div class="listing-records-heading"><div><h2 class="text-lg font-semibold">Your listings</h2><p>{{ filteredListings.length }} of {{ posts.length }} listings</p></div><input v-model="listingSearch" type="search" aria-label="Search service listings" placeholder="Search by name, type, or description..." /></div>
 
-        <div v-if="posts.length === 0" class="text-slate-400">No posts yet.</div>
+        <div v-if="!filteredListings.length" class="listing-empty-state"><h3>{{ posts.length ? 'No matching listings' : 'No listings yet' }}</h3><p>{{ posts.length ? 'Try a different name, type, or description.' : 'Create your first listing to make a service available for booking.' }}</p><button v-if="!posts.length" type="button" class="listing-primary-button" @click="activeListingTab = 'create'">Create listing</button></div>
 
         <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          <article v-for="post in posts" :key="post.id" class="bg-slate-900/70 border border-slate-700 rounded-lg overflow-hidden">
-            <img v-if="post.imageUrl" :src="post.imageUrl" alt="Post image" class="w-full h-40 object-cover" />
-            <div class="p-4">
+          <article v-for="post in filteredListings" :key="post.id" class="listing-card bg-slate-900/70 border border-slate-700 rounded-lg overflow-hidden">
+            <img v-if="post.imageUrl" :src="post.imageUrl" :alt="post.title || 'Service image'" class="w-full h-40 object-cover" />
+            <div v-else class="listing-image-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4 18.4 5.6" stroke-linecap="round" /></svg><span>{{ post.postType }}</span></div>
+            <div class="listing-card-body p-4">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-300">{{ post.postType }}</span>
+                <span class="listing-detail-badge listing-type-badge">{{ post.postType }}</span>
                 <span class="text-xs text-slate-400">{{ formatDate(post.createdAt) }}</span>
               </div>
               <h3 class="font-semibold mb-1">{{ post.title }}</h3>
-              <p class="mb-2 text-sm font-semibold">{{ isFreePlan ? (post.isPublished ? 'Published' : 'Draft') : (post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft') }}</p>
+              <p class="listing-publication-status mb-2 text-sm font-semibold" :class="{ 'is-published': post.isPublished }">{{ isFreePlan ? (post.isPublished ? 'Published' : 'Draft') : (post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft') }}</p>
               <p v-if="!isFreePlan && post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
               <div v-if="canManageListingWorkflow && isFreePlan && !post.isPublished" class="mb-3 flex flex-wrap gap-2">
                 <button :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">Publish</button>
@@ -355,41 +82,41 @@
               <p v-if="post.postType === 'Package'" class="mb-2 text-xs text-amber-200">
                 Includes {{ (post.packageServiceIds || []).length }} consultation/service component(s).
               </p>
-              <p class="text-sm text-slate-400 mb-2">{{ post.description }}</p>
+              <p class="listing-card-description text-sm text-slate-400 mb-2">{{ post.description }}</p>
               <div v-if="post.postType === 'Service' || post.postType === 'Consultation'" class="mb-2 flex flex-wrap gap-2">
                 <span
                   v-if="post.postType === 'Service' && post.requiresConsultationFirst"
-                  class="rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-200"
+                  class="listing-detail-badge"
                 >
                   Consultation required
                 </span>
                 <span
                   v-if="post.postType === 'Consultation' || (post.postType === 'Service' && post.requiresConsultationFirst)"
-                  class="rounded-full border border-orange-400/40 bg-orange-500/10 px-2 py-1 text-[11px] font-medium text-orange-200"
+                  class="listing-detail-badge"
                 >
                   Fee PHP {{ Number(post.consultationFee || post.price || 0).toFixed(2) }}
                 </span>
                 <span
                   v-if="post.postType === 'Service' && post.followUpAllowed"
-                  class="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-200"
+                  class="listing-detail-badge listing-follow-up-badge"
                 >
                   Follow-up allowed
                 </span>
                 <span
                   v-if="post.durationMinutes"
-                  class="rounded-full border border-sky-400/40 bg-sky-500/10 px-2 py-1 text-[11px] font-medium text-sky-200"
+                  class="listing-detail-badge"
                 >
                   {{ post.durationMinutes }} mins
                 </span>
               </div>
               <p v-if="post.postType === 'Service' && post.requiresConsultationFirst" class="mb-2 text-xs font-semibold text-amber-200">
-                Customer must make sure they have already consulted before booking this service.
+                A completed linked consultation or clinic-approved clearance is required before booking this service.
               </p>
               <p v-if="post.postType === 'Consultation'" class="mb-2 text-xs font-semibold text-orange-200">
                 Standalone consultation post. Customers book this separately before any follow-up service.
               </p>
-              <p class="text-sm font-semibold text-green-400">{{ formatCurrency(post.price) }}</p>
-              <div class="mt-3 flex flex-wrap gap-2">
+              <p class="listing-card-price text-sm font-semibold text-green-400">{{ formatCurrency(post.price) }}</p>
+              <div class="listing-card-actions mt-3 flex flex-wrap gap-2">
                 <button
                   @click="openEditPost(post)"
                   :disabled="actionLoadingId === post.id"
@@ -419,186 +146,13 @@
 
       <div v-if="showEditModal" class="fixed inset-0 z-50 bg-black/60 p-4 flex items-start md:items-center justify-center overflow-y-auto">
         <div class="w-full max-w-2xl rounded-xl bg-slate-800 border border-slate-700 max-h-[calc(100vh-2rem)] overflow-hidden flex flex-col">
-          <div class="px-6 pt-6 pb-4 border-b border-slate-700">
-            <h3 class="text-lg font-semibold">Edit Post</h3>
-            <p class="text-sm text-amber-300">Changing prices or installment terms unpublishes this listing and requires a new Finance review. Photo and description edits keep the current approval.</p>
+          <div class="listing-edit-heading px-6 pt-6 pb-4 border-b border-slate-700">
+            <h3 class="text-lg font-semibold">Edit listing</h3><button type="button" aria-label="Close edit listing" @click="closeEditModal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke-linecap="round" /></svg></button>
+            <p class="text-sm text-amber-300">{{ isFreePlan ? 'Update the listing details below. The listing type stays the same.' : 'Price or booking changes may require Finance review before publishing. The listing type stays the same.' }}</p>
           </div>
 
           <div class="flex-1 overflow-y-auto px-6 py-5">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label class="block text-slate-400 mb-1">Post Type</label>
-                <input
-                  :value="editForm.postType"
-                  disabled
-                  class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 text-slate-300"
-                />
-              </div>
-              <div>
-            <label class="block text-slate-400 mb-1">
-                  {{ editForm.postType === 'Product' ? 'Product' : (editForm.postType === 'Consultation' ? 'Consultation Name' : (editForm.postType === 'Package' ? 'Package Name' : 'Service Name')) }}
-                </label>
-                <input
-                  v-model="editForm.name"
-                  :disabled="editForm.postType === 'Product'"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
-                />
-              </div>
-            </div>
-
-          <div v-if="editForm.postType === 'Service' || editForm.postType === 'Consultation'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <label class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-              <input
-                v-if="editForm.postType === 'Service'"
-                v-model="editForm.requiresConsultationFirst"
-                type="checkbox"
-                class="mt-1 h-4 w-4 accent-blue-500"
-              />
-              <input
-                v-else
-                type="checkbox"
-                checked
-                disabled
-                class="mt-1 h-4 w-4 accent-blue-500"
-              />
-              <span>
-                <span class="block font-medium text-white">
-                  {{ editForm.postType === 'Consultation' ? 'Standalone consultation post' : 'Requires consultation first' }}
-                </span>
-                <span class="block text-xs text-slate-400">
-                  {{ editForm.postType === 'Consultation'
-                    ? 'This consultation can be booked separately.'
-                    : 'Keep this on when the service should not be booked directly.' }}
-                </span>
-              </span>
-            </label>
-            <div v-if="editForm.postType === 'Consultation' || editForm.requiresConsultationFirst" class="md:col-span-2">
-              <label class="block text-slate-400 mb-1">Consultation Fee (PHP)</label>
-              <input
-                v-model.number="editForm.consultationFee"
-                type="number"
-                min="0.01"
-                step="0.01"
-                placeholder="0.00"
-                class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div v-if="editForm.postType === 'Consultation'" class="md:col-span-2">
-              <label class="block text-slate-400 mb-1">Consultation Mode</label>
-              <select v-model="editForm.consultationMode" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="on-site">On-site consultation</option>
-                <option value="online">Online consultation</option>
-              </select>
-              <p class="mt-1 text-xs text-slate-400">Packages inherit the mode of their included consultation.</p>
-            </div>
-
-            <label v-if="editForm.postType === 'Service'" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-              <input v-model="editForm.followUpAllowed" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
-              <span>
-                <span class="block font-medium text-white">Allow follow-ups</span>
-                <span class="block text-xs text-slate-400">Let customers book a follow-up tied to this service.</span>
-                </span>
-              </label>
-              <div v-if="editForm.postType === 'Service'" class="md:col-span-2">
-                <label class="block text-slate-400 mb-1">Follow-up Window (days)</label>
-                <input
-                  v-model.number="editForm.followUpWindowDays"
-                  type="number"
-                  min="1"
-                  step="1"
-                  :disabled="!editForm.followUpAllowed"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
-                />
-              </div>
-              <div v-if="['Service', 'Package'].includes(editForm.postType)" class="md:col-span-2">
-                <label class="block text-slate-400 mb-1">Number of Treatment Sessions</label>
-                <input v-model.number="editForm.sessionCount" type="number" min="1" max="50" step="1" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <p class="mt-1 text-xs text-slate-400">Use 1 for a one-time treatment or package.</p>
-              </div>
-              <div class="md:col-span-2">
-                <label class="block text-slate-400 mb-1">{{ editForm.postType === 'Consultation' ? 'Consultation Duration (minutes)' : 'Service Duration (minutes)' }}</label>
-                <input
-                  v-model.number="editForm.durationMinutes"
-                  type="number"
-                  min="1"
-                  step="1"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div v-if="editForm.postType === 'Service'" class="md:col-span-2">
-                <label class="block text-slate-400 mb-1">Required Supplies</label>
-                <div class="mb-4 space-y-2">
-            </div><select v-model="editForm.requiredSupplyIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit || 'unit' }})</option>
-                </select>
-            <p class="mt-1 text-xs text-slate-400">One unit of each selected material is reserved per booking and deducted when the service starts.</p>
-            <label class="block text-slate-400 mt-3 mb-1">Required equipment (reusable)</label>
-            <select v-model="editForm.requiredEquipmentIds" multiple class="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
-              <option v-for="item in inventoryProducts" :key="item.id" :value="item.id">{{ item.name }}</option>
-            </select>
-            <p class="text-xs text-slate-400">One unit of each is reserved for the appointment time, then becomes available again.</p>
-              </div>
-            </div>
-
-            <div v-if="editForm.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label class="block text-slate-400 mb-1">Quantity / Volume</label>
-                <input v-model="editForm.productVolume" type="text" placeholder="e.g. 30 mL or 1 L" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label class="block text-slate-400 mb-1">Unit</label>
-                <input v-model="editForm.productUnit" type="text" placeholder="e.g. bottle, box, piece" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-            </div>
-
-            <div v-if="editForm.postType === 'Product'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
-              <p class="mb-3 font-medium text-amber-200">FDA product documentation</p>
-              <p class="text-xs leading-5 text-slate-400">FDA details come from the supplier inventory record and cannot be replaced by the clinic.</p>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label class="block text-slate-400 mb-1">Title</label>
-                <input
-                  v-model="editForm.title"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label class="block text-slate-400 mb-1">Price (PHP)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  v-model.number="editForm.price"
-                  :readonly="editForm.postType === 'Product'"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <div class="mb-4">
-            <label class="block text-slate-400 mb-1">Description</label>
-              <textarea
-                v-model="editForm.description"
-                rows="3"
-                class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            ></textarea>
-
-            <label class="block text-slate-400 mb-1 mt-4">{{ editForm.postType === 'Product' ? 'Product Terms and Conditions' : 'Service Contract Terms and Conditions' }}</label>
-            <textarea v-model="editForm.termsAndConditions" rows="3" :placeholder="editForm.postType === 'Product' ? 'Add product-specific terms, usage instructions, or return conditions' : 'Add the terms the customer must accept before booking this service'" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-            </div>
-
-            <div class="mb-4">
-              <label class="block text-slate-400 mb-1">Replace Image (optional)</label>
-              <input
-                type="file"
-                accept="image/*"
-                @change="handleEditImageUpload"
-                class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-blue-600 file:text-white"
-              />
-              <p v-if="editImageFileName" class="text-xs text-slate-400 mt-1">Selected: {{ editImageFileName }}</p>
-            </div>
+            <ServiceListingFields :model="editForm" editing :disabled="loading" :is-free-plan="isFreePlan" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="editImageFileName" @image-change="handleEditImageUpload" />
           </div>
 
           <div class="border-t border-slate-700 px-6 py-4">
@@ -626,8 +180,10 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { draftListing, financialTermsChanged, updateListingApproval } from '@/utils/listingApproval'
+import { draftListing, financialTermsChanged, validateListingNumbers, updateListingApproval } from '@/utils/listingApproval'
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, deleteDoc, setDoc, onSnapshot } from 'firebase/firestore'
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -639,13 +195,18 @@ import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
 import { useSubscription } from '@/composables/useSubscription'
 import { getClinicPolicyOwnerId } from '@/utils/clinicPolicies'
+import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
+import ServiceListingFields from '@/components/common/ServiceListingFields.vue'
+import { buildClientContractDocument, clientContractPolicies } from '../../../../../../shared/clientContract.js'
 
 const FREE_PLAN_POST_LIMIT = 5
 
 export default {
   name: 'ProductServiceListing',
-  components: { OwnerSidebar },
+  components: { OwnerSidebar, ClientContractDocument, ServiceListingFields },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const storage = getStorage(getApp())
     const auth = getAuth(getApp())
@@ -660,19 +221,21 @@ export default {
     const currentUserId = ref('')
     const currentBranchId = ref('')
     const clinicPolicies = ref({})
-    const policyDefinitions = {
-      Product: [['deliveryPolicy', 'Pickup & Payment Policy'], ['productOrderCancellationPolicy', 'Order Cancellation Policy'], ['productReturnPolicy', 'Product Return Policy']],
-      Service: [['paymentPolicy', 'Payment Policy'], ['cancellationPolicy', 'Cancellation Policy'], ['reschedulePolicy', 'Rescheduling Policy'], ['noShowPolicy', 'No-Show Policy']],
-      Consultation: [['paymentPolicy', 'Payment Policy'], ['cancellationPolicy', 'Cancellation Policy'], ['reschedulePolicy', 'Rescheduling Policy'], ['noShowPolicy', 'No-Show Policy']],
-      Package: [['paymentPolicy', 'Payment Policy'], ['cancellationPolicy', 'Cancellation Policy'], ['reschedulePolicy', 'Rescheduling Policy'], ['noShowPolicy', 'No-Show Policy']]
-    }
-    const applicablePolicies = computed(() => (policyDefinitions[form.value.postType] || [])
-      .filter(([key]) => clinicPolicies.value[`${key}Enabled`] === true && String(clinicPolicies.value[key] || '').trim())
-      .map(([key, label]) => ({ key, label, text: String(clinicPolicies.value[key]).trim() })))
+    const contractBranch = ref({})
+    const hasClientContract = computed(() => clinicPolicies.value.clientContract?.configured === true)
+    const listingContractPreview = computed(() => buildClientContractDocument(clinicPolicies.value, { branch: contractBranch.value }))
+    const applicablePolicies = computed(() => clientContractPolicies(clinicPolicies.value, { branch: contractBranch.value })
+      .map(policy => ({ ...policy, label: policy.title })))
 
     const inventoryProducts = ref([])
 
     const posts = ref([])
+    const activeListingTab = ref('listings')
+    const listingSearch = ref('')
+    const filteredListings = computed(() => {
+      const search = listingSearch.value.trim().toLowerCase()
+      return posts.value.filter(post => !search || [post.title, post.serviceName, post.consultationName, post.packageName, post.postType, post.description].some(value => String(value || '').toLowerCase().includes(search)))
+    })
     const imageFile = ref(null)
     const imageFileName = ref('')
     const fdaApprovalFile = ref(null)
@@ -693,17 +256,20 @@ export default {
     const showEditModal = ref(false)
     const editTargetId = ref('')
     const editForm = ref({
-      postType: 'Product',
+      postType: 'Service',
       name: '',
       title: '',
       description: '',
       price: 0,
       requiresConsultationFirst: false,
+        linkedConsultationId: '',
       consultationFee: 0,
       consultationMode: 'on-site',
       followUpAllowed: false,
       followUpWindowDays: 14,
+      staffingRequirements: [],
       sessionCount: 1,
+      sessionIntervalDays: 0,
       durationMinutes: 60,
       productVolume: '',
       productUnit: '',
@@ -718,7 +284,7 @@ export default {
     const editFdaApprovalFileName = ref('')
 
     const form = ref({
-      postType: 'Product',
+      postType: 'Service',
       productName: '',
       serviceName: '',
       consultationName: '',
@@ -728,11 +294,14 @@ export default {
       description: '',
       price: 0,
       requiresConsultationFirst: false,
+        linkedConsultationId: '',
       consultationFee: 0,
       consultationMode: 'on-site',
       followUpAllowed: false,
       followUpWindowDays: 14,
+      staffingRequirements: [],
       sessionCount: 1,
+      sessionIntervalDays: 0,
       durationMinutes: 60,
       productVolume: '',
       productUnit: '',
@@ -798,7 +367,7 @@ export default {
 
     const resetForm = () => {
       form.value = {
-        postType: isFreePlan.value ? 'Service' : 'Product',
+        postType: 'Service',
         productName: '',
       serviceName: '',
       consultationName: '',
@@ -808,11 +377,13 @@ export default {
         description: '',
         price: 0,
         requiresConsultationFirst: false,
+        linkedConsultationId: '',
         consultationFee: 0,
         consultationMode: 'on-site',
         followUpAllowed: false,
         followUpWindowDays: 14,
-        sessionCount: 1,
+        staffingRequirements: [],
+      sessionCount: 1,
         durationMinutes: 60,
         productVolume: '',
         productUnit: '',
@@ -830,12 +401,13 @@ export default {
     const resetEditState = () => {
       editTargetId.value = ''
       editForm.value = {
-        postType: 'Product',
+        postType: 'Service',
         name: '',
         title: '',
         description: '',
         price: 0,
         requiresConsultationFirst: false,
+        linkedConsultationId: '',
         consultationFee: 0,
         consultationMode: 'on-site',
         followUpAllowed: false,
@@ -864,7 +436,7 @@ export default {
       catch (error) { toast.error(error.message) }
       finally { actionLoadingId.value = '' }
     }
-    const loadPosts = async () => {
+    const loadPosts = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         posts.value = []
         return
@@ -880,9 +452,9 @@ export default {
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .filter((post) => post.archived !== true && (!isFreePlan.value || post.postType === 'Service'))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-    }
+    })
 
-    const loadInventoryProducts = async () => {
+    const loadInventoryProducts = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         inventoryProducts.value = []
         return
@@ -896,7 +468,7 @@ export default {
       inventoryProducts.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .filter((item) => Boolean(item.name))
-    }
+    })
 
     const findSelectedProduct = () => {
       return inventoryProducts.value.find((item) => item.name === form.value.productName) || null
@@ -1001,13 +573,13 @@ export default {
         return
       }
 
-      const postsCreated = postType === 'Service' && form.value.requiresConsultationFirst ? 3 : 1
+      const postsCreated = 1
       if (isFreePlan.value && posts.value.length + postsCreated > FREE_PLAN_POST_LIMIT) {
         toast.error(`Free Plan allows up to ${FREE_PLAN_POST_LIMIT} listings. Archive a listing or upgrade to Basic to add more.`)
         return
       }
 
-      if (!selectedName?.trim() || !form.value.title?.trim() || !form.value.description?.trim()) {
+      if (!selectedName?.trim() || !form.value.description?.trim()) {
         toast.error('Please complete all required fields.')
         return
       }
@@ -1015,10 +587,8 @@ export default {
         toast.error('Please select a valid product from inventory.')
         return
       }
-      if (Number(form.value.price) < 0) {
-        toast.error('Price cannot be negative.')
-        return
-      }
+      const numericError = validateListingNumbers(form.value)
+      if (numericError) { toast.error(numericError); return }
       if (!imageFile.value) {
         toast.error('Please upload one image.')
         return
@@ -1047,8 +617,8 @@ export default {
           return
         }
       }
-      if (postType === 'Service' && form.value.requiresConsultationFirst && Number(form.value.consultationFee) <= 0) {
-        toast.error('Please enter a valid consultation fee.')
+      if (postType === 'Service' && form.value.requiresConsultationFirst && !posts.value.some(post => post.id === form.value.linkedConsultationId && post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
+        toast.error('Link an existing published consultation before saving this service.');
         return
       }
       if (postType === 'Consultation' && Number(form.value.consultationFee) <= 0) {
@@ -1078,15 +648,14 @@ export default {
             : postType === 'Package'
               ? normalizeConsultationMode(packageComponents.find((post) => post.postType === 'Consultation')?.consultationMode)
               : null,
-          title: form.value.title.trim(),
+          title: selectedName.trim(),
           description: form.value.description.trim(),
           price: postType === 'Product'
             ? Number(selectedProduct?.unitPrice || 0)
             : Number(form.value.price || form.value.consultationFee || 0),
           requiresConsultationFirst: postType === 'Service' ? Boolean(form.value.requiresConsultationFirst) : false,
-          consultationFee: postType === 'Service' && form.value.requiresConsultationFirst
-            ? Number(form.value.consultationFee || 0)
-            : (postType === 'Consultation' ? Number(form.value.consultationFee || 0) : null),
+          linkedConsultationId: postType === 'Service' && form.value.requiresConsultationFirst ? form.value.linkedConsultationId : null,
+          consultationFee: postType === 'Consultation' ? Number(form.value.consultationFee || 0) : null,
           followUpAllowed: postType === 'Service'
             ? Boolean(form.value.followUpAllowed)
             : postType === 'Package'
@@ -1097,7 +666,9 @@ export default {
             : postType === 'Package' && packageFollowUpComponents.length
               ? Math.min(...packageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
+          staffingRequirements: JSON.parse(JSON.stringify(form.value.staffingRequirements || [])),
           sessionCount: ['Service', 'Package'].includes(postType) ? Math.min(50, Math.max(1, Number(form.value.sessionCount || 1))) : 1,
+          sessionIntervalDays: ['Service', 'Package'].includes(postType) && Number(form.value.sessionCount || 1) > 1 ? Math.min(365, Math.max(0, Number(form.value.sessionIntervalDays || 0))) : 0,
           durationMinutes: postType === 'Product' ? null : postType === 'Package'
             ? Math.max(1, (form.value.packageServiceIds || []).reduce((total, id) => total + Number(posts.value.find((post) => post.id === id)?.durationMinutes || 0), 0))
             : Math.max(1, Number(form.value.durationMinutes || 60)),
@@ -1105,7 +676,7 @@ export default {
           productUnit: postType === 'Product' ? String(form.value.productUnit || '').trim() : '',
           fdaRegistrationNumber: postType === 'Product' ? String(selectedProduct?.fdaRegistrationNumber || '').trim() : '',
           fdaApprovalDocument: postType === 'Product' ? (selectedProduct?.fdaApprovalDocument || null) : null,
-          termsAndConditions: String(form.value.termsAndConditions || '').trim(),
+          termsAndConditions: '',
           allowInstallments: false,
           depositPercent: 100,
           requiredEquipmentIds: [...(form.value.requiredEquipmentIds || [])],
@@ -1118,76 +689,18 @@ export default {
           createdAt: serverTimestamp(),
         }
 
-        if (postType === 'Service' && form.value.requiresConsultationFirst) {
-          const consultationRef = await addDoc(collection(db, 'productServicePosts'), {
-            ...postPayload,
-            postType: 'Consultation',
-            productName: '',
-            serviceName: '',
-            consultationName: `${selectedName.trim()} Consultation`,
-            packageName: '',
-            packageServiceIds: [],
-            title: `${form.value.title.trim()} Consultation`,
-            description: `Consultation required before ${selectedName.trim()}.`,
-            price: Number(form.value.consultationFee || 0),
-            consultationMode: normalizeConsultationMode(form.value.consultationMode),
-            requiresConsultationFirst: false,
-            consultationFee: Number(form.value.consultationFee || 0),
-            followUpAllowed: false,
-            followUpWindowDays: null,
-            sessionCount: 1,
-            durationMinutes: 30,
-            requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50,
-            isPackageComponent: true,
-            packageComponentType: 'Consultation',
-          })
-          const serviceRef = await addDoc(collection(db, 'productServicePosts'), {
-            ...postPayload,
-            postType: 'Service',
-            productName: '',
-            serviceName: selectedName.trim(),
-            consultationName: '',
-            packageName: '',
-            packageServiceIds: [],
-            requiresConsultationFirst: false,
-            consultationFee: null,
-            isPackageComponent: true,
-            packageComponentType: 'Service',
-          })
-          const packageRef = await addDoc(collection(db, 'productServicePosts'), {
-            ...postPayload,
-            postType: 'Package',
-            productName: '',
-            serviceName: '',
-            consultationName: '',
-            packageName: form.value.title.trim(),
-            packageServiceIds: [consultationRef.id, serviceRef.id],
-            title: form.value.title.trim(),
-            price: Number(form.value.price || 0) + Number(form.value.consultationFee || 0),
-            consultationMode: normalizeConsultationMode(form.value.consultationMode),
-            requiresConsultationFirst: false,
-            consultationFee: null,
-            durationMinutes: Math.max(1, Number(form.value.durationMinutes || 60) + 30),
-            requiredSupplyIds: [...(form.value.requiredSupplyIds || [])],
-            isPackageComponent: false,
-            autoGeneratedFromService: true,
-          })
-          await Promise.all([
-            updateDoc(consultationRef, { parentPackageId: packageRef.id, updatedAt: serverTimestamp() }),
-            updateDoc(serviceRef, { parentPackageId: packageRef.id, updatedAt: serverTimestamp() }),
-          ])
-        } else {
-          await addDoc(collection(db, 'productServicePosts'), postPayload)
-        }
+        await addDoc(collection(db, 'productServicePosts'), postPayload)
         await logActivity(db, {
           module: 'Manager',
           action: 'Created product/service post',
-          details: `Created ${postType.toLowerCase()} post: ${form.value.title.trim()}.`
+          details: `Created ${postType.toLowerCase()} post: ${selectedName.trim()}.`
         })
 
         toast.success(isFreePlan.value ? 'Service published and ready for online booking.' : 'Draft saved. Submit it for Finance review when ready.')
         resetForm()
         await loadPosts()
+        listingSearch.value = ''
+        activeListingTab.value = 'listings'
       } catch (error) {
         console.error(error)
         toast.error('Failed to create post.')
@@ -1205,11 +718,14 @@ export default {
         description: post.description || '',
         price: Number(post.price || 0),
         requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
+        linkedConsultationId: String(post.linkedConsultationId || ''),
         consultationFee: Number(post.consultationFee || 0),
         consultationMode: normalizeConsultationMode(post.consultationMode),
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
+        staffingRequirements: JSON.parse(JSON.stringify(post.staffingRequirements || [])),
         sessionCount: Math.min(50, Math.max(1, Number(post.sessionCount || 1))),
+        sessionIntervalDays: Math.min(365, Math.max(0, Number(post.sessionIntervalDays || 0))),
         durationMinutes: Number(post.durationMinutes || 60)
         , productVolume: String(post.productVolume || '').trim()
         , productUnit: String(post.productUnit || '').trim()
@@ -1255,14 +771,12 @@ export default {
         return
       }
       if (isFreePlan.value) editForm.value.requiresConsultationFirst = false
-      if (!editForm.value.title?.trim() || !editForm.value.description?.trim() || !editForm.value.name?.trim()) {
+      if (!editForm.value.description?.trim() || !editForm.value.name?.trim()) {
         toast.error('Please complete all required fields.')
         return
       }
-      if (Number(editForm.value.price) < 0) {
-        toast.error('Price cannot be negative.')
-        return
-      }
+      const numericError = validateListingNumbers(editForm.value)
+      if (numericError) { toast.error(numericError); return }
       if (editForm.value.postType === 'Package') {
         const selectedComponents = (editForm.value.packageServiceIds || [])
           .map((id) => posts.value.find((post) => post.id === id))
@@ -1283,8 +797,8 @@ export default {
         ? (editForm.value.packageServiceIds || []).map((id) => posts.value.find((post) => post.id === id)).filter(Boolean)
         : []
       const editPackageFollowUpComponents = editPackageComponents.filter((post) => post.followUpAllowed === true)
-      if (editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst && Number(editForm.value.consultationFee) <= 0) {
-        toast.error('Please enter a valid consultation fee.')
+      if (editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst && !posts.value.some(post => post.id === editForm.value.linkedConsultationId && post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
+        toast.error('Link an existing published consultation before saving this service.');
         return
       }
       if (editForm.value.postType === 'Consultation' && Number(editForm.value.consultationFee) <= 0) {
@@ -1312,7 +826,7 @@ export default {
 
         const selectedProduct = inventoryProducts.value.find((item) => item.name === editForm.value.name) || null
         const payload = {
-          title: editForm.value.title.trim(),
+          title: editForm.value.name.trim(),
           description: editForm.value.description.trim(),
           productName: editForm.value.postType === 'Product' ? editForm.value.name.trim() : '',
           serviceName: editForm.value.postType === 'Service' ? editForm.value.name.trim() : '',
@@ -1323,14 +837,15 @@ export default {
             ? normalizeConsultationMode(editForm.value.consultationMode)
             : editForm.value.postType === 'Package'
               ? normalizeConsultationMode(editPackageComponents.find((post) => post.postType === 'Consultation')?.consultationMode)
-              : null,
+              : editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst
+                ? normalizeConsultationMode(editForm.value.consultationMode)
+                : null,
           price: editForm.value.postType === 'Product'
             ? Number(selectedProduct?.unitPrice || editForm.value.price || 0)
             : Number(editForm.value.price || editForm.value.consultationFee || 0),
           requiresConsultationFirst: editForm.value.postType === 'Service' && !isFreePlan.value ? Boolean(editForm.value.requiresConsultationFirst) : false,
-          consultationFee: editForm.value.postType === 'Service' && !isFreePlan.value && editForm.value.requiresConsultationFirst
-            ? Number(editForm.value.consultationFee || 0)
-            : (editForm.value.postType === 'Consultation' ? Number(editForm.value.consultationFee || 0) : null),
+          linkedConsultationId: editForm.value.postType === 'Service' && !isFreePlan.value && editForm.value.requiresConsultationFirst ? editForm.value.linkedConsultationId : null,
+          consultationFee: editForm.value.postType === 'Consultation' ? Number(editForm.value.consultationFee || 0) : null,
           followUpAllowed: editForm.value.postType === 'Service'
             ? Boolean(editForm.value.followUpAllowed)
             : editForm.value.postType === 'Package'
@@ -1341,9 +856,13 @@ export default {
             : editForm.value.postType === 'Package' && editPackageFollowUpComponents.length
               ? Math.min(...editPackageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
+          staffingRequirements: JSON.parse(JSON.stringify(editForm.value.staffingRequirements || [])),
           sessionCount: ['Service', 'Package'].includes(editForm.value.postType)
             ? Math.min(50, Math.max(1, Number(editForm.value.sessionCount || 1)))
             : 1,
+          sessionIntervalDays: ['Service', 'Package'].includes(editForm.value.postType) && Number(editForm.value.sessionCount || 1) > 1
+            ? Math.min(365, Math.max(0, Number(editForm.value.sessionIntervalDays || 0)))
+            : 0,
           durationMinutes: editForm.value.postType === 'Product'
             ? null
             : editForm.value.postType === 'Package'
@@ -1357,7 +876,7 @@ export default {
           fdaApprovalDocument: editForm.value.postType === 'Product'
             ? (selectedProduct?.fdaApprovalDocument || currentPost?.fdaApprovalDocument || null)
             : null,
-          termsAndConditions: String(editForm.value.termsAndConditions || '').trim(),
+          termsAndConditions: '',
           allowInstallments: false,
           depositPercent: 100,
           requiredEquipmentIds: [...(editForm.value.requiredEquipmentIds || [])],
@@ -1375,7 +894,7 @@ export default {
         await logActivity(db, {
           module: 'Manager',
           action: 'Updated product/service post',
-          details: `Updated ${editForm.value.postType.toLowerCase()} post: ${editForm.value.title.trim()}.`
+          details: `Updated ${editForm.value.postType.toLowerCase()} post: ${editForm.value.name.trim()}.`
         })
         toast.success('Post updated successfully.')
         closeEditModal()
@@ -1426,8 +945,17 @@ export default {
     }
 
     const deletePost = async (post) => {
-      const confirmed = window.confirm(`Delete "${post.title || 'this post'}"? This cannot be undone.`)
-      if (!confirmed) return
+      const result = await Swal.fire({
+        title: 'Delete listing?',
+        text: `Delete "${post.title || 'this listing'}"? This permanently removes the listing and cannot be undone.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Delete listing',
+        cancelButtonText: 'Cancel',
+        focusCancel: true,
+        reverseButtons: true,
+      })
+      if (!result.isConfirmed) return
 
       actionLoadingId.value = post.id
       try {
@@ -1457,12 +985,13 @@ export default {
       }
     )
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
           clinicPolicies.value = {}
+          contractBranch.value = {}
           unsubscribePolicies?.()
           unsubscribePolicies = null
           posts.value = []
@@ -1479,16 +1008,17 @@ export default {
         }
 
         const currentClinic = await getDoc(doc(db, 'clinics', currentBranchId.value))
+        contractBranch.value = currentClinic.exists() ? currentClinic.data() : {}
         const policyOwnerId = getClinicPolicyOwnerId(currentClinic.exists() ? currentClinic.data() : null, currentUserId.value)
         unsubscribePolicies?.()
-        unsubscribePolicies = onSnapshot(doc(db, 'clinicPolicies', policyOwnerId), (snapshot) => {
+        unsubscribePolicies = pageListener(onSnapshot, doc(db, 'clinicPolicies', policyOwnerId), (snapshot) => {
           clinicPolicies.value = snapshot.exists() ? snapshot.data() || {} : {}
         }, (error) => console.error('Unable to load active clinic policies:', error))
 
         await loadInventoryProducts()
         await loadPosts()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
@@ -1497,14 +1027,20 @@ export default {
     })
 
     return {
+      pageLoading,
       listingAction,
       canManageListingWorkflow,
       loading,
       form,
       applicablePolicies,
+      hasClientContract,
+      listingContractPreview,
       isFreePlan,
       freePlanPostLimit: FREE_PLAN_POST_LIMIT,
       posts,
+      activeListingTab,
+      listingSearch,
+      filteredListings,
       actionLoadingId,
       showEditModal,
       editForm,
@@ -1530,3 +1066,96 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.listing-page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.listing-eyebrow { margin-bottom: 8px; color: #b78055; font-size: 11px; letter-spacing: .15em; text-transform: uppercase; }
+.service-listings-page .listing-primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; padding: 11px 18px; border: 1px solid #8d5a3b; border-radius: 10px; background: #8d5a3b; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 3px 8px #75482e1a; transition: background-color 150ms ease, box-shadow 150ms ease; }
+.listing-primary-button svg { width: 18px; height: 18px; flex-shrink: 0; }
+.service-listings-page .listing-primary-button:hover { background: #75482e; box-shadow: 0 4px 12px #75482e26; }
+.service-listings-page .listing-primary-button:focus-visible { outline: 2px solid #b78055; outline-offset: 3px; }
+.listing-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.listing-overview article { padding: 18px 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; }
+.listing-overview span { color: #8a725f; font-size: 12px; }
+.listing-overview strong { display: block; margin-top: 8px; color: #3d281d; font-size: 26px; }
+.listing-tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid #ead2b2; }
+.service-listings-page .listing-tabs button { padding: 12px 18px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; color: #a58a73; font-size: 14px; font-weight: 600; }
+.service-listings-page .listing-tabs button.is-active { color: #91643f; border-bottom-color: #b78055; }
+.listing-policy-panel { margin-bottom: 24px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; color: #3d281d; overflow: hidden; }
+.service-listings-page .listing-disclosure-trigger { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; margin: 0; padding: 16px 20px; list-style: none; background: #fffaf3; color: #543a29; font-size: 14px; font-weight: 600; cursor: pointer; }
+.listing-disclosure-trigger::-webkit-details-marker { display: none; }
+.listing-disclosure-trigger::marker { content: ''; }
+.listing-disclosure-trigger small { display: inline-block; margin-left: 8px; padding: 3px 8px; border-radius: 999px; background: #eee1d0; color: #62432d; font-size: 11px; font-weight: 500; }
+.listing-disclosure-trigger svg { width: 20px; height: 20px; flex-shrink: 0; color: #91643f; transition: transform 150ms ease; }
+details[open] > .listing-disclosure-trigger { border-bottom: 1px solid #ead2b2; }
+details[open] > .listing-disclosure-trigger svg { transform: rotate(180deg); }
+.listing-disclosure-trigger:hover { background: #f7ead7; }
+.listing-disclosure-trigger:focus-visible { outline: 2px solid #b78055; outline-offset: -3px; }
+.listing-policy-content { padding: 20px; }
+.listing-policy-description { color: #6b5342; font-size: 13px; line-height: 1.7; }
+.listing-policy-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.listing-policy-grid article { padding: 16px; border: 1px solid #ead2b2; border-radius: 10px; background: #fffaf3; }
+.listing-policy-grid h3 { color: #543a29; font-size: 14px; font-weight: 600; }
+.listing-policy-grid p { margin-top: 8px; color: #6b5342; font-size: 13px; line-height: 1.7; }
+.listing-contract-disclosure { border: 1px solid #ead2b2; border-radius: 10px; background: #fffdf9; overflow: hidden; }
+.listing-contract-preview-body { padding: 20px; }
+@media (max-width: 640px) { .listing-policy-grid { grid-template-columns: minmax(0, 1fr); }.listing-policy-content, .listing-contract-preview-body { padding: 16px; }.service-listings-page .listing-disclosure-trigger { padding: 16px; } }
+.listing-create-panel, .listing-records-panel { border-color: #ead2b2 !important; box-shadow: 0 4px 16px #3d281d05; }
+.listing-section-description { margin-bottom: 24px; color: #8a725f; font-size: 13px; line-height: 1.6; }
+.listing-create-panel label, .listing-edit-heading ~ div label { font-size: 13px; }
+.listing-post-type { margin: 0; }
+.listing-post-type :deep(label) { margin-bottom: 4px; color: #6b5342; font-weight: 400; }
+.service-listings-page main :is(input:not([type=checkbox]), select, textarea) { min-height: 44px; font-size: 13px; color-scheme: light; }
+.service-listings-page main textarea { line-height: 1.7; resize: vertical; }
+.service-listings-page main select[multiple] { min-height: 130px; background: #fffdf9 !important; color: #3d281d !important; padding: 6px; }
+.service-listings-page main select option { padding: 8px 10px; background: #fffdf9; color: #3d281d; }
+.service-listings-page main input[type=checkbox] { accent-color: #97603c; }
+.service-listings-page main input[type=file] { padding: 8px; border-style: dashed; }
+.service-listings-page main input[type=file]::file-selector-button { padding: 7px 12px; border: 0; border-radius: 6px; background: #f4e7d5; color: #805432; cursor: pointer; }
+.service-listings-page main button[class*="bg-blue-"] { background: #8d5a3b !important; border-color: #8d5a3b !important; color: #fff !important; }
+.service-listings-page main button[class*="bg-blue-"]:hover:not(:disabled) { background: #75482e !important; }
+.service-listings-page main button[class*="bg-slate-"] { background: #fffaf3 !important; color: #73533d !important; border: 1px solid #dec19e; }
+.service-listings-page main button[class*="bg-amber-"] { background: #f4e7d5 !important; color: #805432 !important; border: 1px solid #dec19e; }
+.service-listings-page main button[class*="bg-red-"] { background: #fbe9e6 !important; color: #a12d22 !important; border: 1px solid #e8b9ae; }
+.service-listings-page main button[class*="bg-emerald-"] { background: #e4f2e9; color: #28765c; border: 1px solid #bbd8c6; }
+.listing-records-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+.listing-records-heading p { margin-top: 6px; color: #8a725f; font-size: 12px; }
+.listing-records-heading input { width: min(100%, 360px); padding: 10px 12px; border: 1px solid #dec19e; border-radius: 10px; }
+.listing-card { display: flex; flex-direction: column; border-color: #ead2b2 !important; border-radius: 14px; transition: box-shadow 150ms ease; }
+.listing-card:hover { box-shadow: 0 8px 24px #3d281d0d; }
+.listing-card > img { height: 180px; }
+.listing-image-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; height: 180px; background: #f7ead7; color: #b78055; }
+.listing-image-placeholder svg { width: 40px; height: 40px; }
+.listing-image-placeholder span { font-size: 12px; }
+.listing-card-body { display: flex; flex-direction: column; flex: 1; padding: 20px; }
+.listing-card-body h3 { color: #3d281d; font-size: 18px; }
+.listing-detail-badge { display: inline-flex; align-items: center; padding: 5px 10px; border: 1px solid #dfc7a9; border-radius: 999px; background: #f7ead7; color: #62432d; font-size: 12px; font-weight: 600; line-height: 1.4; }
+.listing-type-badge { background: #eee1d0; color: #543a29; border-color: #d9bfa0; }
+.listing-follow-up-badge { background: #e4f2e9; color: #235b45; border-color: #b8d6c4; }
+.listing-card .listing-card-body :is(.text-slate-400, .text-slate-300) { color: #6b5342 !important; }
+.listing-card .listing-card-body p.text-sm { font-size: 14px; }
+.listing-card .listing-card-body p.listing-card-price { font-size: 20px; }
+.listing-card .listing-card-body span.text-xs { font-size: 12px; }
+.listing-card .listing-card-body p:is(.text-amber-200, .text-orange-200) { color: #765032 !important; line-height: 1.6; }
+.listing-card .listing-card-body .listing-publication-status { font-size: 12px; color: #684329; }
+.listing-card .listing-card-body .listing-publication-status.is-published { color: #235b45; }
+.listing-publication-status { width: fit-content; padding: 5px 9px; border-radius: 999px; background: #f4e7d5; color: #805432; font-size: 11px; }
+.listing-publication-status.is-published { background: #e4f2e9; color: #28765c; }
+.listing-card-description { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.6; }
+.listing-card .listing-card-price { color: #28765c !important; font-size: 20px; margin-top: auto; padding-top: 12px; }
+.listing-card-actions { padding-top: 16px; border-top: 1px solid #ead2b2; }
+.listing-card-actions button { min-height: 36px; padding: 7px 12px; font-size: 12px; }
+.listing-empty-state { padding: 48px 20px; border: 1px dashed #dec19e; border-radius: 12px; text-align: center; background: #fffaf3; }
+.listing-empty-state h3 { color: #3d281d; font-size: 18px; font-weight: 600; }
+.listing-empty-state p { margin: 8px 0 20px; color: #8a725f; font-size: 13px; }
+.listing-edit-heading { position: relative; padding-right: 64px; }
+.listing-edit-heading > button { position: absolute; top: 20px; right: 20px; padding: 8px; border-radius: 8px; color: #73533d; background: #fffaf3; border: 1px solid #dec19e; }
+.listing-edit-heading > button svg { width: 18px; height: 18px; }
+.listing-edit-heading > p { margin-top: 8px; color: #8a725f; font-size: 12px; line-height: 1.6; }
+@media (max-width: 640px) { .listing-overview { gap: 8px; }.listing-overview article { padding: 14px 10px; }.listing-overview strong { font-size: 22px; }.listing-records-heading input { width: 100%; }.listing-page-heading > button { width: 100%; }.listing-card-body { padding: 16px; } }
+.listing-client-contract { margin-bottom: 24px; padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffaf3; color: #3d281d; }
+.listing-client-contract h2 { font-size: 18px; font-weight: 700; }
+.listing-client-contract p { margin-top: 8px; color: #6b5342; font-size: 13px; line-height: 1.7; }
+.listing-client-contract details { margin-top: 16px; }
+.listing-client-contract .listing-contract-preview-note { margin-bottom: 16px; font-size: 12px; }
+</style>

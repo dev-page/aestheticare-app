@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-4 md:p-8 text-white">
+    <main v-page-loading="{ active: pageLoading, variant: 'cards', cards: 6 }" class="flex-1 p-4 md:p-8 text-white">
       <div class="mb-6">
         <h1 class="text-2xl md:text-3xl font-bold mb-1">Archives</h1>
         <p class="text-slate-400">Review archived posts and suppliers, then restore or delete when needed.</p>
@@ -122,6 +122,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -136,6 +138,8 @@ export default {
   name: 'ArchivedPosts',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasPermission } = usePermissions()
@@ -166,7 +170,7 @@ export default {
       return []
     }
 
-    const loadArchivedPosts = async () => {
+    const loadArchivedPosts = trackPageLoad(async () => {
       if (!hasPermission('services:view')) {
         posts.value = []
         return
@@ -183,9 +187,9 @@ export default {
       posts.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .sort((a, b) => (b.archivedAt?.seconds || b.updatedAt?.seconds || 0) - (a.archivedAt?.seconds || a.updatedAt?.seconds || 0))
-    }
+    })
 
-    const loadArchivedSuppliers = async () => {
+    const loadArchivedSuppliers = trackPageLoad(async () => {
       if (!hasPermission('inventory:view')) {
         archivedSuppliers.value = []
         return
@@ -202,7 +206,7 @@ export default {
       archivedSuppliers.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .sort((a, b) => (b.archivedAt?.seconds || b.updatedAt?.seconds || 0) - (a.archivedAt?.seconds || a.updatedAt?.seconds || 0))
-    }
+    })
 
     const unarchivePost = async (post) => {
       if (!canRestorePosts.value) {
@@ -349,8 +353,8 @@ export default {
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
           posts.value = []
@@ -363,13 +367,14 @@ export default {
         await loadArchivedPosts()
         await loadArchivedSuppliers()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
     })
 
     return {
+      pageLoading,
       posts,
       archivedSuppliers,
       loadingId,

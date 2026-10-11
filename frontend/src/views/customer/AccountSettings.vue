@@ -1,8 +1,8 @@
 <template>
-  <div class="customer-settings-shell flex min-h-screen">
+  <div class="customer-settings-shell customer-theme flex min-h-screen">
     <CustomerSidebar class="flex-shrink-0" />
 
-    <main class="customer-settings-main flex-1">
+    <main v-page-loading="{ active: pageLoading, variant: 'settings', fields: 4, sections: 2 }" class="customer-settings-main flex-1">
       <div class="customer-settings-content">
         <section class="settings-hero">
           <p class="settings-eyebrow">Account Settings</p>
@@ -171,6 +171,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where } from 'firebase/firestore'
@@ -179,6 +181,8 @@ import { toast } from 'vue3-toastify'
 import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import MyProfile from '@/views/customer/MyProfile.vue'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const route = useRoute()
 const router = useRouter()
@@ -260,7 +264,7 @@ const closeAccountAction = () => {
   reasonPreset.value = ''
 }
 
-const loadAccount = async () => {
+const loadAccount = trackPageLoad(async () => {
   const currentUser = auth.currentUser
   if (!currentUser) return
   accountEmail.value = currentUser.email || ''
@@ -269,7 +273,7 @@ const loadAccount = async () => {
   status.value = String(data.status || 'Active')
   deletionRequested.value = data.accountDeletionRequested === true
   tutorialEnabled.value = data.preferences?.onboarding?.customer?.disabled !== true
-}
+})
 
 const formatNotificationDate = (value) => {
   const date = value?.toDate ? value.toDate() : new Date(value || 0)
@@ -281,8 +285,8 @@ const startNotificationsListener = (userId) => {
   if (unsubscribeNotifications) unsubscribeNotifications()
   notificationsLoading.value = true
   notificationsError.value = ''
-  unsubscribeNotifications = onSnapshot(
-    query(collection(db, 'notifications'), where('recipientUserId', '==', userId)),
+  unsubscribeNotifications = pageListener(
+    onSnapshot, query(collection(db, 'notifications'), where('recipientUserId', '==', userId)),
     (snapshot) => {
       notifications.value = snapshot.docs
         .map((item) => ({ id: item.id, ...item.data(), createdLabel: formatNotificationDate(item.data()?.createdAt), createdAtMs: item.data()?.createdAt?.toMillis?.() || 0 }))
@@ -453,14 +457,14 @@ const exportAccountData = async () => {
   }
 }
 
-onMounted(() => {
+onMounted(trackPageLoad(() => {
   loadAccount().catch((error) => {
     console.error(error)
     errorMessage.value = 'Unable to load account settings.'
   })
   const currentUser = auth.currentUser
   if (currentUser) startNotificationsListener(currentUser.uid)
-})
+}))
 
 onUnmounted(() => {
   if (unsubscribeNotifications) unsubscribeNotifications()

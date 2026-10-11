@@ -1,0 +1,386 @@
+[
+  {
+    "filename": "frontend/src/views/admin/owner/AddStaff.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/ArchivedEmployees.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/Attendance.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/BookingAvailability.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/BranchInfo.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/clinic/GroupBookings.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/clinic/Patients.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/clinic/PractitionerAppointments.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/clinic/PractitionerClients.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/clinic/PractitionerDashboard.vue",
+    "variant": "dashboard"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/clinic/PractitionerOnlineConsultation.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/clinic/TreatmentSessions.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/ClinicPage.vue",
+    "variant": "profile"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/ClinicProfile.vue",
+    "variant": "profile"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/crm/AppointmentRequestApprovals.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/crm/ReceptionistActivityLogs.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/crm/ReceptionistAppointmentList.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/crm/ReceptionistClientList.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/crm/ReceptionistDashboard.vue",
+    "variant": "dashboard"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/crm/ReceptionistInbox.vue",
+    "variant": "chat"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/crm/ReceptionistTransactionHistory.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/crm/WalkInDesk.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/employee/EmployeeDashboard.vue",
+    "variant": "dashboard"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/employee/EmployeePayslips.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/employee/EmployeeProfileSelf.vue",
+    "variant": "profile"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/finance/CommissionContracts.vue",
+    "variant": "list"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/finance/FinanceExpenses.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/finance/FinancePayrollApproval.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/finance/FinancePayrollSummary.vue",
+    "variant": "report"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/finance/FinanceRefunds.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/finance/FinanceReports.vue",
+    "variant": "report"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/finance/FinanceSales.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/finance/ListingApprovals.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/hr/AddShift.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/hr/BasePay.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/hr/LeaveManagement.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/hr/LeaveRequest.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/hr/Overtime.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/hr/Payroll.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/hr/PayslipGeneration.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/hr/ScheduleAssignment.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/operations/ArchivedPosts.vue",
+    "variant": "cards"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/operations/ManagerAttendance.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/operations/ManagerDashboard.vue",
+    "variant": "dashboard"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/operations/ManagerOrders.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/operations/ManagerStaffs.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/operations/ProductServiceListing.vue",
+    "variant": "cards"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/operations/SimplifiedSupplyRequests.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/operations/SupplySuppliers.vue",
+    "variant": "cards"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/operations/SupplyWorkspace.vue",
+    "variant": "by supply tab"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerAccountRecovery.vue",
+    "variant": "settings"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerBackup.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerDashboard.vue",
+    "variant": "dashboard"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerFinance.vue",
+    "variant": "report"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerModuleSettings.vue",
+    "variant": "settings"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerPlanSelection.vue",
+    "variant": "cards"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerPolicyManagement.vue",
+    "variant": "settings"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerReports.vue",
+    "variant": "report"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerRoleManagement.vue",
+    "variant": "split"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerSubscription.vue",
+    "variant": "cards"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/OwnerSubscriptionOnboarding.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/StaffProfile.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/AccountManagement.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/AccountSettings.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/ActivityLogs.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/AdminList.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/ArchivedAccounts.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/ArchivedClinics.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/ClinicVerification.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/Dashboard.vue",
+    "variant": "dashboard"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/PaymentsAnalytics.vue",
+    "variant": "report"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/Permissions.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/SubscriptionPayments.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/SubscriptionPermission.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/SubscriptionPlans.vue",
+    "variant": "cards"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/SystemSettings.vue",
+    "variant": "settings"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/UserTickets.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/superAdmin/VerifiedClinics.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/customer/AccountRecovery.vue",
+    "variant": "settings"
+  },
+  {
+    "filename": "frontend/src/views/customer/AccountSettings.vue",
+    "variant": "settings"
+  },
+  {
+    "filename": "frontend/src/views/customer/CenterPage.vue",
+    "variant": "composed"
+  },
+  {
+    "filename": "frontend/src/views/customer/Checkout.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/customer/CustomerHome.vue",
+    "variant": "cards"
+  },
+  {
+    "filename": "frontend/src/views/customer/MyAppointments.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/customer/MyOrders.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/customer/MyProfile.vue",
+    "variant": "profile"
+  },
+  {
+    "filename": "frontend/src/views/supplier/SupplierChat.vue",
+    "variant": "chat"
+  },
+  {
+    "filename": "frontend/src/views/supplier/SupplierProfile.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/supplier/SupplierSupplies.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/common/Activities.vue",
+    "variant": "table"
+  },
+  {
+    "filename": "frontend/src/views/common/Notifications.vue",
+    "variant": "list"
+  },
+  {
+    "filename": "frontend/src/views/common/SupportReport.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/public/Subscription.vue",
+    "variant": "cards"
+  },
+  {
+    "filename": "frontend/src/views/public/SubscriptionCheckout.vue",
+    "variant": "form"
+  },
+  {
+    "filename": "frontend/src/views/public/ViewCenters.vue",
+    "variant": "cards"
+  },
+  {
+    "filename": "frontend/src/views/admin/owner/crm/AppointmentRecords.vue",
+    "variant": "table"
+  }
+]

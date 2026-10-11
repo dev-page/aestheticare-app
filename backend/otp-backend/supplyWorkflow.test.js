@@ -19,7 +19,8 @@ function fixture() {
   const firestore = () => db; firestore.FieldValue = { serverTimestamp: () => ({ _seconds: 1800000000 }) }
   registerSupplyWorkflow({ get: (path, ...handlers) => routes.set(`GET ${path}`, handlers.at(-1)), post: (path, ...handlers) => routes.set(`POST ${path}`, handlers.at(-1)) }, { admin: { firestore }, requireAuth: () => {}, loadUserContext: async uid => ({ uid, roleKey: ['supplier', 'competitor'].includes(uid) ? 'supplier' : uid, permissions: new Set(permissions[uid]), userData: { branchId: 'clinic', fullName: uid } }), storageBucket: () => 'unused' })
   seed('clinics', 'clinic', { ownerId: 'owner' }); seed('inventoryItems', 'item', { branchId: 'clinic', name: 'Gloves', currentStock: 20, minStock: 25, targetStock: 120, unit: 'boxes', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves' })
-  seed('suppliers', 'vendor', { branchId: 'clinic', status: 'Active', ownerId: 'supplier', offeredItems: [{ id: 'catalog-gloves', name: 'Gloves', category: 'Materials', unit: 'boxes', price: 5, quantity: 1000 }] }); seed('suppliers', 'rival', { branchId: 'clinic', status: 'Active', ownerId: 'competitor', offeredItems: [] })
+  seed('suppliers', 'vendor', { branchId: 'clinic', status: 'Active', verificationStatus: 'Verified', ownerId: 'supplier', offeredItems: [{ id: 'catalog-gloves', name: 'Gloves', category: 'Materials', unit: 'boxes', price: 5, quantity: 1000 }] }); seed('suppliers', 'rival', { branchId: 'clinic', status: 'Active', verificationStatus: 'Verified', ownerId: 'competitor', offeredItems: [] })
+  seed('supplierApplications', 'supplier', { verificationStatus: 'Verified' }); seed('supplierApplications', 'competitor', { verificationStatus: 'Verified' })
   const call = async (uid, path, body = {}, id, method = 'POST') => { let status = 200, payload; await routes.get(`${method} ${path}`)({ user: { uid }, body, params: { id }, query: {} }, { status: code => { status = code; return { json: data => { payload = data } } }, json: data => { payload = data } }); return { status, ...payload } }
   const create = async (uid, kind, data) => { const r = await call(uid, '/supply/records', { branchId: 'clinic', kind, ...data }); assert.equal(r.status, 200, JSON.stringify(r)); return r.data.id }
   const act = async (uid, id, action, data = {}, expected = 200) => { const r = await call(uid, '/supply/records/:id/actions', { action, ...data }, id); assert.equal(r.status, expected, JSON.stringify(r)); return r }
@@ -27,6 +28,16 @@ function fixture() {
   const evidence = id => { const doc = `proof-${id}`; seed('supplyDocuments', doc, { branchId: 'clinic', recordId: id }); return doc }
   return { store, seed, call, create, act, read, evidence }
 }
+
+test('Unverified and suspended suppliers cannot access the portal or receive new requests', async () => {
+  const f = fixture()
+  for (const verificationStatus of ['Submitted', 'Suspended']) {
+    f.seed('supplierApplications', 'supplier', { verificationStatus })
+    f.seed('suppliers', 'vendor', { branchId: 'clinic', status: 'Active', verificationStatus, ownerId: 'supplier', offeredItems: [{ id: 'catalog-gloves', name: 'Gloves', price: 5, quantity: 1000 }] })
+    assert.equal((await f.call('supplier', '/supply/workspace', {}, undefined, 'GET')).status, 403)
+    assert.equal((await f.call('inventory', '/supply/records', { branchId: 'clinic', kind: 'request', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 100, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Replenishment', requiredDate: '2099-12-31' })).status, 409)
+  }
+})
 
 for (const mode of ['Online']) test(`${mode}: catalog-priced request to funded PO, partial receiving, matching and payment`, async () => {
   const f = fixture(), date = '2099-12-31'
@@ -45,12 +56,21 @@ for (const mode of ['Online']) test(`${mode}: catalog-priced request to funded P
   assert.equal(f.read(budget).committed, 55000)
   assert.equal(f.read(`approval-${po}`).status, 'Approved')
   assert.equal(f.read(`allocation-${po}`).status, 'Committed')
+  assert.equal(f.read(po).status, 'Approved')
+  assert.equal(f.read(po).sentAt, undefined)
+  assert.equal(f.read(procurement).status, 'Approved')
+  await f.act('supplier', po, 'confirm', { remarks: 'Too early', deliveryDate: date }, 409)
   assert.equal(f.read(po).tax, 0)
   assert.equal(f.read(po).delivery, 0)
   assert.equal(f.read(po).otherCharges, 0)
   assert.equal(f.read(po).discount, 0)
   assert.equal(f.read(po).total, 50000)
   await f.act('finance', po, 'issue')
+  assert.equal(f.read(po).status, 'Sent to Supplier')
+  assert.ok(f.read(po).sentAt)
+  assert.equal(f.read(procurement).status, 'Ordered')
+  await f.act('finance', po, 'issue')
+  assert.equal(f.read(budget).committed, 55000)
   await f.act('competitor', po, 'confirm', { remarks: 'Wrong supplier', deliveryDate: date }, 403)
   await f.act(mode === 'Online' ? 'supplier' : 'procurement', po, 'confirm', { remarks: 'Confirmed', deliveryDate: date })
   assert.equal(f.read(`confirmation-${po}`).status, 'Accepted')
@@ -185,6 +205,8 @@ test('A legacy purchase order without its Procurement parent can still be approv
   const budget = await f.create('finance', 'budget', { category: 'Legacy inventory', total: 100 })
   f.seed('supplyRecords', 'legacy-finance-po', { id: 'legacy-finance-po', kind: 'po', mode: 'Online', branchId: 'clinic', supplierId: 'vendor', status: 'For Finance Approval', department: 'Inventory', total: 5000, requestedAmount: 5000, lines: [{ itemId: 'item', name: 'Gloves', quantity: 10 }] })
   await f.act('finance', 'legacy-finance-po', 'approve', { budgetId: budget, approvedAmount: 50, remarks: 'Approved legacy order' })
+  assert.equal(f.read('legacy-finance-po').status, 'Approved')
+  await f.act('finance', 'legacy-finance-po', 'issue')
   assert.equal(f.read('legacy-finance-po').status, 'Sent to Supplier')
   assert.equal(f.read(budget).committed, 5000)
 })

@@ -23,7 +23,7 @@ export const afterPaymentStatus = (appointment) => {
   if (normalized(appointment.contract?.status) !== 'signed') return 'Contract Pending'
   if (!initialPaymentReceived(appointment)) return 'Awaiting Payment'
   if (appointment.startedAt) return appointment.workerCompleted ? 'Awaiting Customer Confirmation' : 'Ongoing'
-  return appointment.workerKeyVerified ? 'Ready to Start' : 'Paid'
+  return appointment.checkedInAt || appointment.workerKeyVerified ? 'Checked in' : 'Paid'
 }
 export const assertWorkflow = (condition, message, status = 409) => {
   if (!condition) throw Object.assign(new Error(message), { status })

@@ -22,7 +22,7 @@
     </div>
   </nav>
 
-  <main class="centers-discovery min-h-screen pt-20 pb-14">
+  <main v-page-loading="{ active: pageLoading, variant: 'cards', cards: 6 }" class="centers-discovery min-h-screen pt-20 pb-14">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <section class="centers-hero relative">
         <div class="relative z-10 py-2 md:py-4">
@@ -354,6 +354,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
@@ -362,6 +364,8 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import { fetchCustomerCenters } from '@/utils/customerCenters'
 import BranchPickerModal from '@/components/common/BranchPickerModal.vue'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const router = useRouter()
 const loading = ref(false)
@@ -504,7 +508,7 @@ const toggleFavorite = async (center) => {
   await persistFavorites()
 }
 
-const loadFavoritesForUser = async (user) => {
+const loadFavoritesForUser = trackPageLoad(async (user) => {
   const localFavorites = readLocalFavorites()
   if (!user) {
     favoriteClinicIds.value = localFavorites
@@ -521,7 +525,7 @@ const loadFavoritesForUser = async (user) => {
     console.error('Failed to load favorite clinics:', error)
     favoriteClinicIds.value = localFavorites
   }
-}
+})
 
 const clearNearbyFilter = () => {
   userLocation.value = null
@@ -602,9 +606,9 @@ const openBranch = (branch) => {
   router.push({ name: 'customer-center', params: { id: centerId } })
 }
 
-onMounted(async () => {
+onMounted(trackPageLoad(async () => {
   favoriteClinicIds.value = readLocalFavorites()
-  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+  unsubscribeAuth = pageListener(onAuthStateChanged, auth, (user) => {
     loadFavoritesForUser(user)
   })
   loading.value = true
@@ -617,7 +621,7 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}))
 
 onBeforeUnmount(() => {
   if (redirectTimeout) clearTimeout(redirectTimeout)

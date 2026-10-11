@@ -2,7 +2,7 @@
   <div class="supplier-theme flex min-h-screen">
     <SupplierSidebar />
 
-    <main class="flex-1 p-6 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 2 }" class="flex-1 p-6 md:p-8">
       <section class="mx-auto max-w-6xl">
         <div class="overflow-hidden rounded-[2rem] border border-[#e4c7a1] bg-white/85 shadow-[0_18px_44px_rgba(77,52,31,0.08)] backdrop-blur">
           <div class="border-b border-[#ead6b8] px-6 py-5 md:px-8">
@@ -180,6 +180,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import './supplierTheme.css'
 import { computed, onMounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -195,6 +197,8 @@ import {
   formatTinDisplay,
   normalizeTinDigits,
 } from '@/utils/supplierTin'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const auth = getAuth()
 const storage = getStorage()
@@ -303,7 +307,7 @@ const handleProfilePictureChange = (event) => {
   profile.value.profilePicture = URL.createObjectURL(file)
 }
 
-const loadProfile = async (user) => {
+const loadProfile = trackPageLoad(async (user) => {
   if (!user) return
 
   loading.value = true
@@ -348,7 +352,7 @@ const loadProfile = async (user) => {
   } finally {
     loading.value = false
   }
-}
+})
 
 const saveProfile = async () => {
   if (saving.value) return
@@ -401,15 +405,15 @@ const saveProfile = async () => {
   }
 }
 
-onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
+onMounted(trackPageLoad(() => {
+  pageListener(onAuthStateChanged, auth, (user) => {
     if (!user) {
       loading.value = false
       return
     }
     loadProfile(user)
   })
-})
+}))
 </script>
 
 <style scoped>

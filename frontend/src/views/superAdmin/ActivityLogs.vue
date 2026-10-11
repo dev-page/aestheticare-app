@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5 }" class="flex-1 p-8">
       <h1 class="text-3xl font-bold text-white mb-2">Activity Logs</h1>
       <p class="text-slate-400 mb-6">Track actions performed by users across the platform.</p>
 
@@ -61,7 +61,7 @@
             <tr v-else-if="!logs.length">
               <td class="px-4 py-3 text-slate-200" colspan="6">No activity logs yet.</td>
             </tr>
-            <tr v-else v-for="log in logs" :key="log.id" class="border-t border-slate-700/60">
+            <tr v-else v-for="log in paginatedLogs" :key="log.id" class="border-t border-slate-700/60">
               <td class="px-4 py-3 text-slate-300">{{ formatDate(log.createdAt) }}</td>
               <td class="px-4 py-3 text-slate-200">{{ log.actorName || log.actorEmail || '-' }}</td>
               <td class="px-4 py-3 text-slate-300">
@@ -74,22 +74,30 @@
             </tr>
           </tbody>
         </table>
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="logs.length" />
       </section>
     </main>
   </div>
 </template>
 
 <script>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 
 export default {
   name: 'SuperAdminActivityLogs',
-  components: { SuperAdminSidebar },
+  components: { SuperAdminSidebar, TablePagination },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const logs = ref([])
+    const currentPage = ref(1)
+    const pageSize = ref(10)
     const loading = ref(false)
     const error = ref('')
 
@@ -121,7 +129,7 @@ export default {
       loading.value = true
       error.value = ''
       const activityQuery = query(collection(db, 'activities'), orderBy('createdAt', 'desc'))
-      unsubscribeLogs = onSnapshot(activityQuery, (snapshot) => {
+      unsubscribeLogs = pageListener(onSnapshot, activityQuery, (snapshot) => {
         const all = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
 
         // Apply server-like filters client-side for now
@@ -147,6 +155,8 @@ export default {
             return allowedRoles.has(normalizeRole(log.actorRole))
           })
 
+        currentPage.value = 1
+
         loading.value = false
       }, (err) => {
         console.error('Failed to load activity logs:', err)
@@ -157,6 +167,10 @@ export default {
     }
 
     const reload = () => { fromDate.value = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0,10); toDate.value = new Date().toISOString().slice(0,10); roleFilter.value = ''; searchUser.value = ''; loadLogs() }
+    const paginatedLogs = computed(() => logs.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+    const totalPages = computed(() => Math.max(1, Math.ceil(logs.value.length / pageSize.value)))
+    watch(pageSize, () => { currentPage.value = 1 })
+    watch(totalPages, (count) => { if (currentPage.value > count) currentPage.value = count })
 
     const exportCsv = () => {
       if (!logs.value.length) return alert('No logs to export')
@@ -176,7 +190,11 @@ export default {
     onUnmounted(() => unsubscribeLogs?.())
 
     return {
+      pageLoading,
       logs,
+      paginatedLogs,
+      currentPage,
+      pageSize,
       loading,
       error,
       formatDate,

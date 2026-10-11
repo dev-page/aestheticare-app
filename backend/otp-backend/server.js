@@ -1,13 +1,21 @@
+import { serviceOnlyClinicPolicies } from '../../shared/clinicPolicyContent.js'
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
+import { registerPractitionerTeams } from './practitionerTeams.js'
+import { appointmentStaffIds, practitionerTypes } from '../../shared/practitionerTeam.js'
 import { registerSupplyWorkflow } from './supplyWorkflow.js'
 import { registerFinanceWorkflow } from './financeWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
+import { registerBookingBatch } from './bookingBatch.js'
+import { registerSupplierVerification } from './supplierVerification.js'
+import { registerConsultationWindows, closeExpiredConsultations } from './consultationWindows.js'
 import { registerWalkInPayments } from './walkInWorkflow.js'
 import { prepareBooking } from './bookingResources.js'
+import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
 import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow } from './bookingWorkflow.js'
 import express from 'express'
+import { registerPublicContact } from './publicContact.js'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import admin from 'firebase-admin'
@@ -79,8 +87,36 @@ const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = Math.max(0.74, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.74)))
 const MANUAL_REVIEW_THRESHOLD = Math.max(0.5, Math.min(AUTO_VERIFICATION_THRESHOLD, Number(process.env.MANUAL_REVIEW_THRESHOLD || 0.5)))
+// A document is still usable for registration until it expires.  To avoid
+// activating an account with compliance paperwork that will lapse almost
+// immediately, documents with one to seven calendar days left are held for a
+// replacement. Eight days or more may proceed through normal review.
+const REGISTRATION_EXPIRY_HOLD_DAYS = 7
+const REGISTRATION_EXPIRY_RESUBMISSION_DAYS = 24
+// `registrationStatus` is the single, user-facing registration phase. Keep
+// account status, approval status, and OCR status separate: they describe
+// account access, the reviewer decision, and document processing respectively.
+const CLINIC_REGISTRATION_STATUS = Object.freeze({
+  PENDING_OTP: 'Pending OTP Verification',
+  PENDING_DOCUMENTS: 'Pending Document Submission',
+  PENDING_REVIEW: 'Pending Review',
+  RESUBMISSION_REQUIRED: 'Resubmission Required',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+})
 const REGISTRATION_DOCUMENT_REQUIREMENTS = {
   clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'birRegistration', 'sanitaryCertificate'],
+}
+const AUTHORIZATION_DOCUMENT_KEY = 'authorizationLetter'
+const SUPPORTED_CLINIC_REGISTRATION_DOCUMENTS = new Set([
+  ...REGISTRATION_DOCUMENT_REQUIREMENTS.clinic,
+  AUTHORIZATION_DOCUMENT_KEY,
+])
+const getRegistrationDocumentRequirements = (applicantType, application = {}) => {
+  const baseRequirements = REGISTRATION_DOCUMENT_REQUIREMENTS[applicantType] || []
+  return application.permitHolderIsRegistrant === false
+    ? [...baseRequirements, AUTHORIZATION_DOCUMENT_KEY]
+    : [...baseRequirements]
 }
 const DOCUMENT_NUMBER_REQUIREMENTS = new Set([
   'businessPermit',
@@ -118,6 +154,19 @@ const doesOcrTextMatchRegistrationOwner = (textComparable, application = {}, use
   const tokens = getRegistrationOwnerNameTokensForOcr(application, user)
   if (tokens.length < 2) return null
   return tokens.slice(0, 2).every((token) => textComparable.includes(token))
+}
+
+const getPermitHolderNameForOcr = (application = {}, user = {}) => application.permitHolderIsRegistrant === true
+  ? [user.firstName || application.firstName, user.midName || user.middleName || application.midName, user.lastName || application.lastName]
+    .map((part) => String(part || '').trim()).filter(Boolean).join(' ')
+  : String(application.permitHolderName || '').trim()
+
+const doesOcrTextMatchPermitHolder = (textComparable, application = {}, user = {}) => {
+  const holderName = normalizeOcrComparable(getPermitHolderNameForOcr(application, user))
+  const tokens = holderName.split(' ').filter((token) => token.length >= 2)
+  if (tokens.length < 2) return null
+  const matchedTokens = tokens.filter((token) => textComparable.includes(token))
+  return matchedTokens.length >= 2
 }
 
 const getRegistrationBusinessNameForOcr = (application = {}, user = {}) => normalizeOcrComparable(
@@ -160,11 +209,11 @@ const extractOcrDates = (text) => {
       && parsed.getUTCMonth() + 1 === Number(month)
       && parsed.getUTCDate() === Number(day)) dates.push(normalized)
   }
-  const matcher = /\b(\d{4}[-\/]\d{2}[-\/]\d{2}|\d{2}[-\/]\d{2}[-\/]\d{4})\b/g
+  const matcher = /\b(\d{4}[-\/.]\d{1,2}[-\/.]\d{1,2}|\d{1,2}[-\/.]\d{1,2}[-\/.]\d{4})\b/g
   for (const match of String(text || '').matchAll(matcher)) {
     const raw = match[1]
-    const parts = raw.split(/[-\/]/).map(Number)
-    if (/^\d{2}[-\/]/.test(raw)) addDate(parts[2], parts[0], parts[1])
+    const parts = raw.split(/[-\/.]/).map(Number)
+    if (/^\d{1,2}[-\/.]/.test(raw)) addDate(parts[2], parts[0], parts[1])
     else addDate(parts[0], parts[1], parts[2])
   }
   const monthNames = {
@@ -180,14 +229,15 @@ const extractOcrDates = (text) => {
   return [...new Set(dates)]
 }
 
-const OCR_DATE_TOKEN_PATTERN = '(?:\\d{4}[-\\/]\\d{1,2}[-\\/]\\d{1,2}|\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{4}|(?:january|february|march|april|may|june|july|august|september|october|november|december)\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?[,]?\\s+\\d{4}|\\d{1,2}(?:st|nd|rd|th)?\\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\\.?[,]?\\s+\\d{4})'
+const OCR_MONTH_PATTERN = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
+const OCR_DATE_TOKEN_PATTERN = `(?:\\d{4}[-\\/.]\\d{1,2}[-\\/.]\\d{1,2}|\\d{1,2}[-\\/.]\\d{1,2}[-\\/.]\\d{4}|${OCR_MONTH_PATTERN}\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?[,]?\\s+\\d{4}|\\d{1,2}(?:st|nd|rd|th)?\\s+${OCR_MONTH_PATTERN}\\.?[,]?\\s+\\d{4})`
 
 const normalizeOcrDateToken = (value) => {
   const raw = String(value || '').trim().toLowerCase().replace(/[,]/g, '')
-  const numeric = raw.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$|^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
+  const numeric = raw.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$|^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/)
   const months = {
-    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
-    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5, jun: 6, june: 6,
+    jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
   }
   let year = 0
   let month = 0
@@ -196,8 +246,8 @@ const normalizeOcrDateToken = (value) => {
     if (numeric[1]) [year, month, day] = [Number(numeric[1]), Number(numeric[2]), Number(numeric[3])]
     else [year, month, day] = [Number(numeric[6]), Number(numeric[4]), Number(numeric[5])]
   } else {
-    const monthFirst = raw.match(/^(january|february|march|april|may|june|july|august|september|october|november|december)\.?\s+(\d{1,2})(?:st|nd|rd|th)?\s+(\d{4})$/)
-    const dayFirst = raw.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)\.?\s+(\d{4})$/)
+    const monthFirst = raw.match(new RegExp(`^(${OCR_MONTH_PATTERN})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+(\\d{4})$`))
+    const dayFirst = raw.match(new RegExp(`^(\\d{1,2})(?:st|nd|rd|th)?\\s+(${OCR_MONTH_PATTERN})\\.?\\s+(\\d{4})$`))
     if (monthFirst) [year, month, day] = [Number(monthFirst[3]), months[monthFirst[1]], Number(monthFirst[2])]
     if (dayFirst) [year, month, day] = [Number(dayFirst[3]), months[dayFirst[2]], Number(dayFirst[1])]
   }
@@ -230,16 +280,37 @@ const extractOcrExpiryContext = (text) => {
 }
 
 const getOcrExpiryValidation = (text, requiresExpiry) => {
-  if (!requiresExpiry) return { valid: null, expired: false, invalidRange: false, ...extractOcrExpiryContext('') }
+  if (!requiresExpiry) return { valid: null, expired: false, invalidRange: false, daysRemaining: null, accountHold: false, ...extractOcrExpiryContext('') }
   const context = extractOcrExpiryContext(text)
-  if (!context.validTo) return { valid: null, expired: false, invalidRange: false, ...context }
-  const endMs = new Date(`${context.validTo}T23:59:59.999Z`).getTime()
-  const startMs = context.validFrom ? new Date(`${context.validFrom}T00:00:00Z`).getTime() : null
-  const now = Date.now()
-  if (startMs !== null && endMs < startMs) return { valid: false, expired: false, invalidRange: true, ...context }
-  const expired = endMs < now
-  return { valid: !expired && (startMs === null || startMs <= now), expired, invalidRange: false, ...context }
+  if (!context.validTo) return { valid: null, expired: false, invalidRange: false, daysRemaining: null, accountHold: false, ...context }
+  // Use Philippines calendar dates rather than a server clock boundary. An
+  // expiry printed as a date remains valid through that local calendar day.
+  const localParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date()).reduce((parts, part) => ({ ...parts, [part.type]: part.value }), {})
+  const today = `${localParts.year}-${localParts.month}-${localParts.day}`
+  const toUtcDay = (dateKey) => Date.parse(`${dateKey}T00:00:00Z`)
+  const endDay = toUtcDay(context.validTo)
+  const startDay = context.validFrom ? toUtcDay(context.validFrom) : null
+  const todayDay = toUtcDay(today)
+  if (startDay !== null && endDay < startDay) return { valid: false, expired: false, invalidRange: true, daysRemaining: null, accountHold: false, ...context }
+  const daysRemaining = Math.round((endDay - todayDay) / DAY_MS)
+  const expired = daysRemaining < 0
+  const accountHold = !expired && daysRemaining <= REGISTRATION_EXPIRY_HOLD_DAYS
+  return { valid: !expired && (startDay === null || startDay <= todayDay), expired, invalidRange: false, daysRemaining, accountHold, ...context }
 }
+
+const hasActiveRegistrationExpiryHold = (verificationResults = {}) => Object.values(verificationResults || {}).some((result) => {
+  const expiry = result?.checks?.expiryDate || result?.expiryDate
+  if (!expiry) return false
+  return getOcrExpiryValidation(`Expiry date: ${expiry}`, true).accountHold
+})
+const registrationDocumentLabel = (key) => ({
+  businessPermit: 'Business Permit / Registration',
+  dohAccreditation: 'DOH License to Operate',
+  sanitaryCertificate: 'Sanitary Certificate',
+  authorizationLetter: 'Authorization Letter / Proof of Authority',
+}[key] || String(key || 'Required document'))
 const extractOcrDocumentNumber = (text) => {
   const source = String(text || '').toUpperCase()
   const labelled = source.match(/\b(?:LTO|LICENSE|PERMIT|REGISTRATION|CERTIFICATE|TIN|TAXPAYER\s*(?:ID|NUMBER))\s*(?:NO\.?|NUMBER|#|:)?\s*((?:[A-Z0-9]{2,}(?:-[A-Z0-9]{2,}){1,5}|[A-Z0-9]{4,}))\b/i)
@@ -310,6 +381,7 @@ app.use('/attendance', express.json({ limit: '5mb' }))
 // Registration OCR preflight receives a document as base64 and never persists
 // image files. Allow enough room for the existing 10 MB document limit.
 app.use(express.json({ limit: '15mb' }))
+registerPublicContact(app, admin)
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && Object.prototype.hasOwnProperty.call(error, 'body')) {
     return res.status(400).json({
@@ -678,7 +750,7 @@ const isPayMongoPaidAppointment = (appointmentData = {}) => {
   const paymentId = String(appointmentData.paymongoPaymentId || '').trim()
   const paymentStatus = String(appointmentData.paymentStatus || '').trim().toLowerCase()
   const source = String(appointmentData.source || '').trim().toLowerCase()
-  return Boolean(paymentId) && paymentStatus === 'paid' && source === 'paymongo_checkout'
+  return Boolean(paymentId) && ['paid', 'partially paid'].includes(paymentStatus) && Boolean(source === 'paymongo_checkout' || appointmentData.paymongoPaidAt || appointmentData.recordedPaymentSessions?.length)
 }
 
 const getAppointmentCustomerProfile = async (firestore, appointmentData = {}) => {
@@ -1956,7 +2028,7 @@ const getClinicPoliciesForBranch = async (firestore, branchId, knownBranch = nul
   }
   const ownerId = String(branch.ownerId || branch.organizationOwnerId || '').trim()
   const applyBranchLinks = (sourcePolicy) => {
-    const policy = { ...(sourcePolicy || {}) }
+    const policy = serviceOnlyClinicPolicies(sourcePolicy)
     // Undefined means a legacy branch that predates explicit linking: preserve
     // its existing behaviour by enforcing every enabled clinic policy.
     if (!Array.isArray(branch.enforcedPolicyKeys)) return policy
@@ -1966,9 +2038,6 @@ const getClinicPoliciesForBranch = async (firestore, branchId, knownBranch = nul
       ['cancellationPolicy', ['cancellationPolicyEnabled', 'serviceCancellationPolicyEnabled', 'refundPolicyEnabled']],
       ['reschedulePolicy', ['reschedulePolicyEnabled', 'serviceReschedulingPolicyEnabled']],
       ['noShowPolicy', ['noShowPolicyEnabled', 'serviceNoShowPolicyEnabled']],
-      ['deliveryPolicy', ['deliveryPolicyEnabled', 'productDeliveryPaymentPolicyEnabled']],
-      ['productOrderCancellationPolicy', ['productOrderCancellationPolicyEnabled', 'productCancellationPolicyEnabled']],
-      ['productReturnPolicy', ['productReturnPolicyEnabled', 'productTermsEnabled']],
       ['walkInPolicy', ['walkInPolicyEnabled']],
     ]
     definitions.forEach(([key, enabledKeys]) => {
@@ -2095,12 +2164,20 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     }
     const comparableText = normalizeOcrComparable(extractedText)
     const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
-    const requiresRegistrantName = docKey === 'governmentIdRepresentativeFront'
+    const isAuthorizationDocument = docKey === AUTHORIZATION_DOCUMENT_KEY
+    const requiresRegistrantName = docKey === 'governmentIdRepresentativeFront' || isAuthorizationDocument
+    const requiresPermitHolderName = application.permitHolderIsRegistrant === false
+      && (docKey === 'businessPermit' || isAuthorizationDocument)
     const expectedBusinessName = getRegistrationBusinessNameForOcr(application, user)
     const ownerNameMatch = doesOcrTextMatchRegistrationOwner(comparableText, application, user)
+    const permitHolderNameMatch = requiresPermitHolderName
+      ? doesOcrTextMatchPermitHolder(comparableText, application, user)
+      : null
     const businessNameMatch = expectedBusinessName.length >= 3 ? comparableText.includes(expectedBusinessName) : null
-    const requiresName = requiresBusinessName || requiresRegistrantName
-    const nameMatch = requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : null
+    const requiresName = requiresBusinessName || requiresRegistrantName || requiresPermitHolderName
+    const nameMatch = isAuthorizationDocument
+      ? ownerNameMatch === true && permitHolderNameMatch === true
+      : requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : permitHolderNameMatch
     const readableText = extractedText.length >= 30
     const hasSomeText = extractedText.length > 0
     const ocrConfidence = getVisionWordConfidence(annotation)
@@ -2130,26 +2207,32 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     result.detectedDocumentNumber = detectedDocumentNumber
     result.detectedDates = detectedDates
     result.checks = {
-      readableText, ocrConfidence, nameMatch, ownerNameMatch, businessNameMatch, birthDateMatch, expectedBirthDate,
-      nameCheckType: requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
+      readableText, ocrConfidence, nameMatch, ownerNameMatch, permitHolderNameMatch, businessNameMatch, birthDateMatch, expectedBirthDate,
+      nameCheckType: isAuthorizationDocument ? 'authorization_parties' : requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
       documentNumberDetected: requiresNumber ? Boolean(detectedDocumentNumber) : null,
       expiryValid,
       expiryDate,
       expiryValidationType: expiryValidation.type,
+      expiryDaysRemaining: requiresExpiry ? expiryValidation.daysRemaining : null,
+      expiryAccountHold: requiresExpiry ? expiryValidation.accountHold : false,
     }
     // Automatic approval requires the Step 1 registrant name to be found in
     // the extracted text. Documents that have an expiry date also require a
     // valid, non-expired date; a missing match is sent to a human, not called
     // unreadable and not automatically accepted on score alone.
     const automaticChecksPassed = (!requiresName || nameMatch === true)
+      && (!requiresPermitHolderName || permitHolderNameMatch === true)
       && (!requiresBirthDate || birthDateMatch === true)
       && (!requiresExpiry || expiryValid === true)
-    const requiredNameMismatch = requiresName && nameMatch === false
+    const requiredNameMismatch = !isAuthorizationDocument && requiresName && nameMatch === false
     const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
     const expiredDocument = requiresExpiry && expiryValidation.expired
     const invalidValidityRange = requiresExpiry && expiryValidation.invalidRange
+    const expiryAccountHold = requiresExpiry && expiryValidation.accountHold
     result.status = !readableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || invalidValidityRange || score < MANUAL_REVIEW_THRESHOLD
       ? 'rejected'
+      : expiryAccountHold ? 'held_pending'
+      : isAuthorizationDocument ? 'manual_review'
       : score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
     result.reason = !readableText
       ? 'The text is unclear or unreadable. Please upload a clearer, well-lit, uncropped image or readable PDF.'
@@ -2161,6 +2244,12 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
         ? `This document expired on ${expiryDate}. Please upload a current document.`
       : invalidValidityRange
         ? 'The document has an invalid validity range: its end date is earlier than its start date. Please upload a correct, current document.'
+      : expiryAccountHold
+        ? `This document expires in ${expiryValidation.daysRemaining} day${expiryValidation.daysRemaining === 1 ? '' : 's'}. Your registration requires a replacement document before it can be reviewed.`
+      : isAuthorizationDocument
+        ? 'OCR checked the registrant and permit-holder names. An administrator must review the authority granted before approval.'
+      : requiresPermitHolderName && permitHolderNameMatch !== true
+        ? 'OCR could not confidently match the declared permit holder. This document requires manual review rather than automatic rejection.'
       : result.status === 'rejected'
         ? 'This document did not meet the minimum OCR verification score. Please upload a clearer file.'
         : requiresName && nameMatch !== true
@@ -2205,7 +2294,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   const user = userSnap.exists ? userSnap.data() || {} : {}
   const documents = application.submittedDocuments || {}
   const uploadOcrResults = application.draftDocumentOcr || {}
-  const requiredKeys = REGISTRATION_DOCUMENT_REQUIREMENTS[normalizedType]
+  const requiredKeys = getRegistrationDocumentRequirements(normalizedType, application)
   const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
   const visionClient = createVisionClient()
   const results = {}
@@ -2293,12 +2382,20 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       }
       const textComparable = normalizeOcrComparable(extractedText)
       const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
-      const requiresRegistrantName = docKey === 'governmentIdRepresentativeFront'
+      const isAuthorizationDocument = docKey === AUTHORIZATION_DOCUMENT_KEY
+      const requiresRegistrantName = docKey === 'governmentIdRepresentativeFront' || isAuthorizationDocument
+      const requiresPermitHolderName = application.permitHolderIsRegistrant === false
+        && (docKey === 'businessPermit' || isAuthorizationDocument)
       const expectedBusinessName = getRegistrationBusinessNameForOcr(application, user)
       const ownerNameMatch = doesOcrTextMatchRegistrationOwner(textComparable, application, user)
+      const permitHolderNameMatch = requiresPermitHolderName
+        ? doesOcrTextMatchPermitHolder(textComparable, application, user)
+        : null
       const businessNameMatch = expectedBusinessName.length >= 3 ? textComparable.includes(expectedBusinessName) : null
-      const requiresName = requiresBusinessName || requiresRegistrantName
-      const nameMatch = requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : null
+      const requiresName = requiresBusinessName || requiresRegistrantName || requiresPermitHolderName
+      const nameMatch = isAuthorizationDocument
+        ? ownerNameMatch === true && permitHolderNameMatch === true
+        : requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : permitHolderNameMatch
       const hasReadableText = extractedText.length >= 30
       const hasSomeText = extractedText.length > 0
       const ocrConfidence = getVisionWordConfidence(annotation)
@@ -2338,15 +2435,18 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         ocrConfidence,
         nameMatch,
         ownerNameMatch,
+        permitHolderNameMatch,
         businessNameMatch,
         birthDateMatch,
         expectedBirthDate,
-        nameCheckType: requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
+        nameCheckType: isAuthorizationDocument ? 'authorization_parties' : requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
         numberMatch,
         documentNumberDetected,
         expiryValid: expiryApplicable ? expiryValid : null,
         expiryDate: expiryValidation.validTo,
         expiryValidationType: expiryValidation.type,
+        expiryDaysRemaining: expiryApplicable ? expiryValidation.daysRemaining : null,
+        expiryAccountHold: expiryApplicable ? expiryValidation.accountHold : false,
       }
       result.scoreBreakdown = {
         ocrQuality: Math.round(ocrQuality * 100),
@@ -2365,14 +2465,18 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.confidence = confidence
       result.extractedText = extractedText.slice(0, 2000)
       const automaticChecksPassed = (!requiresName || nameMatch === true)
+        && (!requiresPermitHolderName || permitHolderNameMatch === true)
         && (!requiresBirthDate || birthDateMatch === true)
         && (!expiryApplicable || expiryValid)
-      const requiredNameMismatch = requiresName && nameMatch === false
+      const requiredNameMismatch = !isAuthorizationDocument && requiresName && nameMatch === false
       const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
       const expiredDocument = expiryApplicable && expiryValidation.expired
       const invalidValidityRange = expiryApplicable && expiryValidation.invalidRange
+      const expiryAccountHold = expiryApplicable && expiryValidation.accountHold
       result.status = !hasReadableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || invalidValidityRange || confidence < MANUAL_REVIEW_THRESHOLD
         ? 'rejected'
+        : expiryAccountHold ? 'held_pending'
+        : isAuthorizationDocument ? 'manual_review'
         : confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
         result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
@@ -2384,6 +2488,12 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = `This document expired on ${expiryValidation.validTo}. Please upload a current document.`
       } else if (invalidValidityRange) {
         result.reason = 'The document has an invalid validity range: its end date is earlier than its start date. Please upload a correct, current document.'
+      } else if (expiryAccountHold) {
+        result.reason = `This document expires in ${expiryValidation.daysRemaining} day${expiryValidation.daysRemaining === 1 ? '' : 's'}. Your registration requires a replacement document before it can be reviewed.`
+      } else if (isAuthorizationDocument) {
+        result.reason = 'OCR checked the registrant and permit-holder names. An administrator must review the authority granted before approval.'
+      } else if (requiresPermitHolderName && permitHolderNameMatch !== true) {
+        result.reason = 'OCR could not confidently match the declared permit holder. This document requires manual review rather than automatic rejection.'
       } else if (requiresName && nameMatch !== true) {
         result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
       } else if (requiresBirthDate && birthDateMatch !== true) {
@@ -2408,18 +2518,47 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   const allRequiredDocumentsPresent = requiredKeys.every((key) => Boolean(documents?.[key]?.path || documents?.[key]?.storagePath))
   const allVerified = allRequiredDocumentsPresent && requiredKeys.every((key) => results[key]?.status === 'verified')
   const hasRejectedDocument = requiredKeys.some((key) => results[key]?.status === 'rejected')
-  const verificationStatus = allVerified ? 'OCR Verified' : hasRejectedDocument ? 'Rejected' : 'Manual Review Required'
-  const approvalStatus = hasRejectedDocument ? 'Rejected' : 'Pending Approval'
+  const expiryHoldDocuments = requiredKeys.filter((key) => results[key]?.checks?.expiryAccountHold)
+  const hasExpiryHold = expiryHoldDocuments.length > 0
+  const requiresExpiryResubmission = hasExpiryHold && !hasRejectedDocument
+  const existingExpiryDeadline = typeof application.expiryResubmissionExpiresAt?.toDate === 'function'
+    ? application.expiryResubmissionExpiresAt.toDate()
+    : application.expiryResubmissionExpiresAt ? new Date(application.expiryResubmissionExpiresAt) : null
+  const canKeepExistingExpiryDeadline = existingExpiryDeadline && !Number.isNaN(existingExpiryDeadline.getTime()) && existingExpiryDeadline.getTime() > Date.now()
+  const expiryResubmissionExpiresAt = requiresExpiryResubmission
+    ? (canKeepExistingExpiryDeadline
+      ? admin.firestore.Timestamp.fromDate(existingExpiryDeadline)
+      : admin.firestore.Timestamp.fromMillis(Date.now() + REGISTRATION_EXPIRY_RESUBMISSION_DAYS * DAY_MS))
+    : null
+  const shouldSendExpiryHoldEmail = requiresExpiryResubmission && !canKeepExistingExpiryDeadline
+  const verificationStatus = hasExpiryHold ? 'Pending - Expiry Hold' : allVerified ? 'OCR Verified' : hasRejectedDocument ? 'Rejected' : 'Manual Review Required'
+  const approvalStatus = hasRejectedDocument ? 'Rejected' : requiresExpiryResubmission ? 'Pending Documents' : 'Pending Approval'
   const verificationPayload = {
     verificationStatus,
     verificationResults: results,
     verificationThreshold: AUTO_VERIFICATION_THRESHOLD,
     verificationProcessedAt: admin.firestore.FieldValue.serverTimestamp(),
     verificationProcessedBy: processedBy || 'automatic_processor',
+    expiryAccountHold: hasExpiryHold,
+    expiryHoldDocuments,
+    expiryHoldPolicy: hasExpiryHold ? `Document expires within ${REGISTRATION_EXPIRY_HOLD_DAYS} calendar days.` : admin.firestore.FieldValue.delete(),
+    expiryResubmissionExpiresAt: expiryResubmissionExpiresAt || admin.firestore.FieldValue.delete(),
+    expiryResubmissionRequestedAt: requiresExpiryResubmission
+      ? (canKeepExistingExpiryDeadline && application.expiryResubmissionRequestedAt
+        ? application.expiryResubmissionRequestedAt
+        : admin.firestore.FieldValue.serverTimestamp())
+      : admin.firestore.FieldValue.delete(),
     // OCR verifies document quality and consistency; it never grants account access.
     approvalStatus,
-    resubmissionRequired: false,
-    resubmissionReason: admin.firestore.FieldValue.delete(),
+    registrationStatus: hasRejectedDocument
+      ? CLINIC_REGISTRATION_STATUS.REJECTED
+      : requiresExpiryResubmission
+        ? CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED
+        : CLINIC_REGISTRATION_STATUS.PENDING_REVIEW,
+    resubmissionRequired: requiresExpiryResubmission,
+    resubmissionReason: requiresExpiryResubmission
+      ? `Replace the near-expiry document${expiryHoldDocuments.length === 1 ? '' : 's'}: ${expiryHoldDocuments.map(registrationDocumentLabel).join(', ')}.`
+      : admin.firestore.FieldValue.delete(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }
 
@@ -2428,6 +2567,11 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   batch.set(userRef, {
     status: approvalStatus,
     approvalStatus,
+    registrationStatus: hasRejectedDocument
+      ? CLINIC_REGISTRATION_STATUS.REJECTED
+      : requiresExpiryResubmission
+        ? CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED
+        : CLINIC_REGISTRATION_STATUS.PENDING_REVIEW,
     verificationStatus,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true })
@@ -2455,7 +2599,35 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   }, { merge: true })
   await batch.commit()
 
-  return { status: verificationStatus, approvalStatus, allVerified, hasRejectedDocument, results }
+  let expiryHoldEmailSent = false
+  if (shouldSendExpiryHoldEmail) {
+    const recipient = String(user.email || application.email || '').trim().toLowerCase()
+    if (recipient && postmarkClient && senderEmail) {
+      try {
+        const applicantName = String(user.firstName || application.ownerFirstName || '').trim() || 'Applicant'
+        const expiryDocumentLabels = expiryHoldDocuments.map((key) => {
+          const expiryDate = results[key]?.checks?.expiryDate
+          return `${registrationDocumentLabel(key)}${expiryDate ? ` (expires ${expiryDate})` : ''}`
+        }).join(', ')
+        const deadlineLabel = expiryResubmissionExpiresAt.toDate().toLocaleDateString('en-PH', {
+          timeZone: 'Asia/Manila', year: 'numeric', month: 'long', day: 'numeric',
+        })
+        const registrationUrl = `${EMAIL_WEBSITE_URL}/clinic/register?resubmission=expiry-hold`
+        await sendPostmarkMessage({
+          to: recipient,
+          from: senderEmail,
+          subject: 'Action Required: Resubmit Your Clinic Document Within 24 Days',
+          text: `Hi ${applicantName},\n\nYour clinic registration is on hold because a submitted document is close to its expiration date.\n\nDocument requiring replacement: ${expiryDocumentLabels}\n\nPlease renew the document and upload the updated copy here:\n${registrationUrl}\n\nThis resubmission link is valid until ${deadlineLabel}. After this date, your pending clinic registration will be closed and a new application will be required.\n\nPlease ensure the replacement document is complete, clear, readable, and currently valid.\n\nRegards,\nThe AesthetiCare Team`,
+          html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${applicantName},</p><p>Your clinic registration is on hold because a submitted document is close to its expiration date.</p><p><strong>Document requiring replacement:</strong> ${expiryDocumentLabels}</p><p>Please renew the document and upload the updated copy here:</p><p><a href="${registrationUrl}">${registrationUrl}</a></p><p>This resubmission link is valid until <strong>${deadlineLabel}</strong>. After this date, your pending clinic registration will be closed and a new application will be required.</p><p>Please ensure the replacement document is complete, clear, readable, and currently valid.</p><p>Regards,<br>The AesthetiCare Team</p></div>`,
+        })
+        expiryHoldEmailSent = true
+      } catch (emailError) {
+        console.warn('Failed to send clinic expiry-hold resubmission email:', emailError?.message || emailError)
+      }
+    }
+  }
+
+  return { status: verificationStatus, approvalStatus, allVerified, hasRejectedDocument, results, expiryResubmissionExpiresAt, expiryHoldEmailSent }
 }
 
 app.post('/registration/auto-verify-documents', requireAuth, async (req, res) => {
@@ -2478,7 +2650,7 @@ app.post('/registration/ocr-document', requireAuth, async (req, res) => {
   const uid = String(req.body?.uid || '').trim()
   const docKey = String(req.body?.docKey || '').trim()
   if (!uid || uid !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
-  if (!REGISTRATION_DOCUMENT_REQUIREMENTS.clinic.includes(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
+  if (!SUPPORTED_CLINIC_REGISTRATION_DOCUMENTS.has(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
   try {
     const firestore = admin.firestore()
     const clinicRef = firestore.collection('clinics').doc(uid)
@@ -2507,7 +2679,7 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
   const file = req.body?.file || {}
   const contentBase64 = String(file.contentBase64 || '').replace(/^data:[^;]+;base64,/, '')
   if (!uid || uid !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
-  if (!REGISTRATION_DOCUMENT_REQUIREMENTS.clinic.includes(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
+  if (!SUPPORTED_CLINIC_REGISTRATION_DOCUMENTS.has(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
   if (!['image/jpeg', 'image/png'].includes(String(file.type || '').toLowerCase())) {
     return res.status(400).json({ success: false, error: 'Image preflight supports PNG and JPEG files. PDFs are checked after final submission.' })
   }
@@ -2517,10 +2689,22 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
     const firestore = admin.firestore()
     const [clinicSnap, userSnap] = await Promise.all([firestore.collection('clinics').doc(uid).get(), firestore.collection('users').doc(uid).get()])
     if (!clinicSnap.exists) return res.status(404).json({ success: false, error: 'Registration application not found.' })
+    const storedApplication = clinicSnap.data() || {}
+    const suppliedPermitHolder = req.body?.permitHolder || {}
+    const application = {
+      ...storedApplication,
+      ...(typeof suppliedPermitHolder.isRegistrant === 'boolean'
+        ? {
+            permitHolderIsRegistrant: suppliedPermitHolder.isRegistrant,
+            permitHolderName: String(suppliedPermitHolder.name || '').trim(),
+            permitHolderRelationship: String(suppliedPermitHolder.relationship || '').trim(),
+          }
+        : {}),
+    }
     const result = await processUploadedRegistrationDocument({
       uid, docKey,
       document: { name: file.name || '', type: file.type, size, preflight: true, contentBase64 },
-      application: clinicSnap.data() || {}, user: userSnap.data() || {},
+      application, user: userSnap.data() || {},
     })
     return res.json({ success: true, data: result })
   } catch (error) {
@@ -2529,6 +2713,7 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
 })
 
 registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
+registerSupplierVerification(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
 registerFinanceWorkflow(app, { admin, requireAuth, loadUserContext })
 registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
@@ -2567,6 +2752,7 @@ const BOOKING_BLOCKING_STATUSES = new Set([
   'paid - awaiting approval',
   'contract pending',
   'ready to start',
+  'checked in',
   'awaiting customer confirmation',
   'balance due',
   'scheduled',
@@ -3025,6 +3211,7 @@ const buildBookingAppointmentPayload = ({
     paymongoPaymentId: isPaid ? (paymongo?.paymentId || null) : null,
     paymongoPaymentMethodType: isPaid ? (paymentMethodType || null) : null,
     referenceNumber: reservation.referenceNumber || '',
+    groupBooking: reservation.groupBooking && typeof reservation.groupBooking === 'object' ? reservation.groupBooking : null,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     reservationId: reservation.id,
@@ -3263,7 +3450,14 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
     return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Unable to add branch.' })
   }
 })
-registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction })
+const sendServiceCode = async ({ email, serviceKey, date, time }) => {
+  if (!email || !postmarkClient || !senderEmail) return
+  await sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time}. Your private service code is ${serviceKey}. Show this code to reception for check-in. It applies only to your appointment and expires after the appointment window.` })
+}
+registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction, sendServiceCode })
+registerPractitionerTeams(app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap })
+registerConsultationWindows(app, { admin, ready: () => adminReady })
+registerBookingBatch(app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan })
 
 // Each treatment visit has its own lifecycle. The original appointment is the
 // treatment-plan parent; later visits are scheduled explicitly so a missed
@@ -3298,34 +3492,136 @@ app.post('/treatment-sessions/:id/schedule', requireAuth, async (req, res) => {
     const result = await firestore.runTransaction(async tx => {
       const snap = await tx.get(ref); assertWorkflow(snap.exists, 'Treatment session not found.', 404)
       const session = snap.data() || {}; await authorizeClinicAction(req.user.uid, session.branchId, 'appointments:update')
-      assertWorkflow(['unscheduled', 'reschedule eligible'].includes(normalizeBookingStatus(session.status)), 'Only an unscheduled or eligible session can be scheduled.')
+      const practitionerId = String(req.body?.practitionerId || session.practitionerId || '').trim()
+      assertWorkflow(practitionerId, 'Choose a lead practitioner for this session.', 400)
+      assertWorkflow(!(await getApprovedLeaveForDate(practitionerId, date)), 'The selected practitioner is on approved leave.')
+      const currentStatus = normalizeBookingStatus(session.status)
+      assertWorkflow(['unscheduled', 'reschedule eligible', 'schedule requested', 'reschedule requested'].includes(currentStatus), 'Only an unscheduled, requested, or eligible session can be scheduled.')
       const parentRef = firestore.collection('appointments').doc(session.treatmentPlanAppointmentId); const parent = await tx.get(parentRef)
       assertWorkflow(parent.exists, 'Treatment plan appointment not found.', 404)
-      const parentData = parent.data() || {}, requestedRange = getBookingRange({ time, totalServiceDurationMinutes: parentData.totalServiceDurationMinutes || 60 })
-      const scheduleSnap = await tx.get(firestore.collection('users').doc(session.practitionerId).collection('schedules').doc('recurring'))
-      const schedule = scheduleSnap.exists ? scheduleSnap.data() || {} : {}
-      const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).format(new Date(`${date}T12:00:00+08:00`))
-      const availability = schedule.availability?.[weekday], label = String(schedule.assignmentLabels?.[weekday] || schedule.assignments?.[weekday] || '').trim()
-      const [labelStart, labelEnd] = label.split('||').pop().trim().split(' - ')
-      const availableRange = availability?.enabled !== false && availability?.start && availability?.end
-        ? getBookingRange({ time: availability.start, endTime: availability.end })
-        : labelStart && labelEnd ? getBookingRange({ time: labelStart, endTime: labelEnd }) : null
-      assertWorkflow(availableRange && requestedRange && requestedRange.start >= availableRange.start && requestedRange.end <= availableRange.end, 'The chosen time is outside the practitioner’s published availability.')
+      // Later visits are intentionally not booked in advance. The immediately
+      // preceding visit must be resolved before staff can confirm this one.
+      const sessionNumber = Number(session.sessionNumber || 1)
+      if (sessionNumber > 1) {
+        const previous = await tx.get(firestore.collection('treatmentSessions').doc(`${session.treatmentPlanAppointmentId}-${sessionNumber - 1}`))
+        assertWorkflow(previous.exists && ['completed', 'forfeited'].includes(normalizeBookingStatus(previous.data()?.status)), 'Complete or resolve the previous treatment session before scheduling this visit.')
+      }
+      assertWorkflow(!session.earliestScheduleDate || date >= String(session.earliestScheduleDate), `This session is eligible to be scheduled on or after ${session.earliestScheduleDate}.`)
+      const parentData = parent.data() || {}, definition = parentData.treatmentPlan?.sessions?.[sessionNumber - 1]
+      const requestedRange = getBookingRange({ time, totalServiceDurationMinutes: definition?.durationMinutes || parentData.totalServiceDurationMinutes || 60 })
       const [otherAppointments, otherSessions] = await Promise.all([
         tx.get(firestore.collection('appointments').where('branchId', '==', session.branchId)),
         tx.get(firestore.collection('treatmentSessions').where('branchId', '==', session.branchId)),
       ])
       const conflicts = [...otherAppointments.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) })), ...otherSessions.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() || {}) }))]
-        .some(item => item.id !== ref.id && item.date === date && String(item.practitionerId || item.assignedPractitionerId || '') === String(session.practitionerId || '') && ['scheduled', 'paid', 'ready to start', 'ongoing'].includes(normalizeBookingStatus(item.status)) && (() => { const range = getBookingRange(item); return range && rangesOverlap(requestedRange.start, requestedRange.end, range.start, range.end) })())
+        .some(item => item.id !== ref.id && item.id !== session.appointmentId && item.appointmentId !== session.appointmentId && item.date === date && appointmentStaffIds(item).includes(practitionerId) && ['scheduled', 'paid', 'checked in', 'ready to start', 'ongoing'].includes(normalizeBookingStatus(item.status)) && (() => { const range = getBookingRange(item); return range && rangesOverlap(requestedRange.start, requestedRange.end, range.start, range.end) })())
       assertWorkflow(!conflicts, 'The practitioner already has an appointment or treatment session at that time.')
-      const action = normalizeBookingStatus(session.status) === 'reschedule eligible' ? 'rescheduled' : 'scheduled'
-      tx.update(ref, { status: 'Scheduled', date, time, scheduledById: req.user.uid, scheduledAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-      tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action, previousStatus: session.status || '', nextStatus: 'Scheduled', date, time, actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
-      tx.set(firestore.collection('notifications').doc(), { recipientUserId: session.customerId, branchId: session.branchId, title: `Treatment session ${session.sessionNumber} scheduled`, message: `Your next treatment session is scheduled for ${date} at ${time}.`, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
-      return { id: ref.id, status: 'Scheduled', date, time }
+      const visitRef = firestore.collection('appointments').doc(session.appointmentId || undefined)
+      const preparedVisit = await prepareBooking({ tx, db: firestore, reservation: { ...parentData, selectedServiceIds: definition ? [definition.serviceId] : parentData.selectedServiceIds, customerId: session.customerId, customerEmail: parentData.customerEmail, date, time, endTime: '', practitionerId: practitionerId, assignedPractitionerId: practitionerId, groupBooking: null }, getBookingRange, rangesOverlap, appointmentId: session.appointmentId || null })
+      assertWorkflow(Number(parentData.amountPaid || 0) >= Number(parentData.totalAmount || parentData.amount || 0), 'Settle the treatment plan payment before scheduling later visits.')
+      const isLaterVisit = sessionNumber > 1
+      tx.set(preparedVisit.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      for (const lock of preparedVisit.customerLocks || []) tx.set(lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      if (isLaterVisit) tx.set(visitRef, {
+        ...parentData, ...preparedVisit.data, date, time, practitionerId: practitionerId, assignedPractitionerId: practitionerId,
+        bookingId: '', bookingOrderId: '', groupBookingId: '', groupBooking: null, isGroupRecipient: false, isGroupParent: false, isBookingOrderParent: false, paymentManagedByOrganizer: false,
+        treatmentPlanAppointmentId: parentRef.id, treatmentSessionId: ref.id, sessionNumber, treatmentPlan: parentData.treatmentPlan,
+        amount: 0, totalAmount: 0, amountPaid: 0, commissionAmount: 0, merchantNetAmount: 0, paymentStatus: 'Paid', paymentCoverage: 'treatment-plan', installmentsAllowed: false, depositPercent: 100,
+        contract: parentData.contract, approvalStatus: 'Pending Confirmation', status: 'Scheduled', serviceKey: null, checkedInAt: null, checkedInById: null, workerKeyVerified: false, workerKeyVerifiedAt: null,
+        startedAt: null, completedAt: null, workerCompleted: false, workerCompletedAt: null, customerCompleted: false, customerCompletedAt: null, materialsConsumed: false,
+        recordedPaymentSessions: [], paymongoCheckoutSessionId: null, paymongoPaymentId: null, createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+      else tx.update(visitRef, { practitionerId, assignedPractitionerId: practitionerId, treatmentTeam: [], staffingRequirements: preparedVisit.data.staffingRequirements, selectedServiceIds: preparedVisit.data.selectedServiceIds, serviceDetails: preparedVisit.data.serviceDetails, selectedServices: preparedVisit.data.selectedServices, date, time, endTime: preparedVisit.data.endTime, status: 'Scheduled', approvalStatus: 'Pending Confirmation', workerKeyVerified: false, checkedInAt: null, serviceKey: null, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      const action = currentStatus === 'reschedule requested' ? 'reschedule_request_approved' : currentStatus === 'schedule requested' ? 'schedule_request_approved' : currentStatus === 'reschedule eligible' ? 'rescheduled' : 'scheduled'
+      tx.update(ref, { practitionerId, status: 'Schedule Proposed', appointmentId: visitRef.id, date, time, scheduledById: req.user.uid, scheduledAt: admin.firestore.FieldValue.serverTimestamp(), ...(currentStatus === 'reschedule requested' ? { rescheduleCount: Number(session.rescheduleCount || 0) + 1 } : {}), requestedDate: admin.firestore.FieldValue.delete(), requestedTime: admin.firestore.FieldValue.delete(), requestedSlotKey: admin.firestore.FieldValue.delete(), scheduleRequestReason: admin.firestore.FieldValue.delete(), scheduleRequestedAt: admin.firestore.FieldValue.delete(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action, previousStatus: session.status || '', nextStatus: 'Schedule Proposed', date, time, actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(firestore.collection('notifications').doc(), { recipientUserId: session.customerId, branchId: session.branchId, title: `Treatment session ${session.sessionNumber} schedule proposed`, message: `The clinic proposes ${date} at ${time}. Confirm this schedule or request a different time.`, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      return { id: ref.id, status: 'Schedule Proposed', date, time }
     })
     return res.json({ success: true, data: result })
   } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to schedule treatment session.' }) }
+})
+
+// Customers propose a time; the clinic remains responsible for accepting it.
+// This keeps availability and practitioner conflicts authoritative on the API.
+const confirmTreatmentSession = async (req, res) => {
+  try {
+    const firestore = admin.firestore(), ref = firestore.collection('treatmentSessions').doc(req.params.id)
+    const delivery = await firestore.runTransaction(async tx => {
+      const session = (await tx.get(ref)).data()
+      assertWorkflow(session && session.customerId === req.user.uid, 'This treatment session belongs to another customer.', 403)
+      if (req.groupPlanId) assertWorkflow(session.treatmentPlanAppointmentId === req.groupPlanId, 'This invitation belongs to another treatment plan.', 403)
+      assertWorkflow(session.status === 'Schedule Proposed', 'This session has no schedule awaiting confirmation.')
+      const visitRef = firestore.collection('appointments').doc(session.appointmentId), visit = (await tx.get(visitRef)).data()
+      assertWorkflow(visit && new Date(`${visit.date}T${visit.time}+08:00`) > new Date(), 'The proposed schedule has passed. Request another date.')
+      const serviceKey = String(crypto.randomInt(100000, 1000000)), timestamp = admin.firestore.FieldValue.serverTimestamp()
+      tx.update(ref, { status: 'Scheduled', customerConfirmedAt: timestamp, updatedAt: timestamp })
+      tx.update(visitRef, { approvalStatus: 'Approved', status: 'Paid', serviceKey, updatedAt: timestamp })
+      tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, branchId: visit.branchId, actorId: req.user.uid, action: 'schedule_confirmed', previousStatus: 'Schedule Proposed', nextStatus: 'Scheduled', createdAt: timestamp })
+      return { email: visit.customerEmail, serviceKey, date: visit.date, time: visit.time }
+    })
+    await sendServiceCode(delivery).catch(error => console.warn('Session code email failed:', error.message))
+    res.json({ success: true, data: { status: 'Scheduled' } })
+  } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
+}
+app.post('/treatment-sessions/:id/confirm', requireAuth, confirmTreatmentSession)
+app.post('/group-consents/:token/sessions/:id/confirm', async (req, res) => {
+  try {
+    const attendee = await resolveGroupAttendee(req.params.token)
+    req.groupPlanId = attendee.invite.appointmentId
+    req.user = { uid: attendee.appointment.customerId, email: attendee.appointment.customerEmail }
+    return confirmTreatmentSession(req, res)
+  } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
+})
+const requestTreatmentSessionSchedule = async (req, res) => {
+  try {
+    const firestore = admin.firestore(), ref = firestore.collection('treatmentSessions').doc(String(req.params.id || ''))
+    const date = String(req.body?.date || '').trim(), time = String(req.body?.time || '').trim(), reason = String(req.body?.reason || '').trim()
+    assertWorkflow(/^\d{4}-\d{2}-\d{2}$/.test(date) && parseClockToMinutes(time) !== null, 'Choose a valid preferred session date and time.', 400)
+    assertWorkflow(reason.length >= 5 && reason.length <= 1000, 'Provide a scheduling reason (5–1000 characters).', 400)
+    assertWorkflow(new Date(`${date}T${time}+08:00`) > new Date(), 'Choose a future session date and time.', 400)
+    const result = await firestore.runTransaction(async tx => {
+      const snap = await tx.get(ref); assertWorkflow(snap.exists, 'Treatment session not found.', 404)
+      const session = snap.data() || {}
+      assertWorkflow(session.customerId === req.user.uid, 'Only the treatment-plan customer can request this session schedule.', 403)
+      if (req.groupPlanId) assertWorkflow(session.treatmentPlanAppointmentId === req.groupPlanId, 'This invitation belongs to another treatment plan.', 403)
+      if (session.appointmentId) {
+        const visit = (await tx.get(firestore.collection('appointments').doc(session.appointmentId))).data()
+        assertWorkflow(visit && !visit.startedAt && !visit.checkedInAt, 'A checked-in or ongoing session cannot be rescheduled.')
+      }
+      const currentStatus = normalizeBookingStatus(session.status)
+      assertWorkflow(['unscheduled', 'scheduled', 'schedule proposed', 'reschedule eligible'].includes(currentStatus), 'This treatment session cannot be changed at its current stage.')
+      const sessionNumber = Number(session.sessionNumber || 1)
+      if (sessionNumber > 1) {
+        const previous = await tx.get(firestore.collection('treatmentSessions').doc(`${session.treatmentPlanAppointmentId}-${sessionNumber - 1}`))
+        assertWorkflow(previous.exists && ['completed', 'forfeited'].includes(normalizeBookingStatus(previous.data()?.status)), 'The previous treatment session must be completed or resolved first.')
+      }
+      assertWorkflow(!session.earliestScheduleDate || date >= String(session.earliestScheduleDate), `This session is eligible to be scheduled on or after ${session.earliestScheduleDate}.`, 400)
+      if (currentStatus !== 'unscheduled') {
+        const { policy } = await getClinicPoliciesForBranch(firestore, session.branchId)
+        const enabled = policy.serviceReschedulingPolicyEnabled === true || policy.reschedulePolicyEnabled === true
+        assertWorkflow(enabled, 'This clinic does not currently allow treatment-session reschedule requests.', 403)
+        const allowance = Math.max(0, Number(policy.maximumRescheduleAllowance ?? 1))
+        assertWorkflow(Number(session.rescheduleCount || 0) < allowance, 'You have reached this clinic\'s reschedule limit for this treatment session.', 403)
+      }
+      const nextStatus = currentStatus === 'unscheduled' ? 'Schedule Requested' : 'Reschedule Requested'
+      tx.update(ref, { status: nextStatus, requestedDate: date, requestedTime: time, scheduleRequestReason: reason, scheduleRequestedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action: currentStatus === 'unscheduled' ? 'schedule_requested' : 'reschedule_requested', previousStatus: session.status || '', nextStatus, date, time, actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.set(firestore.collection('notifications').doc(), { recipientUserId: session.practitionerId, branchId: session.branchId, title: `Treatment session ${session.sessionNumber} needs scheduling`, message: `The customer requested ${date} at ${time}. Review and confirm an available time.`, link: '/clinical/treatment-sessions', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      return { id: ref.id, status: nextStatus }
+    })
+    return res.json({ success: true, data: result })
+  } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to request treatment-session scheduling.' }) }
+}
+app.post('/treatment-sessions/:id/request-schedule', requireAuth, requestTreatmentSessionSchedule)
+app.post('/group-consents/:token/sessions/:id/request-schedule', async (req, res) => {
+  try {
+    const attendee = await resolveGroupAttendee(req.params.token)
+    assertWorkflow(attendee.invite.status === 'Completed', 'Complete individual consent first.', 403)
+    req.user = { uid: attendee.appointment.customerId, email: attendee.invite.recipientEmail }
+    req.groupPlanId = attendee.appointmentId
+    return requestTreatmentSessionSchedule(req, res)
+  } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
 })
 
 app.post('/treatment-sessions/:id/no-show', requireAuth, async (req, res) => {
@@ -3338,7 +3634,15 @@ app.post('/treatment-sessions/:id/no-show', requireAuth, async (req, res) => {
       assertWorkflow(String(session.date || '') <= new Date().toISOString().slice(0, 10), 'A session cannot be marked as a no-show before its date.')
       const { policy } = await getClinicPoliciesForBranch(firestore, session.branchId); const eligible = policy.noShowRescheduleAllowed === true
       const nextStatus = eligible ? 'Reschedule eligible' : 'Forfeited'
+      const planRef = firestore.collection('appointments').doc(session.treatmentPlanAppointmentId), plan = (await tx.get(planRef)).data() || {}
+      const visitRef = session.appointmentId ? firestore.collection('appointments').doc(session.appointmentId) : null
+      const visit = visitRef ? (await tx.get(visitRef)).data() : null
+      assertWorkflow(!visit?.checkedInAt && !visit?.startedAt, 'An attendee who checked in cannot be marked absent.')
+      const end = new Date(`${session.date}T${session.time}+08:00`).getTime() + Number(visit?.totalServiceDurationMinutes || 60) * 60000
+      assertWorkflow(Number.isFinite(end) && Date.now() >= end, 'Wait until the appointment window ends before marking a no-show.')
       tx.update(ref, { status: nextStatus, noShowAt: admin.firestore.FieldValue.serverTimestamp(), noShowMarkedById: req.user.uid, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      if (visitRef) tx.update(visitRef, { status: 'No-show', updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      if (!eligible) tx.update(planRef, { treatmentPlan: { ...plan.treatmentPlan, forfeitedSessions: Number(plan.treatmentPlan?.forfeitedSessions || 0) + 1, remainingSessions: Math.max(0, Number(plan.treatmentPlan?.remainingSessions || session.totalSessions) - 1) }, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action: 'no_show', previousStatus: session.status || '', nextStatus, actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
       return { status: nextStatus }
     })
@@ -3348,22 +3652,11 @@ app.post('/treatment-sessions/:id/no-show', requireAuth, async (req, res) => {
 
 app.post('/treatment-sessions/:id/complete', requireAuth, async (req, res) => {
   try {
-    const firestore = admin.firestore(), ref = firestore.collection('treatmentSessions').doc(String(req.params.id || ''))
-    const result = await firestore.runTransaction(async tx => {
-      const snap = await tx.get(ref); assertWorkflow(snap.exists, 'Treatment session not found.', 404)
-      const session = snap.data() || {}; await authorizeClinicAction(req.user.uid, session.branchId, 'appointments:update')
-      assertWorkflow(normalizeBookingStatus(session.status) === 'scheduled', 'Only a scheduled session can be completed.')
-      const parentRef = firestore.collection('appointments').doc(session.treatmentPlanAppointmentId); const parentSnap = await tx.get(parentRef); assertWorkflow(parentSnap.exists, 'Treatment plan appointment not found.', 404)
-      const parent = parentSnap.data() || {}, total = Number(session.totalSessions || parent.treatmentPlan?.totalSessions || 1)
-      const nextNumber = Number(session.sessionNumber || 1) + 1, completed = Math.min(total, Number(parent.treatmentPlan?.completedSessions || 0) + 1)
-      tx.update(ref, { status: 'Completed', completedById: req.user.uid, completedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-      tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action: 'completed', previousStatus: session.status || '', nextStatus: 'Completed', actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
-      tx.update(parentRef, { treatmentPlan: { ...(parent.treatmentPlan || {}), totalSessions: total, completedSessions: completed, remainingSessions: Math.max(0, total - completed), schedulingMode: 'clinic-scheduled' }, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-      if (nextNumber <= total) tx.set(firestore.collection('notifications').doc(), { recipientUserId: session.customerId, branchId: session.branchId, title: 'Next treatment session ready to schedule', message: `Session ${nextNumber} is ready for the clinic to schedule.`, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
-      return { completedSessions: completed, remainingSessions: Math.max(0, total - completed), planCompleted: completed === total }
-    })
-    return res.json({ success: true, data: result })
-  } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to complete treatment session.' }) }
+    const session = (await admin.firestore().collection('treatmentSessions').doc(String(req.params.id || '')).get()).data()
+    assertWorkflow(session, 'Treatment session not found.', 404)
+    await authorizeClinicAction(req.user.uid, session.branchId, 'appointments:update')
+    return res.status(409).json({ success: false, error: 'Complete this session through the assigned practitioner appointment queue. Check-in, start, and completion are required.' })
+  } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
 })
 
 app.all('/cron/appointment-reminders', async (req, res) => {
@@ -3421,6 +3714,18 @@ app.all('/cron/appointment-reminders', async (req, res) => {
     }))
     return res.json({ success: true, reminders: rows.length })
   } catch (error) { return res.status(500).json({ success: false, error: 'Unable to send appointment reminders.' }) }
+})
+
+// Invoke this protected endpoint every minute from the deployment scheduler.
+// Unlike the practitioner-page timer, this remains reliable when no browser is
+// open and is the authoritative end of an online consultation's billed window.
+app.all('/cron/online-consultation-timeouts', async (req, res) => {
+  const secret = String(process.env.CRON_SECRET || '').trim()
+  if (!secret || String(req.get('authorization') || '') !== `Bearer ${secret}`) return res.status(401).json({ success: false, error: 'Unauthorized.' })
+  try {
+    const result = await closeExpiredConsultations(admin)
+    return res.json({ success: true, ...result })
+  } catch (error) { return res.status(500).json({ success: false, error: 'Unable to close overdue online consultations.' }) }
 })
 registerWalkInPayments(app, {
   admin, requireAuth, authorizeClinicAction,
@@ -3483,6 +3788,7 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
       contractId,
       title: String(title || 'Contract').trim(),
       terms: appointment.contract?.terms || '',
+      ...(appointment.contract?.document ? { document: appointment.contract.document } : {}),
       templateUrl: String(templateUrl || '').trim() || null,
       requiredSigners: signers,
       signatures: {},
@@ -3550,8 +3856,6 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
     appointmentId,
     summary,
     description,
-    startDateTime,
-    endDateTime,
     timezone,
     attendeeEmails,
     requestId,
@@ -3567,8 +3871,7 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
   req.userContext = req.userContext || await loadUserContext(req.user.uid)
   const assignedBranches = new Set([req.userContext.userData?.branchId, ...(Array.isArray(req.userContext.userData?.branchIds) ? req.userContext.userData.branchIds : [])].map((id) => String(id || '').trim()).filter(Boolean))
   const sameBranch = assignedBranches.has(String(appointment.branchId || '').trim())
-  const roleKey = String(req.userContext.roleKey || '').trim()
-  const isAuthorizedPractitioner = roleKey === 'Superadmin' || roleKey === 'Owner' || (sameBranch && assignedPractitioner)
+  const isAuthorizedPractitioner = sameBranch && assignedPractitioner
   if (!isAuthorizedPractitioner) return res.status(403).json({ success: false, error: 'Only the assigned practitioner may create this consultation link.' })
   if (String(appointment.type || '').trim().toLowerCase() !== 'consultation' || String(appointment.consultationMode || '').trim().toLowerCase() !== 'online') {
     return res.status(409).json({ success: false, error: 'Only online consultation appointments can have an online consultation link.' })
@@ -3585,14 +3888,20 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
 
   const cleanSummary = String(summary || '').trim()
   const cleanDescription = String(description || '').trim()
-  const cleanStart = String(startDateTime || '').trim()
-  const cleanEnd = String(endDateTime || '').trim()
   const cleanTimezone = String(timezone || googleMeetDefaultTimezone).trim() || googleMeetDefaultTimezone
 
-  if (!cleanSummary || !cleanStart || !cleanEnd) {
+  // Never accept a time range supplied by the browser. The appointment is the
+  // source of truth for both the calendar event and the official consultation
+  // window, preventing a practitioner from silently extending it.
+  const scheduledDate = String(appointment.date || '').trim()
+  const scheduledTime = String(appointment.time || '').trim()
+  const startsAt = new Date(`${scheduledDate}T${scheduledTime}+08:00`)
+  const durationMinutes = Math.min(240, Math.max(5, Number(appointment.consultationDurationMinutes || appointment.durationMinutes || appointment.totalServiceDurationMinutes || 30)))
+  const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
+  if (!cleanSummary || Number.isNaN(startsAt.getTime())) {
     return res.status(400).json({
       success: false,
-      error: 'summary, startDateTime, and endDateTime are required',
+      error: 'This consultation needs a valid scheduled date and time.',
     })
   }
 
@@ -3606,8 +3915,8 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
   const eventPayload = {
     summary: cleanSummary,
     description: cleanDescription,
-    start: { dateTime: cleanStart, timeZone: cleanTimezone },
-    end: { dateTime: cleanEnd, timeZone: cleanTimezone },
+    start: { dateTime: startsAt.toISOString(), timeZone: cleanTimezone },
+    end: { dateTime: endsAt.toISOString(), timeZone: cleanTimezone },
     attendees,
     conferenceData: {
       createRequest: {
@@ -3660,6 +3969,9 @@ app.post('/google-meet/create-consultation-link', requireAuth, requirePermission
         meetEventId: data.id || '',
         meetCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
         meetCreatedBy: req.user.uid,
+        scheduledStartAt: startsAt.toISOString(),
+        scheduledEndAt: endsAt.toISOString(),
+        durationMinutes,
         customerId,
         practitionerId: appointment.practitionerId || appointment.assignedPractitionerId || '',
       }, { merge: true }),
@@ -3781,6 +4093,7 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
       transaction.set(userRef, {
         status: 'Pending Documents',
         approvalStatus: 'Pending Documents',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
         resubmissionRequired: true,
         resubmissionReason,
         resubmissionRequestedAt: timestamp,
@@ -3789,6 +4102,7 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
       }, { merge: true })
       transaction.set(clinicRef, {
         approvalStatus: 'Pending Documents',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
         verificationStatus: 'Resubmission Required',
         resubmissionRequired: true,
         resubmissionReason,
@@ -3893,6 +4207,7 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
       userRef.set(
         {
           status: 'Rejected',
+          registrationStatus: CLINIC_REGISTRATION_STATUS.REJECTED,
           rejectionReason,
           rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
           reviewedBy,
@@ -3902,6 +4217,7 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
       clinicRef.set(
         {
           approvalStatus: 'Rejected',
+          registrationStatus: CLINIC_REGISTRATION_STATUS.REJECTED,
           rejectionReason,
           rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
           reviewedBy,
@@ -4042,10 +4358,11 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
       }
     }
 
-    // Basic heuristics for POC: detect expiry-like dates and simple name/clinic matching
-    const expiryRegex = /(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}|\d{2}-\d{2}-\d{4})/g
-    const expiryMatches = fullText.match(expiryRegex) || []
-    const expiryFound = expiryMatches.length > 0
+    // Keep manual OCR reruns on the same labelled expiry-date policy as the
+    // applicant upload flow; an arbitrary date on a document is not an expiry.
+    const expiryValidation = getOcrExpiryValidation(fullText, EXPIRY_DATE_REQUIREMENTS.has(docKey))
+    const expiryFound = Boolean(expiryValidation.validTo)
+    const expiryMatches = expiryFound ? [expiryValidation.validTo] : []
 
     const clinicRef = firestore.collection('clinics').doc(uid)
     const userRef = firestore.collection('users').doc(uid)
@@ -4073,6 +4390,9 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
       extractedText: fullText ? fullText.slice(0, 10000) : '',
       expiryFound,
       expiryMatches,
+      expiryDate: expiryValidation.validTo,
+      expiryDaysRemaining: expiryValidation.daysRemaining,
+      expiryAccountHold: expiryValidation.accountHold,
       nameScore,
       confidence,
       processedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -4091,6 +4411,9 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
         confidence,
         nameScore,
         expiryFound,
+        expiryDate: expiryValidation.validTo,
+        expiryDaysRemaining: expiryValidation.daysRemaining,
+        expiryAccountHold: expiryValidation.accountHold,
         processedAt: new Date().toISOString(),
       },
       processing: false,
@@ -4114,19 +4437,22 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
     })
 
     // If all submitted documents are verified, auto-approve the clinic
-    const allDocKeys = REGISTRATION_DOCUMENT_REQUIREMENTS.clinic
+    const allDocKeys = getRegistrationDocumentRequirements('clinic', clinicDataLatest)
     const allVerified = allDocKeys.every((k) => Boolean(submittedDocs[k]?.verified))
-    if (allVerified) {
+    const expiryAccountHold = Boolean(clinicData.expiryAccountHold) || expiryValidation.accountHold || hasActiveRegistrationExpiryHold(clinicData.verificationResults)
+    if (allVerified && !expiryAccountHold) {
       await clinicRef.set({
         approvalStatus: 'Approved',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
         approvedAt: admin.firestore.FieldValue.serverTimestamp(),
         resubmissionRequired: false,
         resubmissionReason: admin.firestore.FieldValue.delete(),
-        subscriptionOnboardingRequired: true,
+        clinicSetupRequired: true,
       }, { merge: true })
       await userRef.set({
         status: 'Pending Activation',
-        subscriptionOnboardingRequired: true,
+        registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
+        clinicSetupRequired: true,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true })
 
@@ -4146,7 +4472,19 @@ app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','r
       }
     }
 
-    return res.json({ success: true, data: { uid, docKey, confidence, autoApproved: updatedDocEntry.verified || false } })
+    if (expiryAccountHold) {
+      await clinicRef.set({
+        approvalStatus: 'Pending Documents',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
+        verificationStatus: 'Pending - Expiry Hold',
+        expiryAccountHold: true,
+        expiryHoldPolicy: `Document expires within ${REGISTRATION_EXPIRY_HOLD_DAYS} calendar days.`,
+        resubmissionRequired: true,
+        resubmissionReason: `Replace the near-expiry document: ${registrationDocumentLabel(docKey)}.`,
+      }, { merge: true })
+    }
+
+    return res.json({ success: true, data: { uid, docKey, confidence, autoApproved: Boolean(allVerified && !expiryAccountHold), expiryAccountHold } })
   } catch (error) {
     console.error('OCR processing error:', error)
     // best-effort: unset processing flag so future retries can proceed
@@ -4220,20 +4558,23 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
       targetName: userData.fullName || userData.email || uid,
     })
 
-    const allKeys = REGISTRATION_DOCUMENT_REQUIREMENTS.clinic
+    const allKeys = getRegistrationDocumentRequirements('clinic', clinicData)
     const allVerified = allKeys.every((k) => Boolean(submittedDocs[k]?.verified))
-    if (allVerified) {
+    const expiryHold = Boolean(clinicData.expiryAccountHold) || hasActiveRegistrationExpiryHold(clinicData.verificationResults)
+    if (allVerified && !expiryHold) {
       await Promise.all([
         clinicRef.set({
           approvalStatus: 'Approved',
+          registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
           approvedAt: admin.firestore.FieldValue.serverTimestamp(),
           resubmissionRequired: false,
           resubmissionReason: admin.firestore.FieldValue.delete(),
-          subscriptionOnboardingRequired: true,
+          clinicSetupRequired: true,
         }, { merge: true }),
         userRef.set({
           status: 'Pending Activation',
-          subscriptionOnboardingRequired: true,
+          registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
+          clinicSetupRequired: true,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true }),
       ])
@@ -4253,7 +4594,7 @@ app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin
       }
     }
 
-    return res.json({ success: true, data: { uid, docKey, allVerified } })
+    return res.json({ success: true, data: { uid, docKey, allVerified, expiryHold } })
   } catch (error) {
     console.error('document verify error', error)
     return res.status(500).json({ success: false, error: error?.message || 'Failed to verify document' })
@@ -4279,7 +4620,22 @@ app.post('/admin/document/reject', requireAuth, requireRole(['superadmin','admin
     submittedDocs[docKey] = existing
 
     await Promise.all([
-      clinicRef.set({ submittedDocuments: submittedDocs, approvalStatus: 'Pending Approval' }, { merge: true }),
+      clinicRef.set({
+        submittedDocuments: submittedDocs,
+        approvalStatus: 'Pending Documents',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
+        verificationStatus: 'Resubmission Required',
+        resubmissionRequired: true,
+        resubmissionReason: reason || `Replace the rejected ${registrationDocumentLabel(docKey)} document.`,
+      }, { merge: true }),
+      userRef.set({
+        status: 'Pending Documents',
+        approvalStatus: 'Pending Documents',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
+        resubmissionRequired: true,
+        resubmissionReason: reason || `Replace the rejected ${registrationDocumentLabel(docKey)} document.`,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }),
       clinicRef.collection('reviewHistory').add({ action: 'document-rejected', docKey, reviewer: reviewer || null, reason: reason || null, ts: admin.firestore.FieldValue.serverTimestamp() }),
     ])
     await writeSystemAdminActivity(req, {
@@ -4321,7 +4677,8 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
     const userData = userSnap.exists ? userSnap.data() : {}
 
     const submittedDocuments = clinicData.submittedDocuments || {}
-    const missingDocuments = REGISTRATION_DOCUMENT_REQUIREMENTS.clinic.filter((docKey) => !submittedDocuments[docKey]?.url && !submittedDocuments[docKey]?.path)
+    const missingDocuments = getRegistrationDocumentRequirements('clinic', clinicData)
+      .filter((docKey) => !submittedDocuments[docKey]?.url && !submittedDocuments[docKey]?.path)
     if (missingDocuments.length) {
       return res.status(409).json({
         success: false,
@@ -4329,19 +4686,28 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
         missingDocuments,
       })
     }
+    const expiryHold = Boolean(clinicData.expiryAccountHold) || hasActiveRegistrationExpiryHold(clinicData.verificationResults)
+    if (expiryHold) {
+      return res.status(409).json({
+        success: false,
+        error: `This registration requires resubmission because an expiry-dated document has ${REGISTRATION_EXPIRY_HOLD_DAYS} or fewer calendar days remaining. Request a replacement document before approving.`,
+      })
+    }
 
     await Promise.all([
       clinicRef.set({
         approvalStatus: 'Approved',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
         approvedAt: admin.firestore.FieldValue.serverTimestamp(),
         approvedBy: reviewer || null,
         resubmissionRequired: false,
         resubmissionReason: admin.firestore.FieldValue.delete(),
-        subscriptionOnboardingRequired: true,
+        clinicSetupRequired: true,
       }, { merge: true }),
       userRef.set({
         status: 'Pending Activation',
-        subscriptionOnboardingRequired: true,
+        registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
+        clinicSetupRequired: true,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true }),
       clinicRef.collection('reviewHistory').add({ action: 'clinic-approved', reviewer: reviewer || null, note: note || null, ts: admin.firestore.FieldValue.serverTimestamp() }),
@@ -4920,6 +5286,10 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
       }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName))
 
+    await Promise.all(practitioners.map(async practitioner => {
+      const profile = (await firestore.collection('practitionerProfiles').doc(practitioner.id).get()).data()
+      Object.assign(practitioner, { practitionerType: profile?.type || '', approvedServiceIds: profile?.approvedServiceIds || [], credentialsVerified: profile?.credentialsVerified === true })
+    }))
     const availabilityEntries = await Promise.all(practitioners.map(async (practitioner) => {
       const [schedulesSnap, leavesSnap] = await Promise.all([
         firestore.collection('users').doc(practitioner.id).collection('schedules').get(),
@@ -4986,7 +5356,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
 
   try {
     const firestore = admin.firestore()
-    const customerId = String(reservation.customerId || '').trim()
+    let customerId = String(reservation.customerId || '').trim()
     const walkIn = reservation.source === 'walk_in'
     if (walkIn) {
       await authorizeClinicAction(req.user.uid, String(reservation.branchId || ''), 'appointments:create')
@@ -4995,6 +5365,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       const data = client.data() || {}
       reservation.clientId = client.id
       reservation.customerId = client.id
+      customerId = client.id
       reservation.customerName = data.fullName || `${data.firstName || ''} ${data.lastName || ''}`.trim() || 'Walk-in client'
       reservation.customerEmail = String(data.email || '').trim().toLowerCase()
       reservation.customerPhone = data.phone || data.contactNumber || ''
@@ -5031,7 +5402,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     // no Finance or clinic-approval queue in that tier; payment remains due
     // before the service can proceed.
     const freePlanDirectBooking = !walkIn && getEffectiveClinicPlan(branch) === 'free'
-    const initialBookingStatus = walkIn || freePlanDirectBooking ? 'Unpaid' : 'Pending Approval'
+    const initialBookingStatus = walkIn ? 'Unpaid' : freePlanDirectBooking ? 'Awaiting Payment' : 'Pending Approval'
     const initialApprovalStatus = walkIn || freePlanDirectBooking ? 'Approved' : 'Pending'
     const practitionerPermissionKeys = new Set(['appointments:update', 'consultations:view', 'consultations:create'])
     const directPermissions = [...(Array.isArray(practitioner.effectivePermissions) ? practitioner.effectivePermissions : []), ...(Array.isArray(practitioner.permissions) ? practitioner.permissions : [])]
@@ -5104,7 +5475,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       })
     }
     const consultationRequiredIds = selectedServices
-      .filter((service) => service?.requiresConsultationFirst === true)
+      .filter((service) => service?.requiresConsultationFirst === true && service.packageComponents?.[0]?.type !== 'Consultation')
       .map((service) => String(service.id || '').trim())
       .filter(Boolean)
 
@@ -5113,14 +5484,8 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         .where('customerId', '==', customerId)
         .where('type', '==', 'Consultation')
         .get()
-      const hasCompletedConsultation = consultationSnap.docs.some((docSnap) => {
-        const appointment = docSnap.data() || {}
-        if (normalizeBookingStatus(appointment.status) !== 'completed') return false
-        const coveredIds = Array.isArray(appointment.consultationForServiceIds)
-          ? appointment.consultationForServiceIds.map((id) => String(id || '').trim())
-          : []
-        return consultationRequiredIds.every((id) => coveredIds.includes(id))
-      })
+      const requiredServices = await Promise.all(consultationRequiredIds.map(async id => ({ ...(await firestore.collection('productServicePosts').doc(id).get()).data(), id })))
+      const hasCompletedConsultation = requiredServices.every(service => hasConsultationRequirement(service, consultationSnap.docs.map(snapshot => snapshot.data()), [], branchId))
       const clearanceSnap = await firestore.collection('consultationClearances').where('customerId', '==', customerId).where('branchId', '==', branchId).where('status', '==', 'Approved').get()
       const hasApprovedClearance = clearanceSnap.docs.some(docSnap => consultationRequiredIds.every(id => (docSnap.data().serviceIds || []).map(value => String(value)).includes(id)))
       if (!hasCompletedConsultation && !hasApprovedClearance) {
@@ -5200,6 +5565,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       },
     })
 
+    const groupResult = { recipientAppointmentIds: [], invitations: [] }
     await firestore.runTransaction(async (tx) => {
       const prepared = await prepareBooking({ tx, db: firestore, reservation, getBookingRange, rangesOverlap })
       Object.assign(appointmentPayload, prepared.data, {
@@ -5212,9 +5578,65 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         serviceKey: null, customerKeyVerified: false, workerKeyVerified: false, workerCompleted: false, customerCompleted: false,
       })
       tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      for (const lock of prepared.customerLocks || []) tx.set(lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.set(bookingRef, { ...bookingPayload, ...prepared.data, source: walkIn ? 'walk_in' : (freePlanDirectBooking ? 'customer_booking' : 'customer_booking_request'), status: initialBookingStatus })
       tx.set(appointmentRef, appointmentPayload)
+      if (freePlanDirectBooking && !prepared.data.groupBooking && Number(prepared.data.treatmentPlan?.totalSessions || 1) > 1) {
+        const count = prepared.data.treatmentPlan.totalSessions
+        for (let number = 1; number <= count; number++) tx.set(firestore.collection('treatmentSessions').doc(`${appointmentRef.id}-${number}`), { branchId, treatmentPlanAppointmentId: appointmentRef.id, customerId, customerName: reservation.customerName, practitionerId, sessionNumber: number, totalSessions: count, status: number === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: number === 1 ? appointmentRef.id : '', ...(number === 1 ? { date: reservation.date, time: reservation.time } : {}), createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      }
       tx.update(bookingRef, { appointmentId: appointmentRef.id, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      const group = prepared.data.groupBooking
+      if (group) {
+        const recipients = [
+          ...(group.organizerIncluded ? [{ name: reservation.customerName, email: reservation.customerEmail, customerId, organizer: true }] : []),
+          ...group.guests.map((guest) => ({ name: guest.name, email: guest.email, phone: guest.phone || '', customerId: '', organizer: false })),
+        ]
+        const serviceDuration = Math.max(30, Math.round(Number(prepared.data.totalServiceDurationMinutes || 0) / recipients.length))
+        const totalAmount = Number(prepared.data.totalAmount || 0)
+        const perRecipientAmount = Math.round((totalAmount / recipients.length) * 100) / 100
+        const firstStart = parseClockToMinutes(reservation.time)
+        const toClock = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+        const groupRef = firestore.collection('groupBookings').doc(bookingRef.id)
+        const recipientIds = []
+        recipients.forEach((recipient, index) => {
+          const childRef = firestore.collection('appointments').doc()
+          const plan = group.recipientPlans?.[index]
+          const individualDuration = plan?.data.totalServiceDurationMinutes || serviceDuration
+          const individualAmount = plan?.data.totalAmount || perRecipientAmount
+          const startMinutes = plan ? parseClockToMinutes(plan.time) : firstStart + index * serviceDuration
+          const childTime = toClock(startMinutes), childEndTime = toClock(startMinutes + individualDuration)
+          const consentToken = crypto.randomBytes(24).toString('hex')
+          const child = {
+            ...appointmentPayload,
+            ...(plan?.data || {}),
+            services: [plan?.data.service || appointmentPayload.service],
+            customerId: recipient.customerId || `guest:${childRef.id}`,
+            customerName: recipient.name,
+            clientName: recipient.name,
+            customerEmail: String(recipient.email || '').toLowerCase(),
+            customerPhone: recipient.organizer ? reservation.customerPhone || '' : recipient.phone,
+            time: childTime, endTime: childEndTime, totalServiceDurationMinutes: individualDuration,
+            groupBooking: null, resources: plan?.data.resources || (appointmentPayload.resources || []).map(resource => ({ ...resource, quantity: resource.kind === 'material' ? resource.quantity / recipients.length : resource.quantity })),
+            amount: individualAmount, totalAmount: individualAmount, amountPaid: 0,
+            commissionAmount: plan?.data.commissionAmount ?? Math.round((Number(appointmentPayload.commissionAmount || 0) * individualAmount / totalAmount) * 100) / 100,
+            merchantNetAmount: plan?.data.merchantNetAmount ?? Math.round((Number(appointmentPayload.merchantNetAmount || 0) * individualAmount / totalAmount) * 100) / 100,
+            groupBookingId: bookingRef.id, groupOrganizerId: customerId, groupOrganizerName: reservation.customerName || '', groupOrganizerEmail: reservation.customerEmail || '', groupOrganizerPhone: reservation.customerPhone || '', groupRecipientIndex: index + 1, groupRecipientCount: recipients.length,
+            parentAppointmentId: appointmentRef.id,
+            isGroupRecipient: true, paymentManagedByOrganizer: true,
+            consent: { status: recipient.organizer ? 'Organizer Consent Required' : 'Guest Consent Required', invitedAt: admin.firestore.FieldValue.serverTimestamp() },
+            contract: { ...(plan?.data.contract || appointmentPayload.contract || {}), status: 'guest_consent_pending' }, serviceKey: null,
+          }
+          tx.set(childRef, child)
+          if (freePlanDirectBooking && Number(child.treatmentPlan?.totalSessions || 1) > 1) for (let number = 1; number <= child.treatmentPlan.totalSessions; number++) tx.set(firestore.collection('treatmentSessions').doc(`${childRef.id}-${number}`), { branchId, treatmentPlanAppointmentId: childRef.id, customerId: child.customerId, customerName: child.customerName, practitionerId, sessionNumber: number, totalSessions: child.treatmentPlan.totalSessions, status: number === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: number === 1 ? childRef.id : '', ...(number === 1 ? { date: child.date, time: child.time } : {}), createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+          tx.set(firestore.collection('groupConsentInvitations').doc(consentToken), { groupBookingId: bookingRef.id, appointmentId: childRef.id, recipientName: recipient.name, recipientEmail: String(recipient.email || '').toLowerCase(), status: 'Pending', createdAt: admin.firestore.FieldValue.serverTimestamp() })
+          recipientIds.push(childRef.id)
+          groupResult.invitations.push({ email: String(recipient.email || '').toLowerCase(), name: recipient.name, token: consentToken })
+        })
+        tx.set(groupRef, { id: bookingRef.id, organizerId: customerId, organizerName: reservation.customerName || '', organizerEmail: reservation.customerEmail || '', branchId, bookingId: bookingRef.id, parentAppointmentId: appointmentRef.id, recipientAppointmentIds: recipientIds, participantCount: recipients.length, paymentStatus: 'Pending', totalAmount, status: initialBookingStatus, createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+        tx.update(appointmentRef, { isGroupParent: true, groupBookingId: bookingRef.id, groupRecipientAppointmentIds: recipientIds, groupRecipientCount: recipients.length, service: `Group booking (${recipients.length} recipients)`, totalServiceDurationMinutes: 0, practitionerId: '', assignedPractitionerId: '', resources: [], installmentsAllowed: false, depositPercent: 100, treatmentPlan: { totalSessions: 1 }, contract: { status: 'signed', terms: 'Each attendee must complete their individual consent before check-in.' } })
+        groupResult.recipientAppointmentIds.push(...recipientIds)
+      }
     })
 
     let bookingEmailSent = false
@@ -5231,11 +5653,133 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       }
     }
 
-    return res.json({ success: true, data: { bookingId: bookingRef.id, appointmentId: appointmentRef.id, bookingEmailSent } })
+    if (groupResult.recipientAppointmentIds.length && postmarkClient && senderEmail) {
+      const group = reservation.groupBooking || {}
+      await Promise.all(groupResult.invitations.map(async (invite) => {
+        const email = String(invite.email || '').trim().toLowerCase()
+        if (!EMAIL_ADDRESS_REGEX.test(email)) return
+        try {
+          await sendPostmarkMessage({
+            to: email,
+            subject: 'You were added to an AesthetiCare group booking',
+            text: `Hi ${String(invite.name || 'Guest').trim()},\n\n${reservation.customerName || 'The organizer'} added you to a group booking at ${branch.clinicName || branch.clinicBranch || 'the clinic'} on ${[reservation.date, reservation.time].filter(Boolean).join(' at ')}. The organizer will receive the payment confirmation. Complete your individual consent here: ${EMAIL_WEBSITE_URL}/group-consent?token=${invite.token}`,
+          })
+        } catch (error) { console.warn('Group booking guest email failed:', error?.message || error) }
+      }))
+    }
+
+    return res.json({ success: true, data: { bookingId: bookingRef.id, appointmentId: appointmentRef.id, recipientAppointmentIds: groupResult.recipientAppointmentIds, bookingEmailSent } })
   } catch (error) {
     console.error('bookings/create error:', error)
     return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to create booking' })
   }
+})
+
+// A guest does not need an account to consent, but receives only an
+// unguessable, single-recipient invitation token. Their consent and key never
+// affect other guests in the same organizer-paid group.
+const resolveGroupAttendee = async (token, targetId = '') => {
+  assertWorkflow(/^[a-f0-9]{48}$/i.test(String(token || '')), 'Invalid invitation.', 400)
+  const firestore = admin.firestore(), invite = (await firestore.collection('groupConsentInvitations').doc(token).get()).data()
+  assertWorkflow(invite, 'Invitation not found.', 404)
+  const appointment = (await firestore.collection('appointments').doc(invite.appointmentId).get()).data()
+  assertWorkflow(appointment?.isGroupRecipient && normalized(appointment.customerEmail) === normalized(invite.recipientEmail), 'Invalid recipient invitation.', 403)
+  if (targetId && targetId !== invite.appointmentId) {
+    const target = (await firestore.collection('appointments').doc(targetId).get()).data()
+    assertWorkflow(target?.treatmentPlanAppointmentId === invite.appointmentId && target.customerId === appointment.customerId, 'This session belongs to another attendee.', 403)
+    return { invite, appointment: target, appointmentId: targetId }
+  }
+  return { invite, appointment, appointmentId: invite.appointmentId }
+}
+app.post('/group-consents/:token/request', async (req, res) => {
+  try {
+    const { invite, appointment, appointmentId } = await resolveGroupAttendee(req.params.token, String(req.body?.appointmentId || ''))
+    assertWorkflow(invite.status === 'Completed', 'Complete your individual consent first.', 403)
+    const type = String(req.body?.type || ''), reason = String(req.body?.reason || '').trim()
+    assertWorkflow(['cancel', 'reschedule'].includes(type) && reason.length >= 5 && reason.length <= 1000, 'Choose a request type and provide a reason.', 400)
+    const firestore = admin.firestore(), ref = firestore.collection('appointments').doc(appointmentId)
+    const { policy } = await getClinicPoliciesForBranch(firestore, appointment.branchId)
+    assertWorkflow(type === 'cancel' ? policy.cancellationPolicyEnabled === true : policy.reschedulePolicyEnabled !== false && policy.reschedulePolicy, 'This clinic does not allow this change.', 403)
+    const date = String(req.body?.date || ''), time = String(req.body?.time || '')
+    if (type === 'reschedule') assertWorkflow(/^\d{4}-\d{2}-\d{2}$/.test(date) && parseClockToMinutes(time) !== null && new Date(`${date}T${time}+08:00`) > new Date(), 'Choose a future date and time.', 400)
+    await firestore.runTransaction(async tx => {
+      const current = (await tx.get(ref)).data()
+      assertWorkflow(current && !current.startedAt && !current.checkedInAt && ['paid', 'scheduled', 'contract pending', 'awaiting payment'].includes(normalized(current.status)) && new Date(`${current.date}T${current.time}+08:00`) > new Date(), 'Only an upcoming attendee appointment can be changed.')
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      tx.update(ref, type === 'cancel' ? { status: 'Cancellation Requested', cancellationReason: reason, cancellationRequestedAt: timestamp, cancellationPolicySnapshot: policy.cancellationPolicy || '', refundRequestedAmount: Math.max(0, Number(current.amountPaid || 0) - Number(current.commissionAmount || 0)), refundStatus: 'Pending Approval', updatedAt: timestamp } : { status: 'Reschedule Requested', requestedDate: date, requestedTime: time, requestedPractitionerId: current.practitionerId, rescheduleReason: reason, rescheduleRequestedAt: timestamp, reschedulePolicySnapshot: policy.reschedulePolicy || '', updatedAt: timestamp })
+      tx.set(firestore.collection('appointmentAudit').doc(), { appointmentId: ref.id, branchId: current.branchId, actorId: current.customerId, action: `guest_${type}_requested`, previousStatus: current.status, nextStatus: type === 'cancel' ? 'Cancellation Requested' : 'Reschedule Requested', createdAt: timestamp })
+    })
+    res.json({ success: true, data: { requested: true } })
+  } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
+})
+app.get('/group-consents/:token', async (req, res) => {
+  try {
+    assertWorkflow(/^[a-f0-9]{48}$/i.test(String(req.params.token || '')), 'Invalid invitation.', 400)
+    const firestore = admin.firestore(), invite = (await firestore.collection('groupConsentInvitations').doc(req.params.token).get()).data()
+    assertWorkflow(invite, 'Invitation not found.', 404)
+    const appointment = (await firestore.collection('appointments').doc(invite.appointmentId).get()).data()
+    assertWorkflow(appointment?.isGroupRecipient && normalized(appointment.customerEmail) === normalized(invite.recipientEmail), 'Invalid recipient invitation.', 403)
+    const sessions = await Promise.all((await firestore.collection('treatmentSessions').where('treatmentPlanAppointmentId', '==', invite.appointmentId).get()).docs.map(async doc => {
+      const session = doc.data(), visit = session.appointmentId ? (await firestore.collection('appointments').doc(session.appointmentId).get()).data() || {} : {}
+      return { id: doc.id, appointmentId: session.appointmentId || '', sessionNumber: session.sessionNumber, totalSessions: session.totalSessions, status: session.status, appointmentStatus: visit.status || '', serviceKey: invite.status === 'Completed' ? visit.serviceKey || '' : '', date: session.date || '', time: session.time || '' }
+    }))
+    res.json({ success: true, data: { name: appointment.customerName, service: appointment.service, date: appointment.date, time: appointment.time, status: appointment.status, terms: appointment.contract?.terms || '', contractDocument: appointment.contract?.document || null, consentCompleted: invite.status === 'Completed', serviceKey: invite.status === 'Completed' ? appointment.serviceKey : null, sessions } })
+  } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
+})
+app.post('/group-consents/:token/accept', async (req, res) => {
+  try {
+    const token = String(req.params.token || '').trim(), name = String(req.body?.name || '').trim()
+    assertWorkflow(/^[a-f0-9]{48}$/i.test(token) && name, 'A valid invitation and recipient name are required.', 400)
+    assertWorkflow(req.body?.accepted === true, 'Consent must be accepted before continuing.', 400)
+    const firestore = admin.firestore(), inviteRef = firestore.collection('groupConsentInvitations').doc(token)
+    const result = await firestore.runTransaction(async tx => {
+      const inviteSnap = await tx.get(inviteRef); assertWorkflow(inviteSnap.exists, 'This consent invitation is invalid or expired.', 404)
+      const invite = inviteSnap.data() || {}; assertWorkflow(String(invite.status || '') === 'Pending', 'This guest consent was already completed.', 409)
+      const appointmentRef = firestore.collection('appointments').doc(String(invite.appointmentId || '')), appointmentSnap = await tx.get(appointmentRef)
+      assertWorkflow(appointmentSnap.exists, 'Recipient appointment was not found.', 404)
+      const appointment = appointmentSnap.data() || {}; assertWorkflow(String(appointment.customerEmail || '').toLowerCase() === String(invite.recipientEmail || '').toLowerCase(), 'This invitation does not match its recipient.', 403)
+      assertWorkflow(!['cancelled', 'rejected', 'completed', 'expired'].includes(normalized(appointment.status)), 'This appointment is closed.')
+      const serviceKey = String(crypto.randomInt(100000, 1000000))
+      const status = afterPaymentStatus({ ...appointment, contract: { status: 'signed' } })
+      tx.update(appointmentRef, { customerName: name, clientName: name, contract: { ...(appointment.contract || {}), status: 'signed', guestConsent: { name, acceptedAt: admin.firestore.FieldValue.serverTimestamp(), method: 'invitation-link' } }, consent: { ...(appointment.consent || {}), status: 'Completed', completedAt: admin.firestore.FieldValue.serverTimestamp() }, serviceKey, status, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.update(inviteRef, { status: 'Completed', acceptedName: name, acceptedAt: admin.firestore.FieldValue.serverTimestamp() })
+      return { appointmentId: appointmentRef.id, serviceKey, status, email: appointment.customerEmail, date: appointment.date, time: appointment.time }
+    })
+    await sendServiceCode(result).catch(error => console.warn('Group code email failed:', error.message))
+    delete result.email
+    return res.json({ success: true, data: result })
+  } catch (error) { return res.status(error.status || 500).json({ success: false, error: error?.message || 'Unable to complete guest consent.' }) }
+})
+
+app.post('/group-bookings/:id/recipients/:appointmentId/assign', requireAuth, async (req, res) => {
+  try {
+    const firestore = admin.firestore(), groupId = String(req.params.id || ''), appointmentId = String(req.params.appointmentId || '')
+    const practitionerId = String(req.body?.practitionerId || '').trim(), date = String(req.body?.date || '').trim(), time = String(req.body?.time || '').trim()
+    assertWorkflow(groupId && appointmentId && practitionerId && /^\d{4}-\d{2}-\d{2}$/.test(date) && parseClockToMinutes(time) !== null, 'Choose a practitioner, date, and time.', 400)
+    const result = await firestore.runTransaction(async tx => {
+      const ref = firestore.collection('appointments').doc(appointmentId), snap = await tx.get(ref); assertWorkflow(snap.exists, 'Recipient appointment not found.', 404)
+      const appointment = snap.data() || {}; assertWorkflow(appointment.groupBookingId === groupId && appointment.isGroupRecipient === true, 'This recipient does not belong to the group booking.', 403)
+      await authorizeClinicAction(req.user.uid, appointment.branchId, 'appointments:update')
+      assertWorkflow(!appointment.startedAt && !appointment.checkedInAt && ['pending approval', 'awaiting payment', 'contract pending', 'paid', 'scheduled'].includes(normalized(appointment.status)), 'Only an upcoming recipient appointment may be reassigned.')
+      assertWorkflow(!await getApprovedLeaveForDate(practitionerId, date), 'This practitioner is on approved leave.')
+      const prepared = await prepareBooking({ tx, db: firestore, reservation: { ...appointment, practitionerId, assignedPractitionerId: practitionerId, date, time, endTime: '', groupBooking: null }, getBookingRange, rangesOverlap, appointmentId })
+      const practitionerSnap = await tx.get(firestore.collection('users').doc(practitionerId)); assertWorkflow(practitionerSnap.exists && String(practitionerSnap.data()?.branchId || '') === String(appointment.branchId || ''), 'Select an eligible practitioner from this branch.', 400)
+      const duration = Math.max(30, Number(appointment.totalServiceDurationMinutes || 60)), start = parseClockToMinutes(time), requested = { start, end: start + duration }
+      const rows = await tx.get(firestore.collection('appointments').where('branchId', '==', appointment.branchId))
+      const conflict = rows.docs.some(docSnap => { const item = docSnap.data() || {}; if (docSnap.id === appointmentId || item.date !== date || String(item.practitionerId || item.assignedPractitionerId || '') !== practitionerId || !BOOKING_BLOCKING_STATUSES.has(normalizeBookingStatus(item.status))) return false; const range = getBookingRange(item); return range && rangesOverlap(requested.start, requested.end, range.start, range.end) })
+      assertWorkflow(!conflict, 'That practitioner is already booked at the selected time.', 409)
+      const practitioner = practitionerSnap.data() || {}, name = String(practitioner.fullName || `${practitioner.firstName || ''} ${practitioner.lastName || ''}`.trim() || practitioner.email || 'Practitioner')
+      const serviceKey = appointment.serviceKey ? String(crypto.randomInt(100000, 1000000)) : null
+      tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      for (const lock of prepared.customerLocks || []) tx.set(lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.update(ref, { treatmentTeam: [], staffingRequirements: prepared.data.staffingRequirements, practitionerId, assignedPractitionerId: practitionerId, practitionerName: name, assignedPractitionerName: name, date, time, serviceKey, workerKeyVerified: false, checkedInAt: null, endTime: prepared.data.endTime, reassignedAt: admin.firestore.FieldValue.serverTimestamp(), reassignedById: req.user.uid, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      return { appointmentId, practitionerId, practitionerName: name, date, time, email: appointment.customerEmail, serviceKey }
+    })
+    if (result.serviceKey) await sendServiceCode(result).catch(error => console.warn('Group reschedule code email failed:', error.message))
+    delete result.serviceKey
+    delete result.email
+    return res.json({ success: true, data: result })
+  } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to assign recipient.' }) }
 })
 
 app.post(CHECK_USER_PATH, async (req, res) => {
@@ -5618,11 +6162,13 @@ app.post(VERIFY_REGISTRATION_OTP_PATH, async (req, res) => {
     await Promise.all([
       firestore.collection('users').doc(resolvedUid).set({
         status: 'Pending Document Submission',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.PENDING_DOCUMENTS,
         emailVerified: true,
         emailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true }),
       firestore.collection('clinics').doc(resolvedUid).set({
         approvalStatus: 'Pending Document Submission',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.PENDING_DOCUMENTS,
       }, { merge: true }),
       otpRef.set({
         uid: resolvedUid,
@@ -5880,6 +6426,9 @@ app.post('/auth/registration-profile', async (req, res) => {
         subscriptionPlan: clinicData.subscriptionPlan || userData.subscriptionPlan || '',
         paymentStatus: clinicData.paymentStatus || userData.paymentStatus || '',
         paymentId: clinicData.paymentId || userData.paymentId || '',
+        permitHolderIsRegistrant: typeof clinicData.permitHolderIsRegistrant === 'boolean' ? clinicData.permitHolderIsRegistrant : null,
+        permitHolderName: clinicData.permitHolderName || '',
+        permitHolderRelationship: clinicData.permitHolderRelationship || '',
         submittedDocuments: clinicData.submittedDocuments || {},
         draftDocuments: clinicData.draftDocuments || {},
         status: userData.status || '',
@@ -7018,6 +7567,7 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       customRoleName: text(input.customRoleName, 150) || null, effectivePermissions,
       employmentType: text(input.employmentType, 80), userType: 'Staff',
       branchId: branchIds[0], branchIds, organizationOwnerId: ownerId, clinicLocation: text(branches[0].clinicLocation, 250),
+      practitionerType: practitionerTypes.includes(input.practitionerType) ? input.practitionerType : null,
       status: 'Pending Activation', practitionerLicenseUrl: text(input.practitionerLicenseUrl, 2000) || null,
       practitionerLicenseName: text(input.practitionerLicenseName, 255) || null,
       practitionerLicenseUploadedBy: input.practitionerLicenseUrl ? req.user.uid : null,
@@ -7093,7 +7643,7 @@ app.post(SUPPLIER_ACCOUNT_DIRECTORY_PATH, requireAuth, async (req, res) => {
     const byAccount = new Map()
     for (const row of rows) {
       const uid = String(row.ownerId || row.supplierUserId || '').trim()
-      if (!uid || !['Active', 'Pending Activation'].includes(String(row.status || ''))) continue
+      if (!uid || row.verificationStatus !== 'Verified' || !['Active', 'Pending Activation'].includes(String(row.status || ''))) continue
       if (!byAccount.has(uid) || row.branchId === branchId) byAccount.set(uid, row)
     }
     const accounts = [...byAccount.entries()].slice(0, 200).map(([uid, supplier]) => ({
@@ -7124,6 +7674,7 @@ app.post(SUPPLIER_ACCOUNT_LINK_PATH, requireAuth, async (req, res) => {
     if (!permitted || !await resolveBranchAccess(actorId, branchId)) return res.status(403).json({ success: false, error: 'Forbidden' })
     const firestore = admin.firestore(), branchSnap = await firestore.collection('clinics').doc(branchId).get()
     if (!branchSnap.exists) return res.status(404).json({ success: false, error: 'Clinic branch not found.' })
+    assertWorkflow((await firestore.collection('supplierApplications').doc(supplierUid).get()).data()?.verificationStatus === 'Verified', 'This supplier has not completed business verification.', 403)
     const links = (await firestore.collection('suppliers').where('ownerId', '==', supplierUid).get()).docs
     const existing = links.find(snapshot => String(snapshot.data()?.branchId || '') === branchId)
     if (existing) return res.json({ success: true, data: { supplierId: existing.id, alreadyLinked: true } })
@@ -7135,6 +7686,7 @@ app.post(SUPPLIER_ACCOUNT_LINK_PATH, requireAuth, async (req, res) => {
       categories: Array.isArray(source.categories) ? source.categories : (source.category ? [source.category] : []), category: source.category || source.categories?.[0] || '',
       contact: source.contact || source.contactPerson || '', contactPerson: source.contactPerson || source.contact || '', email: source.email || '', phone: source.phone || '', address: source.address || '',
       branchId, clinicOwnerId: String(branch.ownerId || actorId), ownerId: supplierUid, supplierUserId: supplierUid, sourceSupplierId: source.id || '', sharedAcrossBranches: true,
+      verificationStatus: 'Verified',
       status: 'Active', accreditationStatus: source.accreditationStatus || 'Pending Accreditation', procurementAccess: 'Online', accountActivated: true,
       offeredItems: Array.isArray(source.offeredItems) ? source.offeredItems : [], createdBy: actorId, createdAt: now, updatedAt: now,
     }
@@ -7780,14 +8332,8 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
       .where('customerId', '==', customerId)
       .where('type', '==', 'Consultation')
       .get()
-    const hasCompletedConsultation = consultationSnap.docs.some((docSnap) => {
-      const appointment = docSnap.data() || {}
-      if (normalizeBookingStatus(appointment.status) !== 'completed') return false
-      const coveredIds = Array.isArray(appointment.consultationForServiceIds)
-        ? appointment.consultationForServiceIds.map((id) => String(id || '').trim())
-        : []
-      return consultationRequiredIds.every((id) => coveredIds.includes(id))
-    })
+    const requiredServices = await Promise.all(consultationRequiredIds.map(async id => ({ ...(await firestore.collection('productServicePosts').doc(id).get()).data(), id })))
+      const hasCompletedConsultation = requiredServices.every(service => hasConsultationRequirement(service, consultationSnap.docs.map(snapshot => snapshot.data()), [], branchId))
     const clearanceSnap = await firestore.collection('consultationClearances').where('customerId', '==', customerId).where('branchId', '==', branchId).where('status', '==', 'Approved').get()
     const hasApprovedClearance = clearanceSnap.docs.some(docSnap => consultationRequiredIds.every(id => (docSnap.data().serviceIds || []).map(value => String(value)).includes(id)))
     if (!hasCompletedConsultation && !hasApprovedClearance) {
@@ -7812,7 +8358,6 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
         firestore.collection('appointments')
           .where('branchId', '==', branchId)
           .where('date', '==', date)
-          .where('assignedPractitionerId', '==', practitionerId)
       )
       const reservationsSnap = await transaction.get(
         reservationsCol
@@ -7827,7 +8372,7 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
       appointmentsSnap.docs.forEach((snap) => {
         const data = snap.data() || {}
         const status = normalizeBookingStatus(data.status)
-        if (!BOOKING_BLOCKING_STATUSES.has(status)) return
+        if (!appointmentStaffIds(data).includes(practitionerId) || !BOOKING_BLOCKING_STATUSES.has(status)) return
         const range = getBookingRange(data)
         if (range) existingBlocks.push(range)
       })
@@ -7971,46 +8516,33 @@ app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
     const branchId = String(appointment.branchId || '').trim()
     await authorizeClinicAction(req.user.uid, branchId, 'appointments:update')
 
-    const status = normalizeBookingStatus(appointment.status)
-    if (!['scheduled', 'ready to start', 'paid'].includes(status)) {
-      return res.status(409).json({ success: false, error: 'Only an unattended scheduled appointment can be marked as a no-show.' })
-    }
-    const today = new Date().toISOString().slice(0, 10)
-    if (String(appointment.date || '') > today) {
-      return res.status(409).json({ success: false, error: 'An appointment cannot be marked as a no-show before its scheduled date.' })
-    }
-
     const { policy } = await getClinicPoliciesForBranch(firestore, branchId)
     const rescheduleAllowed = policy.noShowRescheduleAllowed === true
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
     const noShowOutcome = rescheduleAllowed ? 'Reschedule eligible' : 'Forfeited'
-    const batch = firestore.batch()
-    batch.update(appointmentRef, {
-      status: 'No-show',
-      noShowAt: timestamp,
-      noShowMarkedById: req.user.uid,
-      noShowOutcome,
-      updatedAt: timestamp,
+    await firestore.runTransaction(async tx => {
+      const fresh = (await tx.get(appointmentRef)).data()
+      assertWorkflow(fresh && ['scheduled', 'ready to start', 'paid'].includes(normalized(fresh.status)) && !fresh.checkedInAt && !fresh.workerKeyVerified && !fresh.startedAt && !fresh.isGroupParent && !fresh.isBookingOrderParent, 'Only an unattended individual appointment can be marked as a no-show.')
+      const start = new Date(`${fresh.date}T${fresh.time}+08:00`)
+      const end = fresh.endTime ? new Date(`${fresh.date}T${fresh.endTime}+08:00`) : new Date(start.getTime() + Number(fresh.totalServiceDurationMinutes || 60) * 60000)
+      assertWorkflow(Number.isFinite(end.getTime()) && new Date() > end, 'Wait until the appointment window has ended before recording a no-show.')
+      const planId = fresh.treatmentPlanAppointmentId || appointmentId
+      const planRef = firestore.collection('appointments').doc(planId)
+      const plan = planId === appointmentId ? fresh : (await tx.get(planRef)).data()
+      const totalSessions = Number(plan?.treatmentPlan?.totalSessions || 1), sessionNumber = Number(fresh.sessionNumber || 1)
+      tx.update(appointmentRef, { status: 'No-show', noShowAt: timestamp, noShowMarkedById: req.user.uid, noShowOutcome, updatedAt: timestamp })
+      tx.set(firestore.collection('appointmentAudit').doc(), { appointmentId, branchId, action: 'no_show', actorId: req.user.uid, previousStatus: fresh.status, nextStatus: 'No-show', createdAt: timestamp })
+      if (totalSessions > 1) {
+        const sessionRef = firestore.collection('treatmentSessions').doc(`${planId}-${sessionNumber}`)
+        tx.set(sessionRef, { branchId, treatmentPlanAppointmentId: planId, customerId: fresh.customerId || '', customerName: fresh.customerName || 'Customer', practitionerId: fresh.practitionerId || fresh.assignedPractitionerId || '', sessionNumber, totalSessions, appointmentId, status: noShowOutcome, noShowAt: timestamp, noShowMarkedById: req.user.uid, updatedAt: timestamp }, { merge: true })
+        if (!rescheduleAllowed) {
+          const forfeited = Number(plan.treatmentPlan.forfeitedSessions || 0) + 1
+          tx.update(planRef, { treatmentPlan: { ...plan.treatmentPlan, forfeitedSessions: forfeited, remainingSessions: Math.max(0, totalSessions - Number(plan.treatmentPlan.completedSessions || 0) - forfeited) }, updatedAt: timestamp })
+          if (sessionNumber < totalSessions) tx.set(firestore.collection('treatmentSessions').doc(`${planId}-${sessionNumber + 1}`), { earliestScheduleDate: new Date(start.getTime() + Math.max(1, Number(plan.treatmentPlan.sessions?.[sessionNumber - 1]?.sessionIntervalDays || 1)) * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }), updatedAt: timestamp }, { merge: true })
+        }
+        tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: sessionRef.id, treatmentPlanAppointmentId: planId, branchId, action: 'no_show', previousStatus: fresh.status, nextStatus: noShowOutcome, actorId: req.user.uid, createdAt: timestamp })
+      }
     })
-    const totalSessions = Number(appointment.treatmentPlan?.totalSessions || 1)
-    if (totalSessions > 1) {
-      const sessionNumber = Number(appointment.sessionNumber || 1)
-      const sessionRef = firestore.collection('treatmentSessions').doc(`${appointmentId}-${sessionNumber}`)
-      batch.set(sessionRef, {
-        branchId, treatmentPlanAppointmentId: appointmentId, customerId: appointment.customerId || '',
-        customerName: appointment.customerName || appointment.clientName || 'Customer',
-        practitionerId: appointment.practitionerId || appointment.assignedPractitionerId || '',
-        sessionNumber, totalSessions, appointmentId, status: noShowOutcome,
-        noShowAt: timestamp, noShowMarkedById: req.user.uid, updatedAt: timestamp,
-      }, { merge: true })
-      batch.set(firestore.collection('treatmentSessionAudit').doc(), {
-        sessionId: sessionRef.id, treatmentPlanAppointmentId: appointmentId, branchId,
-        action: 'no_show', previousStatus: appointment.status || '', nextStatus: noShowOutcome,
-        date: appointment.date || '', time: appointment.time || '', actorId: req.user.uid,
-        actorName: req.user.email || '', createdAt: timestamp,
-      })
-    }
-    await batch.commit()
     await createAppointmentNotification({
       firestore,
       customerId: appointment.customerId || '',
@@ -8123,9 +8655,42 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       const latest = (await tx.get(appointmentRef)).data()
       assertWorkflow(latest && latest.status === appointment.status, 'This booking was already updated. Refresh and try again.')
       let prepared
-      if (approved) prepared = await prepareBooking({ tx, db: firestore, reservation: latest, getBookingRange, rangesOverlap, appointmentId })
+      let groupRef = null
+      let children = []
+      if (latest.isGroupParent && latest.groupBookingId) {
+        groupRef = firestore.collection('groupBookings').doc(String(latest.groupBookingId))
+        const groupSnap = await tx.get(groupRef)
+        for (const id of groupSnap.data()?.recipientAppointmentIds || []) {
+          const ref = firestore.collection('appointments').doc(id), snap = await tx.get(ref)
+          assertWorkflow(snap.exists, 'A group appointment is missing.')
+          children.push({ ref, data: snap.data() })
+        }
+      } else if (latest.isBookingOrderParent) {
+        for (const id of latest.appointmentIds || []) {
+          const ref = firestore.collection('appointments').doc(id), snap = await tx.get(ref)
+          assertWorkflow(snap.exists, 'An appointment in this order is missing.')
+          children.push({ ref, data: snap.data() })
+        }
+      }
+      if (approved && children.length) {
+        for (const child of children) {
+          assertWorkflow(!await getApprovedLeaveForDate(child.data.practitionerId, child.data.date), 'A practitioner is on leave for one of these appointments.')
+          child.prepared = await prepareBooking({ tx, db: firestore, reservation: { ...child.data, groupBooking: null }, getBookingRange, rangesOverlap, appointmentId: child.ref.id })
+        }
+      } else if (approved) prepared = await prepareBooking({ tx, db: firestore, reservation: latest, getBookingRange, rangesOverlap, appointmentId })
       if (prepared) tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      for (const lock of prepared?.customerLocks || []) tx.set(lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.update(appointmentRef, { ...(prepared && !Number(latest.amountPaid) ? prepared.data : {}), ...update })
+      if (children.length) {
+        for (const child of children) {
+          if (child.prepared) tx.set(child.prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+          for (const lock of child.prepared?.customerLocks || []) tx.set(lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+          tx.update(child.ref, { approvalStatus: approved ? 'Approved' : 'Rejected', status: approved ? afterPaymentStatus(child.data) : 'Rejected', paymentStatus: approved ? 'Pending' : 'Not Applicable', approvalNote: decisionNote, approvedAt: approved ? admin.firestore.FieldValue.serverTimestamp() : null, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+          const count = Number(child.data.treatmentPlan?.totalSessions || 1)
+          if (approved && count > 1) for (let number = 1; number <= count; number++) tx.set(firestore.collection('treatmentSessions').doc(`${child.ref.id}-${number}`), { branchId: child.data.branchId, treatmentPlanAppointmentId: child.ref.id, customerId: child.data.customerId, customerName: child.data.customerName || '', practitionerId: child.data.practitionerId, sessionNumber: number, totalSessions: count, status: number === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: number === 1 ? child.ref.id : '', ...(number === 1 ? { date: child.data.date, time: child.data.time } : {}), sessionIntervalDays: child.data.treatmentPlan?.sessionIntervalDays || 1, createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+        }
+        if (groupRef) tx.set(groupRef, { status: approved ? 'Approved' : 'Rejected', approvalStatus: approved ? 'Approved' : 'Rejected', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+      }
       const totalSessions = Number(prepared?.data?.treatmentPlan?.totalSessions || latest?.treatmentPlan?.totalSessions || 1)
       if (approved && totalSessions > 1) {
         for (let sessionNumber = 1; sessionNumber <= totalSessions; sessionNumber += 1) {
@@ -8133,7 +8698,12 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
           tx.set(sessionRef, {
             branchId: latest.branchId, treatmentPlanAppointmentId: appointmentId, customerId: latest.customerId, customerName: latest.customerName || latest.clientName || 'Customer',
             practitionerId: latest.practitionerId || latest.assignedPractitionerId || '', sessionNumber, totalSessions,
+            // The booking date belongs only to the first visit. Future visits
+            // are deliberately left unscheduled until the treatment progresses.
             status: sessionNumber === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: sessionNumber === 1 ? appointmentId : '',
+            ...(sessionNumber === 1 ? { date: latest.date || '', time: latest.time || '' } : {}),
+            durationMinutes: Number(latest.totalServiceDurationMinutes || latest.durationMinutes || 60),
+            sessionIntervalDays: Math.min(365, Math.max(0, Number(prepared?.data?.treatmentPlan?.sessionIntervalDays ?? latest.treatmentPlan?.sessionIntervalDays ?? 0))),
             createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           }, { merge: true })
         }
@@ -8291,7 +8861,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
     if (requestType === 'cancel') {
       const totalAmount = Number(appointmentData.totalAmount || appointmentData.amountPaid || appointmentData.amount || 0)
       commissionAmount = Number(appointmentData.commissionAmount || appointmentData.refundCommissionAmount || 0)
-      refundAmount = Math.max(0, Number(appointmentData.refundRequestedAmount || totalAmount - commissionAmount))
+      refundAmount = Math.max(0, Math.min(totalAmount, Number(appointmentData.amountPaid || 0)) - commissionAmount)
 
       const isPayMongoPaid = isPayMongoPaidAppointment(appointmentData)
       const paymentId = String(appointmentData.paymongoPaymentId || '').trim()
@@ -8307,6 +8877,11 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       })
 
       if (isPayMongoPaid && paymentId && refundAmount > 0) {
+        await firestore.runTransaction(async tx => {
+          const fresh = (await tx.get(appointmentRef)).data()
+          assertWorkflow(fresh && fresh.status === 'Cancellation Requested' && !fresh.refundProcessing && !fresh.paymongoRefundId, 'This refund is already being processed. Refresh the appointment or contact the clinic.')
+          tx.update(appointmentRef, { refundProcessing: true, refundProcessingAt: admin.firestore.FieldValue.serverTimestamp(), refundProcessingById: req.user.uid })
+        })
         const refundResponse = await fetch('https://api.paymongo.com/v1/refunds', {
           method: 'POST',
           headers: buildPayMongoHeaders(),
@@ -8323,6 +8898,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
 
         const refundData = await refundResponse.json()
         if (!refundResponse.ok) {
+          await appointmentRef.update({ refundProcessing: false })
           return res.status(refundResponse.status).json({
             success: false,
             error: refundData?.errors?.[0]?.detail || 'Failed to refund appointment payment via PayMongo',
@@ -8332,10 +8908,13 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
 
         paymongoRefundId = refundData?.data?.id || null
         paymongoRefundStatus = refundData?.data?.attributes?.status || 'pending'
+        assertWorkflow(paymongoRefundId, 'The provider did not return a refund reference. Contact the clinic before retrying.')
+        await appointmentRef.update({ paymongoRefundId, paymongoRefundStatus })
       }
 
       await appointmentRef.update({
         status: 'Cancelled',
+        refundProcessing: false,
         requestDecisionStatus: 'Approved',
         requestDecisionNote: decisionNote,
         requestDecisionAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -8446,7 +9025,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       appointmentData.requestedPractitionerName || appointmentData.practitionerName || appointmentData.assignedPractitionerName || ''
     ).trim()
 
-    await appointmentRef.update({
+    const rescheduleUpdate = {
       status: 'Scheduled',
       date: requestedDate,
       time: requestedTime,
@@ -8464,7 +9043,23 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       rescheduleApprovedById: req.user.uid,
       rescheduleApprovedByName: staffDisplayName,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+    assertWorkflow(!await getApprovedLeaveForDate(requestedPractitionerId, requestedDate), 'The practitioner is on approved leave for this date.')
+    const codeDelivery = await firestore.runTransaction(async tx => {
+      const fresh = (await tx.get(appointmentRef)).data()
+      assertWorkflow(fresh && normalized(fresh.status) === 'reschedule requested' && !fresh.startedAt && !fresh.checkedInAt, 'This appointment can no longer be rescheduled.')
+      const prepared = await prepareBooking({ tx, db: firestore, reservation: { ...fresh, date: requestedDate, time: requestedTime, endTime: '', practitionerId: requestedPractitionerId, assignedPractitionerId: requestedPractitionerId, groupBooking: null }, getBookingRange, rangesOverlap, appointmentId })
+      const serviceKey = fresh.serviceKey ? String(crypto.randomInt(100000, 1000000)) : null
+      const status = afterPaymentStatus({ ...fresh, startedAt: null, checkedInAt: null, workerKeyVerified: false })
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      tx.set(prepared.lock, { updatedAt: timestamp })
+      for (const lock of prepared.customerLocks || []) tx.set(lock, { updatedAt: timestamp })
+      tx.update(appointmentRef, { ...rescheduleUpdate, treatmentTeam: [], staffingRequirements: prepared.data.staffingRequirements, status, endTime: prepared.data.endTime, serviceKey, checkedInAt: null, workerKeyVerified: false, rescheduleCount: Number(fresh.rescheduleCount || 0) + 1 })
+      if (fresh.treatmentPlan?.totalSessions > 1) tx.set(firestore.collection('treatmentSessions').doc(`${fresh.treatmentPlanAppointmentId || appointmentId}-${fresh.sessionNumber || 1}`), { date: requestedDate, time: requestedTime, status: 'Scheduled', updatedAt: timestamp }, { merge: true })
+      tx.set(firestore.collection('appointmentAudit').doc(), { appointmentId, branchId: fresh.branchId, actorId: req.user.uid, action: 'reschedule_approved', previousStatus: fresh.status, nextStatus: status, date: requestedDate, time: requestedTime, createdAt: timestamp })
+      return { email: fresh.customerEmail, serviceKey, date: requestedDate, time: requestedTime }
     })
+    if (codeDelivery.serviceKey) await sendServiceCode(codeDelivery).catch(error => console.warn('Rescheduled code email failed:', error.message))
 
     try {
       await createAppointmentNotification({
@@ -8605,6 +9200,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
           const appointmentSnap = await firestore.collection('appointments').doc(appointmentId).get()
           if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
           const appointmentData = appointmentSnap.data() || {}
+          if (appointmentData.paymentManagedByOrganizer && !appointmentData.isBookingOrderParent && !appointmentData.isGroupParent) return res.status(409).json({ success: false, error: 'Pay through the shared booking checkout.' })
           if (String(appointmentData.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
           if (!['approved', 'awaiting payment', 'payment pending', 'balance due'].includes(normalizeBookingStatus(appointmentData.status))) {
             return res.status(409).json({ success: false, error: 'This appointment is not ready for payment.' })
@@ -8809,6 +9405,7 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
     if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
     const appointment = appointmentSnap.data() || {}
     if (String(appointment.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
+    if (appointment.paymentManagedByOrganizer && !appointment.isBookingOrderParent && !appointment.isGroupParent) return res.status(409).json({ success: false, error: 'Pay through the shared booking checkout.' })
     if (!(appointment.recordedPaymentSessions || []).includes(checkoutSessionId) && !['approved', 'awaiting payment', 'payment pending', 'contract pending', 'balance due', 'paid', 'partially paid'].includes(normalizeBookingStatus(appointment.status))) {
       return res.status(409).json({ success: false, error: 'Payment is not available for this appointment yet.' })
     }
@@ -8858,6 +9455,18 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
       const next = { ...fresh, amountPaid }
       const status = afterPaymentStatus(next)
       const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      let groupRef = null
+      let childIds = []
+      if (fresh.isGroupParent && fresh.groupBookingId) {
+        groupRef = firestore.collection('groupBookings').doc(String(fresh.groupBookingId))
+        childIds = (await tx.get(groupRef)).data()?.recipientAppointmentIds || []
+      } else if (fresh.isBookingOrderParent) childIds = fresh.appointmentIds || []
+      const paidChildren = []
+      for (const id of childIds) {
+        const ref = firestore.collection('appointments').doc(String(id)), snap = await tx.get(ref)
+        assertWorkflow(snap.exists, 'An individual appointment is missing.')
+        paidChildren.push({ ref, data: snap.data() })
+      }
       tx.set(firestore.collection('transactions').doc('booking-' + checkoutSessionId), { branchId: fresh.branchId, customerId: fresh.customerId, appointmentId, checkoutSessionId, type: 'service_payment', service: fresh.service || 'Service booking', amount: paymentAmount, total: paymentAmount, method: payment.attributes?.source?.type || payment.attributes?.payment_method?.type || 'Online', status: 'Paid', createdAt: timestamp })
       tx.update(appointmentRef, {
         status, amountPaid, balance: Math.max(0, totalAmount - amountPaid),
@@ -8866,6 +9475,14 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
         paymongoPaymentId: paymentId, paymongoPaidAt: timestamp, updatedAt: timestamp,
         ...(status === 'Completed' ? { completedAt: timestamp } : {}),
       })
+      if (paidChildren.length) {
+        for (const { ref: childRef, data: child } of paidChildren) {
+          const childTotal = Number(child.totalAmount || child.amount || 0)
+          const childStatus = normalized(child.contract?.status) === 'signed' ? afterPaymentStatus({ ...child, amountPaid: childTotal }) : 'Contract Pending'
+          tx.update(childRef, { amountPaid: childTotal, balance: 0, paymentStatus: 'Paid', paymentCoverage: 'group', status: childStatus, approvalStatus: 'Approved', paymongoCheckoutSessionId: checkoutSessionId, paymongoPaymentId: paymentId, paymongoPaidAt: timestamp, updatedAt: timestamp })
+        }
+        if (groupRef) tx.set(groupRef, { paymentStatus: 'Paid', paymongoCheckoutSessionId: checkoutSessionId, paymongoPaymentId: paymentId, paidAt: timestamp, status: 'Paid', updatedAt: timestamp }, { merge: true })
+      }
       if (fresh.bookingId) tx.set(firestore.collection('bookings').doc(fresh.bookingId), { status, amountPaid, updatedAt: timestamp }, { merge: true })
       tx.set(firestore.collection('notifications').doc(), { recipientUserId: fresh.customerId, title: status === 'Completed' ? 'Booking completed' : 'Booking payment received', message: status === 'Completed' ? 'Your service and final payment are complete. The booking is now in your history.' : (normalized(fresh.contract?.status) === 'signed' ? 'Payment received. Your service key is available in My Appointments.' : 'Payment received. Review and sign your clinic contract to continue.'), link: '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
       return { appointmentId, status, amountPaid, paymentCoverage: fullyPaid ? 'full' : 'installment' }

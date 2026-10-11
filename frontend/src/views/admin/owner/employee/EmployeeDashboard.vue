@@ -4,7 +4,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-6 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 4, panels: 2 }" class="flex-1 p-6 md:p-8">
       <DashboardSkeleton v-if="loading" />
 
       <div v-else class="space-y-6">
@@ -89,6 +89,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -102,6 +104,8 @@ export default {
   name: 'EmployeeDashboard',
   components: { OwnerSidebar, DashboardSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasPermission } = usePermissions()
@@ -147,8 +151,8 @@ export default {
         key: 'hr-payroll',
         label: 'HR and Payroll',
         entries: [
-          { label: 'Add Shift', to: '/hr/add-shift', permission: 'hr:create', feature: 'hr', description: 'Create shift templates and schedules.' },
-          { label: 'Schedule Assignment', to: '/hr/schedule-assignment', permission: 'hr:update', feature: 'hr', description: 'Assign shifts and schedules to staff.' },
+          { label: 'Add Shift', to: '/hr/shifts?tab=add', permission: 'hr:create', feature: 'hr', description: 'Create shift templates in Shift Management.' },
+          { label: 'Shift Assignment', to: '/hr/shifts?tab=assignment', permission: 'hr:update', feature: 'hr', description: 'Assign recurring schedules in Shift Management.' },
           { label: 'Leave Request', to: '/hr/leave-request', permission: 'leave:create', feature: 'hr', description: 'Submit a new leave request.' },
           { label: 'Leave Management', to: '/hr/leave-management', permission: 'leave:review', feature: 'hr', description: 'Track or review leave requests.' },
           { label: 'Base Pay', to: '/hr/base-pay', permission: 'payroll:update', feature: 'payroll', description: 'Manage base pay settings.' },
@@ -243,7 +247,7 @@ export default {
       branchLabel.value = label || branchId || 'No branch assigned'
     }
 
-    const loadTodayShift = async (userId, userData = {}) => {
+    const loadTodayShift = trackPageLoad(async (userId, userData = {}) => {
       if (!hasFeature('hr')) {
         todayShiftLabel.value = 'Not included in this plan'
         todayShiftTime.value = 'Shift and attendance management are available with Premium.'
@@ -298,14 +302,14 @@ export default {
         todayShiftLabel.value = assignmentLabel || 'Assigned Shift'
         todayShiftTime.value = 'Your assigned shift is scheduled for today.'
       }
-    }
+    })
 
     const subscribeToBranchSource = (user, userData = {}) => {
       clearBranchSubscription()
 
       const branchId = String(userData.branchId || userData.clinicBranch || '').trim()
       if (branchId) {
-        unsubscribeBranch = onSnapshot(doc(db, 'clinics', branchId), (branchSnap) => {
+        unsubscribeBranch = pageListener(onSnapshot, doc(db, 'clinics', branchId), (branchSnap) => {
           if (!branchSnap.exists()) {
             branchLabel.value = branchId
             return
@@ -318,8 +322,8 @@ export default {
         return
       }
 
-      unsubscribeBranch = onSnapshot(
-        query(collection(db, 'clinics'), where('branchAdminId', '==', user.uid)),
+      unsubscribeBranch = pageListener(
+        onSnapshot, query(collection(db, 'clinics'), where('branchAdminId', '==', user.uid)),
         (snapshot) => {
           if (snapshot.empty) {
             branchLabel.value = ''
@@ -335,9 +339,9 @@ export default {
       )
     }
 
-    onMounted(async () => {
+    onMounted(trackPageLoad(async () => {
       await initSubscription()
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           roleLabel.value = ''
           branchLabel.value = ''
@@ -355,8 +359,8 @@ export default {
           unsubscribeProfile = null
         }
 
-        unsubscribeProfile = onSnapshot(
-          doc(db, 'users', user.uid),
+        unsubscribeProfile = pageListener(
+          onSnapshot, doc(db, 'users', user.uid),
           async (userSnap) => {
             const userData = userSnap.exists() ? userSnap.data() || {} : {}
             roleLabel.value = String(userData.customRoleName || userData.role || 'Employee').trim()
@@ -370,7 +374,7 @@ export default {
           }
         )
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) {
@@ -383,6 +387,7 @@ export default {
     })
 
     return {
+      pageLoading,
       branchLabel,
       headingTitle,
       loading,

@@ -3,6 +3,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Refresh controls use the supplied Icons8 asset. The asset is used as a
+   mask so it follows the button's current text color on both light and dark
+   surfaces, while its original inline SVG remains only as a fallback. */
+button:has(> svg + .sr-only) > svg {
+  display: none;
+}
+
+button:has(> svg + .sr-only)::before {
+  content: '';
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  background-color: currentColor;
+  -webkit-mask: url('/icons/icons8-refresh.png') center / contain no-repeat;
+  mask: url('/icons/icons8-refresh.png') center / contain no-repeat;
+}
+
+button:has(> svg.animate-spin + .sr-only)::before {
+  animation: icons8-refresh-spin .8s linear infinite;
+}
+
+@keyframes icons8-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
 :root {
   /* Palette sampled from home_picture.jpg (skin tones + highlights + shadow) */
   --color-gold-50: #fff8eb;

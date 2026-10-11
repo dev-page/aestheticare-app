@@ -1,6 +1,6 @@
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 
-const OWNER_ROLE_KEYS = ['owner', 'clinic owner', 'clinicowner']
+const OWNER_ROLE_KEYS = ['owner', 'clinic owner', 'clinicowner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator']
 
 const normalizeText = (value) => String(value || '').trim()
 

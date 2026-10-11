@@ -1,6 +1,6 @@
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
 import {
@@ -36,8 +36,7 @@ const loginOtpUid = ref('')
 const loginOtpError = ref('')
 const loginOtpResendCountdown = ref(0)
 let loginOtpInterval = null
-let redirectTimeout = null
-const REDIRECT_DELAY = 1700
+let redirectInProgress = false
 
 const inactivityExpired = ref(route.query.expired === 'inactivity')
 const passwordResetSuccess = ref(route.query.reset === 'success')
@@ -217,19 +216,22 @@ const setProcessLoading = (active, label) => {
   window.dispatchEvent(new CustomEvent('app-process-loading', { detail: { active, label } }))
 }
 
-const startRedirectFlow = (redirectPath) => {
+const startRedirectFlow = async (redirectPath) => {
+  if (redirectInProgress) return
+  redirectInProgress = true
   setProcessLoading(true, 'Redirecting to your panel...')
-  if (redirectTimeout) clearTimeout(redirectTimeout)
-  redirectTimeout = setTimeout(() => {
-    // Do not leave the full-screen loader active while route guards and lazy
-    // components resolve. A guard redirect (such as Free-plan onboarding)
-    // must never make a successful sign-in appear stuck.
+  try {
+    const failure = await router.push(redirectPath)
+    if (failure) throw failure
+    // Keep the overlay until guards, lazy imports, and the destination render finish.
+    await nextTick()
+  } catch (error) {
+    console.error('Unable to open the account workspace after sign-in:', error)
+    toast.error('Unable to open your workspace. Please try again.')
+  } finally {
+    redirectInProgress = false
     setProcessLoading(false)
-    router.push(redirectPath).catch((error) => {
-      console.error('Unable to open the account workspace after sign-in:', error)
-      toast.error('Unable to open your workspace. Please try again.')
-    })
-  }, REDIRECT_DELAY)
+  }
 }
 
 const handleLogin = async () => {
@@ -310,7 +312,7 @@ const handleLogin = async () => {
           return
         }
 
-        if (['pending', 'pending approval'].includes(accountStatus)) {
+        if (['pending', 'pending approval'].includes(accountStatus) && String(userData.role || userData.userType || '').toLowerCase() !== 'supplier') {
           toast.error('Your employee account is still awaiting approval.')
           setProcessLoading(false)
           return
@@ -423,9 +425,9 @@ const resendLoginOtp = async () => {
 }
 
 onBeforeUnmount(() => {
-  if (redirectTimeout) clearTimeout(redirectTimeout)
   if (loginOtpInterval) clearInterval(loginOtpInterval)
-  setProcessLoading(false)
+  // Navigation owns the overlay until the destination has rendered.
+  if (!redirectInProgress) setProcessLoading(false)
 })
 
 </script>
@@ -507,7 +509,7 @@ onBeforeUnmount(() => {
           <span class="form-side-bubble f-bubble-1 hidden lg:block" aria-hidden="true"></span>
           <span class="form-side-bubble f-bubble-2 hidden lg:block" aria-hidden="true"></span>
           <span class="form-side-bubble f-bubble-3 hidden lg:block" aria-hidden="true"></span>
-          <form class="space-y-4 w-full max-w-[480px]">
+          <form class="space-y-4 w-full max-w-[480px]" @submit.prevent="handleLogin">
             <div class="mb-2">
               <h1 class="login-title text-3xl sm:text-4xl leading-tight">Welcome Back</h1>
               <p class="text-charcoal-600 text-sm mt-1">Sign in to continue your AesthetiCare experience.</p>
@@ -606,8 +608,7 @@ onBeforeUnmount(() => {
             </div>
 
             <button
-              @click="handleLogin"
-              type="button"
+              type="submit"
               :disabled="isSubmitting"
               class="w-full py-3 rounded-xl bg-gold-700
                     text-white font-semibold text-base

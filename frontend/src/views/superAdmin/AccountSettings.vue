@@ -2,7 +2,7 @@
   <div class="flex min-h-screen bg-slate-900 module-theme">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-5 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 2 }" class="flex-1 p-5 md:p-8">
       <div class="mx-auto max-w-4xl">
         <div class="mb-6">
           <p class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">System Administration</p>
@@ -102,6 +102,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, reactive, ref } from 'vue'
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
@@ -109,6 +111,8 @@ import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage
 import { toast } from 'vue3-toastify'
 import { auth, db, storage } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const loading = ref(true)
 const savingProfile = ref(false)
@@ -135,7 +139,7 @@ const handlePhoneInput = (event) => {
   if (phoneNumberError.value) validatePhoneNumber()
 }
 
-const loadProfile = async () => {
+const loadProfile = trackPageLoad(async () => {
   const user = auth.currentUser
   if (!user) return
   try {
@@ -152,7 +156,7 @@ const loadProfile = async () => {
   } finally {
     loading.value = false
   }
-}
+})
 
 const saveProfile = async () => {
   const user = auth.currentUser

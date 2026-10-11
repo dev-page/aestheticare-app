@@ -2,9 +2,11 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="flex-1 p-8">
       <h1 class="text-3xl font-bold text-white mb-2">Plan Payments</h1>
       <p class="text-slate-400 mb-6">Payment history from clinic owners for their subscriptions.</p>
+
+      <input v-model.trim="search" type="search" placeholder="Filter clinic, email, plan, or reference..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <table class="w-full text-sm">
@@ -27,7 +29,8 @@
             <tr v-else-if="payments.length === 0">
               <td class="px-4 py-3 text-slate-200" colspan="5">No payments yet.</td>
             </tr>
-            <tr v-else v-for="payment in payments" :key="payment.id" class="border-t border-slate-700/60">
+            <tr v-else-if="!filteredPayments.length"><td class="px-4 py-3 text-slate-200" colspan="5">No payments match the filter.</td></tr>
+            <tr v-else v-for="payment in paginatedPayments" :key="payment.id" class="border-t border-slate-700/60">
               <td class="px-4 py-3 text-slate-100">
                 <div class="font-semibold">{{ payment.payerName || '-' }}</div>
                 <div class="text-xs text-slate-400">{{ payment.payerEmail || '-' }}</div>
@@ -39,22 +42,31 @@
             </tr>
           </tbody>
         </table>
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredPayments.length" />
       </section>
     </main>
   </div>
 </template>
 
 <script>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 
 export default {
   name: 'SuperAdminSubscriptionPayments',
-  components: { SuperAdminSidebar },
+  components: { SuperAdminSidebar, TablePagination },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const payments = ref([])
+    const search = ref('')
+    const currentPage = ref(1)
+    const pageSize = ref(10)
     const loading = ref(false)
     const error = ref('')
     let unsubscribePayments = null
@@ -94,7 +106,7 @@ export default {
       loading.value = true
       error.value = ''
       const q = query(collection(db, 'planPayments'), orderBy('createdAt', 'desc'))
-      unsubscribePayments = onSnapshot(q, (snapshot) => {
+      unsubscribePayments = pageListener(onSnapshot, q, (snapshot) => {
         payments.value = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data(),
@@ -108,11 +120,27 @@ export default {
       })
     }
 
+    const filteredPayments = computed(() => {
+      const keyword = search.value.toLowerCase()
+      if (!keyword) return payments.value
+      return payments.value.filter((payment) => [payment.payerName, payment.payerEmail, payment.planName, payment.planId, payment.referenceNumber].join(' ').toLowerCase().includes(keyword))
+    })
+    const paginatedPayments = computed(() => filteredPayments.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+    const totalPages = computed(() => Math.max(1, Math.ceil(filteredPayments.value.length / pageSize.value)))
+    watch([search, pageSize], () => { currentPage.value = 1 })
+    watch(totalPages, (count) => { if (currentPage.value > count) currentPage.value = count })
+
     onMounted(loadPayments)
     onUnmounted(() => unsubscribePayments?.())
 
     return {
+      pageLoading,
       payments,
+      search,
+      filteredPayments,
+      paginatedPayments,
+      currentPage,
+      pageSize,
       loading,
       error,
       formatCurrency,

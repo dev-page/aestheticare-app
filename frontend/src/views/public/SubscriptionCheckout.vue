@@ -3,7 +3,7 @@
     <div class="checkout-glow checkout-glow-left"></div>
     <div class="checkout-glow checkout-glow-right"></div>
 
-    <div class="checkout-wrap">
+    <div class="checkout-wrap" v-page-loading="{ active: pageLoading, variant: 'form', fields: 4, sections: 2 }">
       <Transition name="checkout-panel" appear>
         <section v-if="showPanels" class="checkout-panel delay-0 checkout-form-card">
           <p class="checkout-eyebrow">Subscription Checkout</p>
@@ -135,6 +135,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore'
@@ -148,6 +150,8 @@ import {
   getSubscriptionPlanPriority,
 } from '@/utils/subscriptionPlans'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const route = useRoute()
 const router = useRouter()
@@ -247,7 +251,7 @@ const formatCurrency = (amount) => {
   }).format(safe)
 }
 
-const fetchFromBackend = async (path, options = {}) => {
+const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
   let lastError = null
 
   for (const baseUrl of OTP_API_BASE_CANDIDATES) {
@@ -270,12 +274,12 @@ const fetchFromBackend = async (path, options = {}) => {
   }
 
   throw lastError || new Error('Subscription backend is not reachable.')
-}
+})
 
 const getCurrentUser = async () => {
   if (auth.currentUser) return auth.currentUser
   return new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, (user) => {
+    const unsub = pageListener(onAuthStateChanged, auth, (user) => {
       unsub()
       resolve(user)
     })
@@ -313,14 +317,14 @@ const clearPendingPayMongoState = () => {
 
 const getPlanPriority = (planId) => getSubscriptionPlanPriority(normalizePlanId(planId), allPlans.value)
 
-const loadPlans = async () => {
+const loadPlans = trackPageLoad(async () => {
   try {
     if (unsubscribePlans) {
       unsubscribePlans()
       unsubscribePlans = null
     }
-    unsubscribePlans = onSnapshot(
-      collection(db, 'subscriptionPlans'),
+    unsubscribePlans = pageListener(
+      onSnapshot, collection(db, 'subscriptionPlans'),
       (snapshot) => {
         const merged = buildSubscriptionPlanCatalog(defaultPlans(), snapshot.docs)
         allPlans.value = merged
@@ -337,7 +341,7 @@ const loadPlans = async () => {
     allPlans.value = buildSubscriptionPlanCatalog(defaultPlans(), [])
     plans.value = filterActiveSubscriptionPlans(allPlans.value)
   }
-}
+})
 
 const validateForm = () => {
   if (!selectedPlan.value) {
@@ -380,7 +384,7 @@ const applyPrefill = (data = {}) => {
 const prefillFromAccount = async () => {
   if (!shouldPrefill.value) return
   const currentUser = auth.currentUser || await new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, (user) => {
+    const unsub = pageListener(onAuthStateChanged, auth, (user) => {
       unsub()
       resolve(user)
     })
@@ -654,12 +658,12 @@ const goBack = () => {
   router.push({ name: 'subscription-features', query: { plan: selectedPlanId.value || 'basic' } })
 }
 
-onMounted(async () => {
+onMounted(trackPageLoad(async () => {
   showPanels.value = true
   await loadPlans()
   await handlePayMongoReturn()
   await prefillFromAccount()
-})
+}))
 
 onBeforeUnmount(() => {
   if (unsubscribePlans) {

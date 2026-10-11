@@ -1,6 +1,6 @@
 <template>
-  <div class="module-theme flex min-h-screen bg-slate-900 text-slate-100"><OwnerSidebar />
-    <main class="min-w-0 flex-1 p-4 md:p-8"><div class="mx-auto max-w-6xl">
+  <div class="module-theme finance-page flex min-h-screen bg-slate-900 text-slate-100"><OwnerSidebar />
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'cards', cardStyle: 'stat', cards: 3 }, { variant: 'table', columns: 6, rows: 5 }] }" class="min-w-0 flex-1 p-4 md:p-8"><div class="mx-auto max-w-6xl">
       <header class="mb-6 flex flex-wrap items-start justify-between gap-4"><div><p class="text-xs font-semibold uppercase tracking-[.2em] text-amber-300">Finance</p><h1 class="mt-2 text-3xl font-bold">Expenses &amp; Payments</h1><p class="mt-2 text-sm text-slate-400">Review supplier payables and record authorized operating expenses.</p></div><button v-if="canCreate" class="rounded-lg border border-amber-500 bg-amber-800 px-4 py-2 text-sm" @click="showForm = true">Add operating expense</button></header>
       <p v-if="error" class="mb-4 rounded border border-red-600 bg-red-950/30 p-3 text-sm text-red-200">{{ error }}</p><p v-if="loading" class="text-slate-400">Loading financial records…</p>
       <template v-else><div class="mb-5 flex gap-2 border-b border-slate-700"><button v-for="tab in tabs" :key="tab.key" class="border-0 border-b-2 px-4 py-3 text-sm" :class="tab.key === activeTab ? 'border-amber-400 text-amber-300' : 'border-transparent text-slate-400'" @click="activeTab = tab.key">{{ tab.label }}</button></div>
@@ -14,10 +14,14 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, ref, watch } from 'vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth } from '@/config/firebaseConfig'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 const activeTab=ref('supplier'), loading=ref(true), saving=ref(false), error=ref(''), records=ref([]), branches=ref([]), branchId=ref('all'), status=ref(''), search=ref(''), permissions=ref([]), showForm=ref(false), paymentTarget=ref(null)
 const blank=()=>({branchId:'',category:'',description:'',payee:'',amount:'',expenseDate:new Date().toISOString().slice(0,10),dueDate:'',notes:''}); const draft=ref(blank()), payment=ref({amount:'',paymentMethod:'',paymentReference:''})
 const canCreate=computed(()=>permissions.value.includes('finance:payables:approve')||permissions.value.includes('administrator:full_access'));const canSettle=computed(()=>permissions.value.includes('finance:payables:settle')||permissions.value.includes('administrator:full_access'));const tabs=[{key:'supplier',label:'Supplier Invoices'},{key:'other',label:'Other Expenses'}]
@@ -25,7 +29,7 @@ const money=value=>new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP
 const filtered=computed(()=>records.value.filter(record=>record.kind==='operatingExpense'&&(branchId.value==='all'||record.branchId===branchId.value)&&(!status.value||record.status===status.value)&&(!search.value||JSON.stringify(record).toLowerCase().includes(search.value.toLowerCase()))))
 const cards=computed(()=>{const all=filtered.value;return[{label:'Recognized expenses',value:all.reduce((sum,r)=>sum+Number(r.amount||0),0)},{label:'Outstanding payables',value:all.reduce((sum,r)=>sum+Number(r.outstandingAmount||0),0)},{label:'Payments made',value:all.reduce((sum,r)=>sum+Number(r.paidAmount||0),0)}]})
 const api=async(path,body)=>{await auth.authStateReady?.();const token=await auth.currentUser?.getIdToken();if(!token)throw Error('Sign in to continue.');let last;for(const base of OTP_BACKEND_CANDIDATES){try{const response=await fetch(base+path,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const result=await response.json();if(!response.ok||!result.success)throw Error(result.error);return result.data}catch(e){last=e}}throw last||Error('Finance service is unavailable.')}
-const load=async()=>{loading.value=true;try{const workspace=await api('/supply/workspace?branchId=all');branches.value=workspace.branches||[];permissions.value=workspace.permissions||[];records.value=await api('/finance/records?branchId=all');error.value=''}catch(e){error.value=e.message}finally{loading.value=false}}
+const load=trackPageLoad(async()=>{loading.value=true;try{const workspace=await api('/supply/workspace?branchId=all');branches.value=workspace.branches||[];permissions.value=workspace.permissions||[];records.value=await api('/finance/records?branchId=all');error.value=''}catch(e){error.value=e.message}finally{loading.value=false}})
 const create=async()=>{saving.value=true;try{await api('/finance/expenses',draft.value);showForm.value=false;draft.value=blank();await load()}catch(e){error.value=e.message}finally{saving.value=false}}
 const openPayment=record=>{paymentTarget.value=record;payment.value={amount:(Number(record.outstandingAmount||0)/100).toFixed(2),paymentMethod:'',paymentReference:''}}
 const recordPayment=async()=>{saving.value=true;try{await api(`/finance/expenses/${paymentTarget.value.id}/payments`,payment.value);paymentTarget.value=null;await load()}catch(e){error.value=e.message}finally{saving.value=false}}

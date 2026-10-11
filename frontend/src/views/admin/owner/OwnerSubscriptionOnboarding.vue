@@ -1,304 +1,57 @@
 <template>
-  <main class="onboarding-page owner-theme">
-    <section class="onboarding-shell">
-      <div class="onboarding-intro">
-        <p class="onboarding-eyebrow">Welcome to AesthetiCare</p>
-        <h1>Choose your clinic subscription</h1>
-        <p>
-          Your clinic account is ready. Select a plan to activate your workspace and continue to your payment details.
-        </p>
-      </div>
-
-      <p v-if="error" class="onboarding-error">{{ error }}</p>
-
-      <section v-if="loading" class="plan-list" aria-label="Loading subscription plans">
-        <div v-for="index in 2" :key="`plan-skeleton-${index}`" class="plan-card plan-skeleton">
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
+  <main v-page-loading="{ active: pageLoading, variant: 'form', sections: 2, fields: 4 }" class="setup-page owner-theme"><section class="setup-shell">
+    <header><p class="eyebrow">Clinic onboarding</p><h1>Set up your clinic</h1><p>Complete your clinic details before opening the workspace. You can edit them later.</p></header>
+    <ol class="steps"><li v-for="item in stepLabels" :key="item.number" :class="{ active: step === item.number, complete: step > item.number }"><span>{{ item.number }}</span>{{ item.label }}</li></ol>
+    <p v-if="error" class="error-message" role="alert">{{ error }}</p><div v-if="loading" class="setup-card">Loading your clinic details…</div>
+    <form v-else class="setup-card" @submit.prevent="nextStep">
+      <section v-if="step === 1" class="form-section"><h2>Clinic details</h2><p>Tell customers how to recognize and contact your clinic.</p>
+        <label>Clinic name <i>*</i><input v-model.trim="form.clinicName" required maxlength="120" placeholder="e.g. AesthetiCare Imus" /></label>
+        <label>Business email <i>*</i><input v-model.trim="form.businessEmail" required type="email" placeholder="clinic@example.com" /></label>
+        <label>Contact number <i>*</i><div class="phone-input"><b>+63</b><input v-model="form.contactNumber" required inputmode="numeric" maxlength="10" placeholder="9XXXXXXXXX" @input="normalizePhone" /></div></label>
+        <label>Clinic category <i>*</i><select v-model="form.category" required><option value="" disabled>Select a category</option><option>Dermatology</option><option>Aesthetic Clinic</option><option>Dental Clinic</option><option>Wellness Clinic</option><option>Medical Spa</option><option>Other</option></select></label>
+        <label>About your clinic <i>*</i><textarea v-model.trim="form.description" required maxlength="1000" rows="4" placeholder="Briefly describe your clinic, specialties, or services."></textarea></label>
       </section>
-
-      <section v-else class="plan-list" aria-label="Subscription plans">
-        <button
-          v-for="plan in plans"
-          :key="plan.id"
-          type="button"
-          class="plan-card"
-          :class="{ selected: selectedPlan === plan.id }"
-          @click="selectedPlan = plan.id"
-        >
-          <div class="plan-card-head">
-            <div>
-              <span class="plan-label">{{ plan.id }}</span>
-              <h2>{{ plan.name }}</h2>
-            </div>
-            <span v-if="selectedPlan === plan.id" class="selected-badge">Selected</span>
-          </div>
-          <p class="plan-price">{{ plan.priceLabel }}</p>
-          <p class="plan-cycle">{{ plan.cycleLabel }}</p>
-          <p class="plan-description">{{ plan.description }}</p>
-          <ul>
-            <li v-for="feature in plan.features" :key="feature">{{ feature }}</li>
-          </ul>
-        </button>
+      <section v-else-if="step === 2" class="form-section"><h2>Availability</h2><p>Set the starting information for your main branch. Detailed schedules can be managed later.</p>
+        <fieldset><legend>Open days <i>*</i></legend><div class="day-grid"><label v-for="day in days" :key="day" class="check-label"><input v-model="form.openDays" type="checkbox" :value="day" />{{ day }}</label></div></fieldset>
+        <div class="time-grid"><label>Opening time <i>*</i><input v-model="form.openTime" required type="time" /></label><label>Closing time <i>*</i><input v-model="form.closeTime" required type="time" /></label></div>
+        <label class="toggle-label"><input v-model="form.acceptsOnlineBookings" type="checkbox" /><span><b>Accept online booking requests</b><small>You can change this later.</small></span></label>
+        <aside><b>Main branch location</b><span>{{ clinicLocation || 'Your verified registration address' }}</span></aside>
       </section>
-
-      <div v-if="!loading && !plans.length" class="empty-state">
-        No active subscription plans are available right now. Please contact support.
-      </div>
-
-      <div class="onboarding-actions">
-        <button
-          type="button"
-          class="continue-button"
-          :disabled="loading || submitting || !selectedPlan"
-          @click="continueWithSelectedPlan"
-        >
-          {{
-            submitting
-              ? (selectedFreePlan ? 'Opening your portal...' : 'Preparing checkout...')
-              : (selectedFreePlan ? 'Continue' : 'Continue to payment')
-          }}
-        </button>
-      </div>
-
-      <label class="dismiss-option">
-        <input v-model="dontShowAgain" type="checkbox" @change="saveDismissalPreference" />
-        <span>Don't show this again</span>
-      </label>
-
-      <button
-        v-if="dontShowAgain"
-        type="button"
-        class="continue-later-button"
-        :disabled="savingDismissal"
-        @click="continueWithoutPlan"
-      >
-        {{ savingDismissal ? 'Saving...' : 'Continue to dashboard' }}
-      </button>
-
-      <p class="onboarding-note">
-        {{
-          selectedFreePlan
-            ? 'You can upgrade your plan at any time.'
-            : 'Your account details will be filled in automatically on the payment page.'
-        }}
-      </p>
-    </section>
-  </main>
+      <section v-else class="form-section"><h2>Choose a plan <em>Optional</em></h2><p>You can choose a plan now, or continue with Free and upgrade any time from your dashboard.</p>
+        <div v-if="plansLoading">Loading available plans…</div><div v-else class="plan-list"><button v-for="plan in plans" :key="plan.id" type="button" class="plan-card" :class="{ selected: selectedPlan === plan.id }" @click="selectedPlan = plan.id"><span>{{ plan.name }}</span><strong>{{ plan.priceLabel }}</strong><small>{{ plan.cycleLabel }}</small><p>{{ plan.description }}</p></button></div>
+      </section>
+      <footer class="actions"><button v-if="step > 1" type="button" class="secondary-button" :disabled="saving" @click="step -= 1">Back</button><button v-if="step < 3" type="submit" class="primary-button">Continue</button><template v-else><button type="button" class="secondary-button" :disabled="saving" @click="finishSetup">{{ saving ? 'Saving…' : 'Skip plan for now' }}</button><button type="button" class="primary-button" :disabled="saving || !selectedPlan" @click="continueWithPlan">{{ saving ? 'Saving…' : selectedPlanIsFree ? 'Finish setup' : 'Continue to payment' }}</button></template></footer>
+    </form>
+  </section></main>
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { collection, onSnapshot } from 'firebase/firestore'
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
-import {
-  buildSubscriptionPlanCatalog,
-  filterActiveSubscriptionPlans,
-} from '@/utils/subscriptionPlans'
+import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
+import { buildSubscriptionPlanCatalog, filterActiveSubscriptionPlans } from '@/utils/subscriptionPlans'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
-const router = useRouter()
-const loading = ref(true)
-const submitting = ref(false)
-const error = ref('')
-const plans = ref([])
-const selectedPlan = ref('')
-const dontShowAgain = ref(false)
-const savingDismissal = ref(false)
-let unsubscribePlans = null
 
-const selectedFreePlan = computed(() => {
-  const selected = plans.value.find((plan) => plan.id === selectedPlan.value)
-  const planId = String(selected?.id || selectedPlan.value || '').trim().toLowerCase()
-  return planId === 'free' || planId === 'free-plan' || Number(selected?.price) === 0
-})
-
-const defaultPlans = () => [
-  {
-    id: 'free',
-    name: 'Free Plan',
-    price: 0,
-    billingCycle: 'month',
-    description: 'One-branch service listings with direct online booking and no expiry.',
-    features: ['Service listings only', 'Online service bookings', 'One branch', 'Upgrade anytime'],
-    isActive: true,
-  },
-  {
-    id: 'basic',
-    name: 'Basic',
-    price: 999,
-    billingCycle: 'month',
-    description: 'Essential features for daily clinic operations.',
-    features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
-    isActive: true,
-  },
-  {
-    id: 'premium',
-    name: 'Premium',
-    price: 2499,
-    billingCycle: 'month',
-    description: 'Advanced features and priority support for growing clinics.',
-    features: ['Everything in Basic', 'Multi-branch operations', 'HR, attendance & payroll', 'Advanced reports & priority support'],
-    isActive: true,
-  },
-]
-
-const loadPlans = () => {
-  unsubscribePlans = onSnapshot(
-    collection(db, 'subscriptionPlans'),
-    (snapshot) => {
-      const catalog = buildSubscriptionPlanCatalog(defaultPlans(), snapshot.docs)
-      plans.value = filterActiveSubscriptionPlans(catalog)
-      if (!plans.value.some((plan) => plan.id === selectedPlan.value)) {
-        selectedPlan.value = plans.value[0]?.id || ''
-      }
-      loading.value = false
-    },
-    (snapshotError) => {
-      console.error('Failed to load onboarding subscription plans:', snapshotError)
-      error.value = 'Unable to load plans right now. Please try again.'
-      loading.value = false
-    },
-  )
-}
-
-const continueWithSelectedPlan = async () => {
-  if (!selectedPlan.value) return
-  submitting.value = true
-  try {
-    if (selectedFreePlan.value) {
-      // Let the owner enter the Free workspace for this browser session. This
-      // does not set the persistent dismissal preference, so the plan screen
-      // is still shown again on a future sign-in unless they opt out below.
-      try {
-        window.sessionStorage.setItem(
-          `free-plan-onboarding-continued:${auth.currentUser?.uid || ''}`,
-          'true',
-        )
-      } catch {
-        // Storage may be unavailable in a privacy-restricted browser. The
-        // route still remains safe because Free feature restrictions apply.
-      }
-      await router.push({
-        path: '/clinic/dashboard',
-        query: { freeOnboarding: 'continue' },
-      })
-      return
-    }
-
-    await router.push({
-      path: '/subscription/checkout',
-      query: { plan: selectedPlan.value, from: 'owner', onboarding: '1' },
-    })
-  } finally {
-    submitting.value = false
-  }
-}
-
-const saveDismissalPreference = async () => {
-  if (!dontShowAgain.value || !auth.currentUser) return
-  try {
-    await setDoc(doc(db, 'users', auth.currentUser.uid), {
-      subscriptionOnboardingDismissed: true,
-      subscriptionOnboardingDismissedAt: serverTimestamp(),
-    }, { merge: true })
-  } catch (dismissalError) {
-    dontShowAgain.value = false
-    error.value = dismissalError?.message || 'Unable to save this preference.'
-  }
-}
-
-const continueWithoutPlan = async () => {
-  if (!dontShowAgain.value) return
-  savingDismissal.value = true
-  try {
-    await saveDismissalPreference()
-    if (dontShowAgain.value) await router.push('/clinic/dashboard')
-  } finally {
-    savingDismissal.value = false
-  }
-}
-
-onMounted(loadPlans)
-onBeforeUnmount(() => unsubscribePlans?.())
+const router = useRouter(); const step = ref(1); const loading = ref(true); const plansLoading = ref(true); const saving = ref(false); const error = ref(''); const plans = ref([]); const selectedPlan = ref(''); const clinicLocation = ref(''); let unsubscribePlans = null
+const stepLabels = [{ number: 1, label: 'Details' }, { number: 2, label: 'Availability' }, { number: 3, label: 'Plan' }]; const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const form = ref({ clinicName: '', businessEmail: '', contactNumber: '', category: '', description: '', openDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], openTime: '09:00', closeTime: '18:00', acceptsOnlineBookings: true })
+const defaultPlans = [{ id: 'free', name: 'Free Plan', price: 0, billingCycle: 'month', description: 'One-branch service listings and online booking.', features: [], isActive: true }, { id: 'basic', name: 'Basic', price: 999, billingCycle: 'month', description: 'Core tools for daily clinic operations.', features: [], isActive: true }, { id: 'premium', name: 'Premium', price: 2499, billingCycle: 'month', description: 'Advanced tools for growing clinics.', features: [], isActive: true }]
+const selectedPlanIsFree = computed(() => { const plan = plans.value.find((entry) => entry.id === selectedPlan.value); return String(plan?.id || '').toLowerCase() === 'free' || Number(plan?.price) === 0 })
+const normalizePhone = () => { let digits = String(form.value.contactNumber || '').replace(/\D/g, ''); if (digits.startsWith('63')) digits = digits.slice(2); if (digits.startsWith('0')) digits = digits.slice(1); form.value.contactNumber = digits.slice(0, 10) }
+const loadClinic = trackPageLoad(async () => { const uid = auth.currentUser?.uid; if (!uid) return router.replace('/login'); try { const snapshot = await getDoc(doc(db, 'clinics', uid)); const data = snapshot.exists() ? snapshot.data() || {} : {}; if (data.clinicSetupCompletedAt) return router.replace('/clinic/dashboard'); clinicLocation.value = String(data.clinicLocationAddress || data.clinicLocation || '').trim(); form.value = { ...form.value, clinicName: String(data.clinicName || '').trim(), businessEmail: String(data.businessEmail || data.email || auth.currentUser?.email || '').trim(), contactNumber: String(data.contactNumber || '').replace(/\D/g, '').replace(/^63/, '').replace(/^0/, '').slice(0, 10), category: String(data.category || data.clinicCategory || '').trim(), description: String(data.description || '').trim(), openDays: Array.isArray(data.openDays) && data.openDays.length ? data.openDays : form.value.openDays, openTime: String(data.openTime || form.value.openTime), closeTime: String(data.closeTime || form.value.closeTime), acceptsOnlineBookings: data.acceptsOnlineBookings !== false } } catch (reason) { console.error('Unable to load clinic setup:', reason); error.value = 'We could not load your clinic details. Please refresh and try again.' } finally { loading.value = false } })
+const loadPlans = () => { unsubscribePlans = pageListener(onSnapshot, collection(db, 'subscriptionPlans'), (snapshot) => { plans.value = filterActiveSubscriptionPlans(buildSubscriptionPlanCatalog(defaultPlans, snapshot.docs)); plansLoading.value = false }, (reason) => { console.error('Unable to load plans:', reason); plans.value = defaultPlans; plansLoading.value = false }) }
+const validateStep = () => { if (step.value === 1) { normalizePhone(); if (!form.value.clinicName || !form.value.businessEmail || !form.value.category || !form.value.description || !/^9\d{9}$/.test(form.value.contactNumber)) { error.value = 'Complete all clinic details and enter a valid 10-digit mobile number starting with 9.'; return false } } if (step.value === 2 && (!form.value.openDays.length || !form.value.openTime || !form.value.closeTime || form.value.openTime >= form.value.closeTime)) { error.value = 'Choose at least one open day and a valid opening and closing time.'; return false } error.value = ''; return true }
+const nextStep = () => { if (validateStep()) step.value += 1 }
+const saveSetup = async (skippedPlan = false) => { if (!validateStep()) return false; const uid = auth.currentUser?.uid; if (!uid) return false; saving.value = true; try { await setDoc(doc(db, 'clinics', uid), { clinicName: form.value.clinicName, businessEmail: form.value.businessEmail.toLowerCase(), contactNumber: form.value.contactNumber, category: form.value.category, clinicCategory: form.value.category, description: form.value.description, openDays: form.value.openDays, openTime: form.value.openTime, closeTime: form.value.closeTime, acceptsOnlineBookings: form.value.acceptsOnlineBookings, clinicSetupCompletedAt: serverTimestamp(), clinicSetupVersion: 1, ...(skippedPlan ? { clinicSetupPlanSkippedAt: serverTimestamp() } : {}), updatedAt: serverTimestamp() }, { merge: true }); return true } catch (reason) { console.error('Unable to complete clinic setup:', reason); error.value = 'We could not save your clinic setup. Please try again.'; return false } finally { saving.value = false } }
+const finishSetup = async () => { if (await saveSetup(true)) await router.replace('/clinic/dashboard') }
+const continueWithPlan = async () => { if (!selectedPlan.value) return; if (selectedPlanIsFree.value) { if (await saveSetup()) await router.replace('/clinic/dashboard'); return } if (await saveSetup()) await router.push({ path: '/subscription/checkout', query: { plan: selectedPlan.value, from: 'owner', onboarding: '1' } }) }
+onMounted(trackPageLoad(() => { loadClinic(); loadPlans() })); onBeforeUnmount(() => unsubscribePlans?.())
 </script>
 
 <style scoped>
-.onboarding-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(1rem, 4vw, 3rem);
-  background:
-    radial-gradient(circle at 15% 10%, rgba(183, 135, 93, 0.2), transparent 35%),
-    linear-gradient(145deg, #140f0b 0%, #21150e 58%, #100b08 100%);
-  color: var(--owner-text, #f2e2d2);
-}
-
-.onboarding-shell {
-  width: min(100%, 980px);
-}
-
-.onboarding-intro { max-width: 680px; margin-bottom: 2rem; }
-.onboarding-eyebrow,
-.plan-label {
-  color: #d6a878;
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
-h1 { margin: 0.6rem 0 0.75rem; font-size: clamp(2rem, 5vw, 3.6rem); line-height: 1.05; }
-.onboarding-intro > p:last-child { color: #c8af97; line-height: 1.7; }
-.onboarding-error,
-.empty-state { margin: 1rem 0; color: #f0b7a0; }
-
-.plan-list { display: flex; flex-direction: column; gap: 1rem; width: 100%; }
-.plan-card {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  padding: clamp(1.1rem, 3vw, 1.7rem);
-  text-align: left;
-  color: inherit;
-  background: rgba(36, 24, 15, 0.86);
-  border: 1px solid #4a3322;
-  border-radius: 1.1rem;
-  cursor: pointer;
-  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
-}
-.plan-card:hover { border-color: #b4875d; transform: translateY(-2px); }
-.plan-card.selected { background: rgba(73, 48, 30, 0.9); border-color: #d6a878; box-shadow: 0 0 0 3px rgba(214, 168, 120, 0.14); }
-.plan-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
-h2 { margin: 0.45rem 0 0; font-size: clamp(1.3rem, 3vw, 1.8rem); }
-.selected-badge { padding: 0.35rem 0.55rem; color: #24180f; background: #d6a878; border-radius: 999px; font-size: 0.7rem; font-weight: 800; }
-.plan-price { margin: 1.35rem 0 0.1rem; font-size: clamp(1.6rem, 4vw, 2.2rem); font-weight: 800; }
-.plan-cycle { margin: 0; color: #c8af97; font-size: 0.85rem; }
-.plan-description { min-height: 3.2em; margin: 1.2rem 0; color: #dcc6b1; line-height: 1.55; }
-ul { display: flex; flex-direction: column; gap: 0.55rem; margin: 0; padding: 0; list-style: none; color: #c8af97; font-size: 0.9rem; }
-li::before { content: '✓'; margin-right: 0.5rem; color: #d6a878; font-weight: 800; }
-.onboarding-actions { display: flex; justify-content: flex-end; margin-top: 1.5rem; }
-.continue-button { padding: 0.8rem 1.3rem; color: #24180f; background: #d6a878; border: 0; border-radius: 0.7rem; font-weight: 800; cursor: pointer; }
-.continue-button:hover { background: #e1bb8f; }
-.continue-button:disabled { cursor: not-allowed; opacity: 0.55; }
-.onboarding-note { margin-top: 1rem; color: #9f826a; font-size: 0.82rem; text-align: right; }
-.plan-skeleton { display: flex; flex-direction: column; gap: 0.9rem; cursor: default; }
-.plan-skeleton span { display: block; height: 1rem; border-radius: 0.4rem; background: #3a281b; animation: pulse 1.3s ease-in-out infinite alternate; }
-.plan-skeleton span:nth-child(2) { width: 45%; height: 2rem; }
-.plan-skeleton span:nth-child(3) { width: 85%; }
-.plan-skeleton span:nth-child(4) { width: 65%; }
-@keyframes pulse { to { opacity: 0.45; } }
-
-@media (max-width: 640px) {
-  .plan-description { min-height: 0; }
-  .onboarding-actions { justify-content: stretch; }
-  .continue-button { width: 100%; }
-  .onboarding-note { text-align: left; }
-}
+.setup-page{min-height:100vh;padding:clamp(1rem,4vw,3rem);background:radial-gradient(circle at 12% 8%,#f5d8b4 0,transparent 30%),linear-gradient(145deg,#fffaf1,#f5e5cf);color:#4a2c1e}.setup-shell{width:min(100%,850px);margin:auto}header{max-width:680px}.eyebrow{margin:0;color:#956344;font-size:.72rem;font-weight:800;letter-spacing:.18em;text-transform:uppercase}h1{margin:.5rem 0;font-size:clamp(2.2rem,6vw,3.8rem);line-height:1}header p{color:#795c46;line-height:1.6}.steps{display:flex;gap:1rem;margin:2rem 0;padding:0;list-style:none;color:#9f826a;font-size:.85rem;font-weight:700}.steps li{display:flex;align-items:center;gap:.45rem}.steps span{display:grid;width:1.75rem;height:1.75rem;place-items:center;border:1px solid #d5b792;border-radius:50%}.steps .active,.steps .complete{color:#51311f}.steps .active span,.steps .complete span{border-color:#7e5036;background:#7e5036;color:white}.setup-card{padding:clamp(1.25rem,4vw,2.5rem);background:#fffdfa;border:1px solid #e4c7a4;border-radius:1.2rem;box-shadow:0 18px 48px #795c461a}.form-section{display:grid;gap:1rem}.form-section h2{margin:0;font-size:1.65rem}.form-section h2 em{font-size:.75rem;font-style:normal;color:#956344}.form-section>p{margin:-.5rem 0 .5rem;color:#795c46}.form-section label,.form-section fieldset{display:grid;gap:.45rem;color:#5b3d2a;font-size:.9rem;font-weight:700}.form-section i{color:#ad3f2c;font-style:normal}.form-section input:not([type=checkbox]),.form-section select,.form-section textarea{box-sizing:border-box;width:100%;border:1px solid #d6b995;border-radius:.65rem;padding:.75rem;background:#fff;color:#402819;font:inherit}.phone-input{display:flex;align-items:center;border:1px solid #d6b995;border-radius:.65rem;background:white;overflow:hidden}.phone-input b{padding:.75rem;border-right:1px solid #ead4b8}.phone-input input{border:0!important;border-radius:0!important}.day-grid{display:flex;flex-wrap:wrap;gap:.65rem}.check-label,.toggle-label{display:flex!important;align-items:center;gap:.45rem}.check-label input,.toggle-label input{accent-color:#7e5036}.time-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.toggle-label{padding:1rem;border:1px solid #ead4b8;border-radius:.75rem}.toggle-label span{display:grid}.toggle-label small{color:#8d6d55;font-weight:400}aside{display:grid;gap:.25rem;padding:1rem;border-radius:.75rem;background:#fff3df;color:#795c46}aside b{color:#51311f}.plan-list{display:grid;gap:.75rem}.plan-card{display:grid;grid-template-columns:1fr auto;gap:.25rem;text-align:left;padding:1rem;border:1px solid #e1c29e;border-radius:.8rem;background:#fff;cursor:pointer;color:#4a2c1e}.plan-card:hover,.plan-card.selected{border-color:#956344;background:#fff3df}.plan-card small,.plan-card p{color:#795c46}.plan-card p{grid-column:1/-1;margin:.25rem 0 0}.actions{display:flex;justify-content:flex-end;gap:.75rem;margin-top:1.75rem}.primary-button,.secondary-button{border:0;border-radius:.65rem;padding:.8rem 1.15rem;font-weight:800;cursor:pointer}.primary-button{background:#432719;color:#fff}.secondary-button{background:#f5e8d5;color:#5a3824}.primary-button:disabled,.secondary-button:disabled{opacity:.55;cursor:not-allowed}.error-message{margin:1rem 0;padding:.8rem 1rem;border-radius:.7rem;background:#ffe5df;color:#9d3324}@media(max-width:580px){.steps{gap:.5rem;font-size:.72rem}.time-grid{grid-template-columns:1fr}.actions{align-items:stretch;flex-direction:column-reverse}.primary-button,.secondary-button{width:100%}}
 </style>

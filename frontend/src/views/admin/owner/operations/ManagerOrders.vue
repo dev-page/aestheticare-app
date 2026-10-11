@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 8, rows: 5 }" class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Customer Orders</h1>
         <p class="text-slate-400">Orders placed through the platform for this branch.</p>
@@ -113,6 +113,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -124,6 +126,8 @@ export default {
   name: 'ManagerOrders',
   components: { OwnerSidebar, Modal },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -142,7 +146,7 @@ export default {
       return String(value)
     }
 
-    const loadOrders = async () => {
+    const loadOrders = trackPageLoad(async () => {
       if (!currentBranchId.value) return
       loading.value = true
       try {
@@ -158,7 +162,7 @@ export default {
       } finally {
         loading.value = false
       }
-    }
+    })
 
     const filteredOrders = computed(() => {
       const keyword = String(search.value || '').trim().toLowerCase()
@@ -186,16 +190,17 @@ export default {
       selectedOrder.value = null
     }
 
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
         const userSnap = await getDoc(doc(db, 'users', user.uid))
         currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
         await loadOrders()
       })
-    })
+    }))
 
     return {
+      pageLoading,
       loading,
       search,
       filteredOrders,

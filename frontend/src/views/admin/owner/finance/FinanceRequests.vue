@@ -1,5 +1,5 @@
 <template>
-  <div class="module-theme min-h-screen bg-slate-900">
+  <div class="module-theme finance-page min-h-screen bg-slate-900">
     <OwnerSidebar />
     <main class="p-4 md:p-8">
       <div class="mx-auto max-w-6xl">

@@ -17,6 +17,7 @@ import {
 export default {
   name: 'AddBranch',
   components: { OwnerSidebar, Modal, Icon, LocationPicker },
+  props: { embedded: { type: Boolean, default: false } },
   setup() {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -610,10 +611,10 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex flex-row owner-theme" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="mx-auto max-w-2xl flex-1 p-6 text-white">
+    <component :is="embedded ? 'div' : 'main'" class="mx-auto w-full max-w-2xl flex-1 text-white" :class="embedded ? '' : 'p-6'">
       <h1 class="mb-6 text-2xl font-bold">Add Branch</h1>
 
       <div class="mx-auto max-w-2xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8">
@@ -757,6 +758,6 @@ export default {
           />
         </div>
       </Modal>
-    </main>
+    </component>
   </div>
 </template>

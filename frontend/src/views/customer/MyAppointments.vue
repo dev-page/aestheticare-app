@@ -1,8 +1,8 @@
 <template>
-  <div class="appointments-shell">
+  <div class="appointments-shell customer-theme">
     <CustomerSidebar />
 
-    <main class="appointments-main">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="appointments-main">
       <div class="appointments-content">
         <section class="appointments-header">
           <div>
@@ -90,7 +90,7 @@
 
         <section v-if="activeAppointmentTab === 'sessions'" class="appointments-panel">
           <div class="panel-head"><div><p class="panel-kicker">Treatment Plan</p><h2 class="panel-title">My Treatment Sessions</h2></div><p class="panel-note">{{ treatmentSessions.length }} session{{ treatmentSessions.length === 1 ? '' : 's' }}</p></div>
-          <div v-if="treatmentSessions.length" class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Status</th></tr></thead><tbody><tr v-for="session in treatmentSessions" :key="session.id"><td>Session {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.date ? `${session.date} ${session.time || ''}` : 'The clinic will schedule this visit.' }}</td><td>{{ session.status }}</td></tr></tbody></table></div>
+<div v-if="treatmentSessions.length" class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead><tbody><tr v-for="session in treatmentSessions" :key="session.id"><td>Session {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.date ? `${session.date} ${session.time || ''}` : session.requestedDate ? `Requested: ${session.requestedDate} ${session.requestedTime || ''}` : session.earliestScheduleDate ? `Eligible from ${session.earliestScheduleDate}` : 'Not scheduled yet' }}</td><td>{{ session.status }}</td><td><button v-if="session.status === 'Schedule Proposed'" type="button" class="appointment-button appointment-button-secondary" @click="confirmSessionSchedule(session)">Confirm proposed date</button><button v-if="canRequestSessionSchedule(session)" type="button" class="appointment-button appointment-button-secondary" @click="openRequestModal('session', session)">{{ session.status === 'Scheduled' ? 'Request reschedule' : 'Request schedule' }}</button><span v-else-if="String(session.status || '').toLowerCase().includes('requested')" class="text-sm text-[#7f6654]">Awaiting clinic review</span><span v-else class="text-sm text-[#7f6654]">{{ session.sessionNumber > 1 ? 'Available after the prior visit is resolved' : '' }}</span></td></tr></tbody></table></div>
           <div v-else class="state-panel">No treatment sessions have been scheduled yet.</div>
         </section>
         <section v-if="activeAppointmentTab === 'online'" class="appointments-panel">
@@ -141,7 +141,8 @@
                       <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id, $event)"><span aria-hidden="true">&#8943;</span></button>
                       <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" :style="actionMenuStyle" role="menu" aria-label="Appointment actions">
                       <p class="appointment-menu-label">Appointment actions</p>
-                      <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => openMeetLink(appt.meetLink))">Join Call</button>
+                      <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => openMeetLink(appt))">Enter waiting room &amp; join call</button>
+                      <button v-if="appt.status === 'Ongoing' && !appt.consultationClientEndedAt" type="button" class="appointment-menu-item" @click="runAction(() => endConsultationParticipation(appt))">End my consultation participation</button>
                       <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => copyMeetLink(appt.meetLink))">Copy Link</button>
                       <button
                         v-if="canRequestCancellation(appt)"
@@ -233,15 +234,9 @@
                       >
                         Confirm Done
                       </button>
-                      <p v-if="appt.serviceKey && initialPaymentReceived(appt)" class="appointment-menu-key">Service key: {{ appt.serviceKey }} — exchange this with your assigned worker.</p>
-                      <button
-                        v-if="appt.serviceKey && initialPaymentReceived(appt) && !appt.customerKeyVerified"
-                        type="button"
-                        class="appointment-menu-item"
-                        @click="runAction(() => verifyServiceKey(appt))"
-                      >
-                        Confirm Service Key
-                      </button>
+                      <p v-if="appt.serviceKey && initialPaymentReceived(appt)" class="appointment-menu-key">Check-in code: {{ appt.serviceKey }} — show this to reception on your appointment day.</p>
+                      <p v-if="appt.treatmentNotes" class="appointment-menu-key">Treatment notes: {{ appt.treatmentNotes }}</p>
+                      <p v-if="appt.aftercareInstructions" class="appointment-menu-key">Aftercare: {{ appt.aftercareInstructions }}</p>
                       <button
                         v-if="canRequestReschedule(appt)"
                         @click="runAction(() => openRequestModal('reschedule', appt))"
@@ -356,13 +351,13 @@
           <div class="request-modal-head">
             <div>
               <p class="request-modal-kicker">
-                {{ requestModal.type === 'cancel' ? 'Cancellation Request' : 'Reschedule Request' }}
+                {{ requestModal.type === 'cancel' ? 'Cancellation Request' : requestModal.type === 'session' ? 'Treatment Session Request' : 'Reschedule Request' }}
               </p>
               <h3 class="request-modal-title">
-                {{ requestModal.type === 'cancel' ? 'Request Appointment Cancellation' : 'Request Appointment Reschedule' }}
+                {{ requestModal.type === 'cancel' ? 'Request Appointment Cancellation' : requestModal.type === 'session' ? 'Request Treatment Session Schedule' : 'Request Appointment Reschedule' }}
               </h3>
               <p class="request-modal-summary">
-                {{ requestModal.appointment ? `${formatAppointmentServices(requestModal.appointment)} - ${requestModal.appointment.date} - ${requestModal.appointment.time}` : '' }}
+                {{ requestModal.appointment ? (requestModal.type === 'session' ? `Session ${requestModal.appointment.sessionNumber} of ${requestModal.appointment.totalSessions}` : `${formatAppointmentServices(requestModal.appointment)} - ${requestModal.appointment.date} - ${requestModal.appointment.time}`) : '' }}
               </p>
             </div>
             <button type="button" class="request-close-button" @click="closeRequestModal">
@@ -377,7 +372,7 @@
               <p class="mt-3">
                 {{ requestModal.type === 'cancel'
                   ? `If approved, the refundable amount will exclude the system commission and the request will be reviewed by clinic staff first.`
-                  : `Reschedule requests must still be approved before the appointment can move to the new date and time.` }}
+                  : `Your preferred time is sent to the clinic for approval. The schedule changes only after the clinic confirms it.` }}
               </p>
             </div>
 
@@ -391,7 +386,7 @@
               ></textarea>
             </div>
 
-            <div v-if="requestModal.type === 'reschedule'" class="request-reschedule-grid">
+            <div v-if="requestModal.type === 'reschedule' || requestModal.type === 'session'" class="request-reschedule-grid">
               <div class="request-card">
                 <div class="request-card-head">
                   <button
@@ -507,7 +502,7 @@
                   class="request-button request-button-primary"
                   @click="submitRequest"
                 >
-                  {{ requestModal.type === 'cancel' ? 'Submit Cancellation' : 'Submit Reschedule' }}
+                  {{ requestModal.type === 'cancel' ? 'Submit Cancellation' : requestModal.type === 'session' ? 'Submit Schedule Request' : 'Submit Reschedule' }}
                 </button>
               </div>
             </div>
@@ -532,6 +527,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { paymentDue, initialPaymentReceived } from '../../../../backend/otp-backend/bookingWorkflow.js'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { auth, db } from '@/config/firebaseConfig'
@@ -546,6 +543,8 @@ import { toast } from 'vue3-toastify'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import BookingContractModal from '@/components/BookingContractModal.vue'
 import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const loading = ref(true)
 const router = useRouter()
@@ -736,7 +735,7 @@ const getAppointmentDurationMinutes = (appointment) => {
 
 const buildBlockedRanges = (appointmentList = [], options = {}) => {
   const blocked = new Map()
-  const blockingStatuses = new Set(['scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
+  const blockingStatuses = new Set(['checked in', 'scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
   const skipAppointmentId = String(options.skipAppointmentId || '').trim()
 
   appointmentList.forEach((appointment) => {
@@ -786,7 +785,7 @@ const requestCalendarMonthLabel = computed(() =>
 )
 
 const requestAvailableSlots = computed(() => {
-  if (requestModal.value.type !== 'reschedule' || !requestModal.value.open) return []
+  if (!['reschedule', 'session'].includes(requestModal.value.type) || !requestModal.value.open) return []
   if (!requestAssignedPractitionerId.value || !requestBranchId.value) return []
   if (!requestModalSchedules.value || !Object.keys(requestModalSchedules.value).length) return []
 
@@ -806,6 +805,8 @@ const requestAvailableSlots = computed(() => {
     const date = new Date(today)
     date.setDate(today.getDate() + offset)
     const dateKey = toDateInput(date)
+    const earliestScheduleDate = String(requestModal.value.appointment?.earliestScheduleDate || '').trim()
+    if (earliestScheduleDate && dateKey < earliestScheduleDate) continue
     const onApprovedLeave = requestModalLeaves.value.some((leave) =>
       leave.startDate <= dateKey && dateKey <= leave.endDate
     )
@@ -968,7 +969,7 @@ const resetRequestModalState = () => {
   requestModalReservations.value = []
 }
 
-const loadRescheduleAvailability = async (appointment, { autoSelect = true } = {}) => {
+const loadRescheduleAvailability = trackPageLoad(async (appointment, { autoSelect = true } = {}) => {
   const loadSeq = ++requestModalLoadSeq.value
   const branchId = String(appointment?.branchId || '').trim()
   const practitionerId = String(appointment?.assignedPractitionerId || appointment?.practitionerId || '').trim()
@@ -1052,7 +1053,7 @@ const loadRescheduleAvailability = async (appointment, { autoSelect = true } = {
   } finally {
     requestModal.value.loadingAvailability = false
   }
-}
+})
 
 const formatAppointmentServices = (appointment) => {
   if (Array.isArray(appointment?.services) && appointment.services.length) {
@@ -1206,10 +1207,20 @@ const bookFollowUp = (appointment) => {
   }).catch(() => {})
 }
 
-const openMeetLink = (meetLink) => {
-  const url = String(meetLink || '').trim()
+const openMeetLink = async (appointment) => {
+  const url = String(appointment.meetLink || '').trim()
   if (!url) return
-  window.open(url, '_blank', 'noopener,noreferrer')
+  const callWindow = window.open('about:blank', '_blank')
+  try {
+    await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/transition`, { action: 'join_consultation' })
+    if (callWindow) { callWindow.opener = null; callWindow.location.href = url }
+    else toast.info('Waiting room entered. Use Copy Link to open your call.')
+  } catch (error) { callWindow?.close(); toast.error(error.message) }
+}
+const endConsultationParticipation = async appointment => {
+  if (!window.confirm('Record that you have finished participating? Close the meeting tab to leave the call.')) return
+  try { await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/transition`, { action: 'client_end_consultation' }); toast.success('Your end time was recorded. The practitioner must still submit the consultation notes.') }
+  catch (error) { toast.error(error.message) }
 }
 
 const copyMeetLink = async (meetLink) => {
@@ -1291,6 +1302,7 @@ const isRequestPending = (appt, kind) => {
 }
 
 const canRequestCancellation = (appointment) => {
+  if (appointment.isGroupParent || appointment.isBookingOrderParent) return false
   const clinic = clinicsById.value[appointment?.branchId] || {}
   const status = normalizeAppointmentStatus(appointment?.status)
   return Boolean(appointment?.id)
@@ -1301,6 +1313,7 @@ const canRequestCancellation = (appointment) => {
 }
 
 const canRequestReschedule = (appointment) => {
+  if (appointment.isGroupParent || appointment.isBookingOrderParent || appointment.treatmentPlanAppointmentId) return false
   const clinic = clinicsById.value[appointment?.branchId] || {}
   const status = normalizeAppointmentStatus(appointment?.status)
   return Boolean(appointment?.id)
@@ -1308,6 +1321,24 @@ const canRequestReschedule = (appointment) => {
     && Boolean(String(clinic.reschedulePolicy || '').trim())
     && !['cancelled', 'completed', 'no-show'].includes(status)
     && toDateTime(appointment?.date, appointment?.time) >= new Date()
+}
+
+const canRequestSessionSchedule = (session) => {
+  const status = String(session?.status || '').trim().toLowerCase()
+  if (!session?.id || ['schedule requested', 'reschedule requested', 'completed', 'forfeited'].includes(status)) return false
+  // The API repeats this check so the UI can never bypass the sequential plan.
+  if (Number(session?.sessionNumber || 1) > 1) {
+    const previous = treatmentSessions.value.find((item) =>
+      item.treatmentPlanAppointmentId === session.treatmentPlanAppointmentId
+      && Number(item.sessionNumber || 0) === Number(session.sessionNumber || 1) - 1
+    )
+    if (!previous || !['completed', 'forfeited'].includes(String(previous.status || '').trim().toLowerCase())) return false
+  }
+  return ['unscheduled', 'scheduled', 'schedule proposed', 'reschedule eligible'].includes(status)
+}
+const confirmSessionSchedule = async session => {
+  try { await postAppointmentAction(session.id, `/treatment-sessions/${session.id}/confirm`, {}); toast.success('Schedule confirmed. Your appointment code will be emailed to you.') }
+  catch (error) { toast.error(error.message) }
 }
 
 const openRequestModal = async (type, appt) => {
@@ -1319,12 +1350,12 @@ const openRequestModal = async (type, appt) => {
     requestedDate: '',
     requestedTime: '',
     requestedSlotKey: '',
-    loadingAvailability: type === 'reschedule',
+    loadingAvailability: type === 'reschedule' || type === 'session',
     availabilityError: '',
     calendarMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   }
 
-  if (type === 'reschedule') {
+  if (type === 'reschedule' || type === 'session') {
     await loadRescheduleAvailability(appt, { autoSelect: true })
   }
 }
@@ -1349,8 +1380,8 @@ const startAppointmentsListener = (userId) => {
   }
 
   const appointmentsQuery = query(collection(db, 'appointments'), where('customerId', '==', userId))
-  unsubscribeAppointments = onSnapshot(
-    appointmentsQuery,
+  unsubscribeAppointments = pageListener(
+    onSnapshot, appointmentsQuery,
     async (snapshot) => {
       const clinicMap = new Map(Object.entries(clinicsById.value).map(([id, data]) => [id, data]))
       const now = new Date()
@@ -1400,7 +1431,7 @@ const startAppointmentsListener = (userId) => {
 const startTreatmentSessionsListener = (userId) => {
   if (unsubscribeTreatmentSessions) unsubscribeTreatmentSessions()
   if (!userId) { treatmentSessions.value = []; return }
-  unsubscribeTreatmentSessions = onSnapshot(query(collection(db, 'treatmentSessions'), where('customerId', '==', userId)), (snapshot) => {
+  unsubscribeTreatmentSessions = pageListener(onSnapshot, query(collection(db, 'treatmentSessions'), where('customerId', '==', userId)), (snapshot) => {
     treatmentSessions.value = snapshot.docs.map((snap) => ({ id: snap.id, ...(snap.data() || {}) })).sort((a, b) => Number(a.sessionNumber || 0) - Number(b.sessionNumber || 0))
   }, () => { treatmentSessions.value = [] })
 }
@@ -1414,8 +1445,8 @@ const startClinicsListener = () => {
   // Public clinic reads must be constrained to the field required by the
   // Firestore rule. Historical appointments still fall back to “Clinic” when
   // their former clinic is no longer published.
-  unsubscribeClinics = onSnapshot(
-    query(collection(db, 'clinics'), where('isPublished', '==', true)),
+  unsubscribeClinics = pageListener(
+    onSnapshot, query(collection(db, 'clinics'), where('isPublished', '==', true)),
     (snapshot) => {
       const clinicMap = new Map()
       sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))).forEach((data) => {
@@ -1498,6 +1529,17 @@ const submitRequest = async () => {
       return
     }
 
+    if (requestModal.value.type === 'session') {
+      await postAppointmentAction(appt.id, `/treatment-sessions/${appt.id}/request-schedule`, {
+        date: requestModal.value.requestedDate,
+        time: requestModal.value.requestedTime,
+        reason,
+      })
+      toast.success('Your treatment-session request was sent to the clinic.')
+      closeRequestModal()
+      return
+    }
+
     await updateDoc(doc(db, 'appointments', appt.id), {
       status: 'Reschedule Requested',
       requestedDate: requestModal.value.requestedDate,
@@ -1543,6 +1585,7 @@ const contractsToSign = computed(() => upcomingAppointments.value.filter(appoint
 ))
 
 const canPayAppointment = (appointment) => {
+  if (appointment.paymentManagedByOrganizer && !appointment.isBookingOrderParent && !appointment.isGroupParent) return false
   const status = normalizeAppointmentStatus(appointment?.status)
   if (normalizeAppointmentStatus(appointment?.contract?.status) !== 'signed') return false
   return status === 'awaiting payment' || status === 'payment pending' || status === 'approved' || status === 'balance due'
@@ -1747,9 +1790,9 @@ const handlePaymentReturn = async (user) => {
   }
 }
 
-onMounted(() => {
+onMounted(trackPageLoad(() => {
   startClinicsListener()
-  unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+  unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
     if (!user) {
       upcomingAppointments.value = []
       pastAppointments.value = []
@@ -1761,7 +1804,7 @@ onMounted(() => {
     startTreatmentSessionsListener(user.uid)
     await handlePaymentReturn(user)
   })
-})
+}))
 
 onUnmounted(() => {
   if (unsubscribeAppointments) unsubscribeAppointments()

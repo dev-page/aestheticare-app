@@ -1,0 +1,3 @@
+.page-is-loading { position: relative; }
+.page-is-loading > :not(.page-skeleton-overlay) { visibility: hidden !important; }
+.page-skeleton-overlay { position: absolute; top: 0; left: 0; right: 0; padding: inherit; pointer-events: none; }

@@ -17,7 +17,7 @@
 
     <div class="flex flex-1 min-w-0">
       <component :is="sidebarComponent" v-if="sidebarComponent" />
-      <main :class="isModuleView ? 'notifications-main notifications-main-module' : 'notifications-main'">
+      <main v-page-loading="{ active: pageLoading, variant: 'list', rows: 6 }" :class="isModuleView ? 'notifications-main notifications-main-module' : 'notifications-main'">
         <div class="notifications-content">
           <div :class="isModuleView ? 'notifications-header notifications-header-module' : 'notifications-header'">
             <h1 :class="isModuleView ? 'notifications-title notifications-title-module' : 'notifications-title'">Notifications</h1>
@@ -141,6 +141,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
@@ -173,6 +175,8 @@ export default {
     SuperAdminSidebar
   },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const router = useRouter()
     const { activePlan, isExpired, initSubscription } = useSubscription()
 
@@ -281,8 +285,8 @@ export default {
       const baseQuery = (filters) =>
         query(collection(db, 'notifications'), ...filters)
 
-      unsubscribeUser = onSnapshot(
-        baseQuery([where('recipientUserId', '==', userId)]),
+      unsubscribeUser = pageListener(
+        onSnapshot, baseQuery([where('recipientUserId', '==', userId)]),
         (snapshot) => {
           userDocsCache.value = snapshot.docs.map((docSnap) => {
             const data = docSnap.data() || {}
@@ -305,8 +309,8 @@ export default {
       )
 
       if (roleValue && (branchId || roleValue === 'Superadmin')) {
-        unsubscribeRole = onSnapshot(
-        baseQuery([where('recipientRole', '==', roleValue), ...(roleValue === 'Superadmin' ? [] : [where('branchId', '==', branchId)])]),
+        unsubscribeRole = pageListener(
+        onSnapshot, baseQuery([where('recipientRole', '==', roleValue), ...(roleValue === 'Superadmin' ? [] : [where('branchId', '==', branchId)])]),
         (snapshot) => {
           roleDocsCache.value = snapshot.docs.map((docSnap) => {
             const data = docSnap.data() || {}
@@ -421,7 +425,7 @@ export default {
       selectedIds.value = []
     }
 
-    onMounted(() => {
+    onMounted(trackPageLoad(() => {
       initSubscription()
       syncSidebarCollapsed()
       sidebarHandler.value = (event) => {
@@ -432,7 +436,7 @@ export default {
       }
       window.addEventListener('sidebar-collapsed-change', sidebarHandler.value)
 
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
         currentUserId.value = user.uid
         const userSnap = await getDoc(doc(db, 'users', user.uid))
@@ -467,7 +471,7 @@ export default {
         else roleKey = String(data.role || '').trim()
         startNotificationsListener(user.uid, roleKey, data.branchId || ((roleKey) === 'Owner' ? user.uid : ''))
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
@@ -479,6 +483,7 @@ export default {
     })
 
     return {
+      pageLoading,
       notifications,
       loading,
       error,

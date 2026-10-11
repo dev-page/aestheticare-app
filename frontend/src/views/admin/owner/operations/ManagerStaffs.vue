@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="flex-1 p-4 md:p-8">
       <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Records</h1>
       <p class="text-slate-400 mb-6">Employees under your assigned branch</p>
 
@@ -46,6 +46,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -57,6 +59,8 @@ export default {
   name: 'ManagerStaffs',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -64,7 +68,7 @@ export default {
     const currentUserId = ref('')
     const currentBranchId = ref('')
 
-    const loadStaffList = async () => {
+    const loadStaffList = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         staffList.value = []
         return
@@ -79,10 +83,10 @@ export default {
       staffList.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .filter((staff) => staff.id !== currentUserId.value && !staff.archived)
-    }
+    })
 
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
@@ -96,9 +100,10 @@ export default {
 
         await loadStaffList()
       })
-    })
+    }))
 
-    return { staffList }
+    return {
+      pageLoading, staffList }
   }
 }
 </script>

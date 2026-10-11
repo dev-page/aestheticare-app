@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 4, panels: 2 }" class="flex-1 p-8">
       <DashboardSkeleton v-if="loading" />
       <div v-else>
       <div class="mb-8">
@@ -162,6 +162,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -177,6 +179,8 @@ export default {
   name: 'ManagerDashboard',
   components: { OwnerSidebar, DashboardSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -274,7 +278,7 @@ export default {
       return `${yyyy}-${mm}-${dd}`
     }
 
-    const loadCurrentUserShift = async (profile = {}) => {
+    const loadCurrentUserShift = trackPageLoad(async (profile = {}) => {
       const fallbackShift =
         String(profile.shiftStart || '').trim() && String(profile.shiftEnd || '').trim()
           ? `${profile.shiftStart} - ${profile.shiftEnd}`
@@ -297,10 +301,10 @@ export default {
         weeklyShiftAssignments.value = daysOfWeek.map((day) => ({ day, shift: 'Off' }))
         todayShiftLabel.value = fallbackShift
       }
-    }
+    })
 
 
-    const loadManagerData = async () => {
+    const loadManagerData = trackPageLoad(async () => {
       if (!currentBranchId.value || !currentUserId.value) return
 
       const staffQuery = query(
@@ -339,12 +343,12 @@ export default {
           ...activity,
           time: activity.createdAt?.toDate?.().toLocaleString() || 'Unknown time'
         }))
-    }
+    })
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
@@ -378,13 +382,14 @@ export default {
         await loadManagerData()
         loading.value = false
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
     })
 
     return {
+      pageLoading,
       loading,
       totalStaff,
       activeStaff,

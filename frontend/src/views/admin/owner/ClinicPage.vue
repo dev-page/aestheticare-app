@@ -2,7 +2,7 @@
   <div class="flex owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 4, sections: 2 }" class="flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-1">Clinic Page</h1>
@@ -29,7 +29,7 @@
         </div>
       </div>
 
-      <OwnerPageSkeleton v-if="loading" />
+      <OwnerPageSkeleton v-if="loading" variant="profile" />
 
       <div v-else-if="!selectedBranch" class="bg-slate-800 rounded-xl border border-slate-700 p-8 text-slate-300">
         No branches found for this owner account.
@@ -388,6 +388,9 @@
 </template>
 
 <script>
+import { serviceOnlyClinicPolicies } from '@/utils/clinicPolicies'
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -404,6 +407,8 @@ export default {
   name: 'ClinicPage',
   components: { OwnerSidebar, OwnerPageSkeleton, Icon },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const { isExpired, initSubscription } = useSubscription()
 
@@ -509,9 +514,6 @@ export default {
       { key: 'reschedulePolicy', enabledKey: 'reschedulePolicyEnabled', label: 'Rescheduling Policy', category: 'Services', icon: 'mdi:calendar-sync-outline', iconClass: 'border-sky-500/35 bg-sky-500/10 text-sky-300' },
       { key: 'noShowPolicy', enabledKey: 'noShowPolicyEnabled', label: 'No-Show Policy', category: 'Services', icon: 'mdi:account-clock-outline', iconClass: 'border-amber-500/35 bg-amber-500/10 text-amber-300' },
       { key: 'consultationPolicy', enabledKey: 'consultationPolicyEnabled', label: 'Consultation Policy', category: 'Services', icon: 'mdi:stethoscope', iconClass: 'border-violet-500/35 bg-violet-500/10 text-violet-300' },
-      { key: 'deliveryPolicy', enabledKey: 'deliveryPolicyEnabled', label: 'Pickup & Payment Policy', category: 'Products', icon: 'mdi:shopping-outline', iconClass: 'border-teal-500/35 bg-teal-500/10 text-teal-300' },
-      { key: 'productOrderCancellationPolicy', enabledKey: 'productOrderCancellationPolicyEnabled', label: 'Order Cancellation Policy', category: 'Products', icon: 'mdi:package-variant-remove', iconClass: 'border-orange-500/35 bg-orange-500/10 text-orange-300' },
-      { key: 'productReturnPolicy', enabledKey: 'productReturnPolicyEnabled', label: 'Product Return Policy', category: 'Products', icon: 'mdi:package-variant-closed-return', iconClass: 'border-indigo-500/35 bg-indigo-500/10 text-indigo-300' },
       { key: 'walkInPolicy', enabledKey: 'walkInPolicyEnabled', label: 'Walk-In Policy', category: 'Walk-In', icon: 'mdi:walk', iconClass: 'border-cyan-500/35 bg-cyan-500/10 text-cyan-300' }
     ]
 
@@ -827,7 +829,7 @@ export default {
       editForm.value.services.splice(index, 1)
     }
 
-    const loadBranchPostsAndReviews = async (branchId) => {
+    const loadBranchPostsAndReviews = trackPageLoad(async (branchId) => {
       if (!branchId) {
         products.value = []
         reviews.value = []
@@ -843,7 +845,7 @@ export default {
       reviews.value = reviewSnapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-    }
+    })
 
     const listenToBranchPolicies = (branchId) => {
       stopPolicyListener?.()
@@ -851,10 +853,10 @@ export default {
       clinicPolicy.value = {}
       if (!branchId) return
 
-      stopPolicyListener = onSnapshot(
-        doc(db, 'clinicPolicies', branchId),
+      stopPolicyListener = pageListener(
+        onSnapshot, doc(db, 'clinicPolicies', branchId),
         (snapshot) => {
-          clinicPolicy.value = snapshot.exists() ? snapshot.data() || {} : {}
+          clinicPolicy.value = snapshot.exists() ? serviceOnlyClinicPolicies(snapshot.data()) : {}
         },
         (error) => {
           console.error('Failed to load clinic policies:', error)
@@ -891,7 +893,7 @@ export default {
       }
     }
 
-    const loadOwnerBranches = async (user) => {
+    const loadOwnerBranches = trackPageLoad(async (user) => {
       loading.value = true
       try {
         ownerEmail.value = user.email || ''
@@ -971,7 +973,7 @@ export default {
           await initBranchMap()
         }
       }
-    }
+    })
 
     const handleProfileUpload = async (event) => {
       const file = event.target.files?.[0]
@@ -1117,8 +1119,8 @@ export default {
     }
 
     let unsubscribeAuth = null
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           loading.value = false
           branches.value = []
@@ -1133,7 +1135,7 @@ export default {
         await initSubscription()
         await loadOwnerBranches(user)
       })
-    })
+    }))
 
     watch([selectedBranchId, activeTab], async () => {
       await nextTick()
@@ -1156,6 +1158,7 @@ export default {
     })
 
     return {
+      pageLoading,
       loading,
       branches,
       selectedBranchId,

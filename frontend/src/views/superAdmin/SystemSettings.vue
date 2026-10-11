@@ -1,7 +1,7 @@
 <template>
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'settings', fields: 4, sections: 3 }" class="flex-1 p-8">
       <div class="mb-6">
         <h1 class="text-3xl font-bold text-white mb-2">System Settings</h1>
         <p class="text-slate-400">Global system settings, maintenance windows, and announcements.</p>
@@ -60,6 +60,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, onUnmounted } from 'vue'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { db } from '@/config/firebaseConfig'
@@ -70,6 +72,8 @@ export default {
   name: 'SystemSettings',
   components: { SuperAdminSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const date = ref(new Date().toISOString().slice(0,10))
     const time = ref('00:00')
     const message = ref('')
@@ -107,7 +111,7 @@ export default {
       loading.value = true
       announcements.value = []
       const q = query(collection(db, 'systemAnnouncements'), orderBy('createdAt','desc'))
-      unsubscribeAnnouncements = onSnapshot(q, (snap) => {
+      unsubscribeAnnouncements = pageListener(onSnapshot, q, (snap) => {
         const rows = []
         snap.forEach((d) => {
           const data = d.data() || {}
@@ -124,7 +128,8 @@ export default {
     onMounted(loadAnnouncements)
     onUnmounted(() => unsubscribeAnnouncements?.())
 
-    return { date, time, message, notifyByEmail, publish, loading, announcements }
+    return {
+      pageLoading, date, time, message, notifyByEmail, publish, loading, announcements }
   }
 }
 </script>

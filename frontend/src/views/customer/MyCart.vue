@@ -1,5 +1,5 @@
 <template>
-  <div class="cart-shell">
+  <div class="cart-shell customer-theme">
     <CustomerSidebar />
 
     <main class="cart-main">

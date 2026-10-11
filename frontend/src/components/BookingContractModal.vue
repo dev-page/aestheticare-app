@@ -7,21 +7,22 @@
           <h3 id="booking-contract-title">{{ title || 'Booking Contract' }}</h3>
           <p v-if="canSign" class="contract-intro">Review the agreement, draw your signature, and confirm. {{ isWalkIn ? 'The client must sign before treatment can start.' : 'Payment becomes available after signing.' }}</p>
         </div>
-        <span class="contract-status" :class="{ 'contract-status-signed': contract?.status === 'signed' }">{{ contract?.status === 'signed' ? 'Signed' : 'Awaiting signature' }}</span>
+        <div class="contract-header-actions">
+          <span class="contract-status" :class="{ 'contract-status-signed': contract?.status === 'signed' }">{{ contract?.status === 'signed' ? 'Signed' : 'Awaiting signature' }}</span>
+          <button type="button" class="contract-close" aria-label="Close contract" title="Close contract" @click="close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" /></svg>
+          </button>
+        </div>
       </header>
 
       <div class="space-y-3">
         <p v-if="isWalkIn && appointment.paymentStatus !== 'Paid'" class="contract-warning">Collect payment at POS first. The client can then sign here before treatment.</p>
         <section v-if="contract?.terms" class="contract-document">
           <div class="contract-step"><span>1</span><div><h4>Review agreement</h4><p>Please read the terms before signing.</p></div></div>
-          <p class="contract-terms">{{ contract.terms }}</p>
+          <ClientContractDocument v-if="contract.document" class="contract-terms styled-contract" :document="contract.document" />
+          <p v-else class="contract-terms">{{ contract.terms }}</p>
         </section>
-        <div class="contract-field">
-          <label>Contract title</label>
-          <input :readonly="isCustomer || isWalkIn" v-model="title" type="text" />
-        </div>
-
-        <div v-if="!isCustomer && !isWalkIn" class="contract-field">
+        <div v-if="!readOnly && !isCustomer && !isWalkIn" class="contract-field">
           <label>Contract PDF link <span>(optional)</span></label>
           <input :readonly="isCustomer" v-model="templateUrl" type="text" placeholder="https://... or gs://..." />
           <p>Attach a public link only when the clinic has a PDF agreement. The booking customer is the contract signer.</p>
@@ -36,10 +37,9 @@
             <span>I have read and agree to this contract and confirm that the signature above is mine.</span>
           </label>
         </section>
-        <div class="contract-actions">
-          <button v-if="!isCustomer" @click="createContract" :disabled="isProcessing" class="contract-button contract-button-secondary">Create / Update</button>
+        <div v-if="(!readOnly && !isCustomer) || canSign" class="contract-actions">
+          <button v-if="!readOnly && !isCustomer" @click="createContract" :disabled="isProcessing" class="contract-button contract-button-secondary">Create / Update</button>
           <button v-if="canSign" @click="signContract" :disabled="isProcessing || !accepted || !signatureImage" class="contract-button contract-button-primary">{{ isProcessing ? 'Saving signature...' : 'Confirm signature' }}</button>
-          <button @click="close" class="contract-button contract-button-plain">Close</button>
         </div>
 
         <div v-if="contract" class="signature-record">
@@ -50,6 +50,8 @@
           <div class="mt-2">
             <img v-for="(sig, signerId) in contract.signatures || {}" v-show="sig.signatureImage" :key="`image-${signerId}`" :src="sig.signatureImage" alt="Customer electronic signature" class="signature-preview" />
             <p class="contract-record-title">Signatures</p>
+            <p v-if="!Object.values(contract.signatures || {}).some(sig => sig.signatureImage)" class="contract-record-line">No electronic signature image was recorded for this agreement.</p>
+            <p v-if="contract.guestConsent" class="contract-record-line">Individual consent accepted by {{ contract.guestConsent.name || 'the recipient' }}.</p>
             <ul class="contract-signer-list">
               <li v-for="(sig, uid) in contract.signatures || {}" :key="uid">{{ sig.name || sig.email }} — {{ sig.signedAt ? new Date(sig.signedAt).toLocaleString() : 'Not signed' }}</li>
             </ul>
@@ -68,13 +70,15 @@ import { ref, watch, computed } from 'vue'
 import { getAuth } from 'firebase/auth'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import ElectronicSignaturePad from '@/components/common/ElectronicSignaturePad.vue'
+import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
 
 export default {
   name: 'BookingContractModal',
-  components: { ElectronicSignaturePad },
+  components: { ElectronicSignaturePad, ClientContractDocument },
   props: {
     visible: { type: Boolean, default: false },
-    appointment: { type: Object, default: null }
+    appointment: { type: Object, default: null },
+    readOnly: { type: Boolean, default: false }
   },
   emits: ['close', 'updated'],
   setup(props, { emit }) {
@@ -148,6 +152,7 @@ export default {
     const isWalkIn = computed(() => props.appointment?.source === 'walk_in')
     const isCustomer = computed(() => props.appointment?.customerId === auth.currentUser?.uid)
     const canSign = computed(() => {
+      if (props.readOnly) return false
       if (isWalkIn.value) return Boolean(auth.currentUser && contract.value && contract.value.status !== 'signed' && props.appointment.paymentStatus === 'Paid')
       if (!isCustomer.value || contract.value?.status === 'signed') return false
       if (!auth.currentUser || !contract.value) return false
@@ -197,6 +202,12 @@ export default {
 </script>
 
 <style scoped>
+.styled-contract { white-space: normal; max-height: 24rem; }
+.contract-header-actions { display: flex; align-items: center; gap: .65rem; flex-shrink: 0; }
+.contract-close { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; flex-shrink: 0; border: 1px solid #e7cda5; border-radius: .6rem; background: #fffaf4; color: #725d4d; cursor: pointer; }
+.contract-close svg { width: 1.15rem; height: 1.15rem; }
+.contract-close:hover { background: #f4e7d6; color: #3d281d; }
+.contract-close:focus-visible { outline: 2px solid #a56639; outline-offset: 3px; }
 .contract-modal-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(36, 20, 10, .54); backdrop-filter: blur(3px); }
 .contract-modal { width: 100%; max-width: 48rem; max-height: 90vh; overflow-y: auto; border: 1px solid #e7cda5; border-radius: 1rem; background: #fffaf4; color: #2f1d14; box-shadow: 0 25px 70px rgba(48, 25, 11, .28); }
 .contract-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.5rem 1.5rem 1.25rem; border-bottom: 1px solid #efdec8; }.contract-kicker { margin: 0 0 .25rem; color: #9a6340; font-size: .72rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }.contract-modal h3 { margin: 0; font-size: 1.35rem; font-weight: 750; }.contract-intro { max-width: 35rem; margin: .5rem 0 0; color: #70594a; font-size: .88rem; line-height: 1.5; }.contract-status { flex: none; border-radius: 999px; padding: .4rem .65rem; background: #f4e7d6; color: #805432; font-size: .74rem; font-weight: 700; }.contract-status-signed { background: #e2f3e7; color: #21643a; }

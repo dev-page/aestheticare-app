@@ -1,8 +1,8 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
+  <div class="flex module-theme finance-page bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'report', cards: 4 }" class="flex-1 p-8">
       <div class="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Finance Reports</h1>
@@ -136,6 +136,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -148,6 +150,8 @@ export default {
   name: 'FinanceReports',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasFeature, initSubscription } = useSubscription()
@@ -252,7 +256,7 @@ export default {
       return Object.values(grouped).sort((a, b) => b.total - a.total)
     })
 
-    const loadData = async () => {
+    const loadData = trackPageLoad(async () => {
       if (!currentBranchId.value) return
       const payrollRequest = hasPayroll.value
         ? getDocs(query(collection(db, 'payrollSummaries'), where('branchId', '==', currentBranchId.value)))
@@ -272,13 +276,13 @@ export default {
       users.value = usersSnap.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .filter((user) => !user.archived)
-    }
+    })
 
     let unsubscribeAuth = null
 
-    onMounted(async () => {
+    onMounted(trackPageLoad(async () => {
       await initSubscription()
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentBranchId.value = ''
           transactions.value = []
@@ -299,13 +303,14 @@ export default {
 
         await loadData()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
     })
 
     return {
+      pageLoading,
       selectedMonth,
       report,
       salesByStaff,

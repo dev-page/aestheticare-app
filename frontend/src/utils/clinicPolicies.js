@@ -1,3 +1,5 @@
+import { serviceOnlyClinicPolicies } from '../../../shared/clinicPolicyContent.js'
+export { isProductOrderPolicyKey, walkInServicePolicy, serviceOnlyClinicPolicies } from '../../../shared/clinicPolicyContent.js'
 import { doc, getDoc } from 'firebase/firestore'
 
 // Policy configuration is clinic-wide. The branch is used only to resolve the
@@ -12,7 +14,7 @@ export const getClinicPolicyForBranch = async (db, branchId, knownClinic = null)
   }
   const ownerId = String(clinic.ownerId || clinic.organizationOwnerId || '').trim()
   const applyBranchLinks = (sourcePolicy) => {
-    const policy = { ...(sourcePolicy || {}) }
+    const policy = serviceOnlyClinicPolicies(sourcePolicy)
     if (!Array.isArray(clinic?.enforcedPolicyKeys)) return policy
     const linked = new Set(clinic.enforcedPolicyKeys.map((key) => String(key || '').trim()))
     const definitions = [
@@ -20,9 +22,6 @@ export const getClinicPolicyForBranch = async (db, branchId, knownClinic = null)
       ['cancellationPolicy', ['cancellationPolicyEnabled', 'serviceCancellationPolicyEnabled', 'refundPolicyEnabled']],
       ['reschedulePolicy', ['reschedulePolicyEnabled', 'serviceReschedulingPolicyEnabled']],
       ['noShowPolicy', ['noShowPolicyEnabled', 'serviceNoShowPolicyEnabled']],
-      ['deliveryPolicy', ['deliveryPolicyEnabled', 'productDeliveryPaymentPolicyEnabled']],
-      ['productOrderCancellationPolicy', ['productOrderCancellationPolicyEnabled', 'productCancellationPolicyEnabled']],
-      ['productReturnPolicy', ['productReturnPolicyEnabled', 'productTermsEnabled']],
       ['walkInPolicy', ['walkInPolicyEnabled']],
     ]
     definitions.forEach(([key, enabledKeys]) => {

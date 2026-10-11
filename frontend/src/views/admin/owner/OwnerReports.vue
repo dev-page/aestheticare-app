@@ -2,7 +2,7 @@
   <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar class="w-full md:w-64 flex-shrink-0" />
 
-    <main class="flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'report', cards: 4 }" class="flex-1 p-4 md:p-8">
       <div class="mb-6 md:mb-8">
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1 md:mb-2">Reports & Analytics</h1>
         <p class="text-slate-400 text-sm md:text-base">View detailed performance metrics for branches, employees, and revenue</p>
@@ -66,6 +66,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore'
@@ -79,6 +81,8 @@ export default {
   name: 'OwnerReports',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
 
     const totalBranches = ref(0)
@@ -101,7 +105,7 @@ export default {
       return chunks
     }
 
-    const loadOwnerData = async (user) => {
+    const loadOwnerData = trackPageLoad(async (user) => {
       const scope = await loadOwnerBranchScope(db, user.uid)
       const branchData = await loadClinicDocsByIds(db, scope.branchIds?.length ? scope.branchIds : [scope.branchId || ''])
 
@@ -136,11 +140,11 @@ export default {
       activityLogs.value = activitySnapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-    }
+    })
 
     let unsubscribeAuth = null
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           totalBranches.value = 0
           totalEmployees.value = 0
@@ -151,13 +155,14 @@ export default {
         }
         await loadOwnerData(user)
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) unsubscribeAuth()
     })
 
     return {
+      pageLoading,
       totalBranches,
       totalEmployees,
       monthlyRevenue,

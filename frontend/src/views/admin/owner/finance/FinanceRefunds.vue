@@ -1,8 +1,8 @@
 <template>
-  <div class="flex module-theme min-h-screen bg-slate-900">
+  <div class="flex module-theme finance-page min-h-screen bg-slate-900">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 8, rows: 5 }" class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Refund Management</h1>
         <p class="text-slate-400">Review customer refunds for orders, appointments, and services.</p>
@@ -53,7 +53,7 @@
                   class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white transition hover:bg-slate-600"
                   @click="loadData"
                 >
-                  Refresh
+                  <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
                 </button>
               </div>
             </div>
@@ -348,6 +348,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
@@ -374,6 +376,8 @@ export default {
   name: 'FinanceRefunds',
   components: { OwnerSidebar, PageSectionSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasPermission } = usePermissions()
@@ -493,7 +497,7 @@ export default {
       branchMap.value = branchId ? { [branchId]: String(userData.clinicBranch || 'Branch').trim() } : {}
     }
 
-    const loadData = async () => {
+    const loadData = trackPageLoad(async () => {
       if (!accessibleBranchIds.value.length) {
         orders.value = []
         loading.value = false
@@ -600,7 +604,7 @@ export default {
       } finally {
         loading.value = false
       }
-    }
+    })
 
     const selectOrder = (order) => {
       selectedOrder.value = order
@@ -807,8 +811,8 @@ export default {
       }
     }
 
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentUserId.value = ''
           accessibleBranchIds.value = []
@@ -820,9 +824,10 @@ export default {
         await resolveAccessibleBranches(user)
         await loadData()
       })
-    })
+    }))
 
     return {
+      pageLoading,
       loading,
       issuingRefund,
       orders,

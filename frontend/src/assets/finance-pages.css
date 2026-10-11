@@ -1,0 +1,202 @@
+/* Finance, Logistics, and Purchase Orders share the clinic's light canvas and controls. */
+.listing-approvals-page main .listing-review-heading > p:first-child { color: #a8754e; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.listing-review-heading h1 { margin: 8px 0 10px; }
+.listing-review-intro { color: #8a725f; max-width: 640px; }
+.listing-review-error { padding: 14px 18px; border: 1px solid #e4b7ad; border-radius: 10px; color: #a12d22; background: #fff1ed; }
+.listing-approvals-page main .listing-review-summary article > span { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.listing-approvals-page main .listing-review-summary strong { font-size: 28px; }
+.listing-review-summary article p { margin: 8px 0 0; color: #8a725f; font-size: 12px !important; }
+.review-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.review-dot.is-pending { background: #bd8a40; }
+.review-dot.is-approved { background: #28765c; }
+.review-dot.is-rejected { background: #a12d22; }
+.listing-review-filters { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 18px; padding: 20px; border: 1px solid #ead2b2; border-radius: 14px; background: #fffdf9; }
+.listing-review-filters > label { display: flex; flex-direction: column; gap: 8px; color: #5d4536; font-size: 13px !important; font-weight: 600; }
+.listing-approvals-page main .listing-review-filters input { height: 46px; margin: 0; }
+.listing-approvals-page main .listing-review-filters .appearance-select-trigger { min-height: 46px; font-size: 14px; font-weight: 500; padding: 11px 14px; border-radius: 9px; }
+.listing-approvals-page main .listing-review-filters .appearance-select-trigger[aria-expanded=true] { border-color: #b78055; background: #fff8ee; box-shadow: 0 0 0 3px #b7805514; }
+.listing-review-filters .appearance-select-menu { padding: 7px; border-radius: 12px; box-shadow: 0 12px 28px #3d281d1f; }
+.listing-review-filters .appearance-select-menu li { padding: 11px 12px; font-size: 14px; }
+.listing-review-guidance { color: #8a725f; margin: 14px 0 24px; font-size: 13px !important; }
+.listing-review-records { border: 1px solid #ead2b2; border-radius: 14px; background: #fffdf9; overflow: hidden; }
+.listing-review-records-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 20px; }
+.listing-review-records-heading h2 { font-size: 18px; font-weight: 700; }
+.listing-review-records-heading span { color: #8a725f; font-size: 13px; }
+.listing-approvals-page main .listing-review-table-wrap { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+.listing-review-table-wrap table { min-width: 850px; }
+.listing-review-name { min-width: 220px; }
+.listing-review-type { display: inline-block; margin-top: 6px; color: #8a725f; font-size: 12px; }
+.listing-approvals-page main table .listing-review-price { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.listing-review-price small, .listing-review-policy-note { display: block; color: #8a725f; font-size: 12px; margin-top: 6px; }
+.listing-review-status { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #f1ebe4; color: #735039; }
+.listing-review-status.is-approved { background: #e5f2ea; color: #28765c; }
+.listing-review-status.is-pending { background: #f7ead5; color: #886130; }
+.listing-review-status.is-rejected { background: #fbe9e6; color: #a12d22; }
+.listing-review-modal { max-width: 760px; font-family: var(--ac-font-ui); border: 1px solid #ead2b2; border-radius: 16px; }
+.listing-review-modal-heading p { margin-bottom: 6px; color: #a8754e; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.listing-review-modal-heading h2 { color: #3d281d; font-size: 22px; font-weight: 700; overflow-wrap: anywhere; }
+.listing-review-modal .listing-review-modal-body { padding: 24px; }
+.listing-review-modal-content { display: grid; gap: 24px; }
+.listing-review-modal-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffaf4; }
+.listing-review-modal-overview dt { margin-bottom: 6px; color: #8a725f; font-size: 12px; }
+.listing-review-modal-overview dd { color: #3d281d; font-size: 14px; }
+.listing-review-modal-content h3 { margin-bottom: 10px; color: #4f3526; font-size: 15px; font-weight: 700; }
+.listing-review-modal-content section p { white-space: pre-wrap; overflow-wrap: anywhere; color: #5d4536; font-size: 14px; line-height: 1.75; }
+@media (max-width: 540px) { .listing-review-modal .listing-review-modal-body { padding: 16px; }.listing-review-modal-overview { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .listing-review-filters { grid-template-columns: 1fr 1fr; }.listing-review-filters > label { grid-column: 1 / -1; } }
+@media (max-width: 540px) { .listing-review-filters { grid-template-columns: 1fr; padding: 16px; }.listing-review-records-heading { padding: 16px; } }
+.purchase-orders-page main .module-tabs { border-color: #ead2b2; margin-bottom: 24px; }
+.purchase-orders-page main .module-tab { color: #8a725f; }
+.purchase-orders-page main .module-tab:hover, .purchase-orders-page main .module-tab-active { color: #8d5c3c; }
+.purchase-orders-page main .module-tab-active::after { background: #8d5c3c; }
+.purchase-orders-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; }
+.purchase-orders-filters label { display: block; color: #5d4536; font-size: 13px; font-weight: 600; }
+.purchase-orders-filters input { margin-top: 8px; }
+.purchase-orders-page main .purchase-orders-filters .appearance-select label { font-size: 13px; }
+.purchase-orders-page main .module-action span { background: transparent; color: inherit; }
+.purchase-orders-page main .purchase-orders-table-wrap small { display: block; margin-top: 5px; color: #8a725f; font-size: 12px; }
+.purchase-orders-page main .purchase-order-amount { white-space: nowrap; font-weight: 600; font-variant-numeric: tabular-nums; }
+.purchase-orders-status { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.purchase-orders-status.is-negative { background: #fbe9e6; color: #a12d22; }
+.purchase-orders-status.is-positive { background: #e5f2ea; color: #28765c; }
+.purchase-orders-status.is-pending { background: #f7ead5; color: #886130; }
+.purchase-orders-page main .workspace-dialog-close { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; padding: 0; }
+.purchase-orders-page main .fixed.inset-0 section > header { gap: 20px; padding-bottom: 20px; border-bottom: 1px solid #ead2b2; }
+.purchase-orders-page main .fixed.inset-0 dl { padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffaf4; }
+.purchase-orders-page main .fixed.inset-0 dt { margin-bottom: 6px; font-size: 12px; color: #8a725f; }
+.purchase-orders-page main .fixed.inset-0 dd { font-size: 14px; line-height: 1.6; }
+.purchase-orders-page main .fixed.inset-0 h3 { margin-bottom: 12px; color: #4f3526; font-weight: 600; }
+@media (max-width: 1100px) { .purchase-orders-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) { .purchase-orders-filters { grid-template-columns: 1fr; padding: 16px; } }
+.logistics-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; }
+.logistics-filters label { display: block; color: #5d4536; font-size: 13px; font-weight: 600; }
+.logistics-filters input { margin-top: 8px; }
+.logistics-page main .logistics-filters .appearance-select label { font-size: 13px; }
+.logistics-page main .module-action span { background: transparent; color: inherit; }
+.logistics-page main .logistics-status { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.logistics-status.is-negative { background: #fbe9e6; color: #a12d22; }
+.logistics-status.is-positive { background: #e5f2ea; color: #28765c; }
+.logistics-status.is-pending { background: #f7ead5; color: #886130; }
+@media (max-width: 1000px) { .logistics-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) { .logistics-filters { grid-template-columns: 1fr; padding: 16px; } }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) { background: #fffaf4 !important; color: #3d281d; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main { min-width: 0; width: 100%; padding: 28px 32px !important; background: #fffaf4 !important; color: #3d281d !important; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main > .max-w-6xl { max-width: none; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main h1 { font-size: clamp(24px, 2.3vw, 32px); line-height: 1.25; color: #3d281d; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main h2 { color: #4f3526; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main :is(p, td, label, dd) { font-size: 14px; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main > header, :is(.finance-page, .logistics-page, .purchase-orders-page) main > div > header { padding-bottom: 22px; border-bottom: 1px solid #ead2b2; margin-bottom: 24px; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main :is(section, article, div, a)[class*="bg-slate-"] { background: #fffdf9 !important; border-color: #ead2b2 !important; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main :is(.rounded-xl, .rounded-2xl)[class*="bg-slate-"] { box-shadow: 0 3px 14px #6e482b08; border-radius: 14px; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main :is(input:not([type=checkbox]):not([type=radio]), select, textarea) { min-height: 42px; border: 1px solid #dec19e !important; border-radius: 9px; background: #fffdf9 !important; color: #3d281d !important; padding: 10px 12px; font-size: 14px; color-scheme: light; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) select option, .finance-dialog select option { background: #fffdf9; color: #3d281d; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main :is(input, select, textarea):focus-visible { outline: 2px solid #b78055; outline-offset: 2px; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main button { min-height: 38px; padding: 8px 13px; border: 1px solid #dec19e; border-radius: 9px; background: #fffdf9; color: #735039 !important; font-size: 13px; font-weight: 600; transition: background .15s, border-color .15s; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main button:hover:not(:disabled) { background: #f4e7d5; border-color: #b78055; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main button:is([class*="bg-amber-"], [class*="bg-blue-"], [class*="bg-emerald-"], .budget-create) { background: #8d5c3c !important; border-color: #8d5c3c !important; color: #fffaf4 !important; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main button:is([class*="bg-amber-"], [class*="bg-blue-"], [class*="bg-emerald-"], .budget-create):hover:not(:disabled) { background: #70452b !important; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main button:is([class*="bg-red-"], [class*="bg-rose-"]) { background: #fff1ed !important; border-color: #e4b7ad !important; color: #a12d22 !important; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main button:disabled { opacity: .45; cursor: not-allowed; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main button:focus-visible { outline: 2px solid #b78055; outline-offset: 3px; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main table { width: 100%; font-size: 14px; background: #fffdf9 !important; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main table :is(thead, th) { background: #f7ead5 !important; color: #765237 !important; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main table th { padding: 14px 16px; font-size: 11px; font-weight: 700; letter-spacing: .05em; white-space: nowrap; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main table td { padding: 16px; border-bottom: 1px solid #f0dfc9; vertical-align: top; line-height: 1.6; color: #4f3526; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main table tbody tr:last-child td { border-bottom: 0; }
+.module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main table tbody tr:hover { background: #fff6e9 !important; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main table td[colspan] { padding: 44px 20px; text-align: center; color: #8a725f; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main table td strong { display: block; font-weight: 600; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main table td .rounded-full { display: inline-flex; white-space: nowrap; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main details { color: #735039; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main summary { cursor: pointer; font-weight: 600; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main dt { color: #8a725f; font-size: 12px; margin-bottom: 5px; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main dd { color: #3d281d; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .appearance-select { margin: 0; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .finance-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .finance-summary article { padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; }
+.finance-summary span { display: block; color: #8a725f; font-size: 12px; }
+.finance-summary strong { display: block; margin-top: 8px; color: #3d281d; font-size: 24px; font-variant-numeric: tabular-nums; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .finance-filters { padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-page { width: 100%; max-width: none; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-page-heading { border-color: #ead2b2; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-status { display: inline-flex; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-status-active { background: #e5f2ea; color: #28765c; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-status-cancelled { background: #fff1ed; color: #a12d22; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-summary article { padding: 20px; border-color: #ead2b2; border-radius: 12px; background: #fffdf9; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-summary span { font-size: 12px; color: #8a725f; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-summary strong { margin-top: 10px; font-size: 22px; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-records { margin-top: 24px; padding: 24px; border: 1px solid #ead2b2; border-radius: 14px; background: #fffdf9; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; margin: 18px 0; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .finance-status-success { background: #e5f2ea; color: #28765c; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .finance-status-danger { background: #fff1ed; color: #a12d22; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .finance-status-pending { background: #f7ead5; color: #886130; }
+:is(.finance-page, .logistics-page, .purchase-orders-page) main .fixed.inset-0 > :is(section, form, div) { max-height: 90dvh; overflow-y: auto; background: #fffdf9 !important; color: #3d281d !important; }
+/* Shared Modal teleports outside the page, so its Finance panel carries its own scope. */
+.app-modal-panel.finance-dialog { background: #fffdf9 !important; color: #3d281d !important; }
+.finance-dialog :is(.text-white, [class*="text-slate-"]) { color: #5d4536 !important; }
+.finance-dialog :is(section, div)[class*="bg-slate-"] { background: #fff8ee !important; border-color: #ead2b2 !important; }
+.finance-dialog :is(dt, small) { color: #8a725f; }
+.finance-dialog dd { margin-top: 6px; color: #3d281d; }
+.finance-dialog .procurement-modal-body { background: #fffdf9 !important; }
+.finance-dialog .procurement-modal-body dt { color: #8a725f !important; }
+.finance-dialog .procurement-modal-body dd { color: #3d281d !important; }
+/* Purchase order details: readable body text, distinct status, and an itemized list. */
+.app-modal-panel.purchase-order-dialog { max-width: 760px; border: 1px solid #ead2b2 !important; border-radius: 18px; font-family: var(--ac-font-ui, Arial, sans-serif); }
+.purchase-order-dialog > div:first-child { align-items: flex-start; padding: 24px; background: #fffdf9; }
+.purchase-order-dialog > div:first-child > button { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border: 1px solid #ead2b2; border-radius: 9px; background: #fffaf4; color: #8a725f; }
+.purchase-order-dialog > div:first-child > button:hover { background: #f4e7d5; color: #3d281d; }
+.purchase-order-dialog > div:first-child > button:focus-visible { outline: 2px solid #b78055; outline-offset: 2px; }
+.purchase-order-heading { min-width: 0; }
+.purchase-order-heading > p { margin: 0 0 7px; color: #a8754e; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.purchase-order-heading h2 { margin: 0; color: #3d281d; font-size: 22px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.purchase-order-status { display: inline-flex; align-items: center; margin-top: 12px; padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.purchase-order-status.is-negative { background: #fbe9e6; color: #a12d22; }
+.purchase-order-status.is-positive { background: #e5f2ea; color: #28765c; }
+.purchase-order-status.is-pending { background: #f7ead5; color: #886130; }
+.purchase-order-dialog .purchase-order-body { padding: 24px; background: #fffaf4; }
+.purchase-order-content { display: grid; gap: 24px; font-size: 14px; }
+.purchase-order-section h3 { margin: 0 0 16px; color: #4f3526; font-size: 15px; font-weight: 700; }
+.purchase-order-info { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 28px; padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; }
+.purchase-order-info > div { min-width: 0; }
+.purchase-order-info .purchase-order-location { grid-column: 1 / -1; padding-top: 16px; border-top: 1px solid #f0dfc9; }
+.purchase-order-dialog .purchase-order-info dt { color: #8a725f; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.purchase-order-dialog .purchase-order-info dd { margin: 6px 0 0; color: #3d281d; font-size: 14px; font-weight: 500; letter-spacing: 0; line-height: 1.65; overflow-wrap: anywhere; }
+.purchase-order-supplies-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.purchase-order-supplies-heading > span { color: #8a725f; font-size: 12px; }
+.purchase-order-table-wrap { overflow-x: auto; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; }
+.purchase-order-table-wrap table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+.purchase-order-table-wrap th { padding: 12px 16px; background: #f7ead5; color: #765237; font-size: 12px; font-weight: 600; }
+.purchase-order-table-wrap td { padding: 16px; border-top: 1px solid #f0dfc9; color: #3d281d; line-height: 1.6; }
+.purchase-order-table-wrap :is(th, td):nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; }
+.purchase-order-table-wrap .purchase-order-no-supplies { text-align: center; color: #8a725f; }
+.purchase-order-table-wrap .purchase-order-money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.purchase-order-table-wrap th:nth-child(n+4) { text-align: right; white-space: nowrap; }
+.purchase-order-pricing { padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; }
+.purchase-order-pricing .purchase-order-pricing-note { margin: -6px 0 16px; color: #8a725f; font-size: 12px; line-height: 1.6; }
+.purchase-order-pricing dl { display: grid; gap: 12px; }
+.purchase-order-pricing dl > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.purchase-order-pricing dt { color: #5d4536; font-size: 14px; }
+.purchase-order-pricing dt span { display: block; color: #8a725f; font-size: 12px; margin-top: 4px; }
+.purchase-order-pricing dd { margin: 0; color: #3d281d; font-size: 14px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.purchase-order-pricing .purchase-order-discount dd { color: #28765c; }
+.purchase-order-pricing dl + .purchase-order-pricing-note { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid #f0dfc9; }
+.purchase-order-total { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #f7ead5; }
+.purchase-order-total span { font-size: 14px; font-weight: 600; color: #5d4536; }
+.purchase-order-total p { margin: 4px 0 0; color: #8a725f; font-size: 12px; }
+.purchase-order-total strong { color: #3d281d; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+@media (max-width: 540px) {
+  .purchase-order-dialog > div:first-child, .purchase-order-dialog .purchase-order-body { padding: 18px; }
+  .purchase-order-heading h2 { font-size: 18px; }
+  .purchase-order-info { grid-template-columns: 1fr; padding: 16px; gap: 16px; }
+  .purchase-order-total strong { font-size: 23px; }
+}
+@media (max-width: 767px) {
+  .module-theme:is(.finance-page, .logistics-page, .purchase-orders-page) main { padding: 20px 16px !important; }
+  :is(.finance-page, .logistics-page, .purchase-orders-page) main .finance-summary { grid-template-columns: 1fr; gap: 10px; }
+  :is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  :is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-filters { grid-template-columns: 1fr; }
+  :is(.finance-page, .logistics-page, .purchase-orders-page) main .budget-records { padding: 16px; }
+  :is(.finance-page, .logistics-page, .purchase-orders-page) main table :is(th, td) { padding: 12px; }
+  :is(.finance-page, .logistics-page, .purchase-orders-page) main header > div:last-child { flex-wrap: wrap; }
+}

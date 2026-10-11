@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'form', fields: 4, sections: 1 }, { variant: 'table', columns: 7, rows: 5 }] }" class="flex-1 p-4 md:p-8">
       <div class="mb-6">
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Payroll Management</h1>
         <p class="text-slate-400 text-sm md:text-base">Create payroll entries and generate payslips for your branch staff.</p>
@@ -409,7 +409,11 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { workflowApi } from '@/utils/workflowApi'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { basePayForPeriod } from '../../../../../../shared/practitionerTeam.js'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -426,6 +430,8 @@ export default {
   name: 'PayrollAndPayslipManagement',
   components: { OwnerSidebar, PageSectionSkeleton },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
 
     const loading = ref(false)
@@ -777,7 +783,7 @@ export default {
       }
     }
 
-    const loadPayslips = async () => {
+    const loadPayslips = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         payslips.value = []
         return
@@ -799,9 +805,9 @@ export default {
       } finally {
         payslipsLoading.value = false
       }
-    }
+    })
 
-    const loadApprovedSummaries = async () => {
+    const loadApprovedSummaries = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         approvedSummaries.value = []
         return
@@ -822,7 +828,7 @@ export default {
       } finally {
         approvedSummariesLoading.value = false
       }
-    }
+    })
 
     const toDateInputValue = (date) => {
       if (!date) return ''
@@ -906,7 +912,7 @@ export default {
       }
     }
 
-    const loadPayrollSettings = async () => {
+    const loadPayrollSettings = trackPageLoad(async () => {
       if (!currentBranchId.value) return
       const settingsSnap = await getDoc(doc(db, 'payrollSettings', currentBranchId.value))
       if (!settingsSnap.exists()) return
@@ -920,7 +926,7 @@ export default {
           ? Boolean(data.useGraduatedIncomeTax)
           : deductionSettings.value.useGraduatedIncomeTax
       }
-    }
+    })
 
     const savePayrollSettings = async () => {
       if (!currentBranchId.value) return
@@ -964,6 +970,7 @@ export default {
       return getMonthKeyFromDate(parsed) === monthKey
     }
 
+    const workedDays = new Map()
     const computeWorkedHoursFromAttendance = async (employeeId, monthKey = '') => {
       if (!employeeId || !currentBranchId.value) return 0
 
@@ -982,6 +989,7 @@ export default {
         docs = snapshot.docs.filter((snap) => (snap.data()?.employeeId || '') === employeeId)
       }
 
+      const dates = new Set()
       const totalMinutes = docs.reduce((sum, snap) => {
         const data = snap.data() || {}
         if (monthKey && !isDateInMonth(data.date || data.createdAt || data.updatedAt, monthKey)) {
@@ -993,9 +1001,11 @@ export default {
 
         let duration = outMinutes - inMinutes
         if (duration < 0) duration += 24 * 60
+        if (duration > 0) dates.add(String(data.date || snap.id))
         return sum + Math.max(duration, 0)
       }, 0)
 
+      workedDays.set(employeeId, dates.size)
       return roundToQuarterHour(totalMinutes / 60)
     }
 
@@ -1036,7 +1046,7 @@ export default {
       commissionCount.value = 0
     }
 
-    const loadEmployees = async () => {
+    const loadEmployees = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         employees.value = []
         return
@@ -1051,12 +1061,13 @@ export default {
       const snapshot = await getDocs(staffQuery)
       const candidates = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
-        .filter((emp) => emp.id !== currentUserId.value && !emp.archived)
+        .filter((emp) => emp.id !== currentUserId.value && !emp.archived && String(emp.status || '').toLowerCase() === 'active')
         .map((emp) => ({
+          ...emp,
           id: emp.id,
           fullName: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
           role: String(emp.customRoleName || emp.role || 'Staff').trim(),
-          isCommissionBased: emp.role === 'Practitioner',
+          isCommissionBased: Boolean(emp.practitionerType) || emp.role === 'Practitioner',
           basePay: Number(emp.basePay || 0),
           employmentType: emp.employmentType || ''
         }))
@@ -1067,7 +1078,7 @@ export default {
           const hasAssignedShift = hasAnyAssignedShift(
             scheduleSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() || {} }))
           )
-          return hasAssignedShift ? emp : null
+          return hasAssignedShift || emp.basePayModel === 'monthly-retainer' ? emp : null
         })
       )
 
@@ -1075,9 +1086,9 @@ export default {
       if (selectedEmployeeId.value && !employees.value.some((emp) => emp.id === selectedEmployeeId.value)) {
         selectedEmployeeId.value = ''
       }
-    }
+    })
 
-    const loadPayrolls = async () => {
+    const loadPayrolls = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         payrolls.value = []
         return
@@ -1093,7 +1104,7 @@ export default {
           const bTime = b.createdAt?.seconds || 0
           return bTime - aTime
         })
-    }
+    })
 
     const getMonthKeyFromDate = (date) => {
       if (!date) return ''
@@ -1115,15 +1126,17 @@ export default {
       if (!currentBranchId.value) return
       summaryLoading.value = true
       try {
+        staffEarningCache = null
         const monthKey = approvalMonthKey.value
         const monthLabel = approvalMonthLabel.value
-        const monthStart = new Date()
+        const monthStart = new Date(monthKey + '-01T00:00:00+08:00')
         monthStart.setDate(1)
         monthStart.setHours(0, 0, 0, 0)
         const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0)
         monthEnd.setHours(23, 59, 59, 999)
 
         const existingMonthPayrolls = payrolls.value.filter((entry) => {
+          if (entry.payPeriodMonthKey) return entry.payPeriodMonthKey === monthKey
           const dateValue = extractDate(entry.createdAt || entry.date)
           if (!dateValue) return false
           return getMonthKeyFromDate(dateValue) === monthKey
@@ -1140,29 +1153,27 @@ export default {
           if (!employee?.id) continue
 
           const employeeHours = await computeWorkedHoursFromAttendance(employee.id, monthKey)
-          if (!employeeHours || employeeHours <= 0) continue
+          if ((!employeeHours || employeeHours <= 0) && employee.basePayModel !== 'monthly-retainer') continue
 
-          const overtime = await computeApprovedOvertime(employee, monthKey)
+          const base = basePayForPeriod({ model: employee.basePayModel || 'hourly', rate: Number(employee.basePay || 0), hours: employeeHours, days: workedDays.get(employee.id) || 0, monthlyHours: Number(employee.monthlyBaseHours || 176) })
+          const overtime = await computeApprovedOvertime({ ...employee, basePay: base.hourlyEquivalent }, monthKey)
           const overtimeHours = roundToQuarterHour(overtime.minutes / 60)
 
           const basePay = Number(employee.basePay || 0)
           if (basePay <= 0) continue
 
-          let commissionAmount = 0
-          if (employee.isCommissionBased) {
-            const commissionResult = await computeCommissionForEmployee(employee.id, monthStart, monthEnd)
-            commissionAmount = Number(commissionResult.total || 0)
-          }
+          const commissionResult = await computeCommissionForEmployee(employee.id, monthStart, monthEnd)
+          const commissionAmount = Number(commissionResult.total || 0)
 
           const overtimePay = roundCurrency(overtime.pay + overtime.nightDifferential)
-          const totalPay = Number(employeeHours || 0) * basePay + overtimePay + commissionAmount
+          const totalPay = base.amount + overtimePay + commissionAmount
           const deductions = computeDeductions(totalPay)
           const totalDeductions = roundCurrency(
             Object.values(deductions).reduce((sum, entry) => sum + Number(entry?.amount || 0), 0)
           )
           const netPay = roundCurrency(totalPay - totalDeductions)
 
-          const salaryType = employee.isCommissionBased ? 'Hourly + Commission' : 'Hourly'
+          const salaryType = (employee.basePayModel || 'hourly') + (commissionAmount ? ' + Service earnings' : '')
           const payrollPayload = {
             employeeId: employee.id,
             employeeName: employee.fullName,
@@ -1171,11 +1182,18 @@ export default {
             salaryType,
             hoursWorked: Number(employeeHours || 0),
             overtimeHours: Number(overtimeHours || 0),
-            overtimeRateMultiplier: overtimeHours ? Number((overtime.pay / (overtimeHours * basePay)).toFixed(4)) : 1.25,
+            overtimeRateMultiplier: overtimeHours ? Number((overtime.pay / (overtimeHours * base.hourlyEquivalent)).toFixed(4)) : 1.25,
             nightDifferential: Number(overtime.nightDifferential.toFixed(2)),
             overtimePay: Number(overtimePay.toFixed(2)),
-            hourlyRate: Number(basePay || 0),
+            hourlyRate: base.hourlyEquivalent,
+            baseRate: Number(basePay || 0),
+            basePayModel: employee.basePayModel || 'hourly',
+            basePayAmount: base.amount,
+            workedDays: workedDays.get(employee.id) || 0,
+            hourlyEquivalent: base.hourlyEquivalent,
+            monthlyBaseHours: Number(employee.monthlyBaseHours || 176),
             commission: commissionAmount,
+            staffEarningIds: commissionResult.ids,
             totalPay,
             deductions,
             totalDeductions,
@@ -1295,90 +1313,25 @@ export default {
       return null
     }
 
-    const getAppointmentAmount = (appointment, transactionMap) => {
-      const candidates = [
-        appointment?.amountPaid,
-        appointment?.amount,
-        appointment?.price,
-        appointment?.fee,
-        appointment?.serviceFee
-      ]
-      for (const value of candidates) {
-        const numeric = Number(value)
-        if (Number.isFinite(numeric) && numeric > 0) return numeric
-      }
-
-      const txAmount = transactionMap?.get(appointment?.id)
-      if (Number.isFinite(txAmount) && txAmount > 0) return txAmount
-      return 0
-    }
-
-    const buildTransactionMap = async (appointmentIds) => {
-      if (!appointmentIds.length || !currentBranchId.value) return new Map()
-      try {
-        const txQuery = query(
-          collection(db, 'transactions'),
-          where('branchId', '==', currentBranchId.value),
-          where('type', '==', 'appointment_payment')
-        )
-        const snapshot = await getDocs(txQuery)
-        const map = new Map()
-        snapshot.docs.forEach((snap) => {
-          const data = snap.data() || {}
-          if (!appointmentIds.includes(data.appointmentId)) return
-          if (String(data.status || '').toLowerCase() !== 'paid') return
-          const amount = Number(data.amount || 0)
-          if (!Number.isFinite(amount) || amount <= 0) return
-          const existing = map.get(data.appointmentId) || 0
-          map.set(data.appointmentId, existing + amount)
-        })
-        return map
-      } catch (error) {
-        console.error('Failed to load appointment transactions:', error)
-        return new Map()
-      }
-    }
-
+    let staffEarningCache = null
     const computeCommissionForEmployee = async (employeeId, start, end) => {
-      if (!employeeId || !currentBranchId.value) {
-        return { total: 0, count: 0 }
+      if (!employeeId || !currentBranchId.value) return { total: 0, count: 0, ids: [] }
+      if (!staffEarningCache || staffEarningCache.branchId !== currentBranchId.value) {
+        const token = await auth.currentUser.getIdToken()
+        const response = await fetch(OTP_API_BASE + '/staff-earnings?branchId=' + encodeURIComponent(currentBranchId.value), { headers: { Authorization: 'Bearer ' + token } })
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.error || 'Unable to load approved staff earnings. Payroll was not generated.')
+        staffEarningCache = { branchId: currentBranchId.value, rows: payload.data }
       }
-
-      try {
-        const appointmentSnapshot = await getDocs(
-          query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
-        )
-        const appointments = appointmentSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-
-        const filtered = appointments.filter((appointment) => {
-          const practitionerId = appointment.assignedPractitionerId || appointment.practitionerId || ''
-          if (practitionerId !== employeeId) return false
-          if (normalizeStatus(appointment.status) !== 'completed') return false
-
-          const dateValue = extractAppointmentDate(appointment)
-          if (!dateValue) return false
-          const time = dateValue.getTime()
-          return time >= start.getTime() && time <= end.getTime()
-        })
-
-        const missingAmountIds = filtered
-          .filter((appointment) => Number(appointment.amountPaid || appointment.amount || appointment.price || 0) <= 0)
-          .map((appointment) => appointment.id)
-
-        const transactionMap = await buildTransactionMap(missingAmountIds)
-
-        const total = filtered.reduce((sum, appointment) => {
-          return sum + getAppointmentAmount(appointment, transactionMap)
-        }, 0)
-
-        return { total: Number(total.toFixed(2)), count: filtered.length }
-      } catch (error) {
-        console.error('Failed to compute commission:', error)
-        return { total: 0, count: 0 }
-      }
+      const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).formatToParts(start)
+      const monthKey = month.find(part => part.type === 'year').value + '-' + month.find(part => part.type === 'month').value
+      const summaryId = currentBranchId.value + '_' + monthKey
+      const earned = staffEarningCache.rows.filter(row => row.employeeId === employeeId && row.monthKey === monthKey && row.status === 'Approved' && (!row.payrollSummaryId || row.payrollSummaryId === summaryId))
+      return { total: roundCurrency(earned.reduce((sum, row) => sum + Number(row.amount || 0), 0)), count: earned.length, ids: earned.map(row => row.id) }
     }
 
     const computeCommissionFromAppointments = async (employeeId) => {
+      staffEarningCache = null
       if (!employeeId || !currentBranchId.value) {
         commissionTotal.value = 0
         commissionCount.value = 0
@@ -1400,7 +1353,7 @@ export default {
         commissionCount.value = result.count
       } catch (error) {
         console.error('Failed to compute commission:', error)
-        toast.error('Failed to compute commission from appointments.')
+        toast.error('Failed to load approved staff earnings.')
         commissionTotal.value = 0
         commissionCount.value = 0
       } finally {
@@ -1448,98 +1401,40 @@ export default {
     })
 
     const savePayrollAndPayslip = async () => {
-      if (!selectedEmployeeId.value) {
-        toast.error('Please select an employee.')
-        return
-      }
-
-      const employee = employees.value.find((e) => e.id === selectedEmployeeId.value)
-      if (!employee) {
-        toast.error('Selected employee is invalid.')
-        return
-      }
-
-      let totalPay = 0
-      const salaryType = employee.isCommissionBased ? 'Hourly + Commission' : 'Hourly'
-
-      if (hourlyRate.value <= 0) {
-        toast.error('Hourly rate must be greater than 0.')
-        return
-      }
-
-      if (hoursWorked.value <= 0) {
-        toast.error('No completed attendance hours found for this employee.')
-        return
-      }
-
-      if (employee.isCommissionBased) {
-        const start = parseDateInput(commissionRangeStart.value)
-        const end = parseDateInput(commissionRangeEnd.value)
-        if (!start || !end) {
-          toast.error('Please select a valid commission period.')
-          return
-        }
-      }
-
-      const overtime = await computeApprovedOvertime(employee)
-      const overtimeHours = roundToQuarterHour(overtime.minutes / 60)
-      const overtimePay = roundCurrency(overtime.pay + overtime.nightDifferential)
-      const basePayTotal = Number(hoursWorked.value || 0) * Number(hourlyRate.value || 0)
-      const commissionAmount = employee.isCommissionBased ? Number(commissionTotal.value || 0) : 0
-      totalPay = basePayTotal + overtimePay + commissionAmount
-      const deductions = computeDeductions(totalPay)
-      const totalDeductions = roundCurrency(
-        Object.values(deductions).reduce((sum, entry) => sum + Number(entry?.amount || 0), 0)
-      )
-      const netPay = roundCurrency(totalPay - totalDeductions)
-
+      const employee = employees.value.find(item => item.id === selectedEmployeeId.value)
+      if (!employee) { toast.error('Choose an employee.'); return }
+      if (isPayrollApproved.value) { toast.error('Approved payroll is locked.'); return }
       loading.value = true
       try {
-        await addDoc(collection(db, 'payrolls'), {
-          payPeriodMonthKey: getMonthKeyFromDate(new Date()),
-          employeeId: employee.id,
-          employeeName: employee.fullName,
-          branchId: currentBranchId.value,
-          employmentType: employee.employmentType || null,
-          salaryType,
-          hoursWorked: Number(hoursWorked.value || 0),
-          overtimeHours: Number(overtimeHours || 0),
-          hourlyRate: Number(hourlyRate.value || 0),
-          overtimePay,
-          nightDifferential: Number(overtime.nightDifferential.toFixed(2)),
-          commission: commissionAmount,
-          totalPay,
-          deductions,
-          totalDeductions,
-          netPay,
-          createdBy: currentUserId.value,
-          createdAt: serverTimestamp()
-        })
-
-        await logActivity(db, {
-          module: 'HR',
-          action: 'Generated payroll',
-          details: `Generated ${salaryType.toLowerCase()} payroll for ${employee.fullName} (${formatCurrency(totalPay)}).`,
-          targetUserId: employee.id,
-          targetUserName: employee.fullName
-        })
-
-        toast.success('Payroll draft saved. Generate the summary for Finance approval before releasing payslips.')
-        resetForm()
-        await loadPayrolls()
-      } catch (error) {
-        console.error('Error saving payroll/payslip:', error)
-        toast.error('Failed to save payroll and payslip.')
-      } finally {
-        loading.value = false
-      }
+        staffEarningCache = null
+        const monthKey = approvalMonthKey.value
+        const start = new Date(monthKey + '-01T00:00:00+08:00')
+        const hours = await computeWorkedHoursFromAttendance(employee.id, monthKey)
+        const base = basePayForPeriod({ model: employee.basePayModel || 'hourly', rate: Number(employee.basePay || 0), hours, days: workedDays.get(employee.id) || 0, monthlyHours: Number(employee.monthlyBaseHours || 176) })
+        const overtime = await computeApprovedOvertime({ ...employee, basePay: base.hourlyEquivalent }, monthKey)
+        const commission = await computeCommissionForEmployee(employee.id, start)
+        const overtimePay = roundCurrency(overtime.pay + overtime.nightDifferential)
+        const totalPay = roundCurrency(base.amount + overtimePay + commission.total)
+        const deductions = computeDeductions(totalPay)
+        const totalDeductions = roundCurrency(Object.values(deductions).reduce((sum, item) => sum + Number(item?.amount || 0), 0))
+        const netPay = roundCurrency(totalPay - totalDeductions)
+        if (netPay < 0) throw new Error('Adjustments exceed this period earnings. Finance must review the balance.')
+        const payload = { employeeId: employee.id, employeeName: employee.fullName, branchId: currentBranchId.value, payPeriodMonthKey: monthKey, salaryType: employee.basePayModel || 'hourly', hoursWorked: hours, hourlyRate: base.hourlyEquivalent, baseRate: Number(employee.basePay || 0), basePayModel: employee.basePayModel || 'hourly', basePayAmount: base.amount, workedDays: workedDays.get(employee.id) || 0, monthlyBaseHours: Number(employee.monthlyBaseHours || 176), overtimePay, commission: commission.total, staffEarningIds: commission.ids, totalPay, deductions, totalDeductions, netPay, createdBy: currentUserId.value, createdAt: serverTimestamp() }
+        const existing = payrolls.value.find(item => item.employeeId === employee.id && item.payPeriodMonthKey === monthKey)
+        if (existing?.payslipReleasedAt) throw new Error('A released payslip cannot be overwritten.')
+        if (existing) await updateDoc(doc(db, 'payrolls', existing.id), payload)
+        else await addDoc(collection(db, 'payrolls'), payload)
+        toast.success('Payroll draft saved for Finance review.')
+        resetForm(); await loadPayrolls()
+      } catch (cause) { toast.error(cause.message || 'Unable to generate payroll.') }
+      finally { loading.value = false }
     }
 
     let unsubscribeAuth = null
     let unsubscribeApproval = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
@@ -1568,7 +1463,7 @@ export default {
         if (currentBranchId.value) {
           if (unsubscribeApproval) unsubscribeApproval()
           const summaryId = `${currentBranchId.value}_${approvalMonthKey.value}`
-          unsubscribeApproval = onSnapshot(doc(db, 'payrollSummaries', summaryId), (snap) => {
+          unsubscribeApproval = pageListener(onSnapshot, doc(db, 'payrollSummaries', summaryId), (snap) => {
             if (!snap.exists()) {
               isPayrollApproved.value = false
               summaryStatus.value = 'pending'
@@ -1594,13 +1489,13 @@ export default {
           })
         }
       })
-    })
+    }))
 
     watch(currentBranchId, (branchId) => {
       if (!branchId) return
       if (unsubscribeApproval) unsubscribeApproval()
       const summaryId = `${branchId}_${approvalMonthKey.value}`
-      unsubscribeApproval = onSnapshot(doc(db, 'payrollSummaries', summaryId), (snap) => {
+      unsubscribeApproval = pageListener(onSnapshot, doc(db, 'payrollSummaries', summaryId), (snap) => {
         if (!snap.exists()) {
           isPayrollApproved.value = false
           summaryStatus.value = 'pending'
@@ -1632,6 +1527,7 @@ export default {
     })
 
     return {
+      pageLoading,
       loading,
       employees,
       payrolls,

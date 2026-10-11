@@ -1,5 +1,12 @@
 <template>
-  <div :class="{ 'read-only-mode': (isReadOnly || isSuspended) && !isSubscriptionRoute, 'system-admin-route': isSystemAdminRoute }">
+  <div
+    class="aestheticare-app"
+    :class="{
+      'read-only-mode': (isReadOnly || isSuspended) && !isSubscriptionRoute,
+      'system-admin-route': isSystemAdminRoute,
+      'landing-route': isLandingRoute,
+    }"
+  >
     <div>
       <EmployeeTopbar
         v-if="showEmployeeTopbar"
@@ -42,61 +49,7 @@
       <span v-else>Subscription grace period ended. Please renew your subscription to regain access.</span>
     </div>
 
-    <div v-if="isLoading" class="fixed inset-0 z-[9998] bg-[#0f0a07]">
-      <div v-if="isPublicSkeleton" class="flex h-full w-full items-center justify-center px-6">
-        <div class="w-full max-w-3xl animate-pulse space-y-6">
-          <div class="mx-auto h-7 w-40 rounded-full bg-[#3a2417]"></div>
-          <div class="h-10 w-3/4 rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
-          <div class="h-10 w-full rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
-          <div class="h-10 w-full rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
-          <div class="h-12 w-40 rounded-2xl bg-[#3a2417]"></div>
-          <div class="grid grid-cols-1 gap-4 pt-4 sm:grid-cols-2">
-            <div class="h-32 rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
-            <div class="h-32 rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
-          </div>
-        </div>
-      </div>
-      <div v-else class="flex h-full w-full">
-        <div class="hidden w-[18rem] p-4 md:flex">
-          <div class="w-full rounded-2xl border border-[#3a2417] bg-[#1f120b] p-4 shadow-2xl">
-            <div class="animate-pulse space-y-4">
-              <div class="h-5 w-24 rounded bg-[#3a2417]"></div>
-              <div class="h-3 w-32 rounded bg-[#3a2417]"></div>
-              <div class="space-y-2 pt-2">
-                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-                <div class="h-10 rounded-lg bg-[#3a2417]"></div>
-              </div>
-              <div class="mt-6 h-12 rounded-lg border border-[#3a2417] bg-[#150d08]"></div>
-            </div>
-          </div>
-        </div>
-        <div class="flex-1 p-6 md:p-10">
-          <div class="animate-pulse space-y-6">
-            <div class="h-8 w-56 rounded bg-[#3a2417]"></div>
-            <div class="h-4 w-72 rounded bg-[#3a2417]"></div>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div class="h-28 rounded-xl border border-[#3a2417] bg-[#20130c]"></div>
-              <div class="h-28 rounded-xl border border-[#3a2417] bg-[#20130c]"></div>
-              <div class="h-28 rounded-xl border border-[#3a2417] bg-[#20130c]"></div>
-            </div>
-            <div class="h-64 rounded-2xl border border-[#3a2417] bg-[#20130c]"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      class="global-loader"
-      :class="{ 'is-active': processLoading }"
-      aria-live="polite"
-      aria-busy="true"
-    >
-      <div class="loader"></div>
-      <p class="loader-label">{{ processLabel }}</p>
-    </div>
+    <AppLoadingScreen v-if="isLoading || processLoading" :label="processLoading ? processLabel : 'Preparing your experience...'" />
 
     <div v-if="inactivityWarning" class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 p-4" role="alertdialog" aria-modal="true" aria-labelledby="inactivity-title">
       <section class="w-full max-w-md rounded-2xl border border-amber-500/50 bg-[#21130c] p-6 text-slate-100 shadow-2xl">
@@ -166,6 +119,7 @@ import { lockPageScroll, unlockPageScroll } from '@/utils/scrollLock'
 import { useSidebarState } from '@/composables/useSidebarState'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import OnboardingTour from '@/components/common/OnboardingTour.vue'
+import AppLoadingScreen from '@/components/common/AppLoadingScreen.vue'
 
 // Initialize auth state globally
 const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking, continueSession } = useAuth()
@@ -274,7 +228,11 @@ const { collapsed: sidebarCollapsed, syncFromStorage: syncSidebarFromStorage } =
 
 const showEmployeeTopbar = computed(() => {
   const path = String(route.path || '').toLowerCase()
+  if (path.startsWith('/clinic/register')) return false
   return (
+    path.startsWith('/workspace') ||
+    path.startsWith('/clinic') ||
+    path.startsWith('/clinical') ||
     path.startsWith('/employee') ||
     path.startsWith('/manager') ||
     path.startsWith('/hr') ||
@@ -284,16 +242,35 @@ const showEmployeeTopbar = computed(() => {
     path.startsWith('/cashier') ||
     path.startsWith('/supply') ||
     path.startsWith('/owner') ||
+    path.startsWith('/operations') ||
+    path.startsWith('/catalog') ||
+    path.startsWith('/crm') ||
+    path.startsWith('/management') ||
+    path.startsWith('/account') ||
+    path.startsWith('/activities') ||
+    path.startsWith('/appointments') ||
+    path.startsWith('/inventory') ||
+    path.startsWith('/procurement') ||
+    path.startsWith('/logistics') ||
     path.startsWith('/customer')
   )
 })
 
 const topbarTitle = computed(() => {
   const path = String(route.path || '').toLowerCase()
-  if (path.startsWith('/owner')) return ''
+  if (path.startsWith('/clinic')) return 'Clinic Administration'
+  if (path.startsWith('/clinical')) return 'Clinical Workspace'
+  if (path.startsWith('/hr')) return 'Human Resources'
+  if (path.startsWith('/operations')) return 'Operations'
+  if (path.startsWith('/catalog')) return 'Services'
+  if (path.startsWith('/crm')) return 'Client Management'
+  if (path.startsWith('/finance')) return 'Finance'
+  if (path.startsWith('/management')) return 'Management'
+  if (path.startsWith('/inventory') || path.startsWith('/procurement') || path.startsWith('/logistics') || path.startsWith('/supply')) return 'Supply Management'
+  if (path.startsWith('/account')) return 'Account'
+  if (path.startsWith('/owner')) return 'Clinic Administration'
   if (path.startsWith('/customer')) return ''
-  if (path.startsWith('/employee')) return 'Employee Panel'
-  return 'Employee Panel'
+  return 'Clinic Workspace'
 })
 
 const isCustomerPanel = computed(() => String(route.path || '').toLowerCase().startsWith('/customer'))
@@ -314,19 +291,11 @@ const customerTopbarLabel = computed(() => {
 const customerTopbarTone = computed(() => (isCustomerPanel.value ? 'neutral' : ''))
 const customerTopbarVariant = computed(() => (isCustomerPanel.value ? 'date' : 'plan'))
 const showTopbarStatus = computed(() => !isCustomerPanel.value && isExpired.value)
-const isPublicSkeleton = computed(() => {
-  const path = String(route.path || '').toLowerCase()
-  if (path === '/') return true
-  if (path.startsWith('/login')) return true
-  if (path.startsWith('/register')) return true
-  if (path.startsWith('/clinic/register')) return true
-  if (path.startsWith('/forgot-password')) return true
-  if (path.startsWith('/centers')) return true
-  if (path.startsWith('/subscription')) return true
-  if (path.startsWith('/map-test')) return true
-  if (path.startsWith('/test')) return true
-  return false
-})
+
+// The landing page is the visual reference for the product. Keeping this
+// marker at the application boundary lets the shared stylesheet apply the
+// same system to every other route without flattening the landing artwork.
+const isLandingRoute = computed(() => String(route.path || '') === '/')
 let connectionHandler = null
 let processHandler = null
 const processLoading = ref(false)
@@ -492,54 +461,4 @@ const planLabel = computed(() => {
   pointer-events: auto !important;
 }
 
-.global-loader {
-  position: fixed;
-  inset: 0;
-  z-index: 9998;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: #1f120b;
-  transform: translateY(-100%);
-  opacity: 0;
-  pointer-events: none;
-  transition: transform 0.45s ease, opacity 0.45s ease;
-}
-
-.global-loader.is-active {
-  transform: translateY(0);
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.loader {
-  width: 120px;
-  aspect-ratio: 1;
-  border: 14px solid #0000;
-  box-sizing: border-box;
-  background:
-    radial-gradient(farthest-side, #fff 98%, #0000) 0 0/30px 30px,
-    radial-gradient(farthest-side, #fff 98%, #0000) 100% 0/30px 30px,
-    radial-gradient(farthest-side, #fff 98%, #0000) 100% 100%/30px 30px,
-    radial-gradient(farthest-side, #fff 98%, #0000) 0 100%/30px 30px,
-    linear-gradient(#fff 0 0) 50%/60px 60px;
-  background-repeat: no-repeat;
-  filter: blur(4px) contrast(10);
-  animation: l12 0.8s infinite;
-}
-
-.loader-label {
-  margin-top: 1.25rem;
-  color: #f3e7e0;
-  font-size: 0.85rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-@keyframes l12 {
-  100% {
-    background-position: 100% 0, 100% 100%, 0 100%, 0 0, center;
-  }
-}
 </style>

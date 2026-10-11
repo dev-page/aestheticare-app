@@ -1,7 +1,11 @@
 <template>
   <div class="employee-topbar readonly-exempt">
     <div class="employee-topbar-inner" :style="topbarStyle">
-      <div class="employee-topbar-left"></div>
+      <div class="employee-topbar-left">
+        <span class="employee-topbar-kicker">AesthetiCare</span>
+        <span class="employee-topbar-title">{{ resolvedTitle }}</span>
+        <span v-if="roleValue" class="employee-topbar-role">{{ roleValue }}</span>
+      </div>
       <div class="employee-topbar-right">
         <div class="employee-topbar-notifications">
         <button type="button" class="employee-topbar-btn" aria-label="Notifications" @click="toggleNotifications">
@@ -162,6 +166,8 @@ const badgeClass = computed(() => {
 const badgeLabelClass = computed(() => {
   return props.badgeVariant === 'date' ? 'badge-date' : ''
 })
+
+const resolvedTitle = computed(() => props.title || 'Clinic Workspace')
 
 const router = useRouter()
 const showNotifications = ref(false)
@@ -358,9 +364,9 @@ onUnmounted(() => {
   top: 0;
   z-index: 10;
   background:
-    linear-gradient(180deg, rgba(26, 16, 11, 0.94) 0%, rgba(20, 12, 8, 0.9) 100%);
-  border-bottom: 1px solid rgba(123, 79, 55, 0.44);
-  box-shadow: 0 10px 28px rgba(11, 6, 4, 0.2);
+    linear-gradient(180deg, rgba(255, 253, 249, .96) 0%, rgba(255, 247, 236, .94) 100%);
+  border-bottom: 1px solid var(--ac-border, #ead2b2);
+  box-shadow: 0 8px 24px rgba(72, 42, 23, .08);
   backdrop-filter: blur(12px);
 }
 
@@ -374,10 +380,29 @@ onUnmounted(() => {
 }
 
 .employee-topbar-title {
-  color: #f7e8de;
+  color: var(--ac-text, #342419);
   font-size: 0.98rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.employee-topbar-kicker {
+  color: var(--ac-text-muted, #795f4b);
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.employee-topbar-role {
+  border: 1px solid var(--ac-border, #ead2b2);
+  border-radius: 999px;
+  background: var(--ac-surface-soft, #fff7ec);
+  color: var(--ac-text-secondary, #624733);
+  padding: .2rem .55rem;
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .employee-topbar-left {
@@ -401,10 +426,10 @@ onUnmounted(() => {
   right: 0;
   top: calc(100% + 0.6rem);
   width: 300px;
-  background: linear-gradient(180deg, rgba(28, 17, 12, 0.98), rgba(20, 12, 8, 0.98));
-  border: 1px solid rgba(123, 79, 55, 0.62);
+  background: #fffaf1;
+  border: 1px solid #dfbd93;
   border-radius: 1rem;
-  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.38);
+  box-shadow: 0 20px 42px rgba(72, 42, 23, 0.22);
   overflow: hidden;
   z-index: 60;
 }
@@ -423,20 +448,20 @@ onUnmounted(() => {
   font-weight: 700;
   line-height: 18px;
   text-align: center;
-  border: 2px solid rgba(20, 12, 8, 0.96);
+  border: 2px solid #fffaf1;
 }
 .notifications-header {
   padding: 0.75rem 1rem;
   font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #c9b3a5;
-  border-bottom: 1px solid rgba(90, 57, 39, 0.5);
+  color: #634530;
+  border-bottom: 1px solid #ead2b2;
 }
 
 .notifications-empty {
   padding: 1rem;
-  color: #c9b3a5;
+  color: #72533d;
   font-size: 0.8rem;
 }
 
@@ -447,7 +472,12 @@ onUnmounted(() => {
 
 .notifications-item {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid rgba(90, 57, 39, 0.4);
+  border-bottom: 1px solid #ecd8be;
+  background: #fffaf1;
+}
+
+.notifications-item:hover {
+  background: #fff2df;
 }
 
 .notifications-item:last-child {
@@ -455,19 +485,19 @@ onUnmounted(() => {
 }
 
 .notifications-item-title {
-  color: #f7e8de;
+  color: #3f291b;
   font-size: 0.85rem;
   font-weight: 600;
 }
 
 .notifications-item-body {
-  color: #c9b3a5;
+  color: #674934;
   font-size: 0.78rem;
   margin-top: 0.15rem;
 }
 
 .notifications-item-date {
-  color: #9f8a7c;
+  color: #89684d;
   font-size: 0.7rem;
   margin-top: 0.35rem;
 }
@@ -475,32 +505,36 @@ onUnmounted(() => {
 .notifications-view {
   margin-top: 0.45rem;
   font-size: 0.72rem;
-  color: #f3e7e0;
-  background: rgba(58, 36, 23, 0.9);
-  border: 1px solid rgba(90, 57, 39, 0.6);
+  color: #4a2c1e;
+  background: #f6e3c8;
+  border: 1px solid #c99968;
   border-radius: 999px;
   padding: 0.2rem 0.6rem;
   cursor: pointer;
 }
 
 .notifications-view:hover {
-  background: rgba(84, 49, 33, 0.95);
+  background: #eacb9f;
 }
 
 .notifications-more {
   width: 100%;
   padding: 0.65rem 1rem;
   font-size: 0.8rem;
-  color: #f3e7e0;
-  background: rgba(58, 36, 23, 0.9);
+  color: #4a2c1e;
+  background: #f4dfc1;
   border: none;
-  border-top: 1px solid rgba(90, 57, 39, 0.6);
+  border-top: 1px solid #dfbd93;
   cursor: pointer;
 }
 
 .notifications-more:hover {
-  background: rgba(84, 49, 33, 0.95);
+  background: #eacb9f;
 }
+
+.notifications-list::-webkit-scrollbar { width: 8px; }
+.notifications-list::-webkit-scrollbar-track { background: #fff4e5; }
+.notifications-list::-webkit-scrollbar-thumb { background: #c79a6f; border-radius: 999px; }
 
 :deep(.employee-notification-modal-panel) {
   width: 100%;
@@ -630,9 +664,9 @@ onUnmounted(() => {
   height: 40px;
   width: 40px;
   border-radius: 999px;
-  border: 1px solid rgba(123, 79, 55, 0.62);
-  background: linear-gradient(180deg, rgba(72, 45, 30, 0.82), rgba(48, 29, 18, 0.9));
-  color: #f3e7e0;
+  border: 1px solid var(--ac-border, #ead2b2);
+  background: var(--ac-surface, #fffdf9);
+  color: var(--ac-primary, #2d1b13);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -641,8 +675,8 @@ onUnmounted(() => {
 }
 
 .employee-topbar-btn:hover {
-  background: linear-gradient(180deg, rgba(96, 61, 41, 0.94), rgba(61, 38, 25, 0.96));
-  color: #fff;
+  background: var(--ac-surface-muted, #f8ead4);
+  color: var(--ac-primary, #2d1b13);
   transform: translateY(-1px);
 }
 
@@ -664,9 +698,9 @@ onUnmounted(() => {
 }
 
 .badge-active {
-  background: linear-gradient(180deg, rgba(17, 117, 78, 0.35), rgba(10, 88, 58, 0.32));
-  border: 1px solid rgba(35, 183, 122, 0.34);
-  color: #d9f9ea;
+  background: var(--ac-success-bg, #e6f1e8);
+  border: 1px solid #abd4b5;
+  color: var(--ac-success, #39734a);
 }
 
 .badge-expired {
@@ -676,9 +710,9 @@ onUnmounted(() => {
 }
 
 .badge-neutral {
-  background: linear-gradient(180deg, rgba(72, 45, 30, 0.82), rgba(48, 29, 18, 0.9));
-  border: 1px solid rgba(123, 79, 55, 0.74);
-  color: #f3e7e0;
+  background: var(--ac-surface-soft, #fff7ec);
+  border: 1px solid var(--ac-border, #ead2b2);
+  color: var(--ac-text-secondary, #624733);
 }
 
 .badge-date {

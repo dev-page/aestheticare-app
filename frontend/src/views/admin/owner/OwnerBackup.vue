@@ -2,7 +2,7 @@
   <div class="flex owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'settings', fields: 2, sections: 1 }, { variant: 'table', columns: 5, rows: 4 }] }" class="flex-1 p-8">
       <OwnerPageSkeleton v-if="loading" />
       <div v-else>
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
@@ -17,7 +17,7 @@
             :disabled="loading"
             @click="refreshBackups"
           >
-            {{ loading ? 'Refreshing...' : 'Refresh' }}
+            <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
           </button>
           <button
             type="button"
@@ -150,6 +150,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { auth, db, storage } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore'
@@ -157,6 +159,8 @@ import { getDownloadURL, ref as storageRef } from 'firebase/storage'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const loading = ref(true)
 const creating = ref(false)
@@ -273,7 +277,7 @@ const nextBackupCountdown = computed(() => {
   return `${minutes}m`
 })
 
-const refreshBackups = async () => {
+const refreshBackups = trackPageLoad(async () => {
   const user = auth.currentUser
   if (!user) {
     error.value = 'User not authenticated.'
@@ -299,8 +303,8 @@ const refreshBackups = async () => {
     where('ownerId', '==', backupOwnerId.value)
   )
 
-  unsubscribe = onSnapshot(
-    backupQuery,
+  unsubscribe = pageListener(
+    onSnapshot, backupQuery,
     (snapshot) => {
       backups.value = snapshot.docs.map((docSnap) => {
         const data = docSnap.data() || {}
@@ -323,7 +327,7 @@ const refreshBackups = async () => {
       loading.value = false
     }
   )
-}
+})
 
 const createBackup = async () => {
   error.value = ''
@@ -377,14 +381,14 @@ const downloadBackup = async (backup) => {
   }
 }
 
-const loadBackupJson = async (backup) => {
+const loadBackupJson = trackPageLoad(async (backup) => {
   const url = await getDownloadURL(storageRef(storage, backup.storagePath))
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error('Failed to download backup file.')
   }
   return response.json()
-}
+})
 
 const buildCsvContent = (rows = []) => {
   if (!rows.length) return 'collection,'
@@ -506,10 +510,10 @@ onUnmounted(() => {
   if (countdownTimer) clearInterval(countdownTimer)
 })
 
-onMounted(() => {
+onMounted(trackPageLoad(() => {
   if (countdownTimer) clearInterval(countdownTimer)
   countdownTimer = setInterval(() => {
     nowTick.value = Date.now()
   }, 60000)
-})
+}))
 </script>

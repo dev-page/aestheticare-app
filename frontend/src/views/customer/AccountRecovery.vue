@@ -1,5 +1,5 @@
 <template>
-  <main class="recovery-page">
+  <main v-page-loading="{ active: pageLoading, variant: 'settings', fields: 2, sections: 1 }" class="recovery-page customer-theme">
     <section class="recovery-card" aria-labelledby="recovery-title">
       <p class="recovery-kicker">Account recovery</p>
       <h1 id="recovery-title">{{ mode === 'deletion' ? 'Your account is pending deletion' : 'Your account is temporarily deactivated' }}</h1>
@@ -28,11 +28,15 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const router = useRouter()
 const busy = ref(false)
@@ -115,7 +119,7 @@ const recover = async () => {
   }
 }
 
-onMounted(async () => {
+onMounted(trackPageLoad(async () => {
   const currentUser = auth.currentUser
   if (!currentUser) return router.replace('/login')
   const snapshot = await getDoc(doc(db, 'users', currentUser.uid))
@@ -127,7 +131,7 @@ onMounted(async () => {
   }
   if (!isEligible(data)) return signOutAndReturn()
   recoveryEndsAt.value = data.accountRecoveryEndsAt
-})
+}))
 </script>
 
 <style scoped>

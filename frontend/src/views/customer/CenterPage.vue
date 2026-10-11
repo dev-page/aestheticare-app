@@ -2,7 +2,7 @@
   <div class="customer-center-page flex customer-theme min-h-screen bg-[#efe3d0]">
     <CustomerSidebar class="flex-shrink-0" />
 
-    <main class="center-main flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'profile', fields: 4, sections: 1 }, { variant: 'cards', cards: 6 }] }" class="center-main flex-1 p-4 md:p-8">
       <button
         type="button"
         class="mb-4 inline-flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
@@ -301,8 +301,9 @@
                               : 'is-cool'
                           ]"
                         >
-                          {{ isServiceSelected(item) ? 'Selected for Booking' : 'Add to Booking' }}
+                          {{ isServiceSelected(item) ? 'Selected for Booking' : needsLinkedConsultation(item) ? 'Book consultation first' : 'Add to Booking' }}
                         </button>
+                        <button v-if="needsLinkedConsultation(item)" type="button" class="text-sm text-[#6f4a2d] underline" @click="toggleServiceForBooking(item, true)">Already consulted? Request verification</button>
                       </div>
                     </div>
                   </div>
@@ -367,10 +368,16 @@
               </section>
             </div>
 
+            <section v-if="scheduledBookings.length" class="mt-6 rounded-2xl border border-[#e0c09a] bg-[#fffaf3] p-5">
+              <h4 class="center-panel-title">Your scheduled services</h4>
+              <p class="mt-1 text-sm text-[#6f4a2d]">Each service has its own date. Submit them together for one checkout after clinic approval.</p>
+              <ul class="mt-3 space-y-2"><li v-for="(visit, index) in scheduledBookings" :key="index" class="flex items-center justify-between gap-3 rounded-xl bg-[#f7ead7] p-3 text-sm"><span>{{ visit.selectedServices[0].title || visit.selectedServices[0].name }} · {{ visit.date }} {{ visit.time }} · {{ visit.practitionerName }}</span><button type="button" :disabled="bookingPaymentSaving" @click="scheduledBookings.splice(index, 1)">Remove</button></li></ul>
+              <button type="button" :disabled="bookingPaymentSaving" class="mt-4 rounded-xl bg-[#8d5a3b] px-4 py-2 text-white disabled:opacity-50" @click="submitScheduledBookings">Submit scheduled services</button>
+            </section>
             <div v-if="selectedServices.length" class="booking-panel center-booking-panel mt-8 rounded-2xl border p-6">
               <div>
                 <h4 class="center-panel-title text-lg font-semibold mb-1">Book Appointment</h4>
-                <p class="center-panel-copy text-xs">Choose one or more services, then pick a schedule from the calendar.</p>
+                <p class="center-panel-copy text-xs">Choose a schedule for this service. Additional services must use different dates.</p>
               </div>
 
               <div class="mt-5 grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_340px] gap-4 items-start">
@@ -447,6 +454,15 @@
                       </span>
                     </div>
                     <p v-if="bookingRulesNotice" class="mt-3 text-xs text-amber-200">{{ bookingRulesNotice }}</p>
+                    <div class="mt-4 rounded-xl border border-[#e6cfb0] bg-[#fffaf2] p-3 text-xs text-[#6f4a2d]">
+                      <label v-if="selectedServices.every(service => !['Consultation', 'Package'].includes(service.type)) && !scheduledBookings.length" class="flex items-center gap-2 font-semibold"><input v-model="groupBookingEnabled" type="checkbox" /> Book for a group</label>
+                      <template v-if="groupBookingEnabled">
+                        <label class="mt-3 block">Guests (not including you)<input v-model.number="groupGuestCount" type="number" min="1" max="10" class="mt-1 w-full rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]" /></label>
+                        <label class="mt-3 flex items-center gap-2"><input v-model="groupIncludeOrganizer" type="checkbox" /> Include me as a service recipient</label>
+                        <div v-for="(guest, index) in groupGuests" :key="index" class="mt-3 grid gap-2 md:grid-cols-2"><input v-model.trim="guest.name" class="rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]" :placeholder="`Guest ${index + 1} full name`" /><input v-model.trim="guest.email" type="email" class="rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]" placeholder="Guest email (for consent)" /><input v-model.trim="guest.phone" type="tel" maxlength="32" aria-label="Guest contact number" class="rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]" placeholder="Guest contact number" /><label class="md:col-span-2">Service for this attendee<select v-model="guest.serviceId" class="mt-1 w-full rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]"><option value="">Same as selected service</option><option v-for="service in items.filter(item => item.type === 'Service' && !item.isPackageComponent)" :key="service.id" :value="service.id">{{ service.title || service.name }} · ₱{{ service.price }}</option></select></label></div>
+                        <p class="mt-3">Each attendee receives one service in their own consecutive time slot, with their own code and consent link. Choose a different service per guest if needed. One payment covers the group.</p>
+                      </template>
+                    </div>
                     <label v-if="selectedServicesRequireConsultation" class="mt-3 flex items-start gap-2 text-xs text-[#8b6a4d]"><input v-model="priorConsultationConfirmed" type="checkbox" class="mt-0.5" /> I already completed a consultation for this service and want the clinic to verify it.</label>
                   </div>
                   <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
@@ -589,6 +605,7 @@
               <p v-if="availabilityMessage" class="booking-notice mt-2 text-xs">{{ availabilityMessage }}</p>
               <textarea v-model="bookingForm.notes" rows="3" class="mt-4 w-full px-3 py-3 rounded-2xl bg-[#fffaf3] text-[#3d281d] border border-[#e0c09a] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20" placeholder="Notes (optional)"></textarea>
               <div class="mt-4 flex gap-3">
+                <button v-if="!groupBookingEnabled" type="button" :disabled="bookingPaymentSaving" class="rounded-2xl border border-[#e0c09a] px-4 py-2 text-[#6f4a2d]" @click="saveScheduledService">Save schedule &amp; add another service</button>
                 <button
                   @click="submitBooking"
                   :disabled="bookingPaymentSaving"
@@ -740,7 +757,10 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { hasConsultationRequirement } from '../../../../shared/consultationRequirements.js'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
@@ -753,6 +773,8 @@ import { buildWeekScheduleMap, getScheduleDayWindow } from '@/utils/employeeSche
 import { calculateCommissionAmount, calculateNetAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const route = useRoute()
 const router = useRouter()
@@ -791,6 +813,17 @@ let appointmentsUnsubscribe = null
 let bookingReservationsUnsubscribe = null
 let reviewUnsubscribers = []
 const selectedServices = ref([])
+const scheduledBookings = ref([])
+const groupBookingEnabled = ref(false)
+const groupIncludeOrganizer = ref(false)
+const groupGuestCount = ref(1)
+const groupGuests = ref([{ name: '', email: '' }])
+watch(groupGuestCount, (value) => {
+  const count = Math.min(10, Math.max(1, Number(value || 1)))
+  groupGuestCount.value = count
+  groupGuests.value = Array.from({ length: count }, (_, index) => groupGuests.value[index] || { name: '', email: '' })
+})
+const groupRecipientCount = computed(() => groupBookingEnabled.value ? groupGuests.value.length + (groupIncludeOrganizer.value ? 1 : 0) : 1)
 const fallbackImage = 'https://via.placeholder.com/300x200?text=AesthetiCare'
 const bookingPaymentMethod = ref('E-Wallet')
 const bookingBankTransferPaymentTypes = ['dob', 'dob_ubp', 'brankas_bdo', 'brankas_landbank', 'brankas_metrobank']
@@ -836,6 +869,21 @@ const practitioners = ref([])
 const practitionerSchedules = ref({})
 const practitionerLeaves = ref({})
 const appointments = ref([])
+const customerConsultations = ref([])
+const customerClearances = ref([])
+const loadConsultationEligibility = async (branchId = activeBranchId.value) => {
+  const user = auth.currentUser
+  customerConsultations.value = []
+  customerClearances.value = []
+  if (!user || !branchId) return
+  const [visits, clearances] = await Promise.all([
+    getDocs(query(collection(db, 'appointments'), where('customerId', '==', user.uid))),
+    getDocs(query(collection(db, 'consultationClearances'), where('customerId', '==', user.uid))),
+  ])
+  customerConsultations.value = visits.docs.map(snapshot => snapshot.data())
+  customerClearances.value = clearances.docs.map(snapshot => snapshot.data())
+}
+const needsLinkedConsultation = item => Boolean(item.requiresConsultationFirst) && !hasConsultationRequirement(item, customerConsultations.value, customerClearances.value, activeBranchId.value)
 const bookingReservations = ref([])
 const assignedPractitioner = ref(null)
 const availabilityMessage = ref('')
@@ -854,21 +902,22 @@ const selectedServiceTotal = computed(() =>
   selectedServices.value.reduce((sum, service) => sum + Number(service.price || 0), 0)
 )
 const selectedServiceDurationMinutes = computed(() =>
-  selectedServices.value.reduce((sum, service) => sum + Number(service.durationMinutes || 0), 0)
+  selectedServices.value.reduce((sum, service) => sum + Number(service.type === 'Package' ? service.packageComponents?.[0]?.durationMinutes || 60 : service.durationMinutes || 0), 0)
 )
-const selectedTreatmentSessionCount = computed(() => Math.max(1, ...selectedServices.value.map((service) => Number(service.sessionCount || 1))))
-const bookingDurationMinutes = computed(() => Math.max(Number(selectedServiceDurationMinutes.value || 0), 30))
+const selectedTreatmentSessionCount = computed(() => Math.max(1, ...selectedServices.value.map(service => service.type === 'Package' ? Number(service.sessionCount || 1) * (service.packageComponents || []).reduce((sum, component) => sum + Number(component.sessionCount || 1), 0) : Number(service.sessionCount || 1))))
+const groupAttendeeServices = computed(() => [...(groupIncludeOrganizer.value ? selectedServices.value : []), ...groupGuests.value.map(guest => items.value.find(item => item.id === guest.serviceId) || selectedServices.value[0]).filter(Boolean)])
+const bookingDurationMinutes = computed(() => Math.max(groupBookingEnabled.value ? groupAttendeeServices.value.reduce((sum, service) => sum + Number(service.durationMinutes || 60), 0) : Number(selectedServiceDurationMinutes.value || 0), 30))
 const selectedServiceCommission = computed(() =>
   calculateCommissionAmount(selectedServiceTotal.value, serviceCommissionPercent)
 )
-const bookingDueAmount = computed(() => selectedServiceTotal.value)
-const bookingCommissionAmount = computed(() => selectedServiceCommission.value)
-const bookingNetAmount = computed(() => selectedServiceNetAmount.value)
+const bookingDueAmount = computed(() => groupBookingEnabled.value ? groupAttendeeServices.value.reduce((sum, service) => sum + Number(service.price || 0), 0) : selectedServiceTotal.value)
+const bookingCommissionAmount = computed(() => calculateCommissionAmount(bookingDueAmount.value, serviceCommissionPercent))
+const bookingNetAmount = computed(() => calculateNetAmount(bookingDueAmount.value, bookingCommissionAmount.value))
 const selectedServiceNetAmount = computed(() =>
   calculateNetAmount(selectedServiceTotal.value, selectedServiceCommission.value)
 )
 const selectedServicesRequireConsultation = computed(() =>
-  selectedServices.value.some((service) => Boolean(service.requiresConsultationFirst))
+  selectedServices.value.some((service) => Boolean(service.requiresConsultationFirst) && service.packageComponents?.[0]?.type !== 'Consultation')
 )
 const priorConsultationConfirmed = ref(false)
 const selectedServicesAllowFollowUp = computed(() =>
@@ -909,7 +958,7 @@ const getAppointmentDurationMinutes = (appointment) => {
 
 const buildBlockedRanges = (appointmentList = []) => {
   const blocked = new Map()
-  const blockingStatuses = new Set(['pending approval', 'payment pending', 'awaiting payment', 'contract pending', 'ready to start', 'awaiting customer confirmation', 'balance due', 'scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
+  const blockingStatuses = new Set(['pending approval', 'payment pending', 'awaiting payment', 'contract pending', 'checked in', 'ready to start', 'awaiting customer confirmation', 'balance due', 'scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
 
   appointmentList.forEach((appointment) => {
     const date = String(appointment?.date || '').trim()
@@ -928,10 +977,12 @@ const buildBlockedRanges = (appointmentList = []) => {
         ? end
         : start + appointmentDuration
 
-    const key = `${date}|${practitionerId}`
-    const nextList = blocked.get(key) || []
-    nextList.push({ start, end: normalizedEnd })
-    blocked.set(key, nextList)
+    for (const id of new Set([practitionerId, ...(appointment.treatmentTeam || []).map(member => member.employeeId)])) {
+      const key = date + '|' + id
+      const nextList = blocked.get(key) || []
+      nextList.push({ start, end: normalizedEnd })
+      blocked.set(key, nextList)
+    }
   })
 
   return blocked
@@ -1216,8 +1267,8 @@ const startReviewsListener = (branchId) => {
   // Public review access is scoped by branchId in Firestore rules. Legacy
   // centerId/clinicId queries cannot prove that a review belongs to a public
   // clinic, so they are intentionally not used in the customer-facing page.
-  const unsubscribe = onSnapshot(
-    query(collection(db, 'reviews'), where('branchId', '==', branchId)),
+  const unsubscribe = pageListener(
+    onSnapshot, query(collection(db, 'reviews'), where('branchId', '==', branchId)),
     (snapshot) => {
       reviews.value = snapshot.docs.map(normalizeReview).sort(
         (a, b) => toTimestampMillis(b.createdAt) - toTimestampMillis(a.createdAt)
@@ -1420,15 +1471,16 @@ const startBookingReservationsListener = async (branchId) => {
   bookingReservations.value = []
 }
 
-const loadPractitioners = async (branchId = activeBranchId.value) => {
+const loadPractitioners = trackPageLoad(async (branchId = activeBranchId.value) => {
   practitioners.value = []
   practitionerSchedules.value = {}
   practitionerLeaves.value = {}
   if (!branchId) return
   const currentUser = auth.currentUser || await new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => { unsubscribe(); resolve(user) })
+    const unsubscribe = pageListener(onAuthStateChanged, auth, (user) => { unsubscribe(); resolve(user) })
   })
   if (!currentUser) return
+  try { await loadConsultationEligibility(branchId) } catch (error) { console.warn('Unable to load consultation eligibility:', error) }
   try {
     const token = await currentUser.getIdToken()
     const response = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/practitioners`, {
@@ -1443,9 +1495,9 @@ const loadPractitioners = async (branchId = activeBranchId.value) => {
     console.error('Unable to load practitioner availability:', error)
     toast.error(error?.message || 'Unable to load booking availability.')
   }
-}
+})
 
-const loadBranchData = async (branchId) => {
+const loadBranchData = trackPageLoad(async (branchId) => {
   const clinicSnap = await getDoc(doc(db, 'clinics', branchId))
   if (!clinicSnap.exists()) {
     throw new Error('Branch not found.')
@@ -1486,10 +1538,12 @@ const loadBranchData = async (branchId) => {
       price: Number(post.price || 0),
       consultationName: post.consultationName || '',
       requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
+      linkedConsultationId: String(post.linkedConsultationId || ''),
       consultationFee: post.consultationFee != null ? Number(post.consultationFee) : null,
       followUpAllowed: Boolean(post.followUpAllowed),
       followUpWindowDays: post.followUpWindowDays != null ? Number(post.followUpWindowDays) : null,
       durationMinutes: post.durationMinutes != null ? Number(post.durationMinutes) : null,
+      staffingRequirements: post.staffingRequirements || [],
       sessionCount: Math.max(1, Number(post.sessionCount || 1)),
       productVolume: String(post.productVolume || '').trim(),
       productUnit: String(post.productUnit || '').trim(),
@@ -1520,7 +1574,7 @@ const loadBranchData = async (branchId) => {
   if (selectedServices.value.length) {
     syncSelectedSlot()
   }
-}
+})
 
 const bookingSlots = computed(() => {
   const preferredPractitioner = followUpPreferredPractitionerId.value
@@ -1548,6 +1602,10 @@ const bookingSlots = computed(() => {
       const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
 
     practitioners.value.forEach((practitioner) => {
+      const selected = selectedServices.value[0]
+      const service = selected?.type === 'Package' ? selected.packageComponents?.[0] : selected
+      const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
+      if (lead && (practitioner.practitionerType !== lead.type || !practitioner.approvedServiceIds?.includes(service.id) || ['Doctor', 'Registered Nurse'].includes(lead.type) && !practitioner.credentialsVerified)) return
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
       if (!scheduleWindow) return
@@ -1729,6 +1787,10 @@ const buildBookingSlotsForPractitioners = (practitionerList = []) => {
     const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
 
     practitionerList.forEach((practitioner) => {
+      const selected = selectedServices.value[0]
+      const service = selected?.type === 'Package' ? selected.packageComponents?.[0] : selected
+      const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
+      if (lead && (practitioner.practitionerType !== lead.type || !practitioner.approvedServiceIds?.includes(service.id) || ['Doctor', 'Registered Nurse'].includes(lead.type) && !practitioner.credentialsVerified)) return
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
       if (!scheduleWindow) return
@@ -2009,7 +2071,7 @@ const startChatListener = async () => {
   // branch page is changing, which is not a valid Firestore collection path.
   const messagesRef = collection(threadRef, 'messages')
   const q = query(messagesRef)
-  chatUnsubscribe = onSnapshot(q, (snapshot) => {
+  chatUnsubscribe = pageListener(onSnapshot, q, (snapshot) => {
     chatMessages.value = snapshot.docs
       .map((snap) => ({ id: snap.id, ...snap.data() }))
       .sort((a, b) => {
@@ -2032,14 +2094,14 @@ const startUnreadListener = async () => {
   if (!threadRef) return
 
   if (threadUnsubscribe) threadUnsubscribe()
-  threadUnsubscribe = onSnapshot(threadRef, (snap) => {
+  threadUnsubscribe = pageListener(onSnapshot, threadRef, (snap) => {
     const data = snap.exists() ? snap.data() : {}
     customerLastReadAt.value = data.customerLastReadAt || null
   })
 
   const messagesRef = collection(threadRef, 'messages')
   const q = query(messagesRef)
-  unreadUnsubscribe = onSnapshot(q, (snapshot) => {
+  unreadUnsubscribe = pageListener(onSnapshot, q, (snapshot) => {
     const lastRead = customerLastReadAt.value
     unreadChatCount.value = snapshot.docs.filter((docSnap) => {
       const data = docSnap.data()
@@ -2258,11 +2320,27 @@ const isServiceSelected = (item) => item.type === 'Package'
 
 const isConsultationSelected = (item) => isServiceSelected(item)
 
-const toggleServiceForBooking = (item) => {
+const toggleServiceForBooking = async (item, requestVerification = false) => {
+  if (selectedServices.value.length && !isServiceSelected(item)) {
+    toast.info('Save the current service schedule before selecting another service.')
+    return
+  }
   if (isServiceSelected(item)) {
     removeSelectedService(item.id)
     return
   }
+
+  if (item.requiresConsultationFirst && !requestVerification) {
+    try { await loadConsultationEligibility() } catch { toast.error('Could not verify your consultation history. Please try again.'); return }
+    if (needsLinkedConsultation(item)) {
+      const consultation = items.value.find(candidate => candidate.id === item.linkedConsultationId && candidate.type === 'Consultation')
+      if (!consultation) { toast.info('Contact the clinic to arrange the required consultation or verify your previous consultation.'); return }
+      toggleConsultationForBooking(consultation)
+      toast.info(`Book ${consultation.title || consultation.name} first. Treatment booking becomes available after completion or clinic-approved clearance.`)
+      return
+    }
+  }
+  priorConsultationConfirmed.value = requestVerification === true
 
   if (item.type === 'Package') {
     const components = item.packageServiceIds
@@ -2274,7 +2352,7 @@ const toggleServiceForBooking = (item) => {
     }
     selectedServices.value = [{ ...item, packageComponents: components }]
   } else {
-    selectedServices.value = [...selectedServices.value, item]
+    selectedServices.value = [item]
   }
   if (!bookingForm.value.date && availableDates.value.length) {
     bookingForm.value.date = availableDates.value[0]
@@ -2798,7 +2876,41 @@ const handleBookingPayMongoReturn = async () => {
   }
 }
 
+const saveScheduledService = () => {
+  if (groupBookingEnabled.value) { toast.error('Submit group bookings separately.'); return false }
+  const slot = bookingSlots.value.find(entry => entry.key === bookingForm.value.slotKey)
+  if (selectedServices.value.length !== 1 || !slot?.isAvailable || !assignedPractitioner.value) { toast.error('Select an available date, time, and practitioner for this service.'); return false }
+  if (scheduledBookings.value.some(visit => visit.date === bookingForm.value.date)) { toast.error('Choose a different date for each service.'); return false }
+  if (scheduledBookings.value.length && scheduledBookings.value[0].branchId !== activeBranchId.value) { toast.error('Submit the saved appointments before booking another branch.'); return false }
+  if (activeClinicPolicies.value.length && !bookingPolicyAcknowledged.value) { toast.error('Please acknowledge the clinic policies.'); return false }
+  if (!validateBookingPhoneNumber()) { toast.error(bookingPhoneError.value); return false }
+  scheduledBookings.value.push({ branchId: activeBranchId.value, selectedServices: [...selectedServices.value], selectedServiceIds: selectedServices.value.map(service => service.id), practitionerId: assignedPractitioner.value.id, practitionerName: assignedPractitioner.value.fullName, date: bookingForm.value.date, time: bookingForm.value.time, customerPhone: bookingForm.value.contactNumber, totalServiceDurationMinutes: bookingDurationMinutes.value, notes: bookingForm.value.notes || '', policyAcknowledged: bookingPolicyAcknowledged.value })
+  clearBookingSelection()
+  toast.success('Schedule saved. Select another service or submit your scheduled services.')
+  return true
+}
+
+const submitScheduledBookings = async () => {
+  if (bookingPaymentSaving.value || !scheduledBookings.value.length) return
+  if (selectedServices.value.length && !saveScheduledService()) return
+  bookingPaymentSaving.value = true
+  try {
+    const token = await auth.currentUser.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/bookings/batch`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ appointments: scheduledBookings.value }) })
+    const result = await response.json()
+    if (!response.ok || !result.success) throw new Error(result.error || 'Unable to submit appointments.')
+    scheduledBookings.value = []
+    clearBookingSelection()
+    toast.success('Appointments submitted. Each service has its own schedule and verification code.')
+    await router.replace({ name: 'customer-appointments' })
+  } catch (error) { toast.error(error.message) } finally { bookingPaymentSaving.value = false }
+}
+
 const submitBooking = async () => {
+  if (scheduledBookings.value.length) {
+    if (selectedServices.value.length && !saveScheduledService()) return
+    return submitScheduledBookings()
+  }
   const user = auth.currentUser
   if (!user) {
     toast.error('Please log in first.')
@@ -2831,6 +2943,10 @@ const submitBooking = async () => {
     toast.success('Consultation verification was sent to the clinic. You can book after it is approved.')
     return
   }
+  if (groupBookingEnabled.value) {
+    if (!groupIncludeOrganizer.value && !groupGuests.value.length) { toast.error('Add at least one guest or include yourself as a recipient.'); return }
+    if (groupGuests.value.some((guest) => !guest.name || !/^\S+@\S+\.\S+$/.test(guest.email))) { toast.error('Enter each guest’s full name and valid email for their consent link.'); return }
+  }
 
   try {
     bookingPaymentSaving.value = true
@@ -2840,7 +2956,7 @@ const submitBooking = async () => {
     const consultationFee = flowType === 'consultation'
       ? Number(selectedServices.value.find((service) => String(service?.type || '').toLowerCase() === 'consultation')?.price || selectedServiceTotal.value || 0)
       : 0
-    const amountPeso = Number(selectedServiceTotal.value || 0)
+    const amountPeso = Number(bookingDueAmount.value || 0)
     const profile = await resolveCustomerProfile()
     const token = await user.getIdToken()
     const response = await fetch(`${OTP_API_BASE}/bookings/create`, {
@@ -2859,7 +2975,7 @@ const submitBooking = async () => {
           selectedServices: selectedServices.value,
           selectedServiceIds: selectedServices.value.map((service) => service.id).filter(Boolean),
           serviceDurations: selectedServices.value.map((service) => Number(service.durationMinutes || 0)),
-          totalServiceDurationMinutes: selectedServiceDurationMinutes.value,
+          totalServiceDurationMinutes: bookingDurationMinutes.value,
           amount: amountPeso,
           consultationFee,
           practitionerId: assignedPractitioner.value.id,
@@ -2883,6 +2999,7 @@ const submitBooking = async () => {
           commissionAmount: selectedServiceCommission.value,
           netAmount: selectedServiceNetAmount.value,
           source: 'customer_booking_request',
+          groupBooking: groupBookingEnabled.value ? { organizerId: user.uid, organizerIncluded: groupIncludeOrganizer.value, participantCount: groupRecipientCount.value, guests: groupGuests.value.map((guest) => ({ name: guest.name, email: guest.email, phone: guest.phone || '', serviceId: guest.serviceId || selectedServices.value[0]?.id })) } : null,
           policyAcknowledged: bookingPolicyAcknowledged.value,
         },
       }),
@@ -2908,7 +3025,7 @@ const submitBooking = async () => {
   }
 }
 
-onMounted(async () => {
+onMounted(trackPageLoad(async () => {
   loading.value = true
   try {
     const rootSnap = await getDoc(doc(db, 'clinics', centerId))
@@ -2953,7 +3070,7 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}))
 
 onUnmounted(() => {
   setPageScrollLocked(false)

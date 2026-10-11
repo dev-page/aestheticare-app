@@ -1,5 +1,7 @@
 <template>
-  <div class="page-section-skeleton" :class="variantClass" :style="rootStyle">
+  <div class="page-section-skeleton" :class="variantClass" :style="rootStyle" role="status" aria-live="polite" aria-busy="true">
+    <span class="sr-only">Loading content…</span>
+    <div class="skeleton-content" aria-hidden="true">
     <template v-if="variant === 'list'">
       <div
         v-for="item in resolvedCount"
@@ -70,6 +72,7 @@
         </div>
       </div>
     </template>
+    </div>
   </div>
 </template>
 
@@ -111,19 +114,21 @@ export default {
   display: grid;
   gap: 1rem;
 }
+.skeleton-content { display: grid; gap: 1rem; }
 
 .skeleton-line,
 .skeleton-pill,
 .skeleton-check,
 .skeleton-panel,
 .skeleton-detail-card {
-  background: linear-gradient(90deg, rgba(51, 65, 85, 0.72), rgba(71, 85, 105, 0.92), rgba(51, 65, 85, 0.72));
+  background: linear-gradient(90deg, #ead9c3, #f8eedf, #ead9c3);
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.5s ease-in-out infinite;
 }
 
 .skeleton-line {
   height: 0.9rem;
+  max-width: 100%;
   border-radius: 999px;
 }
 
@@ -153,7 +158,7 @@ export default {
 
 .skeleton-table-row {
   padding: 1rem 0;
-  border-top: 1px solid rgba(51, 65, 85, 0.65);
+  border-top: 1px solid #ead2b2;
 }
 
 .skeleton-list-row {
@@ -162,7 +167,7 @@ export default {
   align-items: start;
   gap: 0.85rem;
   padding: 1rem 0;
-  border-top: 1px solid rgba(51, 65, 85, 0.65);
+  border-top: 1px solid #ead2b2;
 }
 
 .skeleton-list-copy {
@@ -228,5 +233,8 @@ export default {
   100% {
     background-position: -200% 0;
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line, .skeleton-pill, .skeleton-check, .skeleton-panel, .skeleton-detail-card { animation: none; }
 }
 </style>

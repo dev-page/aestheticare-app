@@ -133,6 +133,9 @@ const authorizedRepPosition = ref('')
 const authorizedRepPositionOption = ref('')
 const authorizedRepPositionOther = ref('')
 const companyType = ref('')
+const permitHolderIsRegistrant = ref(null)
+const permitHolderName = ref('')
+const permitHolderRelationship = ref('')
 const companyTypes = ['Corporation', 'Partnership', 'Cooperative', 'LLC', 'Other']
 const authorizedRepPositionOptions = [
   'Owner',
@@ -213,6 +216,19 @@ const recoveryLoginAvailable = ref(false)
 const otpVerifiedForRegistration = ref(false)
 const pendingApprovalMode = ref(false)
 const resubmissionReason = ref('')
+const expiryResubmissionExpiresAt = ref(null)
+const expiryResubmissionDeadlineLabel = computed(() => {
+  const value = expiryResubmissionExpiresAt.value
+  const date = value?.toDate ? value.toDate() : value ? new Date(value) : null
+  return date && !Number.isNaN(date.getTime())
+    ? date.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+    : ''
+})
+const isExpiryResubmissionExpired = computed(() => {
+  const value = expiryResubmissionExpiresAt.value
+  const date = value?.toDate ? value.toDate() : value ? new Date(value) : null
+  return Boolean(date && !Number.isNaN(date.getTime()) && Date.now() > date.getTime())
+})
 
 const otpDigits = ref(Array(6).fill(''))
 const userUid = ref('')
@@ -245,6 +261,7 @@ const governmentIdRepresentativeFrontFile = ref(null)
 const governmentIdRepresentativeBackFile = ref(null)
 const dohAccreditationFile = ref(null)
 const fdaApprovalFile = ref(null)
+const authorizationLetterFile = ref(null)
 const existingSubmittedDocuments = ref({
   secCertificate: null,
   articlesOfIncorporation: null,
@@ -255,6 +272,7 @@ const existingSubmittedDocuments = ref({
   governmentIdRepresentativeBack: null,
   dohAccreditation: null,
   fdaApproval: null,
+  authorizationLetter: null,
 })
 const documentPreviewUrls = ref({
   secCertificate: '',
@@ -266,6 +284,7 @@ const documentPreviewUrls = ref({
   governmentIdRepresentativeBack: '',
   dohAccreditation: '',
   fdaApproval: '',
+  authorizationLetter: '',
 })
 const isSubmittingDocuments = ref(false)
 const documentUploadState = ref({
@@ -278,6 +297,7 @@ const documentUploadState = ref({
   governmentIdRepresentativeBack: { uploading: false, progress: 0, error: '' },
   dohAccreditation: { uploading: false, progress: 0, error: '' },
   fdaApproval: { uploading: false, progress: 0, error: '' },
+  authorizationLetter: { uploading: false, progress: 0, error: '' },
 })
 const documentFileMap = {
   secCertificate: secCertificateFile,
@@ -289,6 +309,7 @@ const documentFileMap = {
   governmentIdRepresentativeBack: governmentIdRepresentativeBackFile,
   dohAccreditation: dohAccreditationFile,
   fdaApproval: fdaApprovalFile,
+  authorizationLetter: authorizationLetterFile,
 }
 const documentLabelMap = {
   secCertificate: 'SEC Certificate of Registration',
@@ -300,6 +321,7 @@ const documentLabelMap = {
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
   dohAccreditation: 'DOH License to Operate',
   fdaApproval: 'FDA Approval',
+  authorizationLetter: 'Authorization Letter / Proof of Authority',
 }
 const documentInputKeys = ref({
   secCertificate: 0,
@@ -311,6 +333,7 @@ const documentInputKeys = ref({
   governmentIdRepresentativeBack: 0,
   dohAccreditation: 0,
   fdaApproval: 0,
+  authorizationLetter: 0,
 })
 
 // File upload rules
@@ -485,7 +508,17 @@ const companyDocumentKeys = [
   'governmentIdRepresentativeBack',
   'dohAccreditation',
 ]
-const requiredDocumentKeys = computed(() => companyDocumentKeys)
+const requiredDocumentKeys = computed(() => permitHolderIsRegistrant.value === false
+  ? [...companyDocumentKeys, 'authorizationLetter']
+  : companyDocumentKeys
+)
+const permitHolderDetailsComplete = computed(() => (
+  typeof permitHolderIsRegistrant.value === 'boolean'
+  && (permitHolderIsRegistrant.value || (
+    String(permitHolderName.value || '').trim().length >= 3
+    && String(permitHolderRelationship.value || '').trim().length >= 2
+  ))
+))
 const acceptedGovernmentIdOptions = [
   'National ID (PhilSys)',
   "Driver's License",
@@ -1198,7 +1231,9 @@ const handleDocumentFileChange = async (key, event) => {
     documentUploadState.value[docKey] = { uploading: false, progress: 100, error: '' }
     toast.success(ocrResult.status === 'verified'
       ? 'Document checked and OCR verified. It will upload when you submit registration.'
-      : 'Document checked. It will upload only when you submit registration and may need manual review.')
+      : ocrResult.status === 'held_pending'
+        ? 'Document checked. Your registration requires a replacement document before it can be reviewed.'
+        : 'Document checked. It will upload only when you submit registration and may need manual review.')
   } catch (err) {
     console.error(err)
     const errorMessage = err?.message || 'Failed to upload document. Please try again.'
@@ -1423,7 +1458,13 @@ const applyProfileData = (profile) => {
   clinicStreetNameEnabled.value = Boolean(clinicStreetName.value)
   authorizedRepPosition.value = safe(profile.authorizedRepPosition) || authorizedRepPosition.value
   companyType.value = safe(profile.companyType) || companyType.value
+  if (typeof profile.permitHolderIsRegistrant === 'boolean') {
+    permitHolderIsRegistrant.value = profile.permitHolderIsRegistrant
+  }
+  permitHolderName.value = safe(profile.permitHolderName) || permitHolderName.value
+  permitHolderRelationship.value = safe(profile.permitHolderRelationship) || permitHolderRelationship.value
   resubmissionReason.value = safe(profile.resubmissionReason) || resubmissionReason.value
+  expiryResubmissionExpiresAt.value = profile.expiryResubmissionExpiresAt || null
 
   if (profile.birthDate) {
     const birth = new Date(profile.birthDate)
@@ -1449,6 +1490,7 @@ const applyProfileData = (profile) => {
     governmentIdRepresentativeBack: storedDocuments?.governmentIdRepresentativeBack || null,
     dohAccreditation: storedDocuments?.dohAccreditation || null,
     fdaApproval: storedDocuments?.fdaApproval || null,
+    authorizationLetter: storedDocuments?.authorizationLetter || null,
   }
   syncAuthorizedRepPositionOption(authorizedRepPosition.value)
   syncExistingDocumentPreviews()
@@ -1652,24 +1694,33 @@ const verifyRegistrationEmail = async (options = {}) => {
 
   try {
     userUid.value = ''
+    permitHolderIsRegistrant.value = null
+    permitHolderName.value = ''
+    permitHolderRelationship.value = ''
     setStoredRegistrationUid('')
     clearOtpInputs()
     stopOtpCountdown()
     secCertificateFile.value = null
     articlesOfIncorporationFile.value = null
     businessPermitFile.value = null
+    birRegistrationFile.value = null
+    sanitaryCertificateFile.value = null
     governmentIdRepresentativeFrontFile.value = null
     governmentIdRepresentativeBackFile.value = null
     dohAccreditationFile.value = null
     fdaApprovalFile.value = null
+    authorizationLetterFile.value = null
     existingSubmittedDocuments.value = {
       secCertificate: null,
       articlesOfIncorporation: null,
       businessPermit: null,
+      birRegistration: null,
+      sanitaryCertificate: null,
       governmentIdRepresentativeFront: null,
       governmentIdRepresentativeBack: null,
       dohAccreditation: null,
       fdaApproval: null,
+      authorizationLetter: null,
     }
     syncExistingDocumentPreviews()
     pendingApprovalMode.value = false
@@ -1948,18 +1999,27 @@ const handleEmailDraftInput = () => {
     secCertificateFile.value = null
     articlesOfIncorporationFile.value = null
     businessPermitFile.value = null
+    birRegistrationFile.value = null
+    sanitaryCertificateFile.value = null
     governmentIdRepresentativeFrontFile.value = null
     governmentIdRepresentativeBackFile.value = null
     dohAccreditationFile.value = null
     fdaApprovalFile.value = null
+    authorizationLetterFile.value = null
+    permitHolderIsRegistrant.value = null
+    permitHolderName.value = ''
+    permitHolderRelationship.value = ''
     existingSubmittedDocuments.value = {
       secCertificate: null,
       articlesOfIncorporation: null,
       businessPermit: null,
+      birRegistration: null,
+      sanitaryCertificate: null,
       governmentIdRepresentativeFront: null,
       governmentIdRepresentativeBack: null,
       dohAccreditation: null,
       fdaApproval: null,
+      authorizationLetter: null,
     }
     syncExistingDocumentPreviews()
     pendingApprovalMode.value = false
@@ -2029,28 +2089,37 @@ const resetClinicRegistrationFlow = () => {
   clinicStreetNameEnabled.value = false
   clinicBuildingNumber.value = ''
   clinicStreetName.value = ''
+  permitHolderIsRegistrant.value = null
+  permitHolderName.value = ''
+  permitHolderRelationship.value = ''
   midName.value = ''
   suffix.value = ''
   clearOtpInputs()
-  secCertificateFile.value = null
-  articlesOfIncorporationFile.value = null
-  businessPermitFile.value = null
+    secCertificateFile.value = null
+    articlesOfIncorporationFile.value = null
+    businessPermitFile.value = null
+    birRegistrationFile.value = null
+    sanitaryCertificateFile.value = null
   birRegistrationFile.value = null
   sanitaryCertificateFile.value = null
   governmentIdRepresentativeFrontFile.value = null
   governmentIdRepresentativeBackFile.value = null
   dohAccreditationFile.value = null
   fdaApprovalFile.value = null
+  authorizationLetterFile.value = null
   existingSubmittedDocuments.value = {
     secCertificate: null,
-    articlesOfIncorporation: null,
-    businessPermit: null,
+      articlesOfIncorporation: null,
+      businessPermit: null,
+      birRegistration: null,
+      sanitaryCertificate: null,
     birRegistration: null,
     sanitaryCertificate: null,
     governmentIdRepresentativeFront: null,
     governmentIdRepresentativeBack: null,
     dohAccreditation: null,
     fdaApproval: null,
+    authorizationLetter: null,
   }
   Object.keys(documentPreviewUrls.value).forEach((key) => {
     const currentPreview = documentPreviewUrls.value[key]
@@ -2731,8 +2800,9 @@ const registerClinic = async () => {
       branchId: uid,
       clinicBranch: 'Main Branch',
       role: 'Clinic Owner',
-      userType: 'Owner',
-      status: 'Pending OTP Verification',
+       userType: 'Owner',
+       status: 'Pending OTP Verification',
+       registrationStatus: 'Pending OTP Verification',
       subscriptionPlan: 'free',
       paymentStatus: 'free',
       subscriptionExpiresAt: null,
@@ -2759,7 +2829,8 @@ const registerClinic = async () => {
       isMainBranch: true,
       branchAdminId: uid,
       branchAdminName: ownerFullName || 'Owner',
-      approvalStatus: 'Pending OTP Verification',
+       approvalStatus: 'Pending OTP Verification',
+       registrationStatus: 'Pending OTP Verification',
       subscriptionPlan: 'free',
       paymentStatus: 'free',
       subscriptionExpiresAt: null,
@@ -3013,7 +3084,16 @@ const requestDocumentOcrPreflight = async (uid, docKey, file) => {
   const token = await currentUser.getIdToken(true)
   const response = await fetch(`${OTP_API_BASE}/registration/ocr-preflight`, {
     method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ uid, docKey, file: { name: file.name, type: file.type, size: file.size, contentBase64 } }),
+    body: JSON.stringify({
+      uid,
+      docKey,
+      permitHolder: {
+        isRegistrant: permitHolderIsRegistrant.value,
+        name: permitHolderIsRegistrant.value ? registeredOwnerLegalName.value : permitHolderName.value.trim(),
+        relationship: permitHolderIsRegistrant.value ? 'Self' : permitHolderRelationship.value.trim(),
+      },
+      file: { name: file.name, type: file.type, size: file.size, contentBase64 },
+    }),
   })
   const payload = await response.json().catch(() => null)
   if (!response.ok || !payload?.success) throw new Error(payload?.error || 'OCR preflight could not process this image.')
@@ -3045,6 +3125,18 @@ const claimPrepaidSubscriptionPayment = async () => {
 
 const submitDocuments = async () => {
   if (currentStep.value !== 3) return
+
+  if (isExpiryResubmissionExpired.value) {
+    toast.error('Your 24-day document-resubmission period has ended. Please start a new clinic registration.')
+    return
+  }
+
+  if (!permitHolderDetailsComplete.value) {
+    toast.error(permitHolderIsRegistrant.value === null
+      ? 'Please confirm whether you are the person named on the business permit.'
+      : 'Please provide the permit holder name and your relationship to them.')
+    return
+  }
 
   if (!termsAccepted.value) {
     toast.error('You must agree to the Terms & Conditions and Privacy Policy before submitting.')
@@ -3101,8 +3193,13 @@ const submitDocuments = async () => {
 
     await updateDoc(doc(db, 'clinics', userUid.value), {
       approvalStatus: 'Pending Approval',
+      registrationStatus: 'Pending Review',
       documentsSubmittedAt: serverTimestamp(),
       submittedDocuments: submittedDocumentsPayload,
+      permitHolderIsRegistrant: permitHolderIsRegistrant.value,
+      permitHolderName: permitHolderIsRegistrant.value ? registeredOwnerLegalName.value : permitHolderName.value.trim(),
+      permitHolderRelationship: permitHolderIsRegistrant.value ? 'Self' : permitHolderRelationship.value.trim(),
+      authorizationReviewRequired: permitHolderIsRegistrant.value === false,
       ...(platformAgreementAcceptance ? { platformAgreementAcceptance } : {}),
       draftDocuments: deleteField(),
       draftDocumentsUpdatedAt: deleteField(),
@@ -3663,14 +3760,58 @@ const handleRegistrationSubmit = () => {
               <div v-if="resubmissionReason" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-charcoal-700" role="alert">
                 <p class="font-semibold text-charcoal-800">Document changes requested</p>
                 <p class="mt-1">{{ resubmissionReason }}</p>
+                <p v-if="expiryResubmissionDeadlineLabel" class="mt-2 text-xs font-semibold text-charcoal-700">Submit the replacement documents by {{ expiryResubmissionDeadlineLabel }}. No extension is available.</p>
                 <p class="mt-2 text-xs text-charcoal-600">Upload a complete replacement set of the required documents, then submit them for review again.</p>
               </div>
+              <section class="space-y-4 rounded-2xl border border-gold-200/80 bg-cream-50/70 p-4 sm:p-5" aria-labelledby="permit-holder-heading">
+                <div>
+                  <p id="permit-holder-heading" class="font-semibold text-charcoal-800">Business permit holder</p>
+                  <p class="mt-1 text-xs leading-relaxed text-charcoal-600">
+                    This helps us compare each person with the correct document. A different permit holder will require authorization review, not automatic rejection.
+                  </p>
+                </div>
+
+                <fieldset>
+                  <legend class="text-sm font-medium text-charcoal-700">Are you the person named on the business permit?</legend>
+                  <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label
+                      class="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition"
+                      :class="permitHolderIsRegistrant === true ? 'border-gold-600 bg-gold-100/70 text-charcoal-800' : 'border-gold-200 bg-white/70 text-charcoal-700 hover:border-gold-400'"
+                    >
+                      <input v-model="permitHolderIsRegistrant" :value="true" type="radio" name="permit-holder-is-registrant" class="accent-gold-700" />
+                      <span><strong class="block">Yes, I am</strong><span class="text-xs text-charcoal-500">My name appears as the permit holder.</span></span>
+                    </label>
+                    <label
+                      class="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition"
+                      :class="permitHolderIsRegistrant === false ? 'border-gold-600 bg-gold-100/70 text-charcoal-800' : 'border-gold-200 bg-white/70 text-charcoal-700 hover:border-gold-400'"
+                    >
+                      <input v-model="permitHolderIsRegistrant" :value="false" type="radio" name="permit-holder-is-registrant" class="accent-gold-700" />
+                      <span><strong class="block">No, someone else is</strong><span class="text-xs text-charcoal-500">I am registering as an authorized representative.</span></span>
+                    </label>
+                  </div>
+                </fieldset>
+
+                <div v-if="permitHolderIsRegistrant === false" class="grid grid-cols-1 gap-4 border-t border-gold-200/80 pt-4 sm:grid-cols-2">
+                  <div class="relative">
+                    <input v-model.trim="permitHolderName" type="text" maxlength="120" placeholder=" " class="peer input h-16 px-3 pb-2 pt-4" />
+                    <label class="floating-label">Permit Holder's Full Name</label>
+                  </div>
+                  <div class="relative">
+                    <input v-model.trim="permitHolderRelationship" type="text" maxlength="80" placeholder=" " class="peer input h-16 px-3 pb-2 pt-4" />
+                    <label class="floating-label">Your Role / Relationship</label>
+                  </div>
+                  <p class="text-xs leading-relaxed text-charcoal-600 sm:col-span-2">
+                    An Authorization Letter / Proof of Authority upload will be required below. OCR will look for both names, and an administrator will validate the authority granted.
+                  </p>
+                </div>
+              </section>
               <div class="rounded-xl border border-gold-300 bg-gold-50 px-4 py-3 text-sm text-charcoal-700" role="note">
                 <p class="font-semibold text-charcoal-800">Before you upload</p>
                 <ul class="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-charcoal-600">
                   <li>Your government-issued ID must show the registrant name entered in Step 1.</li>
                   <li>The front of your government-issued ID must clearly show the same name and birth date entered in Step 1.</li>
                   <li>Business Permit, BIR Registration, Sanitary Certificate, and DOH License must show the clinic/business name entered in Step 1.</li>
+                  <li v-if="permitHolderIsRegistrant === false">The business permit should show the declared permit holder, and the authorization document should clearly identify both the permit holder and registrant.</li>
                   <li>Upload clear, complete, and unexpired documents. Documents with an expiry date must still be valid.</li>
                 </ul>
               </div>

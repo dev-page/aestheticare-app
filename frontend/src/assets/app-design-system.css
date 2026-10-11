@@ -1,0 +1,631 @@
+/* AesthetiCare application design system.
+   Marketing pages may remain more expressive; operational UI consumes these
+   tokens and primitives for a consistent, accessible product experience. */
+
+:root {
+  --ac-bg: #fff8eb;
+  --ac-bg-soft: #fdf3e2;
+  --ac-bg-deep: #f6e4c8;
+  --ac-surface: #fffdf9;
+  --ac-surface-soft: #fff7ec;
+  --ac-surface-muted: #f8ead4;
+  --ac-border: #ead2b2;
+  --ac-border-strong: #cf9f78;
+  --ac-text: #342419;
+  --ac-text-secondary: #624733;
+  --ac-text-muted: #795f4b;
+  --ac-primary: #2d1b13;
+  --ac-primary-hover: #493022;
+  --ac-primary-active: #1f120c;
+  --ac-on-primary: #fffaf3;
+  --ac-accent: #b9794f;
+  --ac-accent-soft: #f1d5b5;
+  --ac-success: #39734a;
+  --ac-success-bg: #e6f1e8;
+  --ac-warning: #8a5b18;
+  --ac-warning-bg: #fbefcf;
+  --ac-danger: #a13f38;
+  --ac-danger-hover: #842f2a;
+  --ac-danger-bg: #f8e3df;
+  --ac-info: #5d617f;
+  --ac-info-bg: #eaebf3;
+  --ac-radius-sm: .625rem;
+  --ac-radius-md: .875rem;
+  --ac-radius-lg: 1.25rem;
+  --ac-radius-xl: 1.75rem;
+  --ac-shadow-sm: 0 5px 16px rgba(72, 42, 23, .06);
+  --ac-shadow-md: 0 14px 34px rgba(72, 42, 23, .09);
+  --ac-shadow-lg: 0 24px 60px rgba(72, 42, 23, .14);
+  --ac-font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ac-font-display: "Bodoni Moda", "Playfair Display", Georgia, serif;
+}
+
+html { color-scheme: light; }
+
+body {
+  background: var(--ac-bg);
+  color: var(--ac-text);
+  font-family: var(--ac-font-ui);
+  font-size: .9375rem;
+  line-height: 1.55;
+  text-rendering: optimizeLegibility;
+}
+
+button, input, select, textarea { font-family: var(--ac-font-ui); }
+
+:is(h1, h2, .page-title, .section-title) {
+  color: var(--ac-text);
+  font-family: var(--ac-font-display);
+  font-weight: 600;
+  letter-spacing: -.025em;
+}
+
+:is(h3, h4, h5, h6) { letter-spacing: -.015em; }
+
+::selection { background: #efd0aa; color: var(--ac-text); }
+
+/* ---------- Operational page canvas ---------- */
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) {
+  --owner-bg: var(--ac-bg);
+  --owner-bg-elevated: var(--ac-bg-soft);
+  --owner-surface: var(--ac-surface);
+  --owner-surface-soft: var(--ac-surface-muted);
+  --owner-border: var(--ac-border);
+  --owner-text: var(--ac-text);
+  --owner-muted: var(--ac-text-muted);
+  --owner-accent: var(--ac-primary);
+  --owner-accent-hover: var(--ac-primary-hover);
+  --customer-bg: var(--ac-bg);
+  --customer-surface: var(--ac-surface);
+  --customer-surface-soft: var(--ac-surface-muted);
+  --customer-border: var(--ac-border);
+  --customer-text: var(--ac-text);
+  --customer-muted: var(--ac-text-muted);
+  --customer-ink: var(--ac-primary);
+  --customer-ink-hover: var(--ac-primary-hover);
+  min-height: 100vh;
+  background: var(--ac-bg) !important;
+  color: var(--ac-text) !important;
+  font-family: var(--ac-font-ui);
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme)[class*="bg-slate-"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme)[class*="bg-[#1"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme)[class*="bg-[#2"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme)[class*="bg-[#3"] {
+  background: var(--ac-bg) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main {
+  min-width: 0;
+  background: transparent !important;
+  color: var(--ac-text) !important;
+  font-family: var(--ac-font-ui);
+}
+
+/* ---------- Surfaces and cards ---------- */
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main [class*="bg-slate-900"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main [class*="bg-slate-800"] {
+  background: rgba(255, 253, 249, .94) !important;
+  border-color: var(--ac-border) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main [class*="bg-slate-700"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main [class*="bg-slate-600"] {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-border) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(section, article, form, header, footer, div)[class*="bg-[#1"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(section, article, form, header, footer, div)[class*="bg-[#2"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(section, article, form, header, footer, div)[class*="bg-[#3"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main [class*="rgba(58,36,23"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main [class*="rgba(42,24,15"] {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(.rounded-xl, .rounded-2xl, .rounded-3xl)[class*="bg-"] {
+  box-shadow: var(--ac-shadow-sm);
+}
+
+.owner-theme main.role-page-shell,
+.owner-theme main.closure-page-shell,
+main.owner-theme.onboarding-page {
+  background: transparent !important;
+  color: var(--ac-text) !important;
+}
+
+/* ---------- Text contrast ---------- */
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(.text-white, .text-slate-50, .text-slate-100, .text-slate-200, .text-slate-300) {
+  color: var(--ac-text) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(.text-slate-400, .text-slate-500, .text-gray-500, .text-gray-600, .text-gray-700) {
+  color: var(--ac-text-muted) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-[#f"], [class*="text-[#e"], [class*="text-[#d"]) {
+  color: var(--ac-text) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-[#c"], [class*="text-[#b"], [class*="text-[#a"], [class*="text-[#9"]) {
+  color: var(--ac-text-muted) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(p, label, dd, li) { line-height: 1.55; }
+
+/* ---------- Navigation sidebar ---------- */
+
+aside.app-sidebar {
+  background: linear-gradient(180deg, #fffaf1 0%, #f8ead4 100%) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+  box-shadow: 10px 0 34px rgba(76, 45, 25, .08) !important;
+  font-family: var(--ac-font-ui) !important;
+}
+
+aside.app-sidebar [class*="border-[#3a"],
+aside.app-sidebar [class*="border-[#4b"],
+aside.app-sidebar [class*="border-[#5a"] { border-color: var(--ac-border) !important; }
+
+aside.app-sidebar [class*="text-[#e8"],
+aside.app-sidebar [class*="text-[#f"],
+aside.app-sidebar .text-white { color: var(--ac-text-secondary) !important; }
+
+aside.app-sidebar [class*="text-[#c9"],
+aside.app-sidebar [class*="text-[#b9"],
+aside.app-sidebar [class*="text-[#9f"] { color: var(--ac-text-muted) !important; }
+
+aside.app-sidebar [class*="bg-[#150"],
+aside.app-sidebar [class*="bg-[#1f"],
+aside.app-sidebar [class*="bg-[#241"],
+aside.app-sidebar [class*="bg-[#2a"],
+aside.app-sidebar [class*="bg-[#2f"],
+aside.app-sidebar [class*="bg-[#3a"] {
+  background: rgba(255, 253, 249, .72) !important;
+  border-color: var(--ac-border) !important;
+}
+
+aside.app-sidebar :is([class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"], [class*="bg-[#9a6848"]) {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+  box-shadow: 0 6px 16px rgba(45, 27, 19, .14);
+}
+
+aside.app-sidebar :is([class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"], [class*="bg-[#9a6848"]) * {
+  color: var(--ac-on-primary) !important;
+}
+
+aside.app-sidebar :is(a, button):hover:not(:disabled) {
+  background: #f1ddc1 !important;
+  color: var(--ac-text) !important;
+}
+
+aside.app-sidebar :is(a, button):is([class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"]):hover {
+  background: var(--ac-primary-hover) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+aside.app-sidebar :is(a, button)[aria-current="page"] {
+  background: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+/* Content asides must never inherit navigation styling. */
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main aside {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+  box-shadow: none !important;
+  font-family: var(--ac-font-ui) !important;
+}
+
+/* ---------- Buttons ---------- */
+
+.app-button,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main button {
+  border-radius: var(--ac-radius-sm);
+  font-weight: 600;
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.app-button--primary,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(button, a):is([class*="bg-blue-"], [class*="bg-sky-"], [class*="bg-cyan-"], [class*="bg-indigo-"], [class*="bg-purple-"], [class*="bg-[#6f"], [class*="bg-[#7b"], [class*="bg-[#8d"], [class*="bg-[#95"]) {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+  box-shadow: 0 7px 18px rgba(45, 27, 19, .14);
+}
+
+.app-button--primary:hover:not(:disabled),
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(button, a):is([class*="bg-blue-"], [class*="bg-sky-"], [class*="bg-cyan-"], [class*="bg-indigo-"], [class*="bg-purple-"]):hover {
+  background: var(--ac-primary-hover) !important;
+  transform: translateY(-1px);
+}
+
+.app-button--secondary {
+  border: 1px solid var(--ac-border-strong) !important;
+  background: transparent !important;
+  color: var(--ac-primary) !important;
+}
+
+.app-button--secondary:hover:not(:disabled) { background: var(--ac-bg-deep) !important; }
+
+.app-button--danger,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main button:is([class*="bg-red-"], [class*="bg-rose-"]) {
+  background: var(--ac-danger) !important;
+  border-color: var(--ac-danger) !important;
+  color: #fff !important;
+}
+
+.app-button--danger:hover:not(:disabled) { background: var(--ac-danger-hover) !important; }
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main button:is([class*="bg-emerald-"], [class*="bg-green-"]) {
+  background: var(--ac-success) !important;
+  border-color: var(--ac-success) !important;
+  color: #fff !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(button, a)[disabled],
+.app-button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+:is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid rgba(185, 121, 79, .35) !important;
+  outline-offset: 2px;
+}
+
+/* ---------- Forms ---------- */
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
+.app-modal-panel :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border: 1px solid var(--ac-border-strong) !important;
+  border-radius: var(--ac-radius-sm) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+  box-shadow: inset 0 1px 2px rgba(72, 42, 23, .035);
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(input, select, textarea)::placeholder,
+.app-modal-panel :is(input, textarea)::placeholder {
+  color: #8a705d !important;
+  opacity: 1;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(input, select, textarea):focus,
+.app-modal-panel :is(input, select, textarea):focus {
+  border-color: var(--ac-accent) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(185, 121, 79, .16) !important;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(input, select, textarea):disabled {
+  background: #f0e4d2 !important;
+  color: #766454 !important;
+  cursor: not-allowed;
+  opacity: .8;
+}
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--ac-primary);
+}
+
+/* ---------- Tables ---------- */
+
+.app-table-wrap,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main [class*="overflow-x-auto"]:has(> table) {
+  border: 1px solid var(--ac-border);
+  border-radius: var(--ac-radius-md);
+  background: var(--ac-surface);
+  box-shadow: var(--ac-shadow-sm);
+}
+
+.app-table,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main table {
+  border-collapse: collapse;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+  font-family: var(--ac-font-ui);
+}
+
+.app-table thead,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main table thead,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main table th {
+  background: var(--ac-surface-muted) !important;
+  color: #553a28 !important;
+}
+
+.app-table th,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main table th {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.app-table td,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main table td {
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+.app-table tbody tr,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main table tbody tr {
+  border-color: var(--ac-border) !important;
+  transition: background-color .16s ease;
+}
+
+.app-table tbody tr:hover,
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main table tbody tr:hover {
+  background: #fff4e3 !important;
+}
+
+/* ---------- Semantic status colours ---------- */
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-emerald-"], [class*="text-green-"]) { color: var(--ac-success) !important; }
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-red-"], [class*="text-rose-"]) { color: var(--ac-danger) !important; }
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-amber-"], [class*="text-yellow-"]) { color: var(--ac-warning) !important; }
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-blue-"], [class*="text-sky-"], [class*="text-cyan-"], [class*="text-indigo-"]) { color: var(--ac-info) !important; }
+
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-emerald-"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-green-"] { background: var(--ac-success-bg) !important; color: var(--ac-success) !important; }
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-red-"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-rose-"] { background: var(--ac-danger-bg) !important; color: var(--ac-danger) !important; }
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-amber-"],
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-yellow-"] { background: var(--ac-warning-bg) !important; color: var(--ac-warning) !important; }
+
+/* ---------- Shared modal, alerts, and toasts ---------- */
+
+.app-modal-panel,
+.swal2-popup.swal2-show:not(.swal-logout-popup),
+.Toastify__toast {
+  border: 1px solid var(--ac-border) !important;
+  border-radius: var(--ac-radius-lg) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+  box-shadow: var(--ac-shadow-lg) !important;
+  font-family: var(--ac-font-ui) !important;
+}
+
+.app-modal-panel > :is(div:first-child, div:last-child) { border-color: var(--ac-border) !important; }
+
+.swal2-popup:not(.swal-logout-popup) :is(.swal2-title, .swal2-html-container) { color: var(--ac-text) !important; }
+.swal2-popup:not(.swal-logout-popup) .swal2-html-container { color: var(--ac-text-secondary) !important; }
+.swal2-popup:not(.swal-logout-popup) :is(.swal2-input, .swal2-file, .swal2-textarea, .swal2-select, .swal2-radio, .swal2-checkbox) {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+}
+.swal2-popup:not(.swal-logout-popup) .swal2-icon.swal2-success :is(.swal2-success-fix, .swal2-success-circular-line-left, .swal2-success-circular-line-right) { background: var(--ac-surface) !important; }
+
+.Toastify__toast-body { color: var(--ac-text) !important; }
+
+body .onboarding-tooltip-supplier.onboarding-tooltip-supplier {
+  border-color: var(--ac-border-strong) !important;
+  background: linear-gradient(145deg, var(--ac-surface), var(--ac-bg-soft)) !important;
+  color: var(--ac-text) !important;
+  box-shadow: var(--ac-shadow-lg) !important;
+  font-family: var(--ac-font-ui) !important;
+}
+
+body .onboarding-tooltip-supplier.onboarding-tooltip-supplier::after,
+body .onboarding-tooltip-supplier.onboarding-tooltip-supplier :is(.onboarding-step-card, .onboarding-guide-icon) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-soft) !important;
+}
+
+body .onboarding-tooltip-supplier.onboarding-tooltip-supplier :is(h3, p, .onboarding-preference, [class*="text-[#"]) {
+  color: var(--ac-text-secondary) !important;
+}
+
+body .onboarding-tooltip-supplier.onboarding-tooltip-supplier .onboarding-actions > button:last-child {
+  border-color: var(--ac-primary) !important;
+  background: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+/* ---------- Legacy named panels still used by the supply workspace ---------- */
+
+.module-theme main :is(.budget-summary article, .budget-card, .budget-table-wrap, .budget-table, .funding-total-card, .funding-panel, .funding-projected, .record-message-thread) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+}
+
+.module-theme main :is(.budget-card, .budget-table, .funding-total-card, .funding-panel, .funding-projected, .record-message-thread) :is(p, small, span, dt, dd) { color: var(--ac-text-muted) !important; }
+
+.module-theme main .fixed.inset-0 form {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+  box-shadow: var(--ac-shadow-lg) !important;
+}
+
+/* ---------- Supplier-specific named components ---------- */
+
+body .supplier-theme :is(.chat-shell, .chat-account-field select, .chat-compose textarea, .chat-heading, .bubble.theirs, .exact-item-card, .exact-item-header, .exact-package, .exact-image, .chat-thread) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+}
+
+body .supplier-theme :is(.chat-compose button, .exact-item-card footer button[type="submit"]) {
+  border-color: var(--ac-primary) !important;
+  background: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+/* TreatmentSessions is a compact legacy single-file view whose root predates
+   the role theme wrappers. Keep it visually identical to other workspaces. */
+#app > .flex.min-h-screen.bg-slate-900 {
+  min-height: 100vh;
+  background: linear-gradient(145deg, var(--ac-bg), var(--ac-bg-soft) 58%, #f7e6cc) !important;
+  color: var(--ac-text) !important;
+  font-family: var(--ac-font-ui);
+}
+
+#app > .flex.min-h-screen.bg-slate-900 main { background: transparent !important; color: var(--ac-text) !important; }
+#app > .flex.min-h-screen.bg-slate-900 main [class*="bg-slate-8"],
+#app > .flex.min-h-screen.bg-slate-900 main [class*="bg-slate-9"] { background: var(--ac-surface) !important; }
+#app > .flex.min-h-screen.bg-slate-900 main [class*="border-slate-"] { border-color: var(--ac-border) !important; }
+#app > .flex.min-h-screen.bg-slate-900 main :is(.text-white, [class*="text-slate-"]) { color: var(--ac-text-secondary) !important; }
+#app > .flex.min-h-screen.bg-slate-900 main table { background: var(--ac-surface) !important; color: var(--ac-text) !important; }
+#app > .flex.min-h-screen.bg-slate-900 main thead { background: var(--ac-surface-muted) !important; }
+#app > .flex.min-h-screen.bg-slate-900 main :is(input, select, textarea) { border-color: var(--ac-border-strong) !important; background: var(--ac-surface) !important; color: var(--ac-text) !important; }
+
+/* ---------- Responsive safeguards ---------- */
+
+@media (max-width: 767px) {
+  body { font-size: .9rem; }
+
+  :is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main {
+    padding: 1rem !important;
+  }
+
+  .app-modal-panel {
+    max-height: calc(100dvh - 1.5rem) !important;
+    border-radius: var(--ac-radius-md) !important;
+  }
+
+  :is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(button, a[role="button"]) {
+    min-height: 2.5rem;
+  }
+}
+
+/* Walk-in policy keeps its operational detail in a warm, readable panel. */
+.walk-in-policy-panel {
+  border-color: var(--ac-border) !important;
+  background: linear-gradient(145deg, var(--ac-surface), var(--ac-surface-soft)) !important;
+  color: var(--ac-text) !important;
+}
+
+.walk-in-policy-panel :is([class*="border-slate-"], [class*="border-teal-"]) {
+  border-color: var(--ac-border) !important;
+}
+
+.walk-in-policy-panel :is([class*="bg-slate-900"], [class*="bg-slate-950"], [class*="bg-slate-800"]) {
+  background: var(--ac-surface-soft) !important;
+}
+
+.walk-in-policy-panel :is([class*="text-slate-"], .text-white) {
+  color: var(--ac-text-secondary) !important;
+}
+
+.walk-in-policy-panel :is(h2, h3, [class*="text-slate-100"]) {
+  color: var(--ac-text) !important;
+}
+
+.walk-in-policy-panel :is([class*="text-amber-"]) {
+  color: var(--ac-primary) !important;
+}
+
+.walk-in-policy-panel :is([class*="bg-emerald-"], [class*="bg-teal-"]) {
+  background-color: var(--ac-success-bg) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* ---------- Whole-application coverage ----------
+   Some public, account-recovery, customer-app, and utility routes predate the
+   role-theme wrappers above. Apply the landing-page system at the app boundary
+   so these routes use the same palette, type scale, controls, and surfaces. */
+
+.aestheticare-app {
+  min-height: 100dvh;
+  background: var(--ac-bg);
+  color: var(--ac-text);
+  font-family: var(--ac-font-ui);
+}
+
+.aestheticare-app :is(button, input, select, textarea) {
+  font-family: var(--ac-font-ui);
+}
+
+.aestheticare-app:not(.landing-route) {
+  background:
+    radial-gradient(circle at 88% 4%, rgba(230, 193, 150, .30), transparent 22rem),
+    linear-gradient(145deg, var(--ac-bg) 0%, var(--ac-bg-soft) 58%, #f7e6cc 100%);
+}
+
+.aestheticare-app:not(.landing-route) :is([class*="bg-slate-900"], [class*="bg-slate-800"], [class*="bg-slate-700"], [class*="bg-gray-900"], [class*="bg-gray-800"], [class*="bg-zinc-900"], [class*="bg-zinc-800"]) {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+}
+
+.aestheticare-app:not(.landing-route) :is([class*="bg-blue-"], [class*="bg-sky-"], [class*="bg-cyan-"], [class*="bg-indigo-"], [class*="bg-purple-"]) {
+  background-color: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+}
+
+.aestheticare-app:not(.landing-route) :is([class*="hover:bg-blue-"], [class*="hover:bg-sky-"], [class*="hover:bg-cyan-"], [class*="hover:bg-indigo-"], [class*="hover:bg-purple-"]):hover {
+  background-color: var(--ac-primary-hover) !important;
+}
+
+.aestheticare-app:not(.landing-route) :is([class*="border-slate-"], [class*="border-gray-"], [class*="border-zinc-"]) {
+  border-color: var(--ac-border) !important;
+}
+
+.aestheticare-app:not(.landing-route) :is([class*="text-slate-"], [class*="text-gray-"], [class*="text-zinc-"]) {
+  color: var(--ac-text-secondary) !important;
+}
+
+.aestheticare-app:not(.landing-route) :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border-color: var(--ac-border-strong) !important;
+  border-radius: var(--ac-radius-sm) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+}
+
+.aestheticare-app:not(.landing-route) :is(input, select, textarea):focus {
+  border-color: var(--ac-accent) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(185, 121, 79, .16) !important;
+}
+
+.aestheticare-app:not(.landing-route) :is(button, [role="button"]) {
+  border-radius: var(--ac-radius-sm);
+  font-weight: 600;
+}
+
+.aestheticare-app:not(.landing-route) :is(h1, h2, .page-title, .section-title) {
+  font-family: var(--ac-font-display);
+  font-weight: 600;
+  letter-spacing: -.025em;
+}
+
+/* Keep standalone data pages and older component modals readable on phones. */
+@media (max-width: 767px) {
+  .aestheticare-app:not(.landing-route) :is(main, .min-h-screen) {
+    min-width: 0;
+  }
+
+  .aestheticare-app:not(.landing-route) :is(.overflow-x-auto, .overflow-y-auto) {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .aestheticare-app:not(.landing-route) :is(table, img, svg, video, iframe) {
+    max-width: 100%;
+  }
+
+  .aestheticare-app:not(.landing-route) :is([role="dialog"], .fixed.inset-0) {
+    padding: .75rem;
+  }
+}

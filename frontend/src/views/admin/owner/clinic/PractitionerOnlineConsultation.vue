@@ -1,10 +1,10 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex module-theme min-w-0" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="flex-1 p-8">
+    <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-white mb-2">Online Consultation</h1>
+        <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Online Consultation</h1>
         <p class="text-slate-400">Generate and manage Google Meet links for your assigned appointments.</p>
       </div>
 
@@ -67,7 +67,7 @@
                     <button
                       type="button"
                       class="inline-flex items-center justify-center h-7 w-7 rounded-md bg-slate-700 text-slate-200 hover:bg-slate-600 disabled:opacity-60"
-                      :disabled="isExpiredAppointment(appointment) || isCancelledAppointment(appointment)"
+                      :disabled="!canJoinConsultation(appointment)"
                       @click="copyMeetLink(appointment.meetLink)"
                       title="Copy link"
                     >
@@ -94,10 +94,13 @@
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-500 disabled:opacity-60"
                       :disabled="isExpiredAppointment(appointment) || isCancelledAppointment(appointment)"
-                      @click="joinCall(appointment.meetLink)"
+                      @click="joinCall(appointment)"
                     >
                       Join Call
                     </button>
+                    <p v-if="appointment.clientJoinedAt" class="w-full text-xs text-emerald-300">Customer entered the waiting room.</p>
+                    <p v-if="appointment.consultationClientEndedAt" class="w-full text-xs text-amber-300">Customer ended participation. Submit notes and mark consultation done.</p>
+                    <p v-if="appointment.consultationNeedsReview" class="w-full text-xs text-rose-300">Short consultation flagged for clinic review.</p>
                     <button
                       v-if="canStartConsultation(appointment)"
                       type="button"
@@ -108,7 +111,7 @@
                       {{ startingId === appointment.id ? 'Starting...' : 'Start Consultation' }}
                     </button>
                     <button
-                      v-if="appointment.status === 'Ongoing'"
+                      v-if="appointment.status === 'Ongoing' && !hasConsultationWindowEnded(appointment)"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-500 disabled:opacity-60"
                       :disabled="finishingId === appointment.id"
@@ -116,7 +119,8 @@
                     >
                       {{ finishingId === appointment.id ? 'Completing...' : 'Mark Consultation Done' }}
                     </button>
-                    <span v-else-if="appointment.status === 'Ongoing'" class="text-xs font-medium text-emerald-300">Consultation in progress</span>
+                    <span v-else-if="appointment.status === 'Ongoing'" class="text-xs font-medium text-amber-300">Official consultation window ended</span>
+                    <p v-if="appointment.status === 'Ongoing'" class="w-full text-xs font-medium" :class="hasConsultationWindowEnded(appointment) ? 'text-amber-300' : 'text-emerald-300'">{{ consultationTimerLabel(appointment) }}</p>
                     <p v-if="meetLinkGateReason(appointment)" class="w-full text-xs text-amber-300">
                       {{ meetLinkGateReason(appointment) }}
                     </p>
@@ -133,13 +137,16 @@
           </table>
         </div>
       </div>
-    </main>
+    </component>
   </div>
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc, serverTimestamp, addDoc } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, serverTimestamp, addDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
@@ -151,8 +158,11 @@ import { initialPaymentReceived, normalized } from '../../../../../../backend/ot
 
 export default {
   name: 'PractitionerOnlineConsultation',
+  props: { embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' } },
   components: { OwnerSidebar, Icon },
-  setup() {
+  setup(props) {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -165,9 +175,11 @@ export default {
     const creatingId = ref('')
     const startingId = ref('')
     const finishingId = ref('')
+    const endingId = ref('')
+    const clockNow = ref(Date.now())
     const isSeedingDemo = ref(false)
 
-    const fetchFromBackend = async (path, options = {}) => {
+    const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
       const candidates = OTP_BACKEND_CANDIDATES
       let lastError = null
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
@@ -195,7 +207,7 @@ export default {
       }
 
       throw lastError || new Error(`Failed to reach backend service at ${BACKEND_URL}`)
-    }
+    })
 
     const isAssignedToPractitioner = (appointment) => {
       const assignedIds = [
@@ -226,16 +238,16 @@ export default {
       })
     )
 
-    const loadAppointments = async () => {
+    const loadAppointments = trackPageLoad(async (providedSnapshot = null) => {
       if (!currentBranchId.value) return
-      const snapshot = await getDocs(query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)))
-      const records = await Promise.all(snapshot.docs.map(async (snap) => {
+      const snapshot = providedSnapshot || await getDocs(query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value), where('type', '==', 'Consultation')))
+      const records = await Promise.all(snapshot.docs.filter(snap => isAssignedToPractitioner(snap.data()) && normalized(snap.data().type) === 'consultation').map(async (snap) => {
         const appointment = { id: snap.id, ...snap.data() }
         const meetingSnap = await getDoc(doc(db, 'appointmentMeetings', snap.id))
         return meetingSnap.exists() ? { ...appointment, ...meetingSnap.data() } : appointment
       }))
       appointments.value = sortRecordsNewestFirst(records)
-    }
+    })
 
     const parseDateTime = (dateValue, timeValue) => {
       const date = String(dateValue || '').trim()
@@ -250,8 +262,37 @@ export default {
     const isExpiredAppointment = (appointment) => {
       const start = parseDateTime(appointment?.date, appointment?.time)
       if (!start) return false
-      const end = new Date(start.getTime() + 60 * 60 * 1000)
-      return Date.now() > end.getTime()
+      const end = new Date(start.getTime() + consultationDurationMinutes(appointment) * 60 * 1000)
+      return clockNow.value > end.getTime()
+    }
+
+    const consultationDurationMinutes = (appointment) => Math.min(240, Math.max(5, Number(
+      appointment?.consultationDurationMinutes || appointment?.durationMinutes || appointment?.totalServiceDurationMinutes || 30
+    )))
+
+    const consultationWindow = (appointment) => {
+      const start = parseDateTime(appointment?.date, appointment?.time)
+      if (!start) return null
+      const end = new Date(start.getTime() + consultationDurationMinutes(appointment) * 60 * 1000)
+      return { start, opensAt: new Date(start.getTime() - 5 * 60 * 1000), end }
+    }
+
+    const canJoinConsultation = (appointment) => {
+      const window = consultationWindow(appointment)
+      return Boolean(appointment?.meetLink && window && clockNow.value >= window.opensAt.getTime() && clockNow.value <= window.end.getTime() && !isCancelledAppointment(appointment))
+    }
+
+    const hasConsultationWindowEnded = (appointment) => {
+      const window = consultationWindow(appointment)
+      return Boolean(window && clockNow.value > window.end.getTime())
+    }
+
+    const consultationTimerLabel = (appointment) => {
+      const window = consultationWindow(appointment)
+      if (!window) return 'Consultation schedule is unavailable.'
+      const remainingSeconds = Math.max(0, Math.ceil((window.end.getTime() - clockNow.value) / 1000))
+      if (!remainingSeconds) return 'The official consultation time has ended.'
+      return `Official time remaining: ${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
     }
 
     const isCancelledAppointment = (appointment) =>
@@ -281,7 +322,7 @@ export default {
 
       try {
         const start = parseDateTime(appointment.date, appointment.time) || new Date()
-        const end = new Date(start.getTime() + 60 * 60 * 1000)
+        const end = new Date(start.getTime() + consultationDurationMinutes(appointment) * 60 * 1000)
         const clientName = appointment.clientName || appointment.patientName || 'Client'
         const serviceName = appointment.service || appointment.type || 'Consultation'
 
@@ -320,16 +361,25 @@ export default {
       }
     }
 
-    const joinCall = (meetLink) => {
-      const url = String(meetLink || '').trim()
+    const joinCall = async (appointment) => {
+      const url = String(appointment.meetLink || '').trim()
       if (!url) return
-      window.open(url, '_blank', 'noopener,noreferrer')
+      const callWindow = window.open('about:blank', '_blank')
+      try {
+        const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'join_consultation' }) })
+        const payload = await response.json()
+        if (!response.ok || !payload.success) throw new Error(payload.error || 'Unable to enter waiting room.')
+        appointment.practitionerJoinedAt = new Date().toISOString()
+        if (callWindow) { callWindow.opener = null; callWindow.location.href = url }
+        else toast.info('Waiting room entered. Open the consultation link to join your call.')
+      } catch (error) { callWindow?.close(); toast.error(error.message) }
     }
 
     const canStartConsultation = (appointment) => {
-      if (!appointment?.meetLink || isExpiredAppointment(appointment) || isCancelledAppointment(appointment)) return false
+      if (!appointment?.meetLink || !canJoinConsultation(appointment)) return false
       if (String(appointment.consultationMode || '').trim().toLowerCase() !== 'online') return false
       if (meetLinkGateReason(appointment)) return false
+      if (!appointment.clientJoinedAt || !appointment.practitionerJoinedAt) return false
       return ['Paid', 'Ready to Start', 'Scheduled'].includes(String(appointment.status || '').trim())
     }
 
@@ -349,7 +399,7 @@ export default {
         appointment.status = payload?.data?.status || 'Ongoing'
         appointment.startedAt = new Date().toISOString()
         toast.success('Online consultation started.')
-        joinCall(appointment.meetLink)
+        // The practitioner enters the waiting room using Join Call before starting.
       } catch (error) {
         console.error('Failed to start online consultation:', error)
         toast.error(error?.message || 'Failed to start the online consultation.')
@@ -362,10 +412,12 @@ export default {
       if (!appointment?.id || String(appointment.status || '').trim() !== 'Ongoing') return
       finishingId.value = appointment.id
       try {
+        const treatmentNotes = window.prompt('Consultation notes and recommendations:', '')
+        if (treatmentNotes === null) return
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'worker_complete' }),
+          body: JSON.stringify({ action: 'worker_complete', treatmentNotes }),
         })
         const payload = await response.json()
         if (!response.ok || !payload?.success) {
@@ -379,6 +431,22 @@ export default {
       } finally {
         finishingId.value = ''
       }
+    }
+
+    const endElapsedConsultation = async (appointment) => {
+      if (!appointment?.id || appointment.status !== 'Ongoing' || !hasConsultationWindowEnded(appointment) || endingId.value === appointment.id) return
+      endingId.value = appointment.id
+      try {
+        const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'end_online_window' }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to close the elapsed consultation.')
+        appointment.status = payload?.data?.status || 'Awaiting Customer Confirmation'
+        toast.info('The official consultation time ended. The customer can now confirm completion.')
+      } catch (error) {
+        console.error('Failed to close elapsed consultation:', error)
+      } finally { endingId.value = '' }
     }
 
     const copyMeetLink = async (meetLink) => {
@@ -463,28 +531,41 @@ export default {
     }
 
     let unsubscribeAuth = null
+    let unsubscribeAppointments = null
+    let disposed = false
+    let consultationClock = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      consultationClock = window.setInterval(() => {
+        clockNow.value = Date.now()
+        appointments.value.filter((appointment) => appointment.status === 'Ongoing' && hasConsultationWindowEnded(appointment)).forEach(endElapsedConsultation)
+      }, 1000)
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
 
         currentUserId.value = user.uid
-        const userSnap = await getDoc(doc(db, 'users', user.uid))
-        currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
+        const scope = await loadOwnerBranchScope(db, user.uid)
+        currentBranchId.value = props.branchId || scope.branchId
         if (!currentBranchId.value) {
           toast.error('Your account has no branch assignment.', { toastId: 'missing-branch-assignment-consult' })
           return
         }
 
-        await loadAppointments()
+        if (disposed) return
+        unsubscribeAppointments?.()
+        unsubscribeAppointments = pageListener(onSnapshot, query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value), where('type', '==', 'Consultation')), snapshot => loadAppointments(snapshot), error => toast.error(error.message || 'Live consultation updates are unavailable.'))
       })
-    })
+    }))
 
     onUnmounted(() => {
+      disposed = true
       if (unsubscribeAuth) unsubscribeAuth()
+      unsubscribeAppointments?.()
+      if (consultationClock) window.clearInterval(consultationClock)
     })
 
     return {
+      pageLoading,
       searchQuery,
       statusFilter,
       dateFilter,
@@ -503,6 +584,9 @@ export default {
       startConsultation,
       completeConsultation,
       copyMeetLink,
+      canJoinConsultation,
+      hasConsultationWindowEnded,
+      consultationTimerLabel,
       seedDemoConsultation,
       isExpiredAppointment,
       isCancelledAppointment,

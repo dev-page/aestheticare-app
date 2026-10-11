@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <component :is="sidebarComponent" v-if="sidebarComponent" />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Activities</h1>
         <p class="text-slate-400">Recent activity logs related to your account and clinic access.</p>
@@ -33,6 +33,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -47,6 +49,8 @@ export default {
   name: 'Activities',
   components: { CustomerSidebar, EmployeeSidebar, OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -108,7 +112,7 @@ export default {
       return String(activity?.actorRole || activity?.actorUserType || 'Unknown role').trim()
     }
 
-    const loadActivities = async () => {
+    const loadActivities = trackPageLoad(async () => {
       activities.value = []
       try {
         // Activity documents are branch-scoped in Firestore. A query by actor
@@ -143,10 +147,10 @@ export default {
       } catch (err) {
         console.error('Failed to load activities:', err)
       }
-    }
+    })
 
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
 
         currentUserId.value = user.uid
@@ -157,9 +161,10 @@ export default {
         userType.value = data.userType || ''
         await loadActivities()
       })
-    })
+    }))
 
     return {
+      pageLoading,
       filteredActivities,
       formatDate,
       formatActorRole,

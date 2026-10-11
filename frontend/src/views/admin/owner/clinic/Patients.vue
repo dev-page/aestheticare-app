@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-beige">
+  <div class="module-theme min-h-screen bg-beige">
     <!-- Header -->
     <div class="bg-white shadow-sm border-b border-light">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -19,7 +19,7 @@
       </div>
     </div>
 
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5, header: false }" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
         <div class="flex flex-col sm:flex-row gap-4">
           <div class="flex-1">
@@ -119,6 +119,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted } from 'vue'
 import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
@@ -128,6 +130,8 @@ import Table from '@/components/common/Table.vue'
 import Modal from '@/components/common/Modal.vue'
 import PatientForm from '@/components/clinic/PatientForm.vue'
 import PatientDetails from '@/components/clinic/PatientDetails.vue'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const { hasPermission } = usePermissions()
 
@@ -238,11 +242,11 @@ const closeModals = () => {
   selectedPatient.value = null
 }
 
-onMounted(() => {
+onMounted(trackPageLoad(() => {
   loadPatients()
-})
+}))
 
-const loadPatients = async () => {
+const loadPatients = trackPageLoad(async () => {
   loading.value = true
   try {
     const scope = await loadOwnerBranchScope(db, auth.currentUser?.uid)
@@ -259,5 +263,5 @@ const loadPatients = async () => {
   } finally {
     loading.value = false
   }
-}
+})
 </script>

@@ -16,6 +16,7 @@ export const systemAdminPermissionGroups = [
     label: 'Registration Verification',
     permissions: [
       { key: 'system:clinics:verify', label: 'Verify Clinics' },
+      { key: 'system:suppliers:verify', label: 'Verify Suppliers' },
       { key: 'system:clinics:view', label: 'View Verified Clinics' },
       { key: 'system:accounts:view', label: 'View User Accounts' },
       { key: 'system:accounts:archive', label: 'Manage Archived Accounts' },

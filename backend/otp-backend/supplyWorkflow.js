@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { supplierIsVerified } from './supplierVerification.js'
 import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMatch, stockSignals, hasPermission, permissionsByKind, supplierCanRead, supplierProjection } from './supplyModel.js'
 
 const docs = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }))
@@ -31,7 +32,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const ctx = await loadUserContext(req.user.uid)
     const supplier = String(ctx.roleKey).toLowerCase() === 'supplier' || ctx.userData.userType === 'supplier'
     const owned = supplier ? docs(await db.collection('suppliers').where('ownerId', '==', ctx.uid).get()).concat(docs(await db.collection('suppliers').where('supplierUserId', '==', ctx.uid).get())) : []
-    return { ...ctx, supplier, supplierIds: [...new Set(owned.filter(s => s.status === 'Active').map(s => s.id))] }
+    if (supplier) demand(supplierIsVerified((await db.collection('supplierApplications').doc(ctx.uid).get()).data()), 'Complete supplier verification before using the supply portal.', 403)
+    return { ...ctx, supplier, supplierIds: [...new Set(owned.filter(s => s.status === 'Active' && s.verificationStatus === 'Verified').map(s => s.id))] }
   }
   const branchAccess = async (ctx, branchId) => {
     cleanId(branchId)
@@ -238,6 +240,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     await db.runTransaction(async tx => {
       const snapshot = await tx.get(ref); demand(snapshot.exists, 'Supplier profile not found.', 404)
       const supplier = snapshot.data() || {}; demand(supplier.ownerId === ctx.uid || supplier.supplierUserId === ctx.uid, 'This catalog belongs to another supplier.', 403)
+      demand(supplier.verificationStatus === 'Verified', 'This supplier has not been verified.', 403)
       const oldItems = Array.isArray(supplier.offeredItems) ? supplier.offeredItems : [], ids = new Set()
       const submitted = requested.map(raw => { const item = catalogItem(raw); demand(!ids.has(item.id), 'Duplicate catalog item identifiers are not allowed.', 400); ids.add(item.id); const old = oldItems.find(entry => entry.id === item.id); return { ...item, reservedQuantity: Number(old?.reservedQuantity || 0), lastReservedAt: old?.lastReservedAt || null, lastReservedPoId: old?.lastReservedPoId || '', lastFulfilledAt: old?.lastFulfilledAt || null, lastFulfilledPoId: old?.lastFulfilledPoId || '' } })
       items = [...submitted, ...oldItems.filter(item => !ids.has(item.id))]
@@ -272,8 +275,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       const supplierSnap = supplierId ? await tx.get(db.collection('suppliers').doc(cleanId(supplierId))) : null
       const supplier = supplierSnap?.data()
       const catalogItem = Array.isArray(supplier?.offeredItems) ? supplier.offeredItems.find(product => String(product.id) === catalogItemId) : null
-      if (!existing.exists) demand(supplier && supplier.branchId === branchId && supplier.status === 'Active' && catalogItem, 'Choose an active supplier and an item from that supplier\'s catalog.', 400)
-      if (catalogItem) demand(supplier.branchId === branchId && supplier.status === 'Active', 'The selected supplier is not active for this branch.', 400)
+      if (!existing.exists) demand(supplier && supplier.branchId === branchId && supplier.status === 'Active' && supplier.verificationStatus === 'Verified' && catalogItem, 'Choose a verified supplier and an item from that supplier\'s catalog.', 400)
+      if (catalogItem) demand(supplier.branchId === branchId && supplier.status === 'Active' && supplier.verificationStatus === 'Verified', 'The selected supplier is not verified and active for this branch.', 400)
       const currentStock = quantity(input.currentStock, true), minStock = quantity(input.minStock, true), targetStock = quantity(input.targetStock, true), maxStock = quantity(input.maxStock, true)
       demand(targetStock >= minStock && maxStock >= targetStock, 'Maximum stock must be at least target stock, and target must be at least the restocking threshold.', 400)
       demand(currentStock >= Number(old.reservedStock || 0), 'Stock cannot fall below reserved quantity.')
@@ -352,7 +355,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       writes.push([db.collection('supplyRecords').doc(id), record, false]); return record
     }
     const evidence = (r, message) => demand(documents.some(d => d.recordId === r.id), message || 'Upload supporting documents before continuing.')
-    const supplier = id => { const s = suppliers.find(s => s.id === id); demand(s && s.status === 'Active', 'Select an active supplier assigned to this branch.'); return s }
+    const supplier = id => { const s = suppliers.find(s => s.id === id); demand(s && s.status === 'Active' && s.verificationStatus === 'Verified', 'Select a verified, active supplier assigned to this branch.'); return s }
     const supplierCanProvideLine = (s, line) => (Array.isArray(s.offeredItems) ? s.offeredItems : []).some(product => {
       if (!product || typeof product !== 'object' || !line || typeof line !== 'object') return false
       const catalogMatch = s.id === line.supplierId && String(product.id || '') === String(line.supplierCatalogItemId || '')
@@ -593,9 +596,9 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             set(budget, { committed: budget.committed + approvedAmount })
             const approval = create('financeApproval', { status: 'Approved', poId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...linksOf(r), r.id] }, `approval-${r.id}`)
             const allocation = create('budgetAllocation', { status: 'Committed', poId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...linksOf(approval), approval.id] }, `allocation-${r.id}`)
-            result = set(r, { status: 'Sent to Supplier', budgetId: budget.id, committedAmount: approvedAmount, approvedAmount, approvedBy: ctx.uid, approvedAt: now, sentBy: ctx.uid, sentAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
+            result = set(r, { status: 'Approved', budgetId: budget.id, committedAmount: approvedAmount, approvedAmount, approvedBy: ctx.uid, approvedAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
             const procurement = linked(r.procurementId, 'procurement')
-            if (procurement) set(procurement, { status: 'Ordered' })
+            if (procurement) set(procurement, { status: 'Approved' })
           } else {
             const remarks = required(input.remarks, 'Decision reason')
             result = set(r, { status: action === 'reject' ? 'Rejected' : 'Returned to Procurement', remarks, reviewedBy: ctx.uid, reviewedAt: now })
@@ -726,6 +729,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         recipients = [changed.requesterId]; title = 'Inventory request returned'; message = `${changed.number} needs revision before Procurement can continue.`; link = '/inventory/requests'
       } else if (changed.kind === 'po' && changed.status === 'For Finance Approval') {
         recipients = staffWith('finance:payables:approve'); title = 'Purchase order awaiting Finance approval'; message = `${changed.number} is ready for budget and financial approval.`; link = '/finance/procurement/requests'
+      } else if (changed.kind === 'po' && changed.status === 'Approved') {
+        recipients = staffWith('finance:payables:approve'); title = 'Purchase order approved'; message = `${changed.number} is approved and ready to send to the supplier.`; link = '/finance/procurement/requests'
       } else if (changed.kind === 'po' && changed.status === 'Sent to Supplier') {
         recipients = [supplierRecipient(changed.supplierId)]; title = 'New purchase order'; message = `${changed.number} has been sent for your confirmation.`; link = '/supplier/supply/orders'
       } else if (changed.kind === 'po' && changed.status === 'Shipped') {

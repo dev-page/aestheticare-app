@@ -2,7 +2,7 @@
   <div class="flex min-h-screen flex-row owner-theme bg-slate-900">
     <OwnerSidebar />
 
-    <main class="min-w-0 flex-1 p-4 text-white sm:p-6 md:p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'form', fields: 4, sections: 1 }, { variant: 'table', columns: 6, rows: 4 }] }" class="min-w-0 flex-1 p-4 text-white sm:p-6 md:p-8">
       <div class="mx-auto max-w-7xl">
         <div class="mb-8">
           <p class="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300">Leave & Overtime</p>
@@ -82,6 +82,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
@@ -92,6 +94,8 @@ import { db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { logActivity } from '@/utils/activityLogger'
 import { calculatePhilippineOvertime } from '@/utils/philippineOvertime'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const auth = getAuth()
 const { hasPermission, isClinicAdminOwner } = usePermissions()
@@ -253,7 +257,7 @@ async function reviewRequest(request, status) {
   }
 }
 
-onMounted(() => onAuthStateChanged(auth, async () => {
+onMounted(trackPageLoad(() => pageListener(onAuthStateChanged, auth, async () => {
   try {
     loading.value = true
     await resolveContext()
@@ -261,7 +265,7 @@ onMounted(() => onAuthStateChanged(auth, async () => {
   } finally {
     loading.value = false
   }
-}))
+})))
 </script>
 
 <style scoped>

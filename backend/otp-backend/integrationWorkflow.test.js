@@ -7,7 +7,7 @@ const harness = (seed) => {
   const records = new Map(Object.entries(seed)), routes = new Map()
   let serial = 0, queue = Promise.resolve()
   const ref = (path) => ({ path, id: path.split('/').pop(), collection: (name) => collection(path + '/' + name) })
-  const collection = (path, filters = []) => ({ path, filters, doc: (id = 'auto' + ++serial) => ref(path + '/' + id), where: (key, op, value) => collection(path, [...filters, [key, value]]) })
+  const collection = (path, filters = []) => ({ path, filters, doc: (id = 'auto' + ++serial) => ref(path + '/' + id), where: (key, op, value) => collection(path, [...filters, [key, op, value]]) })
   const snap = (path, data) => ({ id: path.split('/').pop(), ref: ref(path), exists: data !== undefined, data: () => data === undefined ? undefined : structuredClone(data) })
   const db = { collection, runTransaction(fn) {
     const run = queue.then(async () => {
@@ -15,7 +15,7 @@ const harness = (seed) => {
       const tx = {
         async get(target) {
           assert.equal(writes.length, 0, 'All transaction reads must precede writes')
-          if (target.filters) return { docs: [...records].filter(([path, data]) => path.startsWith(target.path + '/') && path.split('/').length === target.path.split('/').length + 1 && target.filters.every(([key, value]) => data[key] === value)).map(([path, data]) => snap(path, data)) }
+          if (target.filters) return { docs: [...records].filter(([path, data]) => path.startsWith(target.path + '/') && path.split('/').length === target.path.split('/').length + 1 && target.filters.every(([key, op, value]) => op === '==' && data[key] === value)).map(([path, data]) => snap(path, data)) }
           return snap(target.path, records.get(target.path))
         },
         update: (target, data) => { assert.ok(records.has(target.path)); writes.push([target.path, data, true]) },
@@ -38,7 +38,7 @@ const harness = (seed) => {
     outsider: { uid: 'outsider', roleKey: 'Manager', userData: { branchId: 'other' }, permissions: new Set(['procurement:review', 'orders:update']) },
   }
   const app = { post(path, auth, handler) { routes.set(path, handler) } }
-  const deps = { admin: { firestore }, requireAuth() {}, loadUserContext: async (uid) => contexts[uid], buildPayMongoHeaders() {} }
+  const deps = { admin: { firestore }, requireAuth() {}, loadUserContext: async (uid) => contexts[uid], assertPlanFeature: async () => {}, buildPayMongoHeaders() {} }
   registerPayrollWorkflow(app, deps); registerOrderWorkflow(app, deps)
   const call = async (path, uid, params, body = {}) => {
     const result = { code: 200 }

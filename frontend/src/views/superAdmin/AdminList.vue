@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5 }" class="flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Admin List</h1>
@@ -22,7 +22,7 @@
             :disabled="loading"
             @click="loadAdmins"
           >
-            {{ loading ? 'Refreshing...' : 'Refresh' }}
+            <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
           </button>
           <button
             type="button"
@@ -60,7 +60,7 @@
               <tr v-else-if="!filteredAdmins.length">
                 <td class="px-4 py-3 text-slate-300" colspan="6">No admin accounts found.</td>
               </tr>
-              <tr v-for="admin in filteredAdmins" :key="admin.id" class="border-b border-slate-700/60 last:border-b-0">
+              <tr v-for="admin in paginatedAdmins" :key="admin.id" class="border-b border-slate-700/60 last:border-b-0">
                 <td class="px-4 py-3 text-slate-100">
                   <div class="flex items-center gap-2">
                     <span>{{ admin.fullName }}</span>
@@ -101,6 +101,11 @@
             </tbody>
           </table>
         </div>
+        <TablePagination
+          v-model:page="currentPage"
+          v-model:page-size="pageSize"
+          :total-items="filteredAdmins.length"
+        />
       </section>
 
       <div
@@ -238,7 +243,9 @@
 </template>
 
 <script>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getApp } from 'firebase/app'
 import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, signOut } from 'firebase/auth'
 import { collection, doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore'
@@ -247,6 +254,7 @@ import { db } from '@/config/firebaseConfig'
 import { toast } from 'vue3-toastify'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { logActivity } from '@/utils/activityLogger'
@@ -272,12 +280,16 @@ const formatDate = (value) => {
 
 export default {
   name: 'SuperAdminAdminList',
-  components: { SuperAdminSidebar },
+  components: { SuperAdminSidebar, TablePagination },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const loading = ref(false)
     const saving = ref(false)
     const error = ref('')
     const search = ref('')
+    const currentPage = ref(1)
+    const pageSize = ref(10)
     const admins = ref([])
     const currentAdminUid = ref('')
     const editingAdminId = ref('')
@@ -349,7 +361,7 @@ export default {
       if (unsubscribeUsers) unsubscribeUsers()
       loading.value = true
       error.value = ''
-      unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      unsubscribeUsers = pageListener(onSnapshot, collection(db, 'users'), (snapshot) => {
         const users = snapshot.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
           .filter((user) => isSystemAdmin(user) && !isArchived(user))
@@ -453,7 +465,7 @@ export default {
       showAddModal.value = true
     }
 
-    const fetchBackend = async (path, options = {}) => {
+    const fetchBackend = trackPageLoad(async (path, options = {}) => {
       let lastError = null
       let lastResponse = null
       for (const baseUrl of OTP_BACKEND_CANDIDATES) {
@@ -468,7 +480,7 @@ export default {
       }
       if (lastResponse) return lastResponse
       throw lastError || new Error('Backend is unavailable.')
-    }
+    })
 
     const deleteAdmin = async (admin) => {
       if (!canManageAdmins.value) {
@@ -620,25 +632,33 @@ export default {
       }
     }
 
-    onMounted(() => {
+    onMounted(trackPageLoad(() => {
       const currentAuth = getAuth()
       currentAdminUid.value = currentAuth.currentUser?.uid || ''
-      unsubscribeAuth = onAuthStateChanged(currentAuth, (user) => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, currentAuth, (user) => {
         currentAdminUid.value = user?.uid || ''
       })
       loadAdmins()
-    })
+    }))
+    const paginatedAdmins = computed(() => filteredAdmins.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+    const totalPages = computed(() => Math.max(1, Math.ceil(filteredAdmins.value.length / pageSize.value)))
+    watch([search, pageSize], () => { currentPage.value = 1 })
+    watch(totalPages, (count) => { if (currentPage.value > count) currentPage.value = count })
     onUnmounted(() => {
       unsubscribeUsers?.()
       unsubscribeAuth?.()
     })
 
     return {
+      pageLoading,
       loading,
       saving,
       error,
       search,
       filteredAdmins,
+      paginatedAdmins,
+      currentPage,
+      pageSize,
       statusClass,
       loadAdmins,
       showAddModal,

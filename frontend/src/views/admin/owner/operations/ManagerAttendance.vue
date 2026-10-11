@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5 }" class="flex-1 p-4 md:p-8">
       <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Attendance</h1>
       <p class="text-slate-400 mb-6">Attendance records for your branch</p>
 
@@ -70,6 +70,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, computed } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -82,6 +84,8 @@ export default {
   name: 'ManagerAttendance',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -117,7 +121,7 @@ export default {
       return Array.from(map.values()).sort((a, b) => (a.dateKey < b.dateKey ? 1 : -1))
     })
 
-    const loadAttendance = async () => {
+    const loadAttendance = trackPageLoad(async () => {
       if (!currentBranchId.value) {
         attendanceRecords.value = []
         return
@@ -155,10 +159,10 @@ export default {
           const bTime = b.createdAt?.seconds || 0
           return bTime - aTime
         })
-    }
+    })
 
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
@@ -172,9 +176,10 @@ export default {
 
         await loadAttendance()
       })
-    })
+    }))
 
-    return { attendanceRecords, groupedAttendance }
+    return {
+      pageLoading, attendanceRecords, groupedAttendance }
   }
 }
 </script>

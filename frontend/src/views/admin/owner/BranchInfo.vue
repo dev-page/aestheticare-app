@@ -1,10 +1,15 @@
 <script>
+import { serviceOnlyClinicPolicies } from '@/utils/clinicPolicies'
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, computed } from 'vue'
 import { getFirestore, collection, updateDoc, doc, getDoc, getDocs, serverTimestamp, query, where } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
+import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
+import { buildClientContractDocument, clientContractPolicies } from '../../../../../shared/clientContract.js'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
@@ -14,8 +19,11 @@ import { revenueByBranch } from '@/utils/revenue'
 
 export default {
   name: 'Branch Info',
-  components: { OwnerSidebar, Modal },
+  components: { OwnerSidebar, Modal, ClientContractDocument },
+  props: { embedded: { type: Boolean, default: false } },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasFeature } = useSubscription()
@@ -27,6 +35,11 @@ export default {
     const policyBranch = ref(null)
     const clinicPolicies = ref({})
     const linkedPolicyKeys = ref([])
+    const showContractPreview = ref(false)
+    const contractPreviewSource = ref('customer_booking_request')
+    const contractConfigured = computed(() => clinicPolicies.value.clientContract?.configured === true)
+    const selectedContractPolicies = computed(() => clientContractPolicies(clinicPolicies.value, { branch: { enforcedPolicyKeys: linkedPolicyKeys.value }, source: contractPreviewSource.value }))
+    const branchContractPreview = computed(() => buildClientContractDocument(clinicPolicies.value, { branch: { enforcedPolicyKeys: linkedPolicyKeys.value }, source: contractPreviewSource.value }))
     const ownerProfile = ref({
       branchAdminId: '',
       branchAdminName: ''
@@ -50,16 +63,13 @@ export default {
       { key: 'cancellationPolicy', title: 'Cancellation Policy', enabledKey: 'serviceCancellationPolicyEnabled' },
       { key: 'reschedulePolicy', title: 'Rescheduling Policy', enabledKey: 'serviceReschedulingPolicyEnabled' },
       { key: 'noShowPolicy', title: 'No-Show Policy', enabledKey: 'serviceNoShowPolicyEnabled' },
-      { key: 'deliveryPolicy', title: 'Product Payment & Pickup Policy', enabledKey: 'productDeliveryPaymentPolicyEnabled' },
-      { key: 'productOrderCancellationPolicy', title: 'Product Cancellation Policy', enabledKey: 'productCancellationPolicyEnabled' },
-      { key: 'productReturnPolicy', title: 'Product Return Policy', enabledKey: 'productReturnPolicyEnabled' },
       { key: 'walkInPolicy', title: 'Walk-In Policy', enabledKey: 'walkInPolicyEnabled' },
     ]
     const enabledPolicies = computed(() => policyDefinitions
       .filter((policy) => clinicPolicies.value[policy.enabledKey] === true || clinicPolicies.value[`${policy.key}Enabled`] === true)
       .map((policy) => ({ ...policy, details: String(clinicPolicies.value[policy.key] || '').trim() || 'No details have been configured.' })))
 
-    const loadOwnerProfile = async (uid) => {
+    const loadOwnerProfile = trackPageLoad(async (uid) => {
       if (!uid) return { branchAdminId: '', branchAdminName: '' }
       const userSnap = await getDoc(doc(db, 'users', uid))
       const data = userSnap.exists() ? userSnap.data() || {} : {}
@@ -72,7 +82,7 @@ export default {
         branchAdminId: uid,
         branchAdminName,
       }
-    }
+    })
 
     const formatFullName = (data = {}) =>
       String(data.fullName || '').trim() ||
@@ -80,7 +90,7 @@ export default {
       data.email ||
       'Owner'
 
-    const loadBranches = async () => {
+    const loadBranches = trackPageLoad(async () => {
       const user = auth.currentUser
       if (!user) {
         branches.value = []
@@ -120,14 +130,14 @@ export default {
 
       const policySnap = await getDoc(doc(db, 'clinicPolicies', currentOwnerId.value))
       if (policySnap.exists()) {
-        clinicPolicies.value = policySnap.data() || {}
+        clinicPolicies.value = serviceOnlyClinicPolicies(policySnap.data())
       } else {
         // Read an older branch-keyed policy document until the owner next
         // saves Policy Management, which migrates it to the clinic owner ID.
         const legacyPolicySnap = branches.value[0]?.id
           ? await getDoc(doc(db, 'clinicPolicies', branches.value[0].id))
           : null
-        clinicPolicies.value = legacyPolicySnap?.exists() ? legacyPolicySnap.data() || {} : {}
+        clinicPolicies.value = legacyPolicySnap?.exists() ? serviceOnlyClinicPolicies(legacyPolicySnap.data()) : {}
       }
 
       const branchIds = branches.value.map((branch) => branch.id).filter(Boolean)
@@ -175,7 +185,7 @@ export default {
         staffOptions.value = []
         toast.error('We could not load branch management. Please refresh and try again.')
       }
-    }
+    })
 
     onMounted(loadBranches)
 
@@ -191,9 +201,19 @@ export default {
       showEditModal.value = true
     }
 
-    const openPolicyModal = (branch) => {
+    const openPolicyModal = async (branch) => {
       activeMenuBranchId.value = ''
+      try {
+        const snapshot = await getDoc(doc(db, 'clinicPolicies', currentOwnerId.value))
+        const legacy = !snapshot.exists() ? await getDoc(doc(db, 'clinicPolicies', branch.id)) : null
+        clinicPolicies.value = serviceOnlyClinicPolicies(snapshot.exists() ? snapshot.data() : legacy?.data() || {})
+      } catch (error) {
+        toast.error('Could not load the latest clinic policies and contract. Please try again.')
+        return
+      }
       policyBranch.value = branch
+      showContractPreview.value = false
+      contractPreviewSource.value = 'customer_booking_request'
       // Existing branches enforce all enabled clinic policies until the owner
       // explicitly saves a narrower selection. This keeps current rules intact.
       linkedPolicyKeys.value = Array.isArray(branch.enforcedPolicyKeys)
@@ -404,6 +424,7 @@ export default {
     }
 
     return {
+      pageLoading,
       branches,
       staffOptions,
       activeBranches,
@@ -415,6 +436,11 @@ export default {
       policyBranch,
       enabledPolicies,
       linkedPolicyKeys,
+      showContractPreview,
+      contractPreviewSource,
+      contractConfigured,
+      selectedContractPolicies,
+      branchContractPreview,
       currentBranch,
       openEditModal,
       openPolicyModal,
@@ -429,11 +455,11 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex flex-row owner-theme" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="flex-1 p-4 md:p-8">
-      <div class="mb-6 flex flex-col items-start justify-between space-y-4 md:flex-row md:items-center md:space-y-0">
+    <component v-page-loading="{ active: pageLoading, variant: 'table', columns: 7, rows: 4, header: false }" :is="embedded ? 'div' : 'main'" class="flex-1 min-w-0" :class="embedded ? '' : 'p-4 md:p-8'">
+      <div v-if="!embedded" class="mb-6 flex flex-col items-start justify-between space-y-4 md:flex-row md:items-center md:space-y-0">
         <div>
           <h1 class="mb-1 text-2xl font-bold text-white md:text-3xl">Branch Management</h1>
           <p class="text-sm text-slate-400 md:text-base">Monitor branch locations, employees, and revenue performance</p>
@@ -549,123 +575,166 @@ export default {
         </table>
       </div>
 
-      <Modal :isOpen="showEditModal" panelClass="bg-slate-800 text-white w-full max-w-md" @close="showEditModal = false">
+      <Modal :isOpen="showEditModal" panelClass="branch-dialog branch-edit-dialog" @close="showEditModal = false">
         <template #header>
-          <h2 class="text-xl font-semibold text-white">Edit Branch</h2>
+          <div>
+            <h2 class="branch-dialog-title">Edit Branch</h2>
+            <p class="branch-dialog-description">Update this location’s details and assigned administrator.</p>
+          </div>
         </template>
-
         <template #body>
-          <form class="space-y-4">
-            <div>
-              <label class="mb-1 block text-slate-400">Branch Name</label>
-              <input
-                v-model="currentBranch.clinicBranch"
-                type="text"
-                placeholder="Enter branch name"
-                class="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+          <form id="branch-edit-form" class="branch-edit-form" @submit.prevent="updateBranch">
+            <div class="branch-field">
+              <label for="branch-edit-name">Branch Name</label>
+              <input id="branch-edit-name" v-model="currentBranch.clinicBranch" type="text" placeholder="Enter branch name" />
             </div>
-
-            <div>
-              <label class="mb-1 block text-slate-400">Location</label>
-              <input
-                v-model="currentBranch.clinicLocation"
-                type="text"
-                placeholder="Enter location"
-                class="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+            <div class="branch-field">
+              <label for="branch-edit-location">Location</label>
+              <input id="branch-edit-location" v-model="currentBranch.clinicLocation" type="text" placeholder="Enter location" />
             </div>
-
-
-            <div>
-              <label class="mb-1 block text-slate-400">Status</label>
-              <select
-                v-model="currentBranch.status"
-                class="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option>Active</option>
-                <option>Inactive</option>
-              </select>
+            <div class="branch-field">
+              <label for="branch-edit-status">Status</label>
+              <select id="branch-edit-status" v-model="currentBranch.status"><option>Active</option><option>Inactive</option></select>
             </div>
-
-            <div v-if="currentBranch.isMainBranch" class="rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-              <p class="font-semibold text-amber-200">Main Branch</p>
-              <p class="mt-1">This is the clinic location registered first. Main-branch status is fixed and cannot be changed here.</p>
-            </div>
-            <p v-else class="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3 text-sm text-slate-300">
-              This is an additional branch. The main branch is the first clinic location registered.
-            </p>
-
-            <div>
-              <label class="mb-1 block text-slate-400">Branch Admin</label>
-              <select
-                v-model="currentBranch.branchAdminId"
-                class="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                @change="currentBranch.branchAdminName = staffOptions.find((staff) => staff.id === currentBranch.branchAdminId)?.fullName || ''"
-              >
+            <div class="branch-field">
+              <label for="branch-edit-admin">Branch Admin</label>
+              <select id="branch-edit-admin" v-model="currentBranch.branchAdminId" @change="currentBranch.branchAdminName = staffOptions.find((staff) => staff.id === currentBranch.branchAdminId)?.fullName || ''">
                 <option value="">Select branch admin</option>
-                <option
-                  v-for="staff in staffOptions"
-                  :key="staff.id"
-                  :value="staff.id"
-                >
-                  {{ staff.fullName }} - {{ staff.role }}{{ staff.isOwner ? ' (Clinic Admin)' : '' }}
-                </option>
+                <option v-for="staff in staffOptions" :key="staff.id" :value="staff.id">{{ staff.fullName }} - {{ staff.role }}{{ staff.isOwner ? ' (Clinic Admin)' : '' }}</option>
               </select>
-              <p class="mt-1 text-xs text-slate-400">The branch admin is auto-filled for the main branch, but you can change it here.</p>
+              <p class="branch-field-help">Choose who manages this branch.</p>
+            </div>
+            <div class="branch-dialog-note">
+              <strong>{{ currentBranch.isMainBranch ? 'Main branch' : 'Additional branch' }}</strong>
+              <p>{{ currentBranch.isMainBranch ? 'This is the clinic location registered first. Its main-branch status cannot be changed here.' : 'The main branch is the first clinic location registered.' }}</p>
             </div>
           </form>
         </template>
-
         <template #footer>
-          <div class="flex flex-col justify-end space-y-2 sm:flex-row sm:space-x-2 sm:space-y-0">
-            <button @click="showEditModal = false" class="rounded bg-slate-600 px-4 py-2 text-white transition hover:bg-slate-700">
-              Cancel
-            </button>
-            <button @click="updateBranch" class="rounded bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700">
-              Update
-            </button>
+          <div class="branch-dialog-actions">
+            <button type="button" class="branch-dialog-button branch-dialog-button-secondary" @click="showEditModal = false">Cancel</button>
+            <button type="submit" form="branch-edit-form" class="branch-dialog-button branch-dialog-button-primary">Update Branch</button>
           </div>
         </template>
       </Modal>
 
-      <Modal :isOpen="showPolicyModal" panelClass="bg-slate-800 text-white w-full max-w-5xl" @close="showPolicyModal = false">
+      <Modal :isOpen="showPolicyModal" panelClass="branch-dialog branch-policy-dialog" @close="showPolicyModal = false">
         <template #header>
           <div>
-            <h2 class="text-xl font-semibold text-white">Link Policies</h2>
-            <p class="mt-1 text-sm text-slate-400">Choose which clinic-wide policies this branch enforces. Policy rules are configured only in Policy Management.</p>
+            <h2 class="branch-dialog-title">Link Policies</h2>
+            <p class="branch-dialog-description">Choose the clinic-wide policies this branch enforces. Edit policies and agreements in Policy &amp; Contract Management.</p>
           </div>
         </template>
-
         <template #body>
-          <p class="mb-4 rounded-lg border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
-            Branch: <strong>{{ policyBranch?.clinicBranch || 'Selected branch' }}</strong>
-          </p>
-          <div class="overflow-x-auto rounded-xl border border-slate-700">
-            <table class="w-full min-w-[760px] text-left text-sm">
-              <thead class="bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
-                <tr><th class="w-16 px-4 py-3">Link</th><th class="px-4 py-3">Policy title</th><th class="px-4 py-3">Policy details</th><th class="px-4 py-3">Status</th></tr>
-              </thead>
+          <div class="branch-policy-summary">
+            <p>Branch: <strong>{{ policyBranch?.clinicBranch || 'Selected branch' }}</strong></p>
+            <span>{{ linkedPolicyKeys.filter(key => enabledPolicies.some(policy => policy.key === key)).length }} of {{ enabledPolicies.length }} policies linked</span>
+          </div>
+          <section class="branch-contract-link-note" aria-label="Linked client contract">
+            <div>
+              <h3>Client Contract</h3>
+              <p v-if="contractConfigured">This branch uses your clinic's saved Client Contract for both online and walk-in bookings, including the saved design and additional terms. The applicable policies selected below are included in each agreement. The Walk-In Policy is an additional policy for walk-in bookings.</p>
+              <p v-else>No Client Contract has been saved yet. Configure it in Policy &amp; Contract Management to use a clinic agreement at this branch. Until then, new bookings use their service-specific agreement.</p>
+              <p v-if="contractConfigured" class="branch-contract-preview-help">Preview reflects your current selections. Save Policy Links to apply changes. Existing booking agreements retain their saved content and design.</p>
+            </div>
+            <button type="button" class="branch-dialog-button branch-dialog-button-secondary" :disabled="!contractConfigured" :aria-expanded="showContractPreview" aria-controls="branch-contract-preview" @click="showContractPreview = !showContractPreview">{{ showContractPreview ? 'Hide Branch Contract' : 'Preview Branch Contract' }}</button>
+          </section>
+          <section v-if="showContractPreview && contractConfigured" id="branch-contract-preview" class="branch-contract-preview">
+            <h3>Contract preview · {{ policyBranch?.clinicBranch }}</h3>
+            <div class="branch-contract-preview-types" aria-label="Preview appointment type">
+              <button type="button" :aria-pressed="contractPreviewSource === 'customer_booking_request'" @click="contractPreviewSource = 'customer_booking_request'">Online booking</button>
+              <button type="button" :aria-pressed="contractPreviewSource === 'walk_in'" @click="contractPreviewSource = 'walk_in'">Walk-in</button>
+            </div>
+            <p class="branch-contract-preview-help">{{ selectedContractPolicies.length ? 'Included policies: ' + selectedContractPolicies.map(policy => policy.title).join(', ') : 'No applicable policies selected.' }} Booked service details and any service-specific terms are added to the actual agreement.</p>
+            <ClientContractDocument :document="branchContractPreview" />
+          </section>
+          <div class="branch-policy-table-wrap">
+            <table class="branch-policy-table">
+              <thead><tr><th scope="col">Link</th><th scope="col">Policy title</th><th scope="col">Policy details</th><th scope="col">Status</th></tr></thead>
               <tbody>
-                <tr v-for="policy in enabledPolicies" :key="policy.key" class="border-t border-slate-700 align-top">
-                  <td class="px-4 py-4"><input v-model="linkedPolicyKeys" :value="policy.key" type="checkbox" class="h-4 w-4 rounded border-slate-500 bg-slate-700 text-amber-500" /></td>
-                  <td class="px-4 py-4 font-medium text-white">{{ policy.title }}</td>
-                  <td class="max-w-xl px-4 py-4 leading-6 text-slate-300">{{ policy.details }}</td>
-                  <td class="px-4 py-4"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="linkedPolicyKeys.includes(policy.key) ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-700 text-slate-300'">{{ linkedPolicyKeys.includes(policy.key) ? 'Enforced' : 'Not Enforced' }}</span></td>
+                <tr v-for="policy in enabledPolicies" :key="policy.key">
+                  <td><input v-model="linkedPolicyKeys" :value="policy.key" type="checkbox" :aria-label="'Enforce ' + policy.title" /></td>
+                  <td class="branch-policy-name">{{ policy.title }}</td>
+                  <td class="branch-policy-details">{{ policy.details }}</td>
+                  <td><span class="branch-policy-badge" :class="{ 'is-enforced': linkedPolicyKeys.includes(policy.key) }">{{ linkedPolicyKeys.includes(policy.key) ? 'Enforced' : 'Not enforced' }}</span></td>
                 </tr>
-                <tr v-if="!enabledPolicies.length"><td colspan="4" class="px-4 py-8 text-center text-slate-400">No clinic-wide policies are enabled. Configure them in Policy Management first.</td></tr>
+                <tr v-if="!enabledPolicies.length"><td colspan="4" class="branch-policy-empty">No clinic-wide policies are enabled. Configure them in Policy &amp; Contract Management first.</td></tr>
               </tbody>
             </table>
           </div>
         </template>
-
         <template #footer>
-          <div class="flex justify-end gap-3">
-            <button type="button" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-white hover:bg-slate-700" @click="showPolicyModal = false">Cancel</button>
-            <button type="button" class="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400" @click="saveLinkedPolicies">Save Policy Links</button>
+          <div class="branch-dialog-actions">
+            <button type="button" class="branch-dialog-button branch-dialog-button-secondary" @click="showPolicyModal = false">Cancel</button>
+            <button type="button" class="branch-dialog-button branch-dialog-button-primary" @click="saveLinkedPolicies">Save Policy Links</button>
           </div>
         </template>
       </Modal>
-    </main>
+    </component>
   </div>
 </template>
+
+<style>
+/* These panels are teleported to body, outside the page theme container. */
+.app-modal-panel.branch-dialog {
+  background: var(--ac-surface, #fffdf9) !important;
+  color: var(--ac-text, #342419) !important;
+  border: 1px solid var(--ac-border, #ead2b2) !important;
+  border-radius: 20px !important;
+}
+.app-modal-panel.branch-edit-dialog { max-width: 600px; }
+.app-modal-panel.branch-policy-dialog { max-width: 1040px; }
+.branch-dialog > div { padding: 24px; }
+.branch-dialog > div:first-child { align-items: flex-start; background: var(--ac-surface-soft, #fff7ec); }
+.branch-dialog > div:last-child { background: var(--ac-surface-soft, #fff7ec); }
+.branch-dialog .branch-dialog-title { margin: 0; color: var(--ac-text) !important; font-size: 22px; font-weight: 700; line-height: 1.3; }
+.branch-dialog .branch-dialog-description { margin: 8px 0 0; color: var(--ac-text-muted); font-size: 14px; line-height: 1.6; }
+.branch-dialog > div:first-child > button { flex-shrink: 0; border-radius: 8px; padding: 4px; color: var(--ac-text-muted); }
+.branch-dialog > div:first-child > button:hover { background: var(--ac-surface-muted); color: var(--ac-text); }
+.branch-edit-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.branch-field { min-width: 0; }
+.branch-field label { display: block; margin-bottom: 8px; color: var(--ac-text-secondary); font-size: 14px; font-weight: 600; }
+.branch-dialog .branch-field :is(input, select) { width: 100%; min-height: 44px; border: 1px solid var(--ac-border-strong) !important; border-radius: 10px !important; padding: 10px 12px; background: var(--ac-surface) !important; color: var(--ac-text) !important; font-size: 14px; }
+.branch-dialog select option { background: var(--ac-surface) !important; color: var(--ac-text) !important; }
+.branch-field-help { margin-top: 8px; color: var(--ac-text-muted); font-size: 12px; line-height: 1.5; }
+.branch-dialog-note { grid-column: 1 / -1; border: 1px solid var(--ac-border); border-radius: 12px; padding: 14px 16px; background: var(--ac-surface-soft); color: var(--ac-text-secondary); font-size: 13px; line-height: 1.6; }
+.branch-dialog-note p { margin: 4px 0 0; }
+.branch-dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.branch-dialog .branch-dialog-button { min-height: 42px; border: 1px solid var(--ac-border-strong); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color .15s ease; }
+.branch-dialog .branch-dialog-button-primary { border-color: var(--ac-primary); background: var(--ac-primary); color: var(--ac-on-primary); }
+.branch-dialog .branch-dialog-button-primary:hover { background: var(--ac-primary-hover); }
+.branch-dialog .branch-dialog-button-secondary { background: var(--ac-surface); color: var(--ac-text-secondary); }
+.branch-dialog .branch-dialog-button-secondary:hover { background: var(--ac-surface-muted); }
+.branch-dialog :is(button, input, select):focus-visible { outline: 2px solid var(--ac-accent); outline-offset: 3px; }
+.branch-policy-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; border: 1px solid var(--ac-border); border-radius: 12px; padding: 14px 16px; background: var(--ac-surface-soft); color: var(--ac-text-secondary); font-size: 14px; }
+.branch-policy-summary p { margin: 0; }
+.branch-policy-summary span { color: var(--ac-text-muted); font-size: 12px; }
+.branch-contract-link-note { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; padding: 18px; border: 1px solid var(--ac-border); border-radius: 12px; background: var(--ac-surface-soft); }
+.branch-contract-link-note > div { flex: 1 1 360px; }
+.branch-contract-link-note h3, .branch-contract-preview > h3 { color: var(--ac-text); font-size: 16px; font-weight: 700; }
+.branch-contract-link-note p { margin-top: 8px; color: var(--ac-text-secondary); font-size: 13px; line-height: 1.6; }
+.branch-contract-preview-help { margin: 10px 0 16px; color: var(--ac-text-muted); font-size: 12px; line-height: 1.6; }
+.branch-contract-link-note button:disabled { opacity: .5; cursor: not-allowed; }
+.branch-contract-preview { margin-bottom: 20px; padding: 18px; border: 1px solid var(--ac-border); border-radius: 12px; background: var(--ac-surface-soft); }
+.branch-contract-preview-types { display: flex; gap: 8px; margin-top: 12px; }
+.branch-contract-preview-types button { border: 1px solid var(--ac-border-strong); border-radius: 8px; padding: 8px 12px; color: var(--ac-text-secondary); background: var(--ac-surface); font-size: 12px; }
+.branch-contract-preview-types button[aria-pressed="true"] { border-color: var(--ac-primary); color: var(--ac-on-primary); background: var(--ac-primary); }
+.branch-policy-table-wrap { overflow-x: auto; border: 1px solid var(--ac-border); border-radius: 12px; }
+.branch-policy-table { width: 100%; min-width: 640px; border-collapse: collapse; text-align: left; font-size: 14px; }
+.branch-policy-table th { padding: 14px 16px; background: var(--ac-surface-muted); color: var(--ac-text-secondary); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.branch-policy-table td { border-top: 1px solid var(--ac-border); padding: 18px 16px; vertical-align: top; }
+.branch-policy-table th:first-child { width: 60px; }
+.branch-policy-table th:nth-child(2) { width: 24%; }
+.branch-policy-name { color: var(--ac-text); font-weight: 600; line-height: 1.6; }
+.branch-policy-details { color: var(--ac-text-secondary); line-height: 1.7; }
+.branch-policy-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--ac-primary); cursor: pointer; }
+.branch-policy-badge { display: inline-block; border-radius: 999px; padding: 5px 10px; background: var(--ac-surface-muted); color: var(--ac-text-muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.branch-policy-badge.is-enforced { background: var(--ac-success-bg); color: var(--ac-success); }
+.branch-policy-table .branch-policy-empty { padding: 32px 20px; color: var(--ac-text-muted); text-align: center; }
+@media (max-width: 640px) {
+  .app-modal-panel.branch-dialog { max-height: calc(100dvh - 6rem); }
+  .branch-dialog > div { padding: 18px; }
+  .branch-edit-form { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .branch-dialog-actions > button { flex: 1; padding-inline: 10px; }
+}
+</style>

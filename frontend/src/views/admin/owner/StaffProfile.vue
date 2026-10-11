@@ -1,10 +1,13 @@
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { getFirestore, collection, getDocs, onSnapshot, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
+import PractitionerProfileEditor from '@/components/common/PractitionerProfileEditor.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
@@ -13,8 +16,11 @@ import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 export default {
   name: 'OwnerStaff',
-  components: { OwnerSidebar, Modal },
+  components: { OwnerSidebar, Modal, PractitionerProfileEditor },
+  props: { embedded: { type: Boolean, default: false } },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const staffList = ref([])
@@ -89,7 +95,7 @@ export default {
           where("branchId", "in", chunk),
           where("userType", "==", "Staff")
         )
-        const unsubscribe = onSnapshot(staffQuery, (snapshot) => {
+        const unsubscribe = pageListener(onSnapshot, staffQuery, (snapshot) => {
           recordsByChunk[chunkIndex] = snapshot.docs.map((staffDoc) => ({ id: staffDoc.id, ...staffDoc.data() }))
           applyStaffDocs(recordsByChunk.flat())
         }, (error) => {
@@ -100,7 +106,7 @@ export default {
       })
     }
 
-    const loadBranches = async () => {
+    const loadBranches = trackPageLoad(async () => {
       const user = auth.currentUser
       if (!user) {
         branches.value = []
@@ -116,9 +122,9 @@ export default {
         clinicBranch: branch.clinicBranch,
         clinicLocation: branch.clinicLocation
       }))
-    }
+    })
 
-    const loadCustomRoles = async () => {
+    const loadCustomRoles = trackPageLoad(async () => {
       const user = auth.currentUser
       if (!user) {
         customRoles.value = []
@@ -146,14 +152,14 @@ export default {
         })
         .filter((role) => role.name && role.permissions.length > 0)
         .sort((left, right) => left.name.localeCompare(right.name))
-    }
+    })
 
-    onMounted(async() => {
+    onMounted(trackPageLoad(async() => {
       await loadBranches()
       await loadCustomRoles()
       subscribeStaff()
 
-    })
+    }))
 
     onUnmounted(() => clearStaffListeners())
 
@@ -347,6 +353,7 @@ export default {
     })
 
     return {
+      pageLoading,
       staffList,
       branches,
       showEditModal,
@@ -366,12 +373,12 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex flex-row owner-theme w-full" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="staff-management-main flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
+    <component v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5, header: false }" :is="embedded ? 'div' : 'main'" class="staff-management-main flex-1 min-w-0" :class="embedded ? '' : 'p-4 sm:p-6 lg:p-8'">
       <!-- Header -->
-      <div class="mb-6 flex flex-col gap-2">
+      <div v-if="!embedded" class="mb-6 flex flex-col gap-2">
         <div>
           <p class="staff-eyebrow">People & access</p>
           <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Employee Management</h1>
@@ -421,7 +428,7 @@ export default {
               <td class="py-2 px-2 sm:py-3 sm:px-4">{{ staff.email }}</td>
               <td class="py-2 px-2 sm:py-3 sm:px-4">{{ staff.phoneNumber || '-' }}</td>
               <td class="py-2 px-2 sm:py-3 sm:px-4">
-                <div>{{ staff.role || '-' }}</div>
+                <div>{{ staff.role || '-' }}<span v-if="staff.practitionerType"> / {{ staff.practitionerType }}</span></div>
                 <div v-if="staff.customRoleName" class="text-xs text-cyan-300">{{ staff.customRoleName }}</div>
               </td>
               <td class="py-2 px-2 sm:py-3 sm:px-4">{{ staff.assignedBranchNames?.join(', ') || staff.clinicBranch }}</td>
@@ -564,6 +571,7 @@ export default {
                 <option value="Pending Activation" disabled>Pending</option>
               </select>
             </div>
+            <PractitionerProfileEditor v-if="currentStaff.id" :key="currentStaff.id" :employee-id="currentStaff.id" :branch-id="currentStaff.branchId" />
           </form>
         </template>
 
@@ -574,7 +582,7 @@ export default {
           </div>
         </template>
       </Modal>
-    </main>
+    </component>
   </div>
 </template>
 

@@ -1,4 +1,14 @@
+import { normalizeStaffing } from '../../shared/practitionerTeam.js'
 export const financialFields = ['price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount']
+export const validateListingNumbers = (post) => {
+  try { normalizeStaffing(post.staffingRequirements) } catch (error) { return error.message }
+  if (post.price === '' || post.price == null || !Number.isFinite(Number(post.price)) || Number(post.price) < 0) return 'Enter a valid price of zero or greater.'
+  if (['Service', 'Package'].includes(post.postType)) {
+    const count = post.sessionCount === undefined ? 1 : Number(post.sessionCount)
+    if (!Number.isInteger(count) || count < 1 || count > 50) return 'Number of treatment sessions must be a whole number from 1 to 50.'
+  }
+  return ''
+}
 export const draftListing = () => ({ financeStatus: 'draft', isPublished: false, financeReview: null, publishedBy: null, publishedAt: null })
 export const financialTermsChanged = (before, after) => financialFields.some((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
 export const approvedOrderLines = (items, listings, amount) => {
@@ -18,6 +28,10 @@ export const approvedOrderLines = (items, listings, amount) => {
 export const listingTransition = (post, action, role, uid, note = '', { isFreePlan = false } = {}) => {
   const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }) }
   if (post.archived) fail('Restore the listing before submitting it for review.')
+  if (['submit', 'publish'].includes(action)) {
+    const error = validateListingNumbers(post)
+    if (error) fail(error, 400)
+  }
   if (isFreePlan) {
     if (post.postType !== 'Service') fail('Free Plan can publish service listings only.', 403)
     if (!['Owner', 'Manager'].includes(role)) fail('Only the clinic owner or manager can publish listings.', 403)
@@ -72,6 +86,11 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         // Legacy clinic records without a plan retain their existing approval
         // workflow until their subscription data is migrated.
         const isFreePlan = String(clinic.subscriptionPlan || clinic.plan || '').trim().toLowerCase() === 'free'
+        if (['submit', 'publish'].includes(action) && post.postType === 'Service' && post.requiresConsultationFirst) {
+          const linkedId = String(post.linkedConsultationId || '').trim()
+          const linked = linkedId ? (await tx.get(db.collection('productServicePosts').doc(linkedId))).data() : null
+          if (!linked || linked.branchId !== post.branchId || linked.postType !== 'Consultation' || linked.isPublished !== true || linked.financeStatus !== 'approved' || linked.archived) throw Object.assign(new Error('Link a published consultation from this branch before submitting or publishing this service.'), { status: 409 })
+        }
         const update = listingTransition(
           post,
           action,

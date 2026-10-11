@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Transaction History</h1>
           <p class="text-slate-400">Customer payment transactions recorded for this branch.</p>
@@ -49,6 +49,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -59,6 +61,8 @@ export default {
   name: 'ReceptionistTransactionHistory',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -85,25 +89,26 @@ export default {
       return 'px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400'
     }
 
-    const loadTransactions = async () => {
+    const loadTransactions = trackPageLoad(async () => {
       if (!currentBranchId.value) return
       const snapshot = await getDocs(query(collection(db, 'transactions'), where('branchId', '==', currentBranchId.value)))
       transactions.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-    }
+    })
 
-    onMounted(() => {
-      onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
 
         const userSnap = await getDoc(doc(db, 'users', user.uid))
         currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
         await loadTransactions()
       })
-    })
+    }))
 
     return {
+      pageLoading,
       transactions,
       totalAmount,
       formatAmount,

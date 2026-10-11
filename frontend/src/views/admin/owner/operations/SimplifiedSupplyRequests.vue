@@ -1,16 +1,13 @@
 <template>
-  <div class="module-theme flex min-h-screen bg-slate-900 text-slate-100">
+  <div class="module-theme flex min-h-screen bg-slate-900 text-slate-100" :class="{ 'finance-page': mode === 'finance' }">
     <OwnerSidebar />
-    <main class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: mode === 'inventory' ? [{ variant: 'form', fields: 4, sections: 2 }, { variant: 'table', columns: 6, rows: 4 }] : [{ variant: 'table', columns: 6, rows: 5 }] }" class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
       <div class="mx-auto max-w-6xl">
       <header class="border-b border-slate-700/80 pb-5">
         <p class="text-xs font-bold tracking-[0.16em] text-amber-400">{{ mode.toUpperCase() }} MANAGEMENT</p>
         <h1 class="mt-1 text-2xl font-bold text-white sm:text-3xl">{{ title }}</h1>
         <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-400">{{ intro }}</p>
       </header>
-      <nav v-if="mode === 'finance'" class="mt-6 flex gap-1 border-b border-slate-700" aria-label="Procurement finance sections">
-        <router-link v-for="tab in financeTabs" :key="tab.to" :to="tab.to" class="relative px-4 py-3 text-sm font-semibold text-slate-400 transition hover:text-slate-100" :class="route.path === tab.to ? 'text-amber-300 after:absolute after:inset-x-3 after:bottom-[-1px] after:h-0.5 after:bg-amber-400' : ''">{{ tab.label }}</router-link>
-      </nav>
       <p v-if="error" class="mt-5 rounded-xl border border-red-500/70 bg-red-950/40 p-4 text-sm text-red-100">{{ error }}</p>
 
       <section v-if="mode === 'inventory'" class="mt-6 rounded-2xl border border-slate-700 bg-slate-800/80 shadow-xl shadow-slate-950/20">
@@ -35,7 +32,7 @@
       </section>
 
       <section class="mt-6">
-        <div class="mb-4"><h2 class="text-lg font-semibold text-white">{{ mode === 'inventory' ? 'Your requests' : mode === 'procurement' ? 'Procurement requests' : 'Records requiring action' }}</h2><p class="mt-1 text-sm text-slate-400">{{ mode === 'inventory' ? 'Track the requests you have sent to Procurement.' : mode === 'procurement' ? 'Open a request to review its inventory details and complete supplier matching.' : 'Review the information below and complete the next workflow step.' }}</p></div>
+        <div class="mb-4"><h2 class="text-lg font-semibold text-white">{{ mode === 'inventory' ? 'Your requests' : mode === 'procurement' ? 'Inventory requests for review' : 'Records requiring action' }}</h2><p class="mt-1 text-sm text-slate-400">{{ mode === 'inventory' ? 'Track the requests you have sent to Procurement.' : mode === 'procurement' ? 'Open a request to review its inventory details and complete supplier matching.' : 'Review the information below and complete the next workflow step.' }}</p></div>
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3"><label class="min-w-64 flex-1 text-sm text-slate-300"><span class="sr-only">Filter records</span><input v-model.trim="recordSearch" class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500" placeholder="Filter by reference, supply, status, or department" /></label><p class="text-xs text-slate-400">Newest records first · {{ filteredTableRecords.length }} record{{ filteredTableRecords.length === 1 ? '' : 's' }}</p></div>
         <div v-if="mode === 'procurement'" class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/80">
           <div class="overflow-x-auto">
@@ -56,7 +53,7 @@
           <p v-if="!inventoryRecords.length" class="px-5 py-8 text-center text-sm text-slate-400">No inventory requests have been created yet.</p>
         </div>
         <div v-if="mode === 'finance'" class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/80">
-          <div class="overflow-x-auto"><table class="min-w-full text-left text-sm"><thead class="border-b border-slate-700 bg-slate-900/70 text-xs font-bold uppercase tracking-[.1em] text-slate-300"><tr><th class="px-4 py-3">Purchase order</th><th class="px-4 py-3">Supplies</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Total</th><th class="px-4 py-3">Date created</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Assign budget</th><th class="px-4 py-3 text-right">Details</th></tr></thead><tbody class="divide-y divide-slate-700"><tr v-for="record in pagedTableRecords" :key="record.id" class="transition hover:bg-slate-700/40"><td class="whitespace-nowrap px-4 py-4 font-semibold text-white">{{ record.number }}</td><td class="px-4 py-4 text-slate-300">{{ record.lines?.map(line => `${line.name} × ${line.quantity}`).join(', ') || '—' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ record.department || 'Inventory' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-100">{{ currency(record.total) }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ formatDateCreated(record.createdAt) }}</td><td class="whitespace-nowrap px-4 py-4"><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ record.status }}</span></td><td class="min-w-64 px-4 py-4"><div v-if="record.status === 'For Finance Approval'" class="flex gap-2"><select v-model="budgetByRecord[record.id]" class="min-w-0 flex-1"><option value="">Choose an Inventory budget</option><option v-for="budget in eligibleBudgetsFor(record)" :key="budget.id" :value="budget.id">{{ budget.category }} · {{ currency(budgetAvailable(budget)) }} available</option></select><button class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-60" :disabled="!budgetByRecord[record.id] || busy" @click="approve(record)">Assign</button></div><span v-else class="text-xs text-slate-400">{{ record.status === 'Approved' ? 'Budget assigned' : '—' }}</span></td><td class="whitespace-nowrap px-4 py-4 text-right"><button class="rounded-lg border border-amber-400/60 px-3 py-2 text-xs font-bold text-amber-200 transition hover:bg-amber-500 hover:text-slate-950" @click="openFinanceOrderDetails(record)">Details</button></td></tr></tbody></table></div><p v-if="!financePurchaseOrders.length" class="px-5 py-8 text-center text-sm text-slate-400">No purchase orders currently need your action.</p></div>
+          <div class="overflow-x-auto"><table class="min-w-full text-left text-sm"><thead class="border-b border-slate-700 bg-slate-900/70 text-xs font-bold uppercase tracking-[.1em] text-slate-300"><tr><th class="px-4 py-3">Purchase order</th><th class="px-4 py-3">Supplies</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Total</th><th class="px-4 py-3">Date created</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Assign budget</th><th class="px-4 py-3 text-right">Details</th></tr></thead><tbody class="divide-y divide-slate-700"><tr v-for="record in pagedTableRecords" :key="record.id" class="transition hover:bg-slate-700/40"><td class="whitespace-nowrap px-4 py-4 font-semibold text-white">{{ record.number }}</td><td class="px-4 py-4 text-slate-300">{{ record.lines?.map(line => `${line.name} × ${line.quantity}`).join(', ') || '—' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ record.department || 'Inventory' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-100">{{ currency(record.total) }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ formatDateCreated(record.createdAt) }}</td><td class="whitespace-nowrap px-4 py-4"><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ record.status }}</span></td><td class="min-w-64 px-4 py-4"><div v-if="record.status === 'For Finance Approval'" class="flex gap-2"><select v-model="budgetByRecord[record.id]" class="min-w-0 flex-1"><option value="">Choose an Inventory budget</option><option v-for="budget in eligibleBudgetsFor(record)" :key="budget.id" :value="budget.id">{{ budget.category }} · {{ currency(budgetAvailable(budget)) }} available</option></select><button class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-60" :disabled="!budgetByRecord[record.id] || busy" @click="approve(record)">Assign</button></div><span v-else class="text-xs text-slate-400">{{ record.status === 'Approved' ? 'Budget assigned' : '—' }}</span><button v-if="record.status === 'Approved'" class="ml-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold" :disabled="busy" @click="action(record, 'issue')">Send to supplier</button></td><td class="whitespace-nowrap px-4 py-4 text-right"><button class="rounded-lg border border-amber-400/60 px-3 py-2 text-xs font-bold text-amber-200 transition hover:bg-amber-500 hover:text-slate-950" @click="openFinanceOrderDetails(record)">Details</button></td></tr></tbody></table></div><p v-if="!financePurchaseOrders.length" class="px-5 py-8 text-center text-sm text-slate-400">No purchase orders currently need your action.</p></div>
         <div v-if="filteredTableRecords.length" class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400"><span>Showing {{ tableStart }}–{{ tableEnd }} of {{ filteredTableRecords.length }}</span><div class="flex items-center gap-2"><button class="rounded-lg border border-slate-600 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50" :disabled="tablePage === 1" @click="tablePage--">Previous</button><span>Page {{ tablePage }} of {{ tablePages }}</span><button class="rounded-lg border border-slate-600 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50" :disabled="tablePage >= tablePages" @click="tablePage++">Next</button></div></div>
         <div v-if="false" class="space-y-3">
         <article v-for="record in records" :key="record.id" class="rounded-xl border border-slate-700 bg-slate-800/80 p-4 sm:p-5">
@@ -100,7 +97,7 @@
       </div>
     </main>
     <Modal :is-open="Boolean(selectedProcurementRecord)" panel-class="procurement-modal-panel" body-class="procurement-modal-body" @close="closeProcurementDetails">
-      <template #header><div><p class="text-xs font-bold tracking-[.14em] text-amber-300">PROCUREMENT REQUEST</p><h2 class="mt-1 text-xl font-bold text-white">{{ selectedProcurementRecord?.number }}</h2></div></template>
+      <template #header><div><p class="text-xs font-bold tracking-[.14em] text-amber-300">INVENTORY REQUEST REVIEW</p><h2 class="mt-1 text-xl font-bold text-white">{{ selectedProcurementRecord?.number }}</h2></div></template>
       <template #body>
         <div v-if="selectedProcurementRecord" class="space-y-5">
           <section class="rounded-xl border border-slate-700 bg-slate-900/70 p-4"><div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="font-semibold text-white">Inventory request details</h3><p class="mt-1 text-sm text-slate-400">The original supply request sent by Inventory.</p></div><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ relatedInventoryRequest(selectedProcurementRecord)?.number || 'Linked request' }}</span></div><dl class="mt-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt>Requested supplies</dt><dd>{{ requestLines(selectedProcurementRecord).map(line => `${line.name} × ${line.quantity} ${line.unit || 'units'}`).join(', ') || '—' }}</dd></div><div><dt>Category</dt><dd>{{ requestValue(selectedProcurementRecord, 'category') }}</dd></div><div><dt>Priority</dt><dd>{{ requestValue(selectedProcurementRecord, 'priority') }}</dd></div><div><dt>Required by</dt><dd>{{ requestValue(selectedProcurementRecord, 'requiredDate') }}</dd></div><div class="sm:col-span-2"><dt>Delivery location</dt><dd>{{ requestValue(selectedProcurementRecord, 'location') }}</dd></div><div class="sm:col-span-2"><dt>Reason for request</dt><dd>{{ requestValue(selectedProcurementRecord, 'reason') }}</dd></div></dl></section>
@@ -109,14 +106,56 @@
         </div>
       </template>
     </Modal>
-    <Modal :is-open="Boolean(selectedFinanceOrder)" panel-class="procurement-modal-panel" body-class="procurement-modal-body" @close="closeFinanceOrderDetails">
-      <template #header><div><p class="text-xs font-bold tracking-[.14em] text-amber-300">PURCHASE ORDER</p><h2 class="mt-1 text-xl font-bold text-white">{{ selectedFinanceOrder?.number }}</h2></div></template>
-      <template #body><div v-if="selectedFinanceOrder" class="space-y-4"><section class="rounded-xl border border-slate-700 bg-slate-900/70 p-4"><h3 class="font-semibold text-white">Purchase order details</h3><dl class="mt-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt>Department</dt><dd>{{ selectedFinanceOrder.department || 'Inventory' }}</dd></div><div><dt>Purpose</dt><dd>{{ selectedFinanceOrder.category || '—' }}</dd></div><div><dt>Supplier</dt><dd>{{ selectedFinanceOrder.supplierBusinessName || '—' }}</dd></div><div><dt>Delivery date</dt><dd>{{ selectedFinanceOrder.deliveryDate || '—' }}</dd></div><div class="sm:col-span-2"><dt>Delivery location</dt><dd>{{ selectedFinanceOrder.deliveryLocation || '—' }}</dd></div><div class="sm:col-span-2"><dt>Requested supplies</dt><dd>{{ selectedFinanceOrder.lines?.map(line => `${line.name} × ${line.quantity} ${line.unit || 'units'}`).join(', ') || '—' }}</dd></div><div><dt>Purchase order total</dt><dd>{{ currency(selectedFinanceOrder.total) }}</dd></div><div><dt>Status</dt><dd>{{ selectedFinanceOrder.status }}</dd></div></dl></section></div></template>
+    <Modal :is-open="Boolean(selectedFinanceOrder)" panel-class="finance-dialog purchase-order-dialog" body-class="purchase-order-body" @close="closeFinanceOrderDetails">
+      <template #header>
+        <div class="purchase-order-heading">
+          <p>Purchase order</p>
+          <h2>{{ selectedFinanceOrder?.number || 'Order details' }}</h2>
+          <span class="purchase-order-status" :class="financeOrderStatusTone">{{ selectedFinanceOrder?.status || 'Pending' }}</span>
+        </div>
+      </template>
+      <template #body>
+        <div v-if="selectedFinanceOrder" class="purchase-order-content">
+          <section class="purchase-order-section">
+            <h3>Order information</h3>
+            <dl class="purchase-order-info">
+              <div><dt>Supplier</dt><dd>{{ selectedFinanceOrder.supplierBusinessName || 'Not specified' }}</dd></div>
+              <div><dt>Department</dt><dd>{{ selectedFinanceOrder.department || 'Inventory' }}</dd></div>
+              <div><dt>Purpose</dt><dd>{{ selectedFinanceOrder.category || 'Not specified' }}</dd></div>
+              <div><dt>Delivery date</dt><dd>{{ formatDateCreated(selectedFinanceOrder.deliveryDate) }}</dd></div>
+              <div class="purchase-order-location"><dt>Delivery location</dt><dd>{{ selectedFinanceOrder.deliveryLocation || 'Not specified' }}</dd></div>
+            </dl>
+          </section>
+          <section class="purchase-order-section">
+            <div class="purchase-order-supplies-heading"><h3>Requested supplies</h3><span>{{ selectedFinanceOrder.lines?.length || 0 }} item{{ selectedFinanceOrder.lines?.length === 1 ? '' : 's' }}</span></div>
+            <div class="purchase-order-table-wrap">
+              <table><thead><tr><th scope="col">Supply</th><th scope="col">Quantity</th><th scope="col">Unit</th><th scope="col">Unit price</th><th scope="col">Line total</th></tr></thead>
+                <tbody><tr v-for="(line, index) in selectedFinanceOrder.lines || []" :key="line.itemId || index"><td>{{ line.name || 'Unnamed supply' }}</td><td>{{ line.quantity ?? '?' }}</td><td>{{ line.unit || 'units' }}</td><td class="purchase-order-money">{{ recordedMoney(line.unitPrice) }}</td><td class="purchase-order-money">{{ recordedMoney(orderLineTotal(line)) }}</td></tr><tr v-if="!selectedFinanceOrder.lines?.length"><td colspan="5" class="purchase-order-no-supplies">No supplies recorded for this order.</td></tr></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="purchase-order-section purchase-order-pricing">
+            <h3>Price breakdown</h3>
+            <p class="purchase-order-pricing-note">Prices and charges recorded when this purchase order was prepared.</p>
+            <dl>
+              <div><dt>Items subtotal</dt><dd>{{ recordedMoney(selectedFinanceOrder.subtotal) }}</dd></div>
+              <div><dt>Tax added</dt><dd>{{ recordedMoney(selectedFinanceOrder.tax) }}</dd></div>
+              <div><dt>Delivery fee<span v-if="selectedFinanceOrder.deliveryFeeCity">{{ selectedFinanceOrder.deliveryFeeCity }}</span></dt><dd>{{ recordedMoney(selectedFinanceOrder.delivery) }}</dd></div>
+              <div><dt>Other supplier charges</dt><dd>{{ recordedMoney(selectedFinanceOrder.otherCharges) }}</dd></div>
+              <div class="purchase-order-discount"><dt>Discount</dt><dd>{{ hasRecordedMoney(selectedFinanceOrder.discount) && Number(selectedFinanceOrder.discount) > 0 ? '-' : '' }}{{ recordedMoney(selectedFinanceOrder.discount) }}</dd></div>
+            </dl>
+            <p v-if="selectedFinanceOrder.lines?.some(line => line.taxTreatment === 'vat-inclusive')" class="purchase-order-pricing-note">For VAT-inclusive items, tax is included in the unit price.</p>
+          </section>
+          <div class="purchase-order-total"><div><span>Purchase order total</span><p>Total amount for this order</p></div><strong>{{ currency(selectedFinanceOrder.total) }}</strong></div>
+        </div>
+      </template>
     </Modal>
   </div>
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -125,6 +164,8 @@ import Modal from '@/components/common/Modal.vue'
 import { auth } from '@/config/firebaseConfig'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { toast } from 'vue3-toastify'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const route = useRoute()
 const data = ref({ records: [], suppliers: [], branches: [] })
@@ -136,17 +177,18 @@ const budgetByRecord = ref({})
 const selectedDeliveryBranchId = ref('')
 const selectedProcurementRecord = ref(null)
 const selectedFinanceOrder = ref(null)
+const financeOrderStatusTone = computed(() => {
+  const status = String(selectedFinanceOrder.value?.status || '').toLowerCase()
+  if (['rejected', 'cancelled', 'disputed'].includes(status)) return 'is-negative'
+  if (['approved', 'paid', 'completed', 'delivered'].includes(status)) return 'is-positive'
+  return 'is-pending'
+})
 const recordSearch = ref('')
 const tablePage = ref(1)
 const rowsPerPage = 10
-const financeTabs = [
-  { label: 'Budget Allocations', to: '/finance/procurement/budgets' },
-  { label: 'Purchase Order Approvals', to: '/finance/procurement/requests' },
-  { label: 'Invoices & Payments', to: '/finance/procurement/invoices' },
-]
 const mode = computed(() => route.path.startsWith('/inventory') ? 'inventory' : route.path.startsWith('/procurement') ? 'procurement' : 'finance')
-const title = computed(() => mode.value === 'inventory' ? 'Inventory Requests' : mode.value === 'procurement' ? 'Procurement Requests' : 'Purchase Order Approvals')
-const intro = computed(() => mode.value === 'inventory' ? 'Create and track supply needs for your clinic. Procurement selects the supplier and matching catalog items.' : mode.value === 'procurement' ? 'Choose a supplier, match every request to a catalog item, and prepare the purchase order.' : 'Review and approve purchase orders prepared by Procurement.')
+const title = computed(() => mode.value === 'inventory' ? 'Inventory Requests' : mode.value === 'procurement' ? 'Inventory Request Review' : 'Purchase Order Approvals')
+const intro = computed(() => mode.value === 'inventory' ? 'Create and track supply needs for your clinic. Procurement selects the supplier and matching catalog items.' : mode.value === 'procurement' ? 'Review inventory requests, select suppliers, and prepare purchase orders for Finance approval.' : 'Review and approve purchase orders prepared by Procurement.')
 const branchId = computed(() => data.value.branchId || data.value.branches?.[0]?.id || '')
 const activeBranch = computed(() => data.value.branches.find(branch => branch.id === selectedDeliveryBranchId.value) || {})
 const requestBranchId = computed(() => String(activeBranch.value?.id || '').trim())
@@ -198,7 +240,7 @@ const api = async (path, body) => {
   }
   throw lastError
 }
-const load = async () => {
+const load = trackPageLoad(async () => {
   try {
     data.value = await api('/workspace')
     if (!selectedDeliveryBranchId.value || !data.value.branches.some(branch => branch.id === selectedDeliveryBranchId.value)) selectedDeliveryBranchId.value = data.value.branches.find(branch => branch.id === data.value.branchId)?.id || data.value.branches[0]?.id || ''
@@ -206,7 +248,7 @@ const load = async () => {
       if (!catalogSelectionsByRecord.value[record.id]) catalogSelectionsByRecord.value[record.id] = {}
     })
   } catch (caught) { error.value = caught.message }
-}
+})
 const draft = ref({ name: '', category: '', quantity: 1, unit: 'units', requiredDate: new Date().toISOString().slice(0, 10), location: 'Clinic branch', reason: '', priority: 'Normal' })
 const createRequest = async () => {
   if (!requestBranchId.value) {
@@ -235,6 +277,9 @@ const formatDateCreated = value => {
   const timestamp = createdTimestamp(value)
   return timestamp ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium' }).format(new Date(timestamp)) : '—'
 }
+const hasRecordedMoney = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+const recordedMoney = value => hasRecordedMoney(value) ? currency(value) : 'Not recorded'
+const orderLineTotal = line => hasRecordedMoney(line.total) ? line.total : hasRecordedMoney(line.unitPrice) && hasRecordedMoney(line.quantity) ? Number(line.unitPrice) * Number(line.quantity) : null
 const currency = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(cents || 0) / 100)
 const budgetAvailable = budget => Math.max(0, Number(budget?.total || 0) - Number(budget?.committed || 0) - Number(budget?.spent || 0))
 const eligibleBudgetsFor = record => budgets.value.filter(budget => String(budget.department || '') === String(record?.department || 'Inventory'))
@@ -266,7 +311,7 @@ const sendForApproval = async record => {
   await action(record, 'confirm', { supplierId: supplierByRecord.value[record.id], catalogSelections: catalogSelectionsByRecord.value[record.id], productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true })
   if (!error.value) closeProcurementDetails()
 }
-const approve = record => action(record, 'approve', { budgetId: budgetByRecord.value[record.id], approvedAmount: record.requestedAmount / 100, remarks: 'Approved' })
+const approve = record => action(record, 'approve', { budgetId: budgetByRecord.value[record.id], approvedAmount: Number(record.total ?? record.requestedAmount ?? 0) / 100, remarks: 'Approved' })
 onMounted(load)
 </script>
 

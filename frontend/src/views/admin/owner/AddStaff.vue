@@ -1,4 +1,6 @@
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { getFirestore, collection, doc, getDocs, query, where } from 'firebase/firestore'
 import { deleteApp, getApp, initializeApp } from 'firebase/app'
@@ -7,6 +9,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
 import { useSubscription } from '@/composables/useSubscription'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
@@ -54,8 +57,11 @@ const generateSecurePassword = (length = PASSWORD_LENGTH) => {
 
 export default {
   name: 'AddStaff',
-  components: { OwnerSidebar, OwnerPageSkeleton },
+  components: { OwnerSidebar, OwnerPageSkeleton, ContractAppearanceSelect },
+  props: { embedded: { type: Boolean, default: false } },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const loading = ref(true)
@@ -79,6 +85,7 @@ export default {
       role: '',
       customRoleId: '',
       customRoleIds: [],
+      practitionerType: '',
       employmentType: '',
       userType: 'Staff',
       clinicBranch: '',   // primary branchId, retained for backwards compatibility
@@ -92,7 +99,7 @@ export default {
     const isBasicPlan = computed(() => normalizedPlan.value === 'basic')
 
     // Load branches from Firestore
-    const loadBranches = async () => {
+    const loadBranches = trackPageLoad(async () => {
       loading.value = true
       const user = auth.currentUser
       if (!user) {
@@ -120,9 +127,9 @@ export default {
         updateLocation()
       }
       loading.value = false
-    }
+    })
 
-    const loadCustomRoles = async () => {
+    const loadCustomRoles = trackPageLoad(async () => {
       const user = auth.currentUser
       if (!user) {
         customRoles.value = []
@@ -153,16 +160,19 @@ export default {
         })
         .filter((role) => role.name && role.permissions.length > 0)
         .sort((left, right) => left.name.localeCompare(right.name))
-    }
+    })
 
-    onMounted(async () => {
+    let unsubscribeAuth = null
+    let isUnmounted = false
+    onMounted(trackPageLoad(async () => {
       loading.value = true
       await initSubscription()
-      onAuthStateChanged(auth, async () => {
+      if (isUnmounted) return
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async () => {
         await loadBranches()
         await loadCustomRoles()
       })
-    })
+    }))
 
     const resetForm = () => {
       currentStaff.value = {
@@ -370,6 +380,8 @@ export default {
     }
 
     onUnmounted(() => {
+      isUnmounted = true
+      unsubscribeAuth?.()
       if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
     })
     const isPractitionerRole = computed(() =>
@@ -520,6 +532,7 @@ export default {
             customRoleIds: Array.isArray(currentStaff.value.customRoleIds) ? currentStaff.value.customRoleIds : [],
             customRoleName: selectedCustomRoleName.value || null,
             effectivePermissions: [...new Set(selectedCustomRoles.value.flatMap((role) => role.permissions || []))],
+            practitionerType: currentStaff.value.practitionerType,
             employmentType: currentStaff.value.employmentType,
             userType: 'Staff',
             branchId: currentStaff.value.clinicBranch,
@@ -582,6 +595,7 @@ export default {
     })
 
     return {
+      pageLoading,
       loading,
       currentStaff,
       saveStaff,
@@ -611,12 +625,12 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex flex-row owner-theme w-full" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="flex-1 p-4 md:p-8">
+    <component v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 3, header: false }" :is="embedded ? 'div' : 'main'" class="flex-1" :class="embedded ? '' : 'p-4 md:p-8'">
       <!-- Page Header -->
-      <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+      <div v-if="!embedded" class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
           <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Add Employee</h1>
           <p class="text-slate-400 text-sm md:text-base">Create a new employee account and assign them to a branch.</p>
@@ -624,7 +638,7 @@ export default {
       </div>
 
       <!-- Loading Skeleton -->
-      <OwnerPageSkeleton v-if="loading" />
+      <OwnerPageSkeleton v-if="loading" variant="form" :fields="6" :sections="3" />
 
       <!-- Add Employee Form -->
       <div v-else class="mx-auto max-w-3xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8">
@@ -760,24 +774,19 @@ export default {
           <div>
             <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Role & Employment</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <ContractAppearanceSelect id="new-staff-specialty" label="Professional specialty" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not a clinical practitioner' }, ...['Doctor', 'Registered Nurse', 'Aesthetician', 'Therapist', 'Other'].map(type => ({ value: type, label: type }))]" />
+              <p class="text-xs text-slate-400">The clinic owner verifies credentials, approves services, and sets earnings agreements after account creation. A specialty does not grant system permissions.</p>
               <!-- Custom Role -->
               <div>
                 <label class="mb-1 block text-slate-400">Role <span class="text-red-400">*</span></label>
-                <select
-                  v-model="currentStaff.customRoleIds"
-                  multiple
-                  class="add-staff-select w-full min-h-28 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option
-                    v-for="role in customRoles"
-                    :key="role.id"
-                    :value="role.id"
-                    class="text-white"
-                  >
-                    {{ role.name }}
-                  </option>
-                </select>
-                <p class="mt-1 text-xs text-slate-400">Hold Ctrl or Command to assign more than one role.</p>
+                <fieldset class="assignment-options" aria-label="Roles">
+                  <label v-for="role in customRoles" :key="role.id" class="assignment-option" :class="{ 'is-selected': currentStaff.customRoleIds.includes(role.id) }">
+                    <input v-model="currentStaff.customRoleIds" type="checkbox" :value="role.id" />
+                    <span>{{ role.name }}</span>
+                  </label>
+                  <p v-if="!customRoles.length" class="assignment-empty">No roles available. Create a role in Roles first.</p>
+                </fieldset>
+                <p class="mt-2 text-xs text-slate-400">Select one or more roles.</p>
                 <div v-if="selectedCustomRoles.length" class="mt-3 rounded-lg border border-gold-500/40 bg-gold-500/10 p-3">
                   <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gold-200">Selected roles</p>
                   <div class="flex flex-wrap gap-2">
@@ -817,25 +826,15 @@ export default {
               <!-- Branch -->
               <div>
                 <label class="mb-1 block text-slate-400">Assigned Branches <span class="text-red-400">*</span></label>
-                <select
-                  v-model="currentStaff.branchIds" multiple
-                  @change="updateLocation"
-                  :class="[
-                    'add-staff-select w-full rounded-lg border bg-slate-800 px-3 py-2 text-white appearance-none focus:outline-none focus:ring-2',
-                    fieldErrors.clinicBranch ? 'border-red-500 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'
-                  ]"
-                >
-                  <option class="text-slate-300" value="" disabled>Select a branch</option>
-                  <option
-                    v-for="branch in branches"
-                    :key="branch.id"
-                    :value="branch.id"
-                    class="text-white"
-                  >
-                    {{ branch.branch }} — {{ branch.location }}
-                  </option>
-                </select>
-                <p v-if="fieldErrors.clinicBranch" class="mt-1 text-xs text-red-400">{{ fieldErrors.clinicBranch }}</p>
+                <fieldset class="assignment-options" :class="{ 'has-error': fieldErrors.clinicBranch }" aria-label="Assigned branches" :aria-invalid="Boolean(fieldErrors.clinicBranch)" :aria-describedby="fieldErrors.clinicBranch ? 'branch-assignment-error' : 'branch-assignment-hint'">
+                  <label v-for="branch in branches" :key="branch.id" class="assignment-option" :class="{ 'is-selected': currentStaff.branchIds.includes(branch.id) }">
+                    <input v-model="currentStaff.branchIds" type="checkbox" :value="branch.id" @change="updateLocation" />
+                    <span><span class="assignment-name">{{ branch.branch }}</span><span class="assignment-location">{{ branch.location }}</span></span>
+                  </label>
+                  <p v-if="!branches.length" class="assignment-empty">No branches available.</p>
+                </fieldset>
+                <p id="branch-assignment-hint" class="mt-2 text-xs text-slate-400">Select one or more branches. The first selected branch sets the clinic location.</p>
+                <p v-if="fieldErrors.clinicBranch" id="branch-assignment-error" class="mt-1 text-xs text-red-400">{{ fieldErrors.clinicBranch }}</p>
               </div>
 
               <!-- Clinic Location (auto-populated) -->
@@ -910,7 +909,7 @@ export default {
           </div>
         </form>
       </div>
-    </main>
+    </component>
   </div>
 </template>
 
@@ -920,20 +919,31 @@ export default {
 }
 
 .add-staff-select {
-  color: #fffbf4;
-  background-color: #1f120b;
+  color: #352a25;
+  background-color: #fffaf4;
+  color-scheme: light;
 }
 
 .add-staff-select option {
-  color: #fffbf4;
-  background-color: #1f120b;
+  color: #352a25;
+  background-color: #fffaf4;
 }
 
 .add-staff-select option:disabled {
-  color: #b99b88;
+  color: #786354;
 }
 
 .add-staff-select::-ms-expand {
-  color: #fffbf4;
+  color: #352a25;
 }
+.assignment-options { max-height: 220px; overflow-y: auto; display: grid; gap: 6px; padding: 8px; border: 1px solid #dfbea0; border-radius: 12px; background: #fffaf4; color: #352a25; color-scheme: light; }
+.assignment-options.has-error { border-color: #b9433f; }
+.assignment-option { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; font-size: 13px; line-height: 1.5; }
+.assignment-option:hover { background: #f8eedf; }
+.assignment-option.is-selected { background: #f4e4cf; border-color: #d7aa7d; }
+.assignment-option input[type="checkbox"] { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 2px; accent-color: #91643f; }
+.assignment-option:focus-within { outline: 2px solid #91643f; outline-offset: 1px; }
+.assignment-name { display: block; font-weight: 600; }
+.assignment-location { display: block; font-size: 12px; color: #786354; }
+.assignment-empty { padding: 12px; font-size: 13px; color: #786354; }
 </style>

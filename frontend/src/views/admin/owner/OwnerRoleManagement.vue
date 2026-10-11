@@ -2,7 +2,7 @@
   <div class="flex min-h-screen owner-theme bg-[#2a180f] text-[#f3e7e0]">
     <OwnerSidebar />
 
-    <main class="flex-1 px-4 py-6 md:px-8 role-page-shell">
+    <main v-page-loading="{ active: pageLoading, variant: 'split', rows: 5 }" class="flex-1 px-4 py-6 md:px-8 role-page-shell">
       <div class="mx-auto max-w-7xl space-y-6">
         <section class="rounded-[2rem] border border-[#5a3927] bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.08),_transparent_42%),linear-gradient(180deg,_rgba(58,36,23,0.98),_rgba(42,24,15,0.98))] p-6 shadow-[0_24px_60px_rgba(20,12,8,0.45)]">
           <div class="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
@@ -22,7 +22,7 @@
                 @click="loadRoles()"
               >
                 <Icon icon="mdi:refresh" class="h-5 w-5" />
-                Refresh
+                <span class="sr-only">Refresh</span>
               </button>
               <button
                 type="button"
@@ -620,6 +620,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -783,6 +785,8 @@ export default {
   name: 'OwnerRoleManagement',
   components: { OwnerSidebar, Icon },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const { hasFeature, initSubscription } = useSubscription()
     const loading = ref(true)
     const saving = ref(false)
@@ -940,10 +944,10 @@ export default {
       }
     }
 
-    const loadBranchIds = async (ownerId) => {
+    const loadBranchIds = trackPageLoad(async (ownerId) => {
       const snapshot = await getDocs(query(collection(db, 'clinics'), where('ownerId', '==', ownerId)))
       branchIds.value = snapshot.docs.map((branchDoc) => branchDoc.id).filter(Boolean)
-    }
+    })
 
     const resolveAccessScope = async (user) => {
       if (!user) {
@@ -1094,7 +1098,7 @@ export default {
       return getDocs(query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId)))
     }
 
-    const loadRoles = async (ownerId = accessScopeOwnerId.value || auth.currentUser?.uid) => {
+    const loadRoles = trackPageLoad(async (ownerId = accessScopeOwnerId.value || auth.currentUser?.uid) => {
       if (ownerId && typeof ownerId !== 'string') {
         ownerId = accessScopeOwnerId.value || auth.currentUser?.uid
       }
@@ -1174,7 +1178,7 @@ export default {
       } finally {
         loading.value = false
       }
-    }
+    })
 
     const openAddTab = () => {
       resetNewRole()
@@ -1515,9 +1519,9 @@ export default {
 
     let unsubscribeAuth = null
 
-    onMounted(async () => {
+    onMounted(trackPageLoad(async () => {
       await initSubscription()
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           loading.value = false
           roles.value = []
@@ -1532,7 +1536,7 @@ export default {
         const ownerId = await resolveAccessScope(user)
         await loadRoles(ownerId)
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAuth) {
@@ -1541,6 +1545,7 @@ export default {
     })
 
     return {
+      pageLoading,
       activeTab,
       allPermissionKeys,
       branchIds,
@@ -1589,9 +1594,9 @@ export default {
 <style scoped>
 .role-page-shell {
   background:
-    radial-gradient(circle at top left, rgba(141, 90, 59, 0.16), transparent 28%),
-    radial-gradient(circle at 82% 8%, rgba(201, 149, 99, 0.08), transparent 22%),
-    linear-gradient(180deg, #2a180f 0%, #24160f 52%, #1a100b 100%);
+    radial-gradient(circle at top left, rgba(230, 193, 150, .26), transparent 28%),
+    radial-gradient(circle at 82% 8%, rgba(241, 213, 181, .38), transparent 22%),
+    linear-gradient(180deg, var(--ac-bg) 0%, var(--ac-bg-soft) 52%, var(--ac-bg-deep) 100%);
 }
 
 .tab-button {
@@ -1599,9 +1604,9 @@ export default {
   align-items: center;
   gap: 0.5rem;
   border-radius: 999px;
-  border: 1px solid #5a3927;
-  background: rgba(42, 24, 15, 0.95);
-  color: #f3e7e0;
+  border: 1px solid var(--ac-border);
+  background: var(--ac-surface);
+  color: var(--ac-text-secondary);
   padding: 0.75rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
@@ -1609,8 +1614,8 @@ export default {
 }
 
 .tab-button:hover:not(:disabled) {
-  border-color: #8d5a3b;
-  background: #3a2417;
+  border-color: var(--ac-border-strong);
+  background: var(--ac-surface-muted);
 }
 
 .tab-button:disabled {
@@ -1619,9 +1624,9 @@ export default {
 }
 
 .tab-button-active {
-  border-color: #8d5a3b;
-  background: linear-gradient(135deg, #8d5a3b, #6f4329);
-  color: #f3e7e0;
+  border-color: var(--ac-primary);
+  background: var(--ac-primary);
+  color: var(--ac-on-primary);
 }
 
 .role-list-item {
@@ -1631,21 +1636,21 @@ export default {
   justify-content: space-between;
   gap: 0.75rem;
   border-radius: 1rem;
-  border: 1px solid #5a3927;
-  background: rgba(58, 36, 23, 0.96);
+  border: 1px solid var(--ac-border);
+  background: var(--ac-surface);
   padding: 0.95rem 1rem;
   transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
 .role-list-item:hover {
-  border-color: rgba(141, 90, 59, 0.72);
-  background: #3a2417;
+  border-color: var(--ac-border-strong);
+  background: var(--ac-surface-soft);
   transform: translateX(2px);
 }
 
 .role-list-item-active {
-  border-color: rgba(201, 149, 99, 0.52);
-  background: linear-gradient(135deg, rgba(141, 90, 59, 0.34), rgba(58, 36, 23, 0.98));
+  border-color: var(--ac-border-strong);
+  background: linear-gradient(135deg, #f1d5b5, #fffaf3);
 }
 
 .role-swatch {
@@ -1653,7 +1658,7 @@ export default {
   height: 0.9rem;
   border-radius: 999px;
   flex-shrink: 0;
-  box-shadow: 0 0 0 3px rgba(42, 24, 15, 0.95);
+  box-shadow: 0 0 0 3px var(--ac-surface-soft);
 }
 
 .role-badge {
@@ -1676,23 +1681,23 @@ export default {
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #d2b7a6;
+  color: var(--ac-text-muted);
 }
 
 .discord-input {
   width: 100%;
   border-radius: 1rem;
-  border: 1px solid #5a3927;
-  background: #24160f;
-  color: #f3e7e0;
+  border: 1px solid var(--ac-border);
+  background: var(--ac-surface);
+  color: var(--ac-text);
   padding: 0.95rem 1rem;
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .discord-input:focus {
-  border-color: #8d5a3b;
-  box-shadow: 0 0 0 3px rgba(141, 90, 59, 0.22);
+  border-color: var(--ac-border-strong);
+  box-shadow: 0 0 0 3px rgba(185, 121, 79, .16);
 }
 
 .discord-textarea {
@@ -1712,7 +1717,7 @@ export default {
 }
 
 .color-chip-active {
-  border-color: #6f4329;
+  border-color: var(--ac-primary);
 }
 
 .ghost-action,
@@ -1728,15 +1733,15 @@ export default {
 }
 
 .ghost-action {
-  border: 1px solid #5a3927;
-  background: #24160f;
-  color: #f3e7e0;
+  border: 1px solid var(--ac-border);
+  background: var(--ac-surface);
+  color: var(--ac-primary);
 }
 
 .ghost-action:hover {
-  border-color: #8d5a3b;
-  background: #3a2417;
-  color: #f3e7e0;
+  border-color: var(--ac-border-strong);
+  background: var(--ac-surface-muted);
+  color: var(--ac-primary);
 }
 
 .danger-action {
@@ -1755,15 +1760,15 @@ export default {
   width: 3.3rem;
   height: 1.85rem;
   border-radius: 999px;
-  border: 1px solid #5a3927;
-  background: #24160f;
+  border: 1px solid var(--ac-border);
+  background: var(--ac-surface-muted);
   transition: background 0.2s ease, border-color 0.2s ease;
   flex-shrink: 0;
 }
 
 .discord-switch-on {
-  background: #8d5a3b;
-  border-color: #8d5a3b;
+  background: var(--ac-primary);
+  border-color: var(--ac-primary);
 }
 
 .discord-switch-thumb {
@@ -1773,7 +1778,7 @@ export default {
   width: 1.35rem;
   height: 1.35rem;
   border-radius: 999px;
-  background: #f3e7e0;
+  background: var(--ac-surface);
   transition: transform 0.2s ease;
 }
 

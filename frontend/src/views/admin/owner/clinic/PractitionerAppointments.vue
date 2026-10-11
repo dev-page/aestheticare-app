@@ -1,11 +1,11 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex module-theme min-w-0" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main class="flex-1 p-8">
+    <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-white mb-2">Appointments</h1>
-        <p class="text-slate-400">All appointments assigned to you.</p>
+        <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Service Queue</h1>
+        <p class="text-slate-400">Checked-in customers appear first. Start your assigned service, record notes, and finish when care is complete.</p>
       </div>
 
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
@@ -23,7 +23,7 @@
             <label class="block text-slate-400 text-sm mb-2">Status</label>
             <select v-model="statusFilter" class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none">
               <option value="">All</option>
-              <option v-for="status in ['Unpaid', 'Pending Approval', 'Awaiting Payment', 'Contract Pending', 'Paid', 'Ready to Start', 'Ongoing', 'Awaiting Customer Confirmation', 'Balance Due', 'Scheduled']" :key="status" :value="status">{{ status }}</option>
+              <option v-for="status in ['Unpaid', 'Pending Approval', 'Awaiting Payment', 'Contract Pending', 'Paid', 'Checked in', 'Ready to Start', 'Ongoing', 'Awaiting Customer Confirmation', 'Balance Due', 'Scheduled', 'No-show', 'Incomplete']" :key="status" :value="status">{{ status }}</option>
               <option value="Completed">Completed</option>
               <option value="Cancelled">Cancelled</option>
             </select>
@@ -68,7 +68,7 @@
             </thead>
             <tbody class="divide-y divide-slate-700">
               <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-slate-700/50 transition-colors">
-                <td class="px-6 py-4 text-white">{{ appointment.clientName || appointment.customerName || appointment.patientName || '-' }}</td>
+                <td class="px-6 py-4 text-white"><p>{{ appointment.clientName || appointment.customerName || appointment.patientName || '-' }}</p><p v-if="appointment.isGroupRecipient" class="mt-1 text-xs text-violet-300">Group recipient {{ appointment.groupRecipientIndex }} of {{ appointment.groupRecipientCount }} · Paid by {{ appointment.groupOrganizerName || 'organizer' }}</p></td>
                 <td class="px-6 py-4 text-slate-300"><p>{{ appointment.service || appointment.type || '-' }}</p><p v-if="appointment.treatmentPlan?.totalSessions > 1" class="mt-1 text-xs text-amber-300">Treatment plan: {{ appointment.treatmentPlan.completedSessions || 0 }}/{{ appointment.treatmentPlan.totalSessions }} completed</p></td>
                 <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ appointment.time || '' }}</td>
                 <td class="px-6 py-4">
@@ -78,15 +78,17 @@
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap items-center gap-3">
+                    <AppointmentTeam :appointment="appointment" />
                     <button v-if="appointment.source === 'walk_in' && appointment.paymentStatus === 'Paid'" @click="contractAppointment = appointment" class="rounded bg-indigo-700 px-3 py-2 text-white">{{ appointment.contract?.status === 'signed' ? 'View contract' : 'Client review & e-sign' }}</button>
-                    <button v-if="appointment.serviceKey && appointment.contract?.status === 'signed' && !appointment.workerKeyVerified && ['Paid', 'Ready to Start', 'Scheduled'].includes(appointment.status)" :disabled="actionBusy" @click="openServiceKeyModal(appointment)" class="rounded bg-amber-700 px-3 py-2 text-white">Verify Customer Key</button>
-                    <button v-if="appointment.status === 'Ready to Start' || (appointment.source === 'walk_in' && appointment.status === 'Paid' && appointment.workerKeyVerified && appointment.contract?.status === 'signed')" :disabled="actionBusy" @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white">Start Service</button>
+                    <button v-if="appointment.contract?.status === 'signed' && !appointment.workerKeyVerified && ['Paid', 'Scheduled'].includes(appointment.status)" :disabled="actionBusy" @click="manualCheckIn(appointment)" class="rounded bg-amber-700 px-3 py-2 text-white">Check in without reception</button>
+                    <button v-if="['Checked in', 'Ready to Start'].includes(appointment.status) || (appointment.source === 'walk_in' && appointment.status === 'Paid' && appointment.workerKeyVerified && appointment.contract?.status === 'signed')" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can start the service." @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50">Start Service</button>
                     <button v-if="canMarkNoShow(appointment)" :disabled="actionBusy" @click="markNoShow(appointment)" class="rounded bg-rose-700 px-3 py-2 text-white">Mark No-show</button>
-                    <button v-if="appointment.status === 'Ongoing'" :disabled="actionBusy" @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
+                    <button v-if="appointment.status === 'Ongoing'" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can complete their work." @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white disabled:opacity-50">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
                     <button
                       v-if="canRecommendFollowUp(appointment)"
                       type="button"
                       class="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/30"
+                      :disabled="!isAssignedToPractitioner(appointment)"
                       @click="recommendFollowUp(appointment)"
                     >
                       Recommend Follow-up
@@ -108,12 +110,12 @@
           </table>
         </div>
       </div>
-    </main>
+    </component>
     <BookingContractModal :visible="Boolean(contractAppointment)" :appointment="contractAppointment" @close="contractAppointment = null" @updated="contractSaved" />
     <ServiceKeyVerificationModal
       :visible="showServiceKeyModal"
       :loading="actionBusy"
-      description="Enter the service key provided by the customer."
+      :description="selectedServiceKeyAppointment?.isGroupRecipient ? `Enter the service key provided by ${selectedServiceKeyAppointment.clientName || selectedServiceKeyAppointment.customerName || 'this recipient'}.` : 'Enter the service key provided by the customer.'"
       @close="closeServiceKeyModal"
       @submit="submitServiceKey"
     />
@@ -121,22 +123,29 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import AppointmentTeam from '@/components/common/AppointmentTeam.vue'
 import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import BookingContractModal from '@/components/BookingContractModal.vue'
 import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
 import { usePermissions } from '@/composables/usePermissions'
+import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 
 export default {
   name: 'PractitionerAppointments',
-  components: { OwnerSidebar, ServiceKeyVerificationModal, BookingContractModal },
-  setup() {
+  props: { embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' } },
+  components: { OwnerSidebar, ServiceKeyVerificationModal, BookingContractModal, AppointmentTeam },
+  setup(props) {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasPermission } = usePermissions()
@@ -154,14 +163,21 @@ export default {
     const showServiceKeyModal = ref(false)
     const selectedServiceKeyAppointment = ref(null)
     const canReviewConsultationClearances = computed(() => hasPermission('appointments:review'))
-    const bookingAction = async (appointment, action, serviceKey = '') => {
+    const bookingAction = async (appointment, action, serviceKey = '', extra = {}) => {
       if (actionBusy.value) return
       if (action === 'key' && !serviceKey) return false
       actionBusy.value = true
       try {
         const token = await auth.currentUser.getIdToken()
         const path = action === 'key' ? 'verify-service-key' : 'transition'
-        const response = await fetch(OTP_API_BASE + '/appointments/' + appointment.id + '/' + path, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(action === 'key' ? { serviceKey } : { action }) })
+        if (action === 'worker_complete') {
+          const treatmentNotes = window.prompt('Treatment notes / recommendations (optional):', '')
+          if (treatmentNotes === null) return false
+          const aftercareInstructions = window.prompt('Aftercare instructions (optional):', '')
+          if (aftercareInstructions === null) return false
+          extra = { treatmentNotes, aftercareInstructions }
+        }
+        const response = await fetch(OTP_API_BASE + '/appointments/' + appointment.id + '/' + path, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(action === 'key' ? { serviceKey } : { action, ...extra }) })
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.error || 'Unable to update booking.')
         toast.success('Booking updated: ' + payload.data.status)
@@ -170,6 +186,10 @@ export default {
       } catch (error) { toast.error(error.message); return false } finally { actionBusy.value = false }
     }
 
+    const manualCheckIn = async appointment => {
+      const reason = window.prompt('Reception fallback: explain how you verified the customer identity (at least 10 characters).')
+      if (reason) await bookingAction(appointment, 'manual_check_in', '', { reason })
+    }
     const openServiceKeyModal = (appointment) => {
       selectedServiceKeyAppointment.value = appointment
       showServiceKeyModal.value = true
@@ -219,7 +239,7 @@ export default {
 
     const assignedAppointments = computed(() =>
       sortRecordsNewestFirst(
-        appointments.value.filter((item) => isAssignedToPractitioner(item))
+        appointments.value.filter((item) => (hasPermission('appointments:review') || isAssignedToPractitioner(item) || item.treatmentTeam?.some(member => member.employeeId === currentUserId.value)) && !item.isGroupParent && !item.isBookingOrderParent)
       )
     )
 
@@ -232,6 +252,9 @@ export default {
         const matchesStatus = !statusFilter.value || (item.status || 'Scheduled') === statusFilter.value
         const matchesDate = !dateFilter.value || item.date === dateFilter.value
         return matchesSearch && matchesStatus && matchesDate
+      }).sort((a, b) => {
+        const priority = { 'Checked in': 0, 'Ready to Start': 0, Ongoing: 1 }
+        return (priority[a.status] ?? 2) - (priority[b.status] ?? 2) || String(a.date + a.time).localeCompare(String(b.date + b.time))
       })
     })
 
@@ -295,7 +318,7 @@ export default {
       }
     }
 
-    const loadAppointments = async (liveSnapshot = null) => {
+    const loadAppointments = trackPageLoad(async (liveSnapshot = null) => {
       if (!currentBranchId.value) return
       const snapshot = liveSnapshot || await getDocs(
         query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value))
@@ -361,34 +384,36 @@ export default {
           || clientNameMap.get(String(appt.clientId))
           || ''
       })))
-    }
+    })
 
     let unsubscribeAuth = null
+    let disposed = false
     let unsubscribeAppointments = null
     let unsubscribeConsultationClearances = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         unsubscribeAppointments?.()
         unsubscribeConsultationClearances?.()
         if (!user) { appointments.value = []; consultationClearances.value = []; return }
 
         currentUserId.value = user.uid
-        const userSnap = await getDoc(doc(db, 'users', user.uid))
-        currentBranchId.value = userSnap.exists() ? userSnap.data().branchId || '' : ''
+        const scope = await loadOwnerBranchScope(db, user.uid)
+        if (disposed) return
+        currentBranchId.value = props.branchId || scope.branchId
         if (!currentBranchId.value) {
           toast.error('Your account has no branch assignment.', { toastId: 'missing-branch-assignment' })
           return
         }
 
-        unsubscribeAppointments = onSnapshot(
-          query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
+        unsubscribeAppointments = pageListener(
+          onSnapshot, query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
           (snapshot) => loadAppointments(snapshot),
           () => toast.error('Unable to refresh bookings.')
         )
         if (canReviewConsultationClearances.value) {
-          unsubscribeConsultationClearances = onSnapshot(
-            query(collection(db, 'consultationClearances'), where('branchId', '==', currentBranchId.value)),
+          unsubscribeConsultationClearances = pageListener(
+            onSnapshot, query(collection(db, 'consultationClearances'), where('branchId', '==', currentBranchId.value)),
             (snapshot) => {
               consultationClearances.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
             },
@@ -396,18 +421,22 @@ export default {
           )
         }
       })
-    })
+    }))
 
     onUnmounted(() => {
+      disposed = true
       if (unsubscribeAuth) unsubscribeAuth()
       unsubscribeAppointments?.()
       unsubscribeConsultationClearances?.()
     })
 
     return {
+      pageLoading,
+      isAssignedToPractitioner,
       contractAppointment, contractSaved,
       actionBusy, bookingAction, showServiceKeyModal, openServiceKeyModal, closeServiceKeyModal, submitServiceKey,
       canMarkNoShow, markNoShow,
+      manualCheckIn,
       searchQuery,
       statusFilter,
       dateFilter,

@@ -2,7 +2,7 @@
   <div class="checkout-page flex customer-theme min-h-screen">
     <CustomerSidebar />
 
-    <main class="checkout-main flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 2 }" class="checkout-main flex-1 p-4 md:p-8">
       <button
         type="button"
         class="mb-3 inline-flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
@@ -168,21 +168,18 @@
           <Icon icon="mdi:file-document-check-outline" class="h-5 w-5 text-[#8b6a4d]" />
         </div>
         <div class="mt-5 max-h-56 overflow-y-auto rounded-2xl border border-[#ead4b7] bg-[#fffaf3] p-4 text-sm leading-6 text-[#6f4a2d]">
-          <p v-if="checkoutPolicyEntries.length" v-for="policy in checkoutPolicyEntries" :key="policy.key" class="mb-3 last:mb-0">
-            <strong>{{ policy.label }}:</strong> {{ policy.text }}
-          </p>
-          <p v-else>No additional clinic policies have been enabled. I understand that this order is for pickup and is subject to the clinic's order and payment terms.</p>
+          <p>Review the payment total before continuing.</p>
         </div>
         <label class="mt-4 flex items-start gap-2 text-sm leading-6 text-[#6f4a2d]">
-          <input v-model="checkoutPolicyAcknowledged" type="checkbox" class="mt-1 h-4 w-4 accent-[#8d5a3b]" />
-          <span>I have read and agree to the applicable clinic policies and order terms.</span>
+          <input v-model="checkoutPaymentConfirmed" type="checkbox" class="mt-1 h-4 w-4 accent-[#8d5a3b]" />
+          <span>I confirm the payment total shown above.</span>
         </label>
       </div>
 
       <div class="flex justify-end">
         <button
           type="button"
-          :disabled="saving || !checkoutPolicyAcknowledged"
+          :disabled="saving || !checkoutPaymentConfirmed"
           @click="startPayMongoCheckout"
           class="checkout-submit inline-flex items-center gap-2 rounded-2xl px-6 py-3 font-semibold text-white disabled:opacity-60"
         >
@@ -196,6 +193,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { workflowApi } from '@/utils/workflowApi'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
@@ -209,7 +208,8 @@ import { toast } from 'vue3-toastify'
 import { onAuthStateChanged } from 'firebase/auth'
 import Swal from 'sweetalert2'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
-import { getClinicPolicyForBranch } from '@/utils/clinicPolicies'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const router = useRouter()
 const route = useRoute()
@@ -217,8 +217,7 @@ const selectedItems = ref([])
 const paymentMethod = ref('GCash')
 const saving = ref(false)
 const selectedPickupBranchId = ref('')
-const checkoutPoliciesByBranch = ref({})
-const checkoutPolicyAcknowledged = ref(false)
+const checkoutPaymentConfirmed = ref(false)
 
 const PENDING_PAYMONGO_KEY = 'customer_checkout_pending_paymongo'
 
@@ -256,41 +255,7 @@ const pickupBranches = computed(() => {
   return Array.from(branches.values())
 })
 
-const checkoutPolicyEntries = computed(() => pickupBranches.value.flatMap((branch) => {
-  const policyData = checkoutPoliciesByBranch.value[branch.id] || {}
-  const definitions = [
-    ['cancellationPolicy', 'Cancellation policy'],
-    ['reschedulePolicy', 'Reschedule policy'],
-    ['refundPolicy', 'Refund policy'],
-    ['consultationPolicy', 'Consultation policy'],
-    ['serviceTerms', 'Service terms'],
-    ['paymentPolicy', 'Payment policy'],
-  ]
-  return definitions
-    .filter(([key]) => policyData[`${key}Enabled`] === true && String(policyData[key] || '').trim())
-    .map(([key, label]) => ({
-      key: `${branch.id}-${key}`,
-      label: `${branch.name}: ${label}`,
-      text: String(policyData[key]).trim(),
-    }))
-}))
-
-const loadCheckoutPolicies = async () => {
-  const entries = await Promise.all(pickupBranches.value.map(async (branch) => {
-    return [branch.id, await getClinicPolicyForBranch(db, branch.id)]
-  }))
-  checkoutPoliciesByBranch.value = Object.fromEntries(entries)
-}
-
-watch(pickupBranches, async () => {
-  checkoutPolicyAcknowledged.value = false
-  try {
-    await loadCheckoutPolicies()
-  } catch (error) {
-    console.error('Failed to load clinic policies for checkout:', error)
-    checkoutPoliciesByBranch.value = {}
-  }
-}, { immediate: true })
+watch(pickupBranches, () => { checkoutPaymentConfirmed.value = false })
 
 const checkoutLocationMapEl = ref(null)
 const hasDeliveryLocationCoords = computed(() => {
@@ -439,7 +404,7 @@ const removePurchasedFromCart = () => {
 
 const toCentavos = (pesoAmount) => Math.round(Number(pesoAmount || 0) * 100)
 
-const fetchFromBackend = async (path, options = {}) => {
+const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
   const baseUrl = String(OTP_API_BASE || '').trim()
   if (!baseUrl) {
     throw new Error('VITE_OTP_API_BASE_URL is not set.')
@@ -453,7 +418,7 @@ const fetchFromBackend = async (path, options = {}) => {
     throw new Error(`Non-JSON response from ${baseUrl}`)
   }
   return response
-}
+})
 
 const buildAuthHeaders = async (headers = {}) => {
   const user = auth.currentUser
@@ -532,7 +497,7 @@ const createPayMongoCheckoutSession = async () => {
     headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       amount: toCentavos(subtotal.value),
-      policyAcknowledged: checkoutPolicyAcknowledged.value === true,
+      policyAcknowledged: checkoutPaymentConfirmed.value === true,
       paymentMethodType,
       description: 'Customer Order Full Payment',
       referenceNumber,
@@ -590,8 +555,8 @@ const startPayMongoCheckout = async () => {
     toast.error(deliveryPhoneError.value)
     return
   }
-  if (!checkoutPolicyAcknowledged.value) {
-    toast.error('Please review and accept the clinic policies before payment.')
+  if (!checkoutPaymentConfirmed.value) {
+    toast.error('Please confirm the payment total before continuing.')
     return
   }
 
@@ -613,7 +578,6 @@ const startPayMongoCheckout = async () => {
       paymentMethod: paymentMethod.value,
       paymentCoverage: 'full',
       policyAcknowledged: true,
-      clinicPolicySnapshot: Object.fromEntries(checkoutPolicyEntries.value.map((policy) => [policy.key, { label: policy.label, text: policy.text }])),
       commissionPercent: productCommissionPercent,
       commissionAmount: commissionAmount.value,
       referenceNumber,
@@ -708,7 +672,7 @@ const prefillDeliveryInfo = async (user) => {
   }
 }
 
-onMounted(() => {
+onMounted(trackPageLoad(() => {
   selectedItems.value = readCheckoutItems()
   selectedPickupBranchId.value = String(selectedItems.value.find((item) => item.branchId)?.branchId || '')
   if (!selectedItems.value.length && !loadPendingPayMongoState()) {
@@ -723,14 +687,14 @@ onMounted(() => {
     return
   }
 
-  const unsubscribe = onAuthStateChanged(auth, (user) => {
+  const unsubscribe = pageListener(onAuthStateChanged, auth, (user) => {
     if (user) {
       prefillDeliveryInfo(user)
       handlePayMongoReturn()
     }
     unsubscribe()
   })
-})
+}))
 
 onUnmounted(() => {
   if (deliveryMarker?.setMap) deliveryMarker.setMap(null)

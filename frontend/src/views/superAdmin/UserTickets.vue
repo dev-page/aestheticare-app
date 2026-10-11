@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 8, rows: 5 }" class="flex-1 p-8">
       <h1 class="text-3xl font-bold text-white mb-2">User Reports</h1>
       <p class="text-slate-400 mb-6">Review, investigate, and resolve platform issues and complaints.</p>
 
@@ -43,7 +43,7 @@
             </tr>
             <tr
               v-else
-              v-for="issue in filteredIssues"
+              v-for="issue in paginatedIssues"
               :key="issue.id"
               class="border-b border-slate-700/60 last:border-b-0"
             >
@@ -81,6 +81,7 @@
           </tbody>
         </table>
       </section>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredIssues.length" />
     </main>
   </div>
 
@@ -99,6 +100,7 @@
           <div>
             <p class="text-slate-400 text-xs uppercase tracking-wide">Reporter</p>
             <p class="text-white mt-1">{{ selectedIssue.userName || selectedIssue.userEmail || 'Unknown' }}</p>
+            <a v-if="selectedIssue.source === 'landing-contact' && selectedIssue.userEmail" :href="`mailto:${selectedIssue.userEmail}`" class="mt-1 inline-block text-amber-300 hover:underline">{{ selectedIssue.userEmail }}</a>
           </div>
           <div>
             <p class="text-slate-400 text-xs uppercase tracking-wide">Date</p>
@@ -232,16 +234,21 @@
 </template>
 
 <script>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { addDoc, arrayUnion, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 
 export default {
   name: 'SuperAdminUserTickets',
-  components: { SuperAdminSidebar, Modal },
+  components: { SuperAdminSidebar, Modal, TablePagination },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const REPORT_WINDOW_DAYS = 90
     const issues = ref([])
     const loading = ref(true)
@@ -254,6 +261,8 @@ export default {
     const statusMessage = ref('')
     const statusError = ref('')
     const search = ref('')
+    const currentPage = ref(1)
+    const pageSize = ref(10)
     const statusFilter = ref('')
     const categoryFilter = ref('')
     const internalNote = ref('')
@@ -307,6 +316,10 @@ export default {
         return matchesSearch && matchesStatus && matchesCategory
       })
     })
+    const paginatedIssues = computed(() => filteredIssues.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+    const totalPages = computed(() => Math.max(1, Math.ceil(filteredIssues.value.length / pageSize.value)))
+    watch([search, statusFilter, categoryFilter, pageSize], () => { currentPage.value = 1 })
+    watch(totalPages, (count) => { if (currentPage.value > count) currentPage.value = count })
 
     const refreshIssueInList = (issueId, updates) => {
       issues.value = issues.value.map((issue) => {
@@ -335,8 +348,8 @@ export default {
     const loadIssues = () => {
       loading.value = true
       error.value = ''
-      unsubscribe = onSnapshot(
-        query(collection(db, 'supportTickets'), orderBy('createdAt', 'desc')),
+      unsubscribe = pageListener(
+        onSnapshot, query(collection(db, 'supportTickets'), orderBy('createdAt', 'desc')),
         (snapshot) => {
           issues.value = snapshot.docs.map((docSnap) => {
             const data = docSnap.data() || {}
@@ -465,13 +478,17 @@ export default {
     })
 
     return {
+      pageLoading,
       issues,
       loading,
       error,
       showModal,
       selectedIssue,
       filteredIssues,
+      paginatedIssues,
       search,
+      currentPage,
+      pageSize,
       statusFilter,
       categoryFilter,
       reportStatuses,

@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Clinic Verification</h1>
@@ -11,18 +11,34 @@
 
         <button
           type="button"
-          class="px-4 py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-800"
+          class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-800"
           :disabled="loading"
+          :aria-label="loading ? 'Refreshing clinics' : 'Refresh clinics'"
+          :title="loading ? 'Refreshing clinics' : 'Refresh clinics'"
           @click="loadPendingClinics"
         >
-          {{ loading ? 'Refreshing...' : 'Refresh' }}
+          <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg>
         </button>
       </div>
 
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
+      <input v-model.trim="registrationSearch" type="search" placeholder="Filter clinic, owner, email, status, or plan..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 
-      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-      <section class="overflow-hidden rounded-xl border border-emerald-700/60 bg-slate-800 shadow-sm">
+      <nav class="mb-6 flex flex-wrap gap-2 rounded-xl border border-slate-700 bg-slate-800 p-2" aria-label="Clinic verification categories">
+        <button
+          v-for="tab in verificationTabs"
+          :key="tab.id"
+          type="button"
+          class="rounded-lg px-4 py-2 text-sm font-semibold transition"
+          :class="activeTab === tab.id ? 'verification-tab-active shadow-sm' : 'text-[#5a3b28] hover:bg-[#f3e4d1] hover:text-[#3d2518]'"
+          :aria-current="activeTab === tab.id ? 'page' : undefined"
+          @click="activeTab = tab.id"
+        >
+          {{ tab.label }} <span class="ml-1 text-xs opacity-80">({{ tab.count }})</span>
+        </button>
+      </nav>
+
+      <section v-if="activeTab === 'ocr'" class="overflow-hidden rounded-xl border border-emerald-700/60 bg-slate-800 shadow-sm">
         <div class="flex flex-col gap-3 border-b border-slate-700 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 class="text-lg font-semibold text-white">OCR Verified</h2>
@@ -63,7 +79,7 @@
             <tr v-else-if="!ocrVerifiedClinics.length">
               <td class="px-4 py-5 text-center text-slate-400" colspan="4">No OCR-verified registrations.</td>
             </tr>
-            <tr v-for="row in ocrVerifiedClinics" :key="row.id" class="border-b border-slate-700/50 transition-colors last:border-b-0 hover:bg-slate-700/25">
+            <tr v-for="row in paginatedOcrClinics" :key="row.id" class="border-b border-slate-700/50 transition-colors last:border-b-0 hover:bg-slate-700/25">
               <td class="px-4 py-3 text-center"><input type="checkbox" :value="row.id" v-model="selectedOcrVerified" :aria-label="`Select ${row.fullName}`" /></td>
               <td class="truncate px-4 py-3 font-medium text-slate-100" :title="row.fullName">{{ row.fullName }}</td>
               <td class="truncate px-4 py-3 text-slate-300" :title="row.email || 'No email available'">{{ row.email || '—' }}</td>
@@ -80,19 +96,19 @@
           </tbody>
         </table>
         </div>
+        <TablePagination v-model:page="ocrPage" v-model:page-size="registrationPageSize" :total-items="ocrVerifiedClinics.length" />
       </section>
 
-      <section class="bg-slate-800 border border-amber-700/60 rounded-xl overflow-hidden">
+      <section v-else-if="activeTab === 'manual'" class="bg-slate-800 border border-amber-700/60 rounded-xl overflow-hidden">
         <div class="px-4 py-4 border-b border-slate-700"><h2 class="text-lg font-semibold text-white">Manual Review Required</h2><p class="text-sm text-slate-400">Review document details individually before deciding.</p></div>
         <table class="w-full text-sm"><thead class="border-b border-slate-700"><tr><th class="text-left text-slate-300 px-4 py-3">Full Name</th><th class="text-left text-slate-300 px-4 py-3">OCR result</th><th class="text-left text-slate-300 px-4 py-3">Action</th></tr></thead>
           <tbody><tr v-if="loading"><td class="px-4 py-3 text-slate-200" colspan="3">Loading registrations...</td></tr><tr v-else-if="!manualReviewClinics.length"><td class="px-4 py-3 text-slate-400" colspan="3">No registrations need manual review.</td></tr>
-            <tr v-for="row in manualReviewClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0"><td class="px-4 py-3 text-slate-100">{{ row.fullName }}</td><td class="px-4 py-3"><span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-300">{{ row.verificationStatus || 'Not processed' }}</span></td><td class="px-4 py-3"><button type="button" class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs" @click="openDetails(row)">Review</button></td></tr>
+            <tr v-for="row in paginatedManualClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0"><td class="px-4 py-3 text-slate-100">{{ row.fullName }}</td><td class="px-4 py-3"><span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-300">{{ row.verificationStatus || 'Not processed' }}</span></td><td class="px-4 py-3"><button type="button" class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs" @click="openDetails(row)">Review</button></td></tr>
           </tbody></table>
+        <TablePagination v-model:page="manualPage" v-model:page-size="registrationPageSize" :total-items="manualReviewClinics.length" />
       </section>
-      </div>
 
-      <!-- Verified clinics table placed under pending clinics -->
-      <section class="mt-6 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+      <section v-else class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <div class="px-4 py-4 border-b border-slate-700">
           <h2 class="text-lg font-semibold text-white">Approved Clinics</h2>
           <p class="text-slate-400 text-sm">List of clinics that have been approved and verified.</p>
@@ -118,7 +134,7 @@
             </tr>
             <tr
               v-else
-              v-for="clinic in verifiedClinics"
+              v-for="clinic in paginatedVerifiedClinics"
               :key="clinic.id"
               class="border-b border-slate-700/60 last:border-b-0"
             >
@@ -157,19 +173,8 @@
             </tr>
           </tbody>
         </table>
+        <TablePagination v-model:page="approvedPage" v-model:page-size="registrationPageSize" :total-items="filteredVerifiedClinics.length" />
       </section>
-
-      <div class="mt-3 flex justify-center">
-        <button
-          v-if="hasMoreVerified && !loadingVerifiedClinics"
-          @click="loadMoreVerifiedClinics"
-          class="px-4 py-2 rounded bg-slate-700 text-white"
-        >
-          Load more
-        </button>
-        <div v-else-if="loadingVerifiedClinics" class="text-slate-400">Loading more...</div>
-        <div v-else class="text-slate-500">No more items</div>
-      </div>
 
       <div v-if="showModal && selectedRecord" class="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
         <div class="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl p-6">
@@ -206,6 +211,9 @@
               <div v-for="item in [
                 ['Birth Date', formatDateValue(selectedRecord.birthDate)],
                 ['Contact Number', selectedRecord.contactNumber],
+                ['Business Permit Holder', selectedRecord.permitHolderName],
+                ['Registrant / Permit Holder', selectedRecord.permitHolderIsRegistrant === true ? 'Same person' : selectedRecord.permitHolderIsRegistrant === false ? 'Different people — authorization review required' : 'Not declared'],
+                ['Registrant Role / Relationship', selectedRecord.permitHolderRelationship],
                 ['House / Building Number', selectedRecord.clinicBuildingNumber],
                 ['Street / Subdivision / Village', selectedRecord.clinicStreetName],
                 ['Barangay', selectedRecord.clinicBarangay],
@@ -304,6 +312,9 @@
                 <div class="mt-4 border-t border-slate-800 pt-3">
                   <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Assessment</p>
                   <p class="mt-1 text-xs leading-relaxed text-slate-300">{{ result.reason }}</p>
+                  <p v-if="result.checks.expiryDate" class="mt-2 text-xs text-amber-200">
+                    Expiry: {{ result.checks.expiryDate }}<span v-if="result.checks.expiryDaysRemaining !== null"> · {{ result.checks.expiryDaysRemaining }} day{{ result.checks.expiryDaysRemaining === 1 ? '' : 's' }} remaining</span>
+                  </p>
                 </div>
               </article>
             </div>
@@ -388,12 +399,15 @@
 </template>
 
 <script>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { doc, getDoc, getDocs, collection, onSnapshot, updateDoc, serverTimestamp, query, where } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
@@ -406,8 +420,13 @@ const normalizePlanLabel = (value) => {
   return value
 }
 
-const normalizeStatusLabel = (clinicStatus, userStatus) => {
-  return String(clinicStatus || userStatus || 'Pending Approval')
+const normalizeStatusLabel = (registrationStatus, clinicStatus, userStatus) => {
+  const publicStatus = String(registrationStatus || '').trim()
+  if (publicStatus) return publicStatus
+  const internalStatus = String(clinicStatus || userStatus || '').trim().toLowerCase()
+  if (internalStatus.includes('approved')) return 'Approved'
+  if (internalStatus.includes('rejected')) return 'Rejected'
+  return 'Pending'
 }
 
 const isPendingRecord = (record) => {
@@ -448,6 +467,9 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
     { key: 'birRegistration', label: 'BIR 2303 or Certificate of Registration' },
     { key: 'sanitaryCertificate', label: 'Sanitary Certificate' },
   ]
+  if (docs.authorizationLetter) {
+    definitions.push({ key: 'authorizationLetter', label: 'Authorization Letter / Proof of Authority' })
+  }
 
   return definitions.map((item) => {
     const file = docs?.[item.key] || {}
@@ -471,6 +493,7 @@ const verificationDocumentOrder = [
   'dohAccreditation',
   'birRegistration',
   'sanitaryCertificate',
+  'authorizationLetter',
 ]
 
 const mapVerificationResults = (verificationResults = {}) => Object.entries(verificationResults || {})
@@ -490,6 +513,9 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
     nameMatch: result.checks?.nameMatch ?? null,
     numberMatch: result.checks?.numberMatch ?? result.checks?.documentNumberDetected ?? null,
     expiryValid: result.checks?.expiryValid ?? null,
+    expiryDate: String(result.checks?.expiryDate || '').trim(),
+    expiryDaysRemaining: Number.isFinite(Number(result.checks?.expiryDaysRemaining)) ? Number(result.checks.expiryDaysRemaining) : null,
+    expiryAccountHold: result.checks?.expiryAccountHold === true,
   },
   scoreBreakdown: result.scoreBreakdown || null,
   reason: String(result.reason || 'No verification explanation was returned.'),
@@ -509,6 +535,7 @@ const documentLabel = (key) => ({
   dohAccreditation: 'DOH License to Operate',
   birRegistration: 'BIR 2303 or Certificate of Registration',
   sanitaryCertificate: 'Sanitary Certificate',
+  authorizationLetter: 'Authorization Letter / Proof of Authority',
 }[key] || key)
 
 const getOverallConfidence = (results = []) => {
@@ -529,16 +556,36 @@ const toDateFromPayment = (paidSeconds, createdSeconds) => {
 
 export default {
   name: 'SuperAdminClinicVerification',
-  components: { SuperAdminSidebar },
+  components: { SuperAdminSidebar, TablePagination },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const auth = getAuth()
     const loading = ref(false)
     const processing = ref(false)
     const error = ref('')
     const pendingClinics = ref([])
+    const activeTab = ref('ocr')
+    const registrationSearch = ref('')
+    const registrationPageSize = ref(10)
+    const ocrPage = ref(1)
+    const manualPage = ref(1)
+    const approvedPage = ref(1)
     const selectedOcrVerified = ref([])
-    const ocrVerifiedClinics = computed(() => pendingClinics.value.filter((clinic) => String(clinic.verificationStatus || '').trim().toLowerCase() === 'ocr verified'))
-    const manualReviewClinics = computed(() => pendingClinics.value.filter((clinic) => String(clinic.verificationStatus || '').trim().toLowerCase() !== 'ocr verified'))
+    const matchesRegistrationSearch = (record) => {
+      const keyword = registrationSearch.value.toLowerCase()
+      return !keyword || [record.clinicName, record.fullName, record.ownerName, record.email, record.ownerEmail, record.verificationStatus, record.approvalStatus, record.registrationStatus, record.planLabel, record.centerStatus].join(' ').toLowerCase().includes(keyword)
+    }
+    const filteredPendingClinics = computed(() => pendingClinics.value.filter(matchesRegistrationSearch))
+    const ocrVerifiedClinics = computed(() => filteredPendingClinics.value.filter((clinic) => String(clinic.verificationStatus || '').trim().toLowerCase() === 'ocr verified'))
+    const manualReviewClinics = computed(() => filteredPendingClinics.value.filter((clinic) => String(clinic.verificationStatus || '').trim().toLowerCase() !== 'ocr verified'))
+    const paginatedOcrClinics = computed(() => ocrVerifiedClinics.value.slice((ocrPage.value - 1) * registrationPageSize.value, ocrPage.value * registrationPageSize.value))
+    const paginatedManualClinics = computed(() => manualReviewClinics.value.slice((manualPage.value - 1) * registrationPageSize.value, manualPage.value * registrationPageSize.value))
+    const verificationTabs = computed(() => [
+      { id: 'ocr', label: 'OCR Verified', count: ocrVerifiedClinics.value.length },
+      { id: 'manual', label: 'Manual Review', count: manualReviewClinics.value.length },
+      { id: 'approved', label: 'Approved Clinics', count: verifiedClinics.value.length },
+    ])
     let unsubscribeClinics = null
 
     const showModal = ref(false)
@@ -551,13 +598,15 @@ export default {
     // Verified clinics list
     const verifiedClinics = ref([])
     const loadingVerifiedClinics = ref(false)
+    const filteredVerifiedClinics = computed(() => verifiedClinics.value.filter(matchesRegistrationSearch))
+    const paginatedVerifiedClinics = computed(() => filteredVerifiedClinics.value.slice((approvedPage.value - 1) * registrationPageSize.value, approvedPage.value * registrationPageSize.value))
 
     // Paginated verified clinics (infinite scroll / load more)
     const verifiedPageSize = 20
     const verifiedLastDoc = ref(null)
     const hasMoreVerified = ref(true)
 
-    const loadVerifiedClinics = async (reset = false) => {
+    const loadVerifiedClinics = trackPageLoad(async (reset = false) => {
       if (reset) {
         verifiedClinics.value = []
         verifiedLastDoc.value = null
@@ -644,6 +693,9 @@ export default {
               approvedAtLabel: approvedAt && approvedAt.toDate ? approvedAt.toDate().toLocaleDateString() : '-',
               approvedAt: approvedAt || null,
               platformAgreementAcceptance: clinic.platformAgreementAcceptance || null,
+              permitHolderIsRegistrant: typeof clinic.permitHolderIsRegistrant === 'boolean' ? clinic.permitHolderIsRegistrant : null,
+              permitHolderName: clinic.permitHolderName || '',
+              permitHolderRelationship: clinic.permitHolderRelationship || '',
               documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
               verificationStatus: clinic.verificationStatus || 'Not processed',
               verificationThreshold: clinic.verificationThreshold || null,
@@ -655,27 +707,32 @@ export default {
         )
 
         const sortedRows = sortRecordsNewestFirst(rows)
-        const pageStart = reset ? 0 : verifiedClinics.value.length
-        const pageRows = sortedRows.slice(pageStart, pageStart + verifiedPageSize)
-
-        if (pageRows.length) {
-          verifiedClinics.value = reset ? pageRows : verifiedClinics.value.concat(pageRows)
-          verifiedLastDoc.value = pageRows[pageRows.length - 1]?.id || verifiedLastDoc.value
-          hasMoreVerified.value = pageStart + pageRows.length < sortedRows.length
-        } else {
-          hasMoreVerified.value = false
-        }
+        verifiedClinics.value = sortedRows
+        hasMoreVerified.value = false
       } catch (err) {
         console.error('Failed to load verified clinics:', err)
         if (!verifiedClinics.value.length) verifiedClinics.value = []
       } finally {
         loadingVerifiedClinics.value = false
       }
-    }
+    })
 
     const loadMoreVerifiedClinics = () => loadVerifiedClinics(false)
 
-    const fetchFromBackend = async (path, options = {}) => {
+    const ensurePageInRange = (page, count) => {
+      const total = Math.max(1, Math.ceil(count / registrationPageSize.value))
+      if (page.value > total) page.value = total
+    }
+    watch([registrationSearch, registrationPageSize], () => {
+      ocrPage.value = 1
+      manualPage.value = 1
+      approvedPage.value = 1
+    })
+    watch(ocrVerifiedClinics, (rows) => ensurePageInRange(ocrPage, rows.length))
+    watch(manualReviewClinics, (rows) => ensurePageInRange(manualPage, rows.length))
+    watch(filteredVerifiedClinics, (rows) => ensurePageInRange(approvedPage, rows.length))
+
+    const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
       const candidates = OTP_BACKEND_CANDIDATES
       let lastError = null
 
@@ -698,13 +755,13 @@ export default {
       }
 
       throw lastError || new Error(`Failed to reach backend service at ${BACKEND_URL}. Ensure otp-backend is running.`)
-    }
+    })
 
     const loadPendingClinics = () => {
       if (unsubscribeClinics) unsubscribeClinics()
       loading.value = true
       error.value = ''
-      unsubscribeClinics = onSnapshot(collection(db, 'clinics'), async (clinicsSnap) => {
+      unsubscribeClinics = pageListener(onSnapshot, collection(db, 'clinics'), async (clinicsSnap) => {
         try {
         const clinicRecords = await Promise.all(clinicsSnap.docs.map(async (docSnap) => {
           const clinic = { id: docSnap.id, ...docSnap.data() }
@@ -717,18 +774,21 @@ export default {
             await Promise.all([
               updateDoc(doc(db, 'clinics', clinic.id), {
                 approvalStatus: 'Pending Approval',
-                verificationStatus: 'Automatically Verified',
+                registrationStatus: 'Pending Review',
+                verificationStatus: 'OCR Verified',
                 updatedAt: serverTimestamp(),
               }),
               updateDoc(doc(db, 'users', clinic.id), {
-                status: 'Pending Approval',
+                status: 'Pending Review',
                 approvalStatus: 'Pending Approval',
-                verificationStatus: 'Automatically Verified',
+                registrationStatus: 'Pending Review',
+                verificationStatus: 'OCR Verified',
                 updatedAt: serverTimestamp(),
               }),
             ])
             clinic.approvalStatus = 'Pending Approval'
-            clinic.verificationStatus = 'Automatically Verified'
+            clinic.registrationStatus = 'Pending Review'
+            clinic.verificationStatus = 'OCR Verified'
           }
 
           return clinic
@@ -807,6 +867,7 @@ export default {
             return {
               id: clinic.id,
               approvalStatus: clinic.approvalStatus || 'Pending Approval',
+              registrationStatus: clinic.registrationStatus || user.registrationStatus || '',
               resubmissionRequired: Boolean(clinic.resubmissionRequired),
               fullName,
               email: normalizedEmail,
@@ -818,7 +879,7 @@ export default {
               authorizedRepPosition: clinic.authorizedRepPosition || user.authorizedRepPosition || '',
               companyName: clinic.companyName || user.companyName || clinic.clinicName || '',
               companyType: clinic.companyType || user.companyType || '',
-              statusLabel: normalizeStatusLabel(clinic.approvalStatus, user.status),
+              statusLabel: normalizeStatusLabel(clinic.registrationStatus || user.registrationStatus, clinic.approvalStatus, user.status),
               clinicName: clinic.clinicName || clinic.companyName || user.companyName || '',
               clinicLocation: clinic.clinicLocation || clinic.clinicLocationAddress || '',
               clinicLocationAddress: clinic.clinicLocationAddress || '',
@@ -833,6 +894,9 @@ export default {
               planLabel: normalizePlanLabel(resolvedPlan),
               paymentStatus: resolvedPayment,
               platformAgreementAcceptance: clinic.platformAgreementAcceptance || null,
+              permitHolderIsRegistrant: typeof clinic.permitHolderIsRegistrant === 'boolean' ? clinic.permitHolderIsRegistrant : null,
+              permitHolderName: clinic.permitHolderName || '',
+              permitHolderRelationship: clinic.permitHolderRelationship || '',
               documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
               verificationStatus: clinic.verificationStatus || 'Not processed',
               verificationThreshold: clinic.verificationThreshold || null,
@@ -1132,23 +1196,33 @@ export default {
         processing.value = false
       }
     }
-    onMounted(async () => { await Promise.all([loadPendingClinics(), loadVerifiedClinics()]) })
+    onMounted(trackPageLoad(async () => { await Promise.all([loadPendingClinics(), loadVerifiedClinics()]) }))
     onUnmounted(() => unsubscribeClinics?.())
 
     return {
+      pageLoading,
       loading,
       processing,
       error,
       pendingClinics,
+      activeTab,
+      registrationSearch,
+      registrationPageSize,
+      ocrPage,
+      manualPage,
+      approvedPage,
+      verificationTabs,
       ocrVerifiedClinics,
       manualReviewClinics,
+      paginatedOcrClinics,
+      paginatedManualClinics,
       selectedOcrVerified,
       verifiedClinics,
+      filteredVerifiedClinics,
+      paginatedVerifiedClinics,
       isPendingRecord,
       isAwaitingResubmission,
       loadingVerifiedClinics,
-      hasMoreVerified,
-      loadMoreVerifiedClinics,
       showModal,
       selectedRecord,
       rejectionRemark,
@@ -1176,4 +1250,20 @@ export default {
   },
 }
 </script>
+
+<style scoped>
+.verification-tab-active {
+  background-color: #5b3a29 !important;
+  color: #fff7e8 !important;
+}
+
+.verification-tab-active span { color: #fff7e8 !important; }
+
+.verification-tab-active:hover {
+  background-color: #472b1e !important;
+  color: #fffdf7 !important;
+}
+
+.verification-tab-active:hover span { color: #fffdf7 !important; }
+</style>
 

@@ -1,23 +1,23 @@
 <template>
-  <div class="overflow-x-auto">
-    <table class="min-w-full divide-y divide-light">
-      <thead class="bg-beige">
+  <div class="app-table-wrap overflow-x-auto">
+    <table class="app-table min-w-full">
+      <thead>
         <tr>
           <th
             v-for="column in columns"
             :key="column.key"
-            class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider"
+            class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider"
           >
             {{ column.label }}
           </th>
         </tr>
       </thead>
-      <tbody class="bg-white divide-y divide-light">
+      <tbody>
         <tr v-for="(row, index) in data" :key="index">
           <td
             v-for="column in columns"
             :key="column.key"
-            class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
+            class="px-6 py-4 whitespace-nowrap text-sm"
           >
             {{ row[column.key] }}
           </td>

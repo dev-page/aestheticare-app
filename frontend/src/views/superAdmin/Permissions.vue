@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 3, rows: 5 }" class="flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Role Management</h1>
@@ -16,7 +16,7 @@
             :disabled="loading"
             @click="loadPermissions"
           >
-            {{ loading ? 'Refreshing...' : 'Refresh' }}
+            <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
           </button>
           <button
             type="button"
@@ -30,6 +30,7 @@
       </div>
 
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
+      <input v-model.trim="resourceSearch" type="search" placeholder="Filter permission resources..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 
       <section class="grid grid-cols-1 gap-6">
         <article
@@ -69,7 +70,7 @@
               </thead>
               <tbody>
                 <tr
-                  v-for="(resource, resourceIndex) in resourcesForRole(roleEntry.key)"
+                  v-for="resource in paginatedResourcesForRole(roleEntry.key)"
                   :key="`${roleEntry.key}-${resource.key}`"
                   class="border-t border-slate-700/60"
                 >
@@ -115,6 +116,13 @@
               </tbody>
             </table>
           </div>
+          <TablePagination
+            :page="resourcePageForRole(roleEntry.key)"
+            :page-size="resourcePageSize"
+            :total-items="filteredResourcesForRole(roleEntry.key).length"
+            @update:page="setResourcePage(roleEntry.key, $event)"
+            @update:page-size="resourcePageSize = $event"
+          />
         </article>
       </section>
     </main>
@@ -122,11 +130,14 @@
 </template>
 
 <script>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 
 const defaultRoles = [
   { key: 'Owner', label: 'Clinic Admin' },
@@ -189,11 +200,16 @@ const normalizeRoleKey = (value) => {
 
 export default {
   name: 'SuperAdminPermissions',
-  components: { SuperAdminSidebar },
+  components: { SuperAdminSidebar, TablePagination },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const loading = ref(false)
     const error = ref('')
     const savingRole = ref('')
+    const resourceSearch = ref('')
+    const resourcePages = ref({})
+    const resourcePageSize = ref(10)
     const rolePermissions = ref({})
 
     const roleEntries = computed(() => {
@@ -206,6 +222,19 @@ export default {
     })
 
     let unsubscribe = null
+    const resourcesForRole = (roleKey) => {
+      if (roleKey === 'Customer') return customerResourceCatalog
+      const allowed = roleResourceMap[roleKey] || []
+      return staffResourceCatalog.filter((resource) => allowed.includes(resource.key))
+    }
+    const filteredResourcesForRole = (roleKey) => {
+      const keyword = resourceSearch.value.toLowerCase()
+      return resourcesForRole(roleKey).filter((resource) => !keyword || [resource.key, resource.label, resource.description].join(' ').toLowerCase().includes(keyword))
+    }
+    const resourcePageForRole = (roleKey) => resourcePages.value[roleKey] || 1
+    const setResourcePage = (roleKey, page) => { resourcePages.value = { ...resourcePages.value, [roleKey]: page } }
+    const paginatedResourcesForRole = (roleKey) => filteredResourcesForRole(roleKey).slice((resourcePageForRole(roleKey) - 1) * resourcePageSize.value, resourcePageForRole(roleKey) * resourcePageSize.value)
+    watch([resourceSearch, resourcePageSize], () => { resourcePages.value = {} })
 
     const loadPermissions = () => {
       loading.value = true
@@ -217,8 +246,8 @@ export default {
       }
 
       try {
-        unsubscribe = onSnapshot(
-          collection(db, 'rolePermissions'),
+        unsubscribe = pageListener(
+          onSnapshot, collection(db, 'rolePermissions'),
           (snapshot) => {
             console.log('[Permissions] snapshot received', snapshot.size)
             const map = {}
@@ -348,17 +377,20 @@ export default {
     })
 
     return {
+      pageLoading,
       loading,
       error,
       savingRole,
       roleEntries,
       actionCatalog,
+      resourceSearch,
+      resourcePageForRole,
+      setResourcePage,
+      resourcePageSize,
+      filteredResourcesForRole,
+      paginatedResourcesForRole,
       syncToCurrentPages,
-      resourcesForRole: (roleKey) => {
-        if (roleKey === 'Customer') return customerResourceCatalog
-        const allowed = roleResourceMap[roleKey] || []
-        return staffResourceCatalog.filter((resource) => allowed.includes(resource.key))
-      },
+      resourcesForRole,
       isRowFullAccess: (roleKey, resourceKey) => {
         const current = Array.isArray(rolePermissions.value[roleKey]) ? rolePermissions.value[roleKey] : []
         const needed = actionCatalog.map((action) => `${resourceKey}:${action.key}`)

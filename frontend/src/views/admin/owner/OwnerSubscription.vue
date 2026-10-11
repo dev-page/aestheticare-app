@@ -2,7 +2,7 @@
   <div class="flex owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'plan', cards: 3 }" class="flex-1 p-8">
       <div class="mb-6">
         <h1 class="text-3xl font-bold text-white mb-2">Subscription Plan</h1>
         <p class="text-slate-400">Review your current plan and manage billing preferences.</p>
@@ -10,7 +10,7 @@
 
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
 
-      <OwnerPageSkeleton v-if="loading" />
+      <OwnerPageSkeleton v-if="loading" variant="cards" card-style="plan" :cards="3" />
 
       <section v-else class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
@@ -101,6 +101,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
@@ -109,6 +111,8 @@ import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
 import { useSubscriptionStore } from '@/stores/subscription'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const router = useRouter()
 const subscriptionStore = useSubscriptionStore()
@@ -277,12 +281,12 @@ const applySubscriptionData = async (userData = {}, clinicData = {}) => {
   }
 }
 
-const loadSubscription = async () => {
+const loadSubscription = trackPageLoad(async () => {
   error.value = ''
   loading.value = true
   try {
     const currentUser = auth.currentUser || await new Promise((resolve) => {
-      const unsub = onAuthStateChanged(auth, (user) => {
+      const unsub = pageListener(onAuthStateChanged, auth, (user) => {
         unsub()
         resolve(user)
       })
@@ -303,7 +307,7 @@ const loadSubscription = async () => {
     syncPlanData()
 
     if (unsubscribePlans) unsubscribePlans()
-    unsubscribePlans = onSnapshot(collection(db, 'subscriptionPlans'), (snapshot) => {
+    unsubscribePlans = pageListener(onSnapshot, collection(db, 'subscriptionPlans'), (snapshot) => {
       planDocs.value = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
       syncPlanData()
       if (loading.value) loading.value = false
@@ -313,11 +317,11 @@ const loadSubscription = async () => {
     error.value = 'Failed to load subscription information.'
     loading.value = false
   }
-}
+})
 
 const subscribeToUpdates = async () => {
   const currentUser = auth.currentUser || await new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, (user) => {
+    const unsub = pageListener(onAuthStateChanged, auth, (user) => {
       unsub()
       resolve(user)
     })
@@ -327,7 +331,7 @@ const subscribeToUpdates = async () => {
   if (unsubscribeUser) unsubscribeUser()
   if (unsubscribeClinic) unsubscribeClinic()
 
-  unsubscribeUser = onSnapshot(doc(db, 'users', currentUser.uid), async (snap) => {
+  unsubscribeUser = pageListener(onSnapshot, doc(db, 'users', currentUser.uid), async (snap) => {
     const userData = snap.exists() ? snap.data() : {}
     const clinicSnap = await getDoc(doc(db, 'clinics', currentUser.uid))
     const clinicData = clinicSnap.exists() ? clinicSnap.data() : {}
@@ -336,7 +340,7 @@ const subscribeToUpdates = async () => {
     await subscriptionStore.refreshSubscription()
   })
 
-  unsubscribeClinic = onSnapshot(doc(db, 'clinics', currentUser.uid), async (snap) => {
+  unsubscribeClinic = pageListener(onSnapshot, doc(db, 'clinics', currentUser.uid), async (snap) => {
     const clinicData = snap.exists() ? snap.data() : {}
     const userSnap = await getDoc(doc(db, 'users', currentUser.uid))
     const userData = userSnap.exists() ? userSnap.data() : {}
@@ -373,10 +377,10 @@ const goToUpgrade = () => {
   router.push({ path: '/account/plans', query: { plan: targetPlan } })
 }
 
-onMounted(async () => {
+onMounted(trackPageLoad(async () => {
   await loadSubscription()
   await subscribeToUpdates()
-})
+}))
 
 onUnmounted(() => {
   if (unsubscribeUser) unsubscribeUser()

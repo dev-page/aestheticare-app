@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5 }" class="flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Archived Accounts</h1>
@@ -22,7 +22,7 @@
             :disabled="loading"
             @click="loadArchivedAccounts"
           >
-            {{ loading ? 'Refreshing...' : 'Refresh' }}
+            <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
           </button>
         </div>
       </div>
@@ -55,7 +55,7 @@
                 <td class="px-4 py-3 text-slate-300" colspan="6">No archived accounts found.</td>
               </tr>
 
-              <tr v-for="account in filteredAccounts" :key="account.id" class="border-b border-slate-700/60 last:border-b-0">
+              <tr v-for="account in paginatedAccounts" :key="account.id" class="border-b border-slate-700/60 last:border-b-0">
                 <td class="px-4 py-3 text-slate-200">{{ account.fullName }}</td>
                 <td class="px-4 py-3 text-slate-300">{{ account.email || '-' }}</td>
                 <td class="px-4 py-3 text-slate-300">{{ account.role || '-' }}</td>
@@ -90,16 +90,20 @@
             </tbody>
           </table>
         </div>
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredAccounts.length" />
       </section>
     </main>
   </div>
 </template>
 
 <script>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { collection, deleteDoc, doc, onSnapshot, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
@@ -114,11 +118,15 @@ const normalizeRoleKey = (value) => {
 
 export default {
   name: 'SuperAdminArchivedAccounts',
-  components: { SuperAdminSidebar },
+  components: { SuperAdminSidebar, TablePagination },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const loading = ref(false)
     const error = ref('')
     const search = ref('')
+    const currentPage = ref(1)
+    const pageSize = ref(10)
     const processingId = ref('')
     const accounts = ref([])
     let unsubscribeUsers = null
@@ -147,7 +155,7 @@ export default {
       if (unsubscribeUsers) unsubscribeUsers()
       loading.value = true
       error.value = ''
-      unsubscribeUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
+      unsubscribeUsers = pageListener(onSnapshot, collection(db, 'users'), (usersSnap) => {
         accounts.value = usersSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
           .filter((user) => !isSystemAdmin(user))
@@ -259,16 +267,24 @@ export default {
         return haystack.includes(keyword)
       })
     })
+    const paginatedAccounts = computed(() => filteredAccounts.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+    const totalPages = computed(() => Math.max(1, Math.ceil(filteredAccounts.value.length / pageSize.value)))
+    watch([search, pageSize], () => { currentPage.value = 1 })
+    watch(totalPages, (count) => { if (currentPage.value > count) currentPage.value = count })
 
     onMounted(loadArchivedAccounts)
     onUnmounted(() => unsubscribeUsers?.())
 
     return {
+      pageLoading,
       loading,
       error,
       search,
       processingId,
       filteredAccounts,
+      paginatedAccounts,
+      currentPage,
+      pageSize,
       statusClass,
       loadArchivedAccounts,
       enableAccount,

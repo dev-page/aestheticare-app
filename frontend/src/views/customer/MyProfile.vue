@@ -1,7 +1,7 @@
 <template>
-  <div :class="['profile-shell', { 'profile-shell-embedded': embedded }]">
+  <div :class="['profile-shell customer-theme', { 'profile-shell-embedded': embedded }]">
     <CustomerSidebar v-if="!embedded" />
-    <main class="profile-main"><div class="profile-content"><section class="profile-panel">
+    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 6, sections: 2 }" class="profile-main"><div class="profile-content"><section class="profile-panel">
       <template v-if="loading"><p class="profile-subtitle">Loading your profile…</p></template>
       <template v-else><header class="profile-header"><h1 class="profile-title">My Profile</h1><p class="profile-subtitle">Keep your contact details updated for appointments and pickup orders.</p></header>
         <div class="profile-avatar-block"><div class="profile-avatar"><img v-if="customer.profilePicture" :src="customer.profilePicture" alt="Customer profile" class="h-full w-full object-cover"><span v-else class="profile-avatar-fallback">{{ fullName ? fullName.charAt(0) : 'U' }}</span></div><label class="profile-upload-label">Upload Profile Picture<input type="file" accept="image/*" class="hidden" @change="handleFileUpload"></label></div>
@@ -11,12 +11,16 @@
   </div>
 </template>
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import { toast } from 'vue3-toastify'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 const { embedded = false } = defineProps({ embedded: { type: Boolean, default: false } })
 const customer=ref({firstName:'',lastName:'',email:'',contactNumber:'',bio:'',profilePicture:''}),loading=ref(true),contactNumberError=ref('');let unsubscribeProfile=null,unsubscribeAuth=null
 const fullName=computed(()=>`${customer.value.firstName||''} ${customer.value.lastName||''}`.trim())
@@ -24,9 +28,9 @@ const normalizePhone=value=>{let digits=String(value||'').replace(/\D/g,'');if(d
 const validateContactNumber=()=>{contactNumberError.value=/^9\d{9}$/.test(customer.value.contactNumber)?'':'Enter exactly 10 digits starting with 9.';return !contactNumberError.value}
 const handleContactNumberInput=event=>{customer.value.contactNumber=normalizePhone(event?.target?.value);if(contactNumberError.value)validateContactNumber()}
 const handleFileUpload=event=>{const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=result=>customer.value.profilePicture=result.target?.result||'';reader.readAsDataURL(file)}
-const loadCustomerProfile=()=>{const user=auth.currentUser;if(!user){loading.value=false;return}loading.value=true;const userRef=doc(db,'users',user.uid);if(unsubscribeProfile)unsubscribeProfile();unsubscribeProfile=onSnapshot(userRef,async snap=>{if(snap.exists()){customer.value={...customer.value,...snap.data(),email:user.email||''};customer.value.contactNumber=normalizePhone(customer.value.contactNumber)}else{await setDoc(userRef,{...customer.value,email:user.email||'',role:'Customer',createdAt:serverTimestamp()});customer.value.email=user.email||''}loading.value=false},error=>{console.error(error);toast.error('Failed to load profile.');loading.value=false})}
+const loadCustomerProfile=()=>{const user=auth.currentUser;if(!user){loading.value=false;return}loading.value=true;const userRef=doc(db,'users',user.uid);if(unsubscribeProfile)unsubscribeProfile();unsubscribeProfile=pageListener(onSnapshot, userRef,async snap=>{if(snap.exists()){customer.value={...customer.value,...snap.data(),email:user.email||''};customer.value.contactNumber=normalizePhone(customer.value.contactNumber)}else{await setDoc(userRef,{...customer.value,email:user.email||'',role:'Customer',createdAt:serverTimestamp()});customer.value.email=user.email||''}loading.value=false},error=>{console.error(error);toast.error('Failed to load profile.');loading.value=false})}
 const saveCustomerProfile=async()=>{const user=auth.currentUser;if(!user)return toast.error('User not authenticated.');if(!validateContactNumber())return toast.error('Enter a valid Philippine mobile number before saving.');try{await updateDoc(doc(db,'users',user.uid),{firstName:customer.value.firstName||'',lastName:customer.value.lastName||'',email:customer.value.email||'',contactNumber:`+63${customer.value.contactNumber}`,bio:customer.value.bio||'',profilePicture:customer.value.profilePicture||'',updatedAt:serverTimestamp()});toast.success('Profile updated successfully.')}catch(error){console.error(error);toast.error('Failed to save profile.')}}
-onMounted(()=>{unsubscribeAuth=onAuthStateChanged(auth,user=>{if(!user){loading.value=false;return}loadCustomerProfile()})});onUnmounted(()=>{if(unsubscribeProfile)unsubscribeProfile();if(unsubscribeAuth)unsubscribeAuth()})
+onMounted(trackPageLoad(()=>{unsubscribeAuth=pageListener(onAuthStateChanged, auth,user=>{if(!user){loading.value=false;return}loadCustomerProfile()})}));onUnmounted(()=>{if(unsubscribeProfile)unsubscribeProfile();if(unsubscribeAuth)unsubscribeAuth()})
 </script>
 <style scoped>
 .profile-shell{display:flex;min-height:100vh;background:#fbf5e8}.profile-main{flex:1;min-width:0;background:linear-gradient(180deg,#fbf5e8,#f4e1c6)}.profile-content{display:flex;justify-content:center;padding:1.5rem}.profile-panel{width:100%;max-width:52rem;padding:1.5rem;border:1px solid #e6c196;border-radius:1.5rem;background:#fffaf3;box-shadow:0 18px 44px rgb(87 56 35 / .08)}.profile-shell-embedded{min-height:auto;background:transparent}.profile-title{font-size:1.8rem;font-weight:800;color:#3d281d}.profile-subtitle{margin-top:.35rem;color:#806248}.profile-avatar-block{display:flex;align-items:center;gap:1rem;margin:1.5rem 0}.profile-avatar{display:grid;width:5rem;height:5rem;place-items:center;overflow:hidden;border-radius:50%;background:#f0d6b7;color:#704625;font-size:2rem;font-weight:800}.profile-upload-label,.profile-save-button{border-radius:.65rem;background:#b97948;padding:.65rem 1rem;color:#fff;font-weight:700;cursor:pointer}.profile-form{display:grid;gap:1rem}.profile-field-label{display:block;margin-bottom:.35rem;color:#684630;font-size:.85rem;font-weight:700}.profile-input{width:100%;box-sizing:border-box;border:1px solid #d9b992;border-radius:.55rem;background:#fff;padding:.65rem .75rem;color:#3d281d}.profile-textarea{resize:vertical}.phone-input-shell{display:flex;overflow:hidden;border:1px solid #d9b992;border-radius:.55rem;background:#fff}.phone-input-shell span{padding:.65rem .75rem;border-right:1px solid #d9b992;background:#f7e8d5;color:#6f4a2d;font-weight:700}.phone-input-shell .profile-input{border:0}.phone-input-invalid{border-color:#c34836}.field-error{margin:.35rem 0 0;color:#b83225;font-size:.8rem}

@@ -1,8 +1,8 @@
 <template>
-  <div class="customer-home-shell flex min-h-screen bg-gradient-to-br from-[#fbf2e4] via-[#f7ead8] to-[#f1dcc0]">
+  <div class="customer-home-shell customer-theme flex min-h-screen bg-gradient-to-br from-[#fbf2e4] via-[#f7ead8] to-[#f1dcc0]">
     <CustomerSidebar class="flex-shrink-0" />
 
-    <main class="customer-home-main flex-1">
+    <main v-page-loading="{ active: pageLoading, variant: 'cards', cards: 6 }" class="customer-home-main flex-1">
       <div class="customer-home-content">
         <section class="customer-home-hero">
           <div>
@@ -228,6 +228,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
@@ -237,6 +239,8 @@ import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { subscribeCustomerCenters } from '@/utils/customerCenters'
 import BranchPickerModal from '@/components/common/BranchPickerModal.vue'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const router = useRouter()
 const loading = ref(true)
@@ -366,7 +370,7 @@ const persistFavorites = async () => {
   }
 }
 
-const loadFavorites = async () => {
+const loadFavorites = trackPageLoad(async () => {
   const localFavorites = readLocalFavorites()
   if (!auth.currentUser) {
     favoriteClinicIds.value = localFavorites
@@ -383,7 +387,7 @@ const loadFavorites = async () => {
     console.error('Failed to load favorite clinics:', error)
     favoriteClinicIds.value = localFavorites
   }
-}
+})
 
 const toggleFavorite = async (center) => {
   const clinicId = String(center?.id || '').trim()
@@ -461,7 +465,7 @@ const openBranch = (branch) => {
   router.push({ name: 'customer-center', params: { id: centerId } })
 }
 
-onMounted(() => {
+onMounted(trackPageLoad(() => {
   loading.value = true
   errorMessage.value = ''
   loadFavorites()
@@ -476,7 +480,7 @@ onMounted(() => {
       loading.value = false
     }
   )
-})
+}))
 
 onUnmounted(() => {
   if (unsubscribeCenters) unsubscribeCenters()

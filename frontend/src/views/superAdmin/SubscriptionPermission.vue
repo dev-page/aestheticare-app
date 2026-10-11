@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main class="flex-1 p-8 overflow-x-hidden">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="flex-1 p-8 overflow-x-hidden">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Subscription Permissions</h1>
@@ -15,11 +15,12 @@
           :disabled="loading"
           @click="loadPermissions"
         >
-          {{ loading ? 'Refreshing...' : 'Refresh' }}
+          <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
         </button>
       </div>
 
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
+      <input v-model.trim="planSearch" type="search" placeholder="Filter subscription plans..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 
       <section class="mb-6 rounded-xl border border-slate-700 bg-slate-800 p-4">
         <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -88,14 +89,14 @@
                   Loading plan permissions...
                 </td>
               </tr>
-              <tr v-else-if="!planEntries.length">
+              <tr v-else-if="!filteredPlanEntries.length">
                 <td class="px-3 py-2 text-slate-300" :colspan="planFeatureCatalog.length + 3">
                   No plans found.
                 </td>
               </tr>
               <tr
                 v-else
-                v-for="planEntry in planEntries"
+                v-for="planEntry in paginatedPlanEntries"
                 :key="planEntry.key"
                 class="border-t border-slate-700/60"
               >
@@ -152,17 +153,21 @@
             </tbody>
           </table>
         </div>
+        <TablePagination v-model:page="planPage" v-model:page-size="planPageSize" :total-items="filteredPlanEntries.length" />
       </section>
     </main>
   </div>
 </template>
 
 <script>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { usePageLoading } from '@/composables/usePageLoading'
+
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 import {
   buildSubscriptionPlanCatalog,
   filterActiveSubscriptionPlans,
@@ -180,12 +185,17 @@ const defaultPlanCatalog = [
 
 export default {
   name: 'SuperAdminSubscriptionPermission',
-  components: { SuperAdminSidebar },
+  components: { SuperAdminSidebar, TablePagination },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const loading = ref(false)
     const error = ref('')
     const savingPlan = ref('')
     const planCatalog = ref([])
+    const planSearch = ref('')
+    const planPage = ref(1)
+    const planPageSize = ref(10)
     const planPermissions = ref({})
     const featureDefinitions = ref(DEFAULT_SUBSCRIPTION_FEATURES.map((feature) => ({ ...feature })))
     const newFeature = ref({ key: '', label: '', description: '', module: 'Other' })
@@ -214,6 +224,14 @@ export default {
         }
       })
     )
+    const filteredPlanEntries = computed(() => {
+      const keyword = planSearch.value.toLowerCase()
+      return planEntries.value.filter((plan) => !keyword || [plan.key, plan.label].join(' ').toLowerCase().includes(keyword))
+    })
+    const paginatedPlanEntries = computed(() => filteredPlanEntries.value.slice((planPage.value - 1) * planPageSize.value, planPage.value * planPageSize.value))
+    const totalPlanPages = computed(() => Math.max(1, Math.ceil(filteredPlanEntries.value.length / planPageSize.value)))
+    watch([planSearch, planPageSize], () => { planPage.value = 1 })
+    watch(totalPlanPages, (count) => { if (planPage.value > count) planPage.value = count })
 
       let unsubscribePermissions = null
     let unsubscribePlans = null
@@ -238,8 +256,8 @@ export default {
       }
 
       try {
-        unsubscribePlans = onSnapshot(
-          collection(db, 'subscriptionPlans'),
+        unsubscribePlans = pageListener(
+          onSnapshot, collection(db, 'subscriptionPlans'),
           (snapshot) => {
             const merged = buildSubscriptionPlanCatalog(defaultPlanCatalog, snapshot.docs)
             planCatalog.value = filterActiveSubscriptionPlans(merged)
@@ -253,8 +271,8 @@ export default {
           }
         )
 
-        unsubscribePermissions = onSnapshot(
-          collection(db, 'planPermissions'),
+        unsubscribePermissions = pageListener(
+          onSnapshot, collection(db, 'planPermissions'),
           (snapshot) => {
             const map = {}
             snapshot.forEach((docSnap) => {
@@ -272,8 +290,8 @@ export default {
           }
         )
 
-        unsubscribeFeatures = onSnapshot(
-          collection(db, 'subscriptionFeatures'),
+        unsubscribeFeatures = pageListener(
+          onSnapshot, collection(db, 'subscriptionFeatures'),
           (snapshot) => {
             featureDefinitions.value = buildSubscriptionFeatureRegistry(snapshot.docs)
           },
@@ -432,10 +450,16 @@ export default {
     })
 
     return {
+      pageLoading,
       loading,
       error,
       savingPlan,
       planEntries,
+      planSearch,
+      planPage,
+      planPageSize,
+      filteredPlanEntries,
+      paginatedPlanEntries,
       featureDefinitions,
       newFeature,
       savingFeature,

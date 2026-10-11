@@ -53,12 +53,15 @@ const hasFreePlanOnboardingSessionAccess = (uid) => {
 }
 
 const routes = [
+  { path: '/supplier/verification', name: 'supplier-verification', component: () => import('@/views/supplier/SupplierVerification.vue'), meta: { requiresAuth: true } },
+  { path: '/superadmin/suppliers/verification', name: 'admin-supplier-verification', component: () => import('@/views/superAdmin/SupplierVerification.vue'), meta: { requiresAuth: true } },
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
   { path: '/supplier/supply/rfqs', redirect: '/supplier/supply/orders' },
   { path: '/supplier/chat', name: 'supplier-chat', component: () => import('@/views/supplier/SupplierChat.vue'), meta: { requiresAuth: true } },
   { path: '/inventory/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true } },
   { path: '/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true } },
   { path: '/finance/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
+  { path: '/logistics/discrepancies', redirect: '/logistics/items' },
   { path: '/:department(inventory|procurement|logistics)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true } },
   { path: '/finance/procurement/:page?', name: 'procurement-finance-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/management/supply/:page?', name: 'supply-management-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'management' } },
@@ -72,10 +75,12 @@ const routes = [
   { path: "/customer-app/register", name: "customer-app-register", component: () => import("@/views/customer-app/CustomerRegister.vue"), meta: { guestOnly: true } },
   { path: "/customer-app/forgot-password", name: "customer-app-forgot-password", component: () => import("@/views/customer-app/CustomerForgotPass.vue"), meta: { guestOnly: true } },
   { path: "/activate-account", name: "activate-account", component: () => import("@/views/public/ActivateAccount.vue") },
+  { path: "/group-consent", name: "group-consent", component: () => import("@/views/public/GroupConsent.vue") },
   { path: "/register", name: "register", component: () => import("@/views/public/Register.vue") },
   { path: "/forgot-password", name: "forgot-password", component: () => import("@/views/public/ForgotPassword.vue") },
   { path: "/clinic/register", name: "register-clinic", component: () => import("@/views/public/Register.vue") },
   { path: "/clinic/register/step-:step", name: "register-clinic-step", component: () => import("@/views/public/Register.vue") },
+  { path: "/clinical/group-bookings", name: "clinical-group-bookings", component: () => import("@/views/admin/owner/clinic/GroupBookings.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:update" } },
   { path: "/centers", name: "centers", component: () => import("@/views/public/ViewCenters.vue") },
   ...(import.meta.env.DEV
     ? [{ path: "/test", name: "test", component: () => import("@/views/public/Test.vue") }]
@@ -109,24 +114,25 @@ const routes = [
   { path: "/clinical/patients", name: "clinical-patients", component: () => import("@/views/admin/owner/clinic/Patients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/clinical/dashboard", name: "clinical-dashboard", component: () => import("@/views/admin/owner/clinic/PractitionerDashboard.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:view" } },
   { path: "/clinical/clients", name: "clinical-clients", component: () => import("@/views/admin/owner/clinic/PractitionerClients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
-  { path: "/clinical/appointments", name: "clinical-appointments", component: () => import("@/views/admin/owner/clinic/PractitionerAppointments.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:view" } },
+  { path: "/clinical/appointments", name: "clinical-appointments", redirect: { path: "/crm/appointments", query: { tab: "queue" } } },
   { path: "/clinical/treatment-sessions", name: "clinical-treatment-sessions", component: () => import("@/views/admin/owner/clinic/TreatmentSessions.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:update" } },
-  { path: "/clinical/consultations/online", name: "clinical-online-consultation", component: () => import("@/views/admin/owner/clinic/PractitionerOnlineConsultation.vue"), meta: { requiresAuth: true, requiresPermission: "consultations:view", requiresFeature: "online_consultations" } },
+  { path: "/clinical/consultations/online", name: "clinical-online-consultation", redirect: { path: "/crm/appointments", query: { tab: "queue", mode: "online" } } },
   { path: "/activities", name: "activities", component: () => import("@/views/common/Activities.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
 
   // HR routes
   { path: "/hr/dashboard", redirect: "/workspace/dashboard" },
   { path: "/hr/sales", redirect: "/hr/reports" },
   //{ path: "/hr/schedule", name: "hr-schedule", component: () => import("@/views/clinic/hr/HRSchedule.vue"), meta: { requiresAuth: true } },
-  { path: "/hr/add-shift", name: "hr-add-shift", component: () => import("@/views/admin/owner/hr/AddShift.vue"), meta: { requiresAuth: true, requiresPermission: "hr:create", requiresFeature: "hr" } },
-  { path: "/hr/schedule-assignment", name: "hr-schedule-assignment", component: () => import("@/views/admin/owner/hr/ScheduleAssignment.vue"), meta: { requiresAuth: true, requiresPermission: "hr:update", requiresFeature: "hr" } },
+  { path: "/hr/shifts", name: "hr-shifts", component: () => import("@/views/admin/owner/hr/Shifts.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["hr:create", "hr:update"], requiresFeature: "hr" } },
+  { path: "/hr/add-shift", name: "hr-add-shift", redirect: { path: "/hr/shifts", query: { tab: "add" } } },
+  { path: "/hr/schedule-assignment", name: "hr-schedule-assignment", redirect: { path: "/hr/shifts", query: { tab: "assignment" } } },
   { path: "/appointments/booking-availability", name: "booking-availability", component: () => import("@/views/admin/owner/BookingAvailability.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:review", requiresFeature: "booking_availability", allowedPlans: ['basic'] } },
   { path: "/hr/leave-request", name: "hr-leave-request", component: () => import("@/views/admin/owner/hr/LeaveRequest.vue"), meta: { requiresAuth: true, requiresPermission: "leave:create", requiresFeature: "hr" } },
   { path: "/hr/leave-management", name: "hr-leave-management", component: () => import("@/views/admin/owner/hr/LeaveManagement.vue"), meta: { requiresAuth: true, requiresPermission: "leave:review", requiresFeature: "hr" } },
   { path: "/hr/overtime", name: "hr-overtime", component: () => import("@/views/admin/owner/hr/Overtime.vue"), meta: { requiresAuth: true, requiresPermission: "overtime:view", requiresFeature: "hr" } },
-  { path: "/hr/employees", name: "hr-employees", component: () => import("@/views/admin/owner/StaffProfile.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view", requiresFeature: "staff_management" } },
-  { path: "/hr/employees/new", name: "hr-employees-new", component: () => import("@/views/admin/owner/AddStaff.vue"), meta: { requiresAuth: true, requiresPermission: "staff:create", requiresFeature: "staff_management" } },
-  { path: "/hr/employees/archived", name: "hr-employees-archived", component: () => import("@/views/admin/owner/ArchivedEmployees.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view", requiresFeature: "staff_management" } },
+  { path: "/hr/employees", name: "hr-employees", component: () => import("@/views/admin/owner/Employees.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["staff:view", "staff:create"], requiresFeature: "staff_management" } },
+  { path: "/hr/employees/new", name: "hr-employees-new", component: () => import("@/views/admin/owner/Employees.vue"), meta: { requiresAuth: true, requiresPermission: "staff:create", requiresFeature: "staff_management" } },
+  { path: "/hr/employees/archived", name: "hr-employees-archived", component: () => import("@/views/admin/owner/Employees.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view", requiresFeature: "staff_management" } },
   { path: "/hr/attendance", name: "hr-attendance", component: () => import("@/views/admin/owner/Attendance.vue"), meta: { requiresAuth: true, requiresNonEmployee: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
   { path: "/hr/roles", name: "hr-roles", component: () => import("@/views/admin/owner/OwnerRoleManagement.vue"), meta: { requiresAuth: true, requiresPermission: "roles:manage", requiresFeature: "staff_management" } },
   { path: "/hr/reports", name: "hr-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
@@ -140,11 +146,11 @@ const routes = [
   { path: "/clinic/dashboard", name: "clinic-dashboard", component: () => import("@/views/admin/owner/OwnerDashboard.vue"), meta: { requiresAuth: true, requiresOwner: true } },
   // Every clinic owner can view their primary branch. Only adding/managing
   // additional branches is a Premium multi-branch feature.
-  { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/BranchInfo.vue"), meta: { requiresAuth: true, requiresPermission: "branches:view" } },
-  { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/AddBranch.vue"), meta: { requiresAuth: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
+  { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/Branches.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["branches:view", "branches:create"] } },
+  { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/Branches.vue"), meta: { requiresAuth: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
   { path: "/clinic/profile", name: "clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:view" } },
   { path: "/clinic/page", name: "clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:update" } },
-  { path: "/clinic/policies", name: "clinic-policies", component: () => import("@/views/admin/owner/OwnerPolicyManagement.vue"), meta: { requiresAuth: true, requiresPermission: "policies:view" } },
+  { path: "/clinic/policies", name: "clinic-policies", component: () => import("@/views/admin/owner/OwnerPolicyManagement.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["policies:view", "policies:update"] } },
   { path: "/management/reports", name: "management-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
   { path: "/account/closure", name: "account-closure", component: () => import("@/views/admin/owner/OwnerAccountClosure.vue"), meta: { requiresAuth: true, requiresOwner: true } },
   { path: "/account/backup", name: "account-backup", component: () => import("@/views/admin/owner/OwnerBackup.vue"), meta: { requiresAuth: true, requiresPermission: "backups:view" } },
@@ -164,8 +170,8 @@ const routes = [
   { path: "/crm/dashboard", name: "crm-dashboard", component: () => import("@/views/admin/owner/crm/ReceptionistDashboard.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/crm/clients", name: "crm-clients", component: () => import("@/views/admin/owner/crm/ReceptionistClientList.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/crm/clients/new", name: "crm-walk-in-client", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermission: "clients:create" } },
-  { path: "/crm/appointments", name: "crm-appointments", component: () => import("@/views/admin/owner/crm/ReceptionistAppointmentList.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:view" } },
-  { path: "/crm/appointments/requests", name: "crm-appointment-requests", component: () => import("@/views/admin/owner/crm/AppointmentRequestApprovals.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:review" } },
+  { path: "/crm/appointments", name: "crm-appointments", component: () => import("@/views/admin/owner/crm/AppointmentManagement.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["appointments:view", "appointments:update", "appointments:review", "consultations:view"], requiresFeature: "appointments" } },
+  { path: "/crm/appointments/requests", name: "crm-appointment-requests", redirect: { path: "/crm/appointments", query: { tab: "requests" } } },
   { path: "/crm/appointments/new", name: "crm-walk-in-appointment", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:create" } },
   { path: "/crm/pos", name: "crm-walk-in-pos", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermission: "payments:create" } },
   { path: "/crm/transactions", name: "crm-transactions", component: () => import("@/views/admin/owner/crm/ReceptionistTransactionHistory.vue"), meta: { requiresAuth: true, requiresPermission: "payments:view" } },
@@ -186,6 +192,7 @@ const routes = [
   { path: "/finance/approvals", name: "finance-approvals", component: () => import("@/views/admin/owner/finance/FinanceRequests.vue"), meta: { requiresAuth: true, requiresPermission: "finance:payables:view", requiresFeature: "reports" } },
   { path: "/finance/requests", redirect: "/finance/approvals" },
   { path: "/finance/payroll-summary", name: "finance-payroll-summary", component: () => import("@/views/admin/owner/finance/FinancePayrollSummary.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:view", requiresFeature: "payroll" } },
+  { path: "/finance/staff-compensation", name: "finance-staff-compensation", component: () => import("@/views/admin/owner/finance/CommissionContracts.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:view", requiresFeature: "payroll" } },
   { path: "/finance/payroll-approval", name: "finance-payroll-approval", component: () => import("@/views/admin/owner/finance/FinancePayrollApproval.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:approve", requiresFeature: "payroll" } },
 
   // Compatibility redirects from former role-owned clinic URLs.
@@ -478,12 +485,7 @@ router.beforeEach(async (to, from, next) => {
 
   const routePath = String(to.path || '').toLowerCase()
   const isOwnerRoute = isOwnerLikeRole(currentUserData, currentUser?.uid)
-  const isSubscriptionOnboardingRoute = routePath === '/clinic/onboarding'
-  const isSubscriptionCheckoutRoute = routePath === '/subscription/checkout'
-  // This query marker is only created by the Free Plan Continue action. It
-  // makes that one navigation resilient when browser session storage is
-  // unavailable (for example, restrictive privacy settings).
-  const continuedFromFreePlanOnboarding = String(to.query?.freeOnboarding || '').trim().toLowerCase() === 'continue'
+  const isClinicSetupRoute = routePath === '/clinic/onboarding'
 
   let clinicSubscriptionData = {}
   if (currentUser && isOwnerRoute) {
@@ -528,27 +530,15 @@ router.beforeEach(async (to, from, next) => {
     && isOwnerRoute
     && userStatus === 'active'
     && clinicApprovalStatus.includes('approved')
-  const needsFreePlanAcknowledgement = isApprovedClinicOwner
-    && isFreeSubscriptionPlan(effectiveSubscriptionPlan)
-    && !isTrueFlag(currentUserData.subscriptionOnboardingDismissed)
-    && !hasFreePlanOnboardingSessionAccess(currentUser?.uid)
-    && !continuedFromFreePlanOnboarding
+  // Clinic registration is followed by a required setup flow. The plan is a
+  // final, optional step in that flow, so it must not become a separate
+  // blocking subscription prompt after setup has been completed.
+  const needsClinicSetup = isApprovedClinicOwner
+    && clinicSubscriptionData.clinicSetupRequired === true
+    && !clinicSubscriptionData.clinicSetupCompletedAt
 
-  if (needsFreePlanAcknowledgement && !isSubscriptionOnboardingRoute && !isSubscriptionCheckoutRoute) {
+  if (needsClinicSetup && !isClinicSetupRoute) {
     return next('/clinic/onboarding')
-  }
-
-  // The onboarding page is the required entry point for a Free owner who has
-  // not dismissed the plan prompt. It must remain reachable; otherwise this
-  // check redirects onboarding to the subscription page while the preceding
-  // check redirects it straight back, leaving the user in a redirect loop.
-  if (
-    isApprovedClinicOwner
-    && isFreeSubscriptionPlan(effectiveSubscriptionPlan)
-    && !isSubscriptionOnboardingRoute
-    && !isFreePlanRoute(routePath)
-  ) {
-    return next('/account/subscription')
   }
 
   if (currentUser && routePath.startsWith('/superadmin') && !isSuperadminRole(currentUserData)) {
@@ -560,10 +550,14 @@ router.beforeEach(async (to, from, next) => {
   if (
     currentUser
     && routePath.startsWith('/supplier')
-    && userStatus !== 'active'
+    && ['inactive', 'disabled', 'closed', 'archived'].includes(userStatus)
   ) {
     await signOut(auth).catch(() => {})
     return next('/login')
+  }
+  if (currentUser && isSupplierRole(currentUserData) && routePath.startsWith('/supplier') && routePath !== '/supplier/verification' && routePath !== '/supplier/profile') {
+    const application = await getDoc(doc(db, 'supplierApplications', currentUser.uid))
+    if (application.data()?.verificationStatus !== 'Verified') return next('/supplier/verification')
   }
   if (currentUser && routePath.startsWith('/customer') && !isCustomerRole(currentUserData)) {
     return next(safeUnauthorizedRedirect(currentUser, currentUserData))
@@ -592,7 +586,7 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // Permission-required routes
-  if (to.meta.requiresPermission && !(to.path === '/account/change-password' && forcedEmployeePasswordChange) && !hasPermission(to.meta.requiresPermission)) {
+  if ((to.meta.requiresPermission && !(to.path === '/account/change-password' && forcedEmployeePasswordChange) && !hasPermission(to.meta.requiresPermission)) || (to.meta.requiresPermissionsAny && !to.meta.requiresPermissionsAny.some(permission => hasPermission(permission)))) {
     if (currentUser?.uid) {
       try {
         const userSnap = await getDoc(doc(db, "users", currentUser.uid));

@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Clients</h1>
         <p class="text-slate-400">Clients with appointments assigned to you.</p>
@@ -51,6 +51,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -63,6 +65,8 @@ export default {
   name: 'PractitionerClients',
   components: { OwnerSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
 
@@ -134,8 +138,8 @@ export default {
         unsubscribeAppointments = null
       }
 
-      unsubscribeAppointments = onSnapshot(
-        query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
+      unsubscribeAppointments = pageListener(
+        onSnapshot, query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
         (snapshot) => {
           appointments.value = sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })))
         },
@@ -148,8 +152,8 @@ export default {
 
     let unsubscribeAuth = null
 
-    onMounted(() => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    onMounted(trackPageLoad(() => {
+      unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) return
 
         currentUserId.value = user.uid
@@ -162,7 +166,7 @@ export default {
 
         startAppointmentsListener()
       })
-    })
+    }))
 
     onUnmounted(() => {
       if (unsubscribeAppointments) unsubscribeAppointments()
@@ -170,6 +174,7 @@ export default {
     })
 
     return {
+      pageLoading,
       searchQuery,
       clients,
       filteredClients

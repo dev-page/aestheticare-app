@@ -17,7 +17,7 @@
     <aside
       :style="asideStyle"
       :class="[
-        'readonly-exempt z-40 h-full bg-[#1f120b] border border-[#3a2417] rounded-tr-2xl rounded-br-2xl shadow-2xl flex flex-col overflow-hidden',
+        'app-sidebar readonly-exempt z-40 h-full bg-[#1f120b] border border-[#3a2417] rounded-tr-2xl rounded-br-2xl shadow-2xl flex flex-col overflow-hidden',
         enableTransitions ? 'transition-all duration-300' : ''
       ]"
     >

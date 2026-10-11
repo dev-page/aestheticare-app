@@ -2,7 +2,7 @@
   <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-6 md:p-8 text-white">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 9, rows: 5 }" class="flex-1 p-6 md:p-8 text-white">
       <div class="mx-auto max-w-7xl">
         <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
@@ -37,19 +37,24 @@
           <div class="mt-6 grid gap-4 md:grid-cols-3">
             <div class="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
               <p class="text-xs uppercase tracking-[0.18em] text-slate-500">Total Requests</p>
-              <p class="mt-2 text-xl font-semibold text-white">{{ leaveRequests.length }}</p>
+              <p class="mt-2 text-xl font-semibold text-white">{{ loadError || loading ? '—' : leaveRequests.length }}</p>
             </div>
             <div class="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
               <p class="text-xs uppercase tracking-[0.18em] text-slate-500">Pending</p>
-              <p class="mt-2 text-xl font-semibold text-white">{{ pendingCount }}</p>
+              <p class="mt-2 text-xl font-semibold text-white">{{ loadError || loading ? '—' : pendingCount }}</p>
             </div>
             <div class="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
               <p class="text-xs uppercase tracking-[0.18em] text-slate-500">Approved</p>
-              <p class="mt-2 text-xl font-semibold text-white">{{ approvedCount }}</p>
+              <p class="mt-2 text-xl font-semibold text-white">{{ loadError || loading ? '—' : approvedCount }}</p>
             </div>
           </div>
 
-          <div v-if="loading" class="mt-6 rounded-2xl border border-slate-700 bg-slate-900/60 p-6 text-sm text-slate-400">
+          <div v-if="loadError" role="alert" class="mt-6 rounded-2xl border border-rose-300 bg-rose-50 p-6 text-sm text-rose-900">
+            <h2 class="font-semibold">Unable to load leave requests</h2>
+            <p class="mt-2">{{ loadError }}</p>
+            <button type="button" class="mt-4 rounded-lg border border-rose-300 px-4 py-2 font-semibold disabled:opacity-50" :disabled="loading" @click="reloadLeaveRequests">Try again</button>
+          </div>
+          <div v-else-if="loading" class="mt-6 rounded-2xl border border-slate-700 bg-slate-900/60 p-6 text-sm text-slate-400">
             Loading leave requests...
           </div>
 
@@ -154,8 +159,10 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -163,18 +170,23 @@ import { auth, db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { LEAVE_STATUSES, formatLeaveDateRange, isPendingLeaveStatus } from '@/utils/leaveRequests'
 import { logActivity } from '@/utils/activityLogger'
+import { loadOwnerBranchScope, loadClinicDocsByIds } from '@/utils/ownerBranchScope'
+import { leaveRequestScopes, subscribeLeaveScopes } from '@/utils/leaveRequestScope'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const { hasPermission, isClinicAdminOwner } = usePermissions()
 
 const loading = ref(true)
+const loadError = ref('')
 const searchQuery = ref('')
 const selectedStatus = ref('')
 const leaveRequests = ref([])
 const currentUserId = ref('')
 const currentUserName = ref('')
-const currentBranchId = ref('')
+const branchIds = ref([])
 let unsubscribeLeaveRequests = null
-const currentOwnerId = ref('')
+let isDisposed = false
 const reviewerMode = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('leave:review')))
 
 const headerDescription = computed(() =>
@@ -223,87 +235,58 @@ const canReviewRequest = (request) =>
   isPendingLeaveStatus(request.status) &&
   String(request.requesterId || '').trim() !== currentUserId.value
 
-const resolveViewerContext = async () => {
+const resolveViewerContext = trackPageLoad(async () => {
   const user = auth.currentUser
-  if (!user) {
-    loading.value = false
-    return
-  }
-
+  if (!user) throw new Error('Please sign in again to view leave requests.')
   currentUserId.value = user.uid
-  const userSnap = await getDoc(doc(db, 'users', user.uid))
-  if (!userSnap.exists()) {
-    loading.value = false
-    return
-  }
+  const scope = await loadOwnerBranchScope(db, user.uid)
+  const profile = scope.userProfile
+  currentUserName.value = String(profile.fullName || '').trim()
+    || `${String(profile.firstName || '').trim()} ${String(profile.lastName || '').trim()}`.trim()
+    || user.email || 'Employee'
+  const clinics = await loadClinicDocsByIds(db, scope.branchIds)
+  // Workforce records are authorized per branch and are Premium-only.
+  branchIds.value = clinics.filter(clinic => clinic.subscriptionPlan === 'premium').map(clinic => clinic.id)
+  if (!branchIds.value.length) throw new Error('No assigned branch includes Premium workforce access. Check your branch assignment and subscription.')
+})
 
-  const profile = userSnap.data() || {}
-  currentUserName.value =
-    String(profile.fullName || '').trim() ||
-    `${String(profile.firstName || '').trim()} ${String(profile.lastName || '').trim()}`.trim() ||
-    user.email ||
-    'Employee'
-  currentBranchId.value = String(profile.branchId || '').trim()
-
-  if (currentBranchId.value) {
-    const clinicSnap = await getDoc(doc(db, 'clinics', currentBranchId.value))
-    if (clinicSnap.exists()) {
-      currentOwnerId.value = String(clinicSnap.data()?.ownerId || '').trim()
-    }
-  }
-
-  if (isClinicAdminOwner.value && !currentOwnerId.value) {
-    currentOwnerId.value = user.uid
-  }
-}
-
-const loadLeaveRequests = async () => {
-  if (!currentUserId.value) {
-    leaveRequests.value = []
-    return
-  }
-
-  let requestsSnap = null
-
-  if (reviewerMode.value && currentOwnerId.value) {
-    requestsSnap = await getDocs(query(collection(db, 'leaveRequests'), where('ownerId', '==', currentOwnerId.value)))
-  } else {
-    requestsSnap = await getDocs(query(collection(db, 'leaveRequests'), where('requesterId', '==', currentUserId.value)))
-  }
-
-  leaveRequests.value = requestsSnap.docs
-    .map((requestDoc) => ({ id: requestDoc.id, ...requestDoc.data() }))
-    .sort((a, b) => {
-      const aTime = a.updatedAt?.seconds || a.createdAt?.seconds || 0
-      const bTime = b.updatedAt?.seconds || b.createdAt?.seconds || 0
-      return bTime - aTime
-    })
-}
+const subscriptionErrorMessage = error => error?.code === 'permission-denied'
+  ? 'Access to leave requests was denied. Your assigned branches, leave-review permission, and branch Premium plan must allow this access.'
+  : error?.message || 'Leave requests could not be loaded. Please check your connection and try again.'
 
 const subscribeLeaveRequests = () => {
   unsubscribeLeaveRequests?.()
-  if (!currentUserId.value) {
-    leaveRequests.value = []
-    return
-  }
-
-  const requestsQuery = reviewerMode.value && currentOwnerId.value
-    ? query(collection(db, 'leaveRequests'), where('ownerId', '==', currentOwnerId.value))
-    : query(collection(db, 'leaveRequests'), where('requesterId', '==', currentUserId.value))
-
-  unsubscribeLeaveRequests = onSnapshot(requestsQuery, (snapshot) => {
-    leaveRequests.value = snapshot.docs
-      .map((requestDoc) => ({ id: requestDoc.id, ...requestDoc.data() }))
-      .sort((a, b) => {
-        const aTime = a.updatedAt?.seconds || a.createdAt?.seconds || 0
-        const bTime = b.updatedAt?.seconds || b.createdAt?.seconds || 0
-        return bTime - aTime
-      })
-  }, (error) => {
-    console.error('Failed to subscribe to leave updates:', error)
-    toast.error('Live leave updates are temporarily unavailable.')
+  leaveRequests.value = []
+  loadError.value = ''
+  loading.value = true
+  const scopes = leaveRequestScopes(branchIds.value, currentUserId.value, reviewerMode.value)
+  unsubscribeLeaveRequests = subscribeLeaveScopes(scopes, (scope, success, failure) => {
+    const constraints = [where('branchId', '==', scope.branchId)]
+    if (scope.requesterId) constraints.push(where('requesterId', '==', scope.requesterId))
+    return pageListener(onSnapshot, query(collection(db, 'leaveRequests'), ...constraints),
+      snapshot => success(snapshot.docs.map(entry => ({ id: entry.id, ...entry.data() }))),
+      error => { console.error('Failed to subscribe to branch leave updates:', error); failure(error) })
+  }, state => {
+    leaveRequests.value = state.requests
+    loading.value = state.loading
+    loadError.value = state.errors.length ? subscriptionErrorMessage(state.errors[0]) : ''
   })
 }
+
+const reloadLeaveRequests = trackPageLoad(async () => {
+  unsubscribeLeaveRequests?.()
+  loading.value = true
+  loadError.value = ''
+  try {
+    await resolveViewerContext()
+    if (isDisposed) return
+    subscribeLeaveRequests()
+  } catch (error) {
+    console.error('Failed to load leave management:', error)
+    loadError.value = subscriptionErrorMessage(error)
+    loading.value = false
+  }
+})
 
 const updateLeaveStatus = async (request, status, reviewRemarks = '') => {
   await updateDoc(doc(db, 'leaveRequests', request.id), {
@@ -379,16 +362,15 @@ const cancelLeaveRequest = async (request) => {
   toast.success('Leave request cancelled.')
 }
 
-onMounted(async () => {
-  await resolveViewerContext()
-  subscribeLeaveRequests()
-  loading.value = false
-})
+onMounted(reloadLeaveRequests)
 
 watch(reviewerMode, () => {
-  if (!currentUserId.value || loading.value) return
+  if (!currentUserId.value || loading.value || loadError.value) return
   subscribeLeaveRequests()
 })
 
-onUnmounted(() => unsubscribeLeaveRequests?.())
+onUnmounted(() => {
+  isDisposed = true
+  unsubscribeLeaveRequests?.()
+})
 </script>

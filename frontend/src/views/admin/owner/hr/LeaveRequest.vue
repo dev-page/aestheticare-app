@@ -2,7 +2,7 @@
   <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main class="flex-1 p-6 md:p-8 text-white">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'form', fields: 4, sections: 2 }, { variant: 'list', rows: 3 }] }" class="flex-1 p-6 md:p-8 text-white">
       <div class="mx-auto max-w-5xl">
         <div class="mb-8">
           <p class="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300">HR and Payroll</p>
@@ -167,6 +167,8 @@
 </template>
 
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { collection, addDoc, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
@@ -178,6 +180,8 @@ import { auth, db, storage } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { LEAVE_TYPES, PAID_LEAVE_ALLOWANCE, PAYMENT_TYPES, calculateLeaveDays, isPendingLeaveStatus } from '@/utils/leaveRequests'
 import { logActivity } from '@/utils/activityLogger'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 
 const route = useRoute()
 const router = useRouter()
@@ -314,7 +318,7 @@ const canSubmit = computed(() => {
   )
 })
 
-const resolveCurrentContext = async () => {
+const resolveCurrentContext = trackPageLoad(async () => {
   const user = auth.currentUser
   if (!user) {
     loading.value = false
@@ -349,9 +353,9 @@ const resolveCurrentContext = async () => {
   if (!branchName.value) {
     branchName.value = 'No branch assigned'
   }
-}
+})
 
-const loadPaidLeaveUsage = async () => {
+const loadPaidLeaveUsage = trackPageLoad(async () => {
   const user = auth.currentUser
   if (!user) return
 
@@ -366,9 +370,9 @@ const loadPaidLeaveUsage = async () => {
     return total + Number(data.daysRequested || 0)
   }, 0)
   paidLeaveUsed.value = usage
-}
+})
 
-const loadExistingRequest = async () => {
+const loadExistingRequest = trackPageLoad(async () => {
   const requestId = String(route.query.id || '').trim()
   if (!requestId) return
 
@@ -397,7 +401,7 @@ const loadExistingRequest = async () => {
     reason: String(record.reason || '').trim()
   }
   attachmentName.value = String(record.attachmentFileName || '').trim()
-}
+})
 
 const handleAttachment = (event) => {
   const file = event?.target?.files?.[0] || null
@@ -516,12 +520,12 @@ const submitLeaveRequest = async () => {
   }
 }
 
-onMounted(async () => {
+onMounted(trackPageLoad(async () => {
   await resolveCurrentContext()
   await loadExistingRequest()
   await loadPaidLeaveUsage()
   loading.value = false
-})
+}))
 
 watch(requestYear, async () => {
   if (loading.value) return

@@ -1,7 +1,7 @@
 <template>
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
-    <main class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'report', cards: 4 }" class="flex-1 p-8">
       <div class="mb-6">
         <h1 class="text-3xl font-bold text-white mb-2">Payments — Analytics</h1>
         <p class="text-slate-400">Financial overview and income analytics. Use the date filter to scope results.</p>
@@ -17,7 +17,7 @@
             <label class="text-xs text-slate-400">To</label>
             <input type="date" v-model="toDate" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100" />
           </div>
-          <button class="px-4 py-2 rounded bg-sky-600 text-white" @click="refresh">Refresh</button>
+          <button type="button" aria-label="Refresh payment analytics" title="Refresh payment analytics" class="inline-flex h-10 w-10 items-center justify-center rounded bg-sky-600 text-white" @click="refresh"><svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span></button>
         </div>
 
         <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -63,7 +63,7 @@
               <option value="oneTime">One-time</option>
             </select>
 
-            <button class="px-3 py-2 rounded bg-sky-600 text-white" @click="refresh">Refresh</button>
+            <button type="button" aria-label="Refresh payment analytics" title="Refresh payment analytics" class="inline-flex h-10 w-10 items-center justify-center rounded bg-sky-600 text-white" @click="refresh"><svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span></button>
           </div>
 
           <div class="flex items-center gap-3">
@@ -109,6 +109,8 @@
 </template>
 
 <script>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import { db } from '@/config/firebaseConfig'
@@ -118,6 +120,8 @@ export default {
   name: 'PaymentsAnalytics',
   components: { SuperAdminSidebar },
   setup() {
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
     const fromDate = ref(new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0,10))
     const toDate = ref(new Date().toISOString().slice(0,10))
     const loading = ref(false)
@@ -131,7 +135,7 @@ export default {
     const searchFilter = ref('')
     let unsubscribePayments = null
 
-    const refresh = async () => {
+    const refresh = trackPageLoad(async () => {
       loading.value = true
       transactions.value = []
       totals.value = { totalIncome: 0, subscriptions: 0, oneTime: 0 }
@@ -168,7 +172,7 @@ export default {
       } finally {
         loading.value = false
       }
-    }
+    })
 
     const filteredTransactions = computed(() => {
       const q = String(searchFilter.value || '').trim().toLowerCase()
@@ -204,15 +208,16 @@ export default {
     // Reset page when filters or date range change
     watch([searchFilter, typeFilter, fromDate, toDate], () => { currentPage.value = 1 })
 
-    onMounted(() => {
+    onMounted(trackPageLoad(() => {
       refresh()
-      unsubscribePayments = onSnapshot(collection(db, 'planPayments'), () => refresh(), (err) => {
+      unsubscribePayments = pageListener(onSnapshot, collection(db, 'planPayments'), () => refresh(), (err) => {
         console.error('Failed to listen to payment analytics:', err)
       })
-    })
+    }))
     onUnmounted(() => unsubscribePayments?.())
 
-    return { fromDate, toDate, refresh, loading, transactions, totals, // pagination
+    return {
+      pageLoading, fromDate, toDate, refresh, loading, transactions, totals, // pagination
       pageSize, currentPage, typeFilter, searchFilter, pagedTransactions, totalPages, prevPage, nextPage, filteredCount, startIndex, endIndex }
   }
 }

@@ -1,7 +1,7 @@
 <template>
   <div class="flex module-theme min-h-screen bg-slate-900 text-white">
     <OwnerSidebar />
-    <main class="min-w-0 flex-1 p-6">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 4 }" class="min-w-0 flex-1 p-6">
       <h1 class="text-2xl font-bold">My Payslips</h1>
       <p class="mt-2 text-slate-400">Payslips released by HR after Finance approval.</p>
       <p v-if="error" role="alert" class="my-4 text-red-400">{{ error }}</p>
@@ -20,10 +20,14 @@
   </div>
 </template>
 <script setup>
+import { usePageLoading } from '@/composables/usePageLoading'
+
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getFirestore, collection, onSnapshot } from 'firebase/firestore'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+
 const slips = ref([]), error = ref('')
 const money = (value) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0))
 const formatDate = (value) => value?.toDate ? value.toDate().toLocaleString('en-PH') : value ? new Date(value).toLocaleString('en-PH') : '-'
@@ -36,9 +40,9 @@ const printSlip = (slip) => {
   popup.print()
 }
 let stopAuth, stopSlips
-onMounted(() => { stopAuth = onAuthStateChanged(getAuth(), (user) => {
+onMounted(trackPageLoad(() => { stopAuth = pageListener(onAuthStateChanged, getAuth(), (user) => {
   stopSlips?.(); slips.value = []
-  if (user) stopSlips = onSnapshot(collection(getFirestore(), 'users', user.uid, 'payslips'), (snapshot) => { slips.value = snapshot.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(b.payPeriod).localeCompare(String(a.payPeriod))) }, (e) => { error.value = e.message })
-}) })
+  if (user) stopSlips = pageListener(onSnapshot, collection(getFirestore(), 'users', user.uid, 'payslips'), (snapshot) => { slips.value = snapshot.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(b.payPeriod).localeCompare(String(a.payPeriod))) }, (e) => { error.value = e.message })
+}) }))
 onUnmounted(() => { stopAuth?.(); stopSlips?.() })
 </script>
