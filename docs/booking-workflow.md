@@ -49,6 +49,8 @@ The customer may record the end of their participation. The practitioner ends th
 
 **Google Meet limitation:** application waiting-room entry and end actions do not prove presence inside Google Meet and do not disconnect an external Meet call. Duration records support review; they cannot guarantee fraud prevention. Customer confirmation remains required. The existing authenticated online-consultation cron endpoint uses the same timeout logic; configure CRON_SECRET for hosted execution.
 
+**Vercel Hobby scheduling:** `vercel.json` schedules reminders and consultation cleanup once daily so deployment meets Hobby cron limits. Daily consultation cleanup is a fallback, not timely session closure. For minute-by-minute timeout processing, an external scheduler must call `/api/cron/online-consultation-timeouts` with `Authorization: Bearer <CRON_SECRET>`, or the backend must run continuously outside Vercel with its existing interval. Vercel serverless execution cannot guarantee that interval runs between requests. An external scheduler is not configured by this repository change.
+
 ## Supplier verification
 
 Suppliers verify their email, then submit business identity/contact information and registration, permit/tax, and representative authorization documents. An optional distribution document can also be submitted.
