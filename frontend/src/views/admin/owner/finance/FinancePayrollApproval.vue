@@ -5,7 +5,7 @@
     <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'cards', cardStyle: 'stat', cards: 3 }, { variant: 'table', columns: 9, rows: 5 }] }" class="flex-1 p-6">
       <div class="mb-6">
         <h1 class="text-2xl font-semibold text-white mb-1">Payroll Approval</h1>
-        <p class="text-slate-400 text-sm">Review monthly payroll summaries and approve them for payslip generation.</p>
+        <p class="text-slate-400 text-sm">Review monthly payroll summaries and approve them for payslip generation. Payroll must be approved by someone who did not prepare or submit it.</p>
       </div>
 
       <div class="finance-summary">
@@ -69,7 +69,8 @@
                     </button>
                     <button
                       class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-500/60 text-amber-200 hover:bg-amber-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
-                      :disabled="processingId === summary.id || summary.status === 'rejected' || (summary.status === 'approved' && !!summary.approvedEntries)"
+                      :disabled="processingId === summary.id || isOwnPayroll(summary) || summary.status === 'rejected' || (summary.status === 'approved' && !!summary.approvedEntries)"
+                      :title="isOwnPayroll(summary) ? 'Another authorized person must approve payroll you prepared or submitted.' : undefined"
                       @click="approveSummary(summary)"
                     >
                       {{ summary.status === 'approved' ? (summary.approvedEntries ? 'Approved' : 'Confirm Legacy Approval') : 'Approve' }}
@@ -205,6 +206,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const currentUserId = ref('')
     const currentUserName = ref('')
     const summaries = ref([])
+    const isOwnPayroll = summary => [summary.submittedBy, summary.updatedBy, ...(summary.preparerIds || [])].includes(currentUserId.value)
     const loading = ref(true)
     const processingId = ref('')
     const showSummaryModal = ref(false)
@@ -391,6 +393,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     })
 
     return {
+      isOwnPayroll,
       pageLoading,
       summaries,
       loading,

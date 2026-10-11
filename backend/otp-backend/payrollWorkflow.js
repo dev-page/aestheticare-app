@@ -76,8 +76,9 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
       check(Math.abs(Number(data.totalPay || 0) - Number(data.totalDeductions || 0) - Number(data.netPay || 0)) < 0.011, 'Payroll earnings, deductions, and net pay do not agree.')
     }
     const now = timestamp()
-    tx.set(ref, { branchId, monthKey, monthLabel: monthKey, payrollEntryIds: entries.map((d) => d.id), ...totals, totalEntries: entries.length, totalEmployees: entries.length, status: 'pending', approvedBy: null, approvedAt: null, updatedBy: req.user.uid, updatedAt: now })
-    for (const user of staff.docs.filter((d) => String(d.data().role || '').toLowerCase() === 'finance')) tx.set(db.collection('notifications').doc(), { recipientUserId: user.id, branchId, title: 'Payroll awaiting approval', message: `HR submitted payroll for ${monthKey}.`, link: '/finance/payroll-approval', read: false, deleted: false, createdAt: now })
+    const preparerIds = [...new Set([req.user.uid, ...entries.flatMap(entry => [entry.data().createdBy, entry.data().updatedBy])].filter(Boolean))]
+    tx.set(ref, { branchId, monthKey, monthLabel: monthKey, payrollEntryIds: entries.map((d) => d.id), ...totals, totalEntries: entries.length, totalEmployees: entries.length, status: 'pending', submittedBy: req.user.uid, preparerIds, approvedBy: null, approvedAt: null, updatedBy: req.user.uid, updatedAt: now })
+    for (const user of staff.docs.filter((d) => String(d.data().role || '').toLowerCase() === 'finance')) tx.set(db.collection('notifications').doc(), { recipientUserId: user.id, branchId, title: 'Payroll awaiting approval', message: `Payroll submitted for ${monthKey}. An independent approver must review it.`, link: '/finance/payroll-approval', read: false, deleted: false, createdAt: now })
     return { status: 'pending' }
   })
   route('/finance/payroll/:id/reject', async (tx, req, context) => {
@@ -97,10 +98,12 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     await requirePayrollPlan(summary?.branchId)
     check(summary && assignedToBranch(context, summary.branchId) && context.permissions.has('payroll:approve'), 'Finance payroll approval permission required for this branch.', 403)
     check(summary.status === 'pending' || (summary.status === 'approved' && !summary.approvedEntries), 'This payroll summary is no longer awaiting approval.')
+    check(![summary.submittedBy, summary.updatedBy, ...(summary.preparerIds || [])].includes(req.user.uid), 'You cannot approve payroll that you prepared or submitted. A different authorized approver must review it.', 403)
     const records = await tx.get(db.collection('payrolls').where('branchId', '==', summary.branchId))
     const entries = records.docs.filter((d) => payrollMonth(d.data()) === summary.monthKey && (!Array.isArray(summary.payrollEntryIds) || summary.payrollEntryIds.includes(d.id)))
     if (Array.isArray(summary.payrollEntryIds)) check(entries.length === new Set(summary.payrollEntryIds).size, 'Some payroll entries are missing or belong to another month.')
     check(entries.length > 0 && entries.length <= 400, 'Payroll must contain between 1 and 400 entries.')
+    check(!entries.some(entry => [entry.data().createdBy, entry.data().updatedBy].includes(req.user.uid)), 'You cannot approve payroll entries that you prepared. A different authorized approver must review them.', 403)
     check(new Set(entries.map((d) => d.data().employeeId)).size === entries.length, 'Resolve duplicate employee payroll entries before approval.')
     const approvedEntries = Object.fromEntries(entries.map((d) => [d.id, d.data()]))
     const earnings = await tx.get(db.collection('staffEarnings').where('branchId', '==', summary.branchId))

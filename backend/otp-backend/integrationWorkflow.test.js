@@ -49,6 +49,19 @@ const harness = (seed) => {
 }
 const base = () => ({ 'clinics/clinic': { ownerId: 'owner' }, 'users/finance': { branchId: 'clinic', role: 'Finance' } })
 
+test('Payroll approval rejects its submitter and entry preparer even with approval permission', async () => {
+  for (const identity of [{ submittedBy: 'finance', updatedBy: 'hr' }, { updatedBy: 'finance' }, { updatedBy: 'hr', preparerIds: ['finance', 'hr'] }]) {
+    const h = harness({ ...base(), 'payrollSummaries/clinic_2026-09': { branchId: 'clinic', monthKey: '2026-09', status: 'pending', totalNetPay: 900, ...identity }, 'payrolls/p': { branchId: 'clinic', employeeId: 'worker', payPeriodMonthKey: '2026-09', totalPay: 1000, totalDeductions: 100, netPay: 900 } })
+    assert.equal((await h.call('/finance/payroll/:id/approve', 'finance', { id: 'clinic_2026-09' })).code, 403)
+    assert.equal(h.records.get('payrollSummaries/clinic_2026-09').status, 'pending')
+    assert.equal(h.records.has('financialRecords/payroll-clinic_2026-09'), false)
+  }
+  for (const field of ['createdBy', 'updatedBy']) {
+    const h = harness({ ...base(), 'payrollSummaries/clinic_2026-09': { branchId: 'clinic', monthKey: '2026-09', status: 'pending', totalNetPay: 900, updatedBy: 'hr' }, 'payrolls/p': { branchId: 'clinic', employeeId: 'worker', payPeriodMonthKey: '2026-09', totalPay: 1000, totalDeductions: 100, netPay: 900, [field]: 'finance' } })
+    assert.equal((await h.call('/finance/payroll/:id/approve', 'finance', { id: 'clinic_2026-09' })).code, 403)
+  }
+})
+
 const orderSeed = (stock) => ({ ...base(), 'inventoryItems/i': { branchId: 'clinic', currentStock: stock }, 'orderCheckouts/cs_test': { branchId: 'clinic', customerId: 'customer', total: 100, items: [{ id: 'product', inventoryItemId: 'i', branchId: 'clinic', name: 'Oil', price: 50, quantity: 2 }], delivery: { fullName: 'Customer' }, referenceNumber: 'ORD-12345' } })
 const paidAttributes = () => ({ metadata: { customerId: 'customer', module: 'customer_order' }, payments: [{ id: 'pay_test', attributes: { status: 'paid', amount: 10000 } }] })
 test('Verified order payment records one sale and deducts stock once across retries', async () => {

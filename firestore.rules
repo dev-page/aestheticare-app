@@ -924,9 +924,12 @@ service cloud.firestore {
     match /payrolls/{payrollId} {
       allow read: if isSignedIn() && ((canAccessBranch(resource.data.branchId) && hasPermission('payroll:view') && planAllowsWorkforceManagement(resource.data.branchId)) || isSuperadmin());
       allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId) && hasPermission('payroll:update') && planAllowsWorkforceManagement(request.resource.data.branchId)
+        && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.payPeriodMonthKey.matches('^[0-9]{4}-[0-9]{2}$')
         && editablePayrollMonth(request.resource.data.branchId, request.resource.data.payPeriodMonthKey);
       allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('payroll:update') && planAllowsWorkforceManagement(resource.data.branchId)
+        && request.resource.data.createdBy == resource.data.get('createdBy', request.auth.uid)
+        && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.branchId == resource.data.branchId && request.resource.data.employeeId == resource.data.employeeId
         && request.resource.data.payPeriodMonthKey == resource.data.get('payPeriodMonthKey', request.resource.data.payPeriodMonthKey)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['payslipReleasedAt', 'paymentStatus', 'paidAt'])

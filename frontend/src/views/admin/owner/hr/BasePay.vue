@@ -14,6 +14,7 @@ import { logActivity } from '@/utils/activityLogger'
 
 export default {
   name: 'BasePay',
+  props: { embedded: { type: Boolean, default: false } },
   components: { OwnerSidebar, PageSectionSkeleton, ContractAppearanceSelect },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
@@ -117,6 +118,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       basePayErrors.value = nextErrors
     }
 
+    const updateBasePayRate = (staff, event) => {
+      const input = event.target
+      const value = input.value
+      if (value.startsWith('-') || Number(value) < 0) {
+        input.value = ''
+        staff.basePay = ''
+        basePayErrors.value = { ...basePayErrors.value, [staff.id]: 'Base pay cannot be negative. Enter a rate greater than PHP 0.00.' }
+        return
+      }
+      staff.basePay = value === '' ? '' : Number(value)
+      clearBasePayError(staff.id)
+    }
+
     let unsubscribeAuth = null
     onMounted(trackPageLoad(() => {
       unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
@@ -152,6 +166,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       savingId,
       basePayErrors,
       clearBasePayError,
+      updateBasePayRate,
       saveBasePay
     }
   }
@@ -159,11 +174,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 </script>
 
 <template>
-  <div class="flex flex-col md:flex-row module-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div :class="embedded ? 'base-pay-content' : 'flex flex-col md:flex-row module-theme bg-slate-900 min-h-screen'">
+    <OwnerSidebar v-if="!embedded" />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="flex-1 p-4 md:p-8 text-white">
-      <div class="mb-6">
+    <component :is="embedded ? 'section' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" :class="embedded ? 'min-w-0' : 'flex-1 p-4 md:p-8 text-white'">
+      <div v-if="!embedded" class="mb-6">
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Base Pay</h1>
         <p class="text-slate-400 text-sm md:text-base">
           Set base pay for employees.
@@ -189,17 +204,25 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <td class="py-2 px-3 sm:py-3 sm:px-4 font-medium">{{ staff.fullName }}</td>
               <td class="py-2 px-3 sm:py-3 sm:px-4">{{ staff.role }}</td>
               <td class="py-2 px-3 sm:py-3 sm:px-4">
+                <ContractAppearanceSelect :id="`base-pay-model-${staff.id}`" v-model="staff.basePayModel" label="Pay model" :options="[{ value: 'hourly', label: 'Hourly / Professional Fee' }, { value: 'daily', label: 'Daily' }, { value: 'monthly-retainer', label: 'Monthly Retainer' }]" />
+                <label :for="`base-pay-rate-${staff.id}`" class="block mb-2 text-xs">Rate (PHP)</label>
                 <input
+                  :id="`base-pay-rate-${staff.id}`"
                   type="number"
-                  min="0"
+                  min="0.01"
+                  max="1000000"
                   step="0.01"
-                  v-model.number="staff.basePay"
+                  :value="staff.basePay"
                   inputmode="decimal"
                   maxlength="12"
-                  @input="clearBasePayError(staff.id)"
+                  @keydown="($event.key === '-' || $event.key === 'Subtract') && $event.preventDefault()"
+                  @input="updateBasePayRate(staff, $event)"
+                  :aria-invalid="!!basePayErrors[staff.id]"
+                  :aria-describedby="basePayErrors[staff.id] ? `base-pay-error-${staff.id}` : undefined"
                   class="w-full min-w-[140px] px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p v-if="basePayErrors[staff.id]" class="mt-1 text-xs text-rose-300">{{ basePayErrors[staff.id] }}</p>
+                <label v-if="staff.basePayModel === 'monthly-retainer'" class="block mt-3 text-xs">Agreed monthly hours<input v-model.number="staff.monthlyBaseHours" type="number" min="1" max="744" step="1" class="mt-2 w-full rounded-lg border px-3 py-2" /></label>
+                <p v-if="basePayErrors[staff.id]" :id="`base-pay-error-${staff.id}`" class="mt-1 text-xs text-rose-300" role="alert">{{ basePayErrors[staff.id] }}</p>
               </td>
               <td class="py-2 px-3 sm:py-3 sm:px-4">
                 <button
@@ -218,6 +241,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           </tbody>
         </table>
       </div>
-    </main>
+    </component>
   </div>
 </template>

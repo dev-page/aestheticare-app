@@ -2,12 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
-import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { compensationApi } from '@/utils/compensationApi'
 import { loadOwnerBranchScope, loadClinicDocsByIds } from '@/utils/ownerBranchScope'
 import { usePermissions } from '@/composables/usePermissions'
 import PractitionerProfileEditor from './PractitionerProfileEditor.vue'
 import ContractAppearanceSelect from './ContractAppearanceSelect.vue'
 import Modal from './Modal.vue'
+import { isPractitionerEmployee } from '../../../../shared/practitionerTeam.js'
 const { hasPermission, isClinicAdminOwner } = usePermissions()
 const emit = defineEmits(['loading'])
 const branches = ref([]), branchId = ref(''), staff = ref([]), appointments = ref([]), earnings = ref([]), busy = ref(true), error = ref(''), notice = ref(''), employeeId = ref(''), reviewing = ref(null), preview = ref([])
@@ -17,16 +18,16 @@ const payrollMonth = ref(new Date().toISOString().slice(0, 7))
 const pending = computed(() => appointments.value.filter(item => item.staffEarningsStatus !== 'Approved'))
 const money = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value || 0)
 const api = async (path, body) => {
-  const token = await auth.currentUser.getIdToken()
-  const response = await fetch(OTP_API_BASE + path, { method: body ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) })
-  const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Unable to load staff earnings.'); return payload.data
+  return compensationApi(path, body === undefined ? 'GET' : 'POST', body)
 }
 const load = async () => {
   if (!branchId.value) return
   busy.value = true; error.value = ''
   try {
-    const [people, visits, ledger] = await Promise.all([getDocs(query(collection(db, 'users'), where('branchId', '==', branchId.value))), api('/staff-earnings/appointments?branchId=' + encodeURIComponent(branchId.value)), api('/staff-earnings?branchId=' + encodeURIComponent(branchId.value))])
-    staff.value = people.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(item => !item.archived && item.userType !== 'Customer')
+    const people = await getDocs(query(collection(db, 'users'), where('branchId', '==', branchId.value)))
+    staff.value = people.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(isPractitionerEmployee)
+    if (!staff.value.some(item => item.id === employeeId.value)) employeeId.value = ''
+    const [visits, ledger] = await Promise.all([api('/staff-earnings/appointments?branchId=' + encodeURIComponent(branchId.value)), api('/staff-earnings?branchId=' + encodeURIComponent(branchId.value))])
     appointments.value = visits
     earnings.value = ledger
   } catch (cause) { error.value = cause.message } finally { busy.value = false }
@@ -61,8 +62,9 @@ watch(branchId, () => { employeeId.value = ''; load() })
     <header><div><h1>Staff Compensation &amp; Earnings</h1><p>Configure individual service agreements, review completed treatments, and approve earnings for payroll.</p></div><ContractAppearanceSelect id="earnings-branch" label="Branch" v-model="branchId" :options="branches.map(item => ({ value: item.id, label: item.clinicBranch || item.clinicName || item.id }))" /></header>
     <p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
     <section v-if="isClinicAdminOwner" class="earnings-card">
-      <h2>Practitioner profiles &amp; agreements</h2><p>Base pay is configured separately in Base Pay. Staff percentages and fixed fees here apply to each completed session and are separate from platform commission.</p>
-      <ContractAppearanceSelect id="earnings-employee" label="Employee" v-model="employeeId" :options="[{ value: '', label: 'Choose an employee' }, ...staff.map(item => ({ value: item.id, label: item.fullName || [item.firstName, item.lastName].filter(Boolean).join(' ') || item.email }))]" />
+      <h2>Practitioner profiles &amp; agreements</h2><p>Set service commissions and fees for clinical practitioners, including treatment leads and assistants. Base pay for all employees is configured in the Base Pay tab.</p>
+      <ContractAppearanceSelect id="earnings-employee" label="Practitioner" v-model="employeeId" :disabled="busy || !staff.length" :options="[{ value: '', label: 'Choose a practitioner' }, ...staff.map(item => ({ value: item.id, label: (item.fullName || [item.firstName, item.lastName].filter(Boolean).join(' ') || item.email) + (item.practitionerType ? ' — ' + item.practitionerType : '') }))]" />
+      <p v-if="!busy && !staff.length">No active practitioners found for this branch. Assign the Practitioner role or a professional specialty in Employee Management first.</p>
       <PractitionerProfileEditor v-if="employeeId" :key="employeeId" :employee-id="employeeId" :branch-id="branchId" />
     </section>
     <section class="earnings-card"><div class="section-heading"><h2>Completed services awaiting earnings review</h2><button type="button" :disabled="busy" @click="load">Refresh</button></div><p>An independent owner or Finance reviewer checks each team's saved agreements and participation. Approve these earnings before approving the month's payroll.</p>

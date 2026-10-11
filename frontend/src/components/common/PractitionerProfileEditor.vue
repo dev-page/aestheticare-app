@@ -1,19 +1,15 @@
 <script setup>
 import { reactive, ref, watch } from 'vue'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
-import { auth, db } from '@/config/firebaseConfig'
-import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { db } from '@/config/firebaseConfig'
+import { compensationApi } from '@/utils/compensationApi'
 import ContractAppearanceSelect from './ContractAppearanceSelect.vue'
 import { practitionerTypes } from '../../../../shared/practitionerTeam.js'
 const props = defineProps({ employeeId: { type: String, required: true }, branchId: String })
 const form = reactive({ type: 'Aesthetician', credentialNumber: '', credentialsVerified: false, approvedServiceIds: [], rates: [] })
 const services = ref([]), busy = ref(false), error = ref(''), notice = ref(''), allowed = ref(false)
 const api = async (method, body) => {
-  const token = await auth.currentUser.getIdToken()
-  const response = await fetch(OTP_API_BASE + '/practitioner-profiles/' + props.employeeId, { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) })
-  const payload = await response.json()
-  if (!response.ok) throw new Error(payload.error || 'Unable to load practitioner profile.')
-  return payload.data
+  return compensationApi('/practitioner-profiles/' + encodeURIComponent(props.employeeId), method, body)
 }
 watch(() => props.employeeId, async () => {
   error.value = ''; notice.value = ''; allowed.value = false; busy.value = true

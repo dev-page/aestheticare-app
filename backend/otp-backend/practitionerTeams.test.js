@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeStaffing, normalizePractitionerProfile, rateFor, calculateStaffEarnings, sessionEarningBase, basePayForPeriod } from '../../shared/practitionerTeam.js'
+import { normalizeStaffing, normalizePractitionerProfile, rateFor, calculateStaffEarnings, sessionEarningBase, basePayForPeriod, isPractitionerEmployee } from '../../shared/practitionerTeam.js'
 import { prepareTeamStart, registerPractitionerTeams } from './practitionerTeams.js'
 import { validatePayrollStaffEarnings } from './payrollWorkflow.js'
 import { transactionDb } from './testTransactionDb.js'
@@ -8,6 +8,18 @@ import { prepareBooking } from './bookingResources.js'
 const rate = { serviceId: 'facial', responsibility: 'lead', model: 'percent', amount: 30, effectiveFrom: '2026-01-01', effectiveUntil: '' }
 const profile = { type: 'Doctor', credentialNumber: '123', credentialsVerified: true, approvedServiceIds: ['facial'], rates: [rate] }
 const requirements = [{ type: 'Doctor', responsibility: 'lead', count: 1 }, { type: 'Registered Nurse', responsibility: 'assistant', count: 1 }]
+
+test('Service compensation picker includes clinical employees and legacy practitioners, excluding other staff', () => {
+  const staff = { userType: 'Staff', status: 'Active' }
+  for (const practitionerType of ['Doctor', 'Registered Nurse', 'Aesthetician', 'Therapist', 'Other']) assert.equal(isPractitionerEmployee({ ...staff, practitionerType }), true)
+  assert.equal(isPractitionerEmployee({ ...staff, role: 'Practitioner' }), true)
+  assert.equal(isPractitionerEmployee({ ...staff, customRoleName: 'Receptionist, Practitioner' }), true)
+  assert.equal(isPractitionerEmployee({ ...staff, roles: [{ name: 'Practitioner' }] }), true)
+  for (const role of ['Receptionist', 'Finance', 'Inventory', 'HR']) assert.equal(isPractitionerEmployee({ ...staff, role }), false)
+  assert.equal(isPractitionerEmployee({ ...staff, role: 'Practitioner', archived: true }), false)
+  assert.equal(isPractitionerEmployee({ ...staff, role: 'Practitioner', status: 'Inactive' }), false)
+  assert.equal(isPractitionerEmployee({ ...staff, userType: 'Customer', practitionerType: 'Doctor' }), false)
+})
 test('Staffing requires one lead, valid specialties, bounded counts and no duplicate slots', () => {
   assert.deepEqual(normalizeStaffing(requirements), requirements)
   assert.throws(() => normalizeStaffing([{ type: 'Doctor', responsibility: 'assistant', count: 1 }]), /one lead/)
@@ -66,10 +78,26 @@ const harness = async () => {
   const capture = await h.db.runTransaction(tx => prepareTeamStart(tx, h.db, h.appointment, 'visit'))
   h.seed('appointmentStaffTerms', 'visit', capture.terms)
   const range = row => { const minutes = time => Number(time?.slice(0, 2)) * 60 + Number(time?.slice(3)); return { start: minutes(row.time), end: minutes(row.endTime) } }
-  registerPractitionerTeams({ get: (path, auth, fn) => handlers.set(path, fn), post: (path, auth, fn) => handlers.set(path, fn) }, { admin: h.admin, requireAuth() {}, getBookingRange: range, rangesOverlap: (a, b, c, d) => a < d && c < b, loadUserContext: async uid => ({ roleKey: uid === 'finance' ? 'Finance' : 'Practitioner', permissions: new Set(uid === 'finance' ? ['payroll:view', 'payroll:approve'] : ['payroll:view']) }), authorizeClinicAction: async uid => { if (!['finance', 'doctor', 'nurse'].includes(uid)) throw Object.assign(Error('Forbidden'), { status: 403 }) } })
-  const call = async (path, uid, body = {}, id = 'visit') => { const result = { code: 200 }; await handlers.get(path)({ user: { uid }, params: { id }, body, query: { branchId: 'clinic' } }, { status(code) { result.code = code; return this }, json(value) { result.body = value } }); return result }
+  registerPractitionerTeams({ get: (path, auth, fn) => { handlers.set('GET ' + path, fn); handlers.set(path, fn) }, post: (path, auth, fn) => handlers.set(path, fn) }, { admin: h.admin, requireAuth() {}, getBookingRange: range, rangesOverlap: (a, b, c, d) => a < d && c < b, loadUserContext: async uid => ({ roleKey: uid === 'finance' ? 'Finance' : 'Practitioner', permissions: new Set(uid === 'finance' ? ['payroll:view', 'payroll:approve'] : ['payroll:view']) }), authorizeClinicAction: async uid => { if (!['finance', 'doctor', 'nurse'].includes(uid)) throw Object.assign(Error('Forbidden'), { status: 403 }) } })
+  const call = async (path, uid, body = {}, id = 'visit', method = '') => { const result = { code: 200 }; await handlers.get(method ? method + ' ' + path : path)({ user: { uid }, params: { id }, body, query: { branchId: 'clinic' } }, { status(code) { result.code = code; return this }, json(value) { result.body = value } }); return result }
   return { ...h, call }
 }
+
+test('Employee specialty editing exposes no pay agreements, preserves rates, and resets changed credentials', async () => {
+  const h = await harness(), path = '/staff/:id/practitioner-details'
+  const loaded = await h.call(path, 'finance', {}, 'doctor', 'GET')
+  assert.deepEqual(loaded.body.data, { type: 'Doctor', credentialNumber: '123' })
+  const saved = await h.call(path, 'finance', { type: 'Doctor', credentialNumber: '456', rates: [], credentialsVerified: true }, 'doctor')
+  assert.equal(saved.code, 200)
+  const next = h.records.get('practitionerProfiles/doctor')
+  assert.deepEqual(next.rates, profile.rates)
+  assert.deepEqual(next.approvedServiceIds, profile.approvedServiceIds)
+  assert.equal(next.credentialsVerified, false)
+  assert.equal(next.credentialNumber, '456')
+  assert.equal(h.records.get('users/doctor').practitionerType, 'Doctor')
+  assert.equal((await h.call(path, 'outsider', { type: 'Doctor', credentialNumber: '789' }, 'doctor')).code, 403)
+  assert.equal((await h.call(path, 'finance', { type: 'Unknown' }, 'doctor')).code, 400)
+})
 test('Only independent Finance approves completed, confirmed work; approval is idempotent and uses frozen rates', async () => {
   const h = await harness(), path = '/appointments/:id/staff-earnings/approve'
   assert.equal((await h.call(path, 'doctor')).code, 403)

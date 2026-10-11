@@ -7,7 +7,9 @@ import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
-import PractitionerProfileEditor from '@/components/common/PractitionerProfileEditor.vue'
+import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
+import { compensationApi } from '@/utils/compensationApi'
+import { practitionerTypes } from '../../../../../shared/practitionerTeam.js'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
@@ -16,7 +18,7 @@ import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 export default {
   name: 'OwnerStaff',
-  components: { OwnerSidebar, Modal, PractitionerProfileEditor },
+  components: { OwnerSidebar, Modal, ContractAppearanceSelect },
   props: { embedded: { type: Boolean, default: false } },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
@@ -31,6 +33,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const showEditModal = ref(false)
     const searchQuery = ref('')
     const editErrors = ref({})
+    const loadingSpecialty = ref(false)
+    const specialtyError = ref('')
+    const savingEmployee = ref(false)
+    const originalSpecialty = ref({ type: '', credentialNumber: '' })
+    const showLicenseField = computed(() => ['Doctor', 'Registered Nurse'].includes(currentStaff.value.practitionerType) || !!currentStaff.value.credentialNumber)
     let staffUnsubscribers = []
 
     const currentStaff = ref({
@@ -175,10 +182,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       { deep: true }
     )
 
-    const openEditModal = (staff) => {
+    const openEditModal = async (staff) => {
       editErrors.value = {}
       currentStaff.value = {
         ...staff,
+        practitionerType: staff.practitionerType || '',
+        credentialNumber: '',
         customRoleId: String(staff.customRoleId || '').trim(),
         customRoleIds: Array.isArray(staff.customRoleIds) && staff.customRoleIds.length
           ? staff.customRoleIds
@@ -187,6 +196,16 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         branchIds: Array.isArray(staff.branchIds) && staff.branchIds.length ? staff.branchIds : [staff.branchId].filter(Boolean),
       }
       showEditModal.value = true
+      loadingSpecialty.value = true
+      specialtyError.value = ''
+      try {
+        const details = await compensationApi(`/staff/${staff.id}/practitioner-details`)
+        if (currentStaff.value.id !== staff.id) return
+        currentStaff.value.practitionerType = details.type
+        currentStaff.value.credentialNumber = details.credentialNumber
+        originalSpecialty.value = { ...details }
+      } catch (error) { specialtyError.value = 'Unable to load specialty and license details. Close and reopen the employee after restarting the updated backend.' }
+      finally { loadingSpecialty.value = false }
     }
 
     const clearEditError = (field) => {
@@ -220,6 +239,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       else if (!normalizePhoneNumber(staff.phoneNumber)) errors.phoneNumber = 'Enter a valid Philippine mobile number.'
       if (!Array.isArray(staff.branchIds) || !staff.branchIds.length) errors.branchId = 'Select at least one branch.'
       if (!String(staff.clinicLocation || '').trim()) errors.clinicLocation = 'Clinic location is required.'
+      if (staff.practitionerType && !practitionerTypes.includes(staff.practitionerType)) errors.practitionerType = 'Choose one of the suggested professional specialties.'
 
       editErrors.value = errors
       return Object.keys(errors).length === 0
@@ -273,6 +293,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
     const saveStaff = async () => {
+      if (savingEmployee.value || loadingSpecialty.value || specialtyError.value) return
       const { firstName, lastName, email, phoneNumber, clinicBranch, clinicLocation } = currentStaff.value
       const fullName = `${firstName} ${lastName}`
       const selectedRoleIds = Array.isArray(currentStaff.value.customRoleIds)
@@ -307,10 +328,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
 
           const staffRef = doc(db, "users", currentStaff.value.id)
+          savingEmployee.value = true
           const token = await auth.currentUser?.getIdToken()
           const branchResponse = await fetch(`${OTP_API_BASE}/staff/${currentStaff.value.id}/branch-assignments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ branchIds: currentStaff.value.branchIds }) })
           const branchPayload = await branchResponse.json()
           if (!branchResponse.ok) throw new Error(branchPayload.error || 'Unable to update assigned branches.')
+          if (currentStaff.value.practitionerType !== originalSpecialty.value.type || currentStaff.value.credentialNumber !== originalSpecialty.value.credentialNumber) {
+            await compensationApi(`/staff/${currentStaff.value.id}/practitioner-details`, 'POST', { type: currentStaff.value.practitionerType, credentialNumber: currentStaff.value.credentialNumber })
+          }
           const nextStatus = currentStaff.value.status
           const shouldArchive = String(nextStatus || '').trim().toLowerCase() === 'inactive'
           await updateDoc(staffRef, { 
@@ -331,13 +356,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             archivedAt: shouldArchive ? serverTimestamp() : null
           })
           toast.success(`${fullName}'s information updated successfully!`)
+          showEditModal.value = false
         }
       } catch (err) {
         console.error(err)
-        toast.error("Unexpected error while saving employee.")
+        toast.error(err.message || 'Unable to save employee changes.')
+      } finally {
+        savingEmployee.value = false
       }
-
-      showEditModal.value = false
     }
 
     const filteredStaffList = computed(() => {
@@ -366,7 +392,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       saveStaff,
       searchQuery,
       filteredStaffList,
-      customRoles
+      customRoles,
+      practitionerTypes, loadingSpecialty, specialtyError, showLicenseField, savingEmployee
     }
   }
 }
@@ -494,14 +521,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       </div>
 
       <!-- Edit Modal -->
-      <Modal :isOpen="showEditModal" panelClass="bg-slate-800 text-white w-full max-w-md" @close="showEditModal = false">
+      <Modal :isOpen="showEditModal" panelClass="employee-edit-modal" :panel-style="{ maxWidth: '720px', background: '#fffdf9', color: '#3d281d' }" :close-on-backdrop="!savingEmployee" @close="!savingEmployee && (showEditModal = false)">
         <template #header>
-          <h2 class="text-xl font-semibold text-white">Edit Employee</h2>
+          <div><p class="employee-edit-eyebrow">EMPLOYEE PROFILE</p><h2 class="employee-edit-title">Edit Employee</h2><p class="employee-edit-caption">Update personal details, assignments, and professional information.</p></div>
         </template>
 
         <template #body>
-          <form class="space-y-4">
-            <div class="grid grid-cols-2 gap-2">
+          <form id="employee-edit-form" class="employee-edit-form space-y-4" @submit.prevent="saveStaff">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label class="block text-slate-400 mb-1">First Name</label>
                 <input type="text" v-model="currentStaff.firstName" @input="clearEditError('firstName')" placeholder="First Name"
@@ -534,23 +561,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
             <div>
               <label class="block text-slate-400 mb-1">Custom Role</label>
-              <select v-model="currentStaff.customRoleIds"
-                multiple
-                class="w-full min-h-28 px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option v-for="role in customRoles" :key="role.id" :value="role.id">{{ role.name }}</option>
-              </select>
-              <p class="mt-1 text-xs text-slate-400">Hold Ctrl or Command to assign more than one role.</p>
+              <div class="employee-edit-choices"><label v-for="role in customRoles" :key="role.id"><input v-model="currentStaff.customRoleIds" type="checkbox" :value="role.id" /><span>{{ role.name }}</span></label><p v-if="!customRoles.length">No custom roles available.</p></div>
+              <p class="mt-1 text-xs text-slate-400">Select all roles this employee needs.</p>
             </div>
 
             <div>
               <label class="block text-slate-400 mb-1">Assigned Branches</label>
-              <select v-model="currentStaff.branchIds" multiple
-                @change="updateCurrentStaffLocation(); clearEditError('branchId')"
-                class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option v-for="branch in branches" :key="branch.id" :value="branch.id">
-                  {{ branch.clinicBranch }} - {{ branch.clinicLocation }}
-                </option>
-              </select>
+              <div class="employee-edit-choices"><label v-for="branch in branches" :key="branch.id"><input v-model="currentStaff.branchIds" type="checkbox" :value="branch.id" @change="updateCurrentStaffLocation(); clearEditError('branchId')" /><span>{{ branch.clinicBranch }} — {{ branch.clinicLocation }}</span></label></div>
               <p class="mt-1 text-xs text-slate-400">Select one or more branches. The first branch is the primary branch.</p>
               <p v-if="editErrors.branchId" class="mt-1 text-xs text-red-300">{{ editErrors.branchId }}</p>
               </div>
@@ -563,22 +580,26 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             </div>
 
             <div>
-              <label class="block text-slate-400 mb-1">Status</label>
-              <select v-model="currentStaff.status"
-                class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Pending Activation" disabled>Pending</option>
-              </select>
+              <ContractAppearanceSelect id="employee-edit-status" v-model="currentStaff.status" label="Status" :options="currentStaff.status === 'Pending Activation' ? [{ value: 'Pending Activation', label: 'Pending Activation' }, { value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }] : [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]" />
             </div>
-            <PractitionerProfileEditor v-if="currentStaff.id" :key="currentStaff.id" :employee-id="currentStaff.id" :branch-id="currentStaff.branchId" />
+            <fieldset class="employee-professional-fields" :disabled="loadingSpecialty || savingEmployee || !!specialtyError">
+              <legend>Professional information</legend>
+              <p v-if="loadingSpecialty" role="status" class="employee-edit-caption">Loading professional details...</p>
+              <label for="employee-edit-specialty">Specialty</label>
+              <input id="employee-edit-specialty" v-model.trim="currentStaff.practitionerType" list="employee-specialty-options" maxlength="40" placeholder="Select or type a professional specialty" @input="clearEditError('practitionerType')" />
+              <datalist id="employee-specialty-options"><option v-for="type in practitionerTypes" :key="type" :value="type" /></datalist>
+              <p class="employee-edit-caption">Doctor, Registered Nurse, Aesthetician, Therapist, or Other. Leave blank for non-clinical employees.</p>
+              <p v-if="editErrors.practitionerType" class="employee-edit-error" role="alert">{{ editErrors.practitionerType }}</p>
+              <template v-if="showLicenseField"><label for="employee-edit-license">Credential / license number</label><input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="Enter the professional license number" /><p class="employee-edit-caption">Changing professional details requires a new credential review by the clinic owner.</p></template>
+            </fieldset>
+            <p v-if="specialtyError" class="employee-edit-error" role="alert">{{ specialtyError }}</p>
           </form>
         </template>
 
         <template #footer>
           <div class="flex flex-col sm:flex-row justify-end sm:space-x-2 space-y-2 sm:space-y-0">
-            <button @click="showEditModal = false" class="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded transition">Cancel</button>
-            <button @click="saveStaff" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition">Update</button>
+            <button type="button" :disabled="savingEmployee" @click="showEditModal = false" class="employee-edit-cancel">Cancel</button>
+            <button type="submit" form="employee-edit-form" :disabled="savingEmployee || loadingSpecialty || !!specialtyError" class="employee-edit-save">{{ savingEmployee ? 'Saving...' : 'Update Employee' }}</button>
           </div>
         </template>
       </Modal>
@@ -587,6 +608,32 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 </template>
 
 <style scoped>
+:global(.app-modal-panel.employee-edit-modal) { background: #fffdf9 !important; color: #3d281d !important; border: 1px solid #ecd6be; border-radius: 16px; }
+:global(.employee-edit-modal > div:first-child), :global(.employee-edit-modal > div:last-child) { background: #fffdf9; padding: 20px 24px; }
+:global(.employee-edit-modal > div:first-child > button) { color: #765d4c; border: 1px solid #ecd6be; border-radius: 8px; padding: 5px; }
+.employee-edit-eyebrow { color: #9b603d; font-size: 10px; letter-spacing: .15em; font-weight: 700; }
+.employee-edit-title { color: #3d281d; font-size: 23px; font-weight: 700; margin: 5px 0; }
+.employee-edit-caption { font-size: 12px; color: #765d4c !important; line-height: 1.6; margin-top: 6px; }
+.employee-edit-form { padding: 4px 8px; color: #3d281d; }
+.employee-edit-form label { color: #5d4536 !important; font-size: 13px; font-weight: 600; }
+.employee-edit-form input:not([type=checkbox]) { display: block; width: 100%; padding: 11px 12px; min-height: 44px; margin-top: 6px; border: 1px solid #dec19e !important; border-radius: 9px; background: #fffdf9 !important; color: #3d281d !important; }
+.employee-edit-form input:read-only { background: #f7f0e6 !important; }
+.employee-edit-form input:focus { outline: 2px solid #d7aa7d; outline-offset: 2px; }
+.employee-edit-form :is(.text-slate-400, .text-white) { color: #765d4c !important; }
+.employee-edit-form :deep(.appearance-select) { margin: 0; }
+.employee-edit-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; border: 1px solid #ecd6be; border-radius: 10px; max-height: 180px; overflow-y: auto; }
+.employee-edit-choices label { display: flex; align-items: flex-start; gap: 9px; padding: 8px; background: #fffaf3; border-radius: 7px; font-weight: 400; }
+.employee-edit-choices input { margin-top: 3px; accent-color: #8d5a3b; flex-shrink: 0; width: 15px; height: 15px; }
+.employee-professional-fields { padding: 18px; border: 1px solid #ecd6be; border-radius: 12px; }
+.employee-professional-fields legend { padding: 0 6px; font-size: 14px; font-weight: 600; color: #3d281d; }
+.employee-professional-fields label { display: block; margin-top: 12px; }
+.employee-edit-error { color: #a13732; font-size: 12px; margin-top: 8px; }
+.employee-edit-cancel, .employee-edit-save { padding: 10px 18px; border-radius: 9px; font-size: 13px; font-weight: 600; min-height: 42px; }
+.employee-edit-cancel { border: 1px solid #dec19e; background: #fffdf9; color: #70482e; }
+.employee-edit-save { border: 1px solid #8d5a3b; background: #8d5a3b; color: #fffdf9; }
+.employee-edit-save:hover { background: #74462d; }
+.employee-edit-cancel:disabled, .employee-edit-save:disabled { opacity: .55; cursor: not-allowed; }
+@media(max-width: 540px) { .employee-edit-choices { grid-template-columns: 1fr; } .employee-edit-form { padding: 0; } }
 .staff-management-main {
   background: radial-gradient(circle at 90% 0%, rgba(126, 78, 46, 0.14), transparent 32rem);
 }

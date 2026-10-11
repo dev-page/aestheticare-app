@@ -1,4 +1,4 @@
-import { normalizePractitionerProfile, normalizeStaffing, rateFor, teamMeetsRequirements, appointmentStaffIds, appointmentServiceId, sessionEarningBase, calculateStaffEarnings } from '../../shared/practitionerTeam.js'
+import { practitionerTypes, normalizePractitionerProfile, normalizeStaffing, rateFor, teamMeetsRequirements, appointmentStaffIds, appointmentServiceId, sessionEarningBase, calculateStaffEarnings } from '../../shared/practitionerTeam.js'
 const check = (ok, message, status = 409) => { if (!ok) throw Object.assign(new Error(message), { status }) }
 const closed = row => ['completed', 'cancelled', 'rejected', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(String(row.status || '').toLowerCase())
 const serviceIdFor = appointmentServiceId
@@ -41,6 +41,30 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
     const clinic = (await db.collection('clinics').doc(branchId).get()).data()
     check(clinic?.ownerId === uid || clinic?.organizationOwnerId === uid, 'Only the clinic owner can change practitioner credentials and compensation.', 403)
   }
+  route('get', '/staff/:id/practitioner-details', async req => {
+    const user = (await db.collection('users').doc(req.params.id).get()).data()
+    check(user, 'Employee not found.', 404)
+    await authorizeClinicAction(req.user.uid, user.branchId, 'staff:view')
+    const profile = (await db.collection('practitionerProfiles').doc(req.params.id).get()).data()
+    return { type: profile?.type || user.practitionerType || '', credentialNumber: profile?.credentialNumber || '' }
+  })
+  route('post', '/staff/:id/practitioner-details', async req => {
+    const type = String(req.body?.type || '').trim()
+    const credentialNumber = String(req.body?.credentialNumber || '').trim()
+    check((!type || practitionerTypes.includes(type)) && credentialNumber.length <= 100, 'Choose a supported specialty and a license number of up to 100 characters.', 400)
+    return db.runTransaction(async tx => {
+      const userRef = db.collection('users').doc(req.params.id), profileRef = db.collection('practitionerProfiles').doc(req.params.id)
+      const user = (await tx.get(userRef)).data()
+      check(user, 'Employee not found.', 404)
+      await authorizeClinicAction(req.user.uid, user.branchId, 'staff:update')
+      const profile = (await tx.get(profileRef)).data()
+      const changed = type !== (profile?.type || user.practitionerType || '') || credentialNumber !== (profile?.credentialNumber || '')
+      if (type || profile) tx.set(profileRef, { ...(profile || { approvedServiceIds: [], rates: [] }), type, credentialNumber, credentialsVerified: changed ? false : profile?.credentialsVerified === true, branchId: user.branchId, updatedBy: req.user.uid, updatedAt: now() })
+      tx.update(userRef, { practitionerType: type || null })
+      if (changed) tx.set(db.collection('practitionerProfileAudit').doc(), { employeeId: req.params.id, branchId: user.branchId, actorId: req.user.uid, action: 'updated_specialty_and_license', type, credentialNumber, createdAt: now() })
+      return { type, credentialNumber }
+    })
+  })
   route('get', '/practitioner-profiles/:id', async (req) => {
     const user = (await db.collection('users').doc(req.params.id).get()).data()
     check(user, 'Employee not found.', 404)

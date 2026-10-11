@@ -1208,6 +1208,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           if (existingPayroll?.id) {
             await updateDoc(doc(db, 'payrolls', existingPayroll.id), {
               ...payrollPayload,
+              createdBy: existingPayroll.createdBy || currentUserId.value,
               createdAt: existingPayroll.createdAt || serverTimestamp(),
               updatedBy: currentUserId.value,
               updatedAt: serverTimestamp()
@@ -1422,7 +1423,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const payload = { employeeId: employee.id, employeeName: employee.fullName, branchId: currentBranchId.value, payPeriodMonthKey: monthKey, salaryType: employee.basePayModel || 'hourly', hoursWorked: hours, hourlyRate: base.hourlyEquivalent, baseRate: Number(employee.basePay || 0), basePayModel: employee.basePayModel || 'hourly', basePayAmount: base.amount, workedDays: workedDays.get(employee.id) || 0, monthlyBaseHours: Number(employee.monthlyBaseHours || 176), overtimePay, commission: commission.total, staffEarningIds: commission.ids, totalPay, deductions, totalDeductions, netPay, createdBy: currentUserId.value, createdAt: serverTimestamp() }
         const existing = payrolls.value.find(item => item.employeeId === employee.id && item.payPeriodMonthKey === monthKey)
         if (existing?.payslipReleasedAt) throw new Error('A released payslip cannot be overwritten.')
-        if (existing) await updateDoc(doc(db, 'payrolls', existing.id), payload)
+        if (existing) await updateDoc(doc(db, 'payrolls', existing.id), { ...payload, createdBy: existing.createdBy || currentUserId.value, createdAt: existing.createdAt || serverTimestamp(), updatedBy: currentUserId.value, updatedAt: serverTimestamp() })
         else await addDoc(collection(db, 'payrolls'), payload)
         toast.success('Payroll draft saved for Finance review.')
         resetForm(); await loadPayrolls()

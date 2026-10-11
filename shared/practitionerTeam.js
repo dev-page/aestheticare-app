@@ -1,4 +1,11 @@
 export const practitionerTypes = ['Doctor', 'Registered Nurse', 'Aesthetician', 'Therapist', 'Other']
+export const isPractitionerEmployee = user => {
+  if (!user || user.archived || (user.userType && String(user.userType).toLowerCase() !== 'staff')) return false
+  if (user.status && String(user.status).toLowerCase() !== 'active') return false
+  if (practitionerTypes.includes(user.practitionerType)) return true
+  const roles = [user.role, user.customRoleName, ...(Array.isArray(user.roles) ? user.roles : [])]
+  return roles.some(role => /\bpractitioner\b/i.test(String(typeof role === 'object' ? role?.name || '' : role || '')))
+}
 export const appointmentServiceId = row => row.serviceDetails?.[0]?.id || row.selectedServices?.[0]?.id || row.selectedServiceIds?.[0] || row.serviceIds?.[0] || ''
 const check = (ok, message) => { if (!ok) throw Object.assign(new Error(message), { status: 400 }) }
 export const basePayForPeriod = ({ model = 'hourly', rate, hours = 0, days = 0, monthlyHours = 176 }) => {

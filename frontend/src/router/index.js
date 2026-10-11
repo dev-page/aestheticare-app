@@ -136,8 +136,9 @@ const routes = [
   { path: "/hr/attendance", name: "hr-attendance", component: () => import("@/views/admin/owner/Attendance.vue"), meta: { requiresAuth: true, requiresNonEmployee: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
   { path: "/hr/roles", name: "hr-roles", component: () => import("@/views/admin/owner/OwnerRoleManagement.vue"), meta: { requiresAuth: true, requiresPermission: "roles:manage", requiresFeature: "staff_management" } },
   { path: "/hr/reports", name: "hr-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
-  { path: "/hr/base-pay", name: "hr-base-pay", component: () => import("@/views/admin/owner/hr/BasePay.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
-  { path: "/hr/payroll", name: "hr-payroll", component: () => import("@/views/admin/owner/hr/Payroll.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
+  { path: "/hr/base-pay", name: "hr-base-pay", redirect: { path: "/finance/employee-compensation", query: { tab: "base-pay" } } },
+  { path: "/hr/payroll", name: "hr-payroll", redirect: "/finance/payroll-management" },
+  { path: "/finance/payroll-management", name: "finance-payroll-management", component: () => import("@/views/admin/owner/hr/Payroll.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
   { path: "/hr/payslip-generation", name: "hr-payslip-generation", redirect: "/hr/payroll" },
   //{ path: "/hr/calendar", name: "hr-calendar", component: () => import("@/views/clinic/hr/Calendar.vue"), meta: { requiresAuth: true } },
 
@@ -192,7 +193,8 @@ const routes = [
   { path: "/finance/approvals", name: "finance-approvals", component: () => import("@/views/admin/owner/finance/FinanceRequests.vue"), meta: { requiresAuth: true, requiresPermission: "finance:payables:view", requiresFeature: "reports" } },
   { path: "/finance/requests", redirect: "/finance/approvals" },
   { path: "/finance/payroll-summary", name: "finance-payroll-summary", component: () => import("@/views/admin/owner/finance/FinancePayrollSummary.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:view", requiresFeature: "payroll" } },
-  { path: "/finance/staff-compensation", name: "finance-staff-compensation", component: () => import("@/views/admin/owner/finance/CommissionContracts.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:view", requiresFeature: "payroll" } },
+  { path: "/finance/staff-compensation", name: "finance-staff-compensation", redirect: { path: "/finance/employee-compensation", query: { tab: "service-fees" } } },
+  { path: "/finance/employee-compensation", name: "finance-employee-compensation", component: () => import("@/views/admin/owner/finance/EmployeeCompensation.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["payroll:update", "payroll:view"], requiresFeature: "payroll" } },
   { path: "/finance/payroll-approval", name: "finance-payroll-approval", component: () => import("@/views/admin/owner/finance/FinancePayrollApproval.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:approve", requiresFeature: "payroll" } },
 
   // Compatibility redirects from former role-owned clinic URLs.

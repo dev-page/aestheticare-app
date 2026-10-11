@@ -1,26 +1,28 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
+  <div class="flex module-theme reports-page min-h-screen">
     <SuperAdminSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 8, rows: 5 }" class="flex-1 p-8">
-      <h1 class="text-3xl font-bold text-white mb-2">User Reports</h1>
-      <p class="text-slate-400 mb-6">Review, investigate, and resolve platform issues and complaints.</p>
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 8, rows: 5 }" class="reports-main flex-1 p-8">
+      <header class="reports-heading">
+        <p class="reports-eyebrow">PLATFORM SUPPORT</p>
+        <h1>User Reports</h1>
+        <p>Review, investigate, and resolve platform issues and complaints.</p>
+      </header>
+      <div class="reports-summary">
+        <article><span>Total reports</span><strong>{{ issues.length }}</strong></article>
+        <article><span>Needs attention</span><strong>{{ issues.filter(issue => !['Resolved', 'Dismissed'].includes(issue.statusLabel)).length }}</strong></article>
+        <article><span>Resolved</span><strong>{{ issues.filter(issue => issue.statusLabel === 'Resolved').length }}</strong></article>
+      </div>
 
-      <div class="mb-4 grid gap-3 md:grid-cols-[1fr_auto_auto]">
-        <input v-model.trim="search" type="search" placeholder="Search reporter, subject, clinic..." class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-amber-500 focus:outline-none" />
-        <select v-model="statusFilter" class="report-filter-select rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 focus:border-amber-500 focus:outline-none">
-          <option value="">All statuses</option>
-          <option v-for="status in reportStatuses" :key="status" :value="status">{{ status }}</option>
-        </select>
-        <select v-model="categoryFilter" class="report-filter-select rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 focus:border-amber-500 focus:outline-none">
-          <option value="">All categories</option>
-          <option v-for="category in reportCategories" :key="category" :value="category">{{ category }}</option>
-        </select>
+      <div class="reports-filters">
+        <label for="report-search">Search reports<input id="report-search" v-model.trim="search" type="search" placeholder="Search reporter, topic, or clinic..." /></label>
+        <ContractAppearanceSelect id="report-status-filter" v-model="statusFilter" label="Status" :options="[{ value: '', label: 'All statuses' }, ...reportStatuses.map(value => ({ value, label: value }))]" />
+        <ContractAppearanceSelect id="report-category-filter" v-model="categoryFilter" label="Category" :options="[{ value: '', label: 'All categories' }, ...reportCategories.map(value => ({ value, label: value }))]" />
       </div>
 
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
 
-      <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+      <section class="reports-table-wrap" aria-label="User reports">
         <table class="w-full text-sm">
           <thead class="border-b border-slate-700">
             <tr>
@@ -71,7 +73,8 @@
               <td class="px-4 py-3 text-right">
                 <button
                   type="button"
-                  class="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
+                  class="report-secondary"
+                  :aria-label="`View report: ${issue.subject || 'Untitled report'}`"
                   @click="openIssue(issue)"
                 >
                   View
@@ -87,15 +90,18 @@
 
   <Modal
     :isOpen="showModal"
-    panelClass="bg-slate-800 text-white w-full max-w-2xl"
+    panelClass="report-modal"
+    :panel-style="{ background: '#fffdf9', color: '#3d281d', maxWidth: '880px' }"
+    bodyClass="report-modal-body"
+    :close-on-backdrop="!savingStatus"
     @close="closeIssue"
   >
     <template #header>
-      <h2 class="text-xl font-semibold">Reported Issue</h2>
+      <div><p class="reports-eyebrow">USER REPORT</p><h2 class="report-modal-title">Reported Issue</h2></div>
     </template>
 
     <template #body>
-      <div v-if="selectedIssue" class="space-y-4 text-sm">
+      <div v-if="selectedIssue" class="report-details space-y-4 text-sm">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p class="text-slate-400 text-xs uppercase tracking-wide">Reporter</p>
@@ -165,34 +171,15 @@
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label class="block text-slate-400 text-xs uppercase tracking-wide mb-2">Status</label>
-              <select
-                v-model="statusDraft"
-                class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-              >
-                <option value="Open">Open</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Under Review">Under Review</option>
-                <option value="Awaiting User Response">Awaiting User Response</option>
-                <option value="Resolved">Resolved</option>
-                <option value="Dismissed">Dismissed</option>
-                <option value="Escalated">Escalated</option>
-              </select>
+              <ContractAppearanceSelect id="report-edit-status" v-model="statusDraft" label="Status" :disabled="savingStatus" :options="reportStatuses.map(value => ({ value, label: value }))" />
             </div>
             <div class="flex items-end">
-              <button
-                type="button"
-                class="px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-60"
-                :disabled="savingStatus"
-                @click="saveStatus"
-              >
-                {{ savingStatus ? 'Saving...' : 'Save Report' }}
-              </button>
+              <span class="report-help">Update the status and notes, then save your changes below.</span>
             </div>
           </div>
 
           <div class="flex flex-wrap items-center gap-3">
-            <button type="button" class="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-60" :disabled="savingStatus || selectedIssue.assignedAdminId === currentAdminUid" @click="assignToMe">
+            <button type="button" class="report-secondary" :disabled="savingStatus || selectedIssue.assignedAdminId === currentAdminUid" @click="assignToMe">
               {{ selectedIssue.assignedAdminId === currentAdminUid ? 'Assigned to you' : 'Assign to me' }}
             </button>
             <span class="text-xs text-slate-500">Assign yourself before investigating.</span>
@@ -226,9 +213,12 @@
           <p class="text-slate-400 text-xs uppercase tracking-wide">Handling Note</p>
           <p class="mt-2 text-sm text-slate-200">Use the status selector above to manage this support ticket.</p>
         </div>
-        <p v-if="statusMessage" class="text-xs text-emerald-300">{{ statusMessage }}</p>
-        <p v-if="statusError" class="text-xs text-rose-300">{{ statusError }}</p>
+        <p v-if="statusMessage" class="report-success" role="status">{{ statusMessage }}</p>
+        <p v-if="statusError" class="report-error" role="alert">{{ statusError }}</p>
       </div>
+    </template>
+    <template #footer>
+      <div class="report-modal-actions"><span class="report-help">Changes are saved to this report.</span><button type="button" class="report-primary" :disabled="savingStatus" @click="saveStatus">{{ savingStatus ? 'Saving...' : 'Save Report' }}</button></div>
     </template>
   </Modal>
 </template>
@@ -242,10 +232,11 @@ import { auth, db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
+import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 
 export default {
   name: 'SuperAdminUserTickets',
-  components: { SuperAdminSidebar, Modal, TablePagination },
+  components: { SuperAdminSidebar, Modal, TablePagination, ContractAppearanceSelect },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -285,10 +276,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const urgencyClass = (severity) => {
       const normalized = String(severity || '').toLowerCase()
-      if (normalized === 'critical') return 'bg-rose-500/20 text-rose-300'
-      if (normalized === 'high') return 'bg-amber-500/20 text-amber-300'
-      if (normalized === 'low') return 'bg-emerald-500/20 text-emerald-300'
-      return 'bg-slate-500/20 text-slate-300'
+      if (normalized === 'critical') return 'report-badge report-badge-danger'
+      if (normalized === 'high') return 'report-badge report-badge-warning'
+      if (normalized === 'low') return 'report-badge report-badge-success'
+      return 'report-badge report-badge-neutral'
     }
 
     const statusLabel = (status) => {
@@ -298,13 +289,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const statusClass = (status) => {
       const normalized = String(status || '').toLowerCase()
-      if (normalized === 'resolved') return 'bg-emerald-500/20 text-emerald-300'
-      if (normalized === 'dismissed') return 'bg-slate-500/20 text-slate-300'
-      if (normalized === 'under review') return 'bg-violet-500/20 text-violet-300'
-      if (normalized === 'in progress') return 'bg-amber-500/20 text-amber-300'
-      if (normalized === 'awaiting user response') return 'bg-sky-500/20 text-sky-300'
-      if (normalized === 'escalated') return 'bg-rose-500/20 text-rose-300'
-      return 'bg-slate-500/20 text-slate-300'
+      if (normalized === 'resolved') return 'report-badge report-badge-success'
+      if (normalized === 'dismissed') return 'report-badge report-badge-neutral'
+      if (normalized === 'under review') return 'report-badge report-badge-review'
+      if (normalized === 'in progress') return 'report-badge report-badge-warning'
+      if (normalized === 'awaiting user response') return 'report-badge report-badge-info'
+      if (normalized === 'escalated') return 'report-badge report-badge-danger'
+      return 'report-badge report-badge-neutral'
     }
 
     const filteredIssues = computed(() => {
@@ -504,22 +495,73 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       openIssue,
       closeIssue,
       assignToMe,
-      saveStatus
+      saveStatus,
+      formatDate
     }
   }
 }
 </script>
 
 <style scoped>
-.report-filter-select,
-.report-filter-select option {
-  color: #f7f2eb;
-  background-color: #2a180f;
-}
-
-.report-filter-select option:checked,
-.report-filter-select option:hover {
-  color: #fffbf4;
-  background-color: #4b3020;
+.reports-page { background: #fffdf9; color: #3d281d; }
+.reports-main { min-width: 0; }
+.reports-heading { margin-bottom: 24px; }
+.reports-heading h1 { margin: 6px 0 8px; font-size: 30px; font-weight: 700; color: #3d281d; }
+.reports-heading > p:last-child { color: #765d4c; font-size: 14px; }
+.reports-eyebrow { color: #9b603d; font-size: 10px; font-weight: 700; letter-spacing: .16em; }
+.reports-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.reports-summary article { padding: 18px 20px; background: #fffdf9; border: 1px solid #ecd6be; border-radius: 12px; }
+.reports-summary span { display: block; color: #765d4c; font-size: 12px; }
+.reports-summary strong { display: block; margin-top: 8px; font-size: 26px; color: #3d281d; }
+.reports-filters { display: grid; grid-template-columns: minmax(200px, 1.5fr) repeat(2, minmax(180px, 1fr)); gap: 16px; padding: 20px; border: 1px solid #ecd6be; border-radius: 12px; margin-bottom: 20px; background: #fffdf9; }
+.reports-filters > label { color: #5d4536; font-size: 13px; font-weight: 600; }
+.reports-filters input { display: block; width: 100%; min-height: 44px; border: 1px solid #dec19e; border-radius: 10px; margin-top: 8px; padding: 10px 12px; font-size: 13px; font-weight: 400; }
+.reports-filters :deep(.appearance-select), .report-details :deep(.appearance-select) { margin: 0; }
+.reports-table-wrap { overflow-x: auto; border: 1px solid #ecd6be; border-radius: 12px; background: #fffdf9; }
+.reports-table-wrap table { min-width: 920px; }
+.reports-table-wrap th { white-space: nowrap; }
+.reports-table-wrap td { vertical-align: middle; line-height: 1.6; }
+.reports-table-wrap td:nth-child(3) { min-width: 180px; max-width: 300px; overflow-wrap: anywhere; }
+.report-badge { display: inline-block; border-radius: 999px; white-space: nowrap; padding: 5px 10px; font-size: 11px; font-weight: 600; }
+.report-badge-neutral { background: #f1ece5; color: #635344; }
+.report-badge-danger { background: #fceceb; color: #a13732; }
+.report-badge-warning { background: #fff0d5; color: #885a16; }
+.report-badge-success { background: #e6f3eb; color: #24634a; }
+.report-badge-review { background: #eee8f7; color: #65418a; }
+.report-badge-info { background: #e5f0f7; color: #315e7d; }
+.report-secondary { min-height: 36px; padding: 8px 14px; border: 1px solid #d9b896; border-radius: 8px; background: #fffdf9; color: #70482e; font-size: 13px; font-weight: 600; }
+.report-secondary:hover { background: #f8eddc; }
+.report-primary { min-height: 42px; padding: 10px 22px; border: 1px solid #8d5a3b; border-radius: 9px; background: #8d5a3b; color: #fffdf9; font-size: 13px; font-weight: 600; }
+.report-primary:hover { background: #74462d; }
+.report-primary:disabled, .report-secondary:disabled { opacity: .55; cursor: not-allowed; }
+.report-primary:focus-visible, .report-secondary:focus-visible { outline: 3px solid #dab999; outline-offset: 3px; }
+:global(.app-modal-panel.report-modal) { background: #fffdf9 !important; color: #3d281d !important; border: 1px solid #ecd6be; border-radius: 16px; }
+:global(.report-modal > div:first-child), :global(.report-modal > div:last-child) { background: #fffdf9; padding: 20px 24px; }
+:global(.report-modal > div:first-child > button) { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border: 1px solid #ecd6be; border-radius: 9px; color: #765d4c; }
+:global(.report-modal > div:first-child > button:hover) { background: #f8eddc; }
+:global(.report-modal-body) { background: #fffaf3; padding: 24px; scrollbar-color: #cfaf90 #fffaf3; }
+.report-modal-title { color: #3d281d; font-size: 22px; font-weight: 700; margin-top: 4px; }
+.report-details { color: #3d281d; line-height: 1.65; }
+.report-details > div:not(.flex) { padding: 16px; border: 1px solid #ecd6be; border-radius: 10px; background: #fffdf9 !important; }
+.report-details :is(.text-white, .text-slate-200) { color: #3d281d !important; overflow-wrap: anywhere; }
+.report-details :is(.text-slate-400, .text-slate-500) { color: #765d4c !important; }
+.report-details .uppercase { font-size: 11px; font-weight: 600; letter-spacing: .05em; }
+.report-details a { color: #8d5a3b !important; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
+.report-details textarea { background: #fffdf9 !important; color: #3d281d !important; border-color: #dec19e !important; border-radius: 10px; min-height: 104px; resize: vertical; line-height: 1.6; }
+.report-details > label > span { font-weight: 600; }
+.report-help { color: #765d4c; font-size: 12px; line-height: 1.6; }
+.report-modal-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.report-success { background: #e6f3eb; color: #24634a; border-radius: 8px; padding: 12px; }
+.report-error { background: #fceceb; color: #a13732; border-radius: 8px; padding: 12px; }
+@media (max-width: 720px) {
+  .reports-main { padding: 20px 16px; }
+  .reports-filters { grid-template-columns: 1fr; padding: 16px; }
+  .reports-summary { gap: 8px; }
+  .reports-summary article { padding: 14px 10px; }
+  .reports-summary strong { font-size: 22px; }
+  :global(.report-modal-body) { padding: 16px; }
+  :global(.report-modal > div:first-child), :global(.report-modal > div:last-child) { padding: 16px; }
+  .report-modal-actions .report-help { display: none; }
+  .report-modal-actions { justify-content: flex-end; }
 }
 </style>
