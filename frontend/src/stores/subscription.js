@@ -1,8 +1,9 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { auth, db } from '@/config/firebaseConfig'
-import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { subscriptionDate } from '../../../shared/subscriptionDates.js'
 
 const SUBSCRIPTION_STATUS = Object.freeze({
   ACTIVE: 'active',
@@ -107,17 +108,7 @@ const isPermissionDenied = (error) => {
   return message.includes('Missing or insufficient permissions')
 }
 
-const toDate = (value) => {
-  if (!value) return null
-  if (typeof value?.toDate === 'function') return value.toDate()
-  if (value instanceof Date) return value
-  if (typeof value === 'number') return new Date(value)
-  if (typeof value === 'string') {
-    const parsed = new Date(value)
-    return Number.isNaN(parsed.getTime()) ? null : parsed
-  }
-  return null
-}
+const toDate = subscriptionDate
 
 export const useSubscriptionStore = defineStore('subscription', () => {
   const activeFeatures = ref([])
@@ -229,33 +220,6 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     }
 
     return { planKey: 'free', expiresAt: null, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus }
-  }
-
-  const loadLatestPaidPlanByEmail = async (email) => {
-    const normalizedEmail = String(email || '').trim().toLowerCase()
-    if (!normalizedEmail) return null
-    const paymentsSnap = await getDocs(
-      query(
-        collection(db, 'planPayments'),
-        where('payerEmail', '==', normalizedEmail),
-        where('status', '==', 'Paid')
-      )
-    )
-    if (paymentsSnap.empty) return null
-    let latest = null
-    paymentsSnap.forEach((docSnap) => {
-      const data = docSnap.data() || {}
-      const createdAt = data.createdAt?.seconds || 0
-      if (!latest || createdAt > latest.createdAt) {
-        latest = {
-          id: docSnap.id,
-          planId: normalizePlanKey(data.planId || data.planName || ''),
-          createdAt,
-          paidAtSeconds: Number(data.paymongoPaidAt || 0)
-        }
-      }
-    })
-    return latest
   }
 
   const loadPlanPermissions = async (planKey) => {
@@ -441,82 +405,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       let planKey = subscriptionMeta.planKey
       let paymentStatus = String(subscriptionMeta.paymentStatus || '').trim().toLowerCase()
       let resolvedExpiresAt = subscriptionMeta.expiresAt
-      const metaEmail = subscriptionMeta.email || ''
-      if (!paymentStatus.includes('paid') && planKey !== 'free' && metaEmail) {
-        try {
-          const latestPayment = await loadLatestPaidPlanByEmail(metaEmail)
-          if (latestPayment?.planId) {
-            planKey = latestPayment.planId
-            paymentStatus = 'paid'
-            const planDays = latestPayment.planId === 'free' ? 0 : 30
-            const baseMillis = latestPayment.paidAtSeconds
-              ? latestPayment.paidAtSeconds * 1000
-              : latestPayment.createdAt
-                ? latestPayment.createdAt * 1000
-                : Date.now()
-            resolvedExpiresAt = new Date(baseMillis + planDays * 24 * 60 * 60 * 1000)
-            const uid = auth.currentUser?.uid
-            if (uid) {
-              try {
-                await Promise.all([
-                  updateDoc(doc(db, 'users', uid), {
-                    subscriptionPlan: planKey,
-                    paymentStatus: 'paid',
-                    paymentId: latestPayment.id,
-                    subscriptionStartedAt: new Date(baseMillis),
-                    subscriptionExpiresAt: resolvedExpiresAt
-                  }),
-                  updateDoc(doc(db, 'clinics', uid), {
-                    subscriptionPlan: planKey,
-                    paymentStatus: 'paid',
-                    paymentId: latestPayment.id,
-                    subscriptionStartedAt: new Date(baseMillis),
-                    subscriptionExpiresAt: resolvedExpiresAt
-                  })
-                ])
-              } catch (_error) {
-                // ignore update errors
-              }
-            }
-          }
-        } catch (_error) {
-          // ignore payment lookup errors
-        }
-      }
-
-      if (!resolvedExpiresAt && paymentStatus.includes('paid') && planKey !== 'free') {
-        try {
-          const latestPayment = await loadLatestPaidPlanByEmail(metaEmail)
-          if (latestPayment?.planId) {
-            const planDays = latestPayment.planId === 'free' ? 0 : 30
-            const baseMillis = latestPayment.paidAtSeconds
-              ? latestPayment.paidAtSeconds * 1000
-              : latestPayment.createdAt
-                ? latestPayment.createdAt * 1000
-                : Date.now()
-            resolvedExpiresAt = new Date(baseMillis + planDays * 24 * 60 * 60 * 1000)
-            const uid = auth.currentUser?.uid
-            if (uid) {
-              try {
-                await Promise.all([
-                  updateDoc(doc(db, 'users', uid), {
-                    subscriptionStartedAt: new Date(baseMillis),
-                    subscriptionExpiresAt: resolvedExpiresAt
-                  }),
-                  updateDoc(doc(db, 'clinics', uid), {
-                    subscriptionStartedAt: new Date(baseMillis),
-                    subscriptionExpiresAt: resolvedExpiresAt
-                  })
-                ])
-              } catch (_error) {
-                // ignore update errors
-              }
-            }
-          }
-        } catch (_error) {
-          // ignore payment lookup errors
-        }
-      }
+      // Billing dates are assigned by the verified payment backend only.
 
       // Free is the permanent fallback tier. A paid plan that has reached its
       // end date must immediately behave as Free instead of leaving the clinic

@@ -1,4 +1,6 @@
 import { registerConsultationEvents } from './consultationEvents.js'
+import { subscriptionDate } from '../../shared/subscriptionDates.js'
+import { registerSubscriptionReminders, sendSubscriptionReminders } from './subscriptionReminders.js'
 import { serviceOnlyClinicPolicies } from '../../shared/clinicPolicyContent.js'
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
@@ -416,9 +418,9 @@ let caviteBoundaryCacheAt = 0
 const CAVITE_BOUNDARY_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 const postmarkClient = mailjetApiKey && mailjetSecretKey ? {
-  async sendEmail({ From, To, Subject, TextBody, HtmlBody }) {
+  async sendEmail({ From, To, Subject, TextBody, HtmlBody, timeoutMs }) {
     const auth = Buffer.from(`${mailjetApiKey}:${mailjetSecretKey}`).toString('base64')
-    const response = await fetch('https://api.mailjet.com/v3.1/send', { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ Messages: [{ From: { Email: From || senderEmail }, To: String(To).split(',').map((Email) => ({ Email: Email.trim() })).filter(({ Email }) => Email), Subject, TextPart: TextBody || '', HTMLPart: HtmlBody || '' }] }) })
+    const response = await fetch('https://api.mailjet.com/v3.1/send', { method: 'POST', ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}), headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ Messages: [{ From: { Email: From || senderEmail }, To: String(To).split(',').map((Email) => ({ Email: Email.trim() })).filter(({ Email }) => Email), Subject, TextPart: TextBody || '', HTMLPart: HtmlBody || '' }] }) })
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(payload?.ErrorMessage || 'Mailjet delivery failed.')
     const result = payload?.Messages?.[0]
@@ -618,6 +620,7 @@ const sendPostmarkMessage = async (message) => {
     Subject: message.subject,
     TextBody: message.text,
     HtmlBody: message.html,
+    timeoutMs: message.timeoutMs,
   })
   return {
     statusCode: response?.ErrorCode === 0 ? 200 : response?.ErrorCode || null,
@@ -2891,14 +2894,7 @@ const getPlanDurationDays = (planKey, billingCycle = 'month') => {
   return 30
 }
 
-const toDateValue = (value) => {
-  if (!value) return null
-  if (typeof value?.toDate === 'function') return value.toDate()
-  if (value instanceof Date) return value
-  if (typeof value === 'number') return new Date(value)
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
+const toDateValue = subscriptionDate
 
 const clearPendingSubscriptionFields = () => ({
   pendingSubscriptionPlan: admin.firestore.FieldValue.delete(),
@@ -3656,10 +3652,21 @@ app.post('/treatment-sessions/:id/complete', requireAuth, async (req, res) => {
   } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
 })
 
+const subscriptionReminderDependencies = {
+  admin, websiteUrl: EMAIL_WEBSITE_URL,
+  sendEmail: postmarkClient && senderEmail ? async message => {
+    const delivery = await sendPostmarkMessage({ ...message, timeoutMs: 15000 })
+    if (delivery.statusCode !== 200) throw new Error('Subscription reminder email was not accepted.')
+  } : null,
+}
+registerSubscriptionReminders(app, subscriptionReminderDependencies)
+
 app.all('/cron/appointment-reminders', async (req, res) => {
   const secret = String(process.env.CRON_SECRET || '').trim()
   if (!secret || String(req.get('authorization') || '') !== `Bearer ${secret}`) return res.status(401).json({ success: false, error: 'Unauthorized.' })
   try {
+    // Run these independently of appointment email failures or an empty list.
+    const subscriptions = await sendSubscriptionReminders(subscriptionReminderDependencies)
     const firestore = admin.firestore(), tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const rows = (await firestore.collection('appointments').where('date', '==', tomorrow).get()).docs.map(snap => ({ id: snap.id, ...(snap.data() || {}) }))
       .filter(row => ['scheduled', 'ready to start', 'paid'].includes(normalizeBookingStatus(row.status)))
@@ -3709,7 +3716,7 @@ app.all('/cron/appointment-reminders', async (req, res) => {
         }
       }
     }))
-    return res.json({ success: true, reminders: rows.length })
+    return res.status(subscriptions.failures ? 503 : 200).json({ success: !subscriptions.failures, reminders: rows.length, subscriptions })
   } catch (error) { return res.status(500).json({ success: false, error: 'Unable to send appointment reminders.' }) }
 })
 
@@ -9443,8 +9450,7 @@ app.get('/paymongo/checkout-session/:id', optionalAuth, async (req, res) => {
           }
 
           if (ownerUid) {
-            const paidAtMs = attributes?.paid_at ? Date.parse(attributes.paid_at) : Date.now()
-            const paidAt = new Date(Number.isNaN(paidAtMs) ? Date.now() : paidAtMs)
+            const paidAt = subscriptionDate(attributes?.paid_at) || new Date()
             const paymentReference =
               String(attributes?.payments?.[0]?.id || data?.data?.id || '').trim() || null
 

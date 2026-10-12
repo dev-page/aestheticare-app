@@ -37,7 +37,7 @@
               <span class="text-white font-semibold">{{ paidAtLabel }}</span>
             </div>
             <div class="flex items-center justify-between">
-              <span class="text-slate-400">Expires At</span>
+              <span class="text-slate-400">Expires At (Philippine time)</span>
               <span class="text-white font-semibold">{{ expiresAtLabel }}</span>
             </div>
             <div class="flex items-center justify-between">
@@ -106,16 +106,15 @@ import { usePageLoading } from '@/composables/usePageLoading'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth, db } from '@/config/firebaseConfig'
-import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
-import { useSubscriptionStore } from '@/stores/subscription'
+import { subscriptionDateLabel, subscriptionRecord } from '../../../../../shared/subscriptionDates.js'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
 const router = useRouter()
-const subscriptionStore = useSubscriptionStore()
 
 const loading = ref(true)
 const error = ref('')
@@ -157,21 +156,7 @@ const syncPlanData = () => {
   planData.value = planDocs.value.get(planKey.value) || planDocs.value.get('free-trial') || null
 }
 
-const toDateValue = (value) => {
-  if (!value) return null
-  if (typeof value?.toDate === 'function') return value.toDate()
-  if (value instanceof Date) return value
-  if (typeof value === 'number') return new Date(value)
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
-
-const formatDate = (value) => {
-  const date = toDateValue(value)
-  if (!date) return '-'
-  if (date.getTime() <= 0) return '-'
-  return new Intl.DateTimeFormat('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }).format(date)
-}
+const formatDate = subscriptionDateLabel
 
 const normalizePlanLabel = (value) => {
   const raw = String(value || '').trim().toLowerCase()
@@ -218,67 +203,18 @@ const pendingPlanNotice = computed(() => {
   return `${pendingPlanLabel.value} will take effect on ${pendingApplyAtLabel.value} after your current billing cycle ends.`
 })
 
-const applySubscriptionData = async (userData = {}, clinicData = {}) => {
-  const resolvedPlan = clinicData.subscriptionPlan || userData.subscriptionPlan || 'free-trial'
-  planKey.value = String(resolvedPlan || 'free-trial').trim().toLowerCase()
-  paymentStatus.value = clinicData.paymentStatus || userData.paymentStatus || ''
-  paymentId.value = clinicData.paymentId || userData.paymentId || ''
-  subscriptionStartedAt.value = clinicData.subscriptionStartedAt || userData.subscriptionStartedAt || null
-  subscriptionExpiresAt.value = clinicData.subscriptionExpiresAt || userData.subscriptionExpiresAt || null
-  pendingPlan.value = String(clinicData.pendingSubscriptionPlan || userData.pendingSubscriptionPlan || '').trim().toLowerCase()
-  pendingApplyAt.value = clinicData.pendingSubscriptionApplyAt || userData.pendingSubscriptionApplyAt || null
-  const clinicAutoRenew = Object.prototype.hasOwnProperty.call(clinicData, 'subscriptionAutoRenew')
-    ? clinicData.subscriptionAutoRenew
-    : undefined
-  const userAutoRenew = Object.prototype.hasOwnProperty.call(userData, 'subscriptionAutoRenew')
-    ? userData.subscriptionAutoRenew
-    : undefined
-  const resolvedAutoRenew = clinicAutoRenew ?? userAutoRenew
-  autoRenew.value = Boolean(resolvedAutoRenew ?? false)
-
-  if (clinicAutoRenew === undefined && userAutoRenew === undefined) {
-    await Promise.all([
-      updateDoc(doc(db, 'users', auth.currentUser.uid), { subscriptionAutoRenew: false }),
-      updateDoc(doc(db, 'clinics', auth.currentUser.uid), { subscriptionAutoRenew: false }),
-    ])
-  }
-
-  if (!subscriptionStartedAt.value || !subscriptionExpiresAt.value) {
-    const paymentRef = String(paymentId.value || '').trim()
-    if (paymentRef) {
-      try {
-        const paymentSnap = await getDoc(doc(db, 'planPayments', paymentRef))
-        if (paymentSnap.exists()) {
-          const data = paymentSnap.data() || {}
-          const createdAt = toDateValue(data.createdAt)
-          const paidAt = toDateValue(data.paymongoPaidAt)
-          const planDays = planKey.value === 'free-trial' ? 14 : 30
-          const startDate = paidAt || createdAt
-          if (startDate && startDate.getTime() > 0) {
-            const expiresAt = new Date(startDate.getTime() + planDays * 24 * 60 * 60 * 1000)
-            subscriptionStartedAt.value = startDate
-            subscriptionExpiresAt.value = expiresAt
-            try {
-              await Promise.all([
-                updateDoc(doc(db, 'users', auth.currentUser.uid), {
-                  subscriptionStartedAt: startDate,
-                  subscriptionExpiresAt: expiresAt
-                }),
-                updateDoc(doc(db, 'clinics', auth.currentUser.uid), {
-                  subscriptionStartedAt: startDate,
-                  subscriptionExpiresAt: expiresAt
-                })
-              ])
-            } catch (_error) {
-              // ignore update errors
-            }
-          }
-        }
-      } catch (_error) {
-        // ignore payment lookup errors
-      }
-    }
-  }
+let userSubscription = {}, clinicSubscription = {}
+const applySubscriptionData = (userData = {}, clinicData = {}) => {
+  const data = subscriptionRecord(userData, clinicData)
+  planKey.value = String(data.subscriptionPlan || 'free-trial').trim().toLowerCase()
+  paymentStatus.value = data.paymentStatus || ''
+  paymentId.value = data.paymentId || ''
+  subscriptionStartedAt.value = data.subscriptionStartedAt ?? null
+  subscriptionExpiresAt.value = data.subscriptionExpiresAt ?? null
+  pendingPlan.value = String(data.pendingSubscriptionPlan || '').trim().toLowerCase()
+  pendingApplyAt.value = data.pendingSubscriptionApplyAt ?? null
+  autoRenew.value = Boolean(data.subscriptionAutoRenew ?? false)
+  syncPlanData()
 }
 
 const loadSubscription = trackPageLoad(async () => {
@@ -303,7 +239,9 @@ const loadSubscription = trackPageLoad(async () => {
 
     const userData = userSnap.exists() ? userSnap.data() : {}
     const clinicData = clinicSnap.exists() ? clinicSnap.data() : {}
-    await applySubscriptionData(userData, clinicData)
+    userSubscription = userData
+    clinicSubscription = clinicData
+    applySubscriptionData(userSubscription, clinicSubscription)
     syncPlanData()
 
     if (unsubscribePlans) unsubscribePlans()
@@ -311,6 +249,9 @@ const loadSubscription = trackPageLoad(async () => {
       planDocs.value = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
       syncPlanData()
       if (loading.value) loading.value = false
+    }, () => {
+      error.value = 'Unable to load subscription plans.'
+      loading.value = false
     })
   } catch (err) {
     console.error('Failed to load subscription info:', err)
@@ -331,23 +272,15 @@ const subscribeToUpdates = async () => {
   if (unsubscribeUser) unsubscribeUser()
   if (unsubscribeClinic) unsubscribeClinic()
 
-  unsubscribeUser = pageListener(onSnapshot, doc(db, 'users', currentUser.uid), async (snap) => {
-    const userData = snap.exists() ? snap.data() : {}
-    const clinicSnap = await getDoc(doc(db, 'clinics', currentUser.uid))
-    const clinicData = clinicSnap.exists() ? clinicSnap.data() : {}
-    await applySubscriptionData(userData, clinicData)
-    syncPlanData()
-    await subscriptionStore.refreshSubscription()
-  })
+  unsubscribeUser = pageListener(onSnapshot, doc(db, 'users', currentUser.uid), (snap) => {
+    userSubscription = snap.exists() ? snap.data() : {}
+    applySubscriptionData(userSubscription, clinicSubscription)
+  }, () => { error.value = 'Unable to update subscription information.' })
 
-  unsubscribeClinic = pageListener(onSnapshot, doc(db, 'clinics', currentUser.uid), async (snap) => {
-    const clinicData = snap.exists() ? snap.data() : {}
-    const userSnap = await getDoc(doc(db, 'users', currentUser.uid))
-    const userData = userSnap.exists() ? userSnap.data() : {}
-    await applySubscriptionData(userData, clinicData)
-    syncPlanData()
-    await subscriptionStore.refreshSubscription()
-  })
+  unsubscribeClinic = pageListener(onSnapshot, doc(db, 'clinics', currentUser.uid), (snap) => {
+    clinicSubscription = snap.exists() ? snap.data() : {}
+    applySubscriptionData(userSubscription, clinicSubscription)
+  }, () => { error.value = 'Unable to update clinic subscription information.' })
 }
 
 const saveAutoRenew = async () => {
