@@ -93,7 +93,6 @@
                     <Icon icon="mdi:check-circle-outline" class="w-4 h-4" />
                   </button>
                   <button
-                    v-if="item.link"
                     type="button"
                     class="notifications-view-button"
                     @click="openNotification(item)"
@@ -109,35 +108,7 @@
     </div>
   </div>
 
-  <Modal
-    :isOpen="showNotificationModal"
-    :panelClass="isModuleView ? 'notifications-modal-panel notifications-modal-panel-module' : 'notifications-modal-panel'"
-    :panelStyle="isModuleView
-      ? { backgroundColor: '#28160e', color: '#fff0e1' }
-      : { backgroundColor: '#fff7e8', color: '#4f3527' }"
-    :bodyClass="isModuleView ? 'notifications-modal-body-shell notifications-modal-body-shell-module' : 'notifications-modal-body-shell'"
-    @close="closeNotificationModal"
-  >
-    <template #header>
-      <h2 :class="isModuleView ? 'notifications-modal-heading notifications-modal-heading-module' : 'notifications-modal-heading'">Notification</h2>
-    </template>
-    <template #body>
-      <div v-if="selectedNotification" class="notifications-modal-body">
-        <div>
-          <p :class="isModuleView ? 'notifications-modal-label notifications-modal-label-module' : 'notifications-modal-label'">Title</p>
-          <p :class="isModuleView ? 'notifications-modal-text notifications-modal-text-module mt-1 break-words' : 'notifications-modal-text mt-1 break-words'">{{ selectedNotification.title || 'Notification' }}</p>
-        </div>
-        <div>
-          <p :class="isModuleView ? 'notifications-modal-label notifications-modal-label-module' : 'notifications-modal-label'">Description</p>
-          <p :class="isModuleView ? 'notifications-modal-text notifications-modal-text-module mt-1 whitespace-pre-wrap break-words leading-6' : 'notifications-modal-text mt-1 whitespace-pre-wrap break-words leading-6'">{{ selectedNotification.message || '-' }}</p>
-        </div>
-        <div>
-          <p :class="isModuleView ? 'notifications-modal-label notifications-modal-label-module' : 'notifications-modal-label'">Date & Time</p>
-          <p :class="isModuleView ? 'notifications-modal-text notifications-modal-text-module mt-1' : 'notifications-modal-text mt-1'">{{ selectedNotification.createdLabel }}</p>
-        </div>
-      </div>
-    </template>
-  </Modal>
+  <NotificationDetailsDialog :is-open="showNotificationModal" :notification="selectedNotification" :user-type="userType" :role="role" @close="closeNotificationModal" />
 </template>
 
 <script>
@@ -153,7 +124,7 @@ import { useSubscription } from '@/composables/useSubscription'
 import EmployeeTopbar from '@/components/common/EmployeeTopbar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { Icon } from '@iconify/vue'
-import Modal from '@/components/common/Modal.vue'
+import NotificationDetailsDialog from '@/components/common/NotificationDetailsDialog.vue'
 
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
@@ -167,7 +138,7 @@ export default {
     EmployeeTopbar,
     PageSectionSkeleton,
     Icon,
-    Modal,
+    NotificationDetailsDialog,
     CustomerSidebar,
     EmployeeSidebar,
     OwnerSidebar,
@@ -484,6 +455,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     return {
       pageLoading,
+      role,
+      userType,
       notifications,
       loading,
       error,

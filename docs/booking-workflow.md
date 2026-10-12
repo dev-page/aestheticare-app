@@ -45,6 +45,8 @@ Session progress is updated once when care is confirmed, even if the first visit
 
 Consultations remain individual; group consultation booking is disabled. Authenticated customer and assigned practitioner enter the application's waiting room before the practitioner starts a paid, signed consultation with a system meeting link.
 
+The customer submits their service code in My Appointments to generate the Google Meet link automatically. The assigned practitioner's individually connected Google account owns the primary-calendar event, and the backend verifies Google's organizer before releasing the link. Arrival order does not change the host. Missing or revoked hosting authorization blocks creation rather than using the platform's shared account. The practitioner joins using the hosting email and starts the timer after both waiting-room entries. See [Google Meet setup](google-meet-setup.md) for OAuth configuration and live rollout checks.
+
 The customer may record the end of their participation. The practitioner ends the consultation and records notes. The scheduled-window job closes elapsed application records: attended consultations await customer confirmation; absent or incomplete consultations are not automatically completed. Short consultations and timer closures missing notes are flagged for clinic review.
 
 **Google Meet limitation:** application waiting-room entry and end actions do not prove presence inside Google Meet and do not disconnect an external Meet call. Duration records support review; they cannot guarantee fraud prevention. Customer confirmation remains required. The existing authenticated online-consultation cron endpoint uses the same timeout logic; configure CRON_SECRET for hosted execution.
@@ -60,6 +62,20 @@ System-admin **Supplier Verification** supports approval, revision requests, rej
 Only verified suppliers can use the supply portal, publish catalogues, or receive new procurement requests. Existing suppliers must submit documents and be reviewed; they are not automatically considered verified. Review is performed by authorized admins, not an automatic claim that a business is legitimate.
 
 ## Verification and release
+
+### Walk-in scheduling
+
+Walk-In Desk supports one registered client and up to twenty service appointments. Group booking is unavailable for walk-ins; reception creates separate bookings for other clients. Each service has its own visible availability calendar, lead practitioner, time, and notes. The client must use different dates for additional services. Supporting staff are assigned through **Treatment team** in Appointment Management before treatment starts, according to the service's staffing requirements.
+
+For a friend arranging a booking, select the treatment recipient's client record and enable **Booking for someone else**. Record the arranger's name, contact number, and optional email. The arranger draws their own signature to accept booking/payment terms; the server snapshots enabled branch financial policies, the priced appointments, signer identity, and staff witness. Clinical additional terms and service-specific treatment text are excluded from this booking agreement. New bookings require this acceptance before cash payment. Existing walk-ins remain payable without retroactive acceptance.
+
+Booking acceptance does not sign the recipient's treatment agreement. The confirmation email identifies the arranger and goes to the recipient; the individual service code still goes to the recipient after payment. The recipient signs their treatment agreement when present, either from Walk-In Desk or **Appointment Management → View Details → Contract**, with authorized staff witnessing the signature. Check-in remains blocked until this separate contract is signed. Online booking flows are unchanged.
+
+`POST /walk-in/bookings` validates the entire submission before writing any appointments. Prices, recipient contacts, consultation prerequisites, resources, and saved clinic contracts come from server records. A submission ID makes retries return the original appointments. `GET /walk-in/availability` requires appointment-creation access and returns busy windows and applicable policies without service keys, signatures, clinical notes, or compensation details.
+
+Payments remain individual: recording cash payment creates that appointment's receipt and service key and sends it to the client's email. A multiple-service booking stays partially paid until all appointments are paid. Reception can open **Sign client agreement** after payment and hand the device to the client. Their signature applies only to that appointment. Card and GCash still require verified checkout; this change adds no manual marking of electronic payments.
+
+Deploy the updated backend with the frontend. In local development, restart the backend to register the new Walk-In endpoints. Before release, verify the calendar, multiple services, individual signatures, printed receipts, and actual Postmark code delivery using clinic staff accounts.
 
 Run `npm test`, `npm run build`, and `node scripts/check-page-skeletons.mjs`. The tests use mocked Firebase and payment-provider responses; they cover appointment ordering, authorization, resource reservations, atomic batches, package expansion, group service selection, supplier decisions/enforcement, consultation timeout handling, and session progress.
 

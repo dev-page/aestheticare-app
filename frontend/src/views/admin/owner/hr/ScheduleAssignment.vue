@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-row owner-theme min-w-0" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+  <div class="schedule-assignment flex flex-row owner-theme min-w-0" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
     <OwnerSidebar v-if="!embedded" />
 
     <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, header: !embedded, blocks: [{ variant: 'form', fields: 4, sections: 1 }, { variant: 'cards', cards: 7, cardStyle: 'summary' }] }" class="flex-1 min-w-0 text-white" :class="embedded ? '' : 'p-6 md:p-8'">
@@ -11,55 +11,30 @@
           </p>
         </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-6">
+        <div class="grid grid-cols-1 xl:grid-cols-[300px_minmax(0,1fr)] gap-6">
           <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
             <h2 class="text-lg font-semibold text-white">Assignment Setup</h2>
             <p class="mt-1 text-sm text-slate-400">Choose the branch, employee, and start date you want to manage.</p>
 
             <div class="mt-5 space-y-4">
               <div>
-                <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Branch</label>
-                <select
-                  v-model="selectedBranchId"
-                  class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white"
-                >
-                  <option value="">Select branch</option>
-                  <option v-for="branch in branches" :key="branch.id" :value="branch.id">
-                    {{ branch.name }}
-                  </option>
-                </select>
+                <ContractAppearanceSelect id="assignment-branch" v-model="selectedBranchId" label="Branch" :disabled="saving" :options="[{ value: '', label: 'Select branch' }, ...branches.map(branch => ({ value: branch.id, label: branch.name }))]" />
               </div>
 
               <div>
-                <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Staff Role</label>
-                <select
-                  v-model="selectedRole"
-                  class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white"
-                >
-                  <option v-for="role in roleOptions" :key="role.value" :value="role.value">
-                    {{ role.label }}
-                  </option>
-                </select>
+                <ContractAppearanceSelect id="assignment-role" v-model="selectedRole" label="Staff Role" :disabled="saving" :options="roleOptions" />
               </div>
 
               <div>
-                <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Employee</label>
-                <select
-                  v-model="selectedEmployeeId"
-                  class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white"
-                  :disabled="!filteredEmployees.length"
-                >
-                  <option value="">{{ filteredEmployees.length ? 'Select employee' : 'No matching employee yet' }}</option>
-                  <option v-for="employee in filteredEmployees" :key="employee.id" :value="employee.id">
-                    {{ employee.fullName }}{{ employee.role ? ` (${employee.role})` : '' }}
-                  </option>
-                </select>
+                <ContractAppearanceSelect id="assignment-employee" v-model="selectedEmployeeId" label="Employee" :disabled="saving || !filteredEmployees.length" :options="[{ value: '', label: filteredEmployees.length ? 'Select employee' : 'No matching employees' }, ...filteredEmployees.map(employee => ({ value: employee.id, label: employee.fullName + (employee.role ? ` (${employee.role})` : '') }))]" />
               </div>
 
               <div>
-                <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Starts On</label>
+                <label for="assignment-start-date" class="assignment-field-label">Starts On</label>
                 <input
                   v-model="selectedWeekStart"
+                  id="assignment-start-date"
+                  :disabled="saving"
                   type="date"
                   class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white"
                 />
@@ -67,11 +42,11 @@
             </div>
 
             <div v-if="selectedEmployee" class="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-              <div class="flex items-start justify-between gap-3">
+              <div class="flex flex-col items-start gap-3">
                 <div>
                   <h3 class="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">DSS Recommendation</h3>
                   <p class="mt-2 text-sm text-slate-200">
-                    {{ selectedEmployee.fullName }} is detected as <span class="font-semibold">{{ scheduleTypeLabel }}</span>.
+                    {{ selectedEmployee.fullName }} has employment type <span class="font-semibold">{{ scheduleTypeLabel }}</span>.
                   </p>
                   <p class="mt-1 text-xs text-slate-300">
                     {{ recommendedShiftSummary }}
@@ -79,17 +54,22 @@
                 </div>
                 <button
                   type="button"
-                  class="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="assignment-button assignment-button-secondary self-stretch"
                   @click="applySuggestedShifts"
-                  :disabled="!scheduleDssReady || !suggestedShiftTemplates.length"
+                  :disabled="saving || !scheduleDssReady || !suggestedShiftTemplates.length"
                 >
                   Apply Suggestions
                 </button>
               </div>
 
+              <div class="mt-4">
+                <label for="dss-weekly-target" class="assignment-field-label">Weekly hours target (planning only)</label>
+                <input id="dss-weekly-target" v-model.number="weeklyTargetHours" type="number" min="1" max="48" step="0.5" :disabled="saving" class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2" />
+                <p class="mt-2 text-xs text-slate-400">Use the employee's agreed weekly hours. Full-time defaults to the existing 48-hour application limit; enter a target for part-time staff.</p>
+              </div>
               <div class="mt-4 grid gap-3 md:grid-cols-2">
                 <div class="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2">
-                  <p class="text-[11px] uppercase tracking-[0.2em] text-slate-400">Detected Type</p>
+                  <p class="text-[11px] uppercase tracking-[0.2em] text-slate-400">Employment Type</p>
                   <p class="mt-1 text-sm font-semibold text-white">{{ scheduleTypeLabel }}</p>
                 </div>
                 <div class="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2">
@@ -115,7 +95,7 @@
                 <li>Bookings use practitioner schedules stored under each employee.</li>
                 <li>Schedules saved here are recurring by default for future weeks.</li>
                 <li>The start date helps show when you began using this recurring pattern.</li>
-                <li>Full-time and part-time shifts are suggested by duration; intern schedules are assigned manually.</li>
+                <li>Suggestions check employment type, weekly target, available slots, and retained off days. Intern schedules are assigned manually.</li>
                 <li>Choose Off for days when the employee should not accept work or appointments.</li>
                 <li>Each shift's capacity is enforced per day when the schedule is saved.</li>
               </ul>
@@ -136,17 +116,17 @@
               <div class="flex gap-3">
                 <button
                   type="button"
-                  class="rounded-lg border border-slate-600 px-4 py-2 text-slate-200 hover:bg-slate-700"
+                  class="assignment-button assignment-button-secondary"
                   @click="resetAssignments"
-                  :disabled="!selectedEmployeeId"
+                  :disabled="saving || !selectedEmployeeId || !capacityReady"
                 >
                   Reset
                 </button>
                 <button
                   type="button"
-                  class="rounded-lg bg-amber-600 px-4 py-2 text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  class="assignment-button assignment-button-primary"
                   @click="saveAssignments"
-                  :disabled="!selectedEmployeeId || saving || Boolean(hoursWarning)"
+                  :disabled="!selectedEmployeeId || saving || !capacityReady || Boolean(hoursWarning)"
                 >
                   {{ saving ? 'Saving...' : 'Save Schedule' }}
                 </button>
@@ -181,27 +161,19 @@
                   </span>
                 </div>
 
-                <select
-                  v-model="assignments[day]"
-                  class="mt-4 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white"
-                >
-                  <option value="">Off</option>
-                  <option v-for="shift in displayShiftTemplates" :key="shift.id" :value="shift.id">
-                    {{ shift.label }} - {{ shift.capacity }} slot{{ shift.capacity === 1 ? '' : 's' }}{{ shift.scheduleType === selectedEmployeeScheduleType ? ' (Recommended)' : '' }}
-                  </option>
-                </select>
+                <ContractAppearanceSelect :id="`assignment-shift-${day.toLowerCase()}`" v-model="assignments[day]" @update:model-value="markManualDay(day, $event)" label="Shift template" class="assignment-day-select" :disabled="saving || !capacityReady" :options="[{ value: '', label: 'Off — no shift assigned' }, ...displayShiftTemplates.map(shift => ({ value: shift.id, label: `${shift.label} — ${shift.capacity} slot${shift.capacity === 1 ? '' : 's'}${getSuggestedShiftForDay(day)?.id === shift.id ? ' (Suggested)' : ''}` }))]" />
 
                 <div class="mt-3 flex items-center justify-between gap-3">
                   <p class="text-xs text-slate-400">
                     DSS suggestion:
                     <span class="text-slate-200">
-                      {{ getSuggestedShiftForDay(day)?.label || 'No matching shift suggestion yet' }}
+                      {{ getSuggestedShiftForDay(day)?.label || (capacityReady ? recommendationPlan.reasons[day] : 'Checking shift capacity...') }}
                     </span>
                   </p>
                   <button
                     type="button"
-                    class="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    :disabled="!getSuggestedShiftForDay(day)"
+                    class="assignment-button assignment-button-secondary assignment-button-small"
+                    :disabled="saving || !getSuggestedShiftForDay(day)"
                     @click="applySuggestedShiftToDay(day, getSuggestedShiftForDay(day)?.id)"
                   >
                     Use DSS
@@ -238,7 +210,9 @@ import { getFirestore } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import { logActivity } from '@/utils/activityLogger'
+import { recommendRecurringShifts } from '@/utils/shiftRecommendations'
 import {
   RECURRING_SCHEDULE_ID,
   classifyShiftEmploymentType,
@@ -264,6 +238,12 @@ const selectedRole = ref('all')
 const selectedEmployeeId = ref('')
 const selectedWeekStart = ref('')
 const saving = ref(false)
+const weeklyTargetHours = ref(48)
+const capacitySchedules = ref([])
+const capacityReady = ref(false)
+const protectedDays = ref([])
+const loadedProtectedDays = ref([])
+let assignmentLoadVersion = 0
 const isOwnerLikeRole = (role) => {
   const normalized = String(role || '').trim().toLowerCase()
   return ['owner', 'clinic owner', 'clinicowner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized)
@@ -316,11 +296,7 @@ const selectedEmployee = computed(() =>
   filteredEmployees.value.find((employee) => employee.id === selectedEmployeeId.value) || null
 )
 
-const selectedEmployeeScheduleType = computed(() => {
-  const profileType = normalizeEmploymentType(selectedEmployee.value?.employmentType || '')
-  if (profileType) return profileType
-  return totalAssignedHours.value >= 8 ? 'full-time' : 'part-time'
-})
+const selectedEmployeeScheduleType = computed(() => normalizeEmploymentType(selectedEmployee.value?.employmentType || ''))
 
 const parseShiftHours = (shiftLabel) => {
   if (!shiftLabel) return 0
@@ -333,7 +309,7 @@ const totalAssignedHours = computed(() =>
 )
 
 const isFullTimeEmployee = computed(() =>
-  String(selectedEmployee.value?.employmentType || '').trim().toLowerCase() === 'full-time'
+  selectedEmployeeScheduleType.value === 'full-time'
 )
 
 const hoursWarning = computed(() => {
@@ -354,30 +330,17 @@ const scheduleTypeLabel = computed(() =>
     ? 'Full-time'
     : selectedEmployeeScheduleType.value === 'intern'
       ? 'Intern'
-      : 'Part-time'
+      : selectedEmployeeScheduleType.value === 'part-time' ? 'Part-time' : 'Not specified'
 )
 
-const matchingShiftTemplates = computed(() => {
-  const scheduleType = selectedEmployeeScheduleType.value
-  const matches = branchShifts.value.filter((shift) => shift.scheduleType === scheduleType)
-  if (matches.length) return matches
-  return [...branchShifts.value]
-})
-
-const suggestedShiftTemplates = computed(() => {
-  const scheduleType = selectedEmployeeScheduleType.value
-  const primaryList = branchShifts.value.filter((shift) => shift.scheduleType === scheduleType)
-  const fallbackList = branchShifts.value
-  const source = primaryList.length ? primaryList : fallbackList
-  return [...source].sort((a, b) => {
-    if (scheduleType === 'part-time') {
-      if (a.durationHours !== b.durationHours) return a.durationHours - b.durationHours
-    } else if (scheduleType === 'full-time') {
-      if (a.durationHours !== b.durationHours) return b.durationHours - a.durationHours
-    }
-    return String(a.label || '').localeCompare(String(b.label || ''))
-  })
-})
+const recommendationPlan = computed(() => recommendRecurringShifts({
+  days: daysOfWeek, shifts: branchShifts.value, assignments: assignments.value,
+  employmentType: selectedEmployee.value?.employmentType, targetHours: weeklyTargetHours.value,
+  schedules: capacitySchedules.value, employeeId: selectedEmployeeId.value,
+  protectedDays: protectedDays.value
+}))
+const matchingShiftTemplates = computed(() => recommendationPlan.value.templates)
+const suggestedShiftTemplates = matchingShiftTemplates
 
 const displayShiftTemplates = computed(() => {
   const scheduleType = selectedEmployeeScheduleType.value
@@ -395,65 +358,28 @@ const displayShiftTemplates = computed(() => {
 })
 
 const recommendedShiftSummary = computed(() => {
-  if (!selectedEmployee.value) return ''
-  const scheduleType = selectedEmployeeScheduleType.value
-  const matchingCount = branchShifts.value.filter((shift) => shift.scheduleType === scheduleType).length
-
-  if (!branchShifts.value.length) {
-    return 'Create shift templates first so the DSS can recommend the right schedule.'
-  }
-
-  if (scheduleType === 'intern') {
-    return 'Intern schedules are assigned manually, so all branch shifts are available to choose from.'
-  }
-
-  if (matchingCount > 0) {
-    return scheduleType === 'part-time'
-      ? 'The system detected a part-time employee and is prioritizing shifts shorter than 8 hours.'
-      : 'The system detected a full-time employee and is prioritizing shifts that are 8 hours or longer.'
-  }
-
-  return 'No exact DSS match is available for this employee, so all branch shifts are being shown.'
+  if (!capacityReady.value) return 'Loading current shift capacity. Suggestions are unavailable until this finishes.'
+  if (!selectedEmployeeScheduleType.value) return 'Set the employee employment type in Employee Management first; no type is guessed from assigned hours.'
+  if (selectedEmployeeScheduleType.value === 'intern') return 'Assign intern schedules manually according to their agreed hours.'
+  if (!(Number(weeklyTargetHours.value) > 0 && Number(weeklyTargetHours.value) <= 48)) return 'Enter agreed weekly hours between 1 and 48 before requesting suggestions.'
+  return 'Uses saved employment type, remaining shift slots, and your ' + weeklyTargetHours.value + '-hour planning target. Existing assignments and off days are retained. Planned total: ' + recommendationPlan.value.plannedHours + ' hours. Shift duration includes the full start-to-end window.'
 })
-
 const applySuggestedShiftToDay = (day, shiftId) => {
-  if (!day) return
-  assignments.value[day] = String(shiftId || '').trim()
+  if (!capacityReady.value || !day || !shiftId) return
+  assignments.value[day] = shiftId
 }
-
 const applySuggestedShifts = () => {
-  const suggestions = suggestedShiftTemplates.value
-  if (!suggestions.length) {
-    toast.info('No shift suggestion is available yet.')
-    return
-  }
-
-  let updated = false
-  daysOfWeek.forEach((day, index) => {
-    if (!assignments.value[day]) {
-      const suggestion = suggestions[index % suggestions.length]
-      if (!suggestion) return
-      assignments.value[day] = suggestion.id
-      updated = true
-    }
-  })
-
-  if (!updated) {
-    toast.info('The suggested shift is already applied to all days.')
-    return
-  }
-
-  toast.success(`Applied ${scheduleTypeLabel.value.toLowerCase()} DSS suggestion to empty days.`)
+  if (!scheduleDssReady.value) return
+  const suggestions = recommendationPlan.value.suggestions
+  Object.entries(suggestions).forEach(([day, shift]) => { assignments.value[day] = shift.id })
+  toast.success('Applied suggestions within the weekly planning target. Review before saving.')
 }
-
-const getSuggestedShiftForDay = (day) => {
-  if (!day || !suggestedShiftTemplates.value.length) return null
-  const index = daysOfWeek.indexOf(day)
-  if (index < 0) return null
-  return suggestedShiftTemplates.value[index % suggestedShiftTemplates.value.length] || null
+const getSuggestedShiftForDay = day => capacityReady.value ? recommendationPlan.value.suggestions[day] || null : null
+const scheduleDssReady = computed(() => Boolean(selectedEmployee.value && capacityReady.value && Object.keys(recommendationPlan.value.suggestions).length))
+const markManualDay = (day, value) => {
+  protectedDays.value = protectedDays.value.filter(entry => entry !== day)
+  if (!value) protectedDays.value.push(day)
 }
-
-const scheduleDssReady = computed(() => Boolean(selectedEmployee.value && branchShifts.value.length))
 
 const assignmentSummary = computed(() => {
   if (!selectedEmployee.value) return 'Choose an employee to start assigning shifts.'
@@ -624,23 +550,36 @@ const hydrateBranchShifts = async () => {
 }
 
 const loadAssignments = trackPageLoad(async () => {
-  if (!selectedEmployeeId.value) {
-    assignments.value = emptyAssignments()
-    loadedAssignments.value = emptyAssignments()
-    return
+  const version = ++assignmentLoadVersion
+  const employeeId = selectedEmployeeId.value
+  capacityReady.value = false
+  capacitySchedules.value = []
+  protectedDays.value = []
+  loadedProtectedDays.value = []
+  assignments.value = emptyAssignments()
+  loadedAssignments.value = emptyAssignments()
+  if (!employeeId) return
+  try {
+    const staff = [...employees.value]
+    const snapshots = await Promise.all(staff.map(employee => getDoc(doc(db, 'users', employee.id, 'schedules', RECURRING_SCHEDULE_ID))))
+    if (version !== assignmentLoadVersion || employeeId !== selectedEmployeeId.value) return
+    capacitySchedules.value = snapshots.map((snapshot, index) => ({ employeeId: staff[index].id, assignments: snapshot.data()?.assignments || {} }))
+    const selected = snapshots[staff.findIndex(employee => employee.id === employeeId)]
+    const next = normalizeAssignments(selected?.data()?.assignments || {}, daysOfWeek)
+    daysOfWeek.forEach(day => {
+      const shift = branchShifts.value.find(shift => shift.id === next[day] || shift.label === next[day])
+      next[day] = shift?.id || next[day]
+    })
+    assignments.value = { ...next }
+    loadedAssignments.value = { ...next }
+    protectedDays.value = selected?.exists() ? daysOfWeek.filter(day => !next[day]) : []
+    loadedProtectedDays.value = [...protectedDays.value]
+    capacityReady.value = true
+  } catch (error) {
+    if (version !== assignmentLoadVersion) return
+    console.error('Failed to load schedule capacity:', error)
+    toast.error('Unable to check current shift capacity. Reopen this page before using suggestions.')
   }
-
-  const recurringSnap = await getDoc(doc(db, 'users', selectedEmployeeId.value, 'schedules', RECURRING_SCHEDULE_ID))
-  const scheduleData = recurringSnap.exists() ? recurringSnap.data() || {} : {}
-  const nextAssignments = normalizeAssignments(scheduleData.assignments || {}, daysOfWeek)
-  daysOfWeek.forEach((day) => {
-    const value = nextAssignments[day]
-    const matchingShift = branchShifts.value.find((shift) => shift.id === value || shift.label === value)
-    nextAssignments[day] = matchingShift?.id || value
-  })
-
-  assignments.value = { ...nextAssignments }
-  loadedAssignments.value = { ...nextAssignments }
 })
 
 const loadScheduleContext = trackPageLoad(async (user) => {
@@ -666,6 +605,7 @@ const loadScheduleContext = trackPageLoad(async (user) => {
 
 const resetAssignments = () => {
   assignments.value = { ...loadedAssignments.value }
+  protectedDays.value = [...loadedProtectedDays.value]
 }
 
 const getShiftForAssignment = (value) => {
@@ -711,7 +651,7 @@ const saveScheduleWithCapacityCheck = async (scheduleRef, payload) => {
       }
     }
 
-    const selectedScheduleSnapshot = scheduleSnapshots.find((scheduleSnap) => scheduleSnap.id === scheduleRef.id)
+    const selectedScheduleSnapshot = scheduleSnapshots[employees.value.findIndex(employee => employee.id === selectedEmployeeId.value)]
     if (!selectedScheduleSnapshot?.exists()) {
       payload.createdAt = serverTimestamp()
     }
@@ -775,6 +715,7 @@ const saveAssignments = async () => {
     })
 
     loadedAssignments.value = { ...assignments.value }
+    await loadAssignments()
     toast.success('Recurring schedule saved successfully.')
   } catch (error) {
     console.error(error)
@@ -789,13 +730,20 @@ const saveAssignments = async () => {
 }
 
 watch(selectedBranchId, async () => {
+  assignmentLoadVersion++
+  capacityReady.value = false
   await Promise.all([hydrateEmployees(), hydrateBranchShifts(), hydrateCustomRoles()])
+  await loadAssignments()
 })
 
 watch(selectedRole, () => {
   if (!filteredEmployees.value.some((employee) => employee.id === selectedEmployeeId.value)) {
     selectedEmployeeId.value = filteredEmployees.value[0]?.id || ''
   }
+})
+
+watch(selectedEmployeeId, () => {
+  weeklyTargetHours.value = normalizeEmploymentType(selectedEmployee.value?.employmentType) === 'full-time' ? 48 : ''
 })
 
 watch([selectedEmployeeId, selectedWeekStart], async () => {
@@ -815,3 +763,22 @@ onBeforeUnmount(() => {
   }
 })
 </script>
+
+<style scoped>
+.schedule-assignment :deep(.appearance-select) { margin: 0; }
+.schedule-assignment :deep(.appearance-select label), .assignment-field-label { display: block; margin-bottom: 8px; color: #5d4536; font-size: 12px; font-weight: 600; }
+.schedule-assignment :deep(.appearance-select-trigger) { min-height: 44px; border-radius: 9px; line-height: 1.6; }
+.schedule-assignment :deep(.appearance-select-trigger > span) { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.schedule-assignment :deep(.appearance-select-menu li > span) { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.schedule-assignment :deep(.appearance-select-menu) { min-width: 100%; box-shadow: 0 8px 24px #3d281d1a; }
+.schedule-assignment .assignment-day-select { margin-top: 16px; }
+.schedule-assignment input[type=date] { min-height: 44px; border-radius: 9px; color-scheme: light; }
+.assignment-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 8px; min-height: 40px; padding: 10px 15px; border: 1px solid; border-radius: 9px; font-size: 12px; font-weight: 600; line-height: 1.5; transition: background .15s, border-color .15s; }
+.assignment-button-primary { background: #8d5a3b; border-color: #8d5a3b; color: #fffdf9; }
+.assignment-button-primary:hover:not(:disabled) { background: #74462d; border-color: #74462d; }
+.assignment-button-secondary { background: #fffdf9; border-color: #d9b896; color: #70482e; }
+.assignment-button-secondary:hover:not(:disabled) { background: #f8eddc; border-color: #b78055; }
+.assignment-button-small { min-height: 34px; padding: 7px 11px; font-size: 11px; }
+.assignment-button:disabled { cursor: not-allowed; opacity: .5; }
+.assignment-button:focus-visible { outline: 2px solid #b78055; outline-offset: 3px; }
+</style>

@@ -42,6 +42,19 @@ export const buildClientContractDocument = (policy = {}, options = {}) => {
   return { version: 1, appearance: normalizeContractAppearance(policy.clientContract?.appearance), title: 'Client treatment agreement', intro: 'Review your booked service, schedule, price, and the applicable terms below before signing.', sections, acknowledgement: 'By signing, I confirm that I have reviewed this agreement and accept the applicable terms for my appointment.' }
 }
 
+// Booking acceptance covers commercial terms only. It never substitutes for
+// the recipient's separate treatment agreement or includes clinical free text.
+export const buildBookingTermsDocument = (policy = {}, options = {}) => ({
+  version: 1,
+  appearance: normalizeContractAppearance(policy.clientContract?.appearance),
+  title: 'Booking and payment agreement',
+  intro: 'The person arranging this booking accepts the applicable booking and payment terms under their own name. Walk-in appointments require full payment for each appointment.',
+  sections: clientContractPolicies(policy, options)
+    .filter(({ key }) => ['paymentPolicy', 'cancellationPolicy', 'reschedulePolicy', 'noShowPolicy'].includes(key))
+    .map(({ title, text }) => ({ title, text })),
+  acknowledgement: 'I accept the displayed prices, schedules, payment, cancellation, rescheduling, and no-show terms for this booking. My signature does not provide consent to treatment for another person. The service recipient must sign their own treatment agreement before check-in.',
+})
+
 export const buildClientContract = (policy = {}, options = {}) => {
   const sections = ['Client treatment agreement', 'Review your booked service, schedule, price, and the applicable terms below before signing.']
   if (options.serviceName) sections.push(`Booked service\n${String(options.serviceName).trim()}`)

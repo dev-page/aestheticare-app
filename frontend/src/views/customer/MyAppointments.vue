@@ -47,7 +47,7 @@
                   <p class="panel-kicker">{{ appt.clinic }}</p>
                   <h3 class="unpaid-appointment-title">{{ formatAppointmentServices(appt) }}</h3>
                 </div>
-                <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
+                <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
               </div>
 
               <dl class="unpaid-appointment-details">
@@ -134,16 +134,18 @@
                     <span class="table-secondary">{{ appt.meetLink ? 'Meeting link available' : 'No meeting link yet' }}</span>
                   </td>
                   <td data-label="Status">
-                    <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
+                    <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
                   </td>
                   <td data-label="Actions">
                     <div class="appointment-menu">
                       <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id, $event)"><span aria-hidden="true">&#8943;</span></button>
                       <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" :style="actionMenuStyle" role="menu" aria-label="Appointment actions">
                       <p class="appointment-menu-label">Appointment actions</p>
-                      <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => openMeetLink(appt))">Enter waiting room &amp; join call</button>
+                      <button type="button" class="appointment-menu-item" @click="runAction(() => selectedOnlineConsultation = appt)">Consultation controls / Report a problem</button>
+                      <button v-if="!appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt) || appt.approvalStatus !== 'Approved' || appt.contract?.status !== 'signed' || !initialPaymentReceived(appt)" @click="runAction(() => verifyServiceKey(appt))">Join Consultation - submit service code</button>
+                      <button v-if="appt.meetLink && onlineAccessOpen(appt)" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => openMeetLink(appt))">Enter waiting room &amp; join call</button>
                       <button v-if="appt.status === 'Ongoing' && !appt.consultationClientEndedAt" type="button" class="appointment-menu-item" @click="runAction(() => endConsultationParticipation(appt))">End my consultation participation</button>
-                      <button v-if="appt.meetLink" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => copyMeetLink(appt.meetLink))">Copy Link</button>
+                      <button v-if="appt.meetLink && onlineAccessOpen(appt)" type="button" class="appointment-menu-item" @click="runAction(() => copyMeetLink(appt))">Copy Link</button>
                       <button
                         v-if="canRequestCancellation(appt)"
                         type="button"
@@ -210,7 +212,7 @@
                   <td data-label="Date">{{ appt.date }}</td>
                   <td data-label="Time">{{ appt.time }}</td>
                   <td data-label="Status">
-                    <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
+                    <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
                   </td>
                   <td data-label="Actions">
                     <div class="table-actions">
@@ -306,7 +308,7 @@
                   <td data-label="Date">{{ appt.date }}</td>
                   <td data-label="Time">{{ appt.time }}</td>
                   <td data-label="Status">
-                    <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span>
+                    <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
                   </td>
                   <td data-label="Actions">
                     <div class="table-actions">
@@ -510,6 +512,7 @@
         </div>
       </div>
     </main>
+    <OnlineConsultationControls v-if="selectedOnlineConsultation" :key="selectedOnlineConsultation.id" :appointment="selectedOnlineConsultation" customer auto-open @close="selectedOnlineConsultation = null" />
     <BookingContractModal
       :visible="showContractModal"
       :appointment="selectedContractAppointment"
@@ -519,7 +522,7 @@
     <ServiceKeyVerificationModal
       :visible="showServiceKeyModal"
       :loading="serviceKeyVerifying"
-      description="Enter the service key you shared with the practitioner."
+      :description="isOnlineConsultationAppointment(selectedServiceKeyAppointment) ? 'Enter your emailed service code to create the Google Meet link automatically. The timer starts when the practitioner starts the consultation.' : 'Enter the service key for your appointment.'"
       @close="closeServiceKeyModal"
       @submit="submitServiceKey"
     />
@@ -527,10 +530,14 @@
 </template>
 
 <script setup>
+import OnlineConsultationClock from '@/components/common/OnlineConsultationClock.vue'
+import OnlineConsultationControls from '@/components/common/OnlineConsultationControls.vue'
+import { onlineAccessOpen } from '../../../../shared/onlineConsultation.js'
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { paymentDue, initialPaymentReceived } from '../../../../backend/otp-backend/bookingWorkflow.js'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+const selectedOnlineConsultation = ref(null)
 import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
@@ -1208,6 +1215,7 @@ const bookFollowUp = (appointment) => {
 }
 
 const openMeetLink = async (appointment) => {
+  if (!onlineAccessOpen(appointment)) { toast.info('Consultation access is closed. Contact the clinic for review.'); return }
   const url = String(appointment.meetLink || '').trim()
   if (!url) return
   const callWindow = window.open('about:blank', '_blank')
@@ -1223,7 +1231,9 @@ const endConsultationParticipation = async appointment => {
   catch (error) { toast.error(error.message) }
 }
 
-const copyMeetLink = async (meetLink) => {
+const copyMeetLink = async (appointment) => {
+  if (!onlineAccessOpen(appointment)) { toast.info('Consultation access is closed.'); return }
+  const meetLink = appointment.meetLink
   const url = String(meetLink || '').trim()
   if (!url) return
 
@@ -1391,7 +1401,7 @@ const startAppointmentsListener = (userId) => {
         return {
           id: snap.id,
           ...data,
-          ...(meetingSnap.exists() ? meetingSnap.data() : {}),
+          ...(meetingSnap.exists() && meetingSnap.data().hostVerified && data.consultationCodeVerifiedAt && meetingSnap.data().practitionerId === (data.assignedPractitionerId || data.practitionerId) && Date.parse(meetingSnap.data().scheduledStartAt) === Date.parse(`${data.date}T${data.time}+08:00`) ? meetingSnap.data() : { meetLink: '' }),
           clinic: clinicMap.get(data.branchId)?.name || 'Clinic',
         }
       }))
@@ -1640,8 +1650,15 @@ const submitServiceKey = async (serviceKey) => {
   if (!appointment?.id) return
   serviceKeyVerifying.value = true
   try {
-    await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/verify-service-key`, { serviceKey })
-    toast.success('Service key verified.')
+    if (isOnlineConsultationAppointment(appointment)) {
+      const result = await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/consultation-access`, { serviceKey })
+      appointment.meetLink = result.meetLink
+      appointment.hostEmail = result.hostEmail
+      toast.success('Code verified. Your Google Meet link is ready. Select Join Call to enter.')
+    } else {
+      await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/verify-service-key`, { serviceKey })
+      toast.success('Service key verified.')
+    }
     closeServiceKeyModal()
   } catch (error) {
     console.error(error)

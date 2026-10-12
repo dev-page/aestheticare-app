@@ -1,7 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildClientContract, buildClientContractDocument, clientContractPolicies, normalizeContractAppearance } from './clientContract.js'
+import { buildClientContract, buildClientContractDocument, buildBookingTermsDocument, clientContractPolicies, normalizeContractAppearance } from './clientContract.js'
 const policy = () => ({ paymentPolicyEnabled: true, paymentPolicy: 'A 50% deposit is required.', cancellationPolicyEnabled: false, cancellationPolicy: 'Disabled cancellation terms.', reschedulePolicyEnabled: true, reschedulePolicy: 'One change is allowed.', walkInPolicyEnabled: true, walkInPolicy: 'Pay before treatment.', productReturnPolicyEnabled: true, productReturnPolicy: 'Retired product terms.', clientContract: { configured: true, additionalTerms: 'Tell the practitioner about allergies.' } })
+
+test('booking acceptance excludes clinical terms and respects enabled branch financial policies', () => {
+  const doc = buildBookingTermsDocument(policy(), { source: 'walk_in', branch: { enforcedPolicyKeys: ['paymentPolicy', 'walkInPolicy'] }, serviceTerms: 'Treatment risk' })
+  assert.equal(doc.title, 'Booking and payment agreement')
+  assert.deepEqual(doc.sections.map(section => section.title), ['Payment Policy'])
+  assert.doesNotMatch(JSON.stringify(doc), /allergies|Treatment risk|Pay before treatment|Retired product/)
+  assert.match(doc.acknowledgement, /does not provide consent/)
+})
 test('Client agreements include enabled service policies and custom terms, with disabled and product rules omitted', () => {
   const terms = buildClientContract(policy(), { source: 'customer_booking_request', serviceName: 'Facial', serviceTerms: 'Facial aftercare.' })
   assert.match(terms, /50% deposit/)

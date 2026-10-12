@@ -48,32 +48,7 @@
     </div>
   </div>
 
-  <Modal
-    :isOpen="showNotificationModal"
-    :panelClass="isCustomerNotificationTheme ? 'employee-notification-modal-panel employee-notification-modal-panel-customer' : 'employee-notification-modal-panel employee-notification-modal-panel-staff'"
-    :bodyClass="isCustomerNotificationTheme ? 'employee-notification-modal-body employee-notification-modal-body-customer' : 'employee-notification-modal-body employee-notification-modal-body-staff'"
-    @close="closeNotificationModal"
-  >
-    <template #header>
-      <h2 :class="isCustomerNotificationTheme ? 'employee-notification-modal-heading employee-notification-modal-heading-customer' : 'employee-notification-modal-heading employee-notification-modal-heading-staff'">Notification</h2>
-    </template>
-    <template #body>
-      <div v-if="selectedNotification" :class="isCustomerNotificationTheme ? 'employee-notification-detail employee-notification-detail-customer' : 'employee-notification-detail employee-notification-detail-staff'">
-        <section class="employee-notification-field">
-          <p class="employee-notification-modal-label">Title</p>
-          <p class="employee-notification-modal-text mt-1">{{ selectedNotification.title || 'Notification' }}</p>
-        </section>
-        <section class="employee-notification-field">
-          <p class="employee-notification-modal-label">Description</p>
-          <p class="employee-notification-modal-text mt-1 whitespace-pre-line">{{ selectedNotification.message || '-' }}</p>
-        </section>
-        <section class="employee-notification-field employee-notification-field-date">
-          <p class="employee-notification-modal-label">Date</p>
-          <p class="employee-notification-modal-text mt-1">{{ selectedNotification.createdLabel }}</p>
-        </section>
-      </div>
-    </template>
-  </Modal>
+  <NotificationDetailsDialog :is-open="showNotificationModal" :notification="selectedNotification" :user-type="userTypeValue" :role="roleValue" @close="closeNotificationModal" />
 </template>
 
 <script setup>
@@ -82,7 +57,7 @@ import { useRouter } from 'vue-router'
 import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
-import Modal from '@/components/common/Modal.vue'
+import NotificationDetailsDialog from '@/components/common/NotificationDetailsDialog.vue'
 
 const props = defineProps({
   title: {
@@ -183,10 +158,6 @@ let unsubscribeUser = null
 let unsubscribeRole = null
 let resizeHandler = null
 
-const isCustomerNotificationTheme = computed(() =>
-  String(userTypeValue.value || '').trim().toLowerCase() === 'customer'
-  || String(roleValue.value || '').trim().toLowerCase() === 'customer'
-)
 
 const formatDate = (value) => {
   if (!value) return '-'
@@ -280,6 +251,10 @@ const goToNotifications = () => {
 
 const openNotificationModal = async (item) => {
   if (!item) return
+  selectedNotification.value = item
+  showNotifications.value = false
+  showNotificationModal.value = true
+  if (item.read) return
   if (item.isWelcome) {
     try {
       await updateDoc(doc(db, 'users', userId.value), {
@@ -291,13 +266,22 @@ const openNotificationModal = async (item) => {
           read: true
         }
       }
-    } catch (_error) {
-      // ignore
+      mergeNotifications(userDocsCache.value, roleDocsCache.value)
+    } catch (error) {
+      console.warn('Unable to mark welcome notification as read:', error)
     }
+    return
   }
-  selectedNotification.value = item
-  showNotifications.value = false
-  showNotificationModal.value = true
+  try {
+    await updateDoc(doc(db, 'notifications', item.id), { read: true })
+    // Keep both recipient caches in sync when a notification appears in both queries.
+    const markRead = notification => notification.id === item.id ? { ...notification, read: true } : notification
+    userDocsCache.value = userDocsCache.value.map(markRead)
+    roleDocsCache.value = roleDocsCache.value.map(markRead)
+    mergeNotifications(userDocsCache.value, roleDocsCache.value)
+  } catch (error) {
+    console.warn('Unable to mark notification as read:', error)
+  }
 }
 
 const closeNotificationModal = () => {
@@ -535,130 +519,6 @@ onUnmounted(() => {
 .notifications-list::-webkit-scrollbar { width: 8px; }
 .notifications-list::-webkit-scrollbar-track { background: #fff4e5; }
 .notifications-list::-webkit-scrollbar-thumb { background: #c79a6f; border-radius: 999px; }
-
-:deep(.employee-notification-modal-panel) {
-  width: 100%;
-  max-width: 36rem;
-  border-radius: 1rem;
-}
-
-:deep(.employee-notification-modal-panel-customer) {
-  background: #fff7e8;
-  color: #4f3527;
-  border: 1px solid #e8c99a;
-}
-
-:deep(.employee-notification-modal-panel-staff) {
-  background: #28160e;
-  color: #fff0e1;
-  border: 1px solid rgba(164, 102, 61, 0.62);
-}
-
-:deep(.employee-notification-modal-body) {
-  padding: 1rem;
-}
-
-:deep(.employee-notification-modal-body-customer) {
-  background: #fff7e8;
-  color: #4f3527;
-}
-
-:deep(.employee-notification-modal-body-staff) {
-  background: #28160e;
-  color: #fff0e1;
-}
-
-.employee-notification-modal-heading {
-  font-size: 1.125rem;
-  font-weight: 700;
-}
-
-.employee-notification-modal-heading-customer,
-.employee-notification-detail-customer .employee-notification-modal-text {
-  color: #4f3527;
-}
-
-.employee-notification-modal-heading-staff,
-.employee-notification-detail-staff .employee-notification-modal-text {
-  color: #fff0e1;
-}
-
-.employee-notification-detail {
-  display: grid;
-  gap: 0.9rem;
-  font-size: 0.875rem;
-}
-
-.employee-notification-modal-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.employee-notification-detail-customer .employee-notification-modal-label {
-  color: #89684d;
-}
-
-.employee-notification-detail-staff .employee-notification-modal-label {
-  color: #d9b99c;
-}
-
-/* Modal teleports to body, outside this component's scoped-style boundary.
-   These global rules keep notification details opaque and readable for every
-   portal theme. */
-:global(.employee-notification-modal-panel) {
-  width: min(92vw, 36rem) !important;
-  max-width: 36rem !important;
-  overflow: hidden;
-  border-radius: 1.25rem !important;
-  box-shadow: 0 24px 64px rgba(25, 13, 7, .34) !important;
-}
-
-:global(.employee-notification-modal-panel > div:first-child) {
-  min-height: 4.5rem;
-  padding: 1.1rem 1.25rem !important;
-}
-
-:global(.employee-notification-modal-panel > div:first-child button) {
-  border-radius: .7rem;
-  padding: .35rem;
-}
-
-:global(.employee-notification-modal-panel-customer),
-:global(.employee-notification-modal-panel-customer > div:first-child),
-:global(.employee-notification-modal-body-customer) {
-  border-color: #e6c196 !important;
-  background: #fff8ed !important;
-  color: #4b3021 !important;
-}
-
-:global(.employee-notification-modal-panel-customer > div:first-child button) {
-  color: #7c563e !important;
-}
-
-:global(.employee-notification-modal-panel-staff),
-:global(.employee-notification-modal-panel-staff > div:first-child),
-:global(.employee-notification-modal-body-staff) {
-  border-color: rgba(166, 106, 44, .72) !important;
-  background: #26160f !important;
-  color: #f8eee5 !important;
-}
-
-:global(.employee-notification-modal-panel-staff > div:first-child button) {
-  color: #e7c5a8 !important;
-}
-
-:global(.employee-notification-modal-body) {
-  padding: 1.25rem !important;
-}
-
-.employee-notification-detail { gap: .75rem; }
-.employee-notification-field { border: 1px solid rgba(181, 127, 92, .28); border-radius: .9rem; padding: .9rem 1rem; }
-.employee-notification-field-date { width: fit-content; min-width: 12rem; }
-.employee-notification-modal-text { margin-bottom: 0; line-height: 1.55; }
-.employee-notification-detail-customer .employee-notification-field { background: #fffdf8; }
-.employee-notification-detail-staff .employee-notification-field { border-color: rgba(166, 106, 44, .45); background: #1c110c; }
 
 .employee-topbar-btn {
   height: 40px;

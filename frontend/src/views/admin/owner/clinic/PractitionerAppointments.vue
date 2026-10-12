@@ -81,9 +81,10 @@
                     <AppointmentTeam :appointment="appointment" />
                     <button v-if="appointment.source === 'walk_in' && appointment.paymentStatus === 'Paid'" @click="contractAppointment = appointment" class="rounded bg-indigo-700 px-3 py-2 text-white">{{ appointment.contract?.status === 'signed' ? 'View contract' : 'Client review & e-sign' }}</button>
                     <button v-if="appointment.contract?.status === 'signed' && !appointment.workerKeyVerified && ['Paid', 'Scheduled'].includes(appointment.status)" :disabled="actionBusy" @click="manualCheckIn(appointment)" class="rounded bg-amber-700 px-3 py-2 text-white">Check in without reception</button>
-                    <button v-if="['Checked in', 'Ready to Start'].includes(appointment.status) || (appointment.source === 'walk_in' && appointment.status === 'Paid' && appointment.workerKeyVerified && appointment.contract?.status === 'signed')" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can start the service." @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50">Start Service</button>
+                    <button v-if="appointment.consultationMode !== 'online' && (['Checked in', 'Ready to Start'].includes(appointment.status) || (appointment.source === 'walk_in' && appointment.status === 'Paid' && appointment.workerKeyVerified && appointment.contract?.status === 'signed'))" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can start the service." @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50">Start Service</button>
                     <button v-if="canMarkNoShow(appointment)" :disabled="actionBusy" @click="markNoShow(appointment)" class="rounded bg-rose-700 px-3 py-2 text-white">Mark No-show</button>
-                    <button v-if="appointment.status === 'Ongoing'" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can complete their work." @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white disabled:opacity-50">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
+                    <router-link v-if="appointment.type === 'Consultation' &amp;&amp; appointment.consultationMode === 'online'" :to="{ path: '/crm/appointments', query: { tab: 'queue', mode: 'online' } }" class="rounded border border-amber-300 px-3 py-2">Open Online Consultation</router-link>
+                    <button v-if="appointment.status === 'Ongoing' && appointment.consultationMode !== 'online'" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can complete their work." @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white disabled:opacity-50">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
                     <button
                       v-if="canRecommendFollowUp(appointment)"
                       type="button"
@@ -164,6 +165,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const selectedServiceKeyAppointment = ref(null)
     const canReviewConsultationClearances = computed(() => hasPermission('appointments:review'))
     const bookingAction = async (appointment, action, serviceKey = '', extra = {}) => {
+      if (appointment.type === 'Consultation' && appointment.consultationMode === 'online') { toast.info('Use Online Consultation for verified attendance, timing, and consultation notes.'); return }
       if (actionBusy.value) return
       if (action === 'key' && !serviceKey) return false
       actionBusy.value = true

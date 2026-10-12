@@ -5,7 +5,7 @@ const serviceIdFor = appointmentServiceId
 const nameFor = user => user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Practitioner'
 
 export const prepareTeamStart = async (tx, db, appointment, id) => {
-  const leadId = appointment.practitionerId || appointment.assignedPractitionerId
+  const leadId = appointment.assignedPractitionerId || appointment.practitionerId
   const team = appointment.treatmentTeam?.length ? appointment.treatmentTeam : [{ employeeId: leadId, responsibility: 'lead' }]
   const requirements = normalizeStaffing(appointment.staffingRequirements)
   const members = [], terms = []
@@ -108,7 +108,7 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
     check(!appointment.startedAt && !closed(appointment) && !appointment.isGroupParent && !appointment.isBookingOrderParent, 'Team assignments are locked once the service starts or closes.')
     const requested = req.body?.members
     check(Array.isArray(requested) && requested.length >= 1 && requested.length <= 8 && new Set(requested.map(row => row.employeeId)).size === requested.length, 'Choose one to eight different team members.', 400)
-    check(requested.filter(row => row.responsibility === 'lead').length === 1 && requested.find(row => row.responsibility === 'lead').employeeId === (appointment.practitionerId || appointment.assignedPractitionerId), 'Keep the booked practitioner as the lead.', 400)
+    check(requested.filter(row => row.responsibility === 'lead').length === 1 && requested.find(row => row.responsibility === 'lead').employeeId === (appointment.assignedPractitionerId || appointment.practitionerId), 'Keep the booked practitioner as the lead.', 400)
     const range = getBookingRange(appointment)
     check(range, 'The appointment needs a valid schedule.')
     const lock = db.collection('bookingResourceLocks').doc(appointment.branchId)
@@ -167,6 +167,8 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
   })
   route('get', '/appointments/:id/staff-earnings', async req => {
     const appointment = (await db.collection('appointments').doc(req.params.id).get()).data()
+    if (appointment?.type === 'Consultation' && appointment.consultationMode === 'online') check(String(appointment.treatmentNotes || '').trim().length >= 10, 'Save consultation documentation before approving earnings.')
+    check(appointment?.consultationDispute?.status !== 'Open', 'Resolve the customer consultation report before approving earnings.')
     check(appointment?.status === 'Completed', 'Choose a completed appointment.')
     await authorizeClinicAction(req.user.uid, appointment.branchId, 'payroll:view')
     const terms = (await db.collection('appointmentStaffTerms').doc(req.params.id).get()).data()

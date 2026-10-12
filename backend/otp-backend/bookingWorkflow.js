@@ -1,4 +1,19 @@
 export const normalized = (value) => String(value || '').trim().toLowerCase()
+// Access evidence belongs to one schedule and assigned practitioner only.
+export const resetAppointmentAccess = () => ({
+  checkedInAt: null, checkedInById: null, manualCheckInReason: null,
+  workerKeyVerified: false, workerKeyVerifiedAt: null, customerKeyVerified: false,
+  clientJoinedAt: null, practitionerJoinedAt: null,
+  consultationCodeVerifiedAt: null, consultationCodeVerifiedBy: null,
+  consultationAccessVersion: null,
+  consultationWindowStartAt: null, consultationWindowEndAt: null,
+  consultationClientEndedAt: null, consultationEndedAt: null,
+  consultationEndedById: null, consultationWindowEndedAt: null,
+  consultationEndedByTimer: false, consultationActualDurationSeconds: null,
+  consultationNeedsReview: false, consultationPresenceVerifiedAt: null, consultationPresenceVerifiedBy: null,
+  consultationInterruption: null, consultationInterruptions: [], consultationExtensionSeconds: 0,
+  consultationConfirmationReminderAt: null,
+})
 export const cents = (value) => Math.round(Number(value || 0) * 100)
 export const initialPayment = (appointment) => {
   const total = cents(appointment.totalAmount ?? appointment.amount)

@@ -1,3 +1,5 @@
+import { appointmentStaffIds } from '../../shared/practitionerTeam.js'
+import { onlineWindow, onlineAccessOpen } from '../../shared/onlineConsultation.js'
 import crypto from 'node:crypto'
 import { prepareTeamStart } from './practitionerTeams.js'
 import { normalized, initialPaymentReceived, balanceSettled, afterPaymentStatus, assertWorkflow as check } from './bookingWorkflow.js'
@@ -14,17 +16,9 @@ const getServiceKeyWindow = (appointment) => {
   return { opensAt: new Date(start.getTime() - 30 * 60 * 1000), closesAt: end }
 }
 
-const getOnlineConsultationWindow = (appointment) => {
-  const date = String(appointment.date || '').trim()
-  const time = String(appointment.time || '').trim()
-  if (!date || !time) return null
-  const startsAt = new Date(`${date}T${time}+08:00`)
-  if (Number.isNaN(startsAt.getTime())) return null
-  const durationMinutes = Math.min(240, Math.max(5, Number(
-    appointment.consultationDurationMinutes || appointment.durationMinutes || appointment.totalServiceDurationMinutes || 30
-  )))
-  const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
-  return { startsAt, opensAt: new Date(startsAt.getTime() - 5 * 60 * 1000), endsAt, durationMinutes }
+const getOnlineConsultationWindow = appointment => {
+  const window = onlineWindow(appointment)
+  return Number.isFinite(window.start.getTime()) ? { ...window, startsAt: window.start, endsAt: window.end, durationMinutes: window.duration } : null
 }
 
 export const registerBookingMilestones = (app, { admin, requireAuth, authorizeClinicAction, sendServiceCode = async () => {} }) => {
@@ -53,7 +47,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
         const appointment = snapshot.data()
         const walkIn = appointment.source === 'walk_in'
         const customer = !walkIn && appointment.customerId === req.user.uid
-        const worker = [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo].includes(req.user.uid)
+        const worker = (appointment.assignedPractitionerId || appointment.practitionerId || appointment.staffId || appointment.assignedTo) === req.user.uid
         const online = normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online'
         check(!appointment.isGroupParent && !appointment.isBookingOrderParent, 'Use the individual appointment for service actions.')
         let checkInStaff = false
@@ -130,10 +124,14 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
           const transition = req.body?.action
           if (transition === 'join_consultation') {
             check(online && (customer || worker), 'Only consultation participants may enter the waiting room.', 403)
+            check(appointment.consultationCodeVerifiedAt && appointment.consultationCodeVerifiedBy === appointment.customerId, 'The customer must submit their service code before joining.', 409)
+            const meeting = (await tx.get(db.collection('appointmentMeetings').doc(ref.id))).data()
+            const hostId = appointment.assignedPractitionerId || appointment.practitionerId
+            check(meeting?.hostVerified && meeting.practitionerId === hostId && meeting.customerId === appointment.customerId && meeting.scheduledStartAt === new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString(), 'The meeting must be generated for the current assigned practitioner and schedule.', 409)
             check(appointment.approvalStatus === 'Approved' && initialPaymentReceived(appointment) && normalized(appointment.contract?.status) === 'signed', 'Approval, payment, and a signed contract are required.')
             check(['paid', 'checked in', 'ready to start', 'scheduled', 'ongoing'].includes(status), 'This consultation is closed.')
             const window = getOnlineConsultationWindow(appointment)
-            check(window && new Date() >= window.opensAt && new Date() <= window.endsAt, 'Enter the waiting room within the scheduled consultation window.')
+            check(window && onlineAccessOpen(appointment), 'This consultation is closed or its arrival grace period has ended.')
             const field = customer ? 'clientJoinedAt' : 'practitionerJoinedAt'
             if (!appointment[field]) update[field] = timestamp
             update.status = appointment.status
@@ -155,22 +153,44 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
               ? 'Clinic approval, the signed consultation contract, and the required payment are needed before starting the online consultation.'
               : 'Reception must check the customer in after payment and signing.')
             if (onlineConsultation) {
+              check(appointment.consultationCodeVerifiedAt && appointment.consultationCodeVerifiedBy === appointment.customerId, 'The customer must verify their service code before consultation starts.', 409)
               check(appointment.clientJoinedAt && appointment.practitionerJoinedAt, 'Both participants must enter the consultation waiting room before starting.')
               const meetingSnap = await tx.get(db.collection('appointmentMeetings').doc(ref.id))
               check(meetingSnap.exists && String(meetingSnap.data()?.meetLink || '').trim(), 'Create the system Google Meet link before starting this consultation.')
+              const meeting = meetingSnap.data()
+              check(meeting.hostVerified && meeting.practitionerId === (appointment.assignedPractitionerId || appointment.practitionerId) && meeting.customerId === appointment.customerId && meeting.scheduledStartAt === new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString(), 'The meeting must belong to the current assigned practitioner and schedule.', 409)
               const window = getOnlineConsultationWindow(appointment)
               check(window, 'This consultation needs a valid scheduled date and time.')
               const now = new Date()
               check(now >= window.opensAt, 'This consultation can be started only within 5 minutes of its scheduled time.')
-              check(now <= window.endsAt, 'The official consultation window has already ended.')
-              update.consultationWindowStartAt = window.startsAt.toISOString()
-              update.consultationWindowEndAt = window.endsAt.toISOString()
+              check(now < window.arrivalDeadline, 'The arrival grace period ended. Contact the clinic for review and rescheduling.')
+              check(req.body?.participantVerified === true, 'Confirm the customer is present in Google Meet and their identity is verified before starting.', 400)
+              const actualEnd = new Date(now.getTime() + window.durationMinutes * 60000)
+              await tx.get(db.collection('bookingResourceLocks').doc(appointment.branchId))
+              const peers = await tx.get(db.collection('appointments').where('branchId', '==', appointment.branchId))
+              const teamIds = appointmentStaffIds(appointment)
+              check(!peers.docs.some(doc => {
+                const peer = doc.data()
+                if (doc.id === ref.id || peer.isGroupParent || peer.isBookingOrderParent || !['paid', 'scheduled', 'ready to start', 'checked in', 'ongoing', 'approved', 'contract pending', 'awaiting payment'].includes(normalized(peer.status)) || !appointmentStaffIds(peer).some(id => teamIds.includes(id))) return false
+                const start = new Date(`${peer.date}T${peer.time}+08:00`)
+                const end = peer.endTime ? new Date(`${peer.date}T${peer.endTime}+08:00`) : new Date(start.getTime() + Number(peer.totalServiceDurationMinutes || 60) * 60000)
+                return start < actualEnd && end > now
+              }), 'A full consultation now overlaps another team appointment. Ask the clinic to review and reschedule.')
+              const reservedEnd = window.reservedEnd > actualEnd ? window.reservedEnd : actualEnd
+              const localEnd = new Date(reservedEnd.getTime() + 8 * 3600000).toISOString()
+              check(localEnd.slice(0, 10) === appointment.date, 'The full consultation must finish within the booked date.')
+              update.endTime = localEnd.slice(11, 16)
+              update.consultationPresenceVerifiedAt = timestamp
+              update.consultationPresenceVerifiedBy = req.user.uid
+              update.consultationWindowStartAt = now.toISOString()
+              update.consultationWindowEndAt = new Date(now.getTime() + window.durationMinutes * 60000).toISOString()
               update.consultationDurationMinutes = window.durationMinutes
             }
             const resourceRefs = (appointment.resources || []).filter((r) => r.kind === 'material').map((r) => ({ ...r, ref: db.collection('inventoryItems').doc(r.id) }))
             const stocks = []
             for (const resource of resourceRefs) stocks.push({ resource, snapshot: await tx.get(resource.ref) })
             for (const { resource, snapshot: stock } of stocks) check(stock.exists && Number(stock.data().currentStock) >= resource.quantity, 'A required material is no longer available. Contact the clinic.')
+            if (onlineConsultation) tx.set(db.collection('bookingResourceLocks').doc(appointment.branchId), { updatedAt: timestamp })
             tx.set(teamStart.termsRef, { ...teamStart.terms, capturedAt: timestamp })
             update.treatmentTeam = teamStart.members
             for (const { resource, snapshot: stock } of stocks) tx.update(resource.ref, { currentStock: Number(stock.data().currentStock) - resource.quantity, updatedAt: timestamp })
@@ -185,11 +205,12 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             if (onlineConsultation) {
               const window = getOnlineConsultationWindow(appointment)
               check(window, 'This consultation needs a valid scheduled window.')
+              check(String(req.body?.treatmentNotes || '').trim().length >= 10, 'Save consultation notes and recommendations (at least 10 characters).', 400)
               update.consultationEndedAt = appointment.consultationEndedAt || timestamp
               update.consultationEndedById = appointment.consultationEndedById || req.user.uid
               const end = appointment.consultationEndedAt?.toDate?.() || appointment.consultationEndedAt || new Date()
               update.consultationActualDurationSeconds = Math.max(0, Math.floor((new Date(end).getTime() - new Date(appointment.startedAt?.toDate?.() || appointment.startedAt).getTime()) / 1000))
-              update.consultationNeedsReview = update.consultationActualDurationSeconds < 60
+              update.consultationNeedsReview = Boolean(appointment.consultationNeedsReview) || update.consultationActualDurationSeconds < window.durationMinutes * 60 * 0.8 || !String(req.body?.treatmentNotes || '').trim()
             }
             update.treatmentNotes = String(req.body?.treatmentNotes || '').trim().slice(0, 5000)
             update.aftercareInstructions = String(req.body?.aftercareInstructions || '').trim().slice(0, 5000)
@@ -207,12 +228,13 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             update.consultationEndedById = appointment.consultationEndedById || req.user.uid
             const actualEnd = new Date(appointment.consultationEndedAt?.toDate?.() || appointment.consultationEndedAt || window.endsAt)
             update.consultationActualDurationSeconds = Math.max(0, Math.floor((actualEnd.getTime() - new Date(appointment.startedAt?.toDate?.() || appointment.startedAt).getTime()) / 1000))
-            update.consultationNeedsReview = !appointment.clientJoinedAt || !appointment.practitionerJoinedAt || update.consultationActualDurationSeconds < 60
+            update.consultationNeedsReview = Boolean(appointment.consultationNeedsReview) || !appointment.clientJoinedAt || !appointment.practitionerJoinedAt || update.consultationActualDurationSeconds < 60
             if (!appointment.treatmentNotes) update.consultationNeedsReview = true
-            update.status = 'Awaiting Customer Confirmation'
+            update.status = appointment.consultationDispute?.status === 'Open' ? 'Consultation Review' : 'Awaiting Customer Confirmation'
           } else if (transition === 'customer_complete') {
             check(customer, 'Only the customer can confirm completion.', 403)
             check(appointment.workerCompleted && !appointment.customerCompleted && ['awaiting customer confirmation', 'balance due'].includes(status), 'The worker must finish the service first, and completion can only be confirmed once.')
+            check(!online || appointment.consultationDispute?.status !== 'Open', 'The clinic must review your reported problem before completion.')
             update.customerCompleted = true; update.customerCompletedAt = timestamp
             update.status = balanceSettled(appointment) ? 'Completed' : 'Balance Due'
           } else check(false, 'Invalid booking action.', 400)
@@ -251,7 +273,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
         if (appointment.bookingId && !appointment.isGroupRecipient && !appointment.bookingOrderId && !appointment.treatmentPlanAppointmentId) tx.set(db.collection('bookings').doc(appointment.bookingId), { status: update.status, updatedAt: timestamp }, { merge: true })
         const recipientUserId = customer ? appointment.practitionerId || appointment.assignedPractitionerId : appointment.customerId
         if (recipientUserId && !walkIn) tx.set(db.collection('notifications').doc(), { recipientUserId, title: 'Booking updated', message: `${appointment.service || 'Your booking'}: ${update.status}.`, link: customer ? '/clinical/appointments' : '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
-        return { appointmentId: ref.id, status: update.status, contract: update.contract || appointment.contract, ...(action === 'sign' ? { codeDelivery: { email: appointment.customerEmail, serviceKey: update.serviceKey, date: appointment.date, time: appointment.time } } : {}) }
+        return { appointmentId: ref.id, ...(update.consultationWindowEndAt ? { consultationWindowEndAt: update.consultationWindowEndAt, consultationWindowStartAt: update.consultationWindowStartAt } : {}), status: update.status, contract: update.contract || appointment.contract, ...(action === 'sign' ? { codeDelivery: { email: appointment.customerEmail, serviceKey: update.serviceKey, date: appointment.date, time: appointment.time } } : {}) }
       })
       if (result.codeDelivery) {
         await sendServiceCode(result.codeDelivery).catch(error => console.warn('Service code email failed:', error.message))

@@ -1,3 +1,4 @@
+import { onlinePolicy } from '../../shared/onlineConsultation.js'
 import { assertWorkflow as check, normalized, resourceConflict } from './bookingWorkflow.js'
 import crypto from 'node:crypto'
 import { normalizeStaffing, appointmentStaffIds } from '../../shared/practitionerTeam.js'
@@ -75,7 +76,12 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const sessionIntervalDays = totalSessions > 1
     ? Math.max(0, ...services.map((service) => Math.min(365, Math.max(0, Number(service.sessionIntervalDays || 0)))))
     : 0
-  const range = getBookingRange({ ...reservation, endTime: '', totalServiceDurationMinutes: duration })
+  const isOnline = normalized(services[0].postType) === 'consultation' && normalized(services[0].consultationMode || 'online') === 'online'
+  const previous = isOnline && appointmentId ? (await tx.get(db.collection('appointments').doc(appointmentId))).data() : null
+  const consultationPolicy = isOnline ? onlinePolicy(previous?.consultationPolicy || services[0].consultationPolicy) : null
+  if (isOnline) check(Number.isInteger(duration) && duration >= 5 && duration <= 240, 'Online consultation duration must be between 5 and 240 minutes.', 400)
+  const reservedDuration = duration + (consultationPolicy?.bufferMinutes || 0)
+  const range = getBookingRange({ ...reservation, endTime: '', totalServiceDurationMinutes: reservedDuration })
   check(range, 'Choose a valid appointment time.', 400)
   const day = String(reservation.date || '')
   const dayDate = new Date(`${day}T00:00:00+08:00`)
@@ -87,6 +93,10 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const worker = await tx.get(db.collection('users').doc(workerId))
   check(worker.exists && [worker.data().branchId, ...(worker.data().branchIds || [])].includes(branchId) && !['inactive', 'disabled', 'archived'].includes(normalized(worker.data().status)), 'The selected worker is unavailable.')
   const workerData = worker.data()
+  if (isOnline) {
+    const connection = (await tx.get(db.collection('googlePractitionerConnections').doc(workerId))).data()
+    check(connection?.active === true, 'This practitioner must connect their Google hosting account before accepting online consultation bookings.')
+  }
   let practitioner = ['practitioner', 'doctor', 'therapist'].includes(normalized(workerData.role).replace(/[\s_-]+/g, '')) || [...(workerData.permissions || []), ...(workerData.effectivePermissions || [])].some(permission => ['appointments:update', 'consultations:view', 'consultations:create'].includes(permission))
   if (!practitioner) {
     const branch = (await tx.get(db.collection('clinics').doc(branchId))).data() || {}
@@ -154,15 +164,20 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   if (!contractPolicy) contractPolicy = (await tx.get(db.collection('clinicPolicies').doc(branchId))).data() || {}
   const clinicContractConfigured = contractPolicy.clientContract?.configured === true
   const contractDocument = clinicContractConfigured ? buildClientContractDocument(contractPolicy, { branch: contractBranch, source: reservation.source || 'customer_booking_request', serviceName: offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service', serviceTerms: offer.termsAndConditions }) : null
-  const terms = clinicContractConfigured
+  let terms = clinicContractConfigured
     ? buildClientContract(contractPolicy, { branch: contractBranch, source: reservation.source || 'customer_booking_request', serviceName: offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service', serviceTerms: offer.termsAndConditions })
     : `${offer.title || offer.name || 'Service'}\n${String(offer.termsAndConditions || '').trim()}`
   if (!clinicContractConfigured) {
     check(String(offer.termsAndConditions || '').trim(), 'Publish contract terms before booking.')
     check(services.every((service) => String(service.termsAndConditions || '').trim()), 'The clinic must publish contract terms for each selected service before it can be booked.')
   }
+  if (isOnline) {
+    const notice = `Online consultation: ${duration} minutes from the verified start. Join up to five minutes early. Arrival grace: ${consultationPolicy.graceMinutes} minutes. Late arrivals and connection failures require clinic review before penalties, rescheduling, or refunds. Report delivery problems within 48 hours of completion.`
+    terms += '\n\n' + notice
+    if (contractDocument) contractDocument.sections.push({ title: 'Online consultation timing and review', text: notice })
+  }
   const endTime = `${String(Math.floor(range.end / 60)).padStart(2, '0')}:${String(range.end % 60).padStart(2, '0')}`
-  return { lock, customerLocks, data: { bookingWorkflowVersion: 2, staffingRequirements, treatmentTeam: [], resources, endTime, selectedServices: services, serviceDetails: services, selectedServiceIds: ids, serviceIds: ids, service: `${offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service'}${normalized(offer.postType) === 'package' ? ` — first visit: ${definitions[0].serviceName}` : ''}`, type: normalized(services[0].postType) === 'consultation' ? 'Consultation' : 'Service', consultationMode: normalized(services[0].postType) === 'consultation' ? services[0].consultationMode || 'online' : null, ...(normalized(services[0].postType) === 'consultation' ? { consultationForServiceIds: definitions.map(visit => visit.serviceId) } : {}), totalServiceDurationMinutes: duration, groupBooking: group ? { organizerId: String(group.organizerId || reservation.customerId || ''), organizerIncluded: group.organizerIncluded === true, participantCount: attendeeCount, guests: guests.map((guest) => ({ name: String(guest.name).trim(), email: String(guest.email).trim().toLowerCase(), phone: String(guest.phone || '').trim().slice(0, 32) })) } : null, sessionNumber: 1, treatmentPlan: { totalSessions, sessionIntervalDays, sessions: definitions, packageId: normalized(offer.postType) === 'package' ? offer.id : null, completedSessions: 0, remainingSessions: totalSessions, schedulingMode: totalSessions > 1 ? 'clinic-scheduled' : 'single-visit' }, amount: total, totalAmount: total, commissionPercent: 10, commissionAmount: Math.round(total * 10) / 100, merchantNetAmount: Math.round(total * 90) / 100, installmentsAllowed, depositPercent, contractRequired: true, contract: { title: 'Service booking agreement', terms, ...(contractDocument ? { document: contractDocument } : {}), status: 'pending', requiredSigners: [], signatures: {} } } }
+  return { lock, customerLocks, data: { bookingWorkflowVersion: 2, ...(isOnline ? { consultationPolicy, consultationDurationMinutes: duration } : {}), staffingRequirements, treatmentTeam: [], resources, endTime, selectedServices: services, serviceDetails: services, selectedServiceIds: ids, serviceIds: ids, service: `${offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service'}${normalized(offer.postType) === 'package' ? ` — first visit: ${definitions[0].serviceName}` : ''}`, type: normalized(services[0].postType) === 'consultation' ? 'Consultation' : 'Service', consultationMode: normalized(services[0].postType) === 'consultation' ? services[0].consultationMode || 'online' : null, ...(normalized(services[0].postType) === 'consultation' ? { consultationForServiceIds: definitions.map(visit => visit.serviceId) } : {}), totalServiceDurationMinutes: duration, groupBooking: group ? { organizerId: String(group.organizerId || reservation.customerId || ''), organizerIncluded: group.organizerIncluded === true, participantCount: attendeeCount, guests: guests.map((guest) => ({ name: String(guest.name).trim(), email: String(guest.email).trim().toLowerCase(), phone: String(guest.phone || '').trim().slice(0, 32) })) } : null, sessionNumber: 1, treatmentPlan: { totalSessions, sessionIntervalDays, sessions: definitions, packageId: normalized(offer.postType) === 'package' ? offer.id : null, completedSessions: 0, remainingSessions: totalSessions, schedulingMode: totalSessions > 1 ? 'clinic-scheduled' : 'single-visit' }, amount: total, totalAmount: total, commissionPercent: 10, commissionAmount: Math.round(total * 10) / 100, merchantNetAmount: Math.round(total * 90) / 100, installmentsAllowed, depositPercent, contractRequired: true, contract: { title: 'Service booking agreement', terms, ...(contractDocument ? { document: contractDocument } : {}), status: 'pending', requiredSigners: [], signatures: {} } } }
 }
 
 const prepareGroupBooking = async ({ tx, db, reservation, getBookingRange, rangesOverlap, appointmentId }) => {

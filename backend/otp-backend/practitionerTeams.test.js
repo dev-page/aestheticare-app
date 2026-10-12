@@ -198,6 +198,7 @@ test('Package components can require different leads and reject an ineligible pr
     h.records.get('users/' + id).role = 'Practitioner'
     h.seed('users/' + id + '/schedules', 'recurring', { availability: Object.fromEntries(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => [day, { enabled: true, start: '08:00', end: '18:00' }])) })
   }
+  h.seed('googlePractitionerConnections', 'doctor', { active: true })
   h.records.get('practitionerProfiles/doctor').approvedServiceIds.push('assessment')
   const published = { branchId: 'clinic', isPublished: true, financeStatus: 'approved', durationMinutes: 30, price: 1000, termsAndConditions: 'Clinic treatment terms' }
   h.seed('productServicePosts', 'assessment', { ...published, postType: 'Consultation', staffingRequirements: [requirements[0]] })

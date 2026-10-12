@@ -466,6 +466,7 @@ service cloud.firestore {
               || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
                 'bookingWorkflowVersion', 'status', 'approvalStatus', 'amount', 'totalAmount', 'amountPaid', 'balance',
                 'paymentStatus', 'installmentsAllowed', 'depositPercent', 'contract', 'contractRequired',
+                'bookingAgreement', 'bookingAgreementRequired', 'bookingForSomeoneElse', 'bookedByName', 'bookedByEmail', 'bookedByPhone',
                 'serviceKey', 'customerKeyVerified', 'workerKeyVerified', 'workerCompleted', 'customerCompleted',
                 'treatmentTeam', 'staffingRequirements', 'staffEarningsStatus', 'staffEarningsApprovedBy', 'staffEarningsReviewNote', 'teamAssignedBy',
                 'resources', 'materialsConsumed', 'startedAt', 'completedAt', 'recordedPaymentSessions'
@@ -479,6 +480,11 @@ service cloud.firestore {
                 'refundProcessing', 'refundProcessingAt', 'refundProcessingById', 'paymongoRefundId', 'paymongoRefundStatus',
                 'paymongoPaymentId', 'paymongoPaidAt', 'paymongoCheckoutSessionId', 'commissionAmount', 'commissionPercent', 'merchantNetAmount',
                 'sessionNumber', 'treatmentSessionId', 'selectedServiceIds', 'selectedServices', 'serviceIds', 'type',
+                'consultationAccessVersion', 'consultationCodeVerifiedAt', 'consultationCodeVerifiedBy',
+                'consultationPolicy', 'consultationPresenceVerifiedAt', 'consultationPresenceVerifiedBy',
+                'consultationDispute', 'consultationReview', 'consultationReviewReason', 'consultationAdjudicated',
+                'consultationInterruption', 'consultationInterruptions', 'consultationExtensionSeconds',
+                'consultationConfirmationReminderAt', 'consultationPreviousAttempts',
                 'treatmentPlan', 'treatmentPlanAppointmentId', 'bookingOrderId', 'isBookingOrderParent', 'isGroupParent', 'appointmentIds'
               ])))
           // Practitioners can record only their own clinical follow-up and meeting-link metadata.
@@ -490,7 +496,6 @@ service cloud.firestore {
               || resource.data.assignedTo == request.auth.uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'followUpRecommended', 'followUpRecommendedAt', 'followUpRecommendedById',
-              'consultationMode', 'meetLink', 'meetEventId', 'meetCreatedAt', 'meetCreatedBy',
               'updatedAt'
             ])));
       allow delete: if isSignedIn()
@@ -564,10 +569,7 @@ service cloud.firestore {
         && (get(/databases/$(database)/documents/appointments/$(appointmentId)).data.customerId == request.auth.uid
           || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.practitionerId == request.auth.uid
           || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.assignedPractitionerId == request.auth.uid);
-      allow create, update: if isSignedIn()
-        && (request.resource.data.customerId == get(/databases/$(database)/documents/appointments/$(appointmentId)).data.customerId
-          && (get(/databases/$(database)/documents/appointments/$(appointmentId)).data.practitionerId == request.auth.uid
-            || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.assignedPractitionerId == request.auth.uid));
+      allow create, update: if false;
       allow delete: if false;
     }
 
@@ -1098,7 +1100,11 @@ service cloud.firestore {
             && request.resource.data.recipientUserId == request.auth.uid)
           || (isSuperadmin() && request.resource.data.recipientUserId != null));
       allow update: if isSignedIn()
-        && (resource.data.recipientUserId == request.auth.uid || isSuperadmin());
+        && (resource.data.get('recipientUserId', '') == request.auth.uid || isSuperadmin()
+          || (resource.data.get('recipientRole', '') == roleKey()
+            && (roleKey() == 'Superadmin' || (resource.data.get('branchId', '') != '' && canAccessBranch(resource.data.branchId)))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+            && request.resource.data.read == true));
       allow delete: if false;
     }
 

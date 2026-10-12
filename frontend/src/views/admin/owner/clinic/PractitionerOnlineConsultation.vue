@@ -5,9 +5,10 @@
     <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8">
         <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Online Consultation</h1>
-        <p class="text-slate-400">Generate and manage Google Meet links for your assigned appointments.</p>
+        <p class="text-slate-400">Customers verify their service code to generate Google Meet links for your assigned appointments.</p>
       </div>
 
+      <GoogleHostingAccount />
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
@@ -80,27 +81,20 @@
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap gap-2">
-                    <button
-                      v-if="appointment.consultationMode !== 'on-site'"
-                      type="button"
-                      class="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs hover:bg-sky-500 disabled:opacity-60"
-                      :disabled="creatingId === appointment.id || isExpiredAppointment(appointment) || isCancelledAppointment(appointment) || Boolean(meetLinkGateReason(appointment))"
-                      @click="createMeetLink(appointment)"
-                    >
-                      {{ creatingId === appointment.id ? 'Creating...' : (appointment.meetLink ? 'Regenerate Link' : 'Create Link') }}
-                    </button>
+<p v-if="!appointment.meetLink" class="text-sm text-slate-400">Waiting for the customer to submit their service code.</p><p v-else class="text-sm text-slate-400">Join as host using {{ appointment.hostEmail }}.</p>
                     <button
                       v-if="appointment.meetLink"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-500 disabled:opacity-60"
-                      :disabled="isExpiredAppointment(appointment) || isCancelledAppointment(appointment)"
+                      :disabled="!canJoinConsultation(appointment)"
                       @click="joinCall(appointment)"
                     >
                       Join Call
                     </button>
+                    <OnlineConsultationControls :appointment="appointment" />
                     <p v-if="appointment.clientJoinedAt" class="w-full text-xs text-emerald-300">Customer entered the waiting room.</p>
                     <p v-if="appointment.consultationClientEndedAt" class="w-full text-xs text-amber-300">Customer ended participation. Submit notes and mark consultation done.</p>
-                    <p v-if="appointment.consultationNeedsReview" class="w-full text-xs text-rose-300">Short consultation flagged for clinic review.</p>
+                    <p v-if="appointment.consultationNeedsReview" class="w-full text-xs text-rose-300">Consultation flagged for clinic review.</p>
                     <button
                       v-if="canStartConsultation(appointment)"
                       type="button"
@@ -151,6 +145,9 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import OnlineConsultationControls from '@/components/common/OnlineConsultationControls.vue'
+import { onlineWindow, onlineAccessOpen } from '../../../../../../shared/onlineConsultation.js'
+import GoogleHostingAccount from '@/components/common/GoogleHostingAccount.vue'
 import { Icon } from '@iconify/vue'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
@@ -159,7 +156,7 @@ import { initialPaymentReceived, normalized } from '../../../../../../backend/ot
 export default {
   name: 'PractitionerOnlineConsultation',
   props: { embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' } },
-  components: { OwnerSidebar, Icon },
+  components: { OwnerSidebar, Icon, GoogleHostingAccount, OnlineConsultationControls },
   setup(props) {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -172,7 +169,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const statusFilter = ref('')
     const dateFilter = ref('')
     const appointments = ref([])
-    const creatingId = ref('')
+
     const startingId = ref('')
     const finishingId = ref('')
     const endingId = ref('')
@@ -209,15 +206,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       throw lastError || new Error(`Failed to reach backend service at ${BACKEND_URL}`)
     })
 
-    const isAssignedToPractitioner = (appointment) => {
-      const assignedIds = [
-        appointment.practitionerId,
-        appointment.assignedPractitionerId,
-        appointment.staffId,
-        appointment.assignedTo,
-      ]
-      return assignedIds.some((value) => value && String(value) === currentUserId.value)
-    }
+    const isAssignedToPractitioner = appointment => String(appointment.assignedPractitionerId || appointment.practitionerId || appointment.staffId || appointment.assignedTo || '') === currentUserId.value
 
     const assignedAppointments = computed(() =>
       sortRecordsNewestFirst(
@@ -244,7 +233,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const records = await Promise.all(snapshot.docs.filter(snap => isAssignedToPractitioner(snap.data()) && normalized(snap.data().type) === 'consultation').map(async (snap) => {
         const appointment = { id: snap.id, ...snap.data() }
         const meetingSnap = await getDoc(doc(db, 'appointmentMeetings', snap.id))
-        return meetingSnap.exists() ? { ...appointment, ...meetingSnap.data() } : appointment
+        return meetingSnap.exists() && meetingSnap.data().hostVerified && appointment.consultationCodeVerifiedAt && meetingSnap.data().practitionerId === (appointment.assignedPractitionerId || appointment.practitionerId) && Date.parse(meetingSnap.data().scheduledStartAt) === Date.parse(`${appointment.date}T${appointment.time}+08:00`) ? { ...appointment, ...meetingSnap.data() } : { ...appointment, meetLink: '' }
       }))
       appointments.value = sortRecordsNewestFirst(records)
     })
@@ -254,7 +243,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const time = String(timeValue || '09:00').trim()
       if (!date) return null
 
-      const parsed = new Date(`${date}T${time.length === 5 ? `${time}:00` : time}`)
+      const parsed = new Date(`${date}T${time.length === 5 ? `${time}:00` : time}+08:00`)
       if (Number.isNaN(parsed.getTime())) return null
       return parsed
     }
@@ -270,16 +259,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       appointment?.consultationDurationMinutes || appointment?.durationMinutes || appointment?.totalServiceDurationMinutes || 30
     )))
 
-    const consultationWindow = (appointment) => {
-      const start = parseDateTime(appointment?.date, appointment?.time)
-      if (!start) return null
-      const end = new Date(start.getTime() + consultationDurationMinutes(appointment) * 60 * 1000)
-      return { start, opensAt: new Date(start.getTime() - 5 * 60 * 1000), end }
-    }
+    const consultationWindow = appointment => onlineWindow(appointment)
 
     const canJoinConsultation = (appointment) => {
       const window = consultationWindow(appointment)
-      return Boolean(appointment?.meetLink && window && clockNow.value >= window.opensAt.getTime() && clockNow.value <= window.end.getTime() && !isCancelledAppointment(appointment))
+      return Boolean(appointment?.meetLink && onlineAccessOpen(appointment, clockNow.value))
     }
 
     const hasConsultationWindowEnded = (appointment) => {
@@ -292,7 +276,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!window) return 'Consultation schedule is unavailable.'
       const remainingSeconds = Math.max(0, Math.ceil((window.end.getTime() - clockNow.value) / 1000))
       if (!remainingSeconds) return 'The official consultation time has ended.'
-      return `Official time remaining: ${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
+      return `${remainingSeconds <= 60 ? 'One minute or less left. ' : remainingSeconds <= 300 ? 'Five minutes or less left. ' : ''}Official time remaining: ${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
     }
 
     const isCancelledAppointment = (appointment) =>
@@ -309,56 +293,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return 'Waiting for the required consultation payment.'
       }
       return ''
-    }
-
-    const createMeetLink = async (appointment) => {
-      if (!appointment?.id) return
-      const gateReason = meetLinkGateReason(appointment)
-      if (gateReason) {
-        toast.info(gateReason)
-        return
-      }
-      creatingId.value = appointment.id
-
-      try {
-        const start = parseDateTime(appointment.date, appointment.time) || new Date()
-        const end = new Date(start.getTime() + consultationDurationMinutes(appointment) * 60 * 1000)
-        const clientName = appointment.clientName || appointment.patientName || 'Client'
-        const serviceName = appointment.service || appointment.type || 'Consultation'
-
-        const response = await fetchFromBackend('/google-meet/create-consultation-link', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            appointmentId: appointment.id,
-            summary: `Online Consultation - ${clientName}`,
-            description: `${serviceName} (${appointment.date || ''} ${appointment.time || ''})`,
-            startDateTime: start.toISOString(),
-            endDateTime: end.toISOString(),
-            timezone: 'Asia/Manila',
-            attendeeEmails: [appointment.clientEmail || appointment.email].filter(Boolean),
-            requestId: `appointment-${appointment.id}-${Date.now()}`,
-          }),
-        })
-
-        const payload = await response.json()
-        if (!response.ok || !payload?.success) {
-          throw new Error(payload?.error || 'Failed to create Google Meet link.')
-        }
-
-        const meetLink = String(payload?.data?.meetLink || '').trim()
-        if (!meetLink) throw new Error('Google Meet link is empty.')
-
-        appointment.meetLink = meetLink
-        appointment.consultationMode = 'online'
-        appointment.meetEventId = payload?.data?.eventId || ''
-        toast.success('Google Meet link created successfully.')
-      } catch (error) {
-        console.error('Failed to create Google Meet link:', error)
-        toast.error(error?.message || 'Failed to create Google Meet link.')
-      } finally {
-        creatingId.value = ''
-      }
     }
 
     const joinCall = async (appointment) => {
@@ -385,17 +319,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const startConsultation = async (appointment) => {
       if (!canStartConsultation(appointment)) return
+      if (!window.confirm('Is the customer present in Google Meet, has their identity been verified, and are both of you ready to begin?')) return
       startingId.value = appointment.id
       try {
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'start' }),
+          body: JSON.stringify({ action: 'start', participantVerified: true }),
         })
         const payload = await response.json()
         if (!response.ok || !payload?.success) {
           throw new Error(payload?.error || 'Failed to start the online consultation.')
         }
+        Object.assign(appointment, payload.data || {})
         appointment.status = payload?.data?.status || 'Ongoing'
         appointment.startedAt = new Date().toISOString()
         toast.success('Online consultation started.')
@@ -412,8 +348,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!appointment?.id || String(appointment.status || '').trim() !== 'Ongoing') return
       finishingId.value = appointment.id
       try {
-        const treatmentNotes = window.prompt('Consultation notes and recommendations:', '')
+        const treatmentNotes = window.prompt('Consultation notes and recommendations (at least 10 characters):', appointment.treatmentNotes || '')
         if (treatmentNotes === null) return
+        if (treatmentNotes.trim().length < 10) throw Error('Enter consultation notes of at least 10 characters.')
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -424,7 +361,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           throw new Error(payload?.error || 'Failed to complete the online consultation.')
         }
         appointment.status = payload?.data?.status || 'Awaiting Customer Confirmation'
-        toast.success('Consultation marked done. The customer can now confirm completion.')
+        toast.success('Consultation marked done. End meeting for all in Google Meet; the customer can confirm receipt or report a problem.')
       } catch (error) {
         console.error('Failed to complete online consultation:', error)
         toast.error(error?.message || 'Failed to complete the online consultation.')
@@ -443,7 +380,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const payload = await response.json()
         if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to close the elapsed consultation.')
         appointment.status = payload?.data?.status || 'Awaiting Customer Confirmation'
-        toast.info('The official consultation time ended. The customer can now confirm completion.')
+        toast.info('Consultation time ended. End meeting for all in Google Meet, save notes, and ask the customer to confirm receipt.')
       } catch (error) {
         console.error('Failed to close elapsed consultation:', error)
       } finally { endingId.value = '' }
@@ -571,13 +508,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       dateFilter,
       assignedAppointments,
       filteredAppointments,
-      creatingId,
+
       startingId,
       finishingId,
       currentBranchId,
       currentUserId,
       isSeedingDemo,
-      createMeetLink,
+
       meetLinkGateReason,
       joinCall,
       canStartConsultation,

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { paymentDue, afterPaymentStatus, resourceConflict } from './bookingWorkflow.js'
+import { paymentDue, afterPaymentStatus, resourceConflict, resetAppointmentAccess } from './bookingWorkflow.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import fs from 'node:fs'
 import vm from 'node:vm'
@@ -14,11 +14,11 @@ const harness = (appointment) => {
   const handlers = new Map()
   let sequence = 0
   const firestore = () => ({
-    collection: (name) => ({ doc: (id = String(++sequence)) => ({ path: `${name}/${id}`, id }) }),
+    collection: (name) => ({ where: () => ({ collectionName: name }), doc: (id = String(++sequence)) => ({ path: `${name}/${id}`, id }) }),
     runTransaction: async (callback) => {
       const writes = []
       const tx = {
-        get: async (ref) => ({ exists: records.has(ref.path), data: () => records.get(ref.path) }),
+        get: async (ref) => ref.collectionName ? { docs: [...records].filter(([path]) => path.startsWith(ref.collectionName + '/')).map(([path,value]) => ({ id: path.split('/').at(-1), data: () => value })) } : ({ exists: records.has(ref.path), data: () => records.get(ref.path) }),
         update: (ref, value) => writes.push([ref.path, value]),
         set: (ref, value) => writes.push([ref.path, value]),
       }
@@ -49,7 +49,7 @@ for (const installmentsAllowed of [false, true]) {
     assert.equal(h.current().status, 'Awaiting Payment')
     assert.equal(h.current().contract.signatures.customer.signatureImage, signature.signatureImage)
     assert.equal((await h.call('contract/sign', 'customer', signature)).code, 409)
-    assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 409)
+    assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 409)
     const due = paymentDue(h.current())
     assert.equal(due, installmentsAllowed ? 30000 : 100000)
     h.current().amountPaid = due / 100
@@ -59,15 +59,15 @@ for (const installmentsAllowed of [false, true]) {
     assert.equal((await h.call('verify-service-key', 'customer', { serviceKey: 'wrong' })).code, 403)
     const serviceKey = h.current().serviceKey
     await h.call('verify-service-key', 'customer', { serviceKey })
-    assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 409)
+    assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 409)
     await h.call('verify-service-key', 'receptionist', { serviceKey })
     assert.equal(h.current().status, 'Checked in')
     assert.equal(h.current().checkedInById, 'receptionist')
-    assert.equal((await h.call('transition', 'customer', { action: 'start' })).code, 403)
-    await h.call('transition', 'worker', { action: 'start' })
+    assert.equal((await h.call('transition', 'customer', { action: 'start', participantVerified: true })).code, 403)
+    await h.call('transition', 'worker', { action: 'start', participantVerified: true })
     assert.equal(h.current().status, 'Ongoing')
     assert.equal(h.records.get('inventoryItems/material').currentStock, 4)
-    assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 409)
+    assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 409)
     assert.equal((await h.call('transition', 'customer', { action: 'customer_complete' })).code, 409)
     await h.call('transition', 'worker', { action: 'worker_complete' })
     assert.equal(h.current().status, 'Awaiting Customer Confirmation')
@@ -85,7 +85,8 @@ for (const installmentsAllowed of [false, true]) {
   })
 }
 
-test('Online consultation requires both waiting-room entries and a system meeting before start', async () => {
+test('Online consultation requires both waiting-room entries and a system meeting before start', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-12T02:00:00Z') })
   const appointment = {
     ...fixture(false),
     type: 'Consultation',
@@ -96,17 +97,52 @@ test('Online consultation requires both waiting-room entries and a system meetin
     date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()),
     time: new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()),
     consultationDurationMinutes: 30,
+    consultationCodeVerifiedAt: new Date(), consultationCodeVerifiedBy: 'customer',
   }
   const h = harness(appointment)
-  h.records.set('appointmentMeetings/a', { meetLink: 'https://meet.google.com/test-meeting' })
-  assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 409)
+  h.records.set('appointmentMeetings/a', { meetLink: 'https://meet.google.com/test-meeting', hostVerified: true, practitionerId: 'worker', customerId: 'customer', scheduledStartAt: new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString() })
+  delete h.current().consultationCodeVerifiedAt
+  assert.equal((await h.call('transition', 'customer', { action: 'join_consultation' })).code, 409)
+  h.current().consultationCodeVerifiedAt = new Date()
+  h.records.get('appointmentMeetings/a').practitionerId = 'another-worker'
+  assert.equal((await h.call('transition', 'customer', { action: 'join_consultation' })).code, 409)
+  h.records.get('appointmentMeetings/a').practitionerId = 'worker'
+  assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 409)
   assert.equal((await h.call('transition', 'customer', { action: 'join_consultation' })).code, 200)
-  assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 409)
+  assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 409)
   assert.equal((await h.call('transition', 'worker', { action: 'join_consultation' })).code, 200)
-  assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 200)
+  h.records.get('appointmentMeetings/a').hostVerified = false
+  assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 409)
+  h.records.get('appointmentMeetings/a').hostVerified = true
+  assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 200)
   assert.equal(h.current().status, 'Ongoing')
   assert.ok(h.current().startedAt)
   assert.equal(h.records.get('inventoryItems/material').currentStock, 4)
+})
+
+test('Reassignment revokes old lead aliases while the current assigned practitioner can start', async () => {
+  const h = harness({ ...fixture(false), practitionerId: 'old-worker', assignedPractitionerId: 'worker', staffId: 'old-worker', assignedTo: 'old-worker', status: 'Checked in', amountPaid: 1000, workerKeyVerified: true, contract: { status: 'signed' } })
+  assert.equal((await h.call('transition', 'old-worker', { action: 'start', participantVerified: true })).code, 403)
+  assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 200)
+})
+
+test('A changed appointment requires a new code verification and fresh waiting-room entries', async () => {
+  const h = harness({ ...fixture(false), type: 'Consultation', consultationMode: 'online', amountPaid: 1000, status: 'Paid', contract: { status: 'signed' }, consultationCodeVerifiedAt: new Date(), consultationCodeVerifiedBy: 'customer', clientJoinedAt: new Date(), practitionerJoinedAt: new Date(), workerKeyVerified: true })
+  Object.assign(h.current(), resetAppointmentAccess())
+  assert.equal(h.current().clientJoinedAt, null)
+  assert.equal(h.current().practitionerJoinedAt, null)
+  assert.equal(h.current().workerKeyVerified, false)
+  assert.equal((await h.call('transition', 'customer', { action: 'join_consultation' })).code, 409)
+  assert.match((await h.call('transition', 'customer', { action: 'join_consultation' })).body.error, /submit their service code/)
+})
+
+test('Online completion flags short delivery and preserves earlier review flags', async () => {
+  for (const [notes, existingFlag, expected] of [['Treatment recorded.', true, true], ['Treatment recorded.', false, true]]) {
+    const h = harness({ ...fixture(false), type: 'Consultation', consultationMode: 'online', amountPaid: 1000, status: 'Ongoing', date: '2026-10-12', time: '10:00', startedAt: new Date(Date.now() - 120000), treatmentTeam: [], consultationNeedsReview: existingFlag })
+    assert.equal((await h.call('transition', 'worker', { action: 'worker_complete', treatmentNotes: notes })).code, 200)
+    assert.equal(h.current().consultationNeedsReview, expected)
+    assert.equal(h.current().status, 'Awaiting Customer Confirmation')
+  }
 })
 
 test('Reception check-in requires an authorized actor, identity evidence, and an unused code', async () => {
@@ -118,8 +154,8 @@ test('Reception check-in requires an authorized actor, identity evidence, and an
   assert.equal(h.current().status, 'Checked in')
   assert.match(h.current().manualCheckInReason, /photo ID/)
   assert.equal((await h.call('verify-service-key', 'receptionist', { serviceKey: '123456' })).code, 409)
-  assert.equal((await h.call('transition', 'receptionist', { action: 'start' })).code, 403)
-  assert.equal((await h.call('transition', 'worker', { action: 'start' })).code, 200)
+  assert.equal((await h.call('transition', 'receptionist', { action: 'start', participantVerified: true })).code, 403)
+  assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 200)
 })
 
 test('Materials reserve stock; reusable equipment reserves overlapping slots only', () => {

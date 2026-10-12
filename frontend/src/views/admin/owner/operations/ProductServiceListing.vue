@@ -264,7 +264,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       requiresConsultationFirst: false,
         linkedConsultationId: '',
       consultationFee: 0,
-      consultationMode: 'on-site',
+      consultationMode: 'on-site', consultationGraceMinutes: 10, consultationBufferMinutes: 15,
       followUpAllowed: false,
       followUpWindowDays: 14,
       staffingRequirements: [],
@@ -597,7 +597,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('User branch is not available.')
         return
       }
-        if (postType !== 'Product' && Number(form.value.durationMinutes) <= 0) {
+        if (form.value.postType === 'Consultation' && form.value.consultationMode === 'online' && (!Number.isInteger(Number(form.value.durationMinutes)) || Number(form.value.durationMinutes) < 5 || Number(form.value.durationMinutes) > 240)) { toast.error('Online consultation duration must be a whole number from 5 to 240 minutes.'); return }
+      if (postType !== 'Product' && Number(form.value.durationMinutes) <= 0) {
         toast.error('Please enter a valid duration.')
         return
       }
@@ -666,6 +667,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             : postType === 'Package' && packageFollowUpComponents.length
               ? Math.min(...packageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
+          consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(form.value.consultationGraceMinutes ?? 10))), bufferMinutes: Math.min(45, Math.max(Number(form.value.consultationGraceMinutes ?? 10) + 5, Number(form.value.consultationBufferMinutes ?? 15))) },
           staffingRequirements: JSON.parse(JSON.stringify(form.value.staffingRequirements || [])),
           sessionCount: ['Service', 'Package'].includes(postType) ? Math.min(50, Math.max(1, Number(form.value.sessionCount || 1))) : 1,
           sessionIntervalDays: ['Service', 'Package'].includes(postType) && Number(form.value.sessionCount || 1) > 1 ? Math.min(365, Math.max(0, Number(form.value.sessionIntervalDays || 0))) : 0,
@@ -720,7 +722,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
         linkedConsultationId: String(post.linkedConsultationId || ''),
         consultationFee: Number(post.consultationFee || 0),
-        consultationMode: normalizeConsultationMode(post.consultationMode),
+        consultationMode: normalizeConsultationMode(post.consultationMode), consultationGraceMinutes: post.consultationPolicy?.graceMinutes ?? 10, consultationBufferMinutes: post.consultationPolicy?.bufferMinutes ?? 15,
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
         staffingRequirements: JSON.parse(JSON.stringify(post.staffingRequirements || [])),
@@ -805,6 +807,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('Please enter a valid consultation fee.')
         return
       }
+      if (editForm.value.postType === 'Consultation' && editForm.value.consultationMode === 'online' && (!Number.isInteger(Number(editForm.value.durationMinutes)) || Number(editForm.value.durationMinutes) < 5 || Number(editForm.value.durationMinutes) > 240)) { toast.error('Online consultation duration must be a whole number from 5 to 240 minutes.'); return }
       if (editForm.value.postType !== 'Product' && Number(editForm.value.durationMinutes) <= 0) {
         toast.error('Please enter a valid duration.')
         return
@@ -856,6 +859,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             : editForm.value.postType === 'Package' && editPackageFollowUpComponents.length
               ? Math.min(...editPackageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
+          consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(editForm.value.consultationGraceMinutes ?? 10))), bufferMinutes: Math.min(45, Math.max(Number(editForm.value.consultationGraceMinutes ?? 10) + 5, Number(editForm.value.consultationBufferMinutes ?? 15))) },
           staffingRequirements: JSON.parse(JSON.stringify(editForm.value.staffingRequirements || [])),
           sessionCount: ['Service', 'Package'].includes(editForm.value.postType)
             ? Math.min(50, Math.max(1, Number(editForm.value.sessionCount || 1)))

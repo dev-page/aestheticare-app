@@ -276,6 +276,7 @@
                           class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
                         >
                           {{ item.durationMinutes }} mins
+                          <span v-if="item.consultationMode === 'online'" class="block text-xs mt-1">Full duration from verified start; {{ onlinePolicy(item.consultationPolicy).graceMinutes }}-minute arrival grace; five-minute early entry. Late arrivals and connection problems require clinic review.</span>
                         </span>
                         <span v-if="Number(item.sessionCount || 1) > 1" class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium">
                           {{ item.sessionCount }} treatment sessions
@@ -757,6 +758,7 @@
 </template>
 
 <script setup>
+import { onlinePolicy } from '../../../../shared/onlineConsultation.js'
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -906,7 +908,7 @@ const selectedServiceDurationMinutes = computed(() =>
 )
 const selectedTreatmentSessionCount = computed(() => Math.max(1, ...selectedServices.value.map(service => service.type === 'Package' ? Number(service.sessionCount || 1) * (service.packageComponents || []).reduce((sum, component) => sum + Number(component.sessionCount || 1), 0) : Number(service.sessionCount || 1))))
 const groupAttendeeServices = computed(() => [...(groupIncludeOrganizer.value ? selectedServices.value : []), ...groupGuests.value.map(guest => items.value.find(item => item.id === guest.serviceId) || selectedServices.value[0]).filter(Boolean)])
-const bookingDurationMinutes = computed(() => Math.max(groupBookingEnabled.value ? groupAttendeeServices.value.reduce((sum, service) => sum + Number(service.durationMinutes || 60), 0) : Number(selectedServiceDurationMinutes.value || 0), 30))
+const bookingDurationMinutes = computed(() => selectedServices.value.reduce((sum, service) => sum + (service.consultationMode === 'online' ? onlinePolicy(service.consultationPolicy).bufferMinutes : 0), 0) + Math.max(groupBookingEnabled.value ? groupAttendeeServices.value.reduce((sum, service) => sum + Number(service.durationMinutes || 60), 0) : Number(selectedServiceDurationMinutes.value || 0), 30))
 const selectedServiceCommission = computed(() =>
   calculateCommissionAmount(selectedServiceTotal.value, serviceCommissionPercent)
 )
@@ -1542,6 +1544,7 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       consultationFee: post.consultationFee != null ? Number(post.consultationFee) : null,
       followUpAllowed: Boolean(post.followUpAllowed),
       followUpWindowDays: post.followUpWindowDays != null ? Number(post.followUpWindowDays) : null,
+      consultationPolicy: post.consultationPolicy || null,
       durationMinutes: post.durationMinutes != null ? Number(post.durationMinutes) : null,
       staffingRequirements: post.staffingRequirements || [],
       sessionCount: Math.max(1, Number(post.sessionCount || 1)),

@@ -10,6 +10,7 @@ import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { appointmentClientName, appointmentSource, appointmentServiceType, appointmentServiceName, appointmentSessions, appointmentRecipients, appointmentBookingRows, appointmentCheckInAllowed } from '@/utils/appointmentManagement'
+import OnlineConsultationControls from '@/components/common/OnlineConsultationControls.vue'
 import Modal from '@/components/common/Modal.vue'
 import AppointmentTeam from '@/components/common/AppointmentTeam.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
@@ -19,7 +20,7 @@ import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModa
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 const { hasPermission } = usePermissions()
 const appointments = ref([]), staff = ref([]), clients = ref([])
-const search = ref(''), status = ref(''), date = ref(''), source = ref(''), error = ref('')
+const search = ref(''), status = ref(''), date = ref(''), source = ref(''), error = ref(''), needsReview = ref(false)
 const page = ref(1), pageSize = ref(10), selectedId = ref('')
 const contractTarget = ref(null), checkInTarget = ref(null), verifying = ref(false), menu = ref(null)
 const canCheckIn = computed(() => hasPermission('appointments:update'))
@@ -37,6 +38,7 @@ const bookingKind = item => item.isGroupParent || item.isGroupRecipient || item.
 const organizer = computed(() => {
   const item = selected.value
   if (!item) return null
+  if (item.source === 'walk_in' && item.bookedByName) return { customerName: item.bookedByName, customerEmail: item.bookedByEmail, customerPhone: item.bookedByPhone }
   if (item.isGroupRecipient) return appointments.value.find(parent => parent.id === item.parentAppointmentId) || { customerName: item.groupOrganizerName, customerEmail: item.groupOrganizerEmail, customerPhone: item.groupOrganizerPhone }
   return item
 })
@@ -44,6 +46,7 @@ const rows = computed(() => sortRecordsNewestFirst(appointmentBookingRows(appoin
 const statuses = computed(() => [...new Set(rows.value.map(item => item.status || 'Scheduled'))].sort())
 const filtered = computed(() => rows.value.filter(item => {
   const children = appointmentRecipients(item, appointments.value)
+  if (needsReview.value && !children.some(child => child.consultationNeedsReview || child.consultationDispute?.status === 'Open')) return false
   const haystack = [nameFor(item), appointmentServiceName(item), ...children.flatMap(child => [nameFor(child), appointmentServiceName(child), emailFor(child)])].join(' ').toLowerCase()
   return (!search.value.trim() || haystack.includes(search.value.trim().toLowerCase()))
     && (!status.value || (item.status || 'Scheduled') === status.value)
@@ -51,7 +54,7 @@ const filtered = computed(() => rows.value.filter(item => {
     && (!source.value || appointmentSource(item) === source.value)
 }))
 const paged = computed(() => filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
-watch([search, status, date, source, pageSize], () => { page.value = 1 })
+watch([search, status, date, source, pageSize, needsReview], () => { page.value = 1 })
 watch(() => filtered.value.length, total => { page.value = Math.min(page.value, Math.max(1, Math.ceil(total / pageSize.value))) })
 watch(selectedId, () => { menu.value = null })
 
@@ -121,6 +124,7 @@ const submitCode = async serviceKey => {
     <section class="records-panel filters">
       <label>Search<input v-model="search" placeholder="Client, recipient, or service" type="search" /></label>
       <label>Appointment Type<select v-model="source"><option value="">All types</option><option>Walk-in</option><option>Online booking</option></select></label>
+      <label><input v-model="needsReview" type="checkbox" /> Consultations needing review</label>
       <label>Status<select v-model="status"><option value="">All statuses</option><option v-for="value in statuses" :key="value">{{ value }}</option></select></label>
       <label>Date<input v-model="date" type="date" /></label>
     </section>
@@ -137,7 +141,7 @@ const submitCode = async serviceKey => {
         <h2 class="details-heading">Service Recipients</h2>
         <p class="subline">Each recipient has an individual contract and service code. The organizer appears here when included as a recipient.</p>
         <div class="table-scroll recipient-table"><table><thead><tr><th>Client Name</th><th>Email Address</th><th>Contact Number</th><th>Service Type</th><th>Service Name</th><th>Practitioner</th><th>Schedule</th><th>Sessions</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-          <tr v-for="recipient in recipientRows" :key="recipient.id"><td>{{ nameFor(recipient) }}</td><td>{{ emailFor(recipient) }}</td><td>{{ phoneFor(recipient) }}</td><td>{{ appointmentServiceType(recipient) }}</td><td>{{ appointmentServiceName(recipient) }}</td><td>{{ practitionerFor(recipient) }}<div v-for="member in recipient.treatmentTeam || []" :key="member.employeeId" class="subline">{{ member.name }} ({{ member.type }}, {{ member.responsibility }})</div><AppointmentTeam :appointment="recipient" /></td><td>{{ scheduleFor(recipient) }}</td><td>{{ appointmentSessions(recipient) }}</td><td>{{ recipient.status }}</td><td><button class="menu-trigger" data-appointment-menu :aria-label="`Actions for ${nameFor(recipient)}`" aria-haspopup="menu" :aria-expanded="menu?.item.id === recipient.id" @click="openMenu(recipient, $event)">⋯</button></td></tr>
+          <tr v-for="recipient in recipientRows" :key="recipient.id"><td>{{ nameFor(recipient) }}</td><td>{{ emailFor(recipient) }}</td><td>{{ phoneFor(recipient) }}</td><td>{{ appointmentServiceType(recipient) }}</td><td>{{ appointmentServiceName(recipient) }}</td><td>{{ practitionerFor(recipient) }}<div v-for="member in recipient.treatmentTeam || []" :key="member.employeeId" class="subline">{{ member.name }} ({{ member.type }}, {{ member.responsibility }})</div><AppointmentTeam :appointment="recipient" /></td><td>{{ scheduleFor(recipient) }}</td><td>{{ appointmentSessions(recipient) }}</td><td>{{ recipient.status }}</td><td><button class="menu-trigger" data-appointment-menu :aria-label="`Actions for ${nameFor(recipient)}`" aria-haspopup="menu" :aria-expanded="menu?.item.id === recipient.id" @click="openMenu(recipient, $event)">⋯</button><OnlineConsultationControls :appointment="recipient" /></td></tr>
           <tr v-if="!recipientRows.length"><td colspan="10" class="empty">Recipient appointments are not available yet.</td></tr>
         </tbody></table></div>
         <div class="related-tools">
@@ -149,7 +153,7 @@ const submitCode = async serviceKey => {
       <template #footer><div class="modal-footer"><button class="outline-button" @click="selectedId = ''">Close</button></div></template>
     </Modal>
     <Teleport to="body"><div v-if="menu" class="recipient-menu" data-appointment-menu role="menu" :style="{ left: `${menu.left}px`, top: `${menu.top}px` }"><button role="menuitem" @click="openContract(menu.item)">Contract</button><button role="menuitem" :disabled="!canCheckIn || !appointmentCheckInAllowed(menu.item)" :title="!canCheckIn ? 'Check-in permission is required.' : 'Check-in requires a paid, signed appointment with an unused service code.'" @click="openCheckIn(menu.item)">Check In</button></div></Teleport>
-    <BookingContractModal :visible="Boolean(contractTarget)" :appointment="contractTarget" read-only @close="contractTarget = null" />
+    <BookingContractModal :visible="Boolean(contractTarget)" :appointment="contractTarget" :read-only="!(contractTarget?.source === 'walk_in' && contractTarget?.paymentStatus === 'Paid' && (hasPermission('appointments:create') || contractTarget?.assignedPractitionerId === auth.currentUser?.uid || contractTarget?.practitionerId === auth.currentUser?.uid))" @close="contractTarget = null" @updated="result => { if (contractTarget && result?.contract) contractTarget.contract = result.contract }" />
     <ServiceKeyVerificationModal :visible="Boolean(checkInTarget)" :loading="verifying" :description="`Enter the service code sent to ${checkInTarget ? emailFor(checkInTarget) : 'the client'}.`" @close="!verifying && (checkInTarget = null)" @submit="submitCode" />
   </div>
 </template>

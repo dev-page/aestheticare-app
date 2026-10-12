@@ -1,3 +1,4 @@
+import { registerConsultationEvents } from './consultationEvents.js'
 import { serviceOnlyClinicPolicies } from '../../shared/clinicPolicyContent.js'
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
@@ -11,9 +12,11 @@ import { registerBookingBatch } from './bookingBatch.js'
 import { registerSupplierVerification } from './supplierVerification.js'
 import { registerConsultationWindows, closeExpiredConsultations } from './consultationWindows.js'
 import { registerWalkInPayments } from './walkInWorkflow.js'
+import { registerWalkInBookings } from './walkInBookings.js'
+import { registerGoogleConsultations } from './googleConsultations.js'
 import { prepareBooking } from './bookingResources.js'
 import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
-import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow } from './bookingWorkflow.js'
+import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow, resetAppointmentAccess } from './bookingWorkflow.js'
 import express from 'express'
 import { registerPublicContact } from './publicContact.js'
 import cors from 'cors'
@@ -405,9 +408,6 @@ const serviceAccountPath = configuredServiceAccountPath
   : path.join(__dirname, 'serviceAccountKey.json')
 const googleOauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || ''
 const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || ''
-const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || ''
-const googleCalendarId = process.env.GOOGLE_CALENDAR_ID || 'primary'
-const googleMeetDefaultTimezone = process.env.GOOGLE_MEET_DEFAULT_TIMEZONE || 'Asia/Manila'
 const firebaseServiceAccountJson = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim()
 const firebaseServiceAccountBase64 = String(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || '').trim()
 
@@ -605,14 +605,10 @@ const assertPayMongoConfigured = (res) => {
   return false
 }
 
-const isGoogleMeetConfigured = () =>
-  Boolean(googleOauthClientId && googleOauthClientSecret && googleOauthRefreshToken)
-
-const getGoogleCalendarClient = () => {
-  const oauth2Client = new google.auth.OAuth2(googleOauthClientId, googleOauthClientSecret)
-  oauth2Client.setCredentials({ refresh_token: googleOauthRefreshToken })
-  return google.calendar({ version: 'v3', auth: oauth2Client })
-}
+const isGoogleMeetConfigured = () => Boolean(
+  googleOauthClientId && googleOauthClientSecret && process.env.GOOGLE_OAUTH_REDIRECT_URI
+  && Buffer.from(process.env.GOOGLE_TOKEN_ENCRYPTION_KEY || '', 'base64').length === 32
+)
 
 const sendPostmarkMessage = async (message) => {
   if (!postmarkClient) return { statusCode: null, messageId: null }
@@ -3455,6 +3451,7 @@ const sendServiceCode = async ({ email, serviceKey, date, time }) => {
   await sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time}. Your private service code is ${serviceKey}. Show this code to reception for check-in. It applies only to your appointment and expires after the appointment window.` })
 }
 registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction, sendServiceCode })
+registerConsultationEvents(app, { admin, requireAuth, authorizeClinicAction })
 registerPractitionerTeams(app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap })
 registerConsultationWindows(app, { admin, ready: () => adminReady })
 registerBookingBatch(app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan })
@@ -3727,6 +3724,18 @@ app.all('/cron/online-consultation-timeouts', async (req, res) => {
     return res.json({ success: true, ...result })
   } catch (error) { return res.status(500).json({ success: false, error: 'Unable to close overdue online consultations.' }) }
 })
+registerWalkInBookings(app, {
+  admin, requireAuth, authorizeClinicAction, assertClinicPlanFeature,
+  getBookingRange, rangesOverlap, getApprovedLeaveForDate, getClinicPoliciesForBranch,
+  sendBooking: async appointment => {
+    if (!postmarkClient || !senderEmail) return
+    await sendPostmarkMessage({
+      to: appointment.customerEmail,
+      subject: 'Your AesthetiCare walk-in appointment is booked',
+      text: `Hi ${appointment.customerName},\n\nYour walk-in appointment is confirmed.${appointment.bookingForSomeoneElse ? `\nArranged for you by: ${appointment.bookedByName}. They accepted the booking and payment terms; you must still review and sign your own treatment agreement before check-in.` : ''}\nService: ${appointment.service}\nWhen: ${appointment.date} at ${appointment.time}\nPractitioner: ${appointment.practitionerName}\n\nThe clinic will collect payment separately for this appointment and send your own service key to this email. Review and sign your individual clinic agreement before check-in.`,
+    })
+  },
+})
 registerWalkInPayments(app, {
   admin, requireAuth, authorizeClinicAction,
   verifyCheckout: async (sessionId, appointmentId, branchId) => {
@@ -3808,7 +3817,7 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
 })
 
 app.post('/appointments/:id/contract/upload-signed', requireAuth, async (req, res) => {
-  return res.status(409).json({ success: false, error: 'The customer must sign the contract from their account after the initial payment.' })
+  return res.status(409).json({ success: false, error: 'Online booking customers must sign the contract from their account before payment. Walk-in recipients sign through the clinic-assisted contract screen after POS payment.' })
 })
 
 app.get('/health', (_req, res) => {
@@ -3843,189 +3852,19 @@ app.get('/maps/cavite-boundary', async (_req, res) => {
   }
 })
 
-app.post('/google-meet/create-consultation-link', requireAuth, requirePermission('consultations:create'), async (req, res) => {
-  if (!isGoogleMeetConfigured()) {
-    return res.status(503).json({
-      success: false,
-      error:
-        'Google Meet integration is not configured. Set GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, and GOOGLE_OAUTH_REFRESH_TOKEN.',
-    })
-  }
+registerGoogleConsultations(app, {
+  admin, google, requireAuth, authorizeClinicAction, loadUserContext,
+  config: {
+    clientId: googleOauthClientId, clientSecret: googleOauthClientSecret,
+    redirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI || '',
+    encryptionKey: process.env.GOOGLE_TOKEN_ENCRYPTION_KEY || '',
+    frontendUrl: frontendBaseUrl,
+  },
+})
 
-  const {
-    appointmentId,
-    summary,
-    description,
-    timezone,
-    attendeeEmails,
-    requestId,
-  } = req.body ?? {}
-
-  const cleanAppointmentId = String(appointmentId || '').trim()
-  if (!cleanAppointmentId) return res.status(400).json({ success: false, error: 'appointmentId is required' })
-  const appointmentSnap = await admin.firestore().collection('appointments').doc(cleanAppointmentId).get()
-  if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
-  const appointment = appointmentSnap.data() || {}
-  const assignedPractitioner = [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo]
-    .map((value) => String(value || '').trim()).includes(req.user.uid)
-  req.userContext = req.userContext || await loadUserContext(req.user.uid)
-  const assignedBranches = new Set([req.userContext.userData?.branchId, ...(Array.isArray(req.userContext.userData?.branchIds) ? req.userContext.userData.branchIds : [])].map((id) => String(id || '').trim()).filter(Boolean))
-  const sameBranch = assignedBranches.has(String(appointment.branchId || '').trim())
-  const isAuthorizedPractitioner = sameBranch && assignedPractitioner
-  if (!isAuthorizedPractitioner) return res.status(403).json({ success: false, error: 'Only the assigned practitioner may create this consultation link.' })
-  if (String(appointment.type || '').trim().toLowerCase() !== 'consultation' || String(appointment.consultationMode || '').trim().toLowerCase() !== 'online') {
-    return res.status(409).json({ success: false, error: 'Only online consultation appointments can have an online consultation link.' })
-  }
-  if (String(appointment.approvalStatus || '').trim() !== 'Approved') {
-    return res.status(409).json({ success: false, error: 'The clinic must approve this online consultation before a meeting link can be created.' })
-  }
-  if (appointment.contractRequired === true && normalized(appointment.contract?.status) !== 'signed') {
-    return res.status(409).json({ success: false, error: 'The customer must sign the consultation contract before a meeting link can be created.' })
-  }
-  if (!initialPaymentReceived(appointment)) {
-    return res.status(409).json({ success: false, error: 'The required consultation payment must be received before a meeting link can be created.' })
-  }
-
-  const cleanSummary = String(summary || '').trim()
-  const cleanDescription = String(description || '').trim()
-  const cleanTimezone = String(timezone || googleMeetDefaultTimezone).trim() || googleMeetDefaultTimezone
-
-  // Never accept a time range supplied by the browser. The appointment is the
-  // source of truth for both the calendar event and the official consultation
-  // window, preventing a practitioner from silently extending it.
-  const scheduledDate = String(appointment.date || '').trim()
-  const scheduledTime = String(appointment.time || '').trim()
-  const startsAt = new Date(`${scheduledDate}T${scheduledTime}+08:00`)
-  const durationMinutes = Math.min(240, Math.max(5, Number(appointment.consultationDurationMinutes || appointment.durationMinutes || appointment.totalServiceDurationMinutes || 30)))
-  const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
-  if (!cleanSummary || Number.isNaN(startsAt.getTime())) {
-    return res.status(400).json({
-      success: false,
-      error: 'This consultation needs a valid scheduled date and time.',
-    })
-  }
-
-  const attendees = Array.isArray(attendeeEmails)
-    ? attendeeEmails
-        .map((email) => String(email || '').trim())
-        .filter(Boolean)
-        .map((email) => ({ email }))
-    : []
-
-  const eventPayload = {
-    summary: cleanSummary,
-    description: cleanDescription,
-    start: { dateTime: startsAt.toISOString(), timeZone: cleanTimezone },
-    end: { dateTime: endsAt.toISOString(), timeZone: cleanTimezone },
-    attendees,
-    conferenceData: {
-      createRequest: {
-        requestId:
-          String(requestId || '').trim() ||
-          `meet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        conferenceSolutionKey: { type: 'hangoutsMeet' },
-      },
-    },
-  }
-
-  try {
-    const calendar = getGoogleCalendarClient()
-    const response = await calendar.events.insert({
-      calendarId: googleCalendarId,
-      conferenceDataVersion: 1,
-      sendUpdates: 'none',
-      requestBody: eventPayload,
-    })
-
-    const data = response?.data || {}
-    const entryPoints = data?.conferenceData?.entryPoints || []
-    const meetEntry = entryPoints.find((item) => item?.entryPointType === 'video')
-    const meetLink = data?.hangoutLink || meetEntry?.uri || ''
-
-    if (!meetLink) {
-      return res.status(500).json({
-        success: false,
-        error: 'Google Meet link was not returned by Google Calendar API',
-      })
-    }
-
-    const firestore = admin.firestore()
-    const customerId = String(appointment.customerId || appointment.clientId || '').trim()
-    const customerEmail = String(appointment.clientEmail || appointment.customerEmail || appointment.email || '').trim().toLowerCase()
-    const customerName = String(appointment.clientName || appointment.customerName || appointment.patientName || 'Customer').trim()
-    const consultationLabel = String(appointment.service || appointment.type || 'online consultation').trim()
-    const schedule = [String(appointment.date || '').trim(), String(appointment.time || '').trim()].filter(Boolean).join(' at ')
-
-    // Persist the link in trusted backend code so a successful creation always gives
-    // the customer a secure in-system path to join, even if the practitioner closes
-    // their browser immediately afterwards.
-    await Promise.all([
-      firestore.collection('appointments').doc(cleanAppointmentId).set({
-        consultationMode: 'online',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true }),
-      firestore.collection('appointmentMeetings').doc(cleanAppointmentId).set({
-        meetLink,
-        meetEventId: data.id || '',
-        meetCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        meetCreatedBy: req.user.uid,
-        scheduledStartAt: startsAt.toISOString(),
-        scheduledEndAt: endsAt.toISOString(),
-        durationMinutes,
-        customerId,
-        practitionerId: appointment.practitionerId || appointment.assignedPractitionerId || '',
-      }, { merge: true }),
-    ])
-
-    let inSystemNotification = { skipped: true, reason: 'Missing customer id' }
-    try {
-      inSystemNotification = await createAppointmentNotification({
-        firestore,
-        customerId,
-        title: 'Your online consultation link is ready',
-        message: `${consultationLabel}${schedule ? ` is scheduled for ${schedule}.` : ''} Open My Appointments to join the call.`,
-      })
-    } catch (notificationError) {
-      console.warn('Failed to create online consultation notification:', notificationError?.message || notificationError)
-    }
-
-    let emailNotification = { skipped: true, reason: 'Email service is not configured or the customer email is missing' }
-    if (customerEmail && postmarkClient && senderEmail) {
-      const appointmentsUrl = `${EMAIL_WEBSITE_URL}/customer/appointments`
-      try {
-        const subject = 'Your AesthetiCare online consultation link is ready'
-        const timingLine = schedule ? `Scheduled for: ${schedule}\n\n` : ''
-        await sendPostmarkMessage({
-          to: customerEmail,
-          from: senderEmail,
-          subject,
-          text: `Hi ${customerName},\n\nYour ${consultationLabel} meeting link is ready.\n${timingLine}For your privacy, sign in to My Appointments to join the call:\n${appointmentsUrl}\n\nAesthetiCare`,
-          html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${customerName},</p><p>Your <strong>${consultationLabel}</strong> meeting link is ready.</p>${schedule ? `<p><strong>Scheduled for:</strong> ${schedule}</p>` : ''}<p>For your privacy, sign in to <a href="${appointmentsUrl}">My Appointments</a> to join the call.</p><p>AesthetiCare</p></div>`,
-        })
-        emailNotification = { skipped: false }
-      } catch (emailError) {
-        console.warn('Failed to email online consultation notification:', emailError?.message || emailError)
-        emailNotification = { skipped: true, reason: 'Email delivery failed' }
-      }
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        eventId: data.id,
-        meetLink,
-        htmlLink: data.htmlLink || '',
-        calendarId: googleCalendarId,
-        inSystemNotification,
-        emailNotification,
-      },
-    })
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      error: error?.message || 'Failed to create Google Meet link',
-    })
-  }
+// Legacy manual creation cannot bypass customer verification or hosting identity.
+app.post('/google-meet/create-consultation-link', requireAuth, (req, res) => {
+  res.status(409).json({ success: false, error: 'The customer must submit their service code in My Appointments. Google Meet links are now generated automatically.' })
 })
 
 app.delete('/admin/system-admin/:uid', requireAuth, requireRole(['superadmin']), requirePermission('system:admins:manage'), async (req, res) => {
@@ -5359,6 +5198,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     let customerId = String(reservation.customerId || '').trim()
     const walkIn = reservation.source === 'walk_in'
     if (walkIn) {
+      assertWorkflow(!reservation.groupBooking, 'Group bookings are not available for walk-ins.', 400)
       await authorizeClinicAction(req.user.uid, String(reservation.branchId || ''), 'appointments:create')
       const client = await firestore.collection('clients').doc(String(reservation.clientId || customerId)).get()
       assertWorkflow(client.exists && client.data().branchId === reservation.branchId, 'Select a walk-in client from this branch.', 403)
@@ -5772,7 +5612,7 @@ app.post('/group-bookings/:id/recipients/:appointmentId/assign', requireAuth, as
       const serviceKey = appointment.serviceKey ? String(crypto.randomInt(100000, 1000000)) : null
       tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       for (const lock of prepared.customerLocks || []) tx.set(lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-      tx.update(ref, { treatmentTeam: [], staffingRequirements: prepared.data.staffingRequirements, practitionerId, assignedPractitionerId: practitionerId, practitionerName: name, assignedPractitionerName: name, date, time, serviceKey, workerKeyVerified: false, checkedInAt: null, endTime: prepared.data.endTime, reassignedAt: admin.firestore.FieldValue.serverTimestamp(), reassignedById: req.user.uid, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.update(ref, { ...resetAppointmentAccess(), treatmentTeam: [], staffingRequirements: prepared.data.staffingRequirements, practitionerId, assignedPractitionerId: practitionerId, practitionerName: name, assignedPractitionerName: name, date, time, serviceKey, workerKeyVerified: false, checkedInAt: null, endTime: prepared.data.endTime, reassignedAt: admin.firestore.FieldValue.serverTimestamp(), reassignedById: req.user.uid, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       return { appointmentId, practitionerId, practitionerName: name, date, time, email: appointment.customerEmail, serviceKey }
     })
     if (result.serviceKey) await sendServiceCode(result).catch(error => console.warn('Group reschedule code email failed:', error.message))
@@ -9054,7 +8894,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       const timestamp = admin.firestore.FieldValue.serverTimestamp()
       tx.set(prepared.lock, { updatedAt: timestamp })
       for (const lock of prepared.customerLocks || []) tx.set(lock, { updatedAt: timestamp })
-      tx.update(appointmentRef, { ...rescheduleUpdate, treatmentTeam: [], staffingRequirements: prepared.data.staffingRequirements, status, endTime: prepared.data.endTime, serviceKey, checkedInAt: null, workerKeyVerified: false, rescheduleCount: Number(fresh.rescheduleCount || 0) + 1 })
+      tx.update(appointmentRef, { ...rescheduleUpdate, ...resetAppointmentAccess(), treatmentTeam: [], staffingRequirements: prepared.data.staffingRequirements, status, endTime: prepared.data.endTime, serviceKey, checkedInAt: null, workerKeyVerified: false, rescheduleCount: Number(fresh.rescheduleCount || 0) + 1 })
       if (fresh.treatmentPlan?.totalSessions > 1) tx.set(firestore.collection('treatmentSessions').doc(`${fresh.treatmentPlanAppointmentId || appointmentId}-${fresh.sessionNumber || 1}`), { date: requestedDate, time: requestedTime, status: 'Scheduled', updatedAt: timestamp }, { merge: true })
       tx.set(firestore.collection('appointmentAudit').doc(), { appointmentId, branchId: fresh.branchId, actorId: req.user.uid, action: 'reschedule_approved', previousStatus: fresh.status, nextStatus: status, date: requestedDate, time: requestedTime, createdAt: timestamp })
       return { email: fresh.customerEmail, serviceKey, date: requestedDate, time: requestedTime }

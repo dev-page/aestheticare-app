@@ -16,6 +16,16 @@
       </header>
 
       <div class="space-y-3">
+        <section v-if="isWalkIn && appointment.bookingAgreement" class="contract-document">
+          <h4>Booking and payment agreement</h4>
+          <p class="contract-record-line">Signed by {{ appointment.bookingAgreement.signer?.name }} as the booking arranger. This signature does not replace the service recipient's treatment consent.</p>
+          <details><summary>View accepted booking terms and signature</summary>
+            <ClientContractDocument :document="appointment.bookingAgreement.document" />
+            <p v-for="(visit, index) in appointment.bookingAgreement.appointments || []" :key="index" class="contract-record-line">{{ visit.service }} · {{ visit.date }} at {{ visit.time }} · PHP {{ Number(visit.amount || 0).toFixed(2) }}</p>
+            <img :src="appointment.bookingAgreement.signer?.signatureImage" alt="Booking arranger signature" class="signature-preview" />
+            <p class="contract-record-line">{{ appointment.bookingAgreement.signer?.signedAt }}</p>
+          </details>
+        </section>
         <p v-if="isWalkIn && appointment.paymentStatus !== 'Paid'" class="contract-warning">Collect payment at POS first. The client can then sign here before treatment.</p>
         <section v-if="contract?.terms" class="contract-document">
           <div class="contract-step"><span>1</span><div><h4>Review agreement</h4><p>Please read the terms before signing.</p></div></div>
@@ -30,15 +40,15 @@
 
         <a v-if="canSign && contract.templateUrl" :href="contract.templateUrl" target="_blank" rel="noopener noreferrer" class="contract-link">Open the attached agreement</a>
         <section v-if="canSign" class="signature-section">
-          <div class="contract-step"><span>2</span><div><h4>{{ isWalkIn ? 'Client electronic signature' : 'Your electronic signature' }}</h4><p>{{ isWalkIn ? 'Hand the device to the client to sign.' : 'Use your finger, stylus, or mouse to sign below.' }}</p></div></div>
+          <div class="contract-step"><span>2</span><div><h4>{{ isWalkIn ? 'Service recipient electronic signature' : 'Your electronic signature' }}</h4><p>{{ isWalkIn ? `Hand the device to ${appointment.clientName || appointment.customerName || 'the service recipient'} to sign. The booking arranger cannot sign treatment consent for them.` : 'Use your finger, stylus, or mouse to sign below.' }}</p></div></div>
           <ElectronicSignaturePad v-model="signatureImage" label="Draw your signature for this appointment contract" />
           <label class="contract-consent">
             <input v-model="accepted" type="checkbox" class="mt-1" />
             <span>I have read and agree to this contract and confirm that the signature above is mine.</span>
           </label>
         </section>
-        <div v-if="(!readOnly && !isCustomer) || canSign" class="contract-actions">
-          <button v-if="!readOnly && !isCustomer" @click="createContract" :disabled="isProcessing" class="contract-button contract-button-secondary">Create / Update</button>
+        <div v-if="(!readOnly && !isCustomer && !isWalkIn) || canSign" class="contract-actions">
+          <button v-if="!readOnly && !isCustomer && !isWalkIn" @click="createContract" :disabled="isProcessing" class="contract-button contract-button-secondary">Create / Update</button>
           <button v-if="canSign" @click="signContract" :disabled="isProcessing || !accepted || !signatureImage" class="contract-button contract-button-primary">{{ isProcessing ? 'Saving signature...' : 'Confirm signature' }}</button>
         </div>
 
@@ -141,7 +151,7 @@ export default {
         if (!payload.success) throw new Error(payload.error || 'Failed')
         contract.value = payload.data.contract
         message.value = 'Contract saved.'
-        emit('updated')
+        emit('updated', { contract: contract.value })
       } catch (err) {
         error.value = err?.message || String(err)
       } finally {
@@ -186,7 +196,7 @@ export default {
         if (!payload.success) throw new Error(payload.error || 'Failed to sign')
         contract.value = payload.data.contract
         message.value = 'Contract signed.'
-        emit('updated')
+        emit('updated', { contract: contract.value })
       } catch (err) {
         error.value = err?.message || String(err)
       } finally {
