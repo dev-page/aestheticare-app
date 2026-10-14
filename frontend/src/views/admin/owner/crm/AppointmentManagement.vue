@@ -24,7 +24,8 @@ onMounted(async () => {
 })
 const canView = computed(() => hasPermission('appointments:view') || hasPermission('appointments:update'))
 const canReview = computed(() => hasPermission('appointments:review'))
-const canOnline = computed(() => hasPermission('consultations:view') && hasFeature('online_consultations'))
+// Existing paid consultations remain available after returning to Free.
+const canOnline = computed(() => hasPermission('consultations:view'))
 const canQueue = computed(() => canView.value || canOnline.value)
 const onlineMode = computed(() => route.query.mode === 'online' || (!canView.value && canOnline.value))
 const activeTab = computed(() => route.query.tab === 'requests' ? 'requests' : route.query.tab === 'queue' ? 'queue' : canView.value ? 'all' : canReview.value ? 'requests' : 'queue')
@@ -57,7 +58,7 @@ const tabs = computed(() => [
           <router-link :to="{ path: '/crm/appointments', query: { tab: 'queue' } }" class="appointment-tab" :class="{ 'is-active': !onlineMode }">Service Queue</router-link>
           <router-link :to="{ path: '/crm/appointments', query: { tab: 'queue', mode: 'online' } }" class="appointment-tab" :class="{ 'is-active': onlineMode }">Online Consultations</router-link>
         </div>
-        <PractitionerOnlineConsultation v-if="onlineMode && canOnline" :key="`online-${branchId}`" :branch-id="branchId" embedded />
+        <PractitionerOnlineConsultation v-if="onlineMode && canOnline" :key="`online-${branchId}`" :branch-id="branchId" :existing-only="!hasFeature('online_consultations')" embedded />
         <PractitionerAppointments v-else-if="!onlineMode && canView" :key="`queue-${branchId}`" :branch-id="branchId" embedded />
         <p v-else class="text-sm text-slate-400">You do not have access to online consultations.</p>
       </section>

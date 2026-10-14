@@ -5,40 +5,15 @@ import { usePermissions } from "@/composables/usePermissions";
 import { useSubscription } from "@/composables/useSubscription";
 import { collection, doc, getDoc, getDocs, limit, query, where } from "firebase/firestore";
 import { auth, db } from "@/config/firebaseConfig";
+import { subscriptionDate } from '../../../shared/subscriptionDates.js';
+import { isFreeClinicRoute as isFreePlanRoute } from '../../../shared/freeClinicRoutes.js';
 
 const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 
-// The Free Plan is a permanent catalog-and-inquiry tier. These are the only
-// clinic workspace destinations it exposes; paid operations begin on Basic.
-const FREE_PLAN_ROUTE_PREFIXES = [
-  '/clinic/dashboard',
-  '/clinic/branches',
-  '/clinic/profile',
-  '/clinic/page',
-  '/clinic/policies',
-  '/catalog/products-services',
-  '/crm/clients',
-  '/crm/clients/new',
-  '/crm/inbox',
-  '/account/profile',
-  '/account/change-password',
-  '/account/subscription',
-  '/account/plans',
-  '/account/closure',
-  '/notifications',
-  '/support/report',
-  '/subscription-features',
-  '/subscription/checkout',
-]
-
-const isFreePlanRoute = (path) => FREE_PLAN_ROUTE_PREFIXES.some((prefix) =>
-  path === prefix || path.startsWith(`${prefix}/`)
-)
-
 const subscriptionExpiryHasPassed = (value) => {
   if (!value) return false
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now()
+  const date = subscriptionDate(value)
+  return Boolean(date && date.getTime() <= Date.now())
 }
 
 const isTrueFlag = (value) => value === true || String(value || '').trim().toLowerCase() === 'true'
@@ -588,6 +563,13 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // Permission-required routes
+  // Check plans before owner/alternate permission shortcuts below.
+  if (currentUser && to.meta.requiresAuth && isClinicAccount(currentUserData) && !isClinicSetupRoute) {
+    await initSubscription(true)
+    if (activePlan.value === 'free' && !isFreePlanRoute(routePath)) return next('/subscription-features')
+  }
+  if (to.meta.requiresFeature && !hasFeature(to.meta.requiresFeature)) return next('/subscription-features')
+
   if ((to.meta.requiresPermission && !(to.path === '/account/change-password' && forcedEmployeePasswordChange) && !hasPermission(to.meta.requiresPermission)) || (to.meta.requiresPermissionsAny && !to.meta.requiresPermissionsAny.some(permission => hasPermission(permission)))) {
     if (currentUser?.uid) {
       try {

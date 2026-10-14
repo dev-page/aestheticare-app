@@ -6,6 +6,16 @@ import { expiryReminderStage, sendSubscriptionReminders, registerSubscriptionRem
 
 const now = new Date('2026-10-13T00:00:00+08:00')
 const DAY = 86400000
+
+test('trial expiry reminders explain no charge and the permanent Free fallback', async () => {
+  const h = setup(2)
+  for (const key of ['users/owner', 'clinics/owner']) Object.assign(h.records.get(key), { subscriptionPlan: 'premium', paymentStatus: 'trial' })
+  await sendSubscriptionReminders(h.dependencies)
+  assert.equal(h.sent.length, 1)
+  assert.match(h.sent[0].subject, /Premium trial/)
+  assert.match(h.sent[0].text, /No automatic charge/)
+  assert.match(h.sent[0].text, /returns to Free/)
+})
 const expiry = days => new Date(now.getTime() + days * DAY)
 function setup(days = 6) {
   const h = transactionDb()

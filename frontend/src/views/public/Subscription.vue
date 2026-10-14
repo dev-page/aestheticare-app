@@ -158,14 +158,14 @@ const planCardClass = (plan) => {
 };
 
 const planKicker = (plan) => {
-  if (plan.id === "free-trial" || plan.id === "free") return "For first-time clinics";
+  if (plan.id === "free-trial" || plan.id === "free") return "Always free";
   if (plan.id === "basic") return "For growing clinics";
   if (plan.id === "premium") return "For full operations";
   return plan.recommended ? "Featured option" : "Flexible option";
 };
 
 const planCaption = (plan) => {
-  if (plan.id === "free-trial" || plan.id === "free") return "A no-cost starting point for exploring the platform.";
+  if (plan.id === "free-trial" || plan.id === "free") return "Keep essential clinic features with no subscription fee or expiry. Approved new clinics can try Premium free for 14 days.";
   if (plan.id === "basic") return "Best fit for clinics focusing on daily bookings, staffing, and reporting.";
   if (plan.id === "premium") return "Built for teams that need deeper visibility, support, and multi-branch control.";
   return "A saved custom plan configured in Setup Plans.";

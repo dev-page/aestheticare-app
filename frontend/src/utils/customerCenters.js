@@ -5,18 +5,6 @@ const FALLBACK_SERVICE = 'General Services'
 
 const toText = (value) => String(value || '').trim()
 
-const toDate = (value) => {
-  if (!value) return null
-  if (typeof value?.toDate === 'function') return value.toDate()
-  if (value instanceof Date) return value
-  if (typeof value === 'number') return new Date(value)
-  if (typeof value === 'string') {
-    const parsed = new Date(value)
-    return Number.isNaN(parsed.getTime()) ? null : parsed
-  }
-  return null
-}
-
 const extractCity = (location) => {
   const raw = toText(location)
   if (!raw) return ''
@@ -37,13 +25,10 @@ const buildBranches = (clinics, serviceMap) =>
       const ownerId = toText(clinic.ownerId)
       const status = toText(clinic.status).toLowerCase()
       const isPublished = clinic.isPublished === true
-      const expiresAt = toDate(clinic.subscriptionExpiresAt)
-      const isExpired = expiresAt ? Date.now() > expiresAt.getTime() : false
       return (
         Boolean(ownerId) &&
         status !== 'inactive' &&
-        isPublished &&
-        !isExpired
+        isPublished
       )
     })
     .map((clinic) => {

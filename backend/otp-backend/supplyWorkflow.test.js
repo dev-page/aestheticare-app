@@ -18,16 +18,27 @@ function fixture() {
   }
   const firestore = () => db; firestore.FieldValue = { serverTimestamp: () => ({ _seconds: 1800000000 }) }
   registerSupplyWorkflow({ get: (path, ...handlers) => routes.set(`GET ${path}`, handlers.at(-1)), post: (path, ...handlers) => routes.set(`POST ${path}`, handlers.at(-1)) }, { admin: { firestore }, requireAuth: () => {}, loadUserContext: async uid => ({ uid, roleKey: ['supplier', 'competitor'].includes(uid) ? 'supplier' : uid, permissions: new Set(permissions[uid]), userData: { branchId: 'clinic', fullName: uid } }), storageBucket: () => 'unused' })
-  seed('clinics', 'clinic', { ownerId: 'owner' }); seed('inventoryItems', 'item', { branchId: 'clinic', name: 'Gloves', currentStock: 20, minStock: 25, targetStock: 120, unit: 'boxes', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves' })
+  seed('clinics', 'clinic', { subscriptionPlan: 'basic', ownerId: 'owner' }); seed('inventoryItems', 'item', { branchId: 'clinic', name: 'Gloves', currentStock: 20, minStock: 25, targetStock: 120, unit: 'boxes', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves' })
   seed('suppliers', 'vendor', { branchId: 'clinic', status: 'Active', verificationStatus: 'Verified', ownerId: 'supplier', offeredItems: [{ id: 'catalog-gloves', name: 'Gloves', category: 'Materials', unit: 'boxes', price: 5, quantity: 1000 }] }); seed('suppliers', 'rival', { branchId: 'clinic', status: 'Active', verificationStatus: 'Verified', ownerId: 'competitor', offeredItems: [] })
   seed('supplierApplications', 'supplier', { verificationStatus: 'Verified' }); seed('supplierApplications', 'competitor', { verificationStatus: 'Verified' })
-  const call = async (uid, path, body = {}, id, method = 'POST') => { let status = 200, payload; await routes.get(`${method} ${path}`)({ user: { uid }, body, params: { id }, query: {} }, { status: code => { status = code; return { json: data => { payload = data } } }, json: data => { payload = data } }); return { status, ...payload } }
+  const call = async (uid, path, body = {}, id, method = 'POST', query = {}) => { let status = 200, payload; await routes.get(`${method} ${path}`)({ user: { uid }, body, params: { id }, query }, { status: code => { status = code; return { json: data => { payload = data } } }, json: data => { payload = data } }); return { status, ...payload } }
   const create = async (uid, kind, data) => { const r = await call(uid, '/supply/records', { branchId: 'clinic', kind, ...data }); assert.equal(r.status, 200, JSON.stringify(r)); return r.data.id }
   const act = async (uid, id, action, data = {}, expected = 200) => { const r = await call(uid, '/supply/records/:id/actions', { action, ...data }, id); assert.equal(r.status, expected, JSON.stringify(r)); return r }
   const read = id => store.get(`supplyRecords/${id}`)
   const evidence = id => { const doc = `proof-${id}`; seed('supplyDocuments', doc, { branchId: 'clinic', recordId: id }); return doc }
   return { store, seed, call, create, act, read, evidence }
 }
+
+test('Free and expired subscriptions block paid supply APIs while preserving inbox access and records', async () => {
+  for (const subscription of [{ subscriptionPlan: 'free' }, { subscriptionPlan: 'basic', subscriptionExpiresAt: new Date(1), paymentStatus: 'trial' }]) {
+    const f = fixture()
+    f.seed('clinics', 'clinic', { ownerId: 'owner', ...subscription })
+    assert.equal((await f.call('inventory', '/supply/workspace', {}, undefined, 'GET')).status, 403)
+    assert.equal((await f.call('inventory', '/supply/records', { branchId: 'clinic', kind: 'request' })).status, 403)
+    assert.equal((await f.call('procurement', '/supply/chat', {}, undefined, 'GET', { supplierId: 'vendor' })).status, 200)
+    assert.ok(f.store.has('inventoryItems/item'))
+  }
+})
 
 test('Unverified and suspended suppliers cannot access the portal or receive new requests', async () => {
   const f = fixture()
@@ -151,7 +162,7 @@ test('Supplier catalog commercial terms are validated and audited on the server'
 
 test('A supplier delivery fee is selected from the clinic branch city before Finance approval', async () => {
   const f = fixture(), date = '2099-12-31'
-  f.seed('clinics', 'clinic', { ownerId: 'owner', clinicLocation: 'Imus' })
+  f.seed('clinics', 'clinic', { subscriptionPlan: 'basic', ownerId: 'owner', clinicLocation: 'Imus' })
   const supplier = f.store.get('suppliers/vendor')
   f.seed('suppliers', 'vendor', { ...supplier, deliveryFees: [{ city: 'Imus', amount: 250 }, { city: 'Bacoor', amount: 400 }] })
   const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date })

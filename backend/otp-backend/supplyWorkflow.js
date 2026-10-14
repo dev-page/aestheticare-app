@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
 import { supplierIsVerified } from './supplierVerification.js'
 import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMatch, stockSignals, hasPermission, permissionsByKind, supplierCanRead, supplierProjection } from './supplyModel.js'
 
@@ -35,12 +36,13 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     if (supplier) demand(supplierIsVerified((await db.collection('supplierApplications').doc(ctx.uid).get()).data()), 'Complete supplier verification before using the supply portal.', 403)
     return { ...ctx, supplier, supplierIds: [...new Set(owned.filter(s => s.status === 'Active' && s.verificationStatus === 'Verified').map(s => s.id))] }
   }
-  const branchAccess = async (ctx, branchId) => {
+  const branchAccess = async (ctx, branchId, paidModule = true) => {
     cleanId(branchId)
     demand(!ctx.supplier, 'Staff access required.', 403)
     const clinic = (await db.collection('clinics').doc(branchId).get()).data()
     const assignedBranches = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
     demand(clinic && (assignedBranches.has(branchId) || clinic.ownerId === ctx.uid || clinic.branchAdminId === ctx.uid || branchId === ctx.uid), 'This branch is not assigned to your account.', 403)
+    if (paidModule) demand(subscriptionLifecycle(clinic).plan !== 'free', 'Inventory, procurement and logistics require Basic or Premium.', 403)
   }
   const canRead = (ctx, r) => ctx.supplier ? supplierCanRead(r, ctx.supplierIds) : hasPermission(ctx, 'reports:view') || (permissionsByKind[r.kind] || []).some(p => hasPermission(ctx, p))
   const ensureRead = async (ctx, r) => { demand(r && canRead(ctx, r), 'Record not available to this account.', 403); if (!ctx.supplier) await branchAccess(ctx, r.branchId) }
@@ -166,6 +168,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const branchId = allBranches ? 'all' : requestedScope
     if (!ctx.supplier && !branchId) return res.json({ success: true, data: { branches, records: [], items: [], suppliers: [], movements: [], permissions: [...ctx.permissions], supplier: false } })
     if (!ctx.supplier && !allBranches) await branchAccess(ctx, branchId)
+    if (allBranches) await Promise.all(branches.map(branch => branchAccess(ctx, branch.id)))
     const scopedDocs = async (collection) => (await Promise.all((allBranches ? branches.map(b => b.id) : [branchId]).map(id => db.collection(collection).where('branchId', '==', id).get()))).flatMap(docs)
     let records
     if (ctx.supplier) {
@@ -796,7 +799,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   app.get('/supply/chats', requireAuth, wrap(async (req, res, ctx) => {
     const branchId = cleanId(req.query.branchId)
     allowClinicSupplierChat(ctx)
-    await branchAccess(ctx, branchId)
+    await branchAccess(ctx, branchId, false)
     const [chatSnap, supplierSnap] = await Promise.all([
       db.collection('supplyChats').where('branchId', '==', branchId).get(),
       db.collection('suppliers').where('branchId', '==', branchId).get(),
@@ -820,7 +823,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const supplierId = cleanId(req.query.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data()
     demand(supplier, 'Supplier not found.', 404)
     if (ctx.supplier) demand(ctx.supplierIds.includes(supplierId), 'This chat belongs to another supplier.', 403)
-    else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId) }
+    else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId, false) }
     const chatId = `chat-${supplier.branchId}-${supplierId}`, messages = docs(await db.collection('supplyChatMessages').where('chatId', '==', chatId).get()).sort((a, b) => (a.createdAt?._seconds || 0) - (b.createdAt?._seconds || 0))
     res.json({ success: true, data: { chatId, supplierId, branchId: supplier.branchId, messages } })
   }))
@@ -828,7 +831,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const supplierId = cleanId(req.params.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data(), message = required(req.body.message, 'Message')
     demand(supplier && supplier.status === 'Active', 'Supplier is unavailable.', 404)
     if (ctx.supplier) demand(ctx.supplierIds.includes(supplierId), 'This chat belongs to another supplier.', 403)
-    else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId) }
+    else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId, false) }
     const clinic = (await db.collection('clinics').doc(supplier.branchId).get()).data() || {}, chatId = `chat-${supplier.branchId}-${supplierId}`, now = stamp(), ref = db.collection('supplyChatMessages').doc()
     const clinicRecipients = ctx.supplier
       ? (await Promise.all(docs(await db.collection('users').where('branchId', '==', supplier.branchId).get()).map(async user => {

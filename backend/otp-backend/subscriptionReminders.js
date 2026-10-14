@@ -35,8 +35,12 @@ export async function sendSubscriptionReminders({ admin, sendEmail, websiteUrl, 
     const reminderRef = db.collection('subscriptionReminders').doc(key)
     const notificationRef = db.collection('notifications').doc(`subscription-expiry-${key}`)
     const token = randomUUID()
-    const title = 'Your subscription is nearing expiry'
-    const message = `Your ${record.subscriptionPlan} subscription expires on ${subscriptionDateLabel(expiry)} (Philippine time). Review your Subscription Plan to arrange renewal and keep your paid features.`
+    const trial = String(record.paymentStatus).toLowerCase() === 'trial'
+    const trialPlanLabel = String(record.subscriptionPlan).toLowerCase() === 'premium' ? 'Premium' : 'Basic'
+    const title = trial ? `Your ${trialPlanLabel} trial is ending soon` : 'Your subscription is nearing expiry'
+    const message = trial
+      ? `Your ${trialPlanLabel} trial ends on ${subscriptionDateLabel(expiry)} (Philippine time). No automatic charge applies. Your clinic returns to Free unless you purchase a plan. Your records and existing appointments are retained.`
+      : `Your ${record.subscriptionPlan} subscription expires on ${subscriptionDateLabel(expiry)} (Philippine time). Your clinic returns to Free after expiry, with records and existing appointments retained. Review your Subscription Plan to arrange renewal and keep your paid features.`
     try {
       const claim = await db.runTransaction(async tx => {
         const [currentOwner, currentClinic, previous] = await Promise.all([tx.get(ownerRef), tx.get(clinicRef), tx.get(reminderRef)])

@@ -21,10 +21,11 @@
             <p class="plan-description">{{ planDescription }}</p>
             <dl class="billing-facts">
               <div><dt>Payment</dt><dd>{{ isFree ? 'No payment required' : paymentStatusLabel }}</dd></div>
-              <div><dt>{{ isFree ? 'Plan duration' : 'Expires on' }}</dt><dd>{{ isFree ? 'No expiry' : expiresAtLabel }}</dd></div>
+              <div><dt>{{ isFree ? 'Plan duration' : isTrial ? 'Trial ends on' : 'Expires on' }}</dt><dd>{{ isFree ? 'No expiry' : expiresAtLabel }}</dd></div>
               <div v-if="!isFree && daysRemaining !== null && daysRemaining > 0"><dt>Time remaining</dt><dd>{{ daysRemaining }} {{ daysRemaining === 1 ? 'day' : 'days' }}</dd></div>
             </dl>
             <p v-if="!isFree" class="date-note">Dates are shown in Philippine time.</p>
+            <p v-if="isTrial" class="pending-notice">No automatic charge. Your clinic returns to Free when the trial ends unless you purchase a plan. Records and existing appointments are retained.</p>
             <div v-if="!isFree && daysRemaining !== null && daysRemaining <= 7" class="renewal-notice" role="status">
               <Icon icon="lucide:clock-3" width="19" aria-hidden="true" />
               <div><strong>{{ daysRemaining <= 0 ? 'Your paid plan has ended' : 'Your renewal is coming up' }}</strong><p>{{ daysRemaining <= 0 ? 'Free Plan access applies after expiry. Explore plans to restore your paid features.' : 'Review your plan options before expiry to keep your paid features.' }}</p></div>
@@ -42,7 +43,7 @@
             <button type="button" class="app-button app-button--primary explore-button" @click="goToUpgrade">Explore Plans <Icon icon="lucide:arrow-right" width="17" aria-hidden="true" /></button>
             <div class="billing-help">
               <div><Icon icon="lucide:credit-card" width="19" aria-hidden="true" /><div><h3>Pay through checkout</h3><p>Choose a plan and complete payment through secure checkout.</p></div></div>
-              <div><Icon icon="lucide:bell" width="19" aria-hidden="true" /><div><h3>Stay ahead of expiry</h3><p>Paid plans receive notification and email reminders 7, 3, and 1 day before expiry.</p></div></div>
+              <div><Icon icon="lucide:bell" width="19" aria-hidden="true" /><div><h3>Stay ahead of expiry</h3><p>Trials and paid plans receive notification and email reminders 7, 3, and 1 day before expiry.</p></div></div>
             </div>
           </aside>
         </div>
@@ -74,6 +75,7 @@ import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
 import { Icon } from '@iconify/vue'
 import { subscriptionDate, subscriptionDateLabel, subscriptionRecord } from '../../../../../shared/subscriptionDates.js'
+import { subscriptionLifecycle } from '../../../../../shared/subscriptionLifecycle.js'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -82,7 +84,8 @@ const router = useRouter()
 const loading = ref(true)
 const error = ref('')
 
-const planKey = ref('free-trial')
+const planKey = ref('free')
+const isTrial = ref(false)
 const paymentStatus = ref('')
 const subscriptionExpiresAt = ref(null)
 const planData = ref(null)
@@ -144,11 +147,12 @@ const normalizePlanLabel = (value) => {
   return value
 }
 
-const planLabel = computed(() => normalizePlanLabel(planKey.value))
+const planLabel = computed(() => `${normalizePlanLabel(planKey.value)}${isTrial.value ? ' trial' : ''}`)
 const isFree = computed(() => planKey.value.includes('free'))
 const isPaid = computed(() => paymentStatus.value.toLowerCase() === 'paid')
-const planPrice = computed(() => isFree.value ? formatCurrency(0) : planData.value?.price != null ? formatCurrency(planData.value.price) : 'Price unavailable')
+const planPrice = computed(() => isFree.value || isTrial.value ? formatCurrency(0) : planData.value?.price != null ? formatCurrency(planData.value.price) : 'Price unavailable')
 const planCycle = computed(() => {
+  if (isTrial.value) return 'Free for 14 days'
   if (isFree.value) return 'No billing cycle'
   const cycle = formatCycle(planData.value?.billingCycle || planData.value?.cycle || '')
   return cycle === 'Trial' ? 'Billing cycle unavailable' : `per ${{ monthly: 'month', yearly: 'year', annually: 'year', annual: 'year' }[cycle] || cycle}`
@@ -159,6 +163,7 @@ const daysRemaining = computed(() => {
 })
 const statusLabel = computed(() => {
   if (isFree.value) return 'Active'
+  if (isTrial.value) return 'Trial active'
   if (daysRemaining.value !== null && daysRemaining.value <= 0) return 'Expired'
   if (!isPaid.value) return 'Pending payment'
   if (daysRemaining.value === null) return 'Check billing details'
@@ -166,17 +171,18 @@ const statusLabel = computed(() => {
 })
 const planDescription = computed(() => {
   if (planKey.value === 'free-trial' || planKey.value === 'free') {
-    return 'Basic access for clinics getting started on the platform.'
+    return 'Permanent access to essential clinic features, with no subscription fee or expiry.'
   }
   return planData.value?.description || 'No description available.'
 })
 const planFeatures = computed(() => {
   if (planKey.value === 'free-trial' || planKey.value === 'free') {
-    return ['Core modules', 'Limited users', 'Standard access']
+    return ['Primary clinic profile and branch', 'Service listings and clinic policies', 'Clients and inbox', 'Appointment management and existing transactions']
   }
   return planData.value?.features || []
 })
 const paymentStatusLabel = computed(() => {
+  if (isTrial.value) return 'No charge during trial'
   if (planKey.value === 'free-trial' || planKey.value === 'free') return '-'
   const raw = String(paymentStatus.value || '').trim().toLowerCase()
   if (!raw) return '-'
@@ -196,9 +202,11 @@ const pendingPlanNotice = computed(() => {
 let userSubscription = {}, clinicSubscription = {}
 const applySubscriptionData = (userData = {}, clinicData = {}) => {
   const data = subscriptionRecord(userData, clinicData)
-  planKey.value = String(data.subscriptionPlan || 'free-trial').trim().toLowerCase()
+  const lifecycle = subscriptionLifecycle(data)
+  planKey.value = lifecycle.plan
+  isTrial.value = lifecycle.trial
   paymentStatus.value = data.paymentStatus || ''
-  subscriptionExpiresAt.value = data.subscriptionExpiresAt ?? null
+  subscriptionExpiresAt.value = lifecycle.expiresAt
   pendingPlan.value = String(data.pendingSubscriptionPlan || '').trim().toLowerCase()
   pendingApplyAt.value = data.pendingSubscriptionApplyAt ?? null
   syncPlanData()
@@ -298,12 +306,12 @@ const subscribePaymentHistory = (ownerId, email) => {
 }
 
 const goToUpgrade = () => {
-  const targetPlan = planKey.value === 'basic' ? 'premium' : planKey.value
+  const targetPlan = isTrial.value ? 'premium' : isFree.value ? 'basic' : planKey.value === 'basic' ? 'premium' : planKey.value
   router.push({ path: '/account/plans', query: { plan: targetPlan } })
 }
 
 onMounted(trackPageLoad(async () => {
-  clockTimer = setInterval(() => { currentTime.value = Date.now() }, 60000)
+  clockTimer = setInterval(() => { currentTime.value = Date.now(); applySubscriptionData(userSubscription, clinicSubscription) }, 60000)
   await loadSubscription()
   await subscribeToUpdates()
 }))

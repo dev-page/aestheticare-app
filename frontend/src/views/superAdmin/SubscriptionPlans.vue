@@ -157,19 +157,7 @@
               <p v-if="fieldError(plan, 'description')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'description') }}</p>
             </div>
 
-            <div v-if="plan.id === 'free' || plan.isDraft">
-              <label class="block text-xs text-slate-400 mb-1">Trial Duration (days)</label>
-              <input
-                v-model="plan.trialDays"
-                type="number"
-                min="0"
-                step="1"
-                class="w-full bg-slate-900 rounded-lg px-3 py-2 text-slate-100 focus:outline-none"
-                :class="fieldClass(plan, 'trialDays')"
-                @input="clearPlanFieldError(plan, 'trialDays')"
-              />
-              <p v-if="fieldError(plan, 'trialDays')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'trialDays') }}</p>
-            </div>
+            <p v-if="plan.id === 'free'" class="text-sm text-slate-400">Free is permanent and has no expiry. The one-time Premium trial is a separate 14-day offer.</p>
 
             <div>
               <div class="flex items-center justify-between mb-2">
@@ -401,7 +389,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const normalizedBillingCycle = String(plan.billingCycle || '').trim()
       const normalizedDescription = String(plan.description || '').trim()
       const numericPrice = Number(plan.price)
-      const numericTrialDays = Number(plan.trialDays)
       const key = planKey(plan)
       const allPlanIds = plans.value
         .filter((entry) => planKey(entry) !== key)
@@ -439,14 +426,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         errors.description = 'Description is required.'
       } else if (normalizedDescription.length < 10) {
         errors.description = 'Description must be at least 10 characters.'
-      }
-
-      if (plan.id === 'free' || plan.isDraft) {
-        if (plan.trialDays === '' || plan.trialDays === null || plan.trialDays === undefined || Number.isNaN(numericTrialDays)) {
-          errors.trialDays = 'Trial duration is required.'
-        } else if (!Number.isInteger(numericTrialDays) || numericTrialDays < 0) {
-          errors.trialDays = 'Trial duration must be a whole number of 0 or more.'
-        }
       }
 
       const features = Array.isArray(plan.features) ? plan.features : []
@@ -599,7 +578,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const normalizedName = String(plan.name || '').trim()
         const normalizedBillingCycle = String(plan.billingCycle || '').trim()
         const normalizedDescription = String(plan.description || '').trim()
-        const normalizedTrialDays = Math.max(0, Math.floor(Number(plan.trialDays || 0)))
         const isDraft = Boolean(plan.isDraft)
 
         const payload = {
@@ -611,7 +589,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           currencyDisplay: 'code',
           billingCycle: normalizedBillingCycle,
           description: normalizedDescription,
-          trialDays: plan.id === 'free' || isDraft ? normalizedTrialDays : Math.max(0, Math.floor(toNumber(plan.trialDays))),
+          trialDays: 0,
           isActive: Boolean(plan.isActive),
           isDeleted: false,
           features: cleanFeatures,

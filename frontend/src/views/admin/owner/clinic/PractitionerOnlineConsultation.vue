@@ -155,7 +155,7 @@ import { initialPaymentReceived, normalized } from '../../../../../../backend/ot
 
 export default {
   name: 'PractitionerOnlineConsultation',
-  props: { embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' } },
+  props: { embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' }, existingOnly: { type: Boolean, default: false } },
   components: { OwnerSidebar, Icon, GoogleHostingAccount, OnlineConsultationControls },
   setup(props) {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
@@ -216,6 +216,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const filteredAppointments = computed(() =>
       assignedAppointments.value.filter((item) => {
+        if (props.existingOnly && !initialPaymentReceived(item)) return false
         if (String(item.consultationMode || '').trim().toLowerCase() !== 'online' && !item.meetLink) return false
         const queryText = searchQuery.value.trim().toLowerCase()
         const clientName = (item.clientName || item.patientName || '').toLowerCase()

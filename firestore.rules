@@ -54,6 +54,8 @@ service cloud.firestore {
         'approvedBy', 'rejectedAt', 'rejectionReason', 'reviewedBy', 'reviewedAt',
         'subscriptionPlan', 'plan', 'paymentStatus', 'paymentId',
         'subscriptionStartedAt', 'subscriptionExpiresAt', 'subscriptionUpdatedAt',
+        'subscriptionTrialPlan', 'subscriptionTrialUsedAt',
+        'subscriptionTrialStartedAt', 'subscriptionTrialEndsAt',
         'subscriptionOnboardingRequired', 'subscriptionOnboardingCompletedAt',
         'pendingSubscriptionPlan', 'pendingSubscriptionApplyAt',
         'pendingSubscriptionRequestedAt', 'pendingSubscriptionChangeType',
@@ -199,6 +201,7 @@ service cloud.firestore {
 
     function planAllowsBookingAvailability(branchId) {
       return exists(/databases/$(database)/documents/clinics/$(branchId))
+        && subscriptionAllowsBusinessWrite(branchId)
         && (clinicDoc(branchId).data.subscriptionPlan == 'basic'
           || clinicDoc(branchId).data.subscriptionPlan == 'premium');
     }
@@ -208,6 +211,7 @@ service cloud.firestore {
     // consultations, product orders, inventory and operational finance.
     function planAllowsWorkforceManagement(branchId) {
       return exists(/databases/$(database)/documents/clinics/$(branchId))
+        && subscriptionAllowsBusinessWrite(branchId)
         && clinicDoc(branchId).data.subscriptionPlan == 'premium';
     }
 

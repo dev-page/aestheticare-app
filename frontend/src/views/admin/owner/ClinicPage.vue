@@ -68,14 +68,13 @@
                 <button
                   v-if="!isEditing"
                   @click="startEdit"
-                  :disabled="isExpired"
                   class="px-4 py-2 rounded-lg bg-gold-700 hover:bg-gold-800 text-white text-sm font-medium transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   Edit Info
                 </button>
                 <button
                   @click="togglePublish"
-                  :disabled="saving || isExpired"
+                  :disabled="saving"
                   :class="[
                     'px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-70 disabled:cursor-not-allowed',
                     selectedBranch.isPublished ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'
@@ -83,7 +82,6 @@
                 >
                   {{ selectedBranch.isPublished ? 'Unpublish Page' : 'Publish Page' }}
                 </button>
-                <span v-if="isExpired" class="text-xs text-amber-300">Publishing is disabled when the plan is expired.</span>
               </div>
             </div>
           </div>
@@ -410,7 +408,7 @@ export default {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp())
-    const { isExpired, initSubscription } = useSubscription()
+    const { initSubscription } = useSubscription()
 
     const loading = ref(true)
     const branches = ref([])
@@ -875,24 +873,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       listenToBranchPolicies(branchId)
     }
 
-    const autoUnpublishExpiredBranches = async () => {
-      const published = branches.value.filter((branch) => branch.isPublished === true)
-      if (!published.length) return
-      try {
-        await Promise.all(
-          published.map((branch) =>
-            updateDoc(doc(db, 'clinics', branch.id), {
-              isPublished: false,
-              updatedAt: serverTimestamp()
-            })
-          )
-        )
-        branches.value = branches.value.map((branch) => ({ ...branch, isPublished: false }))
-      } catch (error) {
-        console.error('Failed to unpublish expired clinic pages:', error)
-      }
-    }
-
     const loadOwnerBranches = trackPageLoad(async (user) => {
       loading.value = true
       try {
@@ -938,9 +918,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               ? (branches.value[0].clinicBranch || branches.value[0].clinicName || 'Assigned branch')
               : ''
           }
-        }
-        if (isExpired.value && branches.value.length) {
-          await autoUnpublishExpiredBranches()
         }
         if (branches.value.length > 0) {
           selectedBranchId.value = branches.value[0].id
@@ -1096,7 +1073,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const togglePublish = async () => {
-      if (!selectedBranch.value?.id || saving.value || isExpired.value) return
+      if (!selectedBranch.value?.id || saving.value) return
       saving.value = true
       try {
         const nextState = !(selectedBranch.value.isPublished === true)
@@ -1201,8 +1178,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       commitServiceInput,
       removeServiceTag,
       handleProfileUpload,
-      handleBannerUpload,
-      isExpired
+      handleBannerUpload
     }
   }
 }

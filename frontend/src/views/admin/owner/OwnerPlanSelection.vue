@@ -10,6 +10,14 @@
 
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
 
+      <section v-if="!loading" class="trial-offer">
+        <div>
+          <h2>{{ trialActive ? 'Your Premium trial is active' : trialEligible ? 'Try Premium free for 14 days' : 'Free stays available' }}</h2>
+          <p>{{ trialActive ? `Your trial ends on ${subscriptionDateLabel(currentPlanExpiresAt)}. Choose a paid plan to continue with Premium features.` : trialEligible ? 'One trial per clinic. No card required and no automatic charge. Return to Free when the trial ends.' : 'When your paid plan ends, your clinic returns to Free. Records and existing appointments are retained.' }}</p>
+        </div>
+        <button v-if="trialEligible" type="button" class="app-button app-button--primary" :disabled="startingTrial || submitting" @click="startTrial">{{ startingTrial ? 'Starting trial…' : 'Start free trial' }}</button>
+      </section>
+
       <section v-if="loading" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div
           v-for="index in 2"
@@ -115,6 +123,9 @@ import {
   getSubscriptionPlanPriority,
 } from '@/utils/subscriptionPlans'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
+import { subscriptionLifecycle } from '../../../../../shared/subscriptionLifecycle.js'
+import { subscriptionDateLabel, subscriptionRecord } from '../../../../../shared/subscriptionDates.js'
+import { useSubscriptionStore } from '@/stores/subscription'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -128,6 +139,10 @@ const allPlans = ref([])
 const plans = ref([])
 const currentPlan = ref('free')
 const currentPlanExpiresAt = ref(null)
+const trialEligible = ref(false)
+const trialActive = ref(false)
+const startingTrial = ref(false)
+const subscriptionStore = useSubscriptionStore()
 const pendingPlan = ref('')
 let unsubscribePlans = null
 
@@ -178,7 +193,7 @@ const hasActiveCurrentCycle = computed(() => {
 })
 
 const isCurrentPlanCard = (planId) =>
-  normalizePlanId(planId) === normalizePlanId(currentPlan.value) && hasActiveCurrentCycle.value
+  normalizePlanId(planId) === normalizePlanId(currentPlan.value) && hasActiveCurrentCycle.value && !trialActive.value
 
 const isPendingPlanCard = (planId) => {
   const normalizedPendingPlan = normalizePlanId(pendingPlan.value)
@@ -186,6 +201,7 @@ const isPendingPlanCard = (planId) => {
 }
 
 const isBlockedDowngradeCard = (planId) =>
+  !trialActive.value &&
   hasActiveCurrentCycle.value &&
   getPlanPriority(planId) < getPlanPriority(currentPlan.value)
 
@@ -218,8 +234,11 @@ const loadPlans = trackPageLoad(async () => {
 
     const userData = userSnap.exists() ? userSnap.data() : {}
     const clinicData = clinicSnap.exists() ? clinicSnap.data() : {}
-    currentPlan.value = normalizePlanId(clinicData.subscriptionPlan || userData.subscriptionPlan || 'free')
-    currentPlanExpiresAt.value = clinicData.subscriptionExpiresAt || userData.subscriptionExpiresAt || null
+    const lifecycle = subscriptionLifecycle(subscriptionRecord(userData, clinicData))
+    currentPlan.value = lifecycle.plan
+    currentPlanExpiresAt.value = lifecycle.expiresAt
+    trialEligible.value = lifecycle.trialEligible && subscriptionLifecycle(clinicData).trialEligible
+    trialActive.value = lifecycle.trial
     pendingPlan.value = normalizePlanId(clinicData.pendingSubscriptionPlan || userData.pendingSubscriptionPlan || '')
 
     if (unsubscribePlans) {
@@ -288,11 +307,12 @@ const fetchBackendJson = trackPageLoad(async (path, options = {}) => {
 
       const payload = await response.json()
       if (!response.ok || !payload?.success) {
-        throw new Error(payload?.error || 'Unable to continue with this plan.')
+        throw Object.assign(new Error(payload?.error || 'Unable to continue with this plan.'), { terminal: true })
       }
 
       return payload
     } catch (error) {
+      if (error.terminal) throw error
       lastError = error
     }
   }
@@ -373,9 +393,33 @@ const continueWithPlan = async () => {
   }
 }
 
+const startTrial = async () => {
+  if (startingTrial.value || !trialEligible.value) return
+  startingTrial.value = true
+  error.value = ''
+  try {
+    const user = await getCurrentUser()
+    if (!user) throw new Error('Please sign in again.')
+    await fetchBackendJson('/subscription/start-trial', {
+      method: 'POST', headers: { authorization: `Bearer ${await user.getIdToken()}` },
+    })
+    await subscriptionStore.refreshSubscription()
+    await router.push('/account/subscription')
+  } catch (err) { error.value = err.message || 'Unable to start the trial.' }
+  finally { startingTrial.value = false }
+}
+
 const goBack = () => {
   router.push('/account/subscription')
 }
 
 onMounted(loadPlans)
 </script>
+
+<style scoped>
+.trial-offer { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 24px; padding: 24px; border: 1px solid #e6c29f; border-radius: 16px; background: #fff7eb; color: #493323; }
+.trial-offer h2 { margin: 0 0 8px; font-size: 20px; }
+.trial-offer p { margin: 0; max-width: 640px; font-size: 14px; line-height: 1.6; color: #785d48; }
+.trial-offer button { flex-shrink: 0; }
+@media (max-width: 640px) { .trial-offer { align-items: stretch; flex-direction: column; } }
+</style>

@@ -1,5 +1,7 @@
 import { registerConsultationEvents } from './consultationEvents.js'
 import { subscriptionDate } from '../../shared/subscriptionDates.js'
+import { subscriptionLifecycle, hasActivePaidCycle } from '../../shared/subscriptionLifecycle.js'
+import { registerSubscriptionTrial } from './subscriptionTrial.js'
 import { registerSubscriptionReminders, sendSubscriptionReminders } from './subscriptionReminders.js'
 import { serviceOnlyClinicPolicies } from '../../shared/clinicPolicyContent.js'
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
@@ -2848,9 +2850,7 @@ const PLAN_PRIORITIES = {
 }
 
 const getEffectiveClinicPlan = (clinic = {}) => {
-  const plan = normalizePlanKey(clinic.subscriptionPlan || clinic.plan || 'free')
-  const expiresAt = toDateValue(clinic.subscriptionExpiresAt)
-  return plan !== 'free' && expiresAt && expiresAt.getTime() <= Date.now() ? 'free' : plan
+  return subscriptionLifecycle(clinic).plan
 }
 
 const PLAN_FEATURES = Object.freeze({
@@ -3000,9 +3000,9 @@ const applySubscriptionPaymentForOwner = async ({
   const targetPriority = getPlanPriority(normalizedTargetPlan)
   const paymentDate = toDateValue(paidAt) || new Date()
   const currentExpiresAt = context.currentExpiresAt
-  const hasActiveCurrentCycle = Boolean(currentExpiresAt && currentExpiresAt.getTime() > paymentDate.getTime())
+  const hasActiveCurrentCycle = hasActivePaidCycle({ ...context.userData, ...context.clinicData }, paymentDate)
 
-  if (normalizedTargetPlan === currentPlan && hasActiveCurrentCycle) {
+  if (normalizedTargetPlan === currentPlan && hasActiveCurrentCycle && String(context.clinicData.paymentStatus || context.userData.paymentStatus).toLowerCase() !== 'trial') {
     return {
       action: 'blocked_same_plan',
       currentPlan,
@@ -3660,6 +3660,7 @@ const subscriptionReminderDependencies = {
   } : null,
 }
 registerSubscriptionReminders(app, subscriptionReminderDependencies)
+registerSubscriptionTrial(app, { admin, requireAuth, loadUserContext })
 
 app.all('/cron/appointment-reminders', async (req, res) => {
   const secret = String(process.env.CRON_SECRET || '').trim()
@@ -6326,13 +6327,14 @@ app.post('/admin/unpublish-expired-clinics', requireAuth, requireRole(['superadm
     const updates = []
     clinicsSnapshot.forEach((docSnap) => {
       const data = docSnap.data() || {}
-      if (data.isPublished !== true) return
+      // Expiry preserves clinic publication and returns it to Free.
       const expiresAt = toDate(data.subscriptionExpiresAt)
       if (!expiresAt) return
       if (now.getTime() <= expiresAt.getTime()) return
       updates.push(
         docSnap.ref.update({
-          isPublished: false,
+          subscriptionPlan: 'free', paymentStatus: 'free', subscriptionExpiresAt: null,
+          ...(String(data.paymentStatus).toLowerCase() === 'trial' ? {} : { lastPaidSubscriptionPlan: data.subscriptionPlan }),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         })
       )
@@ -6378,7 +6380,7 @@ app.post('/subscription/sync-effective-plan', requireAuth, async (req, res) => {
         subscriptionPlan: 'free',
         paymentStatus: 'free',
         subscriptionExpiresAt: null,
-        lastPaidSubscriptionPlan: storedPlan,
+        ...(String(data.paymentStatus).toLowerCase() === 'trial' ? {} : { lastPaidSubscriptionPlan: storedPlan }),
         subscriptionDowngradedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true })
@@ -6445,11 +6447,9 @@ app.post('/owner/subscription/plan-change-preview', requireAuth, async (req, res
     const currentPlan = context.currentPlan
     const currentPriority = getPlanPriority(currentPlan)
     const targetPriority = getPlanPriority(targetPlan)
-    const hasActiveCurrentCycle = Boolean(
-      context.currentExpiresAt && context.currentExpiresAt.getTime() > now.getTime()
-    )
+    const hasActiveCurrentCycle = hasActivePaidCycle({ ...context.userData, ...context.clinicData }, now)
 
-    if (targetPlan === currentPlan && hasActiveCurrentCycle) {
+    if (targetPlan === currentPlan && hasActiveCurrentCycle && !subscriptionLifecycle(context.clinicData).trial) {
       return res.json({
         success: true,
         data: {
@@ -6528,9 +6528,7 @@ app.post('/owner/subscription/schedule-plan-change', requireAuth, async (req, re
 
     const context = await loadOwnerSubscriptionContext(firestore, ownerUid)
     const now = new Date()
-    const hasActiveCurrentCycle = Boolean(
-      context.currentExpiresAt && context.currentExpiresAt.getTime() > now.getTime()
-    )
+    const hasActiveCurrentCycle = hasActivePaidCycle({ ...context.userData, ...context.clinicData }, now)
 
     if (context.currentPlan === targetPlan && hasActiveCurrentCycle) {
       return res.status(409).json({
@@ -9076,9 +9074,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
         const targetPlan = normalizePlanKey(metadata?.planId)
         const context = await loadOwnerSubscriptionContext(firestore, req.user.uid)
         const now = new Date()
-        const hasActiveCurrentCycle = Boolean(
-          context.currentExpiresAt && context.currentExpiresAt.getTime() > now.getTime()
-        )
+        const hasActiveCurrentCycle = hasActivePaidCycle({ ...context.userData, ...context.clinicData }, now)
 
         if (!['basic', 'premium'].includes(targetPlan)) {
           return res.status(400).json({
@@ -9087,7 +9083,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
           })
         }
 
-        if (targetPlan === context.currentPlan && hasActiveCurrentCycle) {
+        if (targetPlan === context.currentPlan && hasActiveCurrentCycle && !subscriptionLifecycle(context.clinicData).trial) {
           return res.status(409).json({
             success: false,
             error: "You're already on this plan.",
