@@ -1,3 +1,4 @@
+import { isCustomerCareListing, assertCustomerCheckoutSupported } from '../../shared/customerCatalog.js'
 import { registerConsultationEvents } from './consultationEvents.js'
 import { subscriptionDate } from '../../shared/subscriptionDates.js'
 import { subscriptionLifecycle, hasActivePaidCycle } from '../../shared/subscriptionLifecycle.js'
@@ -5183,7 +5184,7 @@ app.get('/public/clinics/:branchId/catalog', async (req, res) => {
     const postsSnap = await firestore.collection('productServicePosts').where('branchId', '==', branchId).get()
     const posts = postsSnap.docs
       .map((postSnap) => ({ id: postSnap.id, ...postSnap.data() }))
-      .filter((post) => post.financeStatus === 'approved' && post.isPublished === true && post.archived !== true)
+      .filter(isCustomerCareListing)
       .filter((post) => !isFreePlan || post.postType === 'Service')
     return res.json({ success: true, posts })
   } catch (error) {
@@ -8971,6 +8972,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
     cancelUrl,
   } = req.body ?? {}
 
+  try { assertCustomerCheckoutSupported(metadata) } catch (error) { return res.status(error.status).json({ success: false, error: error.message }) }
   const moduleKey = String(metadata?.module || '').trim().toLowerCase()
   const isSubscriptionCheckout = moduleKey === 'subscription'
   const isCustomerOrderCheckout = moduleKey === 'customer_order'

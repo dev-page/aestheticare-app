@@ -329,7 +329,7 @@
 
             <section v-else-if="activeTab === 'products'" class="space-y-4">
               <div v-if="products.length === 0" class="bg-slate-700/60 rounded-xl p-5 border border-slate-600 text-slate-300">
-                No products or services posted yet for this branch.
+                No services or consultations posted yet for this branch.
               </div>
 
               <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -378,7 +378,7 @@
 
     <div v-if="selectedListing" class="fixed inset-0 z-50 flex overscroll-contain items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" @click.self="closeListingDetails">
       <section class="max-h-[90vh] w-full max-w-3xl overscroll-contain overflow-y-auto rounded-2xl border border-slate-600 bg-slate-800 shadow-2xl" role="dialog" aria-modal="true" :aria-labelledby="`listing-details-${selectedListing.id}`">
-        <header class="flex items-start justify-between gap-4 border-b border-slate-600 px-6 py-5"><div><p class="text-xs font-semibold uppercase tracking-[0.16em] text-gold-300">{{ listingType(selectedListing) || 'Product or Service' }}</p><h2 :id="`listing-details-${selectedListing.id}`" class="mt-1 text-xl font-bold text-white">{{ listingTitle(selectedListing) }}</h2></div><button type="button" @click="closeListingDetails" class="rounded-lg p-2 text-slate-400 transition hover:bg-slate-700 hover:text-white" aria-label="Close details"><Icon icon="mdi:close" class="h-5 w-5" /></button></header>
+        <header class="flex items-start justify-between gap-4 border-b border-slate-600 px-6 py-5"><div><p class="text-xs font-semibold uppercase tracking-[0.16em] text-gold-300">{{ listingType(selectedListing) || 'Service' }}</p><h2 :id="`listing-details-${selectedListing.id}`" class="mt-1 text-xl font-bold text-white">{{ listingTitle(selectedListing) }}</h2></div><button type="button" @click="closeListingDetails" class="rounded-lg p-2 text-slate-400 transition hover:bg-slate-700 hover:text-white" aria-label="Close details"><Icon icon="mdi:close" class="h-5 w-5" /></button></header>
         <div class="grid md:grid-cols-2"><div class="min-h-64 bg-slate-900"><img v-if="listingImage(selectedListing)" :src="listingImage(selectedListing)" :alt="listingTitle(selectedListing)" class="h-full max-h-96 w-full object-cover" /><div v-else class="flex h-64 items-center justify-center text-slate-500"><Icon icon="mdi:image-outline" class="h-12 w-12" /></div></div><div class="p-6"><p class="text-2xl font-bold text-gold-300">{{ formatAmount(selectedListing.price) }}</p><p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-slate-300">{{ selectedListing.description || 'No description has been provided for this listing.' }}</p><dl v-if="listingDetails(selectedListing).length" class="mt-6 grid gap-3"><div v-for="detail in listingDetails(selectedListing)" :key="detail.label" class="rounded-xl border border-slate-600 bg-slate-900/50 p-3"><dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ detail.label }}</dt><dd class="mt-1 text-sm font-medium text-slate-100">{{ detail.value }}</dd></div></dl><button type="button" @click="closeListingDetails" class="mt-6 w-full rounded-xl border border-gold-500/60 px-4 py-2.5 font-semibold text-gold-200 transition hover:bg-gold-500/10">Close</button></div></div>
       </section>
     </div>
@@ -501,7 +501,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const tabs = [
       { id: 'about', label: 'About Us' },
-      { id: 'products', label: 'Products & Services' },
+      { id: 'products', label: 'Services & Consultations' },
       { id: 'reviews', label: 'Reviews' },
       { id: 'policies', label: 'Policies' }
     ]
@@ -839,7 +839,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         getDocs(query(collection(db, 'reviews'), where('branchId', '==', branchId)))
       ])
 
-      products.value = productSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      products.value = productSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() })).filter(item => ['Service', 'Consultation', 'Package'].includes(item.postType))
       reviews.value = reviewSnapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))

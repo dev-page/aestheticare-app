@@ -7,6 +7,7 @@ import { collection, doc, getDoc, getDocs, limit, query, where } from "firebase/
 import { auth, db } from "@/config/firebaseConfig";
 import { subscriptionDate } from '../../../shared/subscriptionDates.js';
 import { isFreeClinicRoute as isFreePlanRoute } from '../../../shared/freeClinicRoutes.js';
+import { CUSTOMER_APP_LOGIN, customerAppAuthRedirect, isCustomerAppAccount, isCustomerAppContext, isCustomerAppRoute } from '@/utils/customerApp';
 
 const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 
@@ -241,9 +242,9 @@ const routes = [
   { path: "/customer/center/:id", name: "customer-center", component: () => import("@/views/customer/CenterPage.vue"), meta: { requiresAuth: true } },
   { path: "/customer/appointments", name: "customer-appointments", component: () => import("@/views/customer/MyAppointments.vue"), meta: { requiresAuth: true } },
   { path: "/customer/unpaid-appointments", name: "customer-unpaid-appointments", component: () => import("@/views/customer/MyAppointments.vue"), meta: { requiresAuth: true } },
-  { path: "/customer/orders", name: "customer-orders", component: () => import("@/views/customer/MyOrders.vue"), meta: { requiresAuth: true } },
-  { path: "/customer/checkout", name: "customer-checkout", component: () => import("@/views/customer/Checkout.vue"), meta: { requiresAuth: true } },
-  { path: "/customer/cart", name: "customer-cart", component: () => import("@/views/customer/MyCart.vue"), meta: { requiresAuth: true } },
+  { path: "/customer/orders", name: "customer-orders", redirect: "/customer/home", meta: { requiresAuth: true } },
+  { path: "/customer/checkout", name: "customer-checkout", redirect: "/customer/home", meta: { requiresAuth: true } },
+  { path: "/customer/cart", name: "customer-cart", redirect: "/customer/home", meta: { requiresAuth: true } },
   { path: "/customer/account-recovery", name: "customer-account-recovery", component: () => import("@/views/customer/AccountRecovery.vue"), meta: { requiresAuth: true } },
   { path: "/clinic/account-recovery", name: "clinic-account-recovery", component: () => import("@/views/admin/owner/OwnerAccountRecovery.vue"), meta: { requiresAuth: true } },
   { path: "/customer/profile", name: "customer-profile", redirect: { path: "/customer/account-settings", query: { tab: "profile" } }, meta: { requiresAuth: true } },
@@ -385,9 +386,12 @@ const permissionAlternates = {
 
 // 🔧 Global guard
 router.beforeEach(async (to, from, next) => {
+  const customerApp = isCustomerAppContext(to.path, isMobileApp)
+  const appAuthPath = customerApp ? customerAppAuthRedirect(to.path) : ''
+  if (appAuthPath) return next({ path: appAuthPath, query: to.query, replace: true })
   // Password recovery must remain accessible even when the current session
   // cannot load or the account requires onboarding or a password change.
-  if (to.name === 'forgot-password') return next();
+  if (to.name === 'forgot-password' || to.name === 'customer-app-forgot-password') return next();
 
   const { user, isLoading, initAuth } = useAuth();
   const { hasPermission } = usePermissions();
@@ -401,6 +405,10 @@ router.beforeEach(async (to, from, next) => {
   await isAuthReady(isLoading)
   const currentUser = user.value || auth.currentUser
 
+  if (customerApp && !isCustomerAppRoute(to.path)) {
+    return next(currentUser ? '/customer/home' : CUSTOMER_APP_LOGIN)
+  }
+
   // Auth-required routes
   if (to.meta.requiresAuth && !currentUser) {
     return next("/login");
@@ -413,6 +421,10 @@ router.beforeEach(async (to, from, next) => {
       const userSnap = await getDoc(doc(db, "users", currentUser.uid));
       const userData = userSnap.exists() ? userSnap.data() || {} : {};
       currentUserData = userData
+      if (customerApp && !isCustomerAppAccount(userData)) {
+        await signOut(auth).catch(() => {})
+        return next({ path: CUSTOMER_APP_LOGIN, query: { reason: 'customer-only' }, replace: true })
+      }
       const userType = String(userData.userType || '').trim().toLowerCase();
       const accountStatus = String(userData.status || '').trim().toLowerCase();
       const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated'].includes(accountStatus)
@@ -451,6 +463,7 @@ router.beforeEach(async (to, from, next) => {
         && (to.path === '/account/change-password' || to.path === '/change-password');
     } catch (error) {
       console.error("Error verifying password change requirement in route guard:", error);
+      if (customerApp) return next(to.path.startsWith('/customer-app/') ? undefined : CUSTOMER_APP_LOGIN)
     }
   }
 

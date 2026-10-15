@@ -29,15 +29,6 @@ export default {
         ],
       },
       {
-        label: 'Shop',
-        icon: 'cart',
-        tourKey: 'customer-shop',
-        children: [
-          { label: 'My cart', icon: 'cart', to: '/customer/cart', tourKey: 'customer-cart' },
-          { label: 'Orders & pickup', icon: 'clipboard', to: '/customer/orders', tourKey: 'customer-orders' },
-        ],
-      },
-      {
         label: 'My account',
         icon: 'settings',
         tourKey: 'customer-account',
@@ -47,7 +38,6 @@ export default {
           { label: 'Account Access', icon: 'account-off', to: '/customer/account-settings?tab=account', tourKey: 'customer-account-settings' },
           { label: 'Help & Guidance', icon: 'help', to: '/customer/account-settings?tab=help', tourKey: 'customer-help' },
           { label: 'Privacy & Data', icon: 'shield', to: '/customer/account-settings?tab=privacy', tourKey: 'customer-privacy' },
-          { label: 'Change Password', icon: 'key', to: '/change-password', tourKey: 'customer-change-password' },
           { label: 'Report Issue', icon: 'reportIssue', to: '/support/report', tourKey: 'customer-report-issue' }
         ]
       }

@@ -35,7 +35,7 @@
           <div class="settings-notifications-content">
             <p class="settings-card-kicker">Notifications</p>
             <h2 class="settings-card-title">Stay updated</h2>
-            <p class="settings-copy">Your latest booking, order, payment, and clinic updates are shown here.</p>
+            <p class="settings-copy">Your latest booking, payment, and clinic updates are shown here.</p>
             <p v-if="notificationsError" class="settings-notifications-error">{{ notificationsError }}</p>
             <p v-if="notificationsLoading" class="settings-notifications-empty">Loading notifications...</p>
             <p v-else-if="!notifications.length" class="settings-notifications-empty">No notifications yet.</p>

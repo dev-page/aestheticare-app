@@ -2,6 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { notificationDestination } from './notificationDestination.js'
 
+test('legacy shopping notifications lead to clinic discovery instead of retired shopping pages', () => {
+  for (const link of ['/customer/cart', '/customer/orders?status=paid', '/customer/checkout', '/customer/orders/old']) {
+    assert.deepEqual(notificationDestination({ link }, { userType: 'customer' }), { to: '/customer/home', label: 'Discover clinics' })
+  }
+})
+
 test('opens the saved page including the correct inbox tab', () => {
   assert.deepEqual(notificationDestination({ link: '/crm/inbox?tab=suppliers' }),
     { to: '/crm/inbox?tab=suppliers', label: 'Open page' })

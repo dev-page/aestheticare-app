@@ -14,6 +14,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import axios from 'axios'
 import { toast } from 'vue3-toastify'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { isCustomerAppAccount } from '@/utils/customerApp'
 
 const router = useRouter()
 const route = useRoute()
@@ -277,7 +278,7 @@ const handleLogin = async () => {
       if (userSnap.exists()) {
         const userData = userSnap.data()
 
-        if (props.customerApp && normalizeRoleKey(userData.role || userData.customRoleName || userData.userType) !== 'Customer') {
+        if (props.customerApp && !isCustomerAppAccount(userData)) {
           await signOut(auth)
           toast.error('This sign-in page is for customer accounts only.')
           isSubmitting.value = false
@@ -515,6 +516,7 @@ onBeforeUnmount(() => {
               <p class="text-charcoal-600 text-sm mt-1">Sign in to continue your AesthetiCare experience.</p>
             </div>
 
+            <p v-if="props.customerApp && route.query.reason === 'customer-only'" role="alert" class="rounded-xl border border-gold-200 bg-cream-50 px-4 py-3 text-sm text-charcoal-800">This app is for customer accounts. Clinic staff, suppliers, and system administrators can sign in through the website.</p>
             <!-- Inactivity session-expired banner -->
             <div
               v-if="inactivityExpired"

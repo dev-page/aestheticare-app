@@ -137,6 +137,7 @@
                   v-else
                   :is="child.locked ? 'button' : 'router-link'"
                   :to="child.locked ? undefined : child.to"
+                  :aria-current-value="child.locked ? undefined : isExactActive(child.to) ? 'page' : 'false'"
                   :disabled="child.locked"
                   :data-onboarding-key="child.tourKey || undefined"
                   @click="handleItemNavigation"
@@ -177,6 +178,7 @@
             <component
               :is="item.locked ? 'button' : 'router-link'"
               :to="item.locked ? undefined : item.to"
+              :aria-current-value="item.locked ? undefined : isActive(item.to) ? 'page' : 'false'"
               :disabled="item.locked"
               :data-onboarding-key="item.tourKey || undefined"
               @click="handleItemNavigation"
@@ -294,6 +296,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useSubscription } from '@/composables/useSubscription'
 import { usePermissions } from '@/composables/usePermissions'
 import { useSidebarState } from '@/composables/useSidebarState'
+import { sidebarRouteMatches } from '@/utils/sidebarRouteMatch'
 
 export default {
   name: 'BaseCollapsibleSidebar',
@@ -573,8 +576,8 @@ export default {
     let skeletonTimer = null
     const skeletonCount = computed(() => (collapsed.value ? 7 : 8))
 
-    const isActive = (path) => route.path === path || route.path.startsWith(`${path}/`)
-    const isExactActive = (path) => route.path === path
+    const isActive = (target) => Boolean(target && sidebarRouteMatches(route, router.resolve(target)))
+    const isExactActive = (target) => Boolean(target && sidebarRouteMatches(route, router.resolve(target), true))
 
     const isGroupActive = (group) => {
       if (!isGroup(group)) return false
@@ -939,7 +942,7 @@ export default {
     })
 
     watch(
-      () => route.path,
+      () => route.fullPath,
       () => {
         syncOpenGroupsToRoute()
         restoreSidebarScrollPosition()

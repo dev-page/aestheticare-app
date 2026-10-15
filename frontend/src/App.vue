@@ -228,7 +228,7 @@ const { collapsed: sidebarCollapsed, syncFromStorage: syncSidebarFromStorage } =
 
 const showEmployeeTopbar = computed(() => {
   const path = String(route.path || '').toLowerCase()
-  if (path.startsWith('/clinic/register')) return false
+  if (path.startsWith('/clinic/register') || path.startsWith('/customer-app/')) return false
   return (
     path.startsWith('/workspace') ||
     path.startsWith('/clinic') ||

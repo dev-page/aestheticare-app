@@ -42,6 +42,16 @@
           <p class="mt-1 text-xs text-slate-400">The service, consultation, or package name becomes the title customers see.</p>
         </div>
 
+        <div v-if="['Service', 'Package'].includes(form.postType)" class="listing-category-field">
+          <ContractAppearanceSelect :id="editing ? 'edit-service-category' : 'service-category'" :model-value="serviceCategoryKey(form.serviceCategory)" label="Service category" :disabled="disabled" :options="categoryOptions" @update:model-value="selectCategory" />
+          <div class="listing-category-help"><p>Group similar treatments so customers can find them easily.</p><button type="button" :disabled="disabled" @click="addingCategory = !addingCategory">{{ addingCategory ? 'Cancel' : '+ Add category' }}</button></div>
+          <div v-if="addingCategory" class="listing-new-category">
+            <label :for="editing ? 'edit-new-category' : 'new-category'">New category name</label>
+            <div><input :id="editing ? 'edit-new-category' : 'new-category'" v-model="newCategory" maxlength="60" placeholder="e.g. Skin Rejuvenation" @keydown.enter.prevent="addCategory" /><button type="button" @click="addCategory">Use category</button></div>
+            <p v-if="categoryError" role="alert">{{ categoryError }}</p>
+          </div>
+        </div>
+
         <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label class="block text-slate-400 mb-1">Price (PHP)</label>
@@ -229,12 +239,24 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { normalizeServiceCategory, serviceCategoryKey, serviceCategoryOptions } from '../../../../shared/serviceCategories.js'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import ServiceStaffingFields from './ServiceStaffingFields.vue'
 const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, isFreePlan: Boolean, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
 defineEmits(['image-change'])
 const form = computed(() => props.model)
+const addingCategory = ref(false), newCategory = ref(''), categoryError = ref('')
+const categoryOptions = computed(() => serviceCategoryOptions([...props.posts, { postType: 'Service', serviceCategory: form.value.serviceCategory }], true))
+const selectCategory = key => { form.value.serviceCategory = categoryOptions.value.find(option => option.value === key)?.label || 'Other' }
+const addCategory = () => {
+  const name = normalizeServiceCategory(newCategory.value)
+  if (!newCategory.value.trim()) { categoryError.value = 'Enter a category name.'; return }
+  if (serviceCategoryKey(name) === 'all services') { categoryError.value = 'Choose a specific category name. All Services is the combined filter.'; return }
+  form.value.serviceCategory = categoryOptions.value.find(option => option.value === serviceCategoryKey(name))?.label || name
+  addingCategory.value = false; newCategory.value = ''; categoryError.value = ''
+}
+watch(() => props.model, () => { addingCategory.value = false; newCategory.value = ''; categoryError.value = '' })
 const nameKey = key => props.editing ? 'name' : key
 const blockNegativeKey = event => { if (event.key === '-') event.preventDefault() }
 const setPositiveNumber = (key, event, min, max = Infinity, wholeNumber = false) => {
@@ -260,4 +282,15 @@ const consultationOptions = computed(() => props.posts.filter(post => post.postT
 .listing-fields input[type=file]::file-selector-button { padding: 7px 12px; border: 0; border-radius: 6px; background: #f4e7d5; color: #805432; cursor: pointer; }
 .listing-post-type { margin: 0; }
 .listing-post-type :deep(label) { margin-bottom: 4px; color: #6b5342; font-weight: 400; }
+.listing-category-field { margin-bottom: 22px; }
+.listing-category-field :deep(.appearance-select) { margin-top: 0; }
+.listing-category-help { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.listing-category-help p { margin: 0; color: #87664e; font-size: 12px; }
+.listing-category-help button { padding: 4px 0; background: transparent; border: 0; color: #865737; font-size: 12px; font-weight: 600; }
+.listing-new-category { margin-top: 12px; padding: 14px; border: 1px solid #e6ceb2; border-radius: 12px; background: #fff8ed; }
+.listing-new-category label { display: block; margin-bottom: 6px; color: #694c37; }
+.listing-new-category > div { display: flex; gap: 8px; flex-wrap: wrap; }
+.listing-new-category input { flex: 1; min-width: 140px; padding: 10px 12px; border: 1px solid #dec19e; border-radius: 9px; background: #fffdf9; color: #3d281d; }
+.listing-new-category button { padding: 10px 14px; border: 1px solid #8d5a3b; border-radius: 9px; background: #8d5a3b; color: #fffaf3; font-size: 12px; }
+.listing-new-category p { margin: 8px 0 0; color: #ac3b30; font-size: 12px; }
 </style>

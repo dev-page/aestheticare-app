@@ -1,3 +1,4 @@
+import { isCustomerCareListing } from '../../../shared/customerCatalog.js'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 
@@ -97,10 +98,11 @@ const buildServiceMap = async (clinicIds) => {
     )
     postsSnapshot.forEach((snap) => {
       const post = snap.data() || {}
+      if (!isCustomerCareListing(post)) return
       const branchId = toText(post.branchId)
       if (!branchId) return
 
-      const serviceLabel = toText(post.serviceName || post.productName || post.title)
+      const serviceLabel = toText(post.serviceName || post.consultationName || post.packageName || post.title)
       if (!serviceLabel) return
 
       if (!serviceMap.has(branchId)) {
@@ -134,7 +136,7 @@ export const subscribeCustomerCenters = (onChange, onError) => {
     if (disposed) return
     const serviceMap = new Map()
     serviceSnapshots.forEach((posts, sourceKey) => {
-      posts.forEach((post) => {
+      posts.filter(isCustomerCareListing).forEach((post) => {
         const branchId = toText(post.branchId)
         if (!branchId) return
         const serviceLabel = toText(post.serviceName || post.productName || post.title)

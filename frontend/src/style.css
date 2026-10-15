@@ -594,9 +594,9 @@ table {
 
 .swal2-container:has(.swal-logout-popup) {
   padding: .625em !important;
-  background: rgba(0, 0, 0, .4) !important;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  background: rgba(45, 27, 19, .42) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .swal2-popup.swal2-show:not(.swal-logout-popup) {
@@ -867,27 +867,28 @@ table {
   }
 }
 
-/* Preserve the original logout dialog styling while other dialogs use the shared theme. */
+/* Logout dialogs are teleported to body, so keep the cream palette explicit. */
 .swal-logout-popup {
   width: min(92vw, 32rem) !important;
   padding: 2.35rem 2.5rem 2.15rem !important;
-  background: linear-gradient(145deg, #2f1d14 0%, #21130d 100%) !important;
-  color: #f7eadf !important;
-  border: 1px solid rgba(198, 148, 108, 0.4) !important;
+  background: linear-gradient(145deg, #fffdf8 0%, #fbf0df 100%) !important;
+  color: #3d281d !important;
+  border: 1px solid #e3c8a8 !important;
   border-radius: 1.25rem !important;
-  box-shadow: 0 22px 55px rgba(18, 9, 5, 0.42) !important;
+  box-shadow: 0 22px 60px rgba(60, 34, 18, 0.22) !important;
 }
 
 .swal-logout-title,
 .swal2-title.swal-logout-title,
 .swal-logout-text,
 .swal2-html-container.swal-logout-text {
-  color: #f7eadf !important;
+  color: #3d281d !important;
 }
 
 .swal-logout-title,
 .swal2-title.swal-logout-title {
   margin: 0.8rem 0 0 !important;
+  font-family: Georgia, 'Times New Roman', serif !important;
   font-size: 1.55rem !important;
   font-weight: 700 !important;
 }
@@ -895,7 +896,7 @@ table {
 .swal-logout-text,
 .swal2-html-container.swal-logout-text {
   margin: 0.85rem 0 0 !important;
-  color: #d9bfa9 !important;
+  color: #785a43 !important;
   font-size: 0.98rem !important;
   line-height: 1.55 !important;
 }
@@ -909,8 +910,9 @@ table {
   height: 4.5rem !important;
   margin: 0 auto !important;
   border-width: 2px !important;
-  border-color: #c98a5d !important;
-  color: #e1a572 !important;
+  border-color: #dfbc94 !important;
+  background: #f6e7d2 !important;
+  color: #91613e !important;
   font-size: 2.75rem !important;
 }
 
@@ -946,33 +948,34 @@ table {
 
 .swal-logout-confirm,
 .swal2-confirm.swal-logout-confirm {
-  background: #a96542 !important;
+  background: #8d5a3b !important;
   color: #fff7ef !important;
-  border: 1px solid #c17a51 !important;
+  border: 1px solid #8d5a3b !important;
 }
 
 .swal-logout-confirm:hover,
 .swal2-confirm.swal-logout-confirm:hover {
-  background: #bd7951 !important;
+  background: #74472d !important;
   transform: translateY(-1px);
 }
 
 .swal-logout-cancel,
 .swal2-cancel.swal-logout-cancel {
-  background: rgba(255, 246, 236, 0.08) !important;
-  color: #ead3c1 !important;
-  border: 1px solid rgba(234, 211, 193, 0.25) !important;
+  background: #fffaf3 !important;
+  color: #704d34 !important;
+  border: 1px solid #dcbf9e !important;
 }
 
 .swal-logout-cancel:hover,
 .swal2-cancel.swal-logout-cancel:hover {
-  background: rgba(255, 246, 236, 0.15) !important;
-  border-color: rgba(234, 211, 193, 0.42) !important;
+  background: #f4e5d1 !important;
+  border-color: #b98b60 !important;
 }
 
-.swal-logout-popup .swal2-actions .swal2-styled:focus,
-.swal-logout-popup .swal2-actions .swal2-styled:focus-visible {
-  box-shadow: 0 0 0 3px rgba(74, 39, 24, 0.25) !important;
+.swal-logout-popup .swal2-actions button:focus-visible {
+  outline: 3px solid #b88759 !important;
+  outline-offset: 3px;
+  box-shadow: none !important;
 }
 
 @media (max-width: 480px) {

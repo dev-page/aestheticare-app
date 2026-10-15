@@ -197,6 +197,7 @@ import { useSubscription } from '@/composables/useSubscription'
 import { getClinicPolicyOwnerId } from '@/utils/clinicPolicies'
 import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
 import ServiceListingFields from '@/components/common/ServiceListingFields.vue'
+import { normalizeServiceCategory } from '../../../../../../shared/serviceCategories.js'
 import { buildClientContractDocument, clientContractPolicies } from '../../../../../../shared/clientContract.js'
 
 const FREE_PLAN_POST_LIMIT = 5
@@ -257,6 +258,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const editTargetId = ref('')
     const editForm = ref({
       postType: 'Service',
+      serviceCategory: 'Other',
       name: '',
       title: '',
       description: '',
@@ -285,6 +287,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const form = ref({
       postType: 'Service',
+      serviceCategory: 'Other',
       productName: '',
       serviceName: '',
       consultationName: '',
@@ -368,6 +371,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const resetForm = () => {
       form.value = {
         postType: 'Service',
+      serviceCategory: 'Other',
         productName: '',
       serviceName: '',
       consultationName: '',
@@ -402,6 +406,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       editTargetId.value = ''
       editForm.value = {
         postType: 'Service',
+      serviceCategory: 'Other',
         name: '',
         title: '',
         description: '',
@@ -651,6 +656,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               : null,
           title: selectedName.trim(),
           description: form.value.description.trim(),
+          serviceCategory: ['Service', 'Package'].includes(postType) ? normalizeServiceCategory(form.value.serviceCategory) : null,
           price: postType === 'Product'
             ? Number(selectedProduct?.unitPrice || 0)
             : Number(form.value.price || form.value.consultationFee || 0),
@@ -714,7 +720,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const openEditPost = (post) => {
       editTargetId.value = post.id
       editForm.value = {
-        postType: post.postType || 'Product',
+        postType: post.postType || 'Service',
+        serviceCategory: normalizeServiceCategory(post.serviceCategory),
         name: post.productName || post.serviceName || post.consultationName || post.packageName || '',
         title: post.title || '',
         description: post.description || '',
@@ -831,6 +838,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const payload = {
           title: editForm.value.name.trim(),
           description: editForm.value.description.trim(),
+          serviceCategory: ['Service', 'Package'].includes(editForm.value.postType) ? normalizeServiceCategory(editForm.value.serviceCategory) : null,
           productName: editForm.value.postType === 'Product' ? editForm.value.name.trim() : '',
           serviceName: editForm.value.postType === 'Service' ? editForm.value.name.trim() : '',
           consultationName: editForm.value.postType === 'Consultation' ? editForm.value.name.trim() : '',

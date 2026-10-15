@@ -133,7 +133,7 @@
             </div>
           </div>
 
-          <div v-if="activeTab === 'Products & Services'">
+          <div v-if="activeTab === 'Services & Consultations'">
             <div class="center-toolbar flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
               <div class="flex w-full md:w-auto gap-3">
                 <div class="center-search-shell flex-1 md:w-[250px]">
@@ -146,82 +146,14 @@
                   />
                 </div>
               </div>
-              <button type="button" @click="goToCart" class="center-cart-button" aria-label="Open cart">
-                <Icon icon="mdi:cart-outline" class="h-5 w-5" />
-                <span>My Cart</span>
-                <span class="center-cart-pill">{{ cartCount }}</span>
-              </button>
             </div>
 
-            <div v-if="loading" class="center-muted-state py-10">Loading products and services...</div>
-            <div v-else-if="!filteredProducts.length && !filteredServices.length && !filteredConsultations.length" class="center-muted-state py-10">
-              No matching products, services, or consultations found.
+            <div v-if="loading" class="center-muted-state py-10">Loading services and consultations...</div>
+            <div v-else-if="!serviceListings.length && !items.some(item => item.type === 'Consultation')" class="center-muted-state py-10">
+              No services or consultations have been published yet.
             </div>
 
             <div v-else class="space-y-8">
-              <section class="center-section-card p-5">
-                <div class="mb-5 flex items-center justify-between gap-3">
-                  <div>
-                    <p class="center-kicker">Products</p>
-                    <h3 class="mt-1 text-xl font-semibold text-[#3d281d]">Available Products</h3>
-                  </div>
-                  <span class="center-count-pill px-3 py-1 text-xs font-medium">
-                    {{ filteredProducts.length }}
-                  </span>
-                </div>
-
-                <div v-if="filteredProducts.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div v-for="item in filteredProducts" :key="item.id" class="center-item-card overflow-hidden">
-                    <img :src="item.imageUrl || fallbackImage" alt="Item image" class="w-full h-40 object-cover rounded mb-4" />
-                    <div class="p-4">
-                      <h3 class="text-xl font-semibold text-[#3d281d]">{{ item.title || item.name }}</h3>
-                      <p class="mt-2 text-[#8b6a4d]">PHP {{ Number(item.price || 0).toFixed(2) }}</p>
-                      <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
-                      <p v-if="item.productVolume || item.productUnit" class="mt-2 text-xs font-semibold text-[#8b6a4d]">
-                        {{ item.productVolume || '' }}{{ item.productVolume && item.productUnit ? ' · ' : '' }}{{ item.productUnit || '' }}
-                      </p>
-                      <p v-if="item.termsAndConditions" class="mt-2 whitespace-pre-wrap text-xs text-[#775743]">
-                        Terms: {{ item.termsAndConditions }}
-                      </p>
-
-                      <div class="mt-4 flex flex-wrap items-center gap-3">
-                        <button type="button" class="center-secondary-button inline-flex items-center gap-2 px-4 py-2 rounded-xl" @click="openProductDetails(item)">
-                          <Icon icon="mdi:information-outline" class="h-4 w-4" />
-                          View Details
-                        </button>
-                        <div class="center-qty-stepper inline-flex items-center overflow-hidden rounded-2xl border border-[#e0c09a] bg-[#fff8ef]">
-                          <button
-                            type="button"
-                            class="center-qty-stepper-btn"
-                            aria-label="Decrease quantity"
-                            @click="decrementItemQuantity(item)"
-                          >
-                            <Icon icon="mdi:minus" class="h-4 w-4" />
-                          </button>
-                          <div class="center-qty-display min-w-14 px-4 py-2 text-center text-sm font-semibold text-[#3d281d]">
-                            {{ item.quantity || 1 }}
-                          </div>
-                          <button
-                            type="button"
-                            class="center-qty-stepper-btn"
-                            aria-label="Increase quantity"
-                            @click="incrementItemQuantity(item)"
-                          >
-                            <Icon icon="mdi:plus" class="h-4 w-4" />
-                          </button>
-                        </div>
-                        <button @click="addToCart(item)" class="center-action-button inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white">
-                          <Icon icon="mdi:cart-plus" class="h-4 w-4" />
-                          Add to Cart
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <p v-else class="center-muted-state text-sm">No products posted yet.</p>
-              </section>
-
               <section class="center-section-card p-5">
                 <div class="mb-5 flex items-center justify-between gap-3">
                   <div>
@@ -233,84 +165,23 @@
                   </span>
                 </div>
 
+                <div v-if="serviceListings.length" class="service-category-filters" role="group" aria-label="Filter services by category">
+                  <button type="button" :class="{ 'is-selected': selectedServiceCategory === '' }" :aria-pressed="selectedServiceCategory === ''" @click="selectedServiceCategory = ''">All Services</button>
+                  <button v-for="category in availableServiceCategories" :key="category.value" type="button" :class="{ 'is-selected': selectedServiceCategory === category.value }" :aria-pressed="selectedServiceCategory === category.value" @click="selectedServiceCategory = category.value">{{ category.label }}</button>
+                </div>
                 <div v-if="filteredServices.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div v-for="item in filteredServices" :key="item.id" class="center-item-card overflow-hidden">
-                    <img :src="item.imageUrl || fallbackImage" alt="Item image" class="w-full h-40 object-cover rounded mb-4" />
-                    <div class="p-4">
-                      <h3 class="text-xl font-semibold text-[#3d281d]">{{ item.title || item.name }}</h3>
-                      <p class="mt-2 text-[#8b6a4d]">PHP {{ Number(item.price || 0).toFixed(2) }}</p>
-                      <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
-                      <div class="mt-3 flex flex-wrap gap-2">
-                        <span
-                          v-if="item.type === 'Package'"
-                          class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium"
-                        >
-                          Consultation package
-                        </span>
-                        <span
-                          v-if="item.type === 'Package' || item.type === 'Consultation'"
-                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
-                        >
-                          {{ item.consultationMode === 'on-site' ? 'On-site consultation' : 'Online consultation' }}
-                        </span>
-                        <span
-                          v-if="item.requiresConsultationFirst"
-                          class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium"
-                        >
-                          Consultation required
-                        </span>
-                        <span
-                          v-if="item.requiresConsultationFirst && item.consultationFee != null"
-                          class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium"
-                        >
-                          Fee PHP {{ Number(item.consultationFee || 0).toFixed(2) }}
-                        </span>
-                        <span
-                          v-if="item.followUpAllowed"
-                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
-                        >
-                          Follow-up allowed
-                        </span>
-                        <span
-                          v-if="item.durationMinutes"
-                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
-                        >
-                          {{ item.durationMinutes }} mins
-                          <span v-if="item.consultationMode === 'online'" class="block text-xs mt-1">Full duration from verified start; {{ onlinePolicy(item.consultationPolicy).graceMinutes }}-minute arrival grace; five-minute early entry. Late arrivals and connection problems require clinic review.</span>
-                        </span>
-                        <span v-if="Number(item.sessionCount || 1) > 1" class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium">
-                          {{ item.sessionCount }} treatment sessions
-                        </span>
-                        <span
-                          v-if="item.requiredSupplyIds?.length"
-                          class="center-badge center-badge-soft px-2 py-1 text-[11px] font-medium"
-                        >
-                          {{ item.requiredSupplyIds.length }} required {{ item.requiredSupplyIds.length === 1 ? 'supply' : 'supplies' }}
-                        </span>
-                      </div>
-                      <p v-if="item.type === 'Package' && item.packageServiceNames.length" class="mt-3 text-xs text-[#6f4a2d]">
-                        Includes: {{ item.packageServiceNames.join(', ') }}
-                      </p>
-
-                      <div class="mt-4">
-                        <button
-                          @click="toggleServiceForBooking(item)"
-                          :class="[
-                            'center-action-button px-3 py-2 rounded-xl text-white',
-                            isServiceSelected(item)
-                              ? 'is-warm'
-                              : 'is-cool'
-                          ]"
-                        >
-                          {{ isServiceSelected(item) ? 'Selected for Booking' : needsLinkedConsultation(item) ? 'Book consultation first' : 'Add to Booking' }}
-                        </button>
-                        <button v-if="needsLinkedConsultation(item)" type="button" class="text-sm text-[#6f4a2d] underline" @click="toggleServiceForBooking(item, true)">Already consulted? Request verification</button>
-                      </div>
+                  <article v-for="item in filteredServices" :key="item.id" class="center-item-card service-preview-card overflow-hidden">
+                    <img :src="item.imageUrl || fallbackImage" :alt="item.title || item.name" class="service-preview-image" loading="lazy" />
+                    <div class="service-preview-content">
+                      <h3>{{ item.title || item.name }}</h3>
+                      <p class="service-preview-duration"><Icon icon="lucide:clock-3" width="16" aria-hidden="true" />{{ item.durationMinutes ? item.durationMinutes + ' minutes' : 'Confirm duration with clinic' }}</p>
+                      <p class="service-preview-price">{{ formatServicePrice(item.price) }}</p>
+                      <button type="button" class="service-preview-details" aria-haspopup="dialog" @click="openServiceDetails(item)">View Details<Icon icon="lucide:arrow-up-right" width="17" aria-hidden="true" /></button>
                     </div>
-                  </div>
+                  </article>
                 </div>
 
-                <p v-else class="center-muted-state text-sm">No services posted yet.</p>
+                <div v-else class="center-muted-state text-sm" role="status"><p>{{ serviceListings.length ? 'No services match this category and search.' : 'No services posted yet.' }}</p><button v-if="serviceListings.length" type="button" class="service-category-reset" @click="selectedServiceCategory = ''; searchQuery = ''">Clear filters</button></div>
               </section>
 
               <section class="center-section-card p-5">
@@ -638,37 +509,18 @@
       </div>
       </div>
     </main>
-    <div v-if="selectedProductDetails" class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(31,18,11,0.6)] p-4 backdrop-blur-sm" @click.self="closeProductDetails">
-      <section class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[1.75rem] border border-[#e0c09a] bg-[#fffaf3] p-5 shadow-[0_30px_80px_rgba(60,34,18,0.26)]">
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <p class="center-kicker">Product Details</p>
-            <h2 class="mt-1 text-2xl font-semibold text-[#3d281d]">{{ selectedProductDetails.title || selectedProductDetails.name }}</h2>
-          </div>
-          <button type="button" class="text-[#8b6a4d] hover:text-[#3d281d]" aria-label="Close product details" @click="closeProductDetails">
-            <Icon icon="mdi:close" class="h-6 w-6" />
-          </button>
-        </div>
-        <img :src="selectedProductDetails.imageUrl || fallbackImage" :alt="selectedProductDetails.title || selectedProductDetails.name" class="mt-4 h-56 w-full rounded-2xl object-cover" />
-        <p class="mt-4 text-lg font-semibold text-[#8d5a3b]">PHP {{ Number(selectedProductDetails.price || 0).toFixed(2) }}</p>
-        <p v-if="selectedProductDetails.description" class="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#6f4a2d]">{{ selectedProductDetails.description }}</p>
-        <p v-if="selectedProductDetails.productVolume || selectedProductDetails.productUnit" class="mt-3 text-sm text-[#775743]">
-          Quantity / unit: {{ selectedProductDetails.productVolume || '-' }} {{ selectedProductDetails.productUnit || '' }}
-        </p>
-        <div v-if="selectedProductDetails.fdaRegistrationNumber || selectedProductDetails.fdaApprovalDocument?.url" class="mt-5 rounded-2xl border border-[#e0c09a] bg-[#fff8ef] p-4">
-          <h3 class="font-semibold text-[#3d281d]">FDA Documentation</h3>
-          <p v-if="selectedProductDetails.fdaRegistrationNumber" class="mt-2 text-sm text-[#6f4a2d]">Registration number: {{ selectedProductDetails.fdaRegistrationNumber }}</p>
-          <a v-if="selectedProductDetails.fdaApprovalDocument?.url" :href="selectedProductDetails.fdaApprovalDocument.url" target="_blank" rel="noopener" class="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-[#8d5a3b] hover:underline">
-            <Icon icon="mdi:file-document-outline" class="h-4 w-4" />
-            View supplier FDA document
-          </a>
-        </div>
-        <div v-if="selectedProductDetails.termsAndConditions" class="mt-5 rounded-2xl border border-[#e0c09a] bg-[#fff8ef] p-4">
-          <h3 class="font-semibold text-[#3d281d]">Product Terms</h3>
-          <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#6f4a2d]">{{ selectedProductDetails.termsAndConditions }}</p>
-        </div>
-      </section>
-    </div>
+    <ServiceDetailsModal
+      v-if="selectedServiceDetails"
+      :service="selectedServiceDetails"
+      :fallback-image="fallbackImage"
+      :consultation="items.find(item => item.id === selectedServiceDetails.linkedConsultationId && item.type === 'Consultation') || null"
+      :policies="activeClinicPolicies"
+      :selected="isServiceSelected(selectedServiceDetails)"
+      :needs-consultation="needsLinkedConsultation(selectedServiceDetails)"
+      :busy="serviceDetailsBooking"
+      @close="selectedServiceDetails = null"
+      @book="bookServiceDetails"
+    />
     <button
       type="button"
       class="center-chat-button"
@@ -758,7 +610,9 @@
 </template>
 
 <script setup>
+import { isCustomerCareListing } from '../../../../shared/customerCatalog.js'
 import { onlinePolicy } from '../../../../shared/onlineConsultation.js'
+import { isCategorizedService, normalizeServiceCategory, serviceCategoryOptions, filterCategorizedServices } from '../../../../shared/serviceCategories.js'
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -770,10 +624,10 @@ import { auth, db } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
-import { addCartItem, readCart } from '@/utils/customerCart'
 import { buildWeekScheduleMap, getScheduleDayWindow } from '@/utils/employeeSchedules'
 import { calculateCommissionAmount, calculateNetAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
+import ServiceDetailsModal from '@/components/common/ServiceDetailsModal.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -782,15 +636,32 @@ const route = useRoute()
 const router = useRouter()
 const centerId = String(route.params.id || '')
 
-const tabs = ['About Us', 'Products & Services', 'Reviews']
+const tabs = ['About Us', 'Services & Consultations', 'Reviews']
 const activeTab = ref('About Us')
 const loading = ref(true)
 const reviews = ref([])
 const items = ref([])
 const searchQuery = ref('')
-const cartCount = ref(0)
+const selectedServiceCategory = ref('')
 const showChatModal = ref(false)
-const selectedProductDetails = ref(null)
+const selectedServiceDetails = ref(null)
+const serviceDetailsBooking = ref(false)
+const formatServicePrice = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value) || 0)
+const openServiceDetails = item => { selectedServiceDetails.value = item }
+const bookServiceDetails = async (requestVerification = false) => {
+  const item = selectedServiceDetails.value
+  if (!item || serviceDetailsBooking.value) return
+  serviceDetailsBooking.value = true
+  const previousSelection = selectedServices.value
+  try {
+    await toggleServiceForBooking(item, requestVerification)
+    if (selectedServices.value !== previousSelection) {
+      selectedServiceDetails.value = null
+      await nextTick()
+      document.querySelector('.center-booking-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  } finally { serviceDetailsBooking.value = false }
+}
 const chatInput = ref('')
 const chatMessages = ref([])
 const currentUserId = ref('')
@@ -1522,10 +1393,10 @@ const loadBranchData = trackPageLoad(async (branchId) => {
 
   const catalogResponse = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/catalog`)
   const catalogPayload = await catalogResponse.json().catch(() => ({}))
-  if (!catalogResponse.ok || !catalogPayload?.success) throw new Error(catalogPayload?.error || 'Unable to load center products and services.')
+  if (!catalogResponse.ok || !catalogPayload?.success) throw new Error(catalogPayload?.error || 'Unable to load clinic services and consultations.')
   const catalogPosts = Array.isArray(catalogPayload.posts) ? catalogPayload.posts : []
 
-  items.value = catalogPosts.map((post) => {
+  items.value = catalogPosts.filter(isCustomerCareListing).map((post) => {
     const packageComponents = Array.isArray(post.packageServiceIds)
       ? post.packageServiceIds.map((componentId) => catalogPosts.find((candidate) => candidate.id === componentId) || {}).filter(Boolean)
       : []
@@ -1534,6 +1405,7 @@ const loadBranchData = trackPageLoad(async (branchId) => {
     return {
       id: post.id,
       type: post.postType || 'Service',
+      serviceCategory: normalizeServiceCategory(post.serviceCategory),
       name: post.productName || post.serviceName || post.consultationName || post.title || 'Unnamed',
       title: post.title || '',
       description: post.description || '',
@@ -1548,6 +1420,7 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       durationMinutes: post.durationMinutes != null ? Number(post.durationMinutes) : null,
       staffingRequirements: post.staffingRequirements || [],
       sessionCount: Math.max(1, Number(post.sessionCount || 1)),
+      sessionIntervalDays: post.sessionIntervalDays != null ? Number(post.sessionIntervalDays) : null,
       productVolume: String(post.productVolume || '').trim(),
       productUnit: String(post.productUnit || '').trim(),
       termsAndConditions: String(post.termsAndConditions || '').trim(),
@@ -1853,7 +1726,7 @@ const applyFollowUpSelectionFromQuery = async () => {
   if (!selection.length) return false
 
   selectedServices.value = selection
-  activeTab.value = 'Products & Services'
+  activeTab.value = 'Services & Consultations'
   await nextTick()
 
   if (!bookingForm.value.slotKey) {
@@ -1876,21 +1749,11 @@ const applyFollowUpSelectionFromQuery = async () => {
 
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase())
 
-const filteredProducts = computed(() => {
-  return items.value.filter((item) => {
-    if (item.type !== 'Product') return false
-    if (!normalizedSearchQuery.value) return true
-    return (item.title || item.name || '').toLowerCase().includes(normalizedSearchQuery.value)
-  })
-})
-
-const filteredServices = computed(() => {
-  return items.value.filter((item) => {
-    if (!['Service', 'Package'].includes(item.type)) return false
-    if (item.isPackageComponent) return false
-    if (!normalizedSearchQuery.value) return true
-    return (item.title || item.name || '').toLowerCase().includes(normalizedSearchQuery.value)
-  })
+const serviceListings = computed(() => items.value.filter(isCategorizedService))
+const availableServiceCategories = computed(() => serviceCategoryOptions(serviceListings.value))
+const filteredServices = computed(() => filterCategorizedServices(serviceListings.value, selectedServiceCategory.value, normalizedSearchQuery.value))
+watch(availableServiceCategories, categories => {
+  if (selectedServiceCategory.value && !categories.some(category => category.value === selectedServiceCategory.value)) selectedServiceCategory.value = ''
 })
 
 const filteredConsultations = computed(() => {
@@ -1901,51 +1764,12 @@ const filteredConsultations = computed(() => {
   })
 })
 
-const syncCartCount = () => {
-  cartCount.value = readCart().reduce((sum, item) => sum + Number(item.quantity || 0), 0)
-}
-
 const goBack = () => {
   if (window.history.length > 1) {
     router.back()
     return
   }
   router.push({ name: 'customer-home' })
-}
-
-const goToCart = () => router.push({ name: 'customer-cart' })
-
-const openProductDetails = (item) => {
-  selectedProductDetails.value = item
-}
-
-const closeProductDetails = () => {
-  selectedProductDetails.value = null
-}
-
-const incrementItemQuantity = (item) => {
-  const current = Math.max(1, Number(item.quantity || 1))
-  item.quantity = current + 1
-}
-
-const decrementItemQuantity = (item) => {
-  const current = Math.max(1, Number(item.quantity || 1))
-  item.quantity = Math.max(1, current - 1)
-}
-
-const addToCart = (item) => {
-  addCartItem({
-    id: item.id,
-    branchId: activeBranchId.value,
-    branchName: center.value.name,
-    name: item.title || item.name,
-    variation: 'Default',
-    price: Number(item.price || 0),
-    quantity: Math.max(1, Number(item.quantity || 1)),
-    imageUrl: item.imageUrl || '',
-  })
-  syncCartCount()
-  toast.success('Added to cart.')
 }
 
 watch(() => bookingForm.value.date, () => {
@@ -2219,10 +2043,6 @@ const sendChat = async () => {
 
 const formatPriceRange = () => {
   const formatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' })
-  const productPrices = items.value
-    .filter((item) => item.type === 'Product')
-    .map((item) => Number(item.price || 0))
-    .filter((price) => price > 0)
   const servicePrices = items.value
     .filter((item) => item.type === 'Service')
     .map((item) => Number(item.price || 0))
@@ -2241,11 +2061,11 @@ const formatPriceRange = () => {
       : `${label}: ${formatter.format(min)} to ${formatter.format(max)}.`
   }
 
-  if (!productPrices.length && !servicePrices.length && !consultationPrices.length) {
+  if (!servicePrices.length && !consultationPrices.length) {
     return 'Pricing is not available yet. Please ask the receptionist for a quote.'
   }
 
-  return `${formatRange(productPrices, 'Products')} ${formatRange(servicePrices, 'Services')} ${formatRange(consultationPrices, 'Consultations')}`.trim()
+  return `${formatRange(servicePrices, 'Services')} ${formatRange(consultationPrices, 'Consultations')}`.trim()
 }
 
 const buildQuickAnswer = (key) => {
@@ -2262,7 +2082,7 @@ const buildQuickAnswer = (key) => {
     case 'price':
       return formatPriceRange()
     case 'booking':
-      return 'To book, go to Products & Services, select a service, then choose a date and time. You can also chat with the receptionist for help.'
+      return 'To book, go to Services & Consultations, select a service, then choose a date and time. You can also chat with the receptionist for help.'
     default:
       return 'Thanks for your question. A receptionist will reply soon.'
   }
@@ -3053,7 +2873,6 @@ onMounted(trackPageLoad(async () => {
     if (selectedServices.value.length) {
       syncSelectedSlot()
     }
-    syncCartCount()
     if (auth.currentUser) {
       currentUserId.value = auth.currentUser.uid
       await startUnreadListener()
@@ -3542,4 +3361,21 @@ const formatChatTime = (timestamp) => {
 .customer-chat-modal .customer-chat-send {
   color: #fff8eb !important;
 }
+
+.service-preview-card { display: flex; flex-direction: column; }
+.service-preview-image { display: block; width: 100%; height: 190px; object-fit: cover; }
+.service-preview-content { display: flex; flex: 1; flex-direction: column; align-items: flex-start; padding: 22px; }
+.service-preview-content h3 { margin: 0 0 12px; color: #3d281d; font-size: 19px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.service-preview-duration { display: flex; align-items: center; gap: 7px; margin: 0; color: #87684f; font-size: 13px; }
+.service-preview-price { margin: 18px 0 22px; color: #855335; font-size: 21px; font-weight: 600; }
+.service-preview-details { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-height: 43px; margin-top: auto; padding: 10px 14px; border: 1px solid #d9b68f; border-radius: 11px; background: #f8eddf; color: #704a30; font-size: 13px; font-weight: 600; transition: background .15s, border-color .15s; }
+.service-preview-details:hover { background: #f0ddc5; border-color: #b98a5b; }
+.service-preview-details:focus-visible { outline: 3px solid #b88759; outline-offset: 3px; }
+
+.service-category-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.service-category-filters button { padding: 9px 15px; border: 1px solid #e2c6a6; border-radius: 24px; background: #fffaf3; color: #7b583e; font-size: 12px; font-weight: 600; transition: background .15s, color .15s; }
+.service-category-filters button:hover { border-color: #b88a62; background: #f5e8d6; }
+.service-category-filters button.is-selected { border-color: #8d5a3b; background: #8d5a3b; color: #fffaf3; }
+.service-category-filters button:focus-visible, .service-category-reset:focus-visible { outline: 3px solid #b88759; outline-offset: 3px; }
+.service-category-reset { margin-top: 12px; border: 0; background: transparent; color: #805232; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 </style>

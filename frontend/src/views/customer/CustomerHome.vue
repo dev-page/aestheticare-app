@@ -8,11 +8,11 @@
           <div>
             <p class="customer-home-eyebrow">Find care that fits your routine</p>
             <h1>Feel confident about your next appointment.</h1>
-            <p>Discover verified clinics, compare their services, and keep every booking and order in one calm, simple space.</p>
+            <p>Discover verified clinics, compare their services, and manage your appointments in one calm, simple space.</p>
           </div>
           <div class="customer-home-hero-actions">
             <RouterLink to="/customer/appointments" class="customer-home-primary-action">My appointments</RouterLink>
-            <RouterLink to="/customer/cart" class="customer-home-secondary-action">View cart</RouterLink>
+            <RouterLink to="/customer/unpaid-appointments" class="customer-home-secondary-action">Payments due</RouterLink>
           </div>
         </section>
         <section class="customer-filter-section">

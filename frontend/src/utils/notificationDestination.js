@@ -3,6 +3,9 @@ export function notificationDestination(notification = {}, { userType = '', role
   const fallback = kind.includes('superadmin') ? '/superadmin/notifications'
     : kind.includes('customer') ? '/customer/account-settings?tab=notifications' : '/notifications'
   const link = String(notification.link || '').trim()
+  if (/^\/customer\/(cart|checkout|orders)(?:[/?#]|$)/.test(link)) {
+    return { to: '/customer/home', label: 'Discover clinics' }
+  }
   // Notifications navigate within the application; never interpret an external URL as a route.
   if (/^\/(?!\/)/.test(link) && !/[\\\u0000-\u001f]/.test(link)) {
     return { to: link, label: 'Open page' }

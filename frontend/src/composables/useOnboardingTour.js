@@ -12,7 +12,6 @@ const tourCatalog = {
     steps: [
       { title: 'Discover clinics', text: 'Search verified clinics, compare treatments, save favorites, and open a clinic to book a service or consultation.', selector: '[data-onboarding-key="customer-home"]', path: '/customer/home' },
       { title: 'My care', text: 'Keep track of appointment requests, confirmed schedules, consultation progress, signed contracts, and payments due.', selector: '[data-onboarding-key="customer-care"]', path: '/customer/appointments' },
-      { title: 'Shop', text: 'Review products in your cart, complete checkout, and track orders or pickup updates in one place.', selector: '[data-onboarding-key="customer-shop"]', path: '/customer/cart' },
       { title: 'My account', text: 'Update your profile and manage notifications, privacy, password, support, and account access settings.', selector: '[data-onboarding-key="customer-account"]', path: '/customer/account-settings?tab=profile' },
     ],
   },
@@ -58,7 +57,7 @@ const getAccountTourKey = (userData = {}) => {
 
 const isTourLandingPath = (tourKey, path) => {
   const normalized = String(path || '').toLowerCase()
-  if (tourKey === 'customer') return normalized.startsWith('/customer')
+  if (tourKey === 'customer') return normalized.startsWith('/customer/')
   if (tourKey === 'supplier') return normalized === '/supplier/supplies'
   if (tourKey === 'owner') return normalized === '/clinic/dashboard'
   if (tourKey === 'employee') return normalized === '/workspace/dashboard'

@@ -6,10 +6,18 @@ import { fileURLToPath } from 'node:url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const customerAppBuild = mode === 'customer-app'
+  return {
   root: __dirname,
   envDir: path.resolve(__dirname, '..'),
-  plugins: [vue()],
+  plugins: [vue(), ...(customerAppBuild ? [{
+    name: 'customer-app-manifest',
+    transformIndexHtml(html) {
+      return html.replace('href="/manifest.json"', 'href="/customer-app/manifest.json"')
+    },
+  }] : [])],
+  ...(customerAppBuild ? { define: { 'import.meta.env.VITE_MOBILE_APP': JSON.stringify('true') } } : {}),
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
@@ -17,7 +25,7 @@ export default defineConfig({
   },
   build: {
     emptyOutDir: true,
-    outDir: '../dist',
+    outDir: customerAppBuild ? '../dist-customer-app' : '../dist',
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -71,5 +79,6 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  }
   }
 })
