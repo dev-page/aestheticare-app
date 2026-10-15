@@ -14,7 +14,14 @@ export default defineConfig(({ mode }) => {
   plugins: [vue(), ...(customerAppBuild ? [{
     name: 'customer-app-manifest',
     transformIndexHtml(html) {
-      return html.replace('href="/manifest.json"', 'href="/customer-app/manifest.json"')
+      return {
+        html: html.replace('href="/manifest.json"', 'href="/customer-app/manifest.json"'),
+        tags: [{
+          tag: 'script',
+          attrs: { src: '/customer-app/register-service-worker.js' },
+          injectTo: 'head-prepend',
+        }],
+      }
     },
   }] : [])],
   ...(customerAppBuild ? { define: { 'import.meta.env.VITE_MOBILE_APP': JSON.stringify('true') } } : {}),

@@ -36,4 +36,6 @@ Official packaging instructions: https://github.com/pwa-builder/PWABuilder/blob/
 
 ## Device checks before release
 
+The customer build registers `/service-worker.js` directly from the HTML head, independently of the Vue/Firebase bundle and the page `load` event. If PWABuilder reports no worker, verify the deployed build includes `/customer-app/register-service-worker.js` and that `/service-worker.js` returns JavaScript rather than the SPA HTML or a deployment-protection login. In Chrome DevTools, check Application > Service Workers for an activated worker controlling `/`. Redeploy the customer build and rerun the scan after correcting deployment errors.
+
 Test the generated, signed APK on Android: fresh launch, direct customer signup and OTP, existing customer login, rejected operational-account login, password recovery, account recovery, booking/payment return, external consultation links, logout, app restart, and Android Back navigation. Test ordinary website clinic/supplier/admin login separately. Local automated checks and a frontend build do not replace these signed-APK checks.
