@@ -6,6 +6,7 @@ import { auth, db } from '@/config/firebaseConfig'
 import { toast } from 'vue3-toastify'
 import { usePageLoading } from '@/composables/usePageLoading'
 import { usePermissions } from '@/composables/usePermissions'
+import { useRoute } from 'vue-router'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
@@ -19,6 +20,7 @@ import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModa
 
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 const { hasPermission } = usePermissions()
+const route = useRoute()
 const appointments = ref([]), staff = ref([]), clients = ref([])
 const search = ref(''), status = ref(''), date = ref(''), source = ref(''), error = ref(''), needsReview = ref(false)
 const page = ref(1), pageSize = ref(10), selectedId = ref('')
@@ -45,6 +47,7 @@ const organizer = computed(() => {
 const rows = computed(() => sortRecordsNewestFirst(appointmentBookingRows(appointments.value)))
 const statuses = computed(() => [...new Set(rows.value.map(item => item.status || 'Scheduled'))].sort())
 const filtered = computed(() => rows.value.filter(item => {
+  if (route.query.branchId && item.branchId !== String(route.query.branchId)) return false
   const children = appointmentRecipients(item, appointments.value)
   if (needsReview.value && !children.some(child => child.consultationNeedsReview || child.consultationDispute?.status === 'Open')) return false
   const haystack = [nameFor(item), appointmentServiceName(item), ...children.flatMap(child => [nameFor(child), appointmentServiceName(child), emailFor(child)])].join(' ').toLowerCase()
@@ -121,6 +124,7 @@ const submitCode = async serviceKey => {
 <template>
   <div v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 6, header: false }" class="appointment-records">
     <p v-if="error" class="error-message" role="alert">{{ error }}</p>
+    <p v-if="route.query.branchId" class="subline">Showing this branch's appointments. <router-link :to="{ path: route.path, query: { ...route.query, branchId: undefined } }" class="outline-button">Show all branches</router-link></p>
     <section class="records-panel filters">
       <label>Search<input v-model="search" placeholder="Client, recipient, or service" type="search" /></label>
       <label>Appointment Type<select v-model="source"><option value="">All types</option><option>Walk-in</option><option>Online booking</option></select></label>

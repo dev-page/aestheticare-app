@@ -14,7 +14,7 @@ export const registerConsultationEvents = (app, { admin, requireAuth, authorizeC
         const update = { updatedAt: stamp() }
         if (action === 'review') {
           await authorizeClinicAction(req.user.uid, appointment.branchId, 'appointments:review')
-          check(!worker && !(appointment.treatmentTeam || []).some(member => member.employeeId === req.user.uid), 'An independent clinic reviewer must handle this consultation.', 403)
+          check(!customer && !worker && !(appointment.treatmentTeam || []).some(member => member.employeeId === req.user.uid), 'An independent clinic reviewer must handle this consultation.', 403)
           check(appointment.consultationNeedsReview || appointment.consultationDispute?.status === 'Open', 'This consultation does not need review.')
           check(note.length >= 10, 'Record the review findings (at least 10 characters).', 400)
           const outcome = req.body?.outcome

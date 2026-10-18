@@ -1,4 +1,5 @@
 import { isCustomerCareListing, assertCustomerCheckoutSupported } from '../../shared/customerCatalog.js'
+import { registerAppointmentPaymentWebhook } from './appointmentPaymentWebhook.js'
 import { registerConsultationEvents } from './consultationEvents.js'
 import { subscriptionDate } from '../../shared/subscriptionDates.js'
 import { subscriptionLifecycle, hasActivePaidCycle } from '../../shared/subscriptionLifecycle.js'
@@ -14,6 +15,7 @@ import { registerFinanceWorkflow } from './financeWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import { registerBookingBatch } from './bookingBatch.js'
+import { prepareClinicBookingRecipients, writeClinicBookingNotifications } from './clinicBookingNotifications.js'
 import { registerSupplierVerification } from './supplierVerification.js'
 import { registerConsultationWindows, closeExpiredConsultations } from './consultationWindows.js'
 import { registerWalkInPayments } from './walkInWorkflow.js'
@@ -388,7 +390,9 @@ app.use('/supply', express.json({ limit: '8mb' }))
 app.use('/attendance', express.json({ limit: '5mb' }))
 // Registration OCR preflight receives a document as base64 and never persists
 // image files. Allow enough room for the existing 10 MB document limit.
-app.use(express.json({ limit: '15mb' }))
+app.use(express.json({ limit: '15mb', verify: (req, _res, buffer) => {
+  if (req.path === '/paymongo/webhook') req.rawBody = buffer
+} }))
 registerPublicContact(app, admin)
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && Object.prototype.hasOwnProperty.call(error, 'body')) {
@@ -3445,13 +3449,13 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
 })
 const sendServiceCode = async ({ email, serviceKey, date, time }) => {
   if (!email || !postmarkClient || !senderEmail) return
-  await sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time}. Your private service code is ${serviceKey}. Show this code to reception for check-in. It applies only to your appointment and expires after the appointment window.` })
+  await sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time} (Philippine time). Your private service code is ${serviceKey}. For an on-site appointment, show this code to reception for check-in. For an online consultation, enter it in My Appointments within 30 minutes before the scheduled start and before the arrival grace period ends; the system will create your Google Meet link. The consultation timer starts when the practitioner verifies your presence and starts the consultation. This code applies only to your appointment. Keep it private.` })
 }
 registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction, sendServiceCode })
 registerConsultationEvents(app, { admin, requireAuth, authorizeClinicAction })
 registerPractitionerTeams(app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap })
 registerConsultationWindows(app, { admin, ready: () => adminReady })
-registerBookingBatch(app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan })
+registerBookingBatch(app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan, loadUserContext })
 
 // Each treatment visit has its own lifecycle. The original appointment is the
 // treatment-plan parent; later visits are scheduled explicitly so a missed
@@ -5417,6 +5421,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     const groupResult = { recipientAppointmentIds: [], invitations: [] }
     await firestore.runTransaction(async (tx) => {
       const prepared = await prepareBooking({ tx, db: firestore, reservation, getBookingRange, rangesOverlap })
+      const recipients = walkIn ? [] : await prepareClinicBookingRecipients({ tx, db: firestore, branchId, branch, loadUserContext })
       Object.assign(appointmentPayload, prepared.data, {
         approvalStatus: initialApprovalStatus, status: initialBookingStatus, paymentStatus: 'Pending', amountPaid: 0,
         ...(walkIn
@@ -5430,6 +5435,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       for (const lock of prepared.customerLocks || []) tx.set(lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.set(bookingRef, { ...bookingPayload, ...prepared.data, source: walkIn ? 'walk_in' : (freePlanDirectBooking ? 'customer_booking' : 'customer_booking_request'), status: initialBookingStatus })
       tx.set(appointmentRef, appointmentPayload)
+      writeClinicBookingNotifications({ tx, db: firestore, recipients, branchId, bookingId: bookingRef.id, appointmentId: appointmentRef.id, customerName: reservation.customerName, directBooking: freePlanDirectBooking, createdAt: admin.firestore.FieldValue.serverTimestamp() })
       if (freePlanDirectBooking && !prepared.data.groupBooking && Number(prepared.data.treatmentPlan?.totalSessions || 1) > 1) {
         const count = prepared.data.treatmentPlan.totalSessions
         for (let number = 1; number <= count; number++) tx.set(firestore.collection('treatmentSessions').doc(`${appointmentRef.id}-${number}`), { branchId, treatmentPlanAppointmentId: appointmentRef.id, customerId, customerName: reservation.customerName, practitionerId, sessionNumber: number, totalSessions: count, status: number === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: number === 1 ? appointmentRef.id : '', ...(number === 1 ? { date: reservation.date, time: reservation.time } : {}), createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
@@ -9229,7 +9235,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
   }
 })
 
-app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
+const recordAppointmentPayment = async (req, res) => {
   if (!assertPayMongoConfigured(res)) return
 
   const appointmentId = String(req.params.id || '').trim()
@@ -9337,6 +9343,12 @@ app.post('/appointments/:id/record-payment', requireAuth, async (req, res) => {
     console.error('appointments/record-payment error:', error)
     return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to record appointment payment' })
   }
+}
+app.post('/appointments/:id/record-payment', requireAuth, recordAppointmentPayment)
+registerAppointmentPaymentWebhook(app, {
+  admin, recordPayment: recordAppointmentPayment,
+  getSecret: () => process.env.PAYMONGO_WEBHOOK_SECRET || '',
+  getMode: () => payMongoSecretKey.startsWith('sk_live_') ? 'live' : payMongoSecretKey.startsWith('sk_test_') ? 'test' : '',
 })
 
 app.get('/paymongo/checkout-session/:id', optionalAuth, async (req, res) => {

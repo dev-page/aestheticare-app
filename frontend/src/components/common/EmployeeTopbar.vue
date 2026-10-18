@@ -58,6 +58,7 @@ import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from 'fi
 import { auth, db } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
 import NotificationDetailsDialog from '@/components/common/NotificationDetailsDialog.vue'
+import { toast } from 'vue3-toastify'
 
 const props = defineProps({
   title: {
@@ -196,12 +197,25 @@ const unreadCount = computed(() => {
 
 const startListeners = (userId, roleKey, branchId) => {
   loading.value = true
+  let receivedUserSnapshot = false
   const baseQuery = (filters) =>
     query(collection(db, 'notifications'), ...filters)
 
   unsubscribeUser = onSnapshot(
     baseQuery([where('recipientUserId', '==', userId)]),
     (snapshot) => {
+      if (receivedUserSnapshot) {
+        for (const change of snapshot.docChanges()) {
+          const item = { id: change.doc.id, ...change.doc.data() }
+          if (change.type === 'added' && item.eventType === 'booking_created' && !item.read && !item.deleted) {
+            toast.info(item.title || 'New online booking', {
+              toastId: `booking-notification-${item.id}`,
+              onClick: () => openNotificationModal(item),
+            })
+          }
+        }
+      }
+      receivedUserSnapshot = true
       userDocsCache.value = snapshot.docs.map((docSnap) => {
         const data = docSnap.data() || {}
         const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt || 0)

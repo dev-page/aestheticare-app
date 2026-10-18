@@ -79,16 +79,23 @@ test('Individual services require separate records and separate dates, across br
 })
 test('Batch submission is atomic and prices come from the catalogue', async () => {
   const h = fixture(), routes = new Map()
+  h.seed('users', 'owner', { role: 'Owner', status: 'Active', permissions: ['appointments:review'] })
   registerBookingBatch({ post: (path, auth, handler) => routes.set(path, handler) }, { admin: h.admin, requireAuth() {}, getBookingRange: range, rangesOverlap: overlap, assertClinicPlanFeature: async () => {}, getClinicPoliciesForBranch: async () => ({ policy: {} }), getApprovedLeaveForDate: async () => null })
   const invalid = [reservation('facial'), reservation('missing', future(6))]
   assert.equal((await callRoute(routes.get('/bookings/batch'), 'customer', { appointments: invalid })).code, 409)
   assert.equal([...h.records.keys()].filter(key => key.startsWith('appointments/')).length, 0)
+  assert.equal([...h.records.keys()].filter(key => key.startsWith('notifications/')).length, 0)
   const response = await callRoute(routes.get('/bookings/batch'), 'customer', { appointments: [reservation('facial'), { ...reservation('laser', future(6)), amount: 1 }] })
   assert.equal(response.code, 200, JSON.stringify(response.body))
   const parent = h.records.get(`appointments/${response.body.data.appointmentId}`)
   assert.equal(parent.totalAmount, 1000)
   assert.equal(parent.isBookingOrderParent, true)
   assert.equal(parent.appointmentIds.length, 2)
+  const alert = h.records.get(`notifications/booking-created-${response.body.data.bookingId}-owner`)
+  assert.equal(alert.recipientUserId, 'owner')
+  assert.equal(alert.appointmentId, response.body.data.appointmentId)
+  assert.match(alert.message, /2 separately scheduled appointments/)
+  assert.equal(alert.read, false)
 })
 test('Packages expand into individual visits and reserve only first-visit resources', async () => {
   const h = fixture()

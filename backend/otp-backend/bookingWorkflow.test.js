@@ -4,6 +4,8 @@ import { paymentDue, afterPaymentStatus, resourceConflict, resetAppointmentAcces
 import { registerBookingMilestones } from './bookingMilestones.js'
 import fs from 'node:fs'
 import vm from 'node:vm'
+import crypto from 'node:crypto'
+import { registerAppointmentPaymentWebhook } from './appointmentPaymentWebhook.js'
 import { normalized, assertWorkflow, initialPaymentReceived } from './bookingWorkflow.js'
 
 const fixture = (installmentsAllowed) => ({ customerId: 'customer', practitionerId: 'worker', branchId: 'clinic', service: 'Treatment', status: 'Awaiting Payment', approvalStatus: 'Approved', totalAmount: 1000, amountPaid: 0, installmentsAllowed, depositPercent: 30, contract: { terms: 'Clinic terms', status: 'pending' }, resources: [{ id: 'material', kind: 'material', quantity: 1 }], bookingId: 'booking' })
@@ -158,6 +160,16 @@ test('Reception check-in requires an authorized actor, identity evidence, and an
   assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 200)
 })
 
+test('An old on-site check-in cannot start a service after its appointment window', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-12T02:00:00Z') })
+  const h = harness({ ...fixture(false), bookingWorkflowVersion: 2, date: '2026-10-11', time: '10:00', endTime: '11:00', status: 'Checked in', amountPaid: 1000, workerKeyVerified: true, contract: { status: 'signed' } })
+  const result = await h.call('transition', 'worker', { action: 'start' })
+  assert.equal(result.code, 409)
+  assert.match(result.body.error, /expired/)
+  assert.equal(h.current().startedAt, undefined)
+  assert.equal(h.records.get('inventoryItems/material').currentStock, 5)
+})
+
 test('Materials reserve stock; reusable equipment reserves overlapping slots only', () => {
   const inventory = [{ id: 'm', currentStock: 1, name: 'Material' }, { id: 'e', currentStock: 1, name: 'Machine' }]
   const requirements = [{ id: 'm', kind: 'material', quantity: 1 }, { id: 'e', kind: 'equipment', quantity: 1 }]
@@ -174,7 +186,7 @@ test('Deposit rounding never underpays fractional cents', () => {
 
 test('Payment endpoint records deposit once and completes after final payment', async () => {
   const source = fs.readFileSync(new URL('./server.js', import.meta.url), 'utf8')
-  const start = source.indexOf("app.post('/appointments/:id/record-payment'")
+  const start = source.indexOf('const recordAppointmentPayment = async')
   const end = source.indexOf("app.get('/paymongo/checkout-session/:id'", start)
   let handler
   let providerAmount = 30000
@@ -190,6 +202,7 @@ test('Payment endpoint records deposit once and completes after final payment', 
     app: { post: (path, auth, callback) => { handler = callback } }, requireAuth() {}, assertPayMongoConfigured: () => true,
     admin: { firestore }, normalizeBookingStatus: normalized, normalized, paymentDue, afterPaymentStatus, initialPaymentReceived, assertWorkflow,
     buildPayMongoHeaders: () => ({}), console: { error() {} },
+    registerAppointmentPaymentWebhook() {},
     fetch: async () => ({ ok: true, json: async () => ({ data: { attributes: { paid_at: providerPaid ? 123 : null, metadata: { appointmentId: 'a', customerId: 'customer' }, payments: [{ id: 'payment', attributes: { amount: providerAmount, status: providerPaid ? 'paid' : 'failed' } }] } } }) }),
   })
   const call = async (checkoutSessionId) => {
@@ -201,6 +214,21 @@ test('Payment endpoint records deposit once and completes after final payment', 
   assert.equal((await call('failed')).status, 409)
   assert.equal(updates, 0)
   providerPaid = true
+  let webhook
+  registerAppointmentPaymentWebhook({ post: (_path, callback) => { webhook = callback } }, {
+    admin: { firestore }, recordPayment: handler, getSecret: () => 'webhook-test-secret', getMode: () => 'test',
+  })
+  const notify = async () => {
+    const rawBody = Buffer.from(JSON.stringify({ data: { attributes: { type: 'checkout_session.payment.paid', livemode: false, data: { id: 'deposit', attributes: { metadata: { appointmentId: 'a', customerId: 'customer' } } } } } }))
+    const time = Math.floor(Date.now() / 1000)
+    const signature = crypto.createHmac('sha256', 'webhook-test-secret').update(`${time}.`).update(rawBody).digest('hex')
+    let code = 200, body
+    await webhook({ rawBody, get: () => `t=${time},te=${signature},li=` }, { status(value) { code = value; return this }, json(value) { body = value; return this } })
+    return { code, body }
+  }
+  // Payment is recorded without a browser return, including duplicate delivery.
+  assert.equal((await notify()).code, 200)
+  assert.equal((await notify()).body.success, true)
   assert.equal((await call('deposit')).status, 200)
   assert.equal(appointment.status, 'Contract Pending')
   assert.equal(appointment.amountPaid, 300)

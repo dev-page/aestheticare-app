@@ -1,5 +1,6 @@
 import { prepareBooking } from './bookingResources.js'
 import { assertWorkflow as check, normalized } from './bookingWorkflow.js'
+import { prepareClinicBookingRecipients, writeClinicBookingNotifications } from './clinicBookingNotifications.js'
 
 export const validateSchedules = rows => {
   check(Array.isArray(rows) && rows.length >= 1 && rows.length <= 10, 'Schedule between one and ten services.', 400)
@@ -9,7 +10,7 @@ export const validateSchedules = rows => {
 }
 
 // Prepare every visit before writing anything: failure leaves no partial order.
-export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan = () => 'paid' }) => {
+export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan = () => 'paid', loadUserContext }) => {
   app.post('/bookings/batch', requireAuth, async (req, res) => {
     try {
       const rows = req.body?.appointments
@@ -61,6 +62,7 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
           const reserved = existing.reduce((sum, row) => sum + (row.materialsConsumed ? 0 : (row.resources || []).filter(resource => resource.id === id && resource.kind === 'material').reduce((total, resource) => total + resource.quantity, 0)), 0)
           check(stock && Number(stock.currentStock) - reserved >= quantity, 'There are not enough materials for all the selected appointments.')
         }
+        const recipients = await prepareClinicBookingRecipients({ tx, db, branchId, branch, loadUserContext })
         const now = admin.firestore.FieldValue.serverTimestamp()
         let total = 0
         prepared.forEach(({ reservation, visit, worker, service }, index) => {
@@ -83,7 +85,8 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
           tx.update(parentRef, { approvalStatus: 'Approved', status: 'Awaiting Payment' })
           tx.update(orderRef, { approvalStatus: 'Approved', status: 'Awaiting Payment' })
         }
-        tx.set(db.collection('notifications').doc(), { recipientUserId: uid, title: 'Booking requests submitted', message: 'Your services have separate appointment dates. The clinic will review them together.', link: '/customer/appointments', read: false, createdAt: now })
+        tx.set(db.collection('notifications').doc(), { recipientUserId: uid, title: directBooking ? 'Bookings submitted' : 'Booking requests submitted', message: directBooking ? 'Your services have separate appointment dates. Complete payment to continue.' : 'Your services have separate appointment dates. The clinic will review them together.', link: '/customer/appointments', read: false, createdAt: now })
+        writeClinicBookingNotifications({ tx, db, recipients, branchId, bookingId: orderRef.id, appointmentId: parentRef.id, customerName: customer.customerName, count: rows.length, directBooking, createdAt: now })
         return { bookingId: orderRef.id, appointmentId: parentRef.id, appointmentIds: refs.map(ref => ref.id) }
       })
       res.json({ success: true, data: result })

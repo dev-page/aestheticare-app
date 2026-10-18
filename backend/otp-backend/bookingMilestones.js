@@ -1,5 +1,5 @@
 import { appointmentStaffIds } from '../../shared/practitionerTeam.js'
-import { onlineWindow, onlineAccessOpen } from '../../shared/onlineConsultation.js'
+import { onlineWindow, onlineAccessOpen, timestampDate } from '../../shared/onlineConsultation.js'
 import crypto from 'node:crypto'
 import { prepareTeamStart } from './practitionerTeams.js'
 import { normalized, initialPaymentReceived, balanceSettled, afterPaymentStatus, assertWorkflow as check } from './bookingWorkflow.js'
@@ -152,6 +152,14 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             check(serviceIsReady, onlineConsultation
               ? 'Clinic approval, the signed consultation contract, and the required payment are needed before starting the online consultation.'
               : 'Reception must check the customer in after payment and signing.')
+            if (!onlineConsultation) {
+              const window = getServiceKeyWindow(appointment)
+              check(appointment.bookingWorkflowVersion !== 2 || window, 'This appointment needs a valid service window.')
+              if (window) {
+                check(new Date() >= window.opensAt, 'This appointment is not ready to start yet.')
+                check(new Date() <= window.closesAt, 'This appointment window has expired. Ask the clinic to review and reschedule.')
+              }
+            }
             if (onlineConsultation) {
               check(appointment.consultationCodeVerifiedAt && appointment.consultationCodeVerifiedBy === appointment.customerId, 'The customer must verify their service code before consultation starts.', 409)
               check(appointment.clientJoinedAt && appointment.practitionerJoinedAt, 'Both participants must enter the consultation waiting room before starting.')
@@ -206,10 +214,10 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
               const window = getOnlineConsultationWindow(appointment)
               check(window, 'This consultation needs a valid scheduled window.')
               check(String(req.body?.treatmentNotes || '').trim().length >= 10, 'Save consultation notes and recommendations (at least 10 characters).', 400)
-              update.consultationEndedAt = appointment.consultationEndedAt || timestamp
+              const end = new Date(Math.min(timestampDate(appointment.consultationEndedAt || new Date()).getTime(), window.endsAt.getTime()))
+              update.consultationEndedAt = end.toISOString()
               update.consultationEndedById = appointment.consultationEndedById || req.user.uid
-              const end = appointment.consultationEndedAt?.toDate?.() || appointment.consultationEndedAt || new Date()
-              update.consultationActualDurationSeconds = Math.max(0, Math.floor((new Date(end).getTime() - new Date(appointment.startedAt?.toDate?.() || appointment.startedAt).getTime()) / 1000))
+              update.consultationActualDurationSeconds = Math.max(0, Math.floor((end - timestampDate(appointment.startedAt)) / 1000))
               update.consultationNeedsReview = Boolean(appointment.consultationNeedsReview) || update.consultationActualDurationSeconds < window.durationMinutes * 60 * 0.8 || !String(req.body?.treatmentNotes || '').trim()
             }
             update.treatmentNotes = String(req.body?.treatmentNotes || '').trim().slice(0, 5000)
@@ -235,6 +243,10 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             check(customer, 'Only the customer can confirm completion.', 403)
             check(appointment.workerCompleted && !appointment.customerCompleted && ['awaiting customer confirmation', 'balance due'].includes(status), 'The worker must finish the service first, and completion can only be confirmed once.')
             check(!online || appointment.consultationDispute?.status !== 'Open', 'The clinic must review your reported problem before completion.')
+            if (online) {
+              check(String(appointment.treatmentNotes || '').trim().length >= 10, 'The practitioner must save consultation notes before completion can be confirmed.')
+              check(!(appointment.treatmentTeam || []).some(member => !member.participationConfirmed), 'The treatment team must confirm participation before completion can be confirmed.')
+            }
             update.customerCompleted = true; update.customerCompletedAt = timestamp
             update.status = balanceSettled(appointment) ? 'Completed' : 'Balance Due'
           } else check(false, 'Invalid booking action.', 400)

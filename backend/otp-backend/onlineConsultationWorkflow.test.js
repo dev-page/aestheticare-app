@@ -18,7 +18,7 @@ const harness = appointment => {
   h.seed('appointments', 'a', appointment)
   h.seed('users', 'worker', { status: 'Active', role: 'Practitioner', branchId: 'clinic' })
   h.seed('appointmentMeetings', 'a', { hostVerified: true, practitionerId: 'worker', customerId: 'customer', meetLink: 'https://meet.google.com/abc-defg-hij', scheduledStartAt: onlineWindow(appointment).start.toISOString() })
-  const deps = { admin: h.admin, requireAuth() {}, authorizeClinicAction: async uid => { if (!['reviewer', 'worker'].includes(uid)) throw Object.assign(Error('Forbidden'), { status: 403 }) } }
+  const deps = { admin: h.admin, requireAuth() {}, authorizeClinicAction: async uid => { if (!['reviewer', 'worker', 'customer'].includes(uid)) throw Object.assign(Error('Forbidden'), { status: 403 }) } }
   const app = { post: (path, auth, handler) => routes.set(path, handler) }
   registerConsultationEvents(app, deps); registerBookingMilestones(app, deps)
   const call = async (uid, action, extra = {}, lifecycle = false) => {
@@ -124,4 +124,29 @@ test('Completion requires notes; closed appointments cannot rejoin', async () =>
   assert.equal((await h.call('worker', 'worker_complete', { treatmentNotes: 'Documented consultation advice.' }, true)).code, 200)
   assert.equal(onlineAccessOpen(h.current()), false)
   assert.equal((await h.call('customer', 'join_consultation', {}, true)).code, 409)
+})
+
+test('Timer expiry cannot bypass clinical documentation or individual team confirmations', async () => {
+  const h = harness(base({ status: 'Ongoing', startedAt: new Date(Date.now() - 31 * 60000), consultationWindowEndAt: new Date(Date.now() - 60000).toISOString(), treatmentTeam: [{ employeeId: 'worker', participationConfirmed: false }] }))
+  await closeExpiredConsultations(h.admin)
+  assert.equal((await h.call('customer', 'customer_complete', {}, true)).code, 409)
+  assert.equal(h.current().customerCompleted, undefined)
+  assert.equal((await h.call('worker', 'save_notes', { note: 'Reviewed symptoms and documented recommendations.' })).code, 200)
+  assert.equal((await h.call('customer', 'customer_complete', {}, true)).code, 409)
+  h.current().treatmentTeam[0].participationConfirmed = true
+  assert.equal((await h.call('customer', 'customer_complete', {}, true)).code, 200)
+  assert.equal(h.current().consultationNeedsReview, true)
+})
+
+test('A clinic reviewer cannot adjudicate their own consultation as the customer', async () => {
+  const h = harness(base({ status: 'Consultation Review', consultationNeedsReview: true, startedAt: new Date(), workerCompleted: true, treatmentNotes: 'Documented consultation recommendations.', treatmentTeam: [] }))
+  assert.equal((await h.call('customer', 'review', { outcome: 'received', note: 'I also have clinic review permissions.' })).code, 403)
+  assert.equal(h.current().status, 'Consultation Review')
+  assert.equal((await h.call('reviewer', 'review', { outcome: 'received', note: 'Independent review of both participant accounts.' })).code, 200)
+})
+
+test('Late manual completion cannot inflate consultation duration beyond the official window', async () => {
+  const h = harness(base({ status: 'Ongoing', startedAt: new Date(Date.now() - 60 * 60000), consultationWindowEndAt: new Date(Date.now() - 30 * 60000).toISOString(), treatmentTeam: [] }))
+  assert.equal((await h.call('worker', 'worker_complete', { treatmentNotes: 'Documented consultation advice.' }, true)).code, 200)
+  assert.equal(h.current().consultationActualDurationSeconds, 30 * 60)
 })

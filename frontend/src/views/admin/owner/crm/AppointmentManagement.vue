@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import AppointmentRecords from './AppointmentRecords.vue'
@@ -14,11 +14,17 @@ const route = useRoute()
 const { hasPermission } = usePermissions()
 const { hasFeature } = useSubscription()
 const branches = ref([]), branchId = ref(''), branchError = ref(''), scopeReady = ref(false)
+const selectLinkedBranch = () => {
+  const requestedId = String(route.query.branchId || '')
+  if (branches.value.some(branch => branch.id === requestedId)) branchId.value = requestedId
+}
+watch(() => route.query.branchId, selectLinkedBranch)
 onMounted(async () => {
   try {
     const scope = await loadOwnerBranchScope(db, auth.currentUser?.uid)
     branches.value = await loadClinicDocsByIds(db, scope.branchIds)
     branchId.value = branches.value.find(branch => branch.id === scope.branchId)?.id || branches.value[0]?.id || ''
+    selectLinkedBranch()
   } catch (cause) { branchError.value = cause.message || 'Unable to load clinic branches.' }
   finally { scopeReady.value = true }
 })
@@ -43,7 +49,7 @@ const tabs = computed(() => [
       <p class="mt-2 text-sm text-slate-400">Manage walk-ins, online bookings, requests, and your service queue.</p>
       <nav class="appointment-tabs" aria-label="Appointment management tabs">
         <template v-for="tab in tabs" :key="tab.key">
-          <router-link v-if="tab.allowed" :to="{ path: '/crm/appointments', query: { tab: tab.key } }" class="appointment-tab" :class="{ 'is-active': activeTab === tab.key }" :aria-current="activeTab === tab.key ? 'page' : undefined">{{ tab.label }}</router-link>
+          <router-link v-if="tab.allowed" :to="{ path: '/crm/appointments', query: { ...route.query, tab: tab.key } }" class="appointment-tab" :class="{ 'is-active': activeTab === tab.key }" :aria-current="activeTab === tab.key ? 'page' : undefined">{{ tab.label }}</router-link>
           <span v-else class="appointment-tab is-disabled" aria-disabled="true">{{ tab.label }}</span>
         </template>
       </nav>
