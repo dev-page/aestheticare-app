@@ -9,6 +9,25 @@ export const supplierDecision = (current, action, reason) => {
   check(action === 'approve' || String(reason || '').trim().length >= 10, 'Provide a clear reason of at least 10 characters.', 400)
   return status
 }
+export const extractSupplierBusinessIdentifiers = text => {
+  const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const extract = marker => {
+    for (let index = 0; index < lines.length; index += 1) {
+      const match = marker.exec(lines[index])
+      if (!match) continue
+      const candidates = [lines[index].slice(match.index + match[0].length), lines[index + 1] || '']
+      for (const candidate of candidates) {
+        const value = candidate.replace(/^[\s:#-]+|[\s,;]+$/g, '').replace(/^(?:no\.?|number|#)\s*[:#-]?\s*/i, '').match(/[A-Z0-9][A-Z0-9./-]{3,39}/i)?.[0] || ''
+        if (value.length >= 4 && /[0-9]/.test(value)) return value
+      }
+    }
+    return ''
+  }
+  return {
+    registrationNumber: extract(/\b(?:SEC\s+)?(?:business\s+)?registration(?:\s+(?:certificate|no\.?|number|#))?|\bcertificate\s+(?:no\.?|number|#)|\bDTI(?:\s+registration)?(?:\s+(?:no\.?|number|#))?/i),
+    taxNumber: extract(/\bTIN\b|\btax\s+identification(?:\s+(?:no\.?|number|#))?|\btax\s+number\b/i),
+  }
+}
 
 export const registerSupplierVerification = (app, { admin, requireAuth, loadUserContext, storageBucket, createVisionClient, createRegistrationVisionRequest, getVisionResponseError, getVisionWordConfidence, getOcrExpiryValidation = () => ({ valid: null, expired: false, invalidRange: false, daysRemaining: null, accountHold: false, validTo: '', type: 'not_found' }), normalizeOcrComparable, autoVerificationThreshold = 0.74, expiryHoldDays = 7 }) => {
   const db = admin.firestore(), stamp = () => admin.firestore.FieldValue.serverTimestamp()
@@ -22,21 +41,6 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
     const matched = tokens.filter(token => comparableText.includes(token)).length
     return matched >= Math.max(1, Math.ceil(tokens.length * 0.7))
   }
-  const extractBusinessIdentifiers = text => {
-    const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)
-    const extract = (patterns, valuePattern) => {
-      for (const line of lines) {
-        if (!patterns.some(pattern => pattern.test(line))) continue
-        const value = line.replace(valuePattern, '').replace(/^[\s:#-]+|[\s,;]+$/g, '').trim()
-        if (value.length >= 4 && value.length <= 40 && /[0-9]/.test(value)) return value
-      }
-      return ''
-    }
-    return {
-      registrationNumber: extract([/\bregistration\b/i, /\bcertificate\b/i, /\bDTI\b/i], /.*?\b(?:registration|certificate|DTI)\s*(?:no\.?|number|#)?\s*[:#-]?\s*/i),
-      taxNumber: extract([/\bTIN\b/i, /\btax\s+identification\b/i, /\btax\s+number\b/i], /.*?\b(?:TIN|tax\s+identification(?:\s+(?:no\.?|number|#))?|tax\s+number)\s*[:#-]?\s*/i),
-    }
-  }
   const processSupplierDocumentOcr = async ({ kind, document, application }) => {
     const result = {
       status: 'manual_review', confidence: 0, ocrConfidence: null, extractedText: '', processedAt: new Date().toISOString(),
@@ -47,18 +51,26 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
     if (!client) { result.reason = 'Automatic OCR is unavailable. An administrator must review this document.'; return result }
     try {
       const request = await createRegistrationVisionRequest({ bucketName: storageBucket() || admin.app().options.storageBucket, storagePath: document.path, contentType: document.contentType })
-      const [response] = await client.documentTextDetection(request)
-      const providerError = getVisionResponseError(response)
-      if (providerError) throw new Error(providerError)
-      let annotation = response?.fullTextAnnotation
-      let extractedText = String(annotation?.text || '').trim()
+      let annotation = null, extractedText = '', primaryOcrError = ''
+      try {
+        const [response] = await client.documentTextDetection(request)
+        const providerError = getVisionResponseError(response)
+        if (providerError) throw new Error(providerError)
+        annotation = response?.fullTextAnnotation || null
+        extractedText = String(annotation?.text || '').trim()
+      } catch (error) { primaryOcrError = String(error?.message || error) }
       if (!extractedText) {
-        const [fallback] = await client.textDetection(request)
-        const fallbackError = getVisionResponseError(fallback)
-        if (fallbackError) throw new Error(fallbackError)
-        annotation = fallback?.fullTextAnnotation || annotation
-        extractedText = String(annotation?.text || fallback?.textAnnotations?.[0]?.description || '').trim()
+        try {
+          const [fallback] = await client.textDetection(request)
+          const fallbackError = getVisionResponseError(fallback)
+          if (fallbackError) throw new Error(fallbackError)
+          annotation = fallback?.fullTextAnnotation || annotation
+          extractedText = String(annotation?.text || fallback?.textAnnotations?.[0]?.description || '').trim()
+        } catch (fallbackError) {
+          if (!primaryOcrError) primaryOcrError = String(fallbackError?.message || fallbackError)
+        }
       }
+      if (!extractedText && primaryOcrError) throw new Error(`Document OCR failed: ${primaryOcrError}`)
       const readableText = extractedText.length >= 30
       const businessNameMatch = nameMatchesOcrText(application.businessName, extractedText)
       const representativeNameMatch = kind === 'representative' ? nameMatchesOcrText(application.representativeName, extractedText) : null
@@ -76,7 +88,7 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       result.confidence = score
       result.ocrConfidence = ocrConfidence
       result.extractedText = extractedText.slice(0, 12000)
-      result.extractedFields = extractBusinessIdentifiers(extractedText)
+      result.extractedFields = extractSupplierBusinessIdentifiers(extractedText)
       result.checks = { readableText, businessNameMatch, representativeNameMatch, expiryValid, expiryDate: expiry.validTo || '', expiryDaysRemaining: expiry.daysRemaining, expiryAccountHold, expiryRequired, expiryValidationType: expiry.type }
       result.reason = !readableText ? 'OCR could not read enough text. Upload a clearer, complete document.' : fatalMismatch ? 'The business or representative name does not match the application. Check the document and business details.' : expiredOrInvalid ? expiry.invalidRange ? 'The document has an invalid validity period.' : 'This document has expired. Upload a current document.' : expiryAccountHold ? `This document expires within ${expiryHoldDays} days. Upload a replacement before submitting for review.` : missingRequiredExpiry ? 'A labelled expiry date or validity period could not be confirmed. An administrator must review this document.' : result.status === 'verified' ? 'OCR found the business name and passed the expiry checks.' : 'OCR extracted the text, but the result needs administrator review.'
     } catch (error) {
@@ -173,11 +185,17 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
         updatedDocuments[kind] = { ...document, ocr }
       }
       const requiredDocuments = ['registration', 'permit', 'representative'].map(kind => updatedDocuments[kind])
+      const ocrRegistrationNumber = String(updatedDocuments.registration?.ocr?.extractedFields?.registrationNumber || '').trim()
+      const ocrTaxNumber = String(updatedDocuments.permit?.ocr?.extractedFields?.taxNumber || '').trim()
+      if (ocrRegistrationNumber) fields.registrationNumber = ocrRegistrationNumber
+      if (ocrTaxNumber) fields.taxNumber = ocrTaxNumber
       check(requiredDocuments.every(document => !['rejected', 'held_pending'].includes(document.ocr?.status)), 'Documents must match the current business and representative names and be current. Upload replacement documents before submitting.', 400)
       check(!updatedDocuments.distribution?.ocr || !['rejected', 'held_pending'].includes(updatedDocuments.distribution.ocr.status), 'Replace rejected or soon-to-expire optional credentials before submitting.', 400)
       const allDocuments = [...requiredDocuments, ...(updatedDocuments.distribution?.path ? [updatedDocuments.distribution] : [])]
-      const ocrStatus = allDocuments.every(document => document.ocr?.status === 'verified') ? 'OCR Verified' : 'Manual Review Required'
-      tx.set(ref, { ...fields, documents: updatedDocuments, ownerId: req.user.uid, verificationStatus: 'Submitted', ocrStatus, revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
+      const identifiersDetected = Boolean(ocrRegistrationNumber && ocrTaxNumber)
+      const ocrStatus = allDocuments.every(document => document.ocr?.status === 'verified') && identifiersDetected ? 'OCR Verified' : 'Manual Review Required'
+      const ocrReviewReason = identifiersDetected ? '' : 'OCR could not confidently locate both the business registration number and tax number. Please compare the entered values with the uploaded documents.'
+      tx.set(ref, { ...fields, documents: updatedDocuments, ownerId: req.user.uid, verificationStatus: 'Submitted', ocrStatus, ocrReviewReason, revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
       tx.set(db.collection('supplierVerificationAudit').doc(), { supplierUid: req.user.uid, actorId: req.user.uid, action: 'submitted', previousStatus: current.verificationStatus || 'Draft', nextStatus: 'Submitted', createdAt: stamp() })
     })
     res.json({ success: true, data: { verificationStatus: 'Submitted' } })
