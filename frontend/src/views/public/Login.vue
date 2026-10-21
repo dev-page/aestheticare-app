@@ -1077,4 +1077,16 @@ onBeforeUnmount(() => {
   }
 }
 
+/* Keep the app's brown visibility toggle as the only password eye control. */
+.input[type="password"]::-ms-reveal,
+.input[type="password"]::-ms-clear,
+.input[type="password"]::-webkit-password-reveal-button,
+.input[type="password"]::-webkit-credentials-auto-fill-button {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 </style>
