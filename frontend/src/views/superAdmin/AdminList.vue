@@ -89,11 +89,12 @@
                     >Edit</button>
                     <button
                       type="button"
-                      class="rounded-md border border-rose-500/50 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-                      :disabled="admin.id === currentAdminUid"
-                      :title="admin.id === currentAdminUid ? 'You cannot delete your own administrator account.' : 'Delete administrator'"
-                      @click="deleteAdmin(admin)"
-                    >Delete</button>
+                      class="rounded-md border px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                      :class="String(admin.status).toLowerCase() === 'inactive' ? 'border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10' : 'border-amber-500/50 text-amber-200 hover:bg-amber-500/10'"
+                      :disabled="admin.id === currentAdminUid || saving"
+                      :title="admin.id === currentAdminUid ? 'You cannot disable your own administrator account.' : String(admin.status).toLowerCase() === 'inactive' ? 'Enable administrator' : 'Disable administrator'"
+                      @click="setAdminStatus(admin, String(admin.status).toLowerCase() === 'inactive' ? 'Active' : 'Inactive')"
+                    >{{ String(admin.status).toLowerCase() === 'inactive' ? 'Enable' : 'Disable' }}</button>
                   </div>
                   <span v-else class="text-xs text-slate-500">Full access required</span>
                 </td>
@@ -113,7 +114,7 @@
         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6"
         @click.self="closeAddModal"
       >
-        <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+        <div class="admin-modal w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
           <div class="flex items-start justify-between gap-4">
             <div>
               <h2 class="text-2xl font-bold text-white">{{ editingAdminId ? 'Edit Admin' : 'Add Admin' }}</h2>
@@ -352,11 +353,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return role === 'Superadmin' || userType === 'systemadmin'
     }
 
-    const isArchived = (user) => {
-      const status = String(user?.status || '').trim().toLowerCase()
-      return user?.archived === true || status === 'inactive' || status === 'disabled'
-    }
-
     const loadAdmins = () => {
       if (unsubscribeUsers) unsubscribeUsers()
       loading.value = true
@@ -364,7 +360,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       unsubscribeUsers = pageListener(onSnapshot, collection(db, 'users'), (snapshot) => {
         const users = snapshot.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-          .filter((user) => isSystemAdmin(user) && !isArchived(user))
+          .filter((user) => isSystemAdmin(user))
 
         // Upgrade the currently existing system-admin accounts once so they retain
         // platform-wide access under the new permission model.
@@ -482,47 +478,45 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       throw lastError || new Error('Backend is unavailable.')
     })
 
-    const deleteAdmin = async (admin) => {
+    const setAdminStatus = async (admin, status) => {
       if (!canManageAdmins.value) {
-        toast.error('Full access is required to delete administrators.')
+        toast.error('Full access is required to manage administrators.')
         return
       }
       if (admin.id === currentAdminUid.value) {
-        toast.error('You cannot delete your own administrator account.')
+        toast.error('You cannot change your own administrator status.')
         return
       }
+      const disabling = status === 'Inactive'
       const confirm = await systemAdminSwal.fire({
-        title: 'Delete Admin Account?',
-        text: `This will permanently remove ${admin.fullName} from Firebase Authentication and the admin list.`,
-        icon: 'warning',
+        title: disabling ? 'Disable Admin Account?' : 'Enable Admin Account?',
+        text: disabling ? `${admin.fullName} will be marked inactive and will no longer be able to sign in.` : `${admin.fullName} will be marked active and can sign in again.`,
+        icon: 'question',
         showCancelButton: true,
-        confirmButtonText: 'Yes, delete',
+        confirmButtonText: disabling ? 'Yes, disable' : 'Yes, enable',
         cancelButtonText: 'Cancel',
       })
       if (!confirm.isConfirmed) return
 
+      saving.value = true
       try {
         const token = await getAuth().currentUser?.getIdToken()
-        const response = await fetchBackend(`/admin/system-admin/${encodeURIComponent(admin.id)}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
+        const response = await fetchBackend(`/admin/system-admin/${encodeURIComponent(admin.id)}/status`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
         })
         if (response.status === 404) {
-          throw new Error('The admin deletion endpoint is not available. Restart the backend server and try again.')
+          throw new Error('The admin status endpoint is not available. Restart the backend server and try again.')
         }
         const result = await response.json().catch(() => ({}))
-        if (!response.ok) throw new Error(result.error || 'Failed to delete administrator.')
-        await logActivity(db, {
-          action: 'Deleted system administrator',
-          details: `Deleted ${admin.fullName || admin.email || 'a system administrator'}'s administrator account.`,
-          module: 'System Administration',
-          targetId: admin.id,
-          targetName: admin.fullName || admin.email || admin.id,
-        })
-        toast.success('Admin account deleted.')
-      } catch (deleteError) {
-        console.error('Error deleting admin account:', deleteError)
-        toast.error(deleteError?.message || 'Failed to delete admin account.')
+        if (!response.ok) throw new Error(result.error || 'Failed to update administrator status.')
+        toast.success(`Admin account ${disabling ? 'disabled' : 'enabled'}.`)
+      } catch (statusError) {
+        console.error('Error updating admin status:', statusError)
+        toast.error(statusError?.message || 'Failed to update admin status.')
+      } finally {
+        saving.value = false
       }
     }
 
@@ -678,10 +672,24 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       isEditingSelf,
       canManageAdmins,
       openEditModal,
-      deleteAdmin,
+      setAdminStatus,
       systemAdminPermissionGroups,
       systemAdminRoleTemplates,
     }
   },
 }
 </script>
+
+<style scoped>
+.admin-modal{border-color:#dfc29e;background:#fff8ec;color:#493426}
+.admin-modal [class*="text-white"],.admin-modal [class*="text-slate-100"],.admin-modal [class*="text-slate-200"],.admin-modal [class*="text-slate-300"]{color:#493426}
+.admin-modal [class*="text-slate-400"],.admin-modal [class*="text-slate-500"]{color:#80644e}
+.admin-modal [class*="bg-slate-900"],.admin-modal [class*="bg-slate-800"],.admin-modal [class*="bg-slate-950"]{background-color:#fffdf9}
+.admin-modal [class*="border-slate-700"],.admin-modal [class*="border-slate-600"]{border-color:#e4ceb0}
+.admin-modal [class*="hover:bg-slate-700"]:hover,.admin-modal [class*="hover:bg-slate-800"]:hover{background-color:#f3e5d2}
+.admin-modal [class*="bg-cyan-500"]{background-color:#805234;color:#fff}
+.admin-modal [class*="text-cyan-200"],.admin-modal [class*="text-cyan-300"]{color:#805234}
+.admin-modal [class*="border-cyan-500"]{border-color:#a87955}
+.admin-modal [class*="accent-cyan"]{accent-color:#805234}
+.admin-modal input:not([type="checkbox"]){border-color:#dfc29e;background:#fff;color:#493426}
+</style>

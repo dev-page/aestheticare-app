@@ -3893,14 +3893,12 @@ app.post('/google-meet/create-consultation-link', requireAuth, (req, res) => {
   res.status(409).json({ success: false, error: 'The customer must submit their service code in My Appointments. Google Meet links are now generated automatically.' })
 })
 
-app.delete('/admin/system-admin/:uid', requireAuth, requireRole(['superadmin']), requirePermission('system:admins:manage'), async (req, res) => {
+app.patch('/admin/system-admin/:uid/status', requireAuth, requireRole(['superadmin']), requirePermission('system:admins:manage'), async (req, res) => {
   const uid = String(req.params?.uid || '').trim()
-  if (!uid) {
-    return res.status(400).json({ success: false, error: 'Admin uid is required' })
-  }
-  if (uid === req.user.uid) {
-    return res.status(403).json({ success: false, error: 'You cannot delete your own administrator account' })
-  }
+  const status = String(req.body?.status || '').trim()
+  if (!uid) return res.status(400).json({ success: false, error: 'Admin uid is required' })
+  if (uid === req.user.uid) return res.status(403).json({ success: false, error: 'You cannot change your own administrator status' })
+  if (!['Active', 'Inactive'].includes(status)) return res.status(400).json({ success: false, error: 'Status must be Active or Inactive' })
 
   try {
     const userRef = admin.firestore().collection('users').doc(uid)
@@ -3914,19 +3912,36 @@ app.delete('/admin/system-admin/:uid', requireAuth, requireRole(['superadmin']),
     if (role !== 'Superadmin') {
       return res.status(400).json({ success: false, error: 'The selected account is not a system administrator' })
     }
-
-    await admin.auth().deleteUser(uid)
-    await userRef.delete()
+    const inactive = status === 'Inactive'
+    const previousStatus = String(userData.status || 'Active')
+    const previousArchived = userData.archived === true
+    if (inactive) {
+      await userRef.set({ status: 'Inactive', archived: true, archivedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+      try {
+        await admin.auth().updateUser(uid, { disabled: true })
+      } catch (authError) {
+        await userRef.set({ status: previousStatus, archived: previousArchived, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+        throw authError
+      }
+    } else {
+      await admin.auth().updateUser(uid, { disabled: false })
+      try {
+        await userRef.set({ status: 'Active', archived: false, archivedAt: admin.firestore.FieldValue.delete(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+      } catch (firestoreError) {
+        await admin.auth().updateUser(uid, { disabled: true }).catch(() => {})
+        throw firestoreError
+      }
+    }
     await writeSystemAdminActivity(req, {
-      action: 'Deleted system administrator',
-      details: `Deleted ${userData.fullName || userData.email || uid}'s administrator account.`,
+      action: `${inactive ? 'Disabled' : 'Enabled'} system administrator`,
+      details: `${inactive ? 'Marked inactive' : 'Marked active'} ${userData.fullName || userData.email || uid}'s administrator account.`,
       targetId: uid,
       targetName: userData.fullName || userData.email || uid,
     })
-    return res.json({ success: true })
+    return res.json({ success: true, data: { uid, status } })
   } catch (error) {
-    console.error('Failed to delete system administrator:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to delete administrator account' })
+    console.error('Failed to update system administrator status:', error)
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to update administrator status' })
   }
 })
 
