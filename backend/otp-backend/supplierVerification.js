@@ -10,9 +10,64 @@ export const supplierDecision = (current, action, reason) => {
   return status
 }
 
-export const registerSupplierVerification = (app, { admin, requireAuth, loadUserContext, storageBucket }) => {
+export const registerSupplierVerification = (app, { admin, requireAuth, loadUserContext, storageBucket, createVisionClient, createRegistrationVisionRequest, getVisionResponseError, getVisionWordConfidence, getOcrExpiryValidation = () => ({ valid: null, expired: false, invalidRange: false, daysRemaining: null, accountHold: false, validTo: '', type: 'not_found' }), normalizeOcrComparable, autoVerificationThreshold = 0.74, expiryHoldDays = 7 }) => {
   const db = admin.firestore(), stamp = () => admin.firestore.FieldValue.serverTimestamp()
   const bucket = () => admin.storage().bucket(storageBucket() || admin.app().options.storageBucket)
+  const expiryRequiredKinds = new Set(['permit', 'distribution'])
+  const nameMatchesOcrText = (expectedName, text) => {
+    const ignored = new Set(['INC', 'INCORPORATED', 'CORP', 'CORPORATION', 'LLC', 'LTD', 'LIMITED', 'COMPANY', 'CO', 'ENTERPRISE', 'ENTERPRISES'])
+    const tokens = String(expectedName || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').split(/\s+/).filter(token => token.length >= 3 && !ignored.has(token))
+    const comparableText = (normalizeOcrComparable || (value => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')))(text)
+    if (!tokens.length || !comparableText) return null
+    const matched = tokens.filter(token => comparableText.includes(token)).length
+    return matched >= Math.max(1, Math.ceil(tokens.length * 0.7))
+  }
+  const processSupplierDocumentOcr = async ({ kind, document, application }) => {
+    const result = {
+      status: 'manual_review', confidence: 0, ocrConfidence: null, extractedText: '', processedAt: new Date().toISOString(),
+      checks: { readableText: false, businessNameMatch: null, representativeNameMatch: null, expiryValid: null, expiryDate: '', expiryDaysRemaining: null, expiryAccountHold: false },
+      reason: '',
+    }
+    const client = createVisionClient?.()
+    if (!client) { result.reason = 'Automatic OCR is unavailable. An administrator must review this document.'; return result }
+    try {
+      const request = await createRegistrationVisionRequest({ bucketName: storageBucket() || admin.app().options.storageBucket, storagePath: document.path, contentType: document.contentType })
+      const [response] = await client.documentTextDetection(request)
+      const providerError = getVisionResponseError(response)
+      if (providerError) throw new Error(providerError)
+      let annotation = response?.fullTextAnnotation
+      let extractedText = String(annotation?.text || '').trim()
+      if (!extractedText) {
+        const [fallback] = await client.textDetection(request)
+        const fallbackError = getVisionResponseError(fallback)
+        if (fallbackError) throw new Error(fallbackError)
+        annotation = fallback?.fullTextAnnotation || annotation
+        extractedText = String(annotation?.text || fallback?.textAnnotations?.[0]?.description || '').trim()
+      }
+      const readableText = extractedText.length >= 30
+      const businessNameMatch = nameMatchesOcrText(application.businessName, extractedText)
+      const representativeNameMatch = kind === 'representative' ? nameMatchesOcrText(application.representativeName, extractedText) : null
+      const expiry = getOcrExpiryValidation(extractedText, true)
+      const expiryRequired = expiryRequiredKinds.has(kind)
+      const expiryValid = expiryRequired ? expiry.valid : (expiry.valid === null ? true : expiry.valid)
+      const expiryAccountHold = expiry.accountHold
+      const ocrConfidence = getVisionWordConfidence(annotation)
+      const ocrQuality = ocrConfidence ?? (readableText ? 0.75 : 0)
+      const score = Math.min(1, ocrQuality * 0.35 + (readableText ? 1 : 0) * 0.15 + (businessNameMatch === true ? 1 : 0) * 0.4 + (expiryValid === true ? 1 : 0) * 0.1)
+      const fatalMismatch = businessNameMatch === false || representativeNameMatch === false
+      const missingRequiredExpiry = expiryRequired && expiry.valid === null
+      const expiredOrInvalid = expiry.expired || expiry.invalidRange
+      result.status = !readableText || fatalMismatch || expiredOrInvalid ? 'rejected' : expiryAccountHold ? 'held_pending' : score >= autoVerificationThreshold && businessNameMatch === true && representativeNameMatch !== false && expiryValid === true && !missingRequiredExpiry ? 'verified' : 'manual_review'
+      result.confidence = score
+      result.ocrConfidence = ocrConfidence
+      result.extractedText = extractedText.slice(0, 12000)
+      result.checks = { readableText, businessNameMatch, representativeNameMatch, expiryValid, expiryDate: expiry.validTo || '', expiryDaysRemaining: expiry.daysRemaining, expiryAccountHold, expiryRequired, expiryValidationType: expiry.type }
+      result.reason = !readableText ? 'OCR could not read enough text. Upload a clearer, complete document.' : fatalMismatch ? 'The business or representative name does not match the application. Check the document and business details.' : expiredOrInvalid ? expiry.invalidRange ? 'The document has an invalid validity period.' : 'This document has expired. Upload a current document.' : expiryAccountHold ? `This document expires within ${expiryHoldDays} days. Upload a replacement before submitting for review.` : missingRequiredExpiry ? 'A labelled expiry date or validity period could not be confirmed. An administrator must review this document.' : result.status === 'verified' ? 'OCR found the business name and passed the expiry checks.' : 'OCR extracted the text, but the result needs administrator review.'
+    } catch (error) {
+      result.reason = `OCR processing failed: ${String(error?.message || error).slice(0, 300)}. An administrator must review this document.`
+    }
+    return result
+  }
   const supplier = async uid => {
     const ctx = await loadUserContext(uid)
     check(normalized(ctx.roleKey || ctx.userData.userType) === 'supplier', 'Supplier access required.', 403)
@@ -37,7 +92,7 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
     const kind = String(req.body.kind || '')
     check(['registration', 'permit', 'representative', 'distribution'].includes(kind), 'Choose a document type.', 400)
     const bytes = Buffer.from(String(req.body.base64 || ''), 'base64')
-    check(bytes.length > 20 && bytes.length <= 3 * 1024 * 1024, 'Upload a document up to 3 MB.', 400)
+    check(bytes.length > 20 && bytes.length <= 10 * 1024 * 1024, 'Upload a document up to 10 MB.', 400)
     const isPdf = bytes.subarray(0, 5).toString() === '%PDF-', isPng = bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])), isJpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
     check(isPdf || isPng || isJpeg, 'Upload a PDF, PNG, or JPEG document.', 400)
     const contentType = isPdf ? 'application/pdf' : isPng ? 'image/png' : 'image/jpeg'
@@ -45,14 +100,21 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
     await bucket().file(path).save(bytes, { resumable: false, metadata: { contentType } })
     const document = { path, name: String(req.body.name || kind).slice(0, 150), contentType, size: bytes.length }
     const applicationRef = db.collection('supplierApplications').doc(req.user.uid)
+    let ocr
     try {
+      const ocrApplication = {
+        ...application,
+        businessName: String(req.body.businessName || application.businessName || '').trim(),
+        representativeName: String(req.body.representativeName || application.representativeName || '').trim(),
+      }
+      ocr = await processSupplierDocumentOcr({ kind, document, application: ocrApplication })
       await db.runTransaction(async tx => {
         const current = (await tx.get(applicationRef)).data() || {}
         check(!['Submitted', 'Under review', 'Verified', 'Suspended'].includes(current.verificationStatus), 'The application was submitted while uploading. Documents are now locked.')
-        tx.set(applicationRef, { ownerId: req.user.uid, documents: { [kind]: document }, updatedAt: stamp() }, { merge: true })
+        tx.set(applicationRef, { ownerId: req.user.uid, documents: { [kind]: { ...document, ocr } }, updatedAt: stamp() }, { merge: true })
       })
     } catch (error) { await bucket().file(path).delete().catch(() => {}); throw error }
-    res.json({ success: true, data: document })
+    res.json({ success: true, data: { ...document, ocr } })
   }))
   app.post('/supplier-verification/submit', requireAuth, wrap(async (req, res) => {
     await supplier(req.user.uid)
@@ -67,7 +129,35 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       const current = (await tx.get(ref)).data() || {}
       check(!['Submitted', 'Under review', 'Verified', 'Suspended'].includes(current.verificationStatus), 'This application cannot be submitted at this stage.')
       check(['registration', 'permit', 'representative'].every(kind => current.documents?.[kind]?.path?.startsWith(`supplier-verification/${req.user.uid}/`)), 'Upload registration, business permit/tax document, and representative authorization.', 400)
-      tx.set(ref, { ...fields, ownerId: req.user.uid, verificationStatus: 'Submitted', revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
+      const updatedDocuments = { ...current.documents }
+      const kindsToCheck = ['registration', 'permit', 'representative', ...(updatedDocuments.distribution?.path ? ['distribution'] : [])]
+      for (const kind of kindsToCheck) {
+        const document = updatedDocuments[kind], ocr = { ...(document.ocr || {}) }
+        const businessNameMatch = nameMatchesOcrText(fields.businessName, ocr.extractedText || '')
+        const representativeNameMatch = kind === 'representative' ? nameMatchesOcrText(fields.representativeName, ocr.extractedText || '') : ocr.checks?.representativeNameMatch ?? null
+        const expiry = getOcrExpiryValidation(ocr.extractedText || '', true)
+        if (businessNameMatch === false || representativeNameMatch === false) {
+          ocr.status = 'rejected'
+          ocr.reason = 'The uploaded document does not show the business or representative name entered in this application.'
+        } else if (expiry.expired || expiry.invalidRange) {
+          ocr.status = 'rejected'
+          ocr.reason = expiry.invalidRange ? 'This document has an invalid validity period.' : 'This document has expired. Upload a current document.'
+        } else if (expiry.accountHold) {
+          ocr.status = 'held_pending'
+          ocr.reason = `This document expires within ${expiryHoldDays} days. Upload a replacement before submitting for review.`
+        } else if (expiryRequiredKinds.has(kind) && expiry.valid === null) {
+          ocr.status = 'manual_review'
+          ocr.reason = 'A labelled expiry date or validity period could not be confirmed. An administrator must review this document.'
+        }
+        ocr.checks = { ...(ocr.checks || {}), businessNameMatch, representativeNameMatch, expiryValid: expiry.valid, expiryDate: expiry.validTo || '', expiryDaysRemaining: expiry.daysRemaining, expiryAccountHold: expiry.accountHold }
+        updatedDocuments[kind] = { ...document, ocr }
+      }
+      const requiredDocuments = ['registration', 'permit', 'representative'].map(kind => updatedDocuments[kind])
+      check(requiredDocuments.every(document => !['rejected', 'held_pending'].includes(document.ocr?.status)), 'Documents must match the current business and representative names and be current. Upload replacement documents before submitting.', 400)
+      check(!updatedDocuments.distribution?.ocr || !['rejected', 'held_pending'].includes(updatedDocuments.distribution.ocr.status), 'Replace rejected or soon-to-expire optional credentials before submitting.', 400)
+      const allDocuments = [...requiredDocuments, ...(updatedDocuments.distribution?.path ? [updatedDocuments.distribution] : [])]
+      const ocrStatus = allDocuments.every(document => document.ocr?.status === 'verified') ? 'OCR Verified' : 'Manual Review Required'
+      tx.set(ref, { ...fields, documents: updatedDocuments, ownerId: req.user.uid, verificationStatus: 'Submitted', ocrStatus, revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
       tx.set(db.collection('supplierVerificationAudit').doc(), { supplierUid: req.user.uid, actorId: req.user.uid, action: 'submitted', previousStatus: current.verificationStatus || 'Draft', nextStatus: 'Submitted', createdAt: stamp() })
     })
     res.json({ success: true, data: { verificationStatus: 'Submitted' } })
@@ -92,6 +182,25 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       const snap = await tx.get(ref)
       check(snap.exists, 'Application not found.', 404)
       const current = snap.data() || {}, status = supplierDecision(current.verificationStatus, req.body.action, reason)
+      if (req.body.action === 'approve') {
+        const requiredDocuments = ['registration', 'permit', 'representative'].map(kind => current.documents?.[kind] || {})
+        const documentsToApprove = [...requiredDocuments, ...(current.documents?.distribution?.path ? [current.documents.distribution] : [])]
+        check(documentsToApprove.every(document => document.path && !['rejected', 'held_pending'].includes(document.ocr?.status)), 'Rejected or soon-to-expire documents must be replaced before approval.', 400)
+        const hasCompleteOcr = documentsToApprove.every(document => String(document.ocr?.extractedText || '').length >= 30)
+        // If OCR is unavailable for a legacy application, an administrator can
+        // still inspect the original documents in the review UI. When OCR did
+        // produce text, enforce its name and expiry findings server-side.
+        if (hasCompleteOcr) {
+          check(documentsToApprove.every(document => nameMatchesOcrText(current.businessName, document.ocr.extractedText)), 'Required documents must contain readable text showing the verified business name.', 400)
+          check(nameMatchesOcrText(current.representativeName, requiredDocuments[2].ocr.extractedText), 'The authorization document must show the named representative.', 400)
+          for (const [index, document] of documentsToApprove.entries()) {
+            const expiry = getOcrExpiryValidation(document.ocr.extractedText, true)
+            check(!expiry.expired && !expiry.invalidRange && !expiry.accountHold, 'Expired or soon-to-expire documents must be replaced before approval.', 400)
+            const kind = index < 3 ? ['registration', 'permit', 'representative'][index] : 'distribution'
+            if (expiryRequiredKinds.has(kind)) check(expiry.valid === true, 'A current expiry date or validity period is required for the business permit or distribution credential.', 400)
+          }
+        }
+      }
       const accounts = await tx.get(db.collection('suppliers').where('ownerId', '==', req.params.id))
       const linked = await tx.get(db.collection('suppliers').where('supplierUserId', '==', req.params.id))
       tx.set(ref, { verificationStatus: status, revisionReason: reason, reviewedById: req.user.uid, reviewedAt: stamp(), updatedAt: stamp() }, { merge: true })

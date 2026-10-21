@@ -2719,7 +2719,20 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
 })
 
 registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
-registerSupplierVerification(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
+registerSupplierVerification(app, {
+  admin,
+  requireAuth,
+  loadUserContext,
+  storageBucket: () => firebaseStorageBucket,
+  createVisionClient,
+  createRegistrationVisionRequest,
+  getVisionResponseError,
+  getVisionWordConfidence,
+  getOcrExpiryValidation,
+  normalizeOcrComparable,
+  autoVerificationThreshold: AUTO_VERIFICATION_THRESHOLD,
+  expiryHoldDays: REGISTRATION_EXPIRY_HOLD_DAYS,
+})
 registerFinanceWorkflow(app, { admin, requireAuth, loadUserContext })
 registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
