@@ -22,6 +22,21 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
     const matched = tokens.filter(token => comparableText.includes(token)).length
     return matched >= Math.max(1, Math.ceil(tokens.length * 0.7))
   }
+  const extractBusinessIdentifiers = text => {
+    const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+    const extract = (patterns, valuePattern) => {
+      for (const line of lines) {
+        if (!patterns.some(pattern => pattern.test(line))) continue
+        const value = line.replace(valuePattern, '').replace(/^[\s:#-]+|[\s,;]+$/g, '').trim()
+        if (value.length >= 4 && value.length <= 40 && /[0-9]/.test(value)) return value
+      }
+      return ''
+    }
+    return {
+      registrationNumber: extract([/\bregistration\b/i, /\bcertificate\b/i, /\bDTI\b/i], /.*?\b(?:registration|certificate|DTI)\s*(?:no\.?|number|#)?\s*[:#-]?\s*/i),
+      taxNumber: extract([/\bTIN\b/i, /\btax\s+identification\b/i, /\btax\s+number\b/i], /.*?\b(?:TIN|tax\s+identification(?:\s+(?:no\.?|number|#))?|tax\s+number)\s*[:#-]?\s*/i),
+    }
+  }
   const processSupplierDocumentOcr = async ({ kind, document, application }) => {
     const result = {
       status: 'manual_review', confidence: 0, ocrConfidence: null, extractedText: '', processedAt: new Date().toISOString(),
@@ -61,6 +76,7 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       result.confidence = score
       result.ocrConfidence = ocrConfidence
       result.extractedText = extractedText.slice(0, 12000)
+      result.extractedFields = extractBusinessIdentifiers(extractedText)
       result.checks = { readableText, businessNameMatch, representativeNameMatch, expiryValid, expiryDate: expiry.validTo || '', expiryDaysRemaining: expiry.daysRemaining, expiryAccountHold, expiryRequired, expiryValidationType: expiry.type }
       result.reason = !readableText ? 'OCR could not read enough text. Upload a clearer, complete document.' : fatalMismatch ? 'The business or representative name does not match the application. Check the document and business details.' : expiredOrInvalid ? expiry.invalidRange ? 'The document has an invalid validity period.' : 'This document has expired. Upload a current document.' : expiryAccountHold ? `This document expires within ${expiryHoldDays} days. Upload a replacement before submitting for review.` : missingRequiredExpiry ? 'A labelled expiry date or validity period could not be confirmed. An administrator must review this document.' : result.status === 'verified' ? 'OCR found the business name and passed the expiry checks.' : 'OCR extracted the text, but the result needs administrator review.'
     } catch (error) {
@@ -124,6 +140,10 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       check(fields[name].length > 0 && fields[name].length <= 500, `Provide a valid ${name.replace(/([A-Z])/g, ' $1').toLowerCase()}.`, 400)
     }
     check(/^\S+@\S+\.\S+$/.test(fields.contactEmail), 'Provide a valid contact email.', 400)
+    const addressLat = Number(req.body.businessAddressLat), addressLng = Number(req.body.businessAddressLng)
+    check(Number.isFinite(addressLat) && addressLat >= -90 && addressLat <= 90 && Number.isFinite(addressLng) && addressLng >= -180 && addressLng <= 180, 'Select the business location on the map.', 400)
+    fields.businessAddressLat = addressLat
+    fields.businessAddressLng = addressLng
     const ref = db.collection('supplierApplications').doc(req.user.uid)
     await db.runTransaction(async tx => {
       const current = (await tx.get(ref)).data() || {}
