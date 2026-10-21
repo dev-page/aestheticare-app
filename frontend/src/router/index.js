@@ -474,6 +474,7 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const routePath = String(to.path || '').toLowerCase()
+  const isSystemAdmin = isSuperadminRole(currentUserData)
   const isOwnerRoute = isOwnerLikeRole(currentUserData, currentUser?.uid)
   const isClinicSetupRoute = routePath === '/clinic/onboarding'
 
@@ -577,11 +578,11 @@ router.beforeEach(async (to, from, next) => {
 
   // Permission-required routes
   // Check plans before owner/alternate permission shortcuts below.
-  if (currentUser && to.meta.requiresAuth && isClinicAccount(currentUserData) && !isClinicSetupRoute) {
+  if (currentUser && to.meta.requiresAuth && isClinicAccount(currentUserData) && !isSystemAdmin && !isClinicSetupRoute) {
     await initSubscription(true)
     if (activePlan.value === 'free' && !isFreePlanRoute(routePath)) return next('/subscription-features')
   }
-  if (to.meta.requiresFeature && !hasFeature(to.meta.requiresFeature)) return next('/subscription-features')
+  if (!isSystemAdmin && to.meta.requiresFeature && !hasFeature(to.meta.requiresFeature)) return next('/subscription-features')
 
   if ((to.meta.requiresPermission && !(to.path === '/account/change-password' && forcedEmployeePasswordChange) && !hasPermission(to.meta.requiresPermission)) || (to.meta.requiresPermissionsAny && !to.meta.requiresPermissionsAny.some(permission => hasPermission(permission)))) {
     if (currentUser?.uid) {
@@ -603,7 +604,7 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // Feature-required routes
-  if (to.meta.requiresFeature && !hasFeature(to.meta.requiresFeature)) {
+  if (!isSystemAdmin && to.meta.requiresFeature && !hasFeature(to.meta.requiresFeature)) {
     return next("/subscription-features");
   }
 
