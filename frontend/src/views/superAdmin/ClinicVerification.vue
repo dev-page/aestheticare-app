@@ -15,7 +15,7 @@
           :disabled="loading"
           :aria-label="loading ? 'Refreshing clinics' : 'Refresh clinics'"
           :title="loading ? 'Refreshing clinics' : 'Refresh clinics'"
-          @click="loadPendingClinics"
+          @click="refreshClinicLists"
         >
           <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg>
         </button>
@@ -108,6 +108,11 @@
         <TablePagination v-model:page="manualPage" v-model:page-size="registrationPageSize" :total-items="manualReviewClinics.length" />
       </section>
 
+      <section v-else-if="activeTab === 'rejected'" class="bg-slate-800 border border-rose-700/60 rounded-xl overflow-hidden">
+        <div class="px-4 py-4 border-b border-slate-700"><h2 class="text-lg font-semibold text-white">Rejected Registrations</h2><p class="text-sm text-slate-400">Overview of clinic registrations that were rejected, including the recorded reason.</p></div>
+        <div class="overflow-x-auto"><table class="w-full min-w-[620px] text-sm"><thead class="border-b border-slate-700"><tr><th class="text-left text-slate-300 px-4 py-3">Applicant</th><th class="text-left text-slate-300 px-4 py-3">Email</th><th class="text-left text-slate-300 px-4 py-3">Rejection reason</th><th class="text-left text-slate-300 px-4 py-3">Rejected date</th></tr></thead><tbody><tr v-if="loadingRejectedRegistrations"><td class="px-4 py-3 text-slate-200" colspan="4">Loading rejected registrations...</td></tr><tr v-else-if="!filteredRejectedRegistrations.length"><td class="px-4 py-3 text-slate-400" colspan="4">No rejected clinic registrations.</td></tr><tr v-for="row in paginatedRejectedRegistrations" :key="row.id" class="border-b border-slate-700/50 last:border-b-0 hover:bg-slate-700/25"><td class="px-4 py-3 text-slate-100">{{ row.applicantName || 'Unnamed Applicant' }}</td><td class="px-4 py-3 text-slate-300">{{ row.email || '—' }}</td><td class="px-4 py-3 text-slate-300 whitespace-normal">{{ row.reason || 'No reason recorded' }}</td><td class="px-4 py-3 text-slate-300">{{ formatDateValue(row.rejectedAt) }}</td></tr></tbody></table></div>
+        <TablePagination v-model:page="rejectedPage" v-model:page-size="registrationPageSize" :total-items="filteredRejectedRegistrations.length" />
+      </section>
       <section v-else class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <div class="px-4 py-4 border-b border-slate-700">
           <h2 class="text-lg font-semibold text-white">Approved Clinics</h2>
@@ -571,6 +576,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const ocrPage = ref(1)
     const manualPage = ref(1)
     const approvedPage = ref(1)
+    const rejectedPage = ref(1)
+    const rejectedRegistrations = ref([])
+    const loadingRejectedRegistrations = ref(false)
     const selectedOcrVerified = ref([])
     const matchesRegistrationSearch = (record) => {
       const keyword = registrationSearch.value.toLowerCase()
@@ -581,9 +589,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const manualReviewClinics = computed(() => filteredPendingClinics.value.filter((clinic) => String(clinic.verificationStatus || '').trim().toLowerCase() !== 'ocr verified'))
     const paginatedOcrClinics = computed(() => ocrVerifiedClinics.value.slice((ocrPage.value - 1) * registrationPageSize.value, ocrPage.value * registrationPageSize.value))
     const paginatedManualClinics = computed(() => manualReviewClinics.value.slice((manualPage.value - 1) * registrationPageSize.value, manualPage.value * registrationPageSize.value))
+    const filteredRejectedRegistrations = computed(() => rejectedRegistrations.value.filter(matchesRegistrationSearch))
+    const paginatedRejectedRegistrations = computed(() => filteredRejectedRegistrations.value.slice((rejectedPage.value - 1) * registrationPageSize.value, rejectedPage.value * registrationPageSize.value))
     const verificationTabs = computed(() => [
       { id: 'ocr', label: 'OCR Verified', count: ocrVerifiedClinics.value.length },
       { id: 'manual', label: 'Manual Review', count: manualReviewClinics.value.length },
+      { id: 'rejected', label: 'Rejected', count: rejectedRegistrations.value.length },
       { id: 'approved', label: 'Approved Clinics', count: verifiedClinics.value.length },
     ])
     let unsubscribeClinics = null
@@ -727,10 +738,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       ocrPage.value = 1
       manualPage.value = 1
       approvedPage.value = 1
+      rejectedPage.value = 1
     })
     watch(ocrVerifiedClinics, (rows) => ensurePageInRange(ocrPage, rows.length))
     watch(manualReviewClinics, (rows) => ensurePageInRange(manualPage, rows.length))
     watch(filteredVerifiedClinics, (rows) => ensurePageInRange(approvedPage, rows.length))
+    watch(filteredRejectedRegistrations, (rows) => ensurePageInRange(rejectedPage, rows.length))
 
     const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
       const candidates = OTP_BACKEND_CANDIDATES
@@ -920,6 +933,26 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         error.value = 'Failed to listen for clinic registration updates.'
         loading.value = false
       })
+    }
+
+    const loadRejectedRegistrations = async () => {
+      loadingRejectedRegistrations.value = true
+      try {
+        const snapshot = await getDocs(query(collection(db, 'registrationRejectionHistory'), where('applicantType', '==', 'clinic')))
+        rejectedRegistrations.value = sortRecordsNewestFirst(snapshot.docs.map((item) => {
+          const data = item.data() || {}
+          return { id: item.id, ...data, fullName: data.applicantName || data.email || 'Unnamed Applicant', clinicName: data.clinicName || '', rejectionReason: data.reason || '' }
+        }))
+      } catch (err) {
+        console.error('Failed to load rejected clinic registrations:', err)
+        error.value = 'Failed to load rejected clinic registrations. Please try again.'
+      } finally {
+        loadingRejectedRegistrations.value = false
+      }
+    }
+
+    const refreshClinicLists = async () => {
+      await Promise.all([loadPendingClinics(), loadVerifiedClinics(true), loadRejectedRegistrations()])
     }
 
     const openDetails = (record) => {
@@ -1196,7 +1229,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         processing.value = false
       }
     }
-    onMounted(trackPageLoad(async () => { await Promise.all([loadPendingClinics(), loadVerifiedClinics()]) }))
+    onMounted(trackPageLoad(async () => { await Promise.all([loadPendingClinics(), loadVerifiedClinics(), loadRejectedRegistrations()]) }))
     onUnmounted(() => unsubscribeClinics?.())
 
     return {
@@ -1211,6 +1244,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       ocrPage,
       manualPage,
       approvedPage,
+      rejectedPage,
+      loadingRejectedRegistrations,
+      filteredRejectedRegistrations,
+      paginatedRejectedRegistrations,
       verificationTabs,
       ocrVerifiedClinics,
       manualReviewClinics,
@@ -1227,6 +1264,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       selectedRecord,
       rejectionRemark,
       loadPendingClinics,
+      refreshClinicLists,
       loadVerifiedClinics,
       openDetails,
       closeModal,

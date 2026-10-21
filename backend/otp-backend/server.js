@@ -4043,12 +4043,14 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
     const userData = userBeforeRejection.exists ? userBeforeRejection.data() || {} : {}
     const clinicData = clinicBeforeRejection.exists ? clinicBeforeRejection.data() || {} : {}
     const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
-    const applicantName = String(userData.firstName || '').trim() || 'Applicant'
+    const applicantName = [userData.firstName, userData.midName || userData.middleName, userData.lastName, userData.suffix].filter(Boolean).join(' ').trim() || 'Applicant'
 
     await firestore.collection('registrationRejectionHistory').add({
       email: recipient,
       applicantType: 'clinic',
       originalUid: uid,
+      applicantName,
+      clinicName: clinicData.clinicName || clinicData.companyName || '',
       reason: rejectionReason,
       rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
       reviewedBy,
