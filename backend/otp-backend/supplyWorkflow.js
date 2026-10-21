@@ -44,6 +44,13 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     demand(clinic && (assignedBranches.has(branchId) || clinic.ownerId === ctx.uid || clinic.branchAdminId === ctx.uid || branchId === ctx.uid), 'This branch is not assigned to your account.', 403)
     if (paidModule) demand(subscriptionLifecycle(clinic).plan !== 'free', 'Inventory, procurement and logistics require Basic or Premium.', 403)
   }
+  const clinicCanContactSupplier = async supplier => {
+    if (supplier?.status !== 'Active' || supplier?.verificationStatus !== 'Verified') return false
+    const supplierUid = String(supplier.ownerId || supplier.supplierUserId || '')
+    if (!supplierUid) return false
+    const application = await db.collection('supplierApplications').doc(supplierUid).get()
+    return supplierIsVerified(application.data())
+  }
   const canRead = (ctx, r) => ctx.supplier ? supplierCanRead(r, ctx.supplierIds) : hasPermission(ctx, 'reports:view') || (permissionsByKind[r.kind] || []).some(p => hasPermission(ctx, p))
   const ensureRead = async (ctx, r) => { demand(r && canRead(ctx, r), 'Record not available to this account.', 403); if (!ctx.supplier) await branchAccess(ctx, r.branchId) }
   const wrap = handler => async (req, res) => {
@@ -780,6 +787,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     if (!ctx.supplier) allow(ctx, 'procurement:create')
     const supplierId = cleanId(req.body.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data()
     demand(supplier && supplier.branchId === record.branchId && (record.supplierId === supplierId || record.supplierIds?.includes(supplierId)), 'Supplier is not part of this record.', 403)
+    if (!ctx.supplier) demand(await clinicCanContactSupplier(supplier), 'Business verification is required before contacting this supplier.', 403)
     demand(!ctx.supplier || ctx.supplierIds.includes(supplierId), 'Cannot communicate as another supplier.', 403)
     const ref = db.collection('supplyMessages').doc(), message = required(req.body.message, 'Message'), now = stamp()
     await db.runTransaction(async tx => {
@@ -805,7 +813,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       db.collection('suppliers').where('branchId', '==', branchId).get(),
     ])
     const chatsBySupplierId = new Map(docs(chatSnap).map(chat => [chat.supplierId, chat]))
-    const chats = docs(supplierSnap)
+    const verifiedSuppliers = await Promise.all(docs(supplierSnap).map(async supplier => ({ supplier, verified: await clinicCanContactSupplier(supplier) })))
+    const chats = verifiedSuppliers.filter(entry => entry.verified).map(entry => entry.supplier)
       .map(supplier => ({
         ...(chatsBySupplierId.get(supplier.id) || {}),
         chatId: chatsBySupplierId.get(supplier.id)?.chatId || `chat-${branchId}-${supplier.id}`,
@@ -822,6 +831,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   app.get('/supply/chat', requireAuth, wrap(async (req, res, ctx) => {
     const supplierId = cleanId(req.query.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data()
     demand(supplier, 'Supplier not found.', 404)
+    if (!ctx.supplier) demand(await clinicCanContactSupplier(supplier), 'Business verification is required before contacting this supplier.', 403)
     if (ctx.supplier) demand(ctx.supplierIds.includes(supplierId), 'This chat belongs to another supplier.', 403)
     else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId, false) }
     const chatId = `chat-${supplier.branchId}-${supplierId}`, messages = docs(await db.collection('supplyChatMessages').where('chatId', '==', chatId).get()).sort((a, b) => (a.createdAt?._seconds || 0) - (b.createdAt?._seconds || 0))
@@ -830,6 +840,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   app.post('/supply/chat/:supplierId/messages', requireAuth, wrap(async (req, res, ctx) => {
     const supplierId = cleanId(req.params.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data(), message = required(req.body.message, 'Message')
     demand(supplier && supplier.status === 'Active', 'Supplier is unavailable.', 404)
+    if (!ctx.supplier) demand(await clinicCanContactSupplier(supplier), 'Business verification is required before contacting this supplier.', 403)
     if (ctx.supplier) demand(ctx.supplierIds.includes(supplierId), 'This chat belongs to another supplier.', 403)
     else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId, false) }
     const clinic = (await db.collection('clinics').doc(supplier.branchId).get()).data() || {}, chatId = `chat-${supplier.branchId}-${supplierId}`, now = stamp(), ref = db.collection('supplyChatMessages').doc()

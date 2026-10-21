@@ -546,7 +546,7 @@ router.beforeEach(async (to, from, next) => {
     await signOut(auth).catch(() => {})
     return next('/login')
   }
-  if (currentUser && isSupplierRole(currentUserData) && routePath.startsWith('/supplier') && routePath !== '/supplier/verification' && routePath !== '/supplier/profile') {
+  if (currentUser && isSupplierRole(currentUserData) && routePath.startsWith('/supplier') && routePath !== '/supplier/verification') {
     const application = await getDoc(doc(db, 'supplierApplications', currentUser.uid))
     if (application.data()?.verificationStatus !== 'Verified') return next('/supplier/verification')
   }
