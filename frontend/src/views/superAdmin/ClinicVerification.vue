@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="min-w-0 flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Clinic Verification</h1>
@@ -24,12 +24,12 @@
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
       <input v-model.trim="registrationSearch" type="search" placeholder="Filter clinic, owner, email, status, or plan..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 
-      <nav class="mb-6 flex flex-wrap gap-2 rounded-xl border border-slate-700 bg-slate-800 p-2" aria-label="Clinic verification categories">
+      <nav class="mb-6 flex max-w-full gap-2 overflow-x-auto rounded-xl border border-slate-700 bg-slate-800 p-2" aria-label="Clinic verification categories">
         <button
           v-for="tab in verificationTabs"
           :key="tab.id"
           type="button"
-          class="rounded-lg px-4 py-2 text-sm font-semibold transition"
+          class="shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition"
           :class="activeTab === tab.id ? 'verification-tab-active shadow-sm' : 'text-[#5a3b28] hover:bg-[#f3e4d1] hover:text-[#3d2518]'"
           :aria-current="activeTab === tab.id ? 'page' : undefined"
           @click="activeTab = tab.id"
@@ -110,7 +110,7 @@
 
       <section v-else-if="activeTab === 'rejected'" class="bg-slate-800 border border-rose-700/60 rounded-xl overflow-hidden">
         <div class="px-4 py-4 border-b border-slate-700"><h2 class="text-lg font-semibold text-white">Rejected Registrations</h2><p class="text-sm text-slate-400">Overview of clinic registrations that were rejected, including the recorded reason.</p></div>
-        <div class="overflow-x-auto"><table class="w-full min-w-[620px] text-sm"><thead class="border-b border-slate-700"><tr><th class="text-left text-slate-300 px-4 py-3">Applicant</th><th class="text-left text-slate-300 px-4 py-3">Email</th><th class="text-left text-slate-300 px-4 py-3">Rejection reason</th><th class="text-left text-slate-300 px-4 py-3">Rejected date</th></tr></thead><tbody><tr v-if="loadingRejectedRegistrations"><td class="px-4 py-3 text-slate-200" colspan="4">Loading rejected registrations...</td></tr><tr v-else-if="!filteredRejectedRegistrations.length"><td class="px-4 py-3 text-slate-400" colspan="4">No rejected clinic registrations.</td></tr><tr v-for="row in paginatedRejectedRegistrations" :key="row.id" class="border-b border-slate-700/50 last:border-b-0 hover:bg-slate-700/25"><td class="px-4 py-3 text-slate-100">{{ row.applicantName || 'Unnamed Applicant' }}</td><td class="px-4 py-3 text-slate-300">{{ row.email || '—' }}</td><td class="px-4 py-3 text-slate-300 whitespace-normal">{{ row.reason || 'No reason recorded' }}</td><td class="px-4 py-3 text-slate-300">{{ formatDateValue(row.rejectedAt) }}</td></tr></tbody></table></div>
+        <div class="overflow-x-auto"><table class="rejected-registration-table w-full min-w-[620px] text-sm"><thead class="border-b border-slate-700"><tr><th class="text-left text-slate-300 px-4 py-3">Applicant</th><th class="text-left text-slate-300 px-4 py-3">Email</th><th class="text-left text-slate-300 px-4 py-3">Rejection reason</th><th class="text-left text-slate-300 px-4 py-3">Rejected date</th></tr></thead><tbody><tr v-if="loadingRejectedRegistrations"><td class="px-4 py-3 text-slate-200" colspan="4">Loading rejected registrations...</td></tr><tr v-else-if="!filteredRejectedRegistrations.length"><td class="px-4 py-3 text-slate-400" colspan="4">No rejected clinic registrations.</td></tr><tr v-for="row in paginatedRejectedRegistrations" :key="row.id" class="border-b border-slate-700/50 last:border-b-0 hover:bg-slate-700/25"><td class="px-4 py-3 text-slate-100">{{ row.applicantName || 'Unnamed Applicant' }}</td><td class="px-4 py-3 text-slate-300">{{ row.email || '—' }}</td><td class="px-4 py-3 text-slate-300 whitespace-normal">{{ row.reason || 'No reason recorded' }}</td><td class="px-4 py-3 text-slate-300">{{ formatDateValue(row.rejectedAt) }}</td></tr></tbody></table></div>
         <TablePagination v-model:page="rejectedPage" v-model:page-size="registrationPageSize" :total-items="filteredRejectedRegistrations.length" />
       </section>
       <section v-else class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
@@ -1303,5 +1303,47 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .verification-tab-active:hover span { color: #fffdf7 !important; }
+
+@media (max-width: 640px) {
+  .rejected-registration-table {
+    display: block;
+    min-width: 0 !important;
+    white-space: normal;
+  }
+
+  .rejected-registration-table thead {
+    display: none;
+  }
+
+  .rejected-registration-table tbody,
+  .rejected-registration-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .rejected-registration-table tr:not(:has(td[colspan])) {
+    padding: 0.5rem 0;
+  }
+
+  .rejected-registration-table td:not([colspan]) {
+    display: grid;
+    grid-template-columns: minmax(6.5rem, 34%) minmax(0, 1fr);
+    gap: 0.75rem;
+    max-width: none !important;
+    overflow: visible !important;
+    padding: 0.5rem 0.75rem !important;
+    text-align: left;
+  }
+
+  .rejected-registration-table td:nth-child(1)::before { content: 'Applicant'; }
+  .rejected-registration-table td:nth-child(2)::before { content: 'Email'; }
+  .rejected-registration-table td:nth-child(3)::before { content: 'Reason'; }
+  .rejected-registration-table td:nth-child(4)::before { content: 'Rejected'; }
+  .rejected-registration-table td:not([colspan])::before {
+    color: #94a3b8;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+}
 </style>
 
