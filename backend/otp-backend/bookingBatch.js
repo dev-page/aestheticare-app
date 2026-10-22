@@ -1,6 +1,7 @@
 import { prepareBooking } from './bookingResources.js'
 import { assertWorkflow as check, normalized } from './bookingWorkflow.js'
 import { prepareClinicBookingRecipients, writeClinicBookingNotifications } from './clinicBookingNotifications.js'
+import { hasCompletedOnlineConsultation } from '../../shared/consultationRequirements.js'
 
 export const validateSchedules = rows => {
   check(Array.isArray(rows) && rows.length >= 1 && rows.length <= 10, 'Schedule between one and ten services.', 400)
@@ -46,9 +47,15 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
           check(eligible, 'Choose a practitioner assigned to this branch.', 400)
           const service = visit.data.selectedServices[0]
           if (service.requiresConsultationFirst === true) {
-            const clearances = await tx.get(db.collection('consultationClearances').where('customerId', '==', uid))
             const consultations = await tx.get(db.collection('appointments').where('customerId', '==', uid))
-            check(clearances.docs.some(doc => doc.data().branchId === branchId && doc.data().status === 'Approved' && (doc.data().serviceIds || []).includes(service.id)) || consultations.docs.some(doc => doc.data().branchId === branchId && doc.data().status === 'Completed' && (doc.data().consultationForServiceIds || []).includes(service.id)), 'A selected service requires consultation clearance.', 422)
+            const packageId = visit.data.treatmentPlan?.packageId
+            const packagePost = packageId ? (await tx.get(db.collection('productServicePosts').doc(packageId))).data() : null
+            let packageHasConsultation = false
+            if (packagePost) for (const componentId of packagePost.packageServiceIds || []) {
+              const component = (await tx.get(db.collection('productServicePosts').doc(String(componentId)))).data()
+              if (normalized(component?.postType) === 'consultation') packageHasConsultation = true
+            }
+            check(packageHasConsultation || hasCompletedOnlineConsultation(service, consultations.docs.map(doc => doc.data()), branchId), 'Complete the linked online consultation before booking this service. Packages that include a consultation are exempt.', 422)
           }
           prepared.push({ reservation, visit, worker, service })
         }

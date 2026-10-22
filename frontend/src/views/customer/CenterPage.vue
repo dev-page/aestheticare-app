@@ -616,7 +616,7 @@ import { isCategorizedService, normalizeServiceCategory, serviceCategoryOptions,
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { hasConsultationRequirement } from '../../../../shared/consultationRequirements.js'
+import { hasCompletedOnlineConsultation } from '../../../../shared/consultationRequirements.js'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
@@ -756,7 +756,7 @@ const loadConsultationEligibility = async (branchId = activeBranchId.value) => {
   customerConsultations.value = visits.docs.map(snapshot => snapshot.data())
   customerClearances.value = clearances.docs.map(snapshot => snapshot.data())
 }
-const needsLinkedConsultation = item => Boolean(item.requiresConsultationFirst) && !hasConsultationRequirement(item, customerConsultations.value, customerClearances.value, activeBranchId.value)
+const needsLinkedConsultation = item => Boolean(item.requiresConsultationFirst) && !hasCompletedOnlineConsultation(item, customerConsultations.value, activeBranchId.value)
 const bookingReservations = ref([])
 const assignedPractitioner = ref(null)
 const availabilityMessage = ref('')

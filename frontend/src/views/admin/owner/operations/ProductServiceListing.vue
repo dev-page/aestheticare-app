@@ -263,6 +263,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       title: '',
       description: '',
       price: 0,
+      discountPercent: 0,
       requiresConsultationFirst: false,
         linkedConsultationId: '',
       consultationFee: 0,
@@ -296,6 +297,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       title: '',
       description: '',
       price: 0,
+      discountPercent: 0,
       requiresConsultationFirst: false,
         linkedConsultationId: '',
       consultationFee: 0,
@@ -380,6 +382,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         title: '',
         description: '',
         price: 0,
+        discountPercent: 0,
         requiresConsultationFirst: false,
         linkedConsultationId: '',
         consultationFee: 0,
@@ -411,6 +414,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         title: '',
         description: '',
         price: 0,
+        discountPercent: 0,
         requiresConsultationFirst: false,
         linkedConsultationId: '',
         consultationFee: 0,
@@ -618,13 +622,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           toast.error('A package must include at least two services, or one consultation plus at least one service.')
           return
         }
-        if (Number(form.value.price) <= 0) {
+        const packageSubtotal = packageComponents.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(form.value.sessionCount || 1))
+        const packageDiscountPercent = Math.min(90, Math.max(0, Number(form.value.discountPercent || 0)))
+        if (packageSubtotal <= 0 || packageSubtotal * (1 - packageDiscountPercent / 100) <= 0) {
           toast.error('Enter a package price greater than zero.')
           return
         }
       }
-      if (postType === 'Service' && form.value.requiresConsultationFirst && !posts.value.some(post => post.id === form.value.linkedConsultationId && post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
-        toast.error('Link an existing published consultation before saving this service.');
+      if (postType === 'Service' && form.value.requiresConsultationFirst && !posts.value.some(post => post.id === form.value.linkedConsultationId && post.postType === 'Consultation' && post.consultationMode === 'online' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
+        toast.error('Link an existing published online consultation before saving this service.');
         return
       }
       if (postType === 'Consultation' && Number(form.value.consultationFee) <= 0) {
@@ -659,7 +665,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           serviceCategory: ['Service', 'Package'].includes(postType) ? normalizeServiceCategory(form.value.serviceCategory) : null,
           price: postType === 'Product'
             ? Number(selectedProduct?.unitPrice || 0)
-            : Number(form.value.price || form.value.consultationFee || 0),
+            : postType === 'Package'
+              ? Math.round(packageSubtotal * (1 - packageDiscountPercent / 100) * 100) / 100
+              : Number(form.value.price || form.value.consultationFee || 0),
+          discountPercent: postType === 'Package' ? packageDiscountPercent : 0,
+          discountAmount: postType === 'Package' ? Math.round((packageSubtotal - packageSubtotal * (1 - packageDiscountPercent / 100)) * 100) / 100 : 0,
           requiresConsultationFirst: postType === 'Service' ? Boolean(form.value.requiresConsultationFirst) : false,
           linkedConsultationId: postType === 'Service' && form.value.requiresConsultationFirst ? form.value.linkedConsultationId : null,
           consultationFee: postType === 'Consultation' ? Number(form.value.consultationFee || 0) : null,
@@ -726,6 +736,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         title: post.title || '',
         description: post.description || '',
         price: Number(post.price || 0),
+        discountPercent: Number(post.discountPercent || 0),
         requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
         linkedConsultationId: String(post.linkedConsultationId || ''),
         consultationFee: Number(post.consultationFee || 0),
@@ -806,8 +817,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         ? (editForm.value.packageServiceIds || []).map((id) => posts.value.find((post) => post.id === id)).filter(Boolean)
         : []
       const editPackageFollowUpComponents = editPackageComponents.filter((post) => post.followUpAllowed === true)
-      if (editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst && !posts.value.some(post => post.id === editForm.value.linkedConsultationId && post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
-        toast.error('Link an existing published consultation before saving this service.');
+      if (editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst && !posts.value.some(post => post.id === editForm.value.linkedConsultationId && post.postType === 'Consultation' && post.consultationMode === 'online' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
+        toast.error('Link an existing published online consultation before saving this service.');
         return
       }
       if (editForm.value.postType === 'Consultation' && Number(editForm.value.consultationFee) <= 0) {
@@ -853,7 +864,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 : null,
           price: editForm.value.postType === 'Product'
             ? Number(selectedProduct?.unitPrice || editForm.value.price || 0)
-            : Number(editForm.value.price || editForm.value.consultationFee || 0),
+            : editForm.value.postType === 'Package'
+              ? Math.round(editPackageComponents.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(editForm.value.sessionCount || 1)) * (1 - Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) / 100) * 100) / 100
+              : Number(editForm.value.price || editForm.value.consultationFee || 0),
+          discountPercent: editForm.value.postType === 'Package' ? Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) : 0,
+          discountAmount: editForm.value.postType === 'Package' ? Math.round((editPackageComponents.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(editForm.value.sessionCount || 1)) * Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) / 100) * 100) / 100 : 0,
           requiresConsultationFirst: editForm.value.postType === 'Service' && !isFreePlan.value ? Boolean(editForm.value.requiresConsultationFirst) : false,
           linkedConsultationId: editForm.value.postType === 'Service' && !isFreePlan.value && editForm.value.requiresConsultationFirst ? editForm.value.linkedConsultationId : null,
           consultationFee: editForm.value.postType === 'Consultation' ? Number(editForm.value.consultationFee || 0) : null,

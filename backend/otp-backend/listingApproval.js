@@ -7,6 +7,7 @@ export const validateListingNumbers = (post) => {
     const count = post.sessionCount === undefined ? 1 : Number(post.sessionCount)
     if (!Number.isInteger(count) || count < 1 || count > 50) return 'Number of treatment sessions must be a whole number from 1 to 50.'
   }
+  if (post.postType === 'Package' && (!Number.isFinite(Number(post.discountPercent || 0)) || Number(post.discountPercent || 0) < 0 || Number(post.discountPercent || 0) > 90)) return 'Package discount must be between 0% and 90%.'
   return ''
 }
 export const draftListing = () => ({ financeStatus: 'draft', isPublished: false, financeReview: null, publishedBy: null, publishedAt: null })
@@ -89,7 +90,7 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         if (['submit', 'publish'].includes(action) && post.postType === 'Service' && post.requiresConsultationFirst) {
           const linkedId = String(post.linkedConsultationId || '').trim()
           const linked = linkedId ? (await tx.get(db.collection('productServicePosts').doc(linkedId))).data() : null
-          if (!linked || linked.branchId !== post.branchId || linked.postType !== 'Consultation' || linked.isPublished !== true || linked.financeStatus !== 'approved' || linked.archived) throw Object.assign(new Error('Link a published consultation from this branch before submitting or publishing this service.'), { status: 409 })
+          if (!linked || linked.branchId !== post.branchId || linked.postType !== 'Consultation' || linked.consultationMode !== 'online' || linked.isPublished !== true || linked.financeStatus !== 'approved' || linked.archived) throw Object.assign(new Error('Link a published online consultation from this branch before submitting or publishing this service.'), { status: 409 })
         }
         const update = listingTransition(
           post,

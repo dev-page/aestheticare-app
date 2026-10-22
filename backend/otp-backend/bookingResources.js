@@ -3,7 +3,7 @@ import { assertWorkflow as check, normalized, resourceConflict } from './booking
 import crypto from 'node:crypto'
 import { normalizeStaffing, appointmentStaffIds } from '../../shared/practitionerTeam.js'
 import { buildClientContract, buildClientContractDocument } from '../../shared/clientContract.js'
-import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
+import { hasCompletedOnlineConsultation } from '../../shared/consultationRequirements.js'
 
 export const prepareBooking = async ({ tx, db, reservation, getBookingRange, rangesOverlap, appointmentId = null }) => {
   const branchId = reservation.branchId
@@ -21,6 +21,8 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   }
   const offer = services[0]
   const definitions = []
+  let packageComponents = []
+  let packageIncludesConsultation = false
   if (normalized(offer.postType) === 'package') {
     check(!reservation.groupBooking, 'Packages are individual treatment plans. Book group services separately.', 400)
     const components = []
@@ -30,6 +32,8 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
       components.push({ ...component, id: snapshot.id })
     }
     check(components.length > 0, 'This package has no services.', 400)
+    packageComponents = components
+    packageIncludesConsultation = components.some(component => normalized(component.postType) === 'consultation')
     for (let cycle = 0; cycle < Math.min(50, Math.max(1, Number(offer.sessionCount || 1))); cycle++) for (const component of components) {
       for (let visit = 0; visit < Math.min(50, Math.max(1, Number(component.sessionCount || 1))); visit++) definitions.push({ serviceId: component.id, serviceName: component.title || component.serviceName || component.consultationName, durationMinutes: Number(component.durationMinutes || 60), sessionIntervalDays: Math.max(1, Number(component.sessionIntervalDays || offer.sessionIntervalDays || 1)) })
     }
@@ -38,11 +42,13 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   } else {
     for (let visit = 0; visit < Math.min(50, Math.max(1, Number(offer.sessionCount || 1))); visit++) definitions.push({ serviceId: offer.id, serviceName: offer.title || offer.serviceName || offer.consultationName, durationMinutes: Number(offer.durationMinutes || 60), sessionIntervalDays: Math.max(1, Number(offer.sessionIntervalDays || 1)) })
   }
-  if (services[0].requiresConsultationFirst === true && normalized(services[0].postType) !== 'consultation') {
+  const consultationRequiredService = normalized(offer.postType) === 'package'
+    ? packageComponents.find(component => component.requiresConsultationFirst === true)
+    : services[0]
+  if (consultationRequiredService?.requiresConsultationFirst === true && normalized(consultationRequiredService.postType) !== 'consultation' && !packageIncludesConsultation) {
     const customerId = reservation.customerId
-    const clearances = await tx.get(db.collection('consultationClearances').where('customerId', '==', customerId))
     const consultations = await tx.get(db.collection('appointments').where('customerId', '==', customerId))
-    check(hasConsultationRequirement(services[0], consultations.docs.map(doc => doc.data()), clearances.docs.map(doc => doc.data()), branchId), 'Complete the linked consultation or obtain clinic-approved clearance before booking this service.', 422)
+    check(hasCompletedOnlineConsultation(consultationRequiredService, consultations.docs.map(doc => doc.data()), branchId), 'Complete the linked online consultation before booking this service. Packages that include a consultation are exempt.', 422)
   }
   const requirements = new Map()
   for (const service of services) {

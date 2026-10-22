@@ -44,14 +44,14 @@ test('Linked consultations qualify only after completion in the same branch; app
   assert.equal(hasConsultationRequirement({ ...service, linkedConsultationId: '' }, [{ ...visit, consultationForServiceIds: ['facial'] }]), true)
 })
 
-test('Online and walk-in service bookings require the actual linked consultation or approved clearance', async () => {
+test('Service bookings require the actual linked online consultation', async () => {
   const h = fixture()
   h.seed('productServicePosts', 'facial', { branchId: 'clinic', postType: 'Service', title: 'Facial', price: 500, durationMinutes: 30, isPublished: true, financeStatus: 'approved', termsAndConditions: 'Treatment terms', requiresConsultationFirst: true, linkedConsultationId: 'assessment' })
   const prepare = source => h.db.runTransaction(tx => prepareBooking({ tx, db: h.db, reservation: { ...reservation(), source }, getBookingRange: range, rangesOverlap: overlap }))
-  for (const source of ['customer_booking_request', 'walk_in']) await assert.rejects(prepare(source), /linked consultation/)
+  for (const source of ['customer_booking_request', 'walk_in']) await assert.rejects(prepare(source), /linked online consultation/)
   h.seed('appointments', 'wrong', { customerId: 'customer', branchId: 'clinic', type: 'Consultation', status: 'Completed', selectedServiceIds: ['different'] })
-  await assert.rejects(prepare('customer_booking_request'), /linked consultation/)
-  h.seed('appointments', 'right', { customerId: 'customer', branchId: 'clinic', type: 'Consultation', status: 'Completed', selectedServiceIds: ['assessment'] })
+  await assert.rejects(prepare('customer_booking_request'), /linked online consultation/)
+  h.seed('appointments', 'right', { customerId: 'customer', branchId: 'clinic', type: 'Consultation', consultationMode: 'online', status: 'Completed', selectedServiceIds: ['assessment'] })
   for (const source of ['customer_booking_request', 'walk_in']) assert.equal((await prepare(source)).data.service, 'Facial')
 })
 test('New appointments snapshot the saved clinic contract and its applicable policies', async () => {

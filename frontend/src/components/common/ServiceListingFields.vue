@@ -55,7 +55,7 @@
         <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label class="block text-slate-400 mb-1">Price (PHP)</label>
-            <input :value="form.price" @input="setPositiveNumber('price', $event, 0)" @keydown="blockNegativeKey" type="number" min="0" step="0.01" placeholder="0.00" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input :value="form.postType === 'Package' ? packagePrice.toFixed(2) : form.price" :readonly="form.postType === 'Package'" @input="setPositiveNumber('price', $event, 0)" @keydown="blockNegativeKey" type="number" min="0" step="0.01" placeholder="0.00" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 read-only:opacity-80" />
           </div>
           <div v-if="['Service', 'Package'].includes(form.postType)">
             <label class="block text-slate-400 mb-1">Number of Treatment Sessions</label>
@@ -81,6 +81,17 @@
             <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
           </select>
           <p class="mt-2 text-xs text-slate-400">A package must include at least two services, or one consultation plus at least one service. Customers book and pay for the package as one appointment.</p>
+          <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label class="block text-slate-400">Package discount (%)
+              <input v-model.number="form.discountPercent" type="number" min="0" max="90" step="0.5" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
+            </label>
+            <div class="rounded-lg border border-slate-700 p-3 text-sm text-slate-300">
+              <p>Included total: PHP {{ packageSubtotal.toFixed(2) }}</p>
+              <p>Customer pays: PHP {{ packagePrice.toFixed(2) }}</p>
+              <p>Customer saves: PHP {{ packageSavings.toFixed(2) }}</p>
+            </div>
+          </div>
+          <p class="mt-2 text-xs text-slate-400">The clinic sets the discount. The package price is calculated from the current prices of its included services and consultation.</p>
         </div>
 
         <div v-if="form.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -208,7 +219,7 @@
           </div>
           <div v-if="form.postType === 'Service' && form.requiresConsultationFirst" class="md:col-span-2">
             <ContractAppearanceSelect :id="editing ? 'edit-linked-consultation' : 'linked-consultation'" v-model="form.linkedConsultationId" label="Linked consultation (required)" :disabled="disabled || !consultationOptions.length" :options="consultationOptions" />
-            <p class="mt-2 text-xs text-slate-400">{{ consultationOptions.length ? 'Clients must complete this consultation or receive clinic-approved clearance before booking this service.' : 'No published consultations are available. Create and publish a consultation first.' }}</p>
+            <p class="mt-2 text-xs text-slate-400">{{ consultationOptions.length ? 'Clients must complete this linked online consultation before booking this service.' : 'No published online consultations are available. Create and publish an online consultation first.' }}</p>
           </div>
         </div>
         <div class="mb-4">
@@ -246,6 +257,10 @@ import ServiceStaffingFields from './ServiceStaffingFields.vue'
 const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, isFreePlan: Boolean, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
 defineEmits(['image-change'])
 const form = computed(() => props.model)
+const packageComponents = computed(() => (form.value.packageServiceIds || []).map(id => props.posts.find(post => post.id === id)).filter(Boolean))
+const packageSubtotal = computed(() => packageComponents.value.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(form.value.sessionCount || 1)))
+const packageSavings = computed(() => packageSubtotal.value * Math.min(90, Math.max(0, Number(form.value.discountPercent || 0))) / 100)
+const packagePrice = computed(() => Math.max(0, packageSubtotal.value - packageSavings.value))
 const addingCategory = ref(false), newCategory = ref(''), categoryError = ref('')
 const categoryOptions = computed(() => serviceCategoryOptions([...props.posts, { postType: 'Service', serviceCategory: form.value.serviceCategory }], true))
 const selectCategory = key => { form.value.serviceCategory = categoryOptions.value.find(option => option.value === key)?.label || 'Other' }
@@ -268,7 +283,7 @@ const setPositiveNumber = (key, event, min, max = Infinity, wholeNumber = false)
   form.value[key] = bounded
   if (bounded !== value) event.target.value = String(bounded)
 }
-const consultationOptions = computed(() => props.posts.filter(post => post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived).map(post => ({ value: post.id, label: post.title || post.consultationName || 'Consultation' })))
+const consultationOptions = computed(() => props.posts.filter(post => post.postType === 'Consultation' && post.consultationMode === 'online' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived).map(post => ({ value: post.id, label: post.title || post.consultationName || 'Online consultation' })))
 </script>
 
 <style scoped>

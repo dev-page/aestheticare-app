@@ -22,7 +22,7 @@ import { registerWalkInPayments } from './walkInWorkflow.js'
 import { registerWalkInBookings } from './walkInBookings.js'
 import { registerGoogleConsultations } from './googleConsultations.js'
 import { prepareBooking } from './bookingResources.js'
-import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
+import { hasCompletedOnlineConsultation } from '../../shared/consultationRequirements.js'
 import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow, resetAppointmentAccess } from './bookingWorkflow.js'
 import express from 'express'
 import { registerPublicContact } from './publicContact.js'
@@ -5358,7 +5358,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       })
     }
     const consultationRequiredIds = selectedServices
-      .filter((service) => service?.requiresConsultationFirst === true && service.packageComponents?.[0]?.type !== 'Consultation')
+      .filter((service) => service?.requiresConsultationFirst === true && !service.packageComponents?.some(component => component.type === 'Consultation'))
       .map((service) => String(service.id || '').trim())
       .filter(Boolean)
 
@@ -5368,10 +5368,8 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         .where('type', '==', 'Consultation')
         .get()
       const requiredServices = await Promise.all(consultationRequiredIds.map(async id => ({ ...(await firestore.collection('productServicePosts').doc(id).get()).data(), id })))
-      const hasCompletedConsultation = requiredServices.every(service => hasConsultationRequirement(service, consultationSnap.docs.map(snapshot => snapshot.data()), [], branchId))
-      const clearanceSnap = await firestore.collection('consultationClearances').where('customerId', '==', customerId).where('branchId', '==', branchId).where('status', '==', 'Approved').get()
-      const hasApprovedClearance = clearanceSnap.docs.some(docSnap => consultationRequiredIds.every(id => (docSnap.data().serviceIds || []).map(value => String(value)).includes(id)))
-      if (!hasCompletedConsultation && !hasApprovedClearance) {
+      const hasCompletedConsultation = requiredServices.every(service => hasCompletedOnlineConsultation(service, consultationSnap.docs.map(snapshot => snapshot.data()), branchId))
+      if (!hasCompletedConsultation) {
         return res.status(422).json({
           success: false,
           code: 'CONSULTATION_REQUIRED',
@@ -8217,7 +8215,7 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
   }
 
   const consultationRequiredIds = selectedServices
-    .filter((service) => service?.requiresConsultationFirst === true)
+    .filter((service) => service?.requiresConsultationFirst === true && !service.packageComponents?.some(component => component.type === 'Consultation'))
     .map((service) => String(service.id || '').trim())
     .filter(Boolean)
 
@@ -8227,10 +8225,8 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
       .where('type', '==', 'Consultation')
       .get()
     const requiredServices = await Promise.all(consultationRequiredIds.map(async id => ({ ...(await firestore.collection('productServicePosts').doc(id).get()).data(), id })))
-      const hasCompletedConsultation = requiredServices.every(service => hasConsultationRequirement(service, consultationSnap.docs.map(snapshot => snapshot.data()), [], branchId))
-    const clearanceSnap = await firestore.collection('consultationClearances').where('customerId', '==', customerId).where('branchId', '==', branchId).where('status', '==', 'Approved').get()
-    const hasApprovedClearance = clearanceSnap.docs.some(docSnap => consultationRequiredIds.every(id => (docSnap.data().serviceIds || []).map(value => String(value)).includes(id)))
-    if (!hasCompletedConsultation && !hasApprovedClearance) {
+      const hasCompletedConsultation = requiredServices.every(service => hasCompletedOnlineConsultation(service, consultationSnap.docs.map(snapshot => snapshot.data()), branchId))
+    if (!hasCompletedConsultation) {
       return res.status(422).json({
         success: false,
         code: 'CONSULTATION_REQUIRED',
