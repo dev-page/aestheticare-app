@@ -128,7 +128,7 @@ const submitCode = async serviceKey => {
     <section class="records-panel filters">
       <label>Search<input v-model="search" placeholder="Client, recipient, or service" type="search" /></label>
       <label>Appointment Type<select v-model="source"><option value="">All types</option><option>Walk-in</option><option>Online booking</option></select></label>
-      <label><input v-model="needsReview" type="checkbox" /> Consultations needing review</label>
+      <label class="review-filter"><input v-model="needsReview" type="checkbox" /><span>Consultations needing review</span></label>
       <label>Status<select v-model="status"><option value="">All statuses</option><option v-for="value in statuses" :key="value">{{ value }}</option></select></label>
       <label>Date<input v-model="date" type="date" /></label>
     </section>
@@ -168,6 +168,9 @@ const submitCode = async serviceKey => {
 .filters { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 16px; padding: 20px; }
 label { display: grid; gap: 7px; font-size: 13px; color: #786354; }
 input, select { width: 100%; padding: 10px 12px; border: 1px solid #dfc2a1; border-radius: 8px; background: #fff; color: #3d281d; }
+.filters .review-filter { display: flex; align-items: center; align-self: start; gap: 10px; min-height: 42px; padding-top: 25px; cursor: pointer; }
+.filters .review-filter input[type="checkbox"] { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; padding: 0; accent-color: #805337; cursor: pointer; }
+.filters .review-filter span { line-height: 1.35; }
 .table-panel { padding: 16px; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; min-width: 850px; border-collapse: collapse; text-align: left; font-size: 13px; }
@@ -189,5 +192,5 @@ th, td { padding: 14px 12px; border-bottom: 1px solid #efdfcc; vertical-align: t
 .related-tools { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }.modal-footer { display: flex; justify-content: flex-end; }
 .empty { text-align: center; padding: 32px; color: #907965; }.error-message { padding: 14px; background: #fbe9e6; color: #9d392d; border-radius: 10px; margin-bottom: 18px; }
 button:focus-visible, a:focus-visible { outline: 2px solid #b78055; outline-offset: 3px; }
-@media(max-width: 767px) { .filters, .booking-summary { grid-template-columns: 1fr; }.table-panel { padding: 8px; } }
+@media(max-width: 767px) { .filters, .booking-summary { grid-template-columns: 1fr; }.filters .review-filter { padding-top: 0; min-height: auto; }.table-panel { padding: 8px; } }
 </style>
