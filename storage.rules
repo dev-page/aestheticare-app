@@ -174,7 +174,9 @@ service firebase.storage {
         && (request.auth.uid == uploaderId || request.auth.uid == staffId || isSuperadmin());
       allow create: if isSignedIn()
         && (request.auth.uid == uploaderId || request.auth.uid == staffId)
-        && isDocumentUpload();
+        && request.resource != null
+        && request.resource.contentType in ['image/jpeg', 'image/png']
+        && request.resource.size <= 5 * 1024 * 1024;
       allow update, delete: if false;
     }
   }

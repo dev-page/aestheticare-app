@@ -3466,7 +3466,7 @@ const sendServiceCode = async ({ email, serviceKey, date, time }) => {
 }
 registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction, sendServiceCode })
 registerConsultationEvents(app, { admin, requireAuth, authorizeClinicAction })
-registerPractitionerTeams(app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap })
+registerPractitionerTeams(app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap, createVisionClient, getVisionResponseError, getVisionWordConfidence })
 registerConsultationWindows(app, { admin, ready: () => adminReady })
 registerBookingBatch(app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan, loadUserContext })
 
@@ -7455,6 +7455,18 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       practitionerLicenseUploadedBy: input.practitionerLicenseUrl ? req.user.uid : null,
       mustChangePassword: true, createdAt: admin.firestore.FieldValue.serverTimestamp(), createdBy: req.user.uid,
     })
+    if (practitionerTypes.includes(input.practitionerType)) {
+      await firestore.collection('practitionerProfiles').doc(targetId).set({
+        type: input.practitionerType,
+        credentialNumber: text(input.credentialNumber, 100),
+        credentialsVerified: false,
+        approvedServiceIds: [],
+        rates: [],
+        branchId: branchIds[0],
+        updatedBy: req.user.uid,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
+    }
     res.status(201).json({ success: true, data: { id: targetId, branchId: branchIds[0], branchIds } })
   } catch (error) {
     console.error('Create staff profile failed:', error)

@@ -5,6 +5,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { getFirestore, collection, getDocs, onSnapshot, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
@@ -15,6 +16,7 @@ import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { storage } from '@/config/firebaseConfig'
 
 export default {
   name: 'OwnerStaff',
@@ -37,7 +39,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const specialtyError = ref('')
     const savingEmployee = ref(false)
     const originalSpecialty = ref({ type: '', credentialNumber: '' })
-    const showLicenseField = computed(() => ['Doctor', 'Registered Nurse'].includes(currentStaff.value.practitionerType) || !!currentStaff.value.credentialNumber)
+    const licenseFile = ref(null)
+    const licenseOcrResult = ref(null)
+    const licenseOcrBusy = ref(false)
+    let licenseOcrSequence = 0
+    const showLicenseField = computed(() => Boolean(String(currentStaff.value.practitionerType || '').trim() || String(currentStaff.value.credentialNumber || '').trim()))
     let staffUnsubscribers = []
 
     const currentStaff = ref({
@@ -184,6 +190,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const openEditModal = async (staff) => {
       editErrors.value = {}
+      licenseFile.value = null
+      licenseOcrResult.value = null
+      licenseOcrBusy.value = false
+      licenseOcrSequence += 1
       currentStaff.value = {
         ...staff,
         practitionerType: staff.practitionerType || '',
@@ -213,6 +223,52 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const nextErrors = { ...editErrors.value }
       delete nextErrors[field]
       editErrors.value = nextErrors
+    }
+
+    const handleLicenseFile = async event => {
+      const sequence = ++licenseOcrSequence
+      licenseOcrBusy.value = false
+      const file = event?.target?.files?.[0] || null
+      licenseFile.value = null
+      licenseOcrResult.value = null
+      if (!file) return
+      const contentType = String(file.type || '').toLowerCase()
+      if (!['image/jpeg', 'image/png'].includes(contentType)) {
+        toast.error('Upload one JPEG or PNG image so OCR can read the credential.')
+        event.target.value = ''
+        return
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File must be 5MB or smaller.')
+        event.target.value = ''
+        return
+      }
+      licenseFile.value = file
+      const branchId = String(currentStaff.value.branchId || currentStaff.value.branchIds?.[0] || '').trim()
+      if (!branchId) {
+        licenseOcrResult.value = { status: 'manual_review', reason: 'No clinic branch is assigned. Enter the license number manually and ask the clinic owner to review the document.' }
+        return
+      }
+      licenseOcrBusy.value = true
+      try {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
+          reader.onerror = () => reject(new Error('Unable to read the selected image.'))
+          reader.readAsDataURL(file)
+        })
+        const token = await auth.currentUser?.getIdToken()
+        const response = await fetch(`${OTP_API_BASE}/practitioner-license/ocr`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ branchId, employeeId: currentStaff.value.id, contentType, base64 }) })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to process this credential image.')
+        if (sequence !== licenseOcrSequence) return
+        licenseOcrResult.value = payload.data || null
+        if (payload.data?.licenseNumber) currentStaff.value.credentialNumber = payload.data.licenseNumber
+      } catch (error) {
+        if (sequence === licenseOcrSequence) licenseOcrResult.value = { status: 'manual_review', reason: error.message || 'OCR is unavailable. Enter the number manually and review the document.' }
+      } finally {
+        if (sequence === licenseOcrSequence) licenseOcrBusy.value = false
+      }
     }
 
     const normalizePhoneNumber = (value) => {
@@ -293,7 +349,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
     const saveStaff = async () => {
-      if (savingEmployee.value || loadingSpecialty.value || specialtyError.value) return
+      if (savingEmployee.value || loadingSpecialty.value || licenseOcrBusy.value || specialtyError.value) return
       const { firstName, lastName, email, phoneNumber, clinicBranch, clinicLocation } = currentStaff.value
       const fullName = `${firstName} ${lastName}`
       const selectedRoleIds = Array.isArray(currentStaff.value.customRoleIds)
@@ -333,8 +389,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           const branchResponse = await fetch(`${OTP_API_BASE}/staff/${currentStaff.value.id}/branch-assignments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ branchIds: currentStaff.value.branchIds }) })
           const branchPayload = await branchResponse.json()
           if (!branchResponse.ok) throw new Error(branchPayload.error || 'Unable to update assigned branches.')
-          if (currentStaff.value.practitionerType !== originalSpecialty.value.type || currentStaff.value.credentialNumber !== originalSpecialty.value.credentialNumber) {
-            await compensationApi(`/staff/${currentStaff.value.id}/practitioner-details`, 'POST', { type: currentStaff.value.practitionerType, credentialNumber: currentStaff.value.credentialNumber })
+          let licenseDocument = null
+          if (licenseFile.value) {
+            const ownerId = auth.currentUser?.uid
+            const safeName = licenseFile.value.name.replace(/[^\w.\-]+/g, '_')
+            const path = `practitioner-licenses/${ownerId}/${currentStaff.value.id}/${Date.now()}-${safeName}`
+            const fileRef = storageRef(storage, path)
+            await uploadBytes(fileRef, licenseFile.value)
+            licenseDocument = { url: await getDownloadURL(fileRef), name: licenseFile.value.name }
+          }
+          if (currentStaff.value.practitionerType !== originalSpecialty.value.type || currentStaff.value.credentialNumber !== originalSpecialty.value.credentialNumber || licenseDocument) {
+            await compensationApi(`/staff/${currentStaff.value.id}/practitioner-details`, 'POST', { type: currentStaff.value.practitionerType, credentialNumber: currentStaff.value.credentialNumber, licenseDocument })
           }
           const nextStatus = currentStaff.value.status
           const shouldArchive = String(nextStatus || '').trim().toLowerCase() === 'inactive'
@@ -393,7 +458,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       searchQuery,
       filteredStaffList,
       customRoles,
-      practitionerTypes, loadingSpecialty, specialtyError, showLicenseField, savingEmployee
+      practitionerTypes, loadingSpecialty, specialtyError, showLicenseField, savingEmployee,
+      licenseFile, licenseOcrResult, licenseOcrBusy, handleLicenseFile
     }
   }
 }
@@ -588,7 +654,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <ContractAppearanceSelect id="employee-edit-specialty" label="Professional specialty" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not a clinical practitioner' }, ...practitionerTypes.map(type => ({ value: type, label: type }))]" @update:model-value="clearEditError('practitionerType')" />
               <p class="employee-edit-caption">Choose “Not a clinical practitioner” for non-clinical employees. Specialty does not grant system permissions; credential reviews and service approvals are managed separately.</p>
               <p v-if="editErrors.practitionerType" class="employee-edit-error" role="alert">{{ editErrors.practitionerType }}</p>
-              <template v-if="showLicenseField"><label for="employee-edit-license">Credential / license number</label><input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="Enter the professional license number" /><p class="employee-edit-caption">Changing professional details requires a new credential review by the clinic owner.</p></template>
+              <template v-if="showLicenseField">
+                <label for="employee-edit-license">Credential / license number</label><input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="OCR suggestion appears here; review or enter it" />
+                <p class="employee-edit-caption">Changing professional details or the uploaded document requires a new credential review by the clinic owner.</p>
+                <p v-if="currentStaff.practitionerLicenseName && !licenseFile" class="employee-edit-caption">Current document: {{ currentStaff.practitionerLicenseName }}</p>
+                <a v-if="currentStaff.practitionerLicenseUrl && !licenseFile" class="employee-license-link" :href="currentStaff.practitionerLicenseUrl" target="_blank" rel="noopener">View current license document</a>
+                <label for="employee-edit-license-file" class="employee-license-upload-label">Upload a replacement license image (optional)</label>
+                <input id="employee-edit-license-file" type="file" accept="image/jpeg,image/png" @change="handleLicenseFile" />
+                <p class="employee-edit-caption">One JPEG or PNG image, up to 5MB. OCR only suggests a number; check the image and verify the credential manually.</p>
+                <p v-if="licenseOcrBusy" class="employee-edit-caption" role="status">Reading the credential with OCR…</p>
+                <div v-else-if="licenseOcrResult" class="employee-license-ocr" aria-live="polite"><strong>OCR suggestion · owner review required</strong><p>{{ licenseOcrResult.reason }}</p><p v-if="licenseOcrResult.confidence != null">Text recognition confidence: {{ Math.round(licenseOcrResult.confidence * 100) }}%</p><details v-if="licenseOcrResult.extractedText"><summary>View extracted text</summary><pre>{{ licenseOcrResult.extractedText }}</pre></details></div>
+              </template>
             </fieldset>
             <p v-if="specialtyError" class="employee-edit-error" role="alert">{{ specialtyError }}</p>
           </form>
@@ -597,7 +673,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         <template #footer>
           <div class="flex flex-col sm:flex-row justify-end sm:space-x-2 space-y-2 sm:space-y-0">
             <button type="button" :disabled="savingEmployee" @click="showEditModal = false" class="employee-edit-cancel">Cancel</button>
-            <button type="submit" form="employee-edit-form" :disabled="savingEmployee || loadingSpecialty || !!specialtyError" class="employee-edit-save">{{ savingEmployee ? 'Saving...' : 'Update Employee' }}</button>
+            <button type="submit" form="employee-edit-form" :disabled="savingEmployee || loadingSpecialty || licenseOcrBusy || !!specialtyError" class="employee-edit-save">{{ savingEmployee ? 'Saving...' : 'Update Employee' }}</button>
           </div>
         </template>
       </Modal>
@@ -625,6 +701,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .employee-professional-fields { padding: 18px; border: 1px solid #ecd6be; border-radius: 12px; }
 .employee-professional-fields legend { padding: 0 6px; font-size: 14px; font-weight: 600; color: #3d281d; }
 .employee-professional-fields label { display: block; margin-top: 12px; }
+.employee-professional-fields input[type="file"] { padding: 8px; background: #fffaf3 !important; color: #5d4536 !important; }
+.employee-license-link { display: inline-block; margin-top: 6px; color: #805337; font-size: 12px; text-decoration: underline; }
+.employee-license-upload-label { margin-top: 14px !important; }
+.employee-license-ocr { margin-top: 10px; padding: 12px; border: 1px solid #e8c99f; border-radius: 9px; background: #fbf1df; color: #5d4536; font-size: 12px; }
+.employee-license-ocr strong { color: #805337; }
+.employee-license-ocr p { margin-top: 5px; }
+.employee-license-ocr summary { cursor: pointer; font-weight: 600; }
+.employee-license-ocr pre { max-height: 160px; margin-top: 8px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 6px; background: #fffdf9; padding: 9px; font: 11px/1.5 ui-monospace, monospace; }
 .employee-edit-error { color: #a13732; font-size: 12px; margin-top: 8px; }
 .employee-edit-cancel, .employee-edit-save { padding: 10px 18px; border-radius: 9px; font-size: 13px; font-weight: 600; min-height: 42px; }
 .employee-edit-cancel { border: 1px solid #dec19e; background: #fffdf9; color: #70482e; }

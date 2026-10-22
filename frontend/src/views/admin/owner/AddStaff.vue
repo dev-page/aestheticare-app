@@ -90,10 +90,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       userType: 'Staff',
       clinicBranch: '',   // primary branchId, retained for backwards compatibility
       branchIds: [],
+      credentialNumber: '',
       clinicLocation: '',
       status: 'Active'
     })
     const practitionerIdFile = ref(null)
+    const credentialOcrResult = ref(null)
+    const credentialOcrBusy = ref(false)
+    let credentialOcrSequence = 0
+    const showCredentialNumber = computed(() => Boolean(String(currentStaff.value.practitionerType || '').trim()))
 
     const normalizedPlan = computed(() => String(activePlan.value || '').trim().toLowerCase())
     const isBasicPlan = computed(() => normalizedPlan.value === 'basic')
@@ -190,9 +195,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         userType: 'Staff',
         clinicBranch: '',
         clinicLocation: '',
+        practitionerType: '',
+        credentialNumber: '',
         status: 'Active'
       }
       practitionerIdFile.value = null
+      credentialOcrResult.value = null
+      credentialOcrBusy.value = false
+      credentialOcrSequence += 1
       if (isBasicPlan.value && branches.value.length > 0) {
         currentStaff.value.clinicBranch = branches.value[0].id
         currentStaff.value.branchIds = [branches.value[0].id]
@@ -318,8 +328,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!currentStaff.value.employmentType.trim()) {
         errors.employmentType = 'Employment type is required.'
       }
-      if (String(currentStaff.value.role || '').toLowerCase() === 'practitioner' && !practitionerIdFile.value) {
-        errors.practitionerId = 'Practitioner ID attachment is required.'
+      if (isPractitionerRole.value && !practitionerIdFile.value) {
+        errors.practitionerId = 'Practitioner credential image is required.'
       }
 
       return errors
@@ -388,15 +398,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       selectedCustomRoles.value.some((role) => String(role.name || '').toLowerCase().includes('practitioner'))
       || String(currentStaff.value.role || '').toLowerCase() === 'practitioner'
     )
+    const showCredentialUpload = computed(() => isPractitionerRole.value || showCredentialNumber.value)
     const selectedCustomRoleName = computed(() => {
       return selectedCustomRoles.value.map((role) => role.name).join(', ')
     })
 
-    const handlePractitionerFile = (event) => {
+    const handlePractitionerFile = async (event) => {
+      const sequence = ++credentialOcrSequence
+      credentialOcrBusy.value = false
+      credentialOcrResult.value = null
       if ((event?.target?.files?.length || 0) > 1) {
         toast.error('Select only one practitioner license file.')
         event.target.value = ''
         practitionerIdFile.value = null
+        credentialOcrResult.value = null
         return
       }
       const file = event?.target?.files?.[0] || null
@@ -404,22 +419,61 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         practitionerIdFile.value = null
         return
       }
-      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')
-      const isImage = String(file.type || '').toLowerCase().startsWith('image/')
-      if (!isPdf && !isImage) {
-        toast.error('Upload one PDF or image file only.')
+      const contentType = String(file.type || '').toLowerCase()
+      if (!['image/jpeg', 'image/png'].includes(contentType)) {
+        toast.error('Upload one JPEG or PNG image so OCR can read the credential.')
         event.target.value = ''
         practitionerIdFile.value = null
+        credentialOcrResult.value = null
         return
       }
       if (file.size > 5 * 1024 * 1024) {
         toast.error('File must be 5MB or smaller.')
         event.target.value = ''
         practitionerIdFile.value = null
+        credentialOcrResult.value = null
         return
       }
       practitionerIdFile.value = file
+      if (!currentStaff.value.clinicBranch) {
+        credentialOcrResult.value = { status: 'manual_review', reason: 'Select a clinic branch to process this document. You can still enter the number manually.' }
+        return
+      }
+      credentialOcrBusy.value = true
+      try {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
+          reader.onerror = () => reject(new Error('Unable to read the selected image.'))
+          reader.readAsDataURL(file)
+        })
+        const token = await auth.currentUser?.getIdToken()
+        const response = await fetch(`${OTP_API_BASE}/practitioner-license/ocr`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ branchId: currentStaff.value.clinicBranch, contentType, base64 }) })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to process this credential image.')
+        if (sequence !== credentialOcrSequence) return
+        credentialOcrResult.value = payload.data || null
+        if (payload.data?.licenseNumber) currentStaff.value.credentialNumber = payload.data.licenseNumber
+        if (payload.data?.licenseNumber) toast.success('Possible license number extracted. Review it against the image before saving.')
+      } catch (error) {
+        if (sequence === credentialOcrSequence) credentialOcrResult.value = { status: 'manual_review', reason: error.message || 'OCR is unavailable. Enter the number manually and review the document.' }
+      } finally {
+        if (sequence === credentialOcrSequence) credentialOcrBusy.value = false
+      }
     }
+
+    const clearPractitionerFile = () => {
+      credentialOcrSequence += 1
+      practitionerIdFile.value = null
+      credentialOcrResult.value = null
+      credentialOcrBusy.value = false
+    }
+
+    watch(() => currentStaff.value.clinicBranch, (branchId, previousBranchId) => {
+      if (branchId && branchId !== previousBranchId && practitionerIdFile.value) {
+        void handlePractitionerFile({ target: { files: [practitionerIdFile.value], value: '' } })
+      }
+    })
 
     const sendStaffWelcomeEmail = async ({ email, fullName, defaultPassword, uid }) => {
       const user = auth.currentUser
@@ -452,6 +506,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const saveStaff = async () => {
+      if (credentialOcrBusy.value) {
+        toast.info('Wait for credential OCR to finish before creating the employee account.')
+        return
+      }
       if (hasErrors.value) {
         const firstError = Object.values(fieldErrors.value).find(Boolean)
         toast.error(firstError || 'Please fix the highlighted fields.')
@@ -533,6 +591,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             customRoleName: selectedCustomRoleName.value || null,
             effectivePermissions: [...new Set(selectedCustomRoles.value.flatMap((role) => role.permissions || []))],
             practitionerType: currentStaff.value.practitionerType,
+            credentialNumber: currentStaff.value.credentialNumber,
             employmentType: currentStaff.value.employmentType,
             userType: 'Staff',
             branchId: currentStaff.value.clinicBranch,
@@ -605,7 +664,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       selectedCustomRoles,
       selectedCustomRoleName,
       isPractitionerRole,
+      showCredentialUpload,
       practitionerIdFile,
+      credentialOcrResult,
+      credentialOcrBusy,
+      showCredentialNumber,
       isFormEmpty,
       isBasicPlan,
       fieldErrors,
@@ -619,6 +682,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       handlePhoneInput,
       updateLocation,
       handlePractitionerFile,
+      clearPractitionerFile,
     }
   }
 }
@@ -776,6 +840,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <ContractAppearanceSelect id="new-staff-specialty" label="Professional specialty" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not a clinical practitioner' }, ...['Doctor', 'Registered Nurse', 'Aesthetician', 'Therapist', 'Other'].map(type => ({ value: type, label: type }))]" />
               <p class="text-xs text-slate-400">Choose “Not a clinical practitioner” for non-clinical employees. Specialty does not grant system permissions; the clinic owner verifies credentials and approves services separately.</p>
+              <div v-if="showCredentialNumber" class="sm:col-span-2">
+                <label for="new-staff-license-number" class="mb-1 block text-slate-400">Credential / license number</label>
+                <input id="new-staff-license-number" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="OCR suggestion appears here; review or enter it" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <p v-if="credentialOcrBusy" class="mt-1 text-xs text-slate-400" role="status">Reading the document…</p>
+                <div v-else-if="credentialOcrResult" class="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-slate-200">
+                  <p class="font-semibold text-amber-200">OCR suggestion · owner review required</p>
+                  <p class="mt-1">{{ credentialOcrResult.reason }}</p>
+                  <p v-if="credentialOcrResult.confidence != null" class="mt-1">Text recognition confidence: {{ Math.round(credentialOcrResult.confidence * 100) }}%</p>
+                  <details v-if="credentialOcrResult.extractedText" class="mt-2"><summary class="cursor-pointer">View extracted text</summary><pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-950/50 p-2">{{ credentialOcrResult.extractedText }}</pre></details>
+                </div>
+              </div>
               <!-- Custom Role -->
               <div>
                 <label class="mb-1 block text-slate-400">Role <span class="text-red-400">*</span></label>
@@ -857,17 +932,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           </div>
 
           <!-- Practitioner ID Upload (conditional) -->
-          <div v-if="isPractitionerRole">
+          <div v-if="showCredentialUpload">
             <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Practitioner License</h2>
             <div>
-              <label class="mb-1 block text-slate-400">Upload Practitioner ID <span class="text-red-400">*</span></label>
+              <label class="mb-1 block text-slate-400">Upload practitioner credential <span v-if="isPractitionerRole" class="text-red-400">*</span><span v-else class="text-slate-400">(optional)</span></label>
               <div class="flex items-center gap-3">
                 <label class="cursor-pointer rounded-lg border border-dashed border-slate-600 bg-slate-800 px-4 py-3 text-sm text-slate-300 hover:border-blue-500 hover:text-blue-300 transition">
                   <span v-if="!practitionerIdFile">Choose File</span>
                   <span v-else class="text-green-400">{{ practitionerIdFile.name }}</span>
                   <input
                     type="file"
-                    accept="application/pdf,.pdf,image/*"
+                    accept="image/jpeg,image/png"
                     class="hidden"
                     @change="handlePractitionerFile"
                   />
@@ -875,14 +950,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 <button
                   v-if="practitionerIdFile"
                   type="button"
-                  @click="practitionerIdFile = null"
+                  @click="clearPractitionerFile"
                   class="text-sm text-red-400 hover:text-red-300 transition"
                 >
                   Remove
                 </button>
               </div>
               <p v-if="fieldErrors.practitionerId" class="mt-1 text-xs text-red-400">{{ fieldErrors.practitionerId }}</p>
-              <p class="mt-1 text-xs text-slate-400">Accepted formats: one PDF or image file (max 5MB).</p>
+              <p class="mt-1 text-xs text-slate-400">Accepted formats: one JPEG or PNG image (max 5MB). OCR is a suggestion; review the extracted number and document before saving.</p>
+              <p v-if="credentialOcrBusy" class="mt-2 text-xs text-slate-300" role="status">Reading the credential with OCR…</p>
+              <div v-else-if="credentialOcrResult && !showCredentialNumber" class="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-slate-200">
+                <p class="font-semibold text-amber-200">OCR result · owner review required</p><p class="mt-1">{{ credentialOcrResult.reason }}</p>
+                <details v-if="credentialOcrResult.extractedText" class="mt-2"><summary class="cursor-pointer">View extracted text</summary><pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-950/50 p-2">{{ credentialOcrResult.extractedText }}</pre></details>
+              </div>
             </div>
           </div>
 
@@ -901,7 +981,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             </button>
             <button
               type="submit"
-              :disabled="hasErrors"
+              :disabled="hasErrors || credentialOcrBusy"
               class="rounded-lg bg-blue-600 px-5 py-2 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Add Employee

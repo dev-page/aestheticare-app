@@ -31,7 +31,21 @@ export const prepareTeamStart = async (tx, db, appointment, id) => {
   return { members, termsRef: db.collection('appointmentStaffTerms').doc(id), terms: { branchId: appointment.branchId, appointmentId: id, members: terms } }
 }
 
-export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap }) => {
+export const extractPractitionerLicenseNumber = text => {
+  const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const marker = /(?:\bPRC\s*)?(?:license|licence|registration|reg\.?)(?:\s*(?:no\.?|number|#))?\s*[:#-]?/i
+  const valuePattern = /\b([A-Z0-9][A-Z0-9./-]{3,29})\b/i
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = marker.exec(lines[index])
+    if (!match) continue
+    const sameLine = lines[index].slice(match.index + match[0].length).replace(/^\s*[:#-]?\s*/, '')
+    const value = sameLine.match(valuePattern)?.[1] || lines[index + 1]?.match(valuePattern)?.[1] || ''
+    if (value && /\d/.test(value) && !/^(?:NUMBER|LICENSE|LICENCE|REGISTRATION)$/i.test(value)) return value
+  }
+  return ''
+}
+
+export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap, createVisionClient, getVisionResponseError, getVisionWordConfidence }) => {
   const db = admin.firestore(), now = () => admin.firestore.FieldValue.serverTimestamp()
   const route = (method, path, fn) => app[method](path, requireAuth, async (req, res) => {
     try { const context = await loadUserContext(req.user.uid); res.json({ success: true, data: await fn(req, context) }) }
@@ -41,6 +55,46 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
     const clinic = (await db.collection('clinics').doc(branchId).get()).data()
     check(clinic?.ownerId === uid || clinic?.organizationOwnerId === uid, 'Only the clinic owner can change practitioner credentials and compensation.', 403)
   }
+  app.post('/practitioner-license/ocr', requireAuth, async (req, res) => {
+    try {
+      const branchId = String(req.body?.branchId || '').trim()
+      const employeeId = String(req.body?.employeeId || '').trim()
+      const contentType = String(req.body?.contentType || '').toLowerCase()
+      const encoded = String(req.body?.base64 || '').replace(/^data:[^,]+,/, '')
+      check(branchId, 'Choose a clinic branch before processing the credential document.', 400)
+      check(['image/jpeg', 'image/png'].includes(contentType), 'Upload a JPEG or PNG image to use OCR.', 400)
+      check(encoded.length >= 16 && encoded.length <= 7 * 1024 * 1024, 'The credential image must be 5 MB or smaller.', 400)
+      await authorizeClinicAction(req.user.uid, branchId, employeeId ? 'staff:update' : 'staff:create')
+      const visionClient = createVisionClient?.()
+      if (!visionClient) return res.json({ success: true, data: { status: 'manual_review', reason: 'OCR is unavailable right now. Enter the license number manually and review the uploaded document.', extractedText: '', licenseNumber: '', confidence: null } })
+      const image = Buffer.from(encoded, 'base64')
+      check(image.length > 0 && image.length <= 5 * 1024 * 1024, 'The credential image must be 5 MB or smaller.', 400)
+      const request = { image: { content: image } }
+      const [result] = await visionClient.documentTextDetection(request)
+      const primaryError = getVisionResponseError?.(result)
+      if (primaryError) throw new Error(primaryError)
+      let annotation = result?.fullTextAnnotation
+      let extractedText = String(annotation?.text || '').trim()
+      if (!extractedText) {
+        const [fallback] = await visionClient.textDetection(request)
+        const fallbackError = getVisionResponseError?.(fallback)
+        if (fallbackError) throw new Error(fallbackError)
+        extractedText = String(fallback?.textAnnotations?.[0]?.description || '').trim()
+        annotation = fallback?.fullTextAnnotation || annotation
+      }
+      const licenseNumber = extractPractitionerLicenseNumber(extractedText)
+      const confidence = getVisionWordConfidence(annotation)
+      return res.json({ success: true, data: {
+        status: extractedText ? 'manual_review' : 'unreadable',
+        reason: licenseNumber ? 'OCR found a possible license number. Confirm it against the document before saving.' : extractedText ? 'OCR read the document but could not confidently locate a license number. Enter it manually and review the document.' : 'OCR could not read text from this image. Upload a clearer image or enter the number manually.',
+        extractedText: extractedText.slice(0, 12000), licenseNumber, confidence,
+      } })
+    } catch (error) {
+      if (error.status) return res.status(error.status).json({ success: false, error: error.message })
+      console.error('Practitioner license OCR failed:', error?.message || error)
+      return res.json({ success: true, data: { status: 'manual_review', reason: 'OCR could not process this image. Enter the license number manually and review the uploaded document.', extractedText: '', licenseNumber: '', confidence: null } })
+    }
+  })
   route('get', '/staff/:id/practitioner-details', async req => {
     const user = (await db.collection('users').doc(req.params.id).get()).data()
     check(user, 'Employee not found.', 404)
@@ -51,16 +105,20 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
   route('post', '/staff/:id/practitioner-details', async req => {
     const type = String(req.body?.type || '').trim()
     const credentialNumber = String(req.body?.credentialNumber || '').trim()
+    const licenseDocument = req.body?.licenseDocument && typeof req.body.licenseDocument === 'object' ? req.body.licenseDocument : null
+    const licenseUrl = String(licenseDocument?.url || '').trim()
+    const licenseName = String(licenseDocument?.name || '').trim()
     check((!type || practitionerTypes.includes(type)) && credentialNumber.length <= 100, 'Choose a supported specialty and a license number of up to 100 characters.', 400)
+    check(!licenseDocument || (licenseUrl.startsWith('https://firebasestorage.googleapis.com/') && licenseUrl.length <= 2000 && licenseName.length <= 255), 'The license document details are invalid.', 400)
     return db.runTransaction(async tx => {
       const userRef = db.collection('users').doc(req.params.id), profileRef = db.collection('practitionerProfiles').doc(req.params.id)
       const user = (await tx.get(userRef)).data()
       check(user, 'Employee not found.', 404)
       await authorizeClinicAction(req.user.uid, user.branchId, 'staff:update')
       const profile = (await tx.get(profileRef)).data()
-      const changed = type !== (profile?.type || user.practitionerType || '') || credentialNumber !== (profile?.credentialNumber || '')
+      const changed = type !== (profile?.type || user.practitionerType || '') || credentialNumber !== (profile?.credentialNumber || '') || Boolean(licenseDocument)
       if (type || profile) tx.set(profileRef, { ...(profile || { approvedServiceIds: [], rates: [] }), type, credentialNumber, credentialsVerified: changed ? false : profile?.credentialsVerified === true, branchId: user.branchId, updatedBy: req.user.uid, updatedAt: now() })
-      tx.update(userRef, { practitionerType: type || null })
+      tx.update(userRef, { practitionerType: type || null, ...(licenseDocument ? { practitionerLicenseUrl: licenseUrl, practitionerLicenseName: licenseName, practitionerLicenseUploadedBy: req.user.uid } : {}) })
       if (changed) tx.set(db.collection('practitionerProfileAudit').doc(), { employeeId: req.params.id, branchId: user.branchId, actorId: req.user.uid, action: 'updated_specialty_and_license', type, credentialNumber, createdAt: now() })
       return { type, credentialNumber }
     })
