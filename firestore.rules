@@ -485,6 +485,7 @@ service cloud.firestore {
                 'paymongoPaymentId', 'paymongoPaidAt', 'paymongoCheckoutSessionId', 'commissionAmount', 'commissionPercent', 'merchantNetAmount',
                 'sessionNumber', 'treatmentSessionId', 'selectedServiceIds', 'selectedServices', 'serviceIds', 'type',
                 'consultationAccessVersion', 'consultationCodeVerifiedAt', 'consultationCodeVerifiedBy',
+                'consultationCustomerReadyAt', 'consultationInviteAt', 'consultationInviteSentBy',
                 'consultationPolicy', 'consultationPresenceVerifiedAt', 'consultationPresenceVerifiedBy',
                 'consultationDispute', 'consultationReview', 'consultationReviewReason', 'consultationAdjudicated',
                 'consultationInterruption', 'consultationInterruptions', 'consultationExtensionSeconds',
@@ -570,7 +571,9 @@ service cloud.firestore {
     // Keep Google Meet links private to the appointment participants.
     match /appointmentMeetings/{appointmentId} {
       allow read: if isSignedIn()
-        && (get(/databases/$(database)/documents/appointments/$(appointmentId)).data.customerId == request.auth.uid
+        && ((get(/databases/$(database)/documents/appointments/$(appointmentId)).data.customerId == request.auth.uid
+            && (get(/databases/$(database)/documents/appointments/$(appointmentId)).data.get('consultationCustomerReadyAt', null) == null
+              || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.get('consultationInviteAt', null) != null))
           || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.practitionerId == request.auth.uid
           || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.assignedPractitionerId == request.auth.uid);
       allow create, update: if false;

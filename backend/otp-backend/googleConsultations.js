@@ -32,6 +32,7 @@ export const registerGoogleConsultations = (app, deps) => {
   const { admin, google, requireAuth, authorizeClinicAction, loadUserContext, config } = deps
   const db = admin.firestore(), stamp = () => admin.firestore.FieldValue.serverTimestamp()
   const connectionRef = uid => db.collection('googlePractitionerConnections').doc(uid)
+  const meetReadScope = 'https://www.googleapis.com/auth/meetings.space.readonly'
   const configured = () => Boolean(config.clientId && config.clientSecret && config.redirectUri && Buffer.from(config.encryptionKey || '', 'base64').length === 32)
   const oauth = () => {
     check(configured(), 'Google account connections are not configured. Contact the administrator.', 503)
@@ -49,7 +50,7 @@ export const registerGoogleConsultations = (app, deps) => {
     try {
       await authorizeSelf(req.user.uid)
       const account = (await connectionRef(req.user.uid).get()).data()
-      res.json({ success: true, data: { configured: configured(), connected: Boolean(account?.active), email: account?.email || '' } })
+      res.json({ success: true, data: { configured: configured(), connected: Boolean(account?.active), attendanceEnabled: Boolean(account?.active && account?.scopes?.includes(meetReadScope)), email: account?.email || '' } })
     } catch (error) { respondError(res, error) }
   })
   app.post('/google-meet/account/connect', requireAuth, async (req, res) => {
@@ -57,7 +58,7 @@ export const registerGoogleConsultations = (app, deps) => {
       await authorizeSelf(req.user.uid)
       const client = oauth(), state = crypto.randomBytes(32).toString('hex')
       await db.collection('googleConnectionStates').doc(state).set({ uid: req.user.uid, expiresAt: Date.now() + 600000, used: false })
-      const url = client.generateAuthUrl({ access_type: 'offline', prompt: 'consent select_account', scope: ['openid', 'email', 'https://www.googleapis.com/auth/calendar.events.owned'], state, nonce: state })
+      const url = client.generateAuthUrl({ access_type: 'offline', prompt: 'consent select_account', scope: ['openid', 'email', 'https://www.googleapis.com/auth/calendar.events.owned', meetReadScope], state, nonce: state })
       res.json({ success: true, data: { url } })
     } catch (error) { respondError(res, error) }
   })
@@ -79,6 +80,7 @@ export const registerGoogleConsultations = (app, deps) => {
       check(identity?.sub && identity.email_verified && identity.email && identity.nonce === req.query.state, 'Unable to verify the selected Google account.', 400)
       check(tokens.refresh_token, 'Google did not grant ongoing access. Connect again and grant Calendar permission.', 400)
       check(String(tokens.scope || '').split(' ').includes('https://www.googleapis.com/auth/calendar.events.owned'), 'Calendar permission is required to host consultations.', 400)
+      check(String(tokens.scope || '').split(' ').includes(meetReadScope), 'Google Meet attendance permission is required. Reconnect and grant access to view meeting participants.', 400)
       const meetings = await db.collection('appointmentMeetings').where('practitionerId', '==', uid).get()
       check(!meetings.docs.some(snapshot => { const meeting = snapshot.data(); return meeting.hostGoogleSub && meeting.hostGoogleSub !== identity.sub && new Date(meeting.scheduledEndAt).getTime() > Date.now() }), 'Finish existing scheduled consultations before changing the hosting Google account. Reconnect their original account instead.', 409)
       const cipher = googleTokenCipher(config.encryptionKey)
@@ -86,7 +88,7 @@ export const registerGoogleConsultations = (app, deps) => {
         const ownerRef = db.collection('googleConnectionOwners').doc(identity.sub), owner = (await tx.get(ownerRef)).data()
         check(!owner || owner.uid === uid, 'This Google account is already connected to another practitioner.', 409)
         tx.set(ownerRef, { uid })
-        tx.set(connectionRef(uid), { active: true, email: identity.email.toLowerCase(), googleSub: identity.sub, version: crypto.randomUUID(), refreshToken: cipher.encrypt(tokens.refresh_token, `${uid}:${identity.sub}`), updatedAt: stamp() })
+        tx.set(connectionRef(uid), { active: true, email: identity.email.toLowerCase(), googleSub: identity.sub, scopes: String(tokens.scope || '').split(' '), version: crypto.randomUUID(), refreshToken: cipher.encrypt(tokens.refresh_token, `${uid}:${identity.sub}`), updatedAt: stamp() })
       })
       res.redirect(`${config.frontendUrl.replace(/\/$/, '')}/clinical/consultations/online?google=connected`)
     } catch (error) {
@@ -165,6 +167,8 @@ export const registerGoogleConsultations = (app, deps) => {
       check(/^https:\/\/meet\.google\.com\/[a-z-]+$/.test(String(meetLink || '')), 'Google is preparing the meeting link. Submit your code again in a few seconds.', 503)
       const meeting = { meetLink, meetEventId: eventId, meetCreatedAt: stamp(), meetCreatedBy: practitionerId, customerId: appointment.customerId,
         practitionerId, hostGoogleSub: account.googleSub, hostEmail: account.email, hostVerified: true,
+        consultationQueueEnabled: true,
+        meetPresenceTrackingEnabled: Boolean(account.scopes?.includes(meetReadScope)),
         scheduledStartAt: window.start.toISOString(), scheduledEndAt: window.end.toISOString(), durationMinutes: window.duration }
       await db.runTransaction(async tx => {
         const current = (await tx.get(ref)).data(), connection = (await tx.get(connectionRef(practitionerId))).data()
@@ -174,14 +178,112 @@ export const registerGoogleConsultations = (app, deps) => {
         check(Date.now() < window.arrivalDeadline.getTime(), 'The consultation window has ended.', 409)
         check(normalized(current.contract?.status) === 'signed' && initialPaymentReceived(current) && current.approvalStatus === 'Approved' && current.serviceKey === appointment.serviceKey, 'The booking changed. Refresh before joining.', 409)
         tx.set(meetingRef, meeting)
-        tx.update(ref, { consultationAccessVersion: 1, consultationCodeVerifiedAt: stamp(), consultationCodeVerifiedBy: req.user.uid, updatedAt: stamp() })
+        tx.update(ref, { consultationAccessVersion: 1, consultationCodeVerifiedAt: current.consultationCodeVerifiedAt || stamp(), consultationCodeVerifiedBy: req.user.uid, consultationCustomerReadyAt: current.consultationCustomerReadyAt || stamp(), updatedAt: stamp() })
         if (previousMeeting?.meetEventId !== eventId) tx.set(db.collection('notifications').doc(`meet-ready-${eventId}`), {
-          recipientUserId: practitionerId, branchId: current.branchId, title: 'Online consultation ready',
-          message: `The customer verified their service code. Join Google Meet using ${account.email}.`,
+          recipientUserId: practitionerId, branchId: current.branchId, title: 'Customer is in the virtual waiting room',
+          message: 'The customer checked in with their service code. Open Online Consultation and invite them to Google Meet when you are ready.',
           link: '/crm/appointments?tab=queue&mode=online', read: false, deleted: false, createdAt: stamp(),
         })
       })
-      res.json({ success: true, data: { meetLink, hostEmail: account.email } })
+      res.json({ success: true, data: { queued: true } })
+    } catch (error) { respondError(res, error) }
+  })
+
+  app.post('/appointments/:id/meet-presence', requireAuth, async (req, res) => {
+    try {
+      check(/^[A-Za-z0-9_-]{1,150}$/.test(req.params.id), 'Invalid appointment.', 400)
+      const ref = db.collection('appointments').doc(req.params.id), meetingRef = db.collection('appointmentMeetings').doc(ref.id)
+      const [appointmentSnap, meetingSnap] = await Promise.all([ref.get(), meetingRef.get()])
+      const appointment = appointmentSnap.data(), meeting = meetingSnap.data()
+      check(appointment && meeting?.hostVerified, 'Online consultation not found.', 404)
+      const practitionerId = appointment.assignedPractitionerId || appointment.practitionerId
+      check(practitionerId === req.user.uid, 'Only the assigned practitioner can check meeting attendance.', 403)
+      await authorizeClinicAction(req.user.uid, appointment.branchId, 'consultations:create')
+      check(normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online', 'Select an online consultation.', 409)
+      check(meeting.practitionerId === practitionerId && meeting.customerId === appointment.customerId && meeting.scheduledStartAt === new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString(), 'The meeting does not match this appointment.', 409)
+      if (meeting.consultationQueueEnabled) check(appointment.consultationInviteAt, 'Invite the customer before checking live meeting attendance.', 409)
+      const account = (await connectionRef(practitionerId).get()).data()
+      check(account?.active && account.scopes?.includes(meetReadScope), 'Reconnect the Google hosting account and grant Google Meet attendance access.', 409)
+      const code = String(meeting.meetLink || '').match(/^https:\/\/meet\.google\.com\/([a-z-]+)$/)?.[1]
+      check(code, 'The Google Meet link is invalid.', 409)
+      const client = oauth()
+      client.setCredentials({ refresh_token: googleTokenCipher(config.encryptionKey).decrypt(account.refreshToken, `${practitionerId}:${account.googleSub}`) })
+      let space
+      try {
+        space = (await client.request({ url: `https://meet.googleapis.com/v2/spaces/${encodeURIComponent(code)}` })).data
+      } catch (error) {
+        const status = Number(error.code || error.response?.status)
+        if (status === 404) {
+          const result = { state: 'waiting', activeParticipantCount: 0, customerNameMatched: false, practitionerNameMatched: false, checkedAt: new Date().toISOString() }
+          await meetingRef.set({ meetPresence: result }, { merge: true })
+          res.json({ success: true, data: result })
+          return
+        }
+        throw error
+      }
+      const conference = space.activeConference?.conferenceRecord
+      if (!conference) {
+        const result = { state: 'waiting', activeParticipantCount: 0, customerNameMatched: false, practitionerNameMatched: false, checkedAt: new Date().toISOString() }
+        await meetingRef.set({ meetPresence: result }, { merge: true })
+        res.json({ success: true, data: result })
+        return
+      }
+      const participants = []
+      let pageToken
+      do {
+        const page = (await client.request({ url: `https://meet.googleapis.com/v2/${conference}/participants`, params: { pageSize: 100, pageToken } })).data
+        participants.push(...(page.participants || []))
+        pageToken = page.nextPageToken
+      } while (pageToken && participants.length < 250)
+      const active = []
+      for (const participant of participants.slice(0, 250)) {
+        let sessionToken
+        do {
+          const page = (await client.request({ url: `https://meet.googleapis.com/v2/${participant.name}/participantSessions`, params: { pageSize: 100, pageToken: sessionToken } })).data
+          if ((page.participantSessions || []).some(session => !session.endTime)) active.push(participant)
+          sessionToken = page.nextPageToken
+        } while (sessionToken)
+      }
+      const normalizedName = value => String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+      const customerName = normalizedName(appointment.clientName || appointment.patientName || '')
+      const practitioner = await loadUserContext(practitionerId)
+      const practitionerName = normalizedName(practitioner?.userData?.fullName || '')
+      const names = active.map(participant => normalizedName(participant.signedinUser?.displayName || participant.anonymousUser?.displayName || participant.phoneUser?.displayName || ''))
+      const customerNameMatched = Boolean(customerName && names.includes(customerName))
+      const practitionerNameMatched = Boolean(practitionerName && names.includes(practitionerName))
+      const result = { state: active.length >= 2 ? 'participants_detected' : active.length === 1 ? 'one_participant' : 'waiting', activeParticipantCount: active.length, customerNameMatched, practitionerNameMatched, checkedAt: new Date().toISOString() }
+      await meetingRef.set({ meetPresence: result }, { merge: true })
+      res.json({ success: true, data: result })
+    } catch (error) { respondError(res, error) }
+  })
+
+  app.post('/appointments/:id/invite-to-meet', requireAuth, async (req, res) => {
+    try {
+      check(/^[A-Za-z0-9_-]{1,150}$/.test(req.params.id), 'Invalid appointment.', 400)
+      const ref = db.collection('appointments').doc(req.params.id), meetingRef = db.collection('appointmentMeetings').doc(req.params.id)
+      const result = await db.runTransaction(async tx => {
+        const appointment = (await tx.get(ref)).data(), meeting = (await tx.get(meetingRef)).data()
+        check(appointment && meeting?.hostVerified, 'Online consultation not found.', 404)
+        const practitionerId = appointment.assignedPractitionerId || appointment.practitionerId
+        check(practitionerId === req.user.uid, 'Only the assigned practitioner can invite the customer.', 403)
+        await authorizeClinicAction(req.user.uid, appointment.branchId, 'consultations:create')
+        check(normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online', 'Select an online consultation.', 409)
+        check(appointment.consultationCodeVerifiedAt && appointment.consultationCodeVerifiedBy === appointment.customerId && appointment.consultationCustomerReadyAt, 'The customer must check in with their service key before receiving an invitation.', 409)
+        check(meeting.practitionerId === practitionerId && meeting.customerId === appointment.customerId && meeting.scheduledStartAt === new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString(), 'The meeting does not match this appointment.', 409)
+        check(appointment.approvalStatus === 'Approved' && initialPaymentReceived(appointment) && normalized(appointment.contract?.status) === 'signed', 'Approval, payment, and a signed contract are required.', 409)
+        check(['paid', 'ready to start', 'scheduled'].includes(normalized(appointment.status)), 'This consultation is no longer waiting to start.', 409)
+        const window = consultationWindow(appointment)
+        check(Date.now() >= window.start.getTime() - 30 * 60000 && Date.now() < window.arrivalDeadline.getTime(), 'The consultation invitation window is closed.', 409)
+        const invitedAt = appointment.consultationInviteAt || stamp()
+        tx.update(ref, { consultationInviteAt: invitedAt, consultationInviteSentBy: req.user.uid, updatedAt: stamp() })
+        tx.set(db.collection('notifications').doc(`meet-invite-${ref.id}`), {
+          recipientUserId: appointment.customerId, branchId: appointment.branchId, title: 'Your practitioner invited you to Google Meet',
+          message: 'Your practitioner is ready. Open My Appointments and select Join Meet to enter the consultation.',
+          link: '/customer/appointments?tab=online', read: false, deleted: false, createdAt: stamp(),
+        }, { merge: true })
+        return { meetLink: meeting.meetLink, hostEmail: meeting.hostEmail, invitedAt: appointment.consultationInviteAt || null }
+      })
+      res.json({ success: true, data: result })
     } catch (error) { respondError(res, error) }
   })
 }

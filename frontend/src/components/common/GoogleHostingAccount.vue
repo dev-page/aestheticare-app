@@ -42,9 +42,10 @@ onUnmounted(() => unsubscribe?.())
     <div><h2>Google Meet hosting account</h2>
       <p v-if="account?.connected">Hosting account: <strong>{{ account.email }}</strong>. Join Google Meet using this account.</p>
       <p v-else>Connect your own Google account once. It may differ from your AesthetiCare email.</p>
-      <p>Customers submit their service code to generate the meeting automatically. You join as host, then start the consultation when both are ready.</p>
+      <p>Customers check in with their service code and wait in the virtual queue. Invite them to Meet when you are ready; the consultation timer starts only after both participants are detected and you start the session.</p>
+      <p v-if="account?.connected && !account.attendanceEnabled" class="attendance-notice">Reconnect this account to grant Google Meet participant access. Until then, attendance remains a manual check.</p>
     </div>
-    <div class="hosting-actions"><button :disabled="busy || !account?.configured" @click="connect">{{ account?.connected ? 'Reconnect / change account' : 'Connect Google account' }}</button><button v-if="account?.connected" :disabled="busy" class="secondary" @click="disconnect">Disconnect</button></div>
+    <div class="hosting-actions"><button :disabled="busy || !account?.configured" @click="connect">{{ account?.connected && !account.attendanceEnabled ? 'Reconnect to enable attendance' : account?.connected ? 'Reconnect / change account' : 'Connect Google account' }}</button><button v-if="account?.connected" :disabled="busy" class="secondary" @click="disconnect">Disconnect</button></div>
     <p v-if="account && !account.configured" role="status">Google account connections need administrator setup before use.</p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
   </section>
@@ -55,5 +56,5 @@ onUnmounted(() => unsubscribe?.())
 h2 { margin: 0; font-size: 18px; font-weight: 700; } p { margin: 8px 0; font-size: 13px; line-height: 1.6; color: #79614f; }
 .hosting-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 button { padding: 10px 14px; border: 1px solid #8d5a3b; border-radius: 8px; background: #8d5a3b; color: white; font-size: 13px; font-weight: 600; }
-button.secondary { background: white; color: #79583f; border-color: #dfc2a5; } button:disabled { opacity: .5; cursor: not-allowed; } .error { color: #a33127; }
+button.secondary { background: white; color: #79583f; border-color: #dfc2a5; } button:disabled { opacity: .5; cursor: not-allowed; } .error { color: #a33127; }.attendance-notice{padding:.65rem .8rem;border-radius:.65rem;background:#fff3d9;color:#805421}
 </style>

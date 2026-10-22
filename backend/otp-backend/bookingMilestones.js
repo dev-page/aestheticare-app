@@ -162,16 +162,22 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             }
             if (onlineConsultation) {
               check(appointment.consultationCodeVerifiedAt && appointment.consultationCodeVerifiedBy === appointment.customerId, 'The customer must verify their service code before consultation starts.', 409)
-              check(appointment.clientJoinedAt && appointment.practitionerJoinedAt, 'Both participants must enter the consultation waiting room before starting.')
               const meetingSnap = await tx.get(db.collection('appointmentMeetings').doc(ref.id))
               check(meetingSnap.exists && String(meetingSnap.data()?.meetLink || '').trim(), 'Create the system Google Meet link before starting this consultation.')
               const meeting = meetingSnap.data()
               check(meeting.hostVerified && meeting.practitionerId === (appointment.assignedPractitionerId || appointment.practitionerId) && meeting.customerId === appointment.customerId && meeting.scheduledStartAt === new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString(), 'The meeting must belong to the current assigned practitioner and schedule.', 409)
+              if (meeting.consultationQueueEnabled) check(appointment.consultationCustomerReadyAt && appointment.consultationInviteAt, 'The customer must check in and receive the practitioner invitation before starting.')
               const window = getOnlineConsultationWindow(appointment)
               check(window, 'This consultation needs a valid scheduled date and time.')
               const now = new Date()
               check(now >= window.opensAt, 'This consultation can be started only within 5 minutes of its scheduled time.')
               check(now < window.arrivalDeadline, 'The arrival grace period ended. Contact the clinic for review and rescheduling.')
+              if (meeting.meetPresenceTrackingEnabled) {
+                const presence = meeting.meetPresence || {}
+                check(presence.state === 'participants_detected' && Number(presence.activeParticipantCount) >= 2 && now.getTime() - new Date(presence.checkedAt || 0).getTime() <= 60000, 'Google Meet must report both participants as currently present. Refresh meeting attendance and try again.', 409)
+              } else {
+                check(appointment.clientJoinedAt && appointment.practitionerJoinedAt, 'Both participants must enter the consultation waiting room before starting.')
+              }
               check(req.body?.participantVerified === true, 'Confirm the customer is present in Google Meet and their identity is verified before starting.', 400)
               const actualEnd = new Date(now.getTime() + window.durationMinutes * 60000)
               await tx.get(db.collection('bookingResourceLocks').doc(appointment.branchId))

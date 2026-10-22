@@ -25,6 +25,7 @@ export default {
         tourKey: 'customer-care',
         children: [
           { label: 'Appointments', icon: 'calendar', to: '/customer/appointments', tourKey: 'customer-appointments' },
+          { label: 'My Prescriptions', icon: 'clipboard', to: '/customer/prescriptions', tourKey: 'customer-prescriptions' },
           { label: 'Payments due', icon: 'card', to: '/customer/unpaid-appointments', tourKey: 'customer-unpaid-appointments' },
         ],
       },

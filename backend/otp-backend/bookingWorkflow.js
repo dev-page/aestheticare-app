@@ -5,6 +5,7 @@ export const resetAppointmentAccess = () => ({
   workerKeyVerified: false, workerKeyVerifiedAt: null, customerKeyVerified: false,
   clientJoinedAt: null, practitionerJoinedAt: null,
   consultationCodeVerifiedAt: null, consultationCodeVerifiedBy: null,
+  consultationCustomerReadyAt: null, consultationInviteAt: null, consultationInviteSentBy: null,
   consultationAccessVersion: null,
   consultationWindowStartAt: null, consultationWindowEndAt: null,
   consultationClientEndedAt: null, consultationEndedAt: null,
