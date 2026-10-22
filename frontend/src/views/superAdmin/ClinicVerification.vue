@@ -1,8 +1,8 @@
 ﻿<template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
-    <SuperAdminSidebar />
+  <div :class="embedded ? 'verification-embedded' : 'flex module-theme bg-slate-900 min-h-screen'">
+    <SuperAdminSidebar v-if="!embedded" />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="min-w-0 flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" :class="embedded ? 'min-w-0' : 'min-w-0 flex-1 p-8'">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Clinic Verification</h1>
@@ -562,6 +562,7 @@ const toDateFromPayment = (paidSeconds, createdSeconds) => {
 export default {
   name: 'SuperAdminClinicVerification',
   components: { SuperAdminSidebar, TablePagination },
+  props: { embedded: { type: Boolean, default: false } },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 

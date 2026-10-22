@@ -30,7 +30,7 @@ const hasFreePlanOnboardingSessionAccess = (uid) => {
 
 const routes = [
   { path: '/supplier/verification', name: 'supplier-verification', component: () => import('@/views/supplier/SupplierVerification.vue'), meta: { requiresAuth: true } },
-  { path: '/superadmin/suppliers/verification', name: 'admin-supplier-verification', component: () => import('@/views/superAdmin/SupplierVerification.vue'), meta: { requiresAuth: true } },
+  { path: '/superadmin/suppliers/verification', name: 'admin-supplier-verification', redirect: { name: 'superadmin-verification', query: { tab: 'supplier' } }, meta: { requiresAuth: true, requiresPermissionsAny: ['system:clinics:verify', 'system:suppliers:verify'] } },
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
   { path: '/supplier/supply/rfqs', redirect: '/supplier/supply/orders' },
   { path: '/supplier/chat', name: 'supplier-chat', component: () => import('@/views/supplier/SupplierChat.vue'), meta: { requiresAuth: true } },
@@ -265,7 +265,8 @@ const routes = [
   { path: "/superadmin/subscription/payments", name: "superadmin-subscription-payments", component: () => import("@/views/superAdmin/SubscriptionPayments.vue"), meta: { requiresAuth: true, requiresPermission: "system:payments:view" } },
   { path: "/superadmin/payments/analytics", name: "superadmin-payments-analytics", component: () => import("@/views/superAdmin/PaymentsAnalytics.vue"), meta: { requiresAuth: true, requiresPermission: "system:analytics:view" } },
   { path: "/superadmin/system-settings", name: "superadmin-system-settings", component: () => import("@/views/superAdmin/SystemSettings.vue"), meta: { requiresAuth: true, requiresPermission: "system:settings:manage" } },
-  { path: "/superadmin/clinics/verification", name: "superadmin-clinic-verification", component: () => import("@/views/superAdmin/ClinicVerification.vue"), meta: { requiresAuth: true, requiresPermission: "system:clinics:verify" } },
+  { path: "/superadmin/verification", name: "superadmin-verification", component: () => import("@/views/superAdmin/Verification.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["system:clinics:verify", "system:suppliers:verify"] } },
+  { path: "/superadmin/clinics/verification", name: "superadmin-clinic-verification", redirect: { name: "superadmin-verification", query: { tab: "clinic" } }, meta: { requiresAuth: true, requiresPermissionsAny: ["system:clinics:verify", "system:suppliers:verify"] } },
   { path: "/superadmin/clinics/verified", name: "superadmin-clinics-verified", component: () => import("@/views/superAdmin/VerifiedClinics.vue"), meta: { requiresAuth: true, requiresPermission: "system:clinics:view" } },
   { path: "/superadmin/clinics/archived", name: "superadmin-clinics-archived", component: () => import("@/views/superAdmin/ArchivedClinics.vue"), meta: { requiresAuth: true, requiresPermission: "system:clinics:view" } },
   { path: "/superadmin/accounts/users", name: "superadmin-accounts-users", component: () => import("@/views/superAdmin/AccountManagement.vue"), meta: { requiresAuth: true, requiresPermission: "system:accounts:view" } },

@@ -27,8 +27,7 @@ export default {
           { label: 'User Accounts', icon: 'profile', to: '/superadmin/accounts/users' }
         ]
       },
-      { label: 'Clinic Verification', icon: 'shield', to: '/superadmin/clinics/verification' },
-      { label: 'Supplier Verification', icon: 'shield', to: '/superadmin/suppliers/verification' },
+      { label: 'Verification', icon: 'shield', to: '/superadmin/verification' },
       {
         key: 'subscription',
         label: 'Subscription',
