@@ -46,7 +46,7 @@ onUnmounted(() => unsubscribe?.())
       <p v-if="account?.connected && !account.attendanceEnabled" class="attendance-notice">Reconnect this account to grant Google Meet participant access. Until then, attendance remains a manual check.</p>
     </div>
     <div class="hosting-actions"><button :disabled="busy || !account?.configured" @click="connect">{{ account?.connected && !account.attendanceEnabled ? 'Reconnect to enable attendance' : account?.connected ? 'Reconnect / change account' : 'Connect Google account' }}</button><button v-if="account?.connected" :disabled="busy" class="secondary" @click="disconnect">Disconnect</button></div>
-    <p v-if="account && !account.configured" role="status">Google account connections need administrator setup before use.</p>
+    <p v-if="account && !account.configured" role="status">Administrator setup required: enable Google Calendar and Meet APIs, configure the OAuth client and callback URL, and add the backend environment secrets.</p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
   </section>
 </template>
