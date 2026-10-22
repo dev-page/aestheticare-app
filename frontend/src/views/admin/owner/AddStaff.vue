@@ -775,7 +775,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Role & Employment</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <ContractAppearanceSelect id="new-staff-specialty" label="Professional specialty" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not a clinical practitioner' }, ...['Doctor', 'Registered Nurse', 'Aesthetician', 'Therapist', 'Other'].map(type => ({ value: type, label: type }))]" />
-              <p class="text-xs text-slate-400">The clinic owner verifies credentials, approves services, and sets earnings agreements after account creation. A specialty does not grant system permissions.</p>
+              <p class="text-xs text-slate-400">Choose “Not a clinical practitioner” for non-clinical employees. Specialty does not grant system permissions; the clinic owner verifies credentials and approves services separately.</p>
               <!-- Custom Role -->
               <div>
                 <label class="mb-1 block text-slate-400">Role <span class="text-red-400">*</span></label>

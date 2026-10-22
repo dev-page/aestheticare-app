@@ -585,10 +585,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             <fieldset class="employee-professional-fields" :disabled="loadingSpecialty || savingEmployee || !!specialtyError">
               <legend>Professional information</legend>
               <p v-if="loadingSpecialty" role="status" class="employee-edit-caption">Loading professional details...</p>
-              <label for="employee-edit-specialty">Specialty</label>
-              <input id="employee-edit-specialty" v-model.trim="currentStaff.practitionerType" list="employee-specialty-options" maxlength="40" placeholder="Select or type a professional specialty" @input="clearEditError('practitionerType')" />
-              <datalist id="employee-specialty-options"><option v-for="type in practitionerTypes" :key="type" :value="type" /></datalist>
-              <p class="employee-edit-caption">Doctor, Registered Nurse, Aesthetician, Therapist, or Other. Leave blank for non-clinical employees.</p>
+              <ContractAppearanceSelect id="employee-edit-specialty" label="Professional specialty" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not a clinical practitioner' }, ...practitionerTypes.map(type => ({ value: type, label: type }))]" @update:model-value="clearEditError('practitionerType')" />
+              <p class="employee-edit-caption">Choose “Not a clinical practitioner” for non-clinical employees. Specialty does not grant system permissions; credential reviews and service approvals are managed separately.</p>
               <p v-if="editErrors.practitionerType" class="employee-edit-error" role="alert">{{ editErrors.practitionerType }}</p>
               <template v-if="showLicenseField"><label for="employee-edit-license">Credential / license number</label><input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="Enter the professional license number" /><p class="employee-edit-caption">Changing professional details requires a new credential review by the clinic owner.</p></template>
             </fieldset>
