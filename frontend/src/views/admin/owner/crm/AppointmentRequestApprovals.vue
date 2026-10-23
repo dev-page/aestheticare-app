@@ -130,9 +130,10 @@
                         type="button"
                         class="rounded-lg px-3 py-2 text-sm text-white transition"
                         :class="selectedRequest?.id === request.id ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-slate-600 hover:bg-slate-500'"
+                        :aria-pressed="selectedRequest?.id === request.id"
                         @click.stop="selectRequest(request)"
                       >
-                        View
+                        {{ selectedRequest?.id === request.id ? 'Viewing' : 'View' }}
                       </button>
                     </td>
                   </tr>
