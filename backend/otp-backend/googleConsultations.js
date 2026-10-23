@@ -107,6 +107,49 @@ export const registerGoogleConsultations = (app, deps) => {
     } catch (error) { respondError(res, error) }
   })
 
+  app.post('/appointments/demo-online-consultation', requireAuth, async (req, res) => {
+    try {
+      const context = await loadUserContext(req.user.uid)
+      const branchId = String(req.body?.branchId || '').trim()
+      check(branchId, 'Select a clinic branch.', 400)
+      check(!['inactive', 'archived', 'disabled'].includes(normalized(context?.userData?.status)), 'An active clinic account is required.', 403)
+      await authorizeClinicAction(req.user.uid, branchId, 'consultations:create')
+      const profile = context.userData || {}
+      const customerName = String(profile.fullName || profile.name || req.user.name || req.user.email || 'Demo Customer').trim()
+      // Put the demo inside the app's five-minute online waiting-room window
+      // so the customer and practitioner can exercise the flow immediately.
+      const now = new Date(Date.now() + 5 * 60000)
+      const localParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(now).reduce((parts, item) => ({ ...parts, [item.type]: item.value }), {})
+      const timeParts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      }).formatToParts(now).reduce((parts, item) => ({ ...parts, [item.type]: item.value }), {})
+      const date = `${localParts.year}-${localParts.month}-${localParts.day}`
+      const time = `${timeParts.hour}:${timeParts.minute}`
+      const serviceKey = String(crypto.randomInt(100000, 1000000))
+      const ref = db.collection('appointments').doc()
+      const timestamp = stamp()
+      const appointment = {
+        branchId, customerId: req.user.uid, customerName, clientName: customerName,
+        customerEmail: String(req.user.email || profile.email || '').trim(),
+        practitionerId: req.user.uid, assignedPractitionerId: req.user.uid,
+        practitionerName: customerName, assignedPractitionerName: customerName,
+        service: 'Demo Online Consultation', type: 'Consultation', consultationMode: 'online',
+        date, time, status: 'Scheduled', approvalStatus: 'Approved',
+        paymentStatus: 'Paid', paymentMethod: 'Demo', paymentCoverage: 'full',
+        amount: 0, totalAmount: 0, amountPaid: 0,
+        contract: { status: 'signed', terms: 'Demo consultation only. No real payment or clinical care is provided.' },
+        serviceKey, consultationDurationMinutes: 15, durationMinutes: 15,
+        consultationPolicy: { version: 2, graceMinutes: 10, bufferMinutes: 15 },
+        source: 'demo_online_consultation', demoMode: true,
+        createdAt: timestamp, updatedAt: timestamp,
+      }
+      await ref.set(appointment)
+      res.status(201).json({ success: true, data: { id: ref.id, date, time, serviceKey } })
+    } catch (error) { respondError(res, error) }
+  })
+
   app.post('/appointments/:id/consultation-access', requireAuth, async (req, res) => {
     try {
       check(/^[A-Za-z0-9_-]{1,150}$/.test(req.params.id), 'Invalid appointment.', 400)
@@ -168,7 +211,7 @@ export const registerGoogleConsultations = (app, deps) => {
       const meeting = { meetLink, meetEventId: eventId, meetCreatedAt: stamp(), meetCreatedBy: practitionerId, customerId: appointment.customerId,
         practitionerId, hostGoogleSub: account.googleSub, hostEmail: account.email, hostVerified: true,
         consultationQueueEnabled: true,
-        meetPresenceTrackingEnabled: Boolean(account.scopes?.includes(meetReadScope)),
+        meetPresenceTrackingEnabled: !appointment.demoMode && Boolean(account.scopes?.includes(meetReadScope)),
         scheduledStartAt: window.start.toISOString(), scheduledEndAt: window.end.toISOString(), durationMinutes: window.duration }
       await db.runTransaction(async tx => {
         const current = (await tx.get(ref)).data(), connection = (await tx.get(connectionRef(practitionerId))).data()

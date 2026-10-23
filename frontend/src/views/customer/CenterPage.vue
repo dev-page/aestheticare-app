@@ -55,6 +55,11 @@
             </div>
           </div>
 
+          <div v-if="route.query.demo === 'service'" class="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-[#6d4b30]">
+            <strong>Customer booking demo</strong>
+            <p class="mt-1">Select a standalone service, choose an available schedule, and create a no-charge demo appointment. The clinic can see the clearly labeled demo in Appointment Management.</p>
+          </div>
+
           <div class="mt-6">
           <div v-if="activeTab === 'About Us'">
             <div class="center-panel p-5">
@@ -250,6 +255,9 @@
               <div>
                 <h4 class="center-panel-title text-lg font-semibold mb-1">Book Appointment</h4>
                 <p class="center-panel-copy text-xs">Choose a schedule for this service. Additional services must use different dates.</p>
+                <p v-if="route.query.demo === 'service'" class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-[#6d4b30]">
+                  Demo mode is available for one standalone service. It creates a clearly marked, no-charge sample appointment and does not reserve the selected slot.
+                </p>
               </div>
 
               <div class="mt-5 grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_340px] gap-4 items-start">
@@ -310,8 +318,8 @@
                 <div class="space-y-4">
                   <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Selected Services</p>
-                    <p v-if="isFollowUpBookingFlow" class="mt-2 text-xs font-medium text-amber-200">
-                      Follow-up booking linked to a previous appointment.
+                    <p v-if="isFollowUpBookingFlow" class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-[#6d4b30]">
+                      This is a new appointment linked to your completed visit. Choose a time and submit the request; the clinic’s usual approval and payment steps still apply.
                     </p>
                     <div class="mt-3 flex flex-wrap gap-2">
                       <span
@@ -518,6 +526,15 @@
                 >
                   {{ bookingPaymentSaving ? 'Processing...' : 'Confirm Booking' }}
                 </button>
+                <button
+                  v-if="canCreateServiceDemo"
+                  type="button"
+                  :disabled="bookingPaymentSaving"
+                  class="rounded-2xl border border-amber-700/40 bg-amber-50 px-4 py-2 text-[#6d4b30] hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  @click="submitDemoServiceBooking"
+                >
+                  {{ bookingPaymentSaving ? 'Creating demo…' : 'Create demo booking · no charge' }}
+                </button>
                 <button @click="clearBookingSelection" class="px-4 py-2 rounded-2xl border border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]">Cancel</button>
               </div>
             </div>
@@ -670,7 +687,7 @@ const router = useRouter()
 const centerId = String(route.params.id || '')
 
 const tabs = ['About Us', 'Services & Consultations', 'Reviews']
-const activeTab = ref('About Us')
+const activeTab = ref(route.query.demo === 'service' ? 'Services & Consultations' : 'About Us')
 const loading = ref(true)
 const reviews = ref([])
 const items = ref([])
@@ -825,6 +842,13 @@ const selectedServiceNetAmount = computed(() =>
 const selectedServicesRequireConsultation = computed(() =>
   selectedServices.value.some((service) => Boolean(service.requiresConsultationFirst) && service.packageComponents?.[0]?.type !== 'Consultation')
 )
+const canCreateServiceDemo = computed(() => selectedServices.value.length === 1
+  && String(selectedServices.value[0]?.type || '').toLowerCase() === 'service'
+  && !selectedServices.value[0]?.isPackageComponent
+  && Number(selectedServices.value[0]?.sessionCount || 1) === 1
+  && !selectedServicesRequireConsultation.value
+  && !groupBookingEnabled.value
+  && !isFollowUpBookingFlow.value)
 const priorConsultationConfirmed = ref(false)
 const selectedServicesAllowFollowUp = computed(() =>
   selectedServices.value.some((service) => Boolean(service.followUpAllowed))
@@ -2760,6 +2784,58 @@ const submitScheduledBookings = async () => {
     toast.success('Appointments submitted. Each service has its own schedule and verification code.')
     await router.replace({ name: 'customer-appointments' })
   } catch (error) { toast.error(error.message) } finally { bookingPaymentSaving.value = false }
+}
+
+const submitDemoServiceBooking = async () => {
+  const user = auth.currentUser
+  const selectedSlot = bookingSlots.value.find((entry) => entry.key === bookingForm.value.slotKey)
+  if (!user) {
+    toast.error('Please log in first.')
+    router.push('/login')
+    return
+  }
+  if (!canCreateServiceDemo.value || !selectedSlot?.isAvailable || !assignedPractitioner.value) {
+    toast.error('Choose one standalone service and an available schedule for the demo.')
+    return
+  }
+  if (activeClinicPolicies.value.length && !bookingPolicyAcknowledged.value) {
+    toast.error('Please review and acknowledge the active clinic policies before continuing.')
+    return
+  }
+
+  bookingPaymentSaving.value = true
+  try {
+    const profile = await resolveCustomerProfile()
+    const token = await user.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/appointments/demo-service-booking`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        branchId: activeBranchId.value,
+        serviceId: selectedServices.value[0].id,
+        practitionerId: assignedPractitioner.value.id,
+        date: bookingForm.value.date,
+        time: bookingForm.value.time,
+        customerPhone: bookingForm.value.contactNumber || profile?.contactNumber || user.phoneNumber || '',
+      }),
+    })
+    const result = await response.json().catch(() => null)
+    if (!response.ok || !result?.success) throw new Error(result?.error || 'Unable to create the demo appointment.')
+
+    await Swal.fire({
+      title: 'Demo appointment created',
+      text: 'It is marked DEMO in My Appointments and the clinic appointment list. No payment or notification was sent, and the demo does not reserve or block the selected time.',
+      icon: 'success',
+      confirmButtonText: 'View My Appointments',
+      confirmButtonColor: '#8d5a3b',
+    })
+    clearBookingSelection()
+    await router.replace({ name: 'customer-appointments' })
+  } catch (error) {
+    toast.error(error?.message || 'Unable to create the demo appointment.')
+  } finally {
+    bookingPaymentSaving.value = false
+  }
 }
 
 const submitBooking = async () => {

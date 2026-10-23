@@ -506,7 +506,7 @@ service cloud.firestore {
               || resource.data.staffId == request.auth.uid
               || resource.data.assignedTo == request.auth.uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'followUpRecommended', 'followUpRecommendedAt', 'followUpRecommendedById',
+              'followUpRecommended', 'followUpRecommendationNote', 'followUpRecommendedAt', 'followUpRecommendedById',
               'updatedAt'
             ])));
       allow delete: if isSignedIn()

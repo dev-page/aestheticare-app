@@ -6,6 +6,13 @@
       <div class="mb-8">
         <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Online Consultation</h1>
         <p class="text-slate-400">Customers check in to the virtual waiting room with their service code. Invite a waiting customer to Meet when you are ready; the consultation timer starts when both participants are detected and you start the session.</p>
+        <div class="mt-4 rounded-xl border border-amber-700/40 bg-amber-950/20 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div><strong class="text-amber-100">End-to-end demo</strong><p class="mt-1 text-sm text-slate-300">Creates a zero-charge consultation for your signed-in account. Open My Appointments to check in as the customer, then return here as the clinic. No service-code email is sent. Check-in creates a real Google Meet event on the connected hosting account's calendar.</p></div>
+            <button type="button" class="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50" :disabled="isSeedingDemo || !currentBranchId || Boolean(activeDemoAppointment)" @click="seedDemoConsultation">{{ isSeedingDemo ? 'Creating demo…' : activeDemoAppointment ? 'Demo appointment active' : 'Create demo appointment' }}</button>
+          </div>
+          <a v-if="lastDemoAppointmentId || activeDemoAppointment" href="/customer/appointments?tab=online" class="mt-3 inline-block text-sm text-amber-200 underline">Open the customer appointment view</a>
+        </div>
       </div>
 
       <GoogleHostingAccount />
@@ -57,7 +64,7 @@
             </thead>
             <tbody class="divide-y divide-slate-700">
               <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-slate-700/50 transition-colors">
-                <td class="px-6 py-4 text-white">{{ appointment.clientName || appointment.patientName || '-' }}</td>
+                <td class="px-6 py-4 text-white">{{ appointment.clientName || appointment.patientName || '-' }} <span v-if="appointment.demoMode" class="ml-2 rounded-full bg-amber-700/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Demo</span></td>
                 <td class="px-6 py-4 text-slate-300">{{ appointment.service || appointment.type || '-' }}</td>
                 <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ appointment.time || '' }}</td>
                 <td class="px-6 py-4">
@@ -146,7 +153,7 @@ import { usePageLoading } from '@/composables/usePageLoading'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, getDocs, query, where, doc, getDoc, serverTimestamp, addDoc, onSnapshot } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
@@ -182,6 +189,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const endingId = ref('')
     const clockNow = ref(Date.now())
     const isSeedingDemo = ref(false)
+    const lastDemoAppointmentId = ref('')
 
     const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
       const candidates = OTP_BACKEND_CANDIDATES
@@ -214,6 +222,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     })
 
     const isAssignedToPractitioner = appointment => String(appointment.assignedPractitionerId || appointment.practitionerId || appointment.staffId || appointment.assignedTo || '') === currentUserId.value
+    const activeDemoAppointment = computed(() => appointments.value.find(item => {
+      if (item.demoMode !== true || ['completed', 'cancelled', 'rejected', 'no-show'].includes(normalized(item.status))) return false
+      const window = onlineWindow(item)
+      const expiresAt = item.startedAt ? window.end.getTime() : window.arrivalDeadline.getTime()
+      return Number.isFinite(expiresAt) && expiresAt > clockNow.value
+    }))
 
     const assignedAppointments = computed(() =>
       sortRecordsNewestFirst(appointments.value.filter((item) => isAssignedToPractitioner(item))).sort((a, b) => {
@@ -311,7 +325,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!url) return
       const callWindow = window.open('about:blank', '_blank')
       try {
-        const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'join_consultation' }) })
+        const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'join_consultation', ...(appointment.demoMode ? { demoParticipantRole: 'practitioner' } : {}) }) })
         const payload = await response.json()
         if (!response.ok || !payload.success) throw new Error(payload.error || 'Unable to enter waiting room.')
         appointment.practitionerJoinedAt = new Date().toISOString()
@@ -329,7 +343,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const payload = await response.json()
         if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to invite the customer to Google Meet.')
         appointment.consultationInviteAt = new Date().toISOString()
-        const joined = await fetchFromBackend(`/appointments/${appointment.id}/transition`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'join_consultation' }) })
+        const joined = await fetchFromBackend(`/appointments/${appointment.id}/transition`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'join_consultation', ...(appointment.demoMode ? { demoParticipantRole: 'practitioner' } : {}) }) })
         const joinPayload = await joined.json()
         if (!joined.ok || !joinPayload?.success) throw new Error(joinPayload?.error || 'Invitation sent, but the waiting room entry could not be recorded.')
         appointment.practitionerJoinedAt = new Date().toISOString()
@@ -454,6 +468,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const seedDemoConsultation = async () => {
+      if (activeDemoAppointment.value) {
+        lastDemoAppointmentId.value = activeDemoAppointment.value.id
+        toast.info('A demo appointment is already active. Use the customer appointment view to continue it.')
+        return
+      }
       if (!currentBranchId.value || !currentUserId.value) {
         toast.error('Missing practitioner context for demo seeding.')
         return
@@ -461,62 +480,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       isSeedingDemo.value = true
       try {
-        const clientQuery = query(
-          collection(db, 'clients'),
-          where('branchId', '==', currentBranchId.value)
-        )
-        const usersSnap = await getDocs(clientQuery)
-        const customers = usersSnap.docs
-          .map((snap) => ({ id: snap.id, ...snap.data() }))
-          .filter((user) => {
-            const status = String(user.status || '').trim().toLowerCase()
-            return status !== 'disabled' && status !== 'archived'
-          })
-
-        if (!customers.length) {
-          toast.error('No customer account found in users collection.')
-          return
-        }
-
-        const picked = customers[0]
-        const firstName = String(picked.firstName || '').trim()
-        const lastName = String(picked.lastName || '').trim()
-        const fullName =
-          String(picked.fullName || '').trim() ||
-          `${firstName} ${lastName}`.trim() ||
-          picked.email ||
-          'Customer'
-
-        const now = new Date()
-        now.setMinutes(0, 0, 0)
-        now.setHours(now.getHours() + 1)
-        const dateValue = now.toISOString().slice(0, 10)
-        const timeValue = now.toTimeString().slice(0, 5)
-
-        const payload = {
-          branchId: currentBranchId.value,
-          practitionerId: currentUserId.value,
-          assignedPractitionerId: currentUserId.value,
-          clientId: picked.id,
-          clientName: fullName,
-          patientName: fullName,
-          clientEmail: String(picked.email || '').trim(),
-          service: 'Online Consultation',
-          type: 'Consultation',
-          date: dateValue,
-          time: timeValue,
-          status: 'Scheduled',
-          consultationMode: 'online',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        }
-
-        await addDoc(collection(db, 'appointments'), payload)
-        toast.success(`Demo consultation created for ${fullName}.`)
+        const response = await fetchFromBackend('/appointments/demo-online-consultation', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ branchId: currentBranchId.value }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to create a demo consultation.')
+        lastDemoAppointmentId.value = payload.data?.id || ''
+        toast.success(`Demo appointment created for ${payload.data?.date} at ${payload.data?.time}. Use its service code in My Appointments.`)
         await loadAppointments()
       } catch (error) {
-        console.error('Failed to seed demo consultation:', error)
-        toast.error('Failed to create demo consultation.')
+        console.error('Failed to create demo consultation:', error)
+        toast.error(error.message || 'Failed to create demo consultation.')
       } finally {
         isSeedingDemo.value = false
       }
@@ -572,6 +548,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       currentBranchId,
       currentUserId,
       isSeedingDemo,
+      lastDemoAppointmentId,
+      activeDemoAppointment,
 
       meetLinkGateReason,
       invitingId,

@@ -141,6 +141,7 @@ const submitCode = async serviceKey => {
     </section>
     <Modal :is-open="Boolean(selected) && !contractTarget && !checkInTarget" title="Appointment Details" panel-class="appointment-details-panel" :panel-style="{ maxWidth: '86rem', background: '#fffaf4', color: '#3d281d' }" @close="selectedId = ''">
       <template #body><div v-if="selected" class="details-body">
+        <p v-if="selected.demoMode" class="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-[#6d4b30]">Demo record: no payment, customer notification, treatment, or schedule reservation was created.</p>
         <section class="booking-summary"><div><span class="summary-label">Booked by</span><strong>{{ organizer ? nameFor(organizer) : 'Not provided' }}</strong><p>{{ organizer ? emailFor(organizer) : 'Not provided' }}</p><p>{{ organizer ? phoneFor(organizer) : 'Not provided' }}</p></div><div><span class="summary-label">Booking</span><strong>{{ bookingKind(selected) }}</strong><p>{{ appointmentSource(selected) }} · {{ selected.status }}</p><p>{{ recipientRows.length }} service recipient{{ recipientRows.length === 1 ? '' : 's' }}</p></div></section>
         <h2 class="details-heading">Service Recipients</h2>
         <p class="subline">Each recipient has an individual contract and service code. The organizer appears here when included as a recipient.</p>

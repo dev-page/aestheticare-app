@@ -196,7 +196,7 @@
               :disabled="!form.followUpAllowed"
               class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
             />
-            <p class="text-xs text-slate-400 mt-1">How many days after the service a follow-up can be scheduled.</p>
+            <p class="text-xs text-slate-400 mt-1">Customers must book the follow-up within this many days after the service is completed.</p>
           </div>
           <div :class="{ 'md:col-span-2': form.postType === 'Consultation' }">
             <label class="block text-slate-400 mb-1">{{ form.postType === 'Consultation' ? 'Consultation Duration (minutes)' : 'Service Duration (minutes)' }}</label>

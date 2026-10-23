@@ -132,7 +132,8 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             check(['paid', 'checked in', 'ready to start', 'scheduled', 'ongoing'].includes(status), 'This consultation is closed.')
             const window = getOnlineConsultationWindow(appointment)
             check(window && onlineAccessOpen(appointment), 'This consultation is closed or its arrival grace period has ended.')
-            const field = customer ? 'clientJoinedAt' : 'practitionerJoinedAt'
+            const demoPractitionerJoin = appointment.demoMode === true && worker && req.body?.demoParticipantRole === 'practitioner'
+            const field = demoPractitionerJoin ? 'practitionerJoinedAt' : customer ? 'clientJoinedAt' : 'practitionerJoinedAt'
             if (!appointment[field]) update[field] = timestamp
             update.status = appointment.status
           } else if (transition === 'client_end_consultation') {
@@ -185,7 +186,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
               const teamIds = appointmentStaffIds(appointment)
               check(!peers.docs.some(doc => {
                 const peer = doc.data()
-                if (doc.id === ref.id || peer.isGroupParent || peer.isBookingOrderParent || !['paid', 'scheduled', 'ready to start', 'checked in', 'ongoing', 'approved', 'contract pending', 'awaiting payment'].includes(normalized(peer.status)) || !appointmentStaffIds(peer).some(id => teamIds.includes(id))) return false
+                if (doc.id === ref.id || peer.demoMode === true || peer.isGroupParent || peer.isBookingOrderParent || !['paid', 'scheduled', 'ready to start', 'checked in', 'ongoing', 'approved', 'contract pending', 'awaiting payment'].includes(normalized(peer.status)) || !appointmentStaffIds(peer).some(id => teamIds.includes(id))) return false
                 const start = new Date(`${peer.date}T${peer.time}+08:00`)
                 const end = peer.endTime ? new Date(`${peer.date}T${peer.endTime}+08:00`) : new Date(start.getTime() + Number(peer.totalServiceDurationMinutes || 60) * 60000)
                 return start < actualEnd && end > now

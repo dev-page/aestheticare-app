@@ -103,6 +103,23 @@ test('provider errors stay retryable and never expose tokens or consume the appo
   assert.equal((await h.call('/appointments/:id/consultation-access', 'customer', { serviceKey: '123456' })).code, 200)
 })
 
+test('demo consultation creation links the zero-charge appointment to the signed-in account', async () => {
+  const h = fixture()
+  const result = await h.call('/appointments/demo-online-consultation', 'doctor', { branchId: 'clinic' })
+  assert.equal(result.code, 201)
+  const demo = h.records.get(`appointments/${result.body.data.id}`)
+  assert.equal(demo.customerId, 'doctor')
+  assert.equal(demo.assignedPractitionerId, 'doctor')
+  assert.equal(demo.demoMode, true)
+  assert.equal(demo.source, 'demo_online_consultation')
+  assert.equal(demo.type, 'Consultation')
+  assert.equal(demo.consultationMode, 'online')
+  assert.equal(demo.amountPaid, 0)
+  assert.equal(demo.totalAmount, 0)
+  assert.match(demo.serviceKey, /^\d{6}$/)
+  assert.equal((await h.call('/appointments/demo-online-consultation', 'not-doctor', { branchId: 'clinic' })).code, 403)
+})
+
 test('OAuth state is single-use, binds the logged-in practitioner, and stores encrypted credentials', async () => {
   const h = fixture()
   assert.equal((await h.call('/google-meet/account/connect', 'doctor')).code, 200)

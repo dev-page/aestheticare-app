@@ -2813,6 +2813,46 @@ const parseClockToMinutes = (value) => {
 
 const normalizeBookingStatus = (value) => String(value || '').trim().toLowerCase()
 
+const getFollowUpTimestampMillis = (value) => {
+  if (value && typeof value.toDate === 'function') return value.toDate().getTime()
+  if (value && Number.isFinite(Number(value.seconds))) return Number(value.seconds) * 1000
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (value) {
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+const validateFollowUpSource = (source, { customerId, branchId, now = Date.now() } = {}) => {
+  if (!source || String(source.customerId || '') !== String(customerId || '')
+    || String(source.branchId || '') !== String(branchId || '')
+    || normalizeBookingStatus(source.status) !== 'completed') {
+    return 'The selected appointment is not eligible for a follow-up.'
+  }
+
+  const services = Array.isArray(source.serviceDetails) ? source.serviceDetails : []
+  const allowed = Boolean(source.followUpAllowed) || services.some((service) => Boolean(service?.followUpAllowed))
+  if (!allowed || source.followUpRecommended !== true) {
+    return 'The clinic has not enabled or recommended a follow-up for this appointment.'
+  }
+
+  const windowValues = [source.followUpWindowDays, ...services.map((service) => service?.followUpWindowDays)]
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+  const windowDays = windowValues.length ? Math.min(...windowValues) : 0
+  if (windowDays) {
+    const completedAt = getFollowUpTimestampMillis(source.completedAt)
+      ?? getFollowUpTimestampMillis(source.workerCompletedAt)
+      ?? getFollowUpTimestampMillis(source.date ? `${source.date}T${source.time || '00:00'}+08:00` : null)
+    if (completedAt !== null && now > completedAt + windowDays * 24 * 60 * 60 * 1000) {
+      return 'The follow-up booking window for this appointment has expired.'
+    }
+  }
+
+  return ''
+}
+
 const getMinutesFromData = (value, fallback = 60) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
@@ -5227,6 +5267,108 @@ app.get('/public/clinics/:branchId/catalog', async (req, res) => {
   }
 })
 
+// Demo customer bookings exercise the customer selection flow and appear in
+// the clinic appointment list, but never enter payment, notification, or slot
+// reservation workflows.
+app.post('/appointments/demo-service-booking', requireAuth, async (req, res) => {
+  try {
+    const branchId = String(req.body?.branchId || '').trim()
+    const serviceId = String(req.body?.serviceId || '').trim()
+    const practitionerId = String(req.body?.practitionerId || '').trim()
+    const date = String(req.body?.date || '').trim()
+    const time = String(req.body?.time || '').trim()
+    const validDocumentId = (value) => /^[A-Za-z0-9_-]{1,150}$/.test(value)
+    const selectedDate = new Date(`${date}T00:00:00+08:00`)
+    if (!validDocumentId(branchId) || !validDocumentId(serviceId) || !validDocumentId(practitionerId)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(selectedDate.getTime())
+      || selectedDate.getTime() < Date.now() - 24 * 60 * 60 * 1000
+      || selectedDate.getTime() > Date.now() + 366 * 24 * 60 * 60 * 1000 || parseClockToMinutes(time) === null) {
+      return res.status(400).json({ success: false, error: 'Choose a service, practitioner, and available date and time.' })
+    }
+
+    const firestore = admin.firestore()
+    const [branchSnap, serviceSnap, practitionerSnap, context] = await Promise.all([
+      firestore.collection('clinics').doc(branchId).get(),
+      firestore.collection('productServicePosts').doc(serviceId).get(),
+      firestore.collection('users').doc(practitionerId).get(),
+      loadUserContext(req.user.uid),
+    ])
+    const branch = branchSnap.exists ? branchSnap.data() || {} : null
+    const service = serviceSnap.exists ? { id: serviceSnap.id, ...serviceSnap.data() } : null
+    const practitioner = practitionerSnap.exists ? practitionerSnap.data() || {} : null
+    if (!branch || branch.isPublished !== true || String(branch.status || '').toLowerCase() === 'inactive') {
+      return res.status(404).json({ success: false, error: 'This clinic is not available for demo bookings.' })
+    }
+    if (!service || String(service.branchId || '') !== branchId || !isCustomerCareListing(service)
+      || service.postType !== 'Service' || service.isPackageComponent === true || Number(service.sessionCount || 1) !== 1) {
+      return res.status(409).json({ success: false, error: 'Choose a currently published standalone service.' })
+    }
+    if (!practitioner || String(practitioner.branchId || '') !== branchId || practitioner.archived === true
+      || ['inactive', 'disabled', 'archived'].includes(String(practitioner.status || '').trim().toLowerCase())) {
+      return res.status(409).json({ success: false, error: 'Choose an active practitioner from this clinic.' })
+    }
+    if (['inactive', 'disabled', 'archived'].includes(String(context?.userData?.status || '').trim().toLowerCase())) {
+      return res.status(403).json({ success: false, error: 'An active account is required to create a demo booking.' })
+    }
+
+    const user = context?.userData || {}
+    const customerName = String(user.fullName || user.name || req.user.name || req.user.email || 'Demo Customer').trim()
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const appointmentRef = firestore.collection('appointments').doc()
+    const requestedDuration = Number(service.durationMinutes || 60)
+    const durationMinutes = Number.isFinite(requestedDuration) ? Math.max(15, requestedDuration) : 60
+    const serviceDetails = {
+      id: service.id,
+      title: String(service.title || service.name || 'Service'),
+      name: String(service.title || service.name || 'Service'),
+      postType: 'Service',
+      durationMinutes,
+      sessionCount: 1,
+    }
+    await appointmentRef.set({
+      branchId,
+      customerId: req.user.uid,
+      customerName,
+      clientName: customerName,
+      customerEmail: String(req.user.email || user.email || '').trim().toLowerCase(),
+      customerPhone: String(req.body?.customerPhone || user.contactNumber || user.phoneNumber || '').trim(),
+      practitionerId,
+      assignedPractitionerId: practitionerId,
+      practitionerName: String(practitioner.fullName || `${practitioner.firstName || ''} ${practitioner.lastName || ''}`.trim() || 'Practitioner'),
+      assignedPractitionerName: String(practitioner.fullName || `${practitioner.firstName || ''} ${practitioner.lastName || ''}`.trim() || 'Practitioner'),
+      service: serviceDetails.title,
+      services: [serviceDetails.title],
+      serviceIds: [serviceId],
+      selectedServiceIds: [serviceId],
+      serviceDetails: [serviceDetails],
+      serviceDurations: [durationMinutes],
+      totalServiceDurationMinutes: durationMinutes,
+      type: 'Service',
+      date,
+      time,
+      status: 'Demo',
+      approvalStatus: 'Demo',
+      paymentStatus: 'No charge',
+      paymentMethod: 'Demo',
+      paymentCoverage: 'demo',
+      amount: 0,
+      totalAmount: 0,
+      amountPaid: 0,
+      contract: { status: 'signed', terms: 'Demo appointment only. No payment is taken and no treatment is performed.' },
+      source: 'demo_customer_booking',
+      bookingType: 'demo',
+      demoMode: true,
+      demoScenario: 'customer_service_booking',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    return res.status(201).json({ success: true, data: { id: appointmentRef.id, service: serviceDetails.title, date, time, noCharge: true } })
+  } catch (error) {
+    console.error('Demo service booking failed:', error?.message || error)
+    return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Unable to create a demo booking.' })
+  }
+})
+
 // Bookings: create booking record and corresponding appointment (transactional) with availability checks
 app.post('/bookings/create', requireAuth, async (req, res) => {
   const { reservation } = req.body ?? {}
@@ -5309,9 +5451,8 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       }
       const sourceSnap = await firestore.collection('appointments').doc(followUpOf).get()
       const source = sourceSnap.exists ? sourceSnap.data() || {} : null
-      if (!source || String(source.customerId || '') !== customerId || String(source.branchId || '') !== branchId || normalizeBookingStatus(source.status) !== 'completed') {
-        return res.status(403).json({ success: false, error: 'The selected appointment is not eligible for a follow-up.' })
-      }
+      const followUpError = validateFollowUpSource(source, { customerId, branchId })
+      if (followUpError) return res.status(409).json({ success: false, error: followUpError })
       const existingFollowUps = await firestore.collection('appointments').where('followUpOf', '==', followUpOf).get()
       const hasOpenFollowUp = existingFollowUps.docs.some((docSnap) => !['cancelled', 'rejected'].includes(normalizeBookingStatus(docSnap.data()?.status)))
       if (hasOpenFollowUp) {
@@ -8170,7 +8311,8 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
     if (!followUpOf) return res.status(400).json({ success: false, error: 'A follow-up must be linked to the completed appointment.' })
     const source = await admin.firestore().collection('appointments').doc(followUpOf).get()
     const sourceData = source.data() || {}
-    if (!source.exists || sourceData.customerId !== customerId || normalizeBookingStatus(sourceData.status) !== 'completed') return res.status(409).json({ success: false, error: 'The source appointment is not eligible for follow-up.' })
+    const followUpError = validateFollowUpSource(source.exists ? sourceData : null, { customerId, branchId })
+    if (followUpError) return res.status(409).json({ success: false, error: followUpError })
     const existing = await admin.firestore().collection('appointments').where('followUpOf', '==', followUpOf).get()
     if (existing.docs.some(docSnap => !['cancelled', 'rejected'].includes(normalizeBookingStatus(docSnap.data().status)))) return res.status(409).json({ success: false, error: 'A follow-up has already been booked for this appointment.' })
   }

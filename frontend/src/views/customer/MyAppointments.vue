@@ -138,6 +138,7 @@
                   <td class="appointment-service-cell" data-label="Service">
                     <div class="table-primary">{{ formatAppointmentServices(appt) }}</div>
                     <div class="table-secondary">Online consultation</div>
+                    <span v-if="appt.demoMode" class="status-badge">DEMO · No charge</span>
                   </td>
                   <td data-label="Clinic">
                     <div class="table-primary">{{ appt.clinic }}</div>
@@ -221,6 +222,7 @@
                 <tr v-for="appt in activeUpcomingAppointments" :key="appt.id">
                   <td class="appointment-service-cell" data-label="Service">
                     <div class="table-primary">{{ formatAppointmentServices(appt) }}</div>
+                    <span v-if="appt.demoMode" class="status-badge mt-2">DEMO · No charge; no service is scheduled</span>
                   </td>
                   <td data-label="Clinic">
                     <div class="table-primary">{{ appt.clinic }}</div>
@@ -316,6 +318,9 @@
                       <span class="inline-flex items-center rounded-full border border-emerald-300/60 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
                         Follow-up recommended
                       </span>
+                      <p v-if="appt.followUpRecommendationNote" class="mt-1 max-w-xs text-xs text-slate-600">
+                        {{ appt.followUpRecommendationNote }}
+                      </p>
                     </div>
                   </td>
                   <td data-label="Clinic">
@@ -329,7 +334,7 @@
                   <td data-label="Actions">
                     <div class="table-actions">
                       <button
-                        v-if="canBookFollowUp(appt)"
+                        v-if="canBookFollowUp(appt) && !hasOpenFollowUp(appt)"
                         type="button"
                         class="appointment-button appointment-button-secondary"
                         @click="bookFollowUp(appt)"
@@ -344,13 +349,12 @@
                       >
                         Leave Feedback
                       </button>
-                      <span
-                        v-else-if="normalizeAppointmentStatus(appt.status) === 'completed' && (appt.followUpAllowed || (Array.isArray(appt.serviceDetails) && appt.serviceDetails.some((service) => Boolean(service.followUpAllowed))))"
-                        class="table-secondary"
-                      >
-                        Awaiting clinic recommendation
+                      <span v-if="hasOpenFollowUp(appt)" class="table-secondary">
+                        {{ followUpBookingStatus(appt) }}
                       </span>
-                      <span v-else class="table-secondary">No follow-up available</span>
+                      <span v-else-if="followUpAvailabilityMessage(appt)" class="table-secondary">
+                        {{ followUpAvailabilityMessage(appt) }}
+                      </span>
                     </div>
                   </td>
                 </tr>
@@ -1093,26 +1097,18 @@ const getAppointmentTimestampMillis = (value) => {
 }
 
 const getAppointmentFollowUpWindowDays = (appointment) => {
-  const direct = Number(appointment?.followUpWindowDays || 0)
-  if (Number.isFinite(direct) && direct > 0) return direct
-
+  const windows = [Number(appointment?.followUpWindowDays || 0)]
   if (Array.isArray(appointment?.serviceDetails)) {
-    const serviceWindow = appointment.serviceDetails
-      .map((service) => Number(service?.followUpWindowDays || 0))
-      .find((value) => Number.isFinite(value) && value > 0)
-    if (serviceWindow) return serviceWindow
+    windows.push(...appointment.serviceDetails.map((service) => Number(service?.followUpWindowDays || 0)))
   }
-
-  return 0
+  const validWindows = windows.filter((value) => Number.isFinite(value) && value > 0)
+  return validWindows.length ? Math.min(...validWindows) : 0
 }
 
 const getAppointmentCompletedAtMillis = (appointment) => {
   const candidates = [
     appointment?.completedAt,
-    appointment?.updatedAt,
-    appointment?.approvedAt,
-    appointment?.paidAt,
-    appointment?.createdAt,
+    appointment?.workerCompletedAt,
   ]
 
   for (const candidate of candidates) {
@@ -1194,6 +1190,38 @@ const canBookFollowUp = (appointment) => {
   if (!isFollowUpEligible(appointment)) return false
   if (!String(appointment?.branchId || '').trim()) return false
   return extractAppointmentServiceIds(appointment).length > 0 || extractAppointmentServiceNames(appointment).length > 0
+}
+
+const hasOpenFollowUp = (appointment) => {
+  const sourceId = String(appointment?.id || '').trim()
+  if (!sourceId) return false
+  const related = [...upcomingAppointments.value, ...pastAppointments.value, ...onlineConsultations.value]
+    .find((candidate) => String(candidate?.followUpOf || '').trim() === sourceId
+      && !['cancelled', 'rejected'].includes(normalizeAppointmentStatus(candidate.status)))
+  return Boolean(related)
+}
+
+const followUpBookingStatus = (appointment) => {
+  const sourceId = String(appointment?.id || '').trim()
+  const related = [...upcomingAppointments.value, ...pastAppointments.value, ...onlineConsultations.value]
+    .find((candidate) => String(candidate?.followUpOf || '').trim() === sourceId
+      && !['cancelled', 'rejected'].includes(normalizeAppointmentStatus(candidate.status)))
+  return related && normalizeAppointmentStatus(related.status) === 'completed'
+    ? 'Follow-up completed'
+    : 'Follow-up already booked'
+}
+
+const followUpAvailabilityMessage = (appointment) => {
+  if (normalizeAppointmentStatus(appointment?.status) !== 'completed') return ''
+  const allowed = Boolean(appointment?.followUpAllowed)
+    || (Array.isArray(appointment?.serviceDetails) && appointment.serviceDetails.some((service) => Boolean(service?.followUpAllowed)))
+  if (!allowed) return 'No follow-up offered for this service'
+  if (!appointment?.followUpRecommended) return 'Awaiting clinic recommendation'
+  if (!isFollowUpEligible(appointment)) return 'Follow-up booking window has expired'
+  if (!String(appointment?.branchId || '').trim() || (!extractAppointmentServiceIds(appointment).length && !extractAppointmentServiceNames(appointment).length)) {
+    return 'Contact the clinic to arrange your follow-up'
+  }
+  return ''
 }
 
 const bookFollowUp = (appointment) => {

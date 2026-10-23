@@ -282,9 +282,26 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const recommendFollowUp = async (appointment) => {
       if (!appointment?.id || !canRecommendFollowUp(appointment)) return
 
+      const serviceWindows = Array.isArray(appointment.serviceDetails)
+        ? appointment.serviceDetails.map((service) => Number(service?.followUpWindowDays)).filter((days) => Number.isFinite(days) && days > 0)
+        : []
+      const allWindows = [Number(appointment.followUpWindowDays || 0), ...serviceWindows].filter((days) => Number.isFinite(days) && days > 0)
+      const windowDays = allWindows.length ? Math.min(...allWindows) : 14
+      const note = window.prompt(
+        'Add a brief follow-up recommendation for the customer. Avoid sensitive medical details.',
+        `A follow-up visit is recommended. Please book within ${windowDays} days.`
+      )
+      if (note === null) return
+      const customerNote = note.trim()
+      if (customerNote.length < 5 || customerNote.length > 250) {
+        toast.error('Enter a customer note between 5 and 250 characters.')
+        return
+      }
+
       try {
         await updateDoc(doc(db, 'appointments', appointment.id), {
           followUpRecommended: true,
+          followUpRecommendationNote: customerNote,
           followUpRecommendedAt: new Date().toISOString(),
           followUpRecommendedById: currentUserId.value,
           updatedAt: new Date().toISOString(),

@@ -1,6 +1,6 @@
 const text = value => String(value || '').trim()
 export const appointmentClientName = item => text(item.clientName || item.customerName || item.patientName || item.name) || 'Client not provided'
-export const appointmentSource = item => ['walk_in', 'walk-in', 'walkin'].includes(text(item.source).toLowerCase()) ? 'Walk-in' : 'Online booking'
+export const appointmentSource = item => item?.demoMode === true ? 'Demo booking' : ['walk_in', 'walk-in', 'walkin'].includes(text(item.source).toLowerCase()) ? 'Walk-in' : 'Online booking'
 export const appointmentServiceType = item => {
   if (item.treatmentPlan?.packageId || text(item.type || item.postType).toLowerCase() === 'package') return 'Package'
   return text(item.type || item.postType).toLowerCase() === 'consultation' && text(item.consultationMode || 'online').toLowerCase() === 'online' ? 'Online Consultation' : 'Service'

@@ -122,6 +122,29 @@ test('Online consultation requires both waiting-room entries and a system meetin
   assert.equal(h.records.get('inventoryItems/material').currentStock, 4)
 })
 
+test('demo participant can exercise customer and practitioner waiting-room steps from one account', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-12T02:00:00Z') })
+  const appointment = {
+    ...fixture(false), customerId: 'worker', assignedPractitionerId: 'worker', practitionerId: 'worker',
+    demoMode: true, source: 'demo_online_consultation', type: 'Consultation', consultationMode: 'online',
+    status: 'Scheduled', approvalStatus: 'Approved', amount: 0, totalAmount: 0, amountPaid: 0,
+    contract: { status: 'signed' }, serviceKey: '123456', consultationCodeVerifiedAt: new Date(),
+    consultationCodeVerifiedBy: 'worker', consultationCustomerReadyAt: new Date(), consultationInviteAt: new Date(),
+    date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()),
+    time: new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()),
+    consultationDurationMinutes: 15,
+  }
+  const h = harness(appointment)
+  h.records.set('appointmentMeetings/a', { meetLink: 'https://meet.google.com/test-meeting', hostVerified: true, consultationQueueEnabled: true, meetPresenceTrackingEnabled: false, practitionerId: 'worker', customerId: 'worker', scheduledStartAt: new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString() })
+  assert.equal((await h.call('transition', 'worker', { action: 'join_consultation', demoParticipantRole: 'practitioner' })).code, 200)
+  assert.ok(h.current().practitionerJoinedAt)
+  assert.equal(h.current().clientJoinedAt, undefined)
+  assert.equal((await h.call('transition', 'worker', { action: 'join_consultation' })).code, 200)
+  assert.ok(h.current().clientJoinedAt)
+  assert.equal((await h.call('transition', 'worker', { action: 'start', participantVerified: true })).code, 200)
+  assert.equal(h.current().status, 'Ongoing')
+})
+
 test('Reassignment revokes old lead aliases while the current assigned practitioner can start', async () => {
   const h = harness({ ...fixture(false), practitionerId: 'old-worker', assignedPractitionerId: 'worker', staffId: 'old-worker', assignedTo: 'old-worker', status: 'Checked in', amountPaid: 1000, workerKeyVerified: true, contract: { status: 'signed' } })
   assert.equal((await h.call('transition', 'old-worker', { action: 'start', participantVerified: true })).code, 403)
