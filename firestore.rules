@@ -374,8 +374,8 @@ service cloud.firestore {
         && request.resource.data.ownerId == request.auth.uid;
       allow update: if isSignedIn()
         && (isSuperadmin()
-          || (isOwnerOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
-            && (applicantCannotChangeVerificationFields()
+          || (isOwnerOfBranch(clinicId)
+            && ((subscriptionAllowsBusinessWrite(clinicId) && applicantCannotChangeVerificationFields())
               || applicantCanSaveClinicDocumentDraft()
               || applicantCanSubmitClinicDocuments()))
           || (isOwnerOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
