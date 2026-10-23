@@ -117,13 +117,13 @@
                   </div>
                   <span
                     v-if="role.isBuiltIn"
-                    class="rounded-full border border-[#8d5a3b] bg-[#24160f] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#e2c7b6]"
+                    class="shrink-0 whitespace-nowrap rounded-full border border-[#dfc5a8] bg-[#f6eadb] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#67452e]"
                   >
                     Built-in
                   </span>
                   <span
                     v-else-if="role.permissions.length === 0"
-                    class="rounded-full border border-[#5a3927] bg-[#3a2417] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d2b7a6]"
+                    class="shrink-0 whitespace-nowrap rounded-full border border-[#dfc5a8] bg-[#f6eadb] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#67452e]"
                   >
                     Needs permissions
                   </span>
@@ -217,13 +217,13 @@
                             </p>
                           </div>
                         </div>
-                        <span class="rounded-full border border-[#5a3927] bg-[#24160f] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]">
+                        <span class="shrink-0 whitespace-nowrap rounded-full border border-[#ead8c4] bg-[#f4eadc] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-[#5c4533]">
                           {{ role.memberCount }} staff
                         </span>
                       </div>
                       <p class="mt-4 min-h-[3rem] text-sm leading-6 text-[#e2c7b6]">{{ role.description || 'No description added yet.' }}</p>
                       <div class="mt-4 flex flex-wrap gap-2">
-                        <span class="rounded-full bg-[#24160f] px-3 py-1 text-xs text-[#e2c7b6]">
+                        <span class="rounded-full border border-[#ead8c4] bg-[#f4eadc] px-3 py-1 text-xs font-medium text-[#5c4533]">
                           {{ role.permissions.length }} permissions enabled
                         </span>
                         <span class="rounded-full px-3 py-1 text-xs font-medium" :style="{ background: `${role.color || '#38bdf8'}22`, color: role.color || '#38bdf8' }">
@@ -1192,7 +1192,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const selectRole = (roleId) => {
       selectedRoleId.value = roleId
       cloneSelectedRole()
-      activeTab.value = 'roles'
+      activeTab.value = 'details'
     }
 
     const openDetails = (roleId) => {
