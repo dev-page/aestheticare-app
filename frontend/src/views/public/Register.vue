@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
 import { createUserWithEmailAndPassword, deleteUser, signInWithCustomToken, signOut } from 'firebase/auth'
 import { collection, deleteField, doc, deleteDoc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
-import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
 import LocationPicker from '@/components/common/LocationPicker.vue'
@@ -311,6 +311,10 @@ const documentFileMap = {
   fdaApproval: fdaApprovalFile,
   authorizationLetter: authorizationLetterFile,
 }
+// Keep completed uploads in Storage while the applicant finishes the form.
+// Final submission can then send only small document metadata to Firestore.
+const clinicDocumentUploadPromises = new Map()
+const clinicDocumentUploadControllers = new Map()
 const documentLabelMap = {
   secCertificate: 'SEC Certificate of Registration',
   articlesOfIncorporation: 'Articles of Incorporation/Partnership Agreement',
@@ -1113,7 +1117,12 @@ const startApprovalCheck = () => {
       updateApprovalReviewState()
     },
     (error) => {
-      console.error('Failed to listen to user registration status:', error)
+      console.error('Failed to listen to user registration status:', {
+        code: error?.code,
+        message: error?.message,
+        expectedUid: userUid.value,
+        signedInUid: auth.currentUser?.uid || null,
+      })
     }
   )
 
@@ -1128,7 +1137,12 @@ const startApprovalCheck = () => {
       updateApprovalReviewState()
     },
     (error) => {
-      console.error('Failed to listen to clinic registration status:', error)
+      console.error('Failed to listen to clinic registration status:', {
+        code: error?.code,
+        message: error?.message,
+        expectedUid: userUid.value,
+        signedInUid: auth.currentUser?.uid || null,
+      })
     }
   )
 }
@@ -1163,6 +1177,12 @@ const handleDocumentFileChange = async (key, event) => {
     if (existingSubmittedDocuments.value[key]) {
       existingSubmittedDocuments.value[key] = null
     }
+    const oldUpload = clinicDocumentUploadControllers.get(key)
+    if (oldUpload?.path) {
+      deleteObject(storageRef(storage, oldUpload.path)).catch(() => {})
+    }
+    clinicDocumentUploadControllers.delete(key)
+    clinicDocumentUploadPromises.delete(key)
   }
 
   // revoke previous preview URL
@@ -1205,37 +1225,18 @@ const handleDocumentFileChange = async (key, event) => {
   const docKey = previewKey
   documentUploadState.value[docKey] = { uploading: true, progress: 0, error: '' }
   try {
-    const ocrResult = await requestDocumentOcrPreflight(userUid.value, docKey, selectedFile)
-    // Temporary diagnostic for registration testing. This is written only to
-    // the current browser's developer console, never displayed publicly.
-    console.groupCollapsed(`[OCR] ${documentLabelMap[docKey] || docKey}`)
-    console.log('Status:', ocrResult.status)
-    console.log('Verification score:', `${Math.round(Number(ocrResult.confidence || 0) * 100)}%`)
-    console.log('OCR confidence:', ocrResult.ocrConfidence == null ? 'Not provided' : `${Math.round(Number(ocrResult.ocrConfidence) * 100)}%`)
-    console.log('Extracted text:', ocrResult.extractedText || '(No text extracted)')
-    console.log('Detected document number:', ocrResult.detectedDocumentNumber || '(None)')
-    console.log('Detected dates:', ocrResult.detectedDates || [])
-    console.log('Validation checks:', ocrResult.checks || {})
-    console.log('Decision:', ocrResult.reason || '')
-    if (ocrResult.processingError) console.error('OCR processing error:', ocrResult.processingError)
-    console.groupEnd()
-    if (ocrResult.status === 'rejected') {
-      existingSubmittedDocuments.value[docKey] = null
-      documentFileMap[docKey].value = null
-      documentInputKeys.value[docKey] = (documentInputKeys.value[docKey] || 0) + 1
-      documentPreviewUrls.value[docKey] = ''
-      documentUploadState.value[docKey] = { uploading: false, progress: 0, error: ocrResult.reason }
-      toast.error(ocrResult.reason || 'This document was rejected by OCR. Please upload a clearer file.')
-      return
-    }
+    const uploadPromise = uploadDocumentForClinic(userUid.value, selectedFile, docKey, (progress) => {
+      documentUploadState.value[docKey] = { uploading: progress < 100, progress, error: '' }
+    })
+    clinicDocumentUploadPromises.set(docKey, uploadPromise)
+    const uploadedDocument = await uploadPromise
+    clinicDocumentUploadControllers.set(docKey, uploadedDocument)
     documentUploadState.value[docKey] = { uploading: false, progress: 100, error: '' }
-    toast.success(ocrResult.status === 'verified'
-      ? 'Document checked and OCR verified. It will upload when you submit registration.'
-      : ocrResult.status === 'held_pending'
-        ? 'Document checked. Your registration requires a replacement document before it can be reviewed.'
-        : 'Document checked. It will upload only when you submit registration and may need manual review.')
+    toast.success('Document uploaded. Verification will run after you submit registration.')
   } catch (err) {
     console.error(err)
+    clinicDocumentUploadPromises.delete(docKey)
+    clinicDocumentUploadControllers.delete(docKey)
     const errorMessage = err?.message || 'Failed to upload document. Please try again.'
     documentUploadState.value[docKey] = { uploading: false, progress: 0, error: errorMessage }
     toast.error(errorMessage)
@@ -2997,8 +2998,9 @@ const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () =
   if (!sessionUser || sessionUser.uid !== uid) {
     throw new Error('Your registration session does not match this application. Please sign in with the registration account, then try uploading again.')
   }
-  // Refresh before Firebase Storage evaluates request.auth for this upload.
-  await sessionUser.getIdToken(true)
+  // Firebase refreshes an expired token automatically. A forced refresh on
+  // each document added a serial network round trip to every upload.
+  await sessionUser.getIdToken()
   const safeName = `${Date.now()}-${String(file.name || 'document').replace(/\s+/g, '_')}`
   const filePath = `clinic-registration/${uid}/${documentKey}/${safeName}`
   const fileRef = storageRef(storage, filePath)
@@ -3048,56 +3050,6 @@ const requestAutomaticClinicVerification = async (uid) => {
   const payload = await response.json().catch(() => null)
   if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Automatic verification could not be started.')
   return payload.data
-}
-
-const requestUploadedDocumentOcr = async (uid, docKey) => {
-  if (!uid || !docKey) throw new Error('The uploaded document could not be verified.')
-  if (typeof auth.authStateReady === 'function') await auth.authStateReady()
-  const currentUser = auth.currentUser
-  if (!currentUser) throw new Error('Your registration session expired. Please sign in again.')
-  const token = await currentUser.getIdToken(true)
-  const response = await fetch(`${OTP_API_BASE}/registration/ocr-document`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ uid, docKey }),
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'OCR could not process this document.')
-  return payload.data || {}
-}
-
-const requestDocumentOcrPreflight = async (uid, docKey, file) => {
-  if (!uid || !docKey || !file) throw new Error('Select a document before starting OCR.')
-  if (file.type === 'application/pdf') {
-    // PDFs stay only in the browser until final submission. They are processed
-    // after that upload because Vision requires a private Cloud Storage source.
-    return { status: 'manual_review', confidence: 0.5, reason: 'PDF will be securely checked after final submission.' }
-  }
-  const contentBase64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(new Error('The selected image could not be read.'))
-    reader.onload = () => resolve(String(reader.result || '').split(',').pop() || '')
-    reader.readAsDataURL(file)
-  })
-  const currentUser = auth.currentUser
-  if (!currentUser) throw new Error('Your registration session expired. Please sign in again.')
-  const token = await currentUser.getIdToken(true)
-  const response = await fetch(`${OTP_API_BASE}/registration/ocr-preflight`, {
-    method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({
-      uid,
-      docKey,
-      permitHolder: {
-        isRegistrant: permitHolderIsRegistrant.value,
-        name: permitHolderIsRegistrant.value ? registeredOwnerLegalName.value : permitHolderName.value.trim(),
-        relationship: permitHolderIsRegistrant.value ? 'Self' : permitHolderRelationship.value.trim(),
-      },
-      file: { name: file.name, type: file.type, size: file.size, contentBase64 },
-    }),
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'OCR preflight could not process this image.')
-  return payload.data || {}
 }
 
 const claimPrepaidSubscriptionPayment = async () => {
@@ -3172,12 +3124,26 @@ const submitDocuments = async () => {
   isSubmittingDocuments.value = true
 
   try {
-    const submittedDocumentsPayload = {}
-    for (const docKey of requiredDocumentKeys.value) {
+    const submittedDocumentsPayload = Object.fromEntries(requiredDocumentKeys.value.map((docKey) => {
+      const existing = existingSubmittedDocuments.value[docKey]
+      const uploaded = clinicDocumentUploadControllers.get(docKey)
       const selectedFile = documentFileMap[docKey]?.value
-      const fallbackUpload = await uploadDocumentForClinic(userUid.value, selectedFile, docKey)
-      if (!fallbackUpload) throw new Error(`Upload ${docKey.replace(/([A-Z])/g, ' $1').toLowerCase()} before submitting.`)
-      submittedDocumentsPayload[docKey] = fallbackUpload
+      return [docKey, selectedFile ? uploaded || null : existing]
+    }))
+    await Promise.all(requiredDocumentKeys.value.map(async (docKey) => {
+      if (submittedDocumentsPayload[docKey]?.path || submittedDocumentsPayload[docKey]?.storagePath) return
+      const file = documentFileMap[docKey]?.value
+      if (!file) return
+      const pending = clinicDocumentUploadPromises.get(docKey)
+      submittedDocumentsPayload[docKey] = pending
+        ? await pending
+        : await uploadDocumentForClinic(userUid.value, file, docKey)
+      clinicDocumentUploadControllers.set(docKey, submittedDocumentsPayload[docKey])
+    }))
+    for (const docKey of requiredDocumentKeys.value) {
+      if (!submittedDocumentsPayload[docKey]?.path && !submittedDocumentsPayload[docKey]?.storagePath) {
+        throw new Error(`Upload ${docKey.replace(/([A-Z])/g, ' $1').toLowerCase()} before submitting.`)
+      }
     }
 
     const platformAgreementAcceptance = isClinicRegistrationActive.value
@@ -3206,22 +3172,20 @@ const submitDocuments = async () => {
     })
     resubmissionReason.value = ''
 
-    let automaticVerification = null
-    try {
-      automaticVerification = await requestAutomaticClinicVerification(userUid.value)
-    } catch (verificationError) {
+    // Verification is a server-side follow-up. Show submission success as soon
+    // as the durable Firestore write completes instead of holding the applicant
+    // on this screen while OCR processes every document.
+    requestAutomaticClinicVerification(userUid.value).catch((verificationError) => {
       console.error('Automatic clinic verification was not completed:', verificationError)
-      toast.warning(`Documents were submitted, but automatic OCR could not start: ${verificationError?.message || 'Please ask an administrator to run verification.'}`)
-    }
+    })
 
     existingSubmittedDocuments.value = submittedDocumentsPayload
     syncExistingDocumentPreviews()
+    stopApprovalCheck()
     await signOut(auth).catch(() => {})
     pendingApprovalMode.value = true
     approvalReviewState.value = 'reviewing'
-    approvalReviewMessage.value = automaticVerification?.allVerified
-      ? 'Your documents passed automatic verification and are now waiting for system administrator approval.'
-      : 'Your registration is under review. Some documents require system administrator review.'
+    approvalReviewMessage.value = 'Your registration was submitted and is waiting for document verification and administrator review.'
 
     currentStep.value = 4
     startPendingApprovalRedirect()
@@ -3983,9 +3947,19 @@ const handleRegistrationSubmit = () => {
 
               <div v-if="isApprovalUnderReview" class="rounded-2xl border border-gold-200 bg-white/70 p-4 text-sm text-charcoal-600">
                 <template v-if="pendingApprovalRedirecting">
-                  <div class="flex items-center justify-between gap-3"><span>Your registration is being reviewed.</span><strong class="text-gold-800">Redirecting to login</strong></div>
-                  <div class="mt-4 flex items-center gap-3"><span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 border-gold-300 bg-gold-50 text-lg font-bold tabular-nums text-gold-800">{{ pendingApprovalRedirectSeconds }}</span><span class="text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">seconds remaining</span></div>
-                  <div class="mt-3 h-2 overflow-hidden rounded-full bg-gold-100" role="progressbar" aria-label="Redirecting to login" :aria-valuenow="pendingApprovalRedirectProgress" aria-valuemin="0" aria-valuemax="100"><div class="h-full rounded-full bg-gold-600 transition-all duration-1000" :style="{ width: `${pendingApprovalRedirectProgress}%` }"></div></div>
+                  <div class="rounded-xl border border-gold-300 bg-gold-50 p-4 text-charcoal-700" role="status" aria-live="polite">
+                    <div class="flex items-center justify-between gap-4">
+                      <div>
+                        <strong class="block text-base">Documents submitted successfully</strong>
+                        <span class="mt-1 block text-sm">Taking you to login in {{ pendingApprovalRedirectSeconds }} seconds.</span>
+                      </div>
+                      <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gold-700 text-lg font-bold tabular-nums text-white" aria-hidden="true">{{ pendingApprovalRedirectSeconds }}</span>
+                    </div>
+                    <div class="mt-4 h-2.5 overflow-hidden rounded-full bg-gold-200" role="progressbar" aria-label="Time until redirect to login" :aria-valuenow="pendingApprovalRedirectProgress" aria-valuemin="0" aria-valuemax="100">
+                      <div class="h-full rounded-full bg-gold-700 transition-[width] duration-1000 ease-linear" :style="{ width: `${pendingApprovalRedirectProgress}%` }"></div>
+                    </div>
+                    <p class="mt-3 text-xs text-charcoal-600">Your registration remains pending review. We’ll notify you by email when there’s an update.</p>
+                  </div>
                 </template>
                 <template v-else>Your registration is being reviewed. An email will be sent to you regarding your registration.</template>
               </div>

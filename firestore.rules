@@ -365,7 +365,8 @@ service cloud.firestore {
     match /clinics/{clinicId} {
       allow read: if (resource.data.isPublished == true)
         || (isSignedIn()
-          && (isSuperadmin() || resource.data.ownerId == request.auth.uid || isStaffOfBranch(clinicId)));
+          && (request.auth.uid == clinicId
+            || isSuperadmin() || resource.data.ownerId == request.auth.uid || isStaffOfBranch(clinicId)));
       allow create: if isSignedIn()
         // The browser may create only its initial owner clinic (whose ID is
         // the owner's UID during registration). Additional branches are
