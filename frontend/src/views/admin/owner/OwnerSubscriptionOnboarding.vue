@@ -6,8 +6,8 @@
     <form v-else class="setup-card" @submit.prevent="nextStep">
       <section v-if="step === 1" class="form-section"><h2>Clinic details</h2><p>Tell customers how to recognize and contact your clinic.</p>
         <label>Clinic name<input :value="form.clinicName || 'Clinic name unavailable'" readonly aria-readonly="true" class="locked-field" /><small class="field-hint">This is taken from your clinic registration and can’t be changed here.</small></label>
-        <label>Clinic Email Address <i>*</i><input v-model.trim="form.businessEmail" required type="email" placeholder="clinic@example.com" autocomplete="email" /></label>
-        <label>Clinic Phone Number <i>*</i><div class="phone-input"><b>+63</b><input v-model="form.contactNumber" required inputmode="numeric" maxlength="10" placeholder="9XXXXXXXXX" autocomplete="tel-national" @input="normalizePhone" /></div><small class="field-hint">Use a mobile number that customers can call.</small></label>
+        <label>Clinic Email Address <i>*</i><input v-model.trim="form.businessEmail" required type="email" placeholder="clinic@example.com" autocomplete="email" /><small class="field-hint">The email customers can use to contact your clinic. It can be different from your personal account email.</small></label>
+        <label>Clinic Phone Number <i>*</i><div class="phone-input"><b>+63</b><input v-model="form.contactNumber" required inputmode="numeric" maxlength="10" placeholder="9XXXXXXXXX" autocomplete="tel-national" @input="normalizePhone" /></div><small class="field-hint">The phone number customers can use to contact your clinic. It can be different from your personal phone number.</small></label>
         <label>About your clinic <i>*</i><textarea v-model.trim="form.description" required maxlength="1000" rows="4" placeholder="Briefly describe your clinic, specialties, or services."></textarea></label>
       </section>
       <section v-else-if="step === 2" class="form-section"><h2>Availability</h2><p>Set the starting information for your main branch. Detailed schedules can be managed later.</p>
