@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
 import { createUserWithEmailAndPassword, deleteUser, signInWithCustomToken, signOut } from 'firebase/auth'
 import { collection, deleteField, doc, deleteDoc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
-import { deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
+import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
 import LocationPicker from '@/components/common/LocationPicker.vue'
@@ -1219,10 +1219,8 @@ const handleDocumentFileChange = async (key, event) => {
     if (existingSubmittedDocuments.value[key]) {
       existingSubmittedDocuments.value[key] = null
     }
-    const oldUpload = clinicDocumentUploadControllers.get(key)
-    if (oldUpload?.path) {
-      deleteObject(storageRef(storage, oldUpload.path)).catch(() => {})
-    }
+    // Registration documents are immutable in Storage. Leave the previous
+    // object in place and upload the replacement under its unique filename.
     clinicDocumentUploadControllers.delete(key)
     clinicDocumentUploadPromises.delete(key)
   }
@@ -3268,6 +3266,8 @@ const submitDocuments = async () => {
 
     existingSubmittedDocuments.value = submittedDocumentsPayload
     syncExistingDocumentPreviews()
+    // Stop Firestore listeners while the registration session is still
+    // authenticated; signing out first makes their next snapshots fail.
     stopApprovalCheck()
     await signOut(auth).catch(() => {})
     pendingApprovalMode.value = true
