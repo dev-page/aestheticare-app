@@ -2,32 +2,50 @@
   <div class="flex min-h-screen bg-slate-900 module-theme">
     <SuperAdminSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 2 }" class="flex-1 p-5 md:p-8">
-      <div class="mx-auto max-w-4xl">
-        <div class="mb-6">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">System Administration</p>
-          <h1 class="mt-2 text-3xl font-bold text-white">Account Settings</h1>
-          <p class="mt-2 text-slate-400">Manage your administrator profile and password securely.</p>
-        </div>
+    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 2 }" class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+      <div class="mx-auto max-w-6xl">
+        <header class="mb-7 overflow-hidden rounded-2xl border border-cyan-900/50 bg-gradient-to-br from-slate-800 via-slate-800 to-cyan-950/50 p-5 shadow-xl shadow-slate-950/20 sm:p-7">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">System Administration</p>
+              <h1 class="mt-2 text-2xl font-bold text-white sm:text-3xl">Profile &amp; Security</h1>
+              <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Manage your administrator profile and keep your account secure.</p>
+            </div>
+            <span class="inline-flex items-center gap-2 rounded-full border border-cyan-800/70 bg-cyan-950/50 px-3 py-1.5 text-xs font-semibold text-cyan-200">
+              <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
+              System Administrator
+            </span>
+          </div>
+        </header>
 
-        <div v-if="loading" class="rounded-2xl border border-slate-700 bg-slate-800 p-6 text-slate-300">Loading account settings...</div>
+        <div v-if="loading" class="rounded-2xl border border-slate-700 bg-slate-800 p-6 text-slate-300">Loading profile and security settings...</div>
 
-        <div v-else class="grid gap-6 lg:grid-cols-[1fr_1fr]">
-          <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-xl shadow-slate-950/20">
-            <div class="mb-5">
-              <h2 class="text-lg font-semibold text-white">Profile Information</h2>
-              <p class="mt-1 text-sm text-slate-400">This information identifies you in the system.</p>
+        <div v-else class="grid items-start gap-5 xl:grid-cols-2">
+          <section class="min-w-0 rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-xl shadow-slate-950/20 sm:p-6">
+            <div class="mb-5 flex items-start gap-3 border-b border-slate-700/80 pb-4">
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-800/60 bg-cyan-950/50 text-cyan-300">
+                <Icon icon="mdi:account-edit-outline" class="text-xl" />
+              </span>
+              <div>
+                <h2 class="text-lg font-semibold text-white">Profile Information</h2>
+                <p class="mt-1 text-sm text-slate-400">This information identifies you in the system.</p>
+              </div>
             </div>
 
-            <div class="mb-5 flex items-center gap-4 rounded-xl border border-slate-700 bg-slate-900/60 p-4">
-              <div class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-950 text-xl font-bold text-white">
+            <div class="mb-5 flex flex-wrap items-center gap-4 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+              <div class="flex h-[4.5rem] w-[4.5rem] shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-cyan-800/70 bg-slate-950 text-xl font-bold text-white shadow-lg shadow-black/20">
                 <img v-if="profilePreview || profile.profilePicture" :src="profilePreview || profile.profilePicture" alt="System administrator profile picture" class="h-full w-full object-cover" />
                 <span v-else>{{ profileInitial }}</span>
               </div>
-              <label class="cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-cyan-500 hover:text-white">
-                Upload Profile Picture
-                <input type="file" accept="image/*" class="sr-only" @change="handleProfilePictureChange" />
-              </label>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-slate-100">Profile photo</p>
+                <p class="mt-1 text-xs leading-5 text-slate-400">JPG, PNG, or another image format. Maximum size: 5 MB.</p>
+                <label class="mt-3 inline-flex cursor-pointer items-center rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-cyan-500 hover:text-white focus-within:ring-2 focus-within:ring-cyan-500">
+                  {{ profilePictureFile ? 'Choose a different photo' : 'Upload profile photo' }}
+                  <input type="file" accept="image/*" class="sr-only" @change="handleProfilePictureChange" />
+                </label>
+                <p v-if="profilePictureFile" class="mt-2 truncate text-xs text-cyan-300">{{ profilePictureFile.name }}</p>
+              </div>
             </div>
 
             <form class="space-y-4" @submit.prevent="saveProfile">
@@ -57,16 +75,21 @@
                 <span v-if="phoneNumberError" class="block text-xs text-rose-400">{{ phoneNumberError }}</span>
               </label>
 
-              <button type="submit" class="rounded-lg bg-cyan-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60" :disabled="savingProfile">
+              <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-cyan-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto" :disabled="savingProfile">
                 {{ savingProfile ? 'Saving...' : 'Save Profile' }}
               </button>
             </form>
           </section>
 
-          <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-xl shadow-slate-950/20">
-            <div class="mb-5">
-              <h2 class="text-lg font-semibold text-white">Password and Security</h2>
-              <p class="mt-1 text-sm text-slate-400">Use your current password to set a new one.</p>
+          <section class="min-w-0 rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-xl shadow-slate-950/20 sm:p-6">
+            <div class="mb-5 flex items-start gap-3 border-b border-slate-700/80 pb-4">
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-800/60 bg-violet-950/40 text-violet-300">
+                <Icon icon="mdi:shield-lock-outline" class="text-xl" />
+              </span>
+              <div>
+                <h2 class="text-lg font-semibold text-white">Password &amp; Security</h2>
+                <p class="mt-1 text-sm text-slate-400">Use your current password to set a new one.</p>
+              </div>
             </div>
 
             <form class="space-y-4" @submit.prevent="changePassword">
@@ -83,15 +106,16 @@
                 <input v-model="passwords.confirm" type="password" autocomplete="new-password" required class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none transition focus:border-cyan-500" />
               </label>
 
-              <div class="rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs leading-5 text-slate-400">
-                Use at least 8 characters with uppercase and lowercase letters, a number, and a special character.
+              <div class="rounded-xl border border-violet-900/60 bg-violet-950/20 p-4">
+                <p class="text-xs font-semibold text-violet-200">Password requirements</p>
+                <p class="mt-1 text-xs leading-5 text-slate-400">At least 8 characters, including uppercase and lowercase letters, a number, and a special character.</p>
               </div>
 
-              <div class="flex flex-wrap items-center gap-3">
-                <button type="submit" class="rounded-lg bg-cyan-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60" :disabled="changingPassword">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-cyan-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto" :disabled="changingPassword">
                   {{ changingPassword ? 'Updating...' : 'Update Password' }}
                 </button>
-                <router-link :to="{ path: '/forgot-password', query: { returnTo: '/superadmin/account-settings' } }" class="text-sm text-cyan-300 underline-offset-4 hover:underline">Forgot your password?</router-link>
+                <router-link :to="{ path: '/forgot-password', query: { returnTo: '/superadmin/account-settings' } }" class="text-center text-sm text-cyan-300 underline-offset-4 hover:underline sm:text-left">Forgot your password?</router-link>
               </div>
             </form>
           </section>
@@ -105,6 +129,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, onMounted, reactive, ref } from 'vue'
+import { Icon } from '@iconify/vue'
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'

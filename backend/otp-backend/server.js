@@ -6369,7 +6369,7 @@ app.post(VERIFY_REGISTRATION_OTP_PATH, async (req, res) => {
     const otpSnap = await otpRef.get()
 
     if (!otpSnap.exists) {
-      return res.status(400).json({
+      return res.json({
         success: false,
         error: 'No active OTP found. Please request a new OTP.',
       })
@@ -6381,7 +6381,7 @@ app.post(VERIFY_REGISTRATION_OTP_PATH, async (req, res) => {
     }
     const expiresAt = getTimestampDate(otpData.expiresAt)
     if (otpData.used) {
-      return res.status(400).json({
+      return res.json({
         success: false,
         error: 'This OTP was already used. Please request a new OTP.',
       })
@@ -6393,7 +6393,7 @@ app.post(VERIFY_REGISTRATION_OTP_PATH, async (req, res) => {
         expiredAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true })
-      return res.status(400).json({
+      return res.json({
         success: false,
         error: 'OTP expired. Please request a new OTP.',
       })
@@ -6405,7 +6405,7 @@ app.post(VERIFY_REGISTRATION_OTP_PATH, async (req, res) => {
         lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true })
-      return res.status(400).json({
+      return res.json({
         success: false,
         error: 'Invalid OTP. Please try again.',
       })

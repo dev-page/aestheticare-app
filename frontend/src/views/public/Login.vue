@@ -319,7 +319,7 @@ const handleLogin = async () => {
         }
 
         if (['pending', 'pending approval'].includes(accountStatus) && String(userData.role || userData.userType || '').toLowerCase() !== 'supplier') {
-          toast.error('Your employee account is still awaiting approval.')
+          toast.error('Your account is still awaiting approval.')
           setProcessLoading(false)
           return
         }

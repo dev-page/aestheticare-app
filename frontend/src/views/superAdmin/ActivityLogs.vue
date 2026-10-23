@@ -4,7 +4,7 @@
 
     <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5 }" class="flex-1 p-8">
       <h1 class="text-3xl font-bold text-white mb-2">Activity Logs</h1>
-      <p class="text-slate-400 mb-6">Track actions performed by users across the platform.</p>
+      <p class="text-slate-400 mb-6">Track actions performed by System Administrators across the platform.</p>
 
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden p-4">
         <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
@@ -16,16 +16,6 @@
             <div>
               <label class="text-xs text-slate-400">To</label>
               <input type="date" v-model="toDate" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100" />
-            </div>
-            <div>
-              <label class="text-xs text-slate-400">Role</label>
-              <select v-model="roleFilter" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100">
-                <option value="">All</option>
-                <option value="Superadmin">Superadmin</option>
-                <option value="Clinic Admin">Clinic Admin</option>
-                <option value="Customer">Customer</option>
-                <option value="Supplier">Supplier</option>
-              </select>
             </div>
             <div>
               <label class="text-xs text-slate-400">Search User</label>
@@ -65,8 +55,7 @@
               <td class="px-4 py-3 text-slate-300">{{ formatDate(log.createdAt) }}</td>
               <td class="px-4 py-3 text-slate-200">{{ log.actorName || log.actorEmail || '-' }}</td>
               <td class="px-4 py-3 text-slate-300">
-                {{ log.actorRole || '-' }}
-                <span v-if="log.actorUserType" class="text-xs text-slate-500">({{ log.actorUserType }})</span>
+                System Administrator
               </td>
               <td class="px-4 py-3 text-slate-300">{{ log.module || 'General' }}</td>
               <td class="px-4 py-3 text-slate-200">{{ log.action || '-' }}</td>
@@ -103,7 +92,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const fromDate = ref(new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0,10))
     const toDate = ref(new Date().toISOString().slice(0,10))
-    const roleFilter = ref('')
     const searchUser = ref('')
     let unsubscribeLogs = null
 
@@ -115,14 +103,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const normalizeRole = (value) => {
       const compact = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
       if (!compact) return ''
-      if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') return 'Superadmin'
-      if (compact === 'owner' || compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Clinic Admin'
-      if (compact === 'customer') return 'Customer'
-      if (compact === 'supplier') return 'Supplier'
+      if (['superadmin', 'systemadmin', 'sysadmin', 'systemadministrator'].includes(compact)) return 'System Administrator'
       return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
     }
-
-    const allowedRoles = new Set(['Superadmin', 'Clinic Admin', 'Customer', 'Supplier'])
 
     const loadLogs = () => {
       if (unsubscribeLogs) unsubscribeLogs()
@@ -137,7 +120,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         start.setHours(0,0,0,0)
         const end = new Date(toDate.value)
         end.setHours(23,59,59,999)
-        const role = String(roleFilter.value || '').trim()
         const search = String(searchUser.value || '').trim().toLowerCase()
 
         logs.value = all
@@ -145,14 +127,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             const created = log.createdAt?.toDate ? log.createdAt.toDate() : null
             if (!created) return false
             if (created < start || created > end) return false
-            const normalized = normalizeRole(log.actorRole)
-            if (role && normalized !== role) return false
+            if (normalizeRole(log.actorRole || log.actorUserType) !== 'System Administrator') return false
             if (search) {
               const actorName = String(log.actorName || '').toLowerCase()
               const actorEmail = String(log.actorEmail || '').toLowerCase()
               return actorName.includes(search) || actorEmail.includes(search)
             }
-            return allowedRoles.has(normalizeRole(log.actorRole))
+            return true
           })
 
         currentPage.value = 1
@@ -166,7 +147,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       })
     }
 
-    const reload = () => { fromDate.value = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0,10); toDate.value = new Date().toISOString().slice(0,10); roleFilter.value = ''; searchUser.value = ''; loadLogs() }
+    const reload = () => { fromDate.value = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0,10); toDate.value = new Date().toISOString().slice(0,10); searchUser.value = ''; loadLogs() }
     const paginatedLogs = computed(() => logs.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
     const totalPages = computed(() => Math.max(1, Math.ceil(logs.value.length / pageSize.value)))
     watch(pageSize, () => { currentPage.value = 1 })
@@ -175,7 +156,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const exportCsv = () => {
       if (!logs.value.length) return alert('No logs to export')
       const rows = [['Timestamp','User','Email','Role','Module','Action','Details']]
-      logs.value.forEach((l) => rows.push([formatDate(l.createdAt), l.actorName || '-', l.actorEmail || '-', l.actorRole || '-', l.module || 'General', String(l.action || '-'), String(l.details || '-')]))
+      logs.value.forEach((l) => rows.push([formatDate(l.createdAt), l.actorName || '-', l.actorEmail || '-', 'System Administrator', l.module || 'General', String(l.action || '-'), String(l.details || '-')]))
       const csv = rows.map(r=> r.map(c=> '"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n')
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
       const url = URL.createObjectURL(blob)
@@ -201,7 +182,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       loadLogs,
       fromDate,
       toDate,
-      roleFilter,
       searchUser,
       reload,
       exportCsv,
