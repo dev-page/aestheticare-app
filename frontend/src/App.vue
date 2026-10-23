@@ -24,7 +24,7 @@
            key tears down the entire page for ?tab=notifications and causes a
            visible flash before the notification listener reconnects. Other
            routes retain their existing query-driven remount behavior. -->
-      <router-view :key="$route.path === '/customer/account-settings' ? $route.path : $route.fullPath" />
+      <router-view :key="($route.name === 'register-clinic' || $route.name === 'register-clinic-step') ? 'register-clinic' : ($route.path === '/customer/account-settings' ? $route.path : $route.fullPath)" />
       <Analytics />
       <OnboardingTour
         :is-open="onboardingIsOpen"

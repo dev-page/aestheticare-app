@@ -196,6 +196,9 @@ const PASSWORD_MAX_LENGTH = 32
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,32}$/
 
 const isSubmitting = ref(false)
+const isVerifyingOtp = ref(false)
+const isResendingOtp = ref(false)
+const otpError = ref('')
 const passwordVisible = ref(false)
 const confirmPasswordVisible = ref(false)
 const passwordFocused = ref(false)
@@ -2549,6 +2552,7 @@ const reverseGeocodeLocation = (lat, lng) => {
 }
 
 const handleOtpInput = (index, event) => {
+  otpError.value = ''
   const digits = String(event.target.value || '').replace(/\D/g, '')
 
   if (!digits) {
@@ -2609,6 +2613,7 @@ const handleOtpKeydown = (index, event) => {
 
 const handleOtpPaste = (event) => {
   event.preventDefault()
+  otpError.value = ''
   const pastedDigits = event.clipboardData?.getData('text')?.replace(/\D/g, '').slice(0, OTP_LENGTH) || ''
   if (!pastedDigits) return
 
@@ -2622,7 +2627,7 @@ const handleOtpPaste = (event) => {
 }
 
 const resendOtp = async () => {
-  if (!otpCanResend.value) return
+  if (!otpCanResend.value || isResendingOtp.value || isVerifyingOtp.value) return
   const recipientEmail = String(otpRecipientEmail.value || email.value || '').trim().toLowerCase()
   if (!recipientEmail) {
     toast.error('Missing recipient email. Please register again.')
@@ -2631,14 +2636,20 @@ const resendOtp = async () => {
   otpRecipientEmail.value = recipientEmail
   setStoredOtpRecipientEmail(recipientEmail)
 
-  const otpResult = await sendOtpEmail(recipientEmail)
-  clearOtpInputs()
-  focusOtpInput(0)
-  handleClinicOtpResult(
-    otpResult,
-    `OTP resent to ${otpRecipientLabel.value || 'your email'}. Check your inbox or spam folder. Only the latest OTP will work.`,
-    'Unable to resend OTP'
-  )
+  isResendingOtp.value = true
+  try {
+    const otpResult = await sendOtpEmail(recipientEmail)
+    clearOtpInputs()
+    otpError.value = ''
+    focusOtpInput(0)
+    handleClinicOtpResult(
+      otpResult,
+      `OTP resent to ${otpRecipientLabel.value || 'your email'}. Check your inbox or spam folder. Only the latest OTP will work.`,
+      'Unable to resend OTP'
+    )
+  } finally {
+    isResendingOtp.value = false
+  }
 }
 
 const cleanupFailedRegistration = async (uid) => {
@@ -2697,7 +2708,7 @@ const showRegistrationAttemptBlock = (attemptResult) => {
 }
 
 const registerClinic = async () => {
-  if (currentStep.value !== 1) return
+  if (currentStep.value !== 1 || isSubmitting.value) return
   if (!emailChecked.value) {
     await verifyRegistrationEmail()
     if (!emailChecked.value || currentStep.value !== 1) return
@@ -2972,13 +2983,15 @@ const registerClinic = async () => {
 }
 
 const verifyOtp = async () => {
-  if (currentStep.value !== 2) return
+  if (currentStep.value !== 2 || isVerifyingOtp.value || isResendingOtp.value) return
 
   if (otpCode.value.length !== OTP_LENGTH) {
     toast.error('Please enter the complete 6-digit OTP')
     return
   }
 
+  isVerifyingOtp.value = true
+  otpError.value = ''
   try {
     const lookupEmail = String(otpRecipientEmail.value || email.value || '').trim().toLowerCase()
     const currentAuthUid = auth?.currentUser?.uid || ''
@@ -3043,7 +3056,10 @@ const verifyOtp = async () => {
       err?.response?.data?.error ||
       err?.message ||
       'Failed to verify OTP, please try again'
-    toast.error(verifyError)
+    otpError.value = verifyError
+    toast.error(verifyError, { autoClose: 7000 })
+  } finally {
+    isVerifyingOtp.value = false
   }
 }
 
@@ -3132,7 +3148,7 @@ const claimPrepaidSubscriptionPayment = async () => {
 }
 
 const submitDocuments = async () => {
-  if (currentStep.value !== 3) return
+  if (currentStep.value !== 3 || isSubmittingDocuments.value) return
 
   if (isExpiryResubmissionExpired.value) {
     toast.error('Your 24-day document-resubmission period has ended. Please start a new clinic registration.')
@@ -3745,12 +3761,14 @@ const handleRegistrationSubmit = () => {
                   maxlength="1"
                   autocomplete="one-time-code"
                   class="otp-digit"
+                  :disabled="isVerifyingOtp || isResendingOtp"
                   :class="{ 'otp-digit-filled': otpDigits[index] }"
                   @input="handleOtpInput(index, $event)"
                   @keydown="handleOtpKeydown(index, $event)"
                   @paste="handleOtpPaste"
                 />
               </div>
+              <p v-if="otpError" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ otpError }}</p>
 
               <div class="flex flex-col items-start gap-2 text-xs sm:flex-row sm:items-center sm:justify-between sm:text-sm">
                 <p class="text-charcoal-500">
@@ -3760,11 +3778,11 @@ const handleRegistrationSubmit = () => {
                 <button
                   type="button"
                   class="font-semibold transition"
-                  :class="otpCanResend ? 'text-gold-700 hover:text-gold-800' : 'text-charcoal-400 cursor-not-allowed'"
-                  :disabled="!otpCanResend"
+                  :class="otpCanResend && !isResendingOtp && !isVerifyingOtp ? 'text-gold-700 hover:text-gold-800' : 'text-charcoal-400 cursor-not-allowed'"
+                  :disabled="!otpCanResend || isResendingOtp || isVerifyingOtp"
                   @click="resendOtp"
                 >
-                  Resend OTP
+                  {{ isResendingOtp ? 'Sending OTP...' : 'Resend OTP' }}
                 </button>
               </div>
 
@@ -3772,16 +3790,18 @@ const handleRegistrationSubmit = () => {
                 <button
                   type="button"
                   class="h-12 px-5 rounded-xl border border-gold-300 text-charcoal-700 font-medium hover:bg-gold-100/70 transition"
+                  :disabled="isVerifyingOtp || isResendingOtp"
                   @click="currentStep = 1"
                 >
                   Back
                 </button>
                 <button
                   type="button"
+                  :disabled="isVerifyingOtp || isResendingOtp"
                   @click="verifyOtp"
-                  class="flex-1 py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition"
+                  class="flex-1 py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Verify OTP and Continue
+                  {{ isVerifyingOtp ? 'Verifying OTP...' : 'Verify OTP and Continue' }}
                 </button>
               </div>
             </section>
@@ -3988,6 +4008,7 @@ const handleRegistrationSubmit = () => {
                 <button
                   type="button"
                   class="h-12 px-5 rounded-xl border border-gold-300 text-charcoal-700 font-medium hover:bg-gold-100/70 transition"
+                  :disabled="isSubmittingDocuments"
                   @click="currentStep = otpVerifiedForRegistration ? 1 : 2"
                 >
                   Back
