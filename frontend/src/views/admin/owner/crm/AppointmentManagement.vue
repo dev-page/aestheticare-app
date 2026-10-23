@@ -42,7 +42,7 @@ const tabs = computed(() => [
 ])
 </script>
 <template>
-  <div class="flex owner-theme min-h-screen bg-slate-900">
+  <div class="flex owner-theme min-h-screen">
     <OwnerSidebar />
     <main class="flex-1 min-w-0 p-4 md:p-8">
       <h1 class="text-2xl md:text-3xl font-bold text-white">Appointment Management</h1>

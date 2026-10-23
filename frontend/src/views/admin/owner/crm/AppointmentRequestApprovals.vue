@@ -1,5 +1,5 @@
 <template>
-  <div class="flex module-theme min-w-0" :class="embedded ? '' : 'min-h-screen bg-slate-900'">
+  <div class="flex module-theme min-w-0" :class="embedded ? '' : 'min-h-screen'">
     <OwnerSidebar v-if="!embedded" />
 
     <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
