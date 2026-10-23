@@ -40,6 +40,9 @@
         <div class="mb-4 border-b border-slate-700 pb-3">
           <h3 class="font-semibold text-white">{{ form.postType === 'Consultation' ? 'Consultation Information' : form.postType === 'Package' ? 'Package Information' : 'Service Information' }}</h3>
           <p class="mt-1 text-xs text-slate-400">The service, consultation, or package name becomes the title customers see.</p>
+          <p v-if="form.postType === 'Service'" class="mt-2 text-xs text-slate-500">Recommendation: create a Service for one appointment. For a planned course with multiple visits, create a Service Package and include the individual services.</p>
+          <p v-else-if="form.postType === 'Package'" class="mt-2 text-xs text-slate-500">Use a package for a course of multiple treatment visits. Select the services or consultations included; the package price is calculated from their prices and your discount.</p>
+          <p v-else-if="form.postType === 'Consultation'" class="mt-2 text-xs text-slate-500">A consultation is a single appointment. Its fee is entered once below.</p>
         </div>
 
         <div v-if="['Service', 'Package'].includes(form.postType)" class="listing-category-field">
@@ -53,16 +56,16 @@
         </div>
 
         <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
+          <div v-if="form.postType !== 'Consultation'">
             <label class="block text-slate-400 mb-1">Price (PHP)</label>
             <input :value="form.postType === 'Package' ? packagePrice.toFixed(2) : form.price" :readonly="form.postType === 'Package'" @input="setPositiveNumber('price', $event, 0)" @keydown="blockNegativeKey" type="number" min="0" step="0.01" placeholder="0.00" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 read-only:opacity-80" />
           </div>
-          <div v-if="['Service', 'Package'].includes(form.postType)">
-            <label class="block text-slate-400 mb-1">Number of Treatment Sessions</label>
+          <div v-if="form.postType === 'Package'">
+            <label class="block text-slate-400 mb-1">Number of Package Visits</label>
             <input :value="form.sessionCount" @input="setPositiveNumber('sessionCount', $event, 1, 50, true)" @keydown="blockNegativeKey" type="number" min="1" max="50" step="1" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <p class="text-xs text-slate-400 mt-1">Use 1 for a single visit. The clinic schedules subsequent treatment sessions.</p>
+            <p class="text-xs text-slate-400 mt-1">Set how many visits the package covers. The clinic schedules each visit.</p>
           </div>
-          <div v-if="['Service', 'Package'].includes(form.postType) && Number(form.sessionCount) > 1" class="md:col-span-2">
+          <div v-if="form.postType === 'Package' && Number(form.sessionCount) > 1" class="md:col-span-2">
             <label class="block text-slate-400 mb-1">Interval before the next session (days)</label>
             <input v-model.number="form.sessionIntervalDays" type="number" min="0" max="365" step="1" class="w-full px-3 py-2 rounded-lg border border-slate-600 bg-slate-700 text-white" />
             <p class="mt-1 text-xs text-slate-400">Counted from completion of the prior treatment session.</p>
@@ -80,7 +83,7 @@
           <select v-model="form.packageServiceIds" multiple class="min-h-28 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
             <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
           </select>
-          <p class="mt-2 text-xs text-slate-400">A package must include at least two services, or one consultation plus at least one service. Customers book and pay for the package as one appointment.</p>
+          <p class="mt-2 text-xs text-slate-400">A package can combine at least two different services, pair a consultation with a service, or repeat one service across multiple package visits. Customers pay for the course once; the clinic schedules its visits.</p>
           <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label class="block text-slate-400">Package discount (%)
               <input v-model.number="form.discountPercent" type="number" min="0" max="90" step="0.5" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
@@ -93,6 +96,8 @@
           </div>
           <p class="mt-2 text-xs text-slate-400">The clinic sets the discount. The package price is calculated from the current prices of its included services and consultation.</p>
         </div>
+
+        <p v-if="editing && form.postType === 'Service' && Number(form.sessionCount || 1) > 1" class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">This existing Service is configured for {{ form.sessionCount }} treatment sessions. New Services cover one appointment; consider creating a Service Package for a multi-visit course. This existing listing will keep its current session setup when edited.</p>
 
         <div v-if="form.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="md:col-span-2">
@@ -239,7 +244,8 @@
           <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Follow-up: {{ form.followUpAllowed ? `Available within ${form.followUpWindowDays || 14} days` : 'Not available' }}</p>
           <p v-if="form.postType === 'Consultation'" class="mt-2 text-slate-300">Mode: {{ form.consultationMode === 'on-site' ? 'On-site consultation' : 'Online consultation' }}</p>
           <p v-if="form.postType === 'Package'" class="mt-2 text-slate-300">Included appointments: {{ form.packageServiceIds.length }}</p>
-          <p v-if="['Service', 'Package'].includes(form.postType)" class="mt-1 text-slate-300">Treatment sessions: {{ Math.max(1, Number(form.sessionCount || 1)) }}</p>
+          <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Appointments per booking: 1</p>
+          <p v-if="form.postType === 'Package'" class="mt-1 text-slate-300">Package visits: {{ Math.max(1, Number(form.sessionCount || 1)) }}</p>
           <p v-if="form.postType === 'Product'" class="mt-2 text-slate-300">Source: selected inventory product</p>
           <p class="mt-1 text-slate-300">Proposed {{ String(form.postType || 'Service').toLowerCase() }} price: PHP {{ Number(form.price || form.consultationFee || 0).toFixed(2) }}</p>
           <p class="mt-1 text-xs text-amber-200">{{ isFreePlan ? 'Free Plan service listings publish directly; Finance approval is not required.' : 'Financial terms, including installment settings, require Finance approval before publication.' }}</p>

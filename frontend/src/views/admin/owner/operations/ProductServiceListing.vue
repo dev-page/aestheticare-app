@@ -617,9 +617,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           .filter(Boolean)
         const consultationCount = selectedComponents.filter((post) => post.postType === 'Consultation').length
         const serviceCount = selectedComponents.filter((post) => post.postType === 'Service').length
-        const validPackage = consultationCount <= 1 && ((consultationCount === 1 && serviceCount >= 1) || serviceCount >= 2)
+        const packageVisits = Math.max(1, Number(form.value.sessionCount || 1))
+        const validPackage = consultationCount <= 1 && ((consultationCount === 1 && serviceCount >= 1) || serviceCount >= 2 || (serviceCount === 1 && packageVisits > 1))
         if (!validPackage) {
-          toast.error('A package must include at least two services, or one consultation plus at least one service.')
+          toast.error('A package must combine two services, pair a consultation with a service, or repeat one service across at least two package visits.')
           return
         }
         const packageSubtotal = packageComponents.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(form.value.sessionCount || 1))
@@ -685,8 +686,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               : null,
           consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(form.value.consultationGraceMinutes ?? 10))), bufferMinutes: Math.min(45, Math.max(Number(form.value.consultationGraceMinutes ?? 10) + 5, Number(form.value.consultationBufferMinutes ?? 15))) },
           staffingRequirements: JSON.parse(JSON.stringify(form.value.staffingRequirements || [])),
-          sessionCount: ['Service', 'Package'].includes(postType) ? Math.min(50, Math.max(1, Number(form.value.sessionCount || 1))) : 1,
-          sessionIntervalDays: ['Service', 'Package'].includes(postType) && Number(form.value.sessionCount || 1) > 1 ? Math.min(365, Math.max(0, Number(form.value.sessionIntervalDays || 0))) : 0,
+          sessionCount: postType === 'Package' ? Math.min(50, Math.max(1, Number(form.value.sessionCount || 1))) : 1,
+          sessionIntervalDays: postType === 'Package' && Number(form.value.sessionCount || 1) > 1 ? Math.min(365, Math.max(0, Number(form.value.sessionIntervalDays || 0))) : 0,
           durationMinutes: postType === 'Product' ? null : postType === 'Package'
             ? Math.max(1, (form.value.packageServiceIds || []).reduce((total, id) => total + Number(posts.value.find((post) => post.id === id)?.durationMinutes || 0), 0))
             : Math.max(1, Number(form.value.durationMinutes || 60)),
@@ -739,7 +740,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         discountPercent: Number(post.discountPercent || 0),
         requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
         linkedConsultationId: String(post.linkedConsultationId || ''),
-        consultationFee: Number(post.consultationFee || 0),
+        consultationFee: Number(post.consultationFee || post.price || 0),
         consultationMode: normalizeConsultationMode(post.consultationMode), consultationGraceMinutes: post.consultationPolicy?.graceMinutes ?? 10, consultationBufferMinutes: post.consultationPolicy?.bufferMinutes ?? 15,
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
@@ -803,9 +804,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           .filter(Boolean)
         const consultationCount = selectedComponents.filter((post) => post.postType === 'Consultation').length
         const serviceCount = selectedComponents.filter((post) => post.postType === 'Service').length
-        const validPackage = consultationCount <= 1 && ((consultationCount === 1 && serviceCount >= 1) || serviceCount >= 2)
+        const packageVisits = Math.max(1, Number(editForm.value.sessionCount || 1))
+        const validPackage = consultationCount <= 1 && ((consultationCount === 1 && serviceCount >= 1) || serviceCount >= 2 || (serviceCount === 1 && packageVisits > 1))
         if (!validPackage) {
-          toast.error('A package must include at least two services, or one consultation plus at least one service.')
+          toast.error('A package must combine two services, pair a consultation with a service, or repeat one service across at least two package visits.')
           return
         }
         if (Number(editForm.value.price) <= 0) {
