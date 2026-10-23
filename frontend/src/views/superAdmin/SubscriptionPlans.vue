@@ -144,6 +144,19 @@
               </div>
             </div>
 
+            <div v-if="plan.id !== 'free' && Number(plan.price) > 0" class="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+              <label class="inline-flex items-center gap-2 text-sm font-medium text-slate-200">
+                <input v-model="plan.freeTrialEnabled" type="checkbox" class="accent-emerald-500" />
+                Offer a free trial for this plan
+              </label>
+              <div v-if="plan.freeTrialEnabled" class="mt-3">
+                <label class="block text-xs text-slate-400 mb-1">Trial length (days)</label>
+                <input v-model="plan.trialDays" type="number" min="1" max="365" step="1" class="w-full rounded-lg bg-slate-800 px-3 py-2 text-slate-100" :class="fieldClass(plan, 'trialDays')" @input="clearPlanFieldError(plan, 'trialDays')" />
+                <p v-if="fieldError(plan, 'trialDays')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'trialDays') }}</p>
+              </div>
+              <p class="mt-2 text-xs text-slate-400">Each clinic can use one paid-plan trial once. No charge is collected during the trial; when it ends, the clinic returns to Free. A later purchase uses this plan’s normal price.</p>
+            </div>
+
             <div>
               <label class="block text-xs text-slate-400 mb-1">Description</label>
               <textarea
@@ -157,7 +170,7 @@
               <p v-if="fieldError(plan, 'description')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'description') }}</p>
             </div>
 
-            <p v-if="plan.id === 'free'" class="text-sm text-slate-400">Free is permanent and has no expiry. The one-time Premium trial is a separate 14-day offer.</p>
+            <p v-if="plan.id === 'free'" class="text-sm text-slate-400">Free is permanent and has no expiry. Free trials are configured separately on paid plans.</p>
 
             <div>
               <div class="flex items-center justify-between mb-2">
@@ -231,6 +244,7 @@ const defaultPlans = () => [
     billingCycle: 'month',
     description: 'Core tools for one-branch clinics with no expiration.',
     trialDays: 0,
+    freeTrialEnabled: false,
     isActive: true,
     features: ['One branch', 'Service listings and online bookings', 'Create employee accounts', 'Upgrade anytime'],
   },
@@ -238,10 +252,11 @@ const defaultPlans = () => [
     id: 'basic',
     label: 'Basic',
     name: 'Basic',
-    price: 999,
+    price: 499,
     billingCycle: 'month',
     description: 'Essential tools for daily clinic operations.',
     trialDays: 0,
+    freeTrialEnabled: false,
     isActive: true,
     features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
   },
@@ -249,10 +264,11 @@ const defaultPlans = () => [
     id: 'premium',
     label: 'Premium',
     name: 'Premium',
-    price: 2499,
+    price: 999,
     billingCycle: 'month',
     description: 'Advanced features and priority support.',
-    trialDays: 0,
+    trialDays: 14,
+    freeTrialEnabled: true,
     isActive: true,
     features: ['Everything in Basic', 'Multi-branch operations', 'HR, attendance & payroll', 'Advanced reports & priority support'],
   },
@@ -284,6 +300,7 @@ const createDraftPlan = () => ({
   billingCycle: 'month',
   description: '',
   trialDays: '',
+  freeTrialEnabled: false,
   isActive: false,
   features: [''],
 })
@@ -299,6 +316,7 @@ const normalizePlan = (plan, fallback = {}) => ({
   billingCycle: String(plan.billingCycle || fallback.billingCycle || '').trim(),
   description: String(plan.description || fallback.description || '').trim(),
   trialDays: plan.trialDays ?? fallback.trialDays ?? '',
+  freeTrialEnabled: Boolean(plan.freeTrialEnabled ?? fallback.freeTrialEnabled ?? false),
   isActive: plan.isActive ?? fallback.isActive ?? false,
   features: Array.isArray(plan.features)
     ? [...plan.features]
@@ -414,6 +432,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         errors.price = 'Price is required.'
       } else if (numericPrice < 0) {
         errors.price = 'Price must be zero or higher.'
+      }
+
+      if (plan.id !== 'free' && Number(plan.price) > 0 && plan.freeTrialEnabled) {
+        const days = Number(plan.trialDays)
+        if (!Number.isInteger(days) || days < 1 || days > 365) errors.trialDays = 'Enter a whole number from 1 to 365 days.'
       }
 
       if (!normalizedBillingCycle) {
@@ -589,7 +612,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           currencyDisplay: 'code',
           billingCycle: normalizedBillingCycle,
           description: normalizedDescription,
-          trialDays: 0,
+          trialDays: normalizedId !== 'free' && Number(plan.price) > 0 && plan.freeTrialEnabled ? Number(plan.trialDays) : 0,
+          freeTrialEnabled: normalizedId !== 'free' && Number(plan.price) > 0 && Boolean(plan.freeTrialEnabled),
           isActive: Boolean(plan.isActive),
           isDeleted: false,
           features: cleanFeatures,

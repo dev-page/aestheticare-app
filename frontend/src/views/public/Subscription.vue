@@ -42,6 +42,7 @@
             <p class="plan-price">{{ plan.priceLabel }}</p>
             <span class="plan-cycle">{{ plan.cycleLabel || plan.cycle || '-' }}</span>
           </div>
+          <p v-if="plan.freeTrialEnabled" class="plan-caption">{{ plan.trialDays }}-day free trial available once per clinic after approval. Normal plan price applies to later purchases.</p>
 
           <p class="plan-desc">{{ plan.description }}</p>
           <p class="plan-caption">{{ planCaption(plan) }}</p>
@@ -98,22 +99,24 @@ const defaultPlans = () => [
   {
     id: "basic",
     name: "Basic",
-    price: "PHP 999",
+    price: 499,
     cycle: "/month",
     description: "For single-branch clinics with streamlined daily operations.",
     features: ["Scheduling, POS & payments", "Inventory, procurement & reports", "Staff account management", "Single-branch operations"],
     trialDays: 0,
+    freeTrialEnabled: false,
     isActive: true,
     recommended: false,
   },
   {
     id: "premium",
     name: "Premium",
-    price: "PHP 2499",
+    price: 999,
     cycle: "/month",
     description: "For multi-branch clinics that need complete operational control.",
     features: ["Everything in Basic", "Multi-branch operations", "HR, attendance & payroll", "Advanced reports & priority support"],
-    trialDays: 0,
+    trialDays: 14,
+    freeTrialEnabled: true,
     isActive: true,
     recommended: true,
   },
@@ -165,7 +168,7 @@ const planKicker = (plan) => {
 };
 
 const planCaption = (plan) => {
-  if (plan.id === "free-trial" || plan.id === "free") return "Keep essential clinic features with no subscription fee or expiry. Approved new clinics can try Premium free for 14 days.";
+  if (plan.id === "free-trial" || plan.id === "free") return "Keep essential clinic features with no subscription fee or expiry.";
   if (plan.id === "basic") return "Best fit for clinics focusing on daily bookings, staffing, and reporting.";
   if (plan.id === "premium") return "Built for teams that need deeper visibility, support, and multi-branch control.";
   return "A saved custom plan configured in Setup Plans.";

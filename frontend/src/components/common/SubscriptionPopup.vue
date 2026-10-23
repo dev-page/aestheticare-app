@@ -43,6 +43,7 @@
           <span class="plan-cycle">{{ plan.cycleLabel }}</span>
         </p>
         <p class="plan-desc">{{ plan.description }}</p>
+        <p v-if="plan.freeTrialEnabled" class="plan-desc">{{ plan.trialDays }}-day free trial after clinic approval, once per clinic. Later purchases use the normal plan price.</p>
         <ul class="plan-features">
           <li v-for="item in plan.features" :key="item">{{ item }}</li>
         </ul>
@@ -96,29 +97,32 @@ const defaultPlans = () => [
     name: 'FreePlan',
     price: 0,
     billingCycle: 'trial',
-    description: 'Try all features for 14 days. No credit card required.',
+    description: 'Essential clinic features with no subscription fee or expiry.',
     features: ['Core modules', 'Limited users', 'Email support'],
-    trialDays: 14,
+    trialDays: 0,
+    freeTrialEnabled: false,
     isActive: true,
   },
   {
     id: 'basic',
     name: 'Basic',
-    price: 999,
+    price: 499,
     billingCycle: 'month',
     description: 'Essential features for your clinic operations.',
     features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
     trialDays: 0,
+    freeTrialEnabled: false,
     isActive: true,
   },
   {
     id: 'premium',
     name: 'Premium',
-    price: 2499,
+    price: 999,
     billingCycle: 'month',
     description: 'Full features including advanced analytics.',
     features: ['Everything in Basic', 'Multi-branch operations', 'HR, attendance & payroll', 'Advanced reports & priority support'],
-    trialDays: 0,
+    trialDays: 14,
+    freeTrialEnabled: true,
     isActive: true,
   },
 ]

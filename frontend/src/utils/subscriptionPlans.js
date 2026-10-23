@@ -1,8 +1,8 @@
 const BASE_PRIORITY = {
   'free-trial': 0,
   free: 0,
-  basic: 999,
-  premium: 2499,
+  basic: 499,
+  premium: 999,
 }
 
 const DISPLAY_ORDER = {
@@ -96,6 +96,7 @@ export const normalizeSubscriptionPlan = (plan = {}, fallback = {}) => {
     cycleLabel: plan.cycleLabel || fallback.cycleLabel || formatSubscriptionCycle(billingCycle),
     description: String(plan.description || fallback.description || '').trim(),
     trialDays: Math.max(0, Math.floor(toNumber(plan.trialDays ?? fallback.trialDays ?? 0))),
+    freeTrialEnabled: Boolean(plan.freeTrialEnabled ?? fallback.freeTrialEnabled ?? false),
     features: normalizeFeatures(plan.features, fallback.features),
     recommended: Boolean(plan.recommended ?? fallback.recommended ?? (id === 'premium')),
     isActive: plan.isActive !== false && fallback.isActive !== false && !isDeleted,

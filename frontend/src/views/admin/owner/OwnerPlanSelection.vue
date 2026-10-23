@@ -12,10 +12,10 @@
 
       <section v-if="!loading" class="trial-offer">
         <div>
-          <h2>{{ trialActive ? 'Your Premium trial is active' : trialEligible ? 'Try Premium free for 14 days' : 'Free stays available' }}</h2>
-          <p>{{ trialActive ? `Your trial ends on ${subscriptionDateLabel(currentPlanExpiresAt)}. Choose a paid plan to continue with Premium features.` : trialEligible ? 'One trial per clinic. No card required and no automatic charge. Return to Free when the trial ends.' : 'When your paid plan ends, your clinic returns to Free. Records and existing appointments are retained.' }}</p>
+          <h2>{{ trialActive ? `Your ${trialPlanName} trial is active` : eligibleTrialPlan ? `Try ${eligibleTrialPlan.name} free for ${eligibleTrialPlan.trialDays} days` : 'Free stays available' }}</h2>
+          <p>{{ trialActive ? `Your trial ends on ${subscriptionDateLabel(currentPlanExpiresAt)}. Choose a paid plan to continue.` : eligibleTrialPlan ? 'One free trial per clinic. No payment is collected during the trial. Your clinic returns to Free when it ends; later purchases use the normal plan price.' : 'When your paid plan ends, your clinic returns to Free. Records and existing appointments are retained.' }}</p>
         </div>
-        <button v-if="trialEligible" type="button" class="app-button app-button--primary" :disabled="startingTrial || submitting" @click="startTrial">{{ startingTrial ? 'Starting trial…' : 'Start free trial' }}</button>
+        <button v-if="trialEligible && eligibleTrialPlan" type="button" class="app-button app-button--primary" :disabled="submitting || startingTrial" @click="selectPlan(eligibleTrialPlan.id)">Select {{ eligibleTrialPlan.name }} trial</button>
       </section>
 
       <section v-if="loading" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -66,6 +66,8 @@
           <div class="mb-4">
             <div class="text-3xl font-bold text-white">{{ plan.priceLabel }}</div>
             <div class="text-sm text-slate-400">{{ plan.cycleLabel || '-' }}</div>
+            <p v-if="trialEligible && plan.freeTrialEnabled" class="mt-2 text-sm font-semibold text-emerald-300">{{ plan.trialDays }}-day free trial · PHP 0 due today</p>
+            <p v-else-if="plan.freeTrialEnabled" class="mt-2 text-sm text-slate-400">{{ plan.trialDays }}-day trial available once per clinic before normal billing.</p>
           </div>
 
           <p class="mb-5 text-sm text-slate-300">{{ plan.description }}</p>
@@ -101,7 +103,7 @@
           :disabled="!selectedPlan || submitting || isPlanDisabled(selectedPlan)"
           @click="continueWithPlan"
         >
-          {{ submitting ? 'Checking...' : 'Confirm And Continue' }}
+          {{ startingTrial || submitting ? (startingTrial ? 'Starting trial…' : 'Checking...') : selectedPlanTrialEligible ? `Start ${selectedPlanData?.trialDays}-Day Free Trial` : 'Confirm And Continue' }}
         </button>
       </div>
     </main>
@@ -144,13 +146,17 @@ const trialActive = ref(false)
 const startingTrial = ref(false)
 const subscriptionStore = useSubscriptionStore()
 const pendingPlan = ref('')
+const selectedPlanData = computed(() => plans.value.find((plan) => plan.id === selectedPlan.value) || null)
+const trialPlanName = computed(() => plans.value.find((plan) => plan.id === normalizePlanId(currentPlan.value))?.name || 'paid plan')
+const eligibleTrialPlan = computed(() => trialEligible.value ? plans.value.find((plan) => plan.freeTrialEnabled && Number(plan.trialDays) > 0) || null : null)
+const selectedPlanTrialEligible = computed(() => trialEligible.value && Boolean(selectedPlanData.value?.freeTrialEnabled) && Number(selectedPlanData.value?.trialDays) > 0)
 let unsubscribePlans = null
 
 const defaultPlans = () => [
   {
     id: 'basic',
     name: 'Basic',
-    price: 999,
+    price: 499,
     billingCycle: 'month',
     description: 'Essential features for daily clinic operations.',
     features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
@@ -159,7 +165,9 @@ const defaultPlans = () => [
   {
     id: 'premium',
     name: 'Premium',
-    price: 2499,
+    price: 999,
+    trialDays: 14,
+    freeTrialEnabled: true,
     billingCycle: 'month',
     description: 'Advanced features and priority support for growing clinics.',
     features: ['Everything in Basic', 'Multi-branch operations', 'HR, attendance & payroll', 'Advanced reports & priority support'],
@@ -329,6 +337,10 @@ onBeforeUnmount(() => {
 
 const continueWithPlan = async () => {
   if (!selectedPlan.value) return
+  if (selectedPlanTrialEligible.value) {
+    await startTrial(selectedPlan.value)
+    return
+  }
   submitting.value = true
   error.value = ''
   try {
@@ -393,7 +405,7 @@ const continueWithPlan = async () => {
   }
 }
 
-const startTrial = async () => {
+const startTrial = async (targetPlan = selectedPlan.value) => {
   if (startingTrial.value || !trialEligible.value) return
   startingTrial.value = true
   error.value = ''
@@ -401,7 +413,8 @@ const startTrial = async () => {
     const user = await getCurrentUser()
     if (!user) throw new Error('Please sign in again.')
     await fetchBackendJson('/subscription/start-trial', {
-      method: 'POST', headers: { authorization: `Bearer ${await user.getIdToken()}` },
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${await user.getIdToken()}` },
+      body: JSON.stringify({ targetPlan }),
     })
     await subscriptionStore.refreshSubscription()
     await router.push('/account/subscription')

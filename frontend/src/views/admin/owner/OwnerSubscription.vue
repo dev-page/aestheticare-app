@@ -89,6 +89,7 @@ const isTrial = ref(false)
 const paymentStatus = ref('')
 const subscriptionExpiresAt = ref(null)
 const planData = ref(null)
+const subscriptionTrialDays = ref(0)
 const pendingPlan = ref('')
 const pendingApplyAt = ref(null)
 const planDocs = ref(new Map())
@@ -152,7 +153,7 @@ const isFree = computed(() => planKey.value.includes('free'))
 const isPaid = computed(() => paymentStatus.value.toLowerCase() === 'paid')
 const planPrice = computed(() => isFree.value || isTrial.value ? formatCurrency(0) : planData.value?.price != null ? formatCurrency(planData.value.price) : 'Price unavailable')
 const planCycle = computed(() => {
-  if (isTrial.value) return 'Free for 14 days'
+  if (isTrial.value) return `Free for ${Number(planData.value?.trialDays || subscriptionTrialDays.value || 14)} days`
   if (isFree.value) return 'No billing cycle'
   const cycle = formatCycle(planData.value?.billingCycle || planData.value?.cycle || '')
   return cycle === 'Trial' ? 'Billing cycle unavailable' : `per ${{ monthly: 'month', yearly: 'year', annually: 'year', annual: 'year' }[cycle] || cycle}`
@@ -205,6 +206,7 @@ const applySubscriptionData = (userData = {}, clinicData = {}) => {
   const lifecycle = subscriptionLifecycle(data)
   planKey.value = lifecycle.plan
   isTrial.value = lifecycle.trial
+  subscriptionTrialDays.value = Number(data.subscriptionTrialDays || 0)
   paymentStatus.value = data.paymentStatus || ''
   subscriptionExpiresAt.value = lifecycle.expiresAt
   pendingPlan.value = String(data.pendingSubscriptionPlan || '').trim().toLowerCase()
