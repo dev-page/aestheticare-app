@@ -2801,6 +2801,44 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
   }
 })
 
+app.get('/registration/clinic-submission-status', requireAuth, async (req, res) => {
+  const uid = String(req.user?.uid || '').trim()
+  try {
+    const firestore = admin.firestore()
+    const [userSnapshot, clinicSnapshot] = await Promise.all([
+      firestore.collection('users').doc(uid).get(),
+      firestore.collection('clinics').doc(uid).get(),
+    ])
+    if (!userSnapshot.exists || !clinicSnapshot.exists) {
+      return res.status(404).json({ success: false, error: 'Clinic registration account was not found.' })
+    }
+    const user = userSnapshot.data() || {}
+    const clinic = clinicSnapshot.data() || {}
+    const email = String(user.email || clinic.email || '').trim().toLowerCase()
+    const authEmail = String(req.user?.email || '').trim().toLowerCase()
+    if (!email || (authEmail && authEmail !== email)) {
+      return res.status(403).json({ success: false, error: 'Your signed-in email does not match this registration.' })
+    }
+    const policySnapshot = await clinicSubmissionPolicyRef(firestore, email).get()
+    const policy = policySnapshot.exists ? policySnapshot.data() || {} : {}
+    const lockedUntil = getTimestampDate(policy.lockedUntil)
+    const activeLock = lockedUntil && lockedUntil.getTime() > Date.now() ? lockedUntil : null
+    const count = activeLock ? CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS : Math.max(
+      Number(policy.submissionAttemptCount || 0),
+      Number(clinic.submissionAttemptCount || 0),
+      Number(clinic.resubmissionCount || 0) + (clinic.documentsSubmittedAt ? 1 : 0),
+    )
+    return res.json({ success: true, data: {
+      submissionAttemptCount: Math.min(count, CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS),
+      maxSubmissionAttempts: CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS,
+      lockedUntil: activeLock?.toISOString() || null,
+    } })
+  } catch (error) {
+    console.error('Clinic submission status lookup failed:', error)
+    return res.status(500).json({ success: false, error: 'Could not load the clinic submission status.' })
+  }
+})
+
 app.post('/registration/auto-verify-documents', requireAuth, async (req, res) => {
   const uid = String(req.body?.uid || '').trim()
   const applicantType = String(req.body?.applicantType || '').trim().toLowerCase()

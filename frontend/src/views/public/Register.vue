@@ -217,6 +217,27 @@ const otpVerifiedForRegistration = ref(false)
 const pendingApprovalMode = ref(false)
 const resubmissionReason = ref('')
 const expiryResubmissionExpiresAt = ref(null)
+const clinicSubmissionAttemptCount = ref(0)
+const clinicSubmissionMaxAttempts = ref(3)
+const clinicRegistrationLockedUntil = ref(null)
+const nextClinicSubmissionAttempt = computed(() => Math.min(
+  clinicSubmissionAttemptCount.value + 1,
+  clinicSubmissionMaxAttempts.value,
+))
+const clinicRegistrationLockLabel = computed(() => {
+  const value = clinicRegistrationLockedUntil.value
+  const date = value ? new Date(value) : null
+  return date && !Number.isNaN(date.getTime())
+    ? date.toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'long', timeStyle: 'short' })
+    : ''
+})
+const getClinicLockoutToast = (lockedUntil) => {
+  const date = lockedUntil ? new Date(lockedUntil) : null
+  const dateLabel = date && !Number.isNaN(date.getTime())
+    ? date.toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'long', timeStyle: 'short' })
+    : 'the end of the 14-day waiting period'
+  return `You have already used all 3 clinic document submission attempts for this email. Please wait until ${dateLabel} (Philippine time) before registering again.`
+}
 const expiryResubmissionDeadlineLabel = computed(() => {
   const value = expiryResubmissionExpiresAt.value
   const date = value?.toDate ? value.toDate() : value ? new Date(value) : null
@@ -1102,6 +1123,24 @@ const stopApprovalCheck = () => {
   }
 }
 
+const refreshClinicSubmissionStatus = async () => {
+  const currentUser = auth.currentUser
+  if (!currentUser || currentUser.uid !== userUid.value) return
+  try {
+    const token = await currentUser.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/registration/clinic-submission-status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) return
+    clinicSubmissionAttemptCount.value = Number(payload.data?.submissionAttemptCount || 0)
+    clinicSubmissionMaxAttempts.value = Number(payload.data?.maxSubmissionAttempts || 3)
+    clinicRegistrationLockedUntil.value = payload.data?.lockedUntil || null
+  } catch (error) {
+    console.warn('Could not refresh clinic submission attempt status:', error?.message || error)
+  }
+}
+
 const startApprovalCheck = () => {
   if (!userUid.value) return
   stopApprovalCheck()
@@ -1419,6 +1458,7 @@ const checkEmailAvailability = async (emailValue) => {
         restoreOtpCountdown()
       }
     } else {
+      if (currentStep.value === 3) await refreshClinicSubmissionStatus()
       toast.info(emailAvailabilityMessage.value)
     }
   } catch (error) {
@@ -1901,6 +1941,10 @@ if (statusResult.resumeStep === 4) {
 
     const clinicDoc = await getDoc(doc(db, 'clinics', userUid.value))
     const clinicData = clinicDoc.exists() ? clinicDoc.data() : {}
+    clinicSubmissionAttemptCount.value = Number(clinicData.submissionAttemptCount || 0)
+    clinicRegistrationLockedUntil.value = clinicData.registrationLockedUntil?.toDate
+      ? clinicData.registrationLockedUntil.toDate().toISOString()
+      : clinicData.registrationLockedUntil || null
     applyProfileData({
       firstName: existingUser.firstName,
       lastName: existingUser.lastName,
@@ -1950,6 +1994,7 @@ if (statusResult.resumeStep === 4) {
         toast.warning(`Unable to send OTP: ${otpResult.error}`)
       }
     } else {
+      if (currentStep.value === 3) await refreshClinicSubmissionStatus()
       stopOtpCountdown()
       toast.info(`Welcome back. Continuing from Step ${resumeStep}.`)
     }
@@ -2640,6 +2685,17 @@ const checkRegistrationAttempt = async (emailValue) => {
   }
 }
 
+const showRegistrationAttemptBlock = (attemptResult) => {
+  if (attemptResult?.code === 'CLINIC_REGISTRATION_LOCKED') {
+    clinicRegistrationLockedUntil.value = attemptResult.lockedUntil || null
+    clinicSubmissionAttemptCount.value = 3
+    toast.error(getClinicLockoutToast(attemptResult.lockedUntil), { autoClose: 9000 })
+    return true
+  }
+  toast.error(attemptResult?.error || 'Too many registration attempts. Please try again later.')
+  return false
+}
+
 const registerClinic = async () => {
   if (currentStep.value !== 1) return
   if (!emailChecked.value) {
@@ -2711,7 +2767,7 @@ const registerClinic = async () => {
     if (!userUid.value) {
       const attemptResult = await checkRegistrationAttempt(email.value)
       if (!attemptResult.success) {
-        toast.error(attemptResult.error || 'Too many registration attempts. Please try again later.')
+        showRegistrationAttemptBlock(attemptResult)
         return
       }
     }
@@ -3175,8 +3231,16 @@ const submitDocuments = async () => {
     })
     const submissionPayload = await submissionResponse.json().catch(() => null)
     if (!submissionResponse.ok || !submissionPayload?.success) {
+      if (submissionResponse.status === 429 && submissionPayload?.code === 'CLINIC_REGISTRATION_LOCKED') {
+        clinicRegistrationLockedUntil.value = submissionPayload.lockedUntil || null
+        clinicSubmissionAttemptCount.value = 3
+        toast.error(getClinicLockoutToast(submissionPayload.lockedUntil), { autoClose: 9000 })
+        return
+      }
       throw new Error(submissionPayload?.error || 'Could not submit clinic documents. Please try again.')
     }
+    clinicSubmissionAttemptCount.value = Number(submissionPayload.data?.submissionAttemptCount || clinicSubmissionAttemptCount.value + 1)
+    clinicRegistrationLockedUntil.value = null
     resubmissionReason.value = ''
 
     // Verification is a server-side follow-up. Show submission success as soon
@@ -3728,6 +3792,11 @@ const handleRegistrationSubmit = () => {
               <p class="text-sm text-charcoal-600">
                 Upload your required documents for legitimacy checks before approval.
               </p>
+              <div class="rounded-xl border border-gold-300 bg-gold-50 px-4 py-3 text-sm text-charcoal-700" role="status">
+                <p class="font-semibold text-charcoal-800">Document submission {{ nextClinicSubmissionAttempt }} of {{ clinicSubmissionMaxAttempts }}</p>
+                <p class="mt-1 text-xs text-charcoal-600">Your original submission and up to two resubmissions are allowed for this email.</p>
+                <p v-if="clinicRegistrationLockLabel" class="mt-2 text-xs font-semibold text-red-700">Registration is locked until {{ clinicRegistrationLockLabel }} (Philippine time).</p>
+              </div>
               <div v-if="resubmissionReason" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-charcoal-700" role="alert">
                 <p class="font-semibold text-charcoal-800">Document changes requested</p>
                 <p class="mt-1">{{ resubmissionReason }}</p>
