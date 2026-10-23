@@ -120,7 +120,7 @@ const syncSmallScreen = () => {
 
 const topbarStyle = computed(() => ({
   '--sidebar-offset': props.useSidebarOffset
-    ? (isSmallScreen.value ? '0rem' : (props.sidebarCollapsed ? '7rem' : '19rem'))
+    ? (isSmallScreen.value ? '0rem' : (props.sidebarCollapsed ? '5rem' : '17rem'))
     : '0rem',
   '--sidebar-offset-padding': props.offsetPadding
 }))
@@ -143,7 +143,11 @@ const badgeLabelClass = computed(() => {
   return props.badgeVariant === 'date' ? 'badge-date' : ''
 })
 
-const resolvedTitle = computed(() => props.title || 'Clinic Workspace')
+const resolvedTitle = computed(() => {
+  if (props.title) return props.title
+  const identity = `${props.panelKey} ${userTypeValue.value} ${roleValue.value}`.toLowerCase()
+  return identity.includes('customer') ? 'Customer Workspace' : 'Clinic Workspace'
+})
 
 const router = useRouter()
 const showNotifications = ref(false)
