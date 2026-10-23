@@ -27,7 +27,7 @@
             <p class="mt-3 text-sm leading-6 text-[#e2c7b6]">Your clinic information, branch data, employee records, and audit logs are held for 30 days. Signing in during that period restores your clinic and re-enables the employee accounts locked by this closure.</p>
             <p class="mt-3 text-sm leading-6 text-[#e2c7b6]">After 30 days, the closure becomes permanent and the held clinic information is deleted.</p>
             <div class="mt-6 space-y-3 border-t border-[#5a3927] pt-5">
-              <label class="flex items-start gap-3 rounded-2xl border border-[#5a3927] bg-[#24160f] p-4"><input v-model="acknowledged" type="checkbox" class="mt-1 h-4 w-4 accent-[#b8794f]" /><span class="text-sm leading-6 text-[#e2c7b6]">I understand that the clinic will be unpublished and employee access will be disabled until I restore the account.</span></label>
+              <label class="flex items-start gap-3 rounded-2xl border border-[#ead8c4] bg-[#fffdfa] p-4"><input v-model="acknowledged" type="checkbox" class="mt-1 h-4 w-4 accent-[#b8794f]" /><span class="text-sm leading-6 text-[#4a3527]">I understand that the clinic will be unpublished and employee access will be disabled until I restore the account.</span></label>
               <label class="block text-sm font-semibold text-[#f3e7e0]" for="closure-confirmation">Type <span class="text-[#f0c38d]">CLOSE MY ACCOUNT</span> to confirm</label>
               <input id="closure-confirmation" v-model.trim="confirmation" type="text" placeholder="CLOSE MY ACCOUNT" class="w-full rounded-xl border border-[#5a3927] bg-[#24160f] px-4 py-3 text-[#f3e7e0] outline-none focus:border-[#b8794f]" />
               <p v-if="error" class="text-sm text-[#ffb0a5]" role="alert">{{ error }}</p>
