@@ -19,13 +19,15 @@
         <!-- Clinic Details Form -->
         <form @submit.prevent="saveClinicProfile" class="space-y-4">
           <div>
-            <label class="block text-slate-400 text-sm mb-1">Clinic Name</label>
+            <label class="block text-slate-400 text-sm mb-1">Clinic Name <span class="text-xs text-slate-500">(registered name)</span></label>
             <input
-              v-model="clinic.clinicName"
+              :value="clinic.clinicName"
               type="text"
-              placeholder="Enter clinic name"
-              class="w-full rounded-lg p-3 bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              readonly
+              aria-readonly="true"
+              class="w-full cursor-not-allowed rounded-lg border border-slate-600 bg-slate-800 p-3 text-slate-400"
             />
+            <p class="mt-1 text-xs text-slate-500">The registered clinic name is protected from changes here.</p>
           </div>
 
           <div>
@@ -39,7 +41,7 @@
           </div>
 
           <div>
-            <label class="block text-slate-400 text-sm mb-1">Business Email Address</label>
+            <label class="block text-slate-400 text-sm mb-1">Clinic Email Address</label>
             <input
               v-model="clinic.businessEmail"
               type="email"
@@ -49,7 +51,7 @@
           </div>
 
           <div>
-            <label class="block text-slate-400 text-sm mb-1">Phone Number</label>
+            <label class="block text-slate-400 text-sm mb-1">Clinic Phone Number</label>
             <div class="flex overflow-hidden rounded-lg border border-slate-600 bg-slate-700 focus-within:ring-2 focus-within:ring-purple-500">
               <span class="inline-flex items-center border-r border-slate-600 px-3 text-sm font-semibold text-slate-300">+63</span>
               <input :value="clinic.contactNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" class="min-w-0 flex-1 bg-transparent p-3 text-white outline-none" @input="handleContactNumberInput" @blur="validateContactNumber" />
@@ -628,9 +630,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
 
       const clinicRef = doc(db, 'clinics', activeClinicId.value || user.uid);
+      const { clinicName, ...editableClinicFields } = clinic.value;
       await updateDoc(clinicRef, {
-        ...clinic.value,
-        clinicName: String(clinic.value.clinicName || clinic.value.clinicBranch || '').trim()
+        ...editableClinicFields,
       });
       toast.success('Clinic profile updated successfully!');
     };
