@@ -125,9 +125,11 @@ const requiresLoginOtp = (userData) => {
 const firebaseLoginMessages = {
   'auth/user-not-found': 'No account found with this email.',
   'auth/invalid-credential': 'Invalid email or password.',
+  'auth/invalid-login-credentials': 'Invalid email or password.',
   'auth/wrong-password': 'Invalid email or password.',
   'auth/too-many-requests': 'Too many failed login attempts. Please try again later.',
-  'auth/network-request-failed': 'Connection error. Please check your internet and try again.'
+  'auth/network-request-failed': 'Connection error. Please check your internet and try again.',
+  'permission-denied': 'Your credentials were accepted, but your account profile could not be loaded. Please try again or contact support.'
 }
 
 const resendActivationEmail = async () => {
@@ -252,7 +254,6 @@ const handleLogin = async () => {
     }
 
     isSubmitting.value = true
-    setProcessLoading(true, 'Checking your account...')
 
     try {
       await setPersistence(
@@ -261,6 +262,10 @@ const handleLogin = async () => {
       )
 
       const userCredentials = await signInWithEmailAndPassword(auth, email.value.trim(), password.value)
+      // Do not show the full-screen loader for rejected credentials. Firebase
+      // has confirmed the password at this point; the remaining profile and
+      // redirect work can use the global loading screen.
+      setProcessLoading(true, 'Loading your account...')
       await userCredentials.user.reload()
 
       // A Free-plan "Continue" action only grants access for the active

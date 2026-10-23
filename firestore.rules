@@ -235,7 +235,11 @@ service cloud.firestore {
           );
       allow update: if isSignedIn()
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['practitionerType'])
-        && ((request.auth.uid == userId && applicantCannotChangeVerificationFields() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'userType', 'branchId', 'branchIds', 'organizationOwnerId', 'clinicId', 'permissions', 'effectivePermissions', 'customRoleIds', 'customRoleId', 'adminRole']))
+        && ((request.auth.uid == userId
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'welcomeNotificationSent', 'welcomeNotificationAt', 'welcomeNotificationRead', 'welcomeNotificationDeleted'
+            ]))
+          || (request.auth.uid == userId && applicantCannotChangeVerificationFields() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'userType', 'branchId', 'branchIds', 'organizationOwnerId', 'clinicId', 'permissions', 'effectivePermissions', 'customRoleIds', 'customRoleId', 'adminRole']))
           || (request.auth.uid == userId
             && isCustomer()
             && request.resource.data.status == 'Inactive'
