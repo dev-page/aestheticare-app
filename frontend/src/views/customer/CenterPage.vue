@@ -326,15 +326,48 @@
                       </span>
                     </div>
                     <p v-if="bookingRulesNotice" class="mt-3 text-xs text-amber-200">{{ bookingRulesNotice }}</p>
-                    <div class="mt-4 rounded-xl border border-[#e6cfb0] bg-[#fffaf2] p-3 text-xs text-[#6f4a2d]">
-                      <label v-if="selectedServices.every(service => !['Consultation', 'Package'].includes(service.type)) && !scheduledBookings.length" class="flex items-center gap-2 font-semibold"><input v-model="groupBookingEnabled" type="checkbox" /> Book for a group</label>
+                    <section v-if="selectedServices.every(service => !['Consultation', 'Package'].includes(service.type)) && !scheduledBookings.length" class="group-booking-panel mt-4" aria-labelledby="group-booking-title">
+                      <label class="group-booking-toggle">
+                        <input v-model="groupBookingEnabled" type="checkbox" />
+                        <span>
+                          <strong id="group-booking-title">Book for a group</strong>
+                          <small>Schedule services for multiple people in one booking.</small>
+                        </span>
+                      </label>
+
                       <template v-if="groupBookingEnabled">
-                        <label class="mt-3 block">Guests (not including you)<input v-model.number="groupGuestCount" type="number" min="1" max="10" class="mt-1 w-full rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]" /></label>
-                        <label class="mt-3 flex items-center gap-2"><input v-model="groupIncludeOrganizer" type="checkbox" /> Include me as a service recipient</label>
-                        <div v-for="(guest, index) in groupGuests" :key="index" class="mt-3 grid gap-2 md:grid-cols-2"><input v-model.trim="guest.name" class="rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]" :placeholder="`Guest ${index + 1} full name`" /><input v-model.trim="guest.email" type="email" class="rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]" placeholder="Guest email (for consent)" /><input v-model.trim="guest.phone" type="tel" maxlength="32" aria-label="Guest contact number" class="rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]" placeholder="Guest contact number" /><label class="md:col-span-2">Service for this attendee<select v-model="guest.serviceId" class="mt-1 w-full rounded-lg border border-[#e0c09a] bg-white px-2 py-1.5 text-[#3d281d]"><option value="">Same as selected service</option><option v-for="service in items.filter(item => item.type === 'Service' && !item.isPackageComponent)" :key="service.id" :value="service.id">{{ service.title || service.name }} · ₱{{ service.price }}</option></select></label></div>
-                        <p class="mt-3">Each attendee receives one service in their own consecutive time slot, with their own code and consent link. Choose a different service per guest if needed. One payment covers the group.</p>
+                        <div class="group-booking-instructions">
+                          <strong>How group booking works</strong>
+                          <p>Each person gets one service in a consecutive time slot. Each attendee receives their own service code and consent link. One payment covers the whole group.</p>
+                        </div>
+
+                        <label class="group-field-label" for="group-guest-count">Number of guests <span>(not including you)</span></label>
+                        <input id="group-guest-count" v-model.number="groupGuestCount" type="number" min="1" max="10" class="group-input" />
+                        <p class="group-field-hint">Add 1–10 guests. You can also include yourself below.</p>
+
+                        <label class="group-self-option">
+                          <input v-model="groupIncludeOrganizer" type="checkbox" />
+                          <span><strong>Include me as an attendee</strong><small>You’ll receive your own service slot too.</small></span>
+                        </label>
+
+                        <div class="group-guest-list">
+                          <fieldset v-for="(guest, index) in groupGuests" :key="index" class="group-guest-card">
+                            <legend>Guest {{ index + 1 }}</legend>
+                            <label class="group-field-label" :for="`group-guest-name-${index}`">Full name</label>
+                            <input :id="`group-guest-name-${index}`" v-model.trim="guest.name" class="group-input" autocomplete="name" :placeholder="`Guest ${index + 1} full name`" />
+                            <label class="group-field-label" :for="`group-guest-email-${index}`">Email <span>(required for consent link)</span></label>
+                            <input :id="`group-guest-email-${index}`" v-model.trim="guest.email" type="email" class="group-input" autocomplete="email" placeholder="name@example.com" />
+                            <label class="group-field-label" :for="`group-guest-phone-${index}`">Contact number <span>(optional)</span></label>
+                            <input :id="`group-guest-phone-${index}`" v-model.trim="guest.phone" type="tel" maxlength="32" class="group-input" autocomplete="tel" placeholder="Guest contact number" />
+                            <label class="group-field-label" :for="`group-guest-service-${index}`">Service for this guest</label>
+                            <select :id="`group-guest-service-${index}`" v-model="guest.serviceId" class="group-input">
+                              <option value="">Same as selected service</option>
+                              <option v-for="service in items.filter(item => item.type === 'Service' && !item.isPackageComponent)" :key="service.id" :value="service.id">{{ service.title || service.name }} · ₱{{ service.price }}</option>
+                            </select>
+                          </fieldset>
+                        </div>
                       </template>
-                    </div>
+                    </section>
                     <label v-if="selectedServicesRequireConsultation" class="mt-3 flex items-start gap-2 text-xs text-[#8b6a4d]"><input v-model="priorConsultationConfirmed" type="checkbox" class="mt-0.5" /> I already completed a consultation for this service and want the clinic to verify it.</label>
                   </div>
                   <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
@@ -3378,4 +3411,28 @@ const formatChatTime = (timestamp) => {
 .service-category-filters button.is-selected { border-color: #8d5a3b; background: #8d5a3b; color: #fffaf3; }
 .service-category-filters button:focus-visible, .service-category-reset:focus-visible { outline: 3px solid #b88759; outline-offset: 3px; }
 .service-category-reset { margin-top: 12px; border: 0; background: transparent; color: #805232; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+
+.group-booking-panel { padding: 14px; border: 1px solid #ead2b2; border-radius: 16px; background: #fffdf9; color: #624733; }
+.group-booking-toggle, .group-self-option { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.group-booking-toggle > span, .group-self-option > span { display: grid; gap: 3px; }
+.group-booking-toggle strong, .group-self-option strong { color: #342419; font-size: 13px; }
+.group-booking-toggle small, .group-self-option small { color: #795f4b; font-size: 12px; line-height: 1.45; }
+.group-booking-toggle input, .group-self-option input { width: 16px; height: 16px; margin-top: 2px; accent-color: #8b5a3c; flex: 0 0 auto; }
+.group-booking-instructions { margin: 14px 0; padding: 12px; border-left: 3px solid #b9794f; border-radius: 8px; background: #fff7ec; }
+.group-booking-instructions strong { color: #493022; font-size: 12px; }
+.group-booking-instructions p { margin: 4px 0 0; color: #795f4b; font-size: 12px; line-height: 1.5; }
+.group-field-label { display: block; margin: 12px 0 5px; color: #624733; font-size: 12px; font-weight: 600; }
+.group-field-label span { color: #876e59; font-weight: 400; }
+.group-input { display: block; width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #d9b68f; border-radius: 9px; background: #fff; color: #342419; font-size: 13px; }
+.group-input:focus { outline: 3px solid rgba(185, 121, 79, .2); border-color: #a66d48; }
+.group-field-hint { margin: 5px 0 12px; color: #876e59; font-size: 11px; }
+.group-self-option { margin: 12px 0; padding: 11px; border: 1px solid #ead2b2; border-radius: 10px; background: #fffaf3; }
+.group-guest-list { display: grid; gap: 12px; margin-top: 12px; }
+.group-guest-card { min-width: 0; padding: 12px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffaf3; }
+.group-guest-card legend { padding: 0 6px; color: #493022; font-size: 12px; font-weight: 700; }
+@media (min-width: 768px) {
+  .group-guest-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 10px; }
+  .group-guest-card legend { grid-column: 1 / -1; }
+  .group-guest-card .group-field-label, .group-guest-card .group-input { min-width: 0; }
+}
 </style>
