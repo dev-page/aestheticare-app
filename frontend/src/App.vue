@@ -9,7 +9,7 @@
   >
     <div>
       <EmployeeTopbar
-        v-if="showEmployeeTopbar"
+        v-if="showEmployeeTopbar && !isClinicOnboardingRoute"
         :title="topbarTitle"
         :plan-label="planLabel"
         :is-expired="isExpired"
@@ -125,6 +125,7 @@ import AppLoadingScreen from '@/components/common/AppLoadingScreen.vue'
 const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking, continueSession } = useAuth()
 
 const route = useRoute()
+const isClinicOnboardingRoute = computed(() => String(route.path || '').toLowerCase() === '/clinic/onboarding')
 const isSystemAdminRoute = computed(() => String(route.path || '').toLowerCase().startsWith('/superadmin/'))
 const {
   isOpen: onboardingIsOpen,

@@ -146,7 +146,7 @@
 
                 <div class="rounded-xl border border-slate-600 bg-slate-800/70 p-4">
                   <div class="flex items-start gap-3"><span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gold-500/40 bg-gold-500/10 text-gold-300"><Icon icon="mdi:clock-outline" class="h-5 w-5" /></span><div><h4 class="font-medium text-white">Operating Hours</h4><p class="mt-1 text-xs text-slate-400">These hours are used for Basic-plan booking availability and shown to customers.</p></div></div>
-                  <div class="mt-4 space-y-3"><div v-for="day in operatingHourDays" :key="day.key" class="grid grid-cols-[minmax(92px,1fr)_auto] items-center gap-3 rounded-lg border border-slate-600 bg-slate-900/60 p-3 sm:grid-cols-[120px_1fr_auto]"><span class="text-sm font-medium text-slate-200">{{ day.label }}</span><div class="flex items-center gap-2" :class="editForm.operatingHours[day.key].closed ? 'pointer-events-none opacity-40' : ''"><input v-model="editForm.operatingHours[day.key].open" type="time" class="min-w-0 rounded-lg border border-slate-500 bg-slate-800 px-2 py-2 text-sm text-white outline-none focus:border-gold-500" :disabled="editForm.operatingHours[day.key].closed" /><span class="text-xs text-slate-500">to</span><input v-model="editForm.operatingHours[day.key].close" type="time" class="min-w-0 rounded-lg border border-slate-500 bg-slate-800 px-2 py-2 text-sm text-white outline-none focus:border-gold-500" :disabled="editForm.operatingHours[day.key].closed" /></div><label class="flex items-center justify-end gap-2 text-xs text-slate-300"><input v-model="editForm.operatingHours[day.key].closed" type="checkbox" /> Closed</label></div></div>
+                  <div class="mt-4 space-y-3"><div v-for="day in operatingHourDays" :key="day.key" class="grid gap-3 rounded-lg border border-slate-600 bg-slate-900/60 p-3 sm:grid-cols-[120px_1fr_auto]"><span class="text-sm font-medium text-slate-200">{{ day.label }}</span><div class="space-y-2" :class="editForm.operatingHours[day.key].closed ? 'pointer-events-none opacity-40' : ''"><div v-for="(range, rangeIndex) in editForm.operatingHours[day.key].ranges" :key="`${day.key}-${rangeIndex}`" class="flex items-center gap-2"><input v-model="range.open" type="time" class="min-w-0 rounded-lg border border-slate-500 bg-slate-800 px-2 py-2 text-sm text-white outline-none focus:border-gold-500" :disabled="editForm.operatingHours[day.key].closed" /><span class="text-xs text-slate-500">to</span><input v-model="range.close" type="time" class="min-w-0 rounded-lg border border-slate-500 bg-slate-800 px-2 py-2 text-sm text-white outline-none focus:border-gold-500" :disabled="editForm.operatingHours[day.key].closed" /><button v-if="editForm.operatingHours[day.key].ranges.length > 1" type="button" class="rounded-md px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/10" :disabled="editForm.operatingHours[day.key].closed" @click="removeOperatingRange(day.key, rangeIndex)">Remove</button></div><button type="button" class="rounded-md border border-slate-600 px-2 py-1.5 text-xs font-medium text-gold-300 hover:bg-slate-800" :disabled="editForm.operatingHours[day.key].closed" @click="addOperatingRange(day.key)">+ Add hours</button></div><label class="flex items-center justify-end gap-2 text-xs text-slate-300"><input v-model="editForm.operatingHours[day.key].closed" type="checkbox" /> Closed</label></div></div>
                 </div>
 
                 <div>
@@ -429,21 +429,26 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const operatingHourDays = [
       { key: 'monday', label: 'Monday' }, { key: 'tuesday', label: 'Tuesday' }, { key: 'wednesday', label: 'Wednesday' }, { key: 'thursday', label: 'Thursday' }, { key: 'friday', label: 'Friday' }, { key: 'saturday', label: 'Saturday' }, { key: 'sunday', label: 'Sunday' }
     ]
-    const defaultOperatingHours = () => Object.fromEntries(operatingHourDays.map(({ key }) => [key, { open: '09:00', close: '18:00', closed: key === 'sunday' }]))
+    const defaultOperatingHours = () => Object.fromEntries(operatingHourDays.map(({ key }) => [key, { ranges: [{ open: '09:00', close: '18:00' }], closed: key === 'sunday' }]))
     const normalizeOperatingHours = (value) => {
       const defaults = defaultOperatingHours()
       operatingHourDays.forEach(({ key }) => {
         const source = value?.[key] || {}
-        defaults[key] = { open: /^\d{2}:\d{2}$/.test(String(source.open || '')) ? source.open : defaults[key].open, close: /^\d{2}:\d{2}$/.test(String(source.close || '')) ? source.close : defaults[key].close, closed: source.closed === true }
+        const sourceRanges = Array.isArray(source.ranges) ? source.ranges : (source.open || source.close ? [{ open: source.open, close: source.close }] : [])
+        const ranges = sourceRanges.map((range) => ({ open: /^\d{2}:\d{2}$/.test(String(range?.open || '')) ? range.open : '09:00', close: /^\d{2}:\d{2}$/.test(String(range?.close || '')) ? range.close : '18:00' }))
+        defaults[key] = { ranges: ranges.length ? ranges : [{ open: '09:00', close: '18:00' }], closed: source.closed === true }
       })
       return defaults
     }
     const formatOperatingHours = (value) => {
       if (!value || value.closed === true) return 'Closed'
       const formatTime = (time) => { const [hours, minutes] = String(time || '').split(':').map(Number); if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return ''; return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' }) }
-      const open = formatTime(value.open); const close = formatTime(value.close)
-      return open && close ? `${open} – ${close}` : 'Not set'
+      const ranges = Array.isArray(value.ranges) ? value.ranges : (value.open || value.close ? [{ open: value.open, close: value.close }] : [])
+      const formattedRanges = ranges.map((range) => { const open = formatTime(range.open); const close = formatTime(range.close); return open && close ? `${open} – ${close}` : '' }).filter(Boolean)
+      return formattedRanges.length ? formattedRanges.join(', ') : 'Not set'
     }
+    const addOperatingRange = (dayKey) => editForm.value.operatingHours[dayKey].ranges.push({ open: '09:00', close: '18:00' })
+    const removeOperatingRange = (dayKey, rangeIndex) => { const ranges = editForm.value.operatingHours[dayKey].ranges; if (ranges.length > 1) ranges.splice(rangeIndex, 1) }
 
     const editForm = ref({
       businessEmail: '',
@@ -1164,6 +1169,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       editForm,
       operatingHourDays,
       formatOperatingHours,
+      addOperatingRange,
+      removeOperatingRange,
       startEdit,
       cancelEdit,
       saveEdit,
