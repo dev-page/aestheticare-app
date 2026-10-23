@@ -1,6 +1,6 @@
 <template>
-  <div class="module-theme min-h-screen bg-slate-900 p-4 md:p-8">
-    <div class="mx-auto max-w-5xl space-y-6">
+  <div class="attendance-page module-theme min-h-screen bg-slate-900 p-4 md:p-8">
+    <main class="mx-auto max-w-5xl space-y-6">
       <header class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <button
@@ -17,7 +17,7 @@
           </p>
         </div>
 
-        <div class="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-right md:min-w-[240px]">
+        <div class="attendance-card rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-right md:min-w-[240px]">
           <p class="text-xs uppercase tracking-wide text-slate-400">Today</p>
           <p class="text-lg font-semibold text-white">{{ todayLabel }}</p>
           <p class="text-sm text-slate-300">{{ liveTime }}</p>
@@ -25,7 +25,7 @@
       </header>
 
       <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <article class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
+        <article class="attendance-card rounded-2xl border border-slate-700 bg-slate-800 p-5">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 class="text-lg font-semibold text-white">QR Scanner</h2>
@@ -34,7 +34,7 @@
 
             <button
               type="button"
-              class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              class="attendance-primary-button rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="isScanning || !proofFile"
               @click="startScanner"
             >
@@ -45,7 +45,7 @@
           <AttendanceCamera v-if="!isScanning" @capture="selectProof" />
           <p class="mt-2 text-xs text-slate-400">{{ proofFileName || 'Take a fresh photo before scanning.' }}</p>
 
-          <div class="mt-5 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950">
+          <div class="attendance-scanner-frame mt-5 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950">
             <div id="attendance-qr-reader" class="min-h-[320px]"></div>
           </div>
 
@@ -55,7 +55,7 @@
         </article>
 
         <aside class="space-y-4">
-          <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
+          <section class="attendance-card rounded-2xl border border-slate-700 bg-slate-800 p-5">
             <p class="text-xs uppercase tracking-[0.18em] text-slate-500">Employee</p>
             <h2 class="mt-2 text-lg font-semibold text-white">{{ employeeName }}</h2>
             <div class="mt-4 space-y-2 text-sm text-slate-300">
@@ -64,19 +64,19 @@
             </div>
           </section>
 
-          <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
+          <section class="attendance-card rounded-2xl border border-slate-700 bg-slate-800 p-5">
             <p class="text-xs uppercase tracking-[0.18em] text-slate-500">My Attendance Today</p>
             <div class="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-300"><div><p class="text-xs text-slate-500">Time in</p><p class="mt-1 font-medium text-white">{{ attendanceRecord.timeIn || 'Not recorded' }}</p></div><div><p class="text-xs text-slate-500">Time out</p><p class="mt-1 font-medium text-white">{{ attendanceRecord.timeOut || 'Not recorded' }}</p></div></div>
             <p class="mt-3 text-xs text-slate-400">Status: <span class="text-white">{{ attendanceRecord.timeOut ? 'Complete' : attendanceRecord.timeIn ? 'On Duty' : 'Not clocked in' }}</span></p>
           </section>
 
-          <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
+          <section class="attendance-card rounded-2xl border border-slate-700 bg-slate-800 p-5">
             <p class="text-xs uppercase tracking-[0.18em] text-slate-500">Recent Attendance</p>
             <ul v-if="attendanceHistory.length" class="mt-3 space-y-2 text-xs text-slate-300"><li v-for="record in attendanceHistory" :key="record.id" class="flex justify-between gap-3 border-b border-slate-700 pb-2 last:border-0"><span>{{ record.date }}</span><span>{{ record.timeIn || '—' }} – {{ record.timeOut || '—' }}</span></li></ul>
             <p v-else class="mt-3 text-sm text-slate-400">No previous attendance records.</p>
           </section>
 
-          <section class="rounded-2xl border border-slate-700 bg-slate-800 p-5">
+          <section class="attendance-card rounded-2xl border border-slate-700 bg-slate-800 p-5">
             <p class="text-xs uppercase tracking-[0.18em] text-slate-500">Latest Result</p>
             <div v-if="lastAttendanceAction" class="mt-3 space-y-2 text-sm text-slate-300">
               <p><span class="text-slate-400">Action:</span> {{ lastAttendanceAction }}</p>
@@ -103,7 +103,7 @@
           </section>
         </aside>
       </section>
-    </div>
+    </main>
   </div>
 </template>
 

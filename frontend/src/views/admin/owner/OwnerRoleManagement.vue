@@ -653,10 +653,9 @@ import {
 } from '@/config/clinicPermissionRegistry'
 
 const colorPresets = ['#5865F2', '#57F287', '#FEE75C', '#EB459E', '#ED4245', '#3BA55D', '#1ABC9C', '#FAA61A', '#2D7DFA', '#A56EFF']
-// These account pages are available to every signed-in clinic user. Showing
-// them as optional role grants was misleading because toggling them never
-// changed actual access.
-const defaultPermissionKeys = new Set(['activities:view', 'notifications:view'])
+// These pages are always available to clinic staff as self-service. Request
+// permissions do not grant access to review other employees' submissions.
+const defaultPermissionKeys = new Set(['activities:view', 'notifications:view', 'leave:create', 'overtime:create'])
 const ownerOnlyPermissionKeys = new Set(
   permissionGroups.flatMap((group) => group.sections.flatMap((section) =>
     section.permissions.filter((permission) => permission.ownerOnly).map((permission) => permission.key)
