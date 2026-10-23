@@ -5379,42 +5379,12 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       }
     }
 
-    // Fetch existing appointments for the same practitioner/branch/date and check for conflicts
-    const apptQuery = firestore.collection('appointments')
-      .where('branchId', '==', branchId)
-      .where('practitionerId', '==', practitionerId)
-      .where('date', '==', date)
+    // A per-practitioner/day transaction lock serializes online and walk-in
+    // bookings. The appointment conflict check below runs after acquiring it.
+    const slotLockId = crypto.createHash('sha256').update(`${branchId}:${practitionerId}:${date}`).digest('hex')
+    const slotLockRef = firestore.collection('bookingSlotLocks').doc(slotLockId)
 
-    const apptSnap = await apptQuery.get()
-
-    for (const docSnap of apptSnap.docs) {
-      const appt = docSnap.data() || {}
-      const existingRange = getBookingRange(appt)
-      if (!existingRange) continue
-
-      const existingStatus = normalizeBookingStatus(appt.status)
-      if (!BOOKING_BLOCKING_STATUSES.has(existingStatus)) continue
-
-      if (rangesOverlap(requestedRange.start, requestedRange.end, existingRange.start, existingRange.end)) {
-        // Conflict found
-        return res.status(409).json({
-          success: false,
-          error: 'Requested time conflicts with an existing appointment',
-          conflict: {
-            appointmentId: docSnap.id,
-            practitionerId,
-            branchId,
-            date,
-            time: appt.time || null,
-            endTime: appt.endTime || null,
-            status: appt.status || null,
-            details: appt.service || appt.type || null,
-          },
-        })
-      }
-    }
-
-    // No conflicts — proceed to create booking + appointment transactionally
+    // Create booking + appointment transactionally after validating the slot.
     const bookingRef = firestore.collection('bookings').doc()
     const appointmentRef = firestore.collection('appointments').doc()
 
@@ -5448,6 +5418,18 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
 
     const groupResult = { recipientAppointmentIds: [], invitations: [] }
     await firestore.runTransaction(async (tx) => {
+      await tx.get(slotLockRef)
+      const apptQuery = firestore.collection('appointments')
+        .where('branchId', '==', branchId)
+        .where('practitionerId', '==', practitionerId)
+        .where('date', '==', date)
+      const apptSnap = await tx.get(apptQuery)
+      for (const docSnap of apptSnap.docs) {
+        const appt = docSnap.data() || {}
+        const existingRange = getBookingRange(appt)
+        if (!existingRange || !BOOKING_BLOCKING_STATUSES.has(normalizeBookingStatus(appt.status))) continue
+        assertWorkflow(!rangesOverlap(requestedRange.start, requestedRange.end, existingRange.start, existingRange.end), 'Requested time conflicts with an existing appointment.', 409)
+      }
       const prepared = await prepareBooking({ tx, db: firestore, reservation, getBookingRange, rangesOverlap })
       const recipients = walkIn ? [] : await prepareClinicBookingRecipients({ tx, db: firestore, branchId, branch, loadUserContext })
       Object.assign(appointmentPayload, prepared.data, {
@@ -5459,6 +5441,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
             : {}),
         serviceKey: null, customerKeyVerified: false, workerKeyVerified: false, workerCompleted: false, customerCompleted: false,
       })
+      tx.set(slotLockRef, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       for (const lock of prepared.customerLocks || []) tx.set(lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.set(bookingRef, { ...bookingPayload, ...prepared.data, source: walkIn ? 'walk_in' : (freePlanDirectBooking ? 'customer_booking' : 'customer_booking_request'), status: initialBookingStatus })
@@ -9097,7 +9080,13 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
             return res.status(409).json({ success: false, error: 'This appointment is not ready for payment.' })
           }
           if (appointmentData.approvalStatus !== 'Approved') return res.status(409).json({ success: false, error: 'The clinic must approve this booking before payment.' })
-          if (normalized(appointmentData.contract?.status) !== 'signed') return res.status(409).json({ success: false, error: 'Please review and sign your contract before payment.' })
+          if (!appointmentData.isBookingOrderParent && normalized(appointmentData.contract?.status) !== 'signed') return res.status(409).json({ success: false, error: 'Please review and sign your contract before payment.' })
+          if (appointmentData.isBookingOrderParent) {
+            const childIds = Array.isArray(appointmentData.appointmentIds) ? appointmentData.appointmentIds : []
+            if (!childIds.length) return res.status(409).json({ success: false, error: 'This booking order has no appointments to pay for.' })
+            const children = await Promise.all(childIds.map(id => firestore.collection('appointments').doc(String(id)).get()))
+            if (children.some(child => !child.exists || child.data()?.approvalStatus !== 'Approved')) return res.status(409).json({ success: false, error: 'Every appointment in this order must be approved before payment.' })
+          }
           const remainingAmount = paymentDue(appointmentData) / 100
           if (remainingAmount <= 0) return res.status(409).json({ success: false, error: 'This appointment has no remaining balance.' })
           if (Math.abs(Number(amount || 0) - Math.round(remainingAmount * 100)) > 1) {

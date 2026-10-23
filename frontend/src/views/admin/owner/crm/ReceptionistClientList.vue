@@ -79,8 +79,17 @@
 
           <div class="grid gap-6 px-6 py-5 lg:grid-cols-[320px_minmax(0,1fr)]">
             <section class="rounded-xl border border-slate-700 bg-slate-800/70 p-5">
-              <h3 class="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Client Details</h3>
-              <div class="mt-4 space-y-3 text-sm">
+              <div class="flex items-center justify-between gap-3">
+                <h3 class="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Client Details</h3>
+                <button v-if="canEditSelectedClient && !editingClient" type="button" class="rounded-lg border border-purple-400/40 bg-purple-500/15 px-3 py-1.5 text-sm font-medium text-purple-200 transition hover:bg-purple-500/25" @click="beginClientEdit">Edit</button>
+              </div>
+              <div v-if="editingClient" class="mt-4 space-y-4">
+                <label class="block text-sm text-slate-300">Full name<input v-model.trim="clientDraft.fullName" type="text" maxlength="201" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
+                <label class="block text-sm text-slate-300">Email<input v-model.trim="clientDraft.email" type="email" maxlength="254" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
+                <label class="block text-sm text-slate-300">Phone<input v-model.trim="clientDraft.phone" type="tel" maxlength="32" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
+                <p v-if="editError" class="text-sm text-rose-300" role="alert">{{ editError }}</p>
+              </div>
+              <div v-else class="mt-4 space-y-3 text-sm">
                 <p><span class="text-slate-500">Name:</span> <span class="text-white">{{ selectedClient.fullName || '-' }}</span></p>
                 <p><span class="text-slate-500">Email:</span> <span class="text-white">{{ selectedClient.email || '-' }}</span></p>
                 <p><span class="text-slate-500">Phone:</span> <span class="text-white">{{ selectedClient.phone || '-' }}</span></p>
@@ -145,6 +154,11 @@
               </div>
             </section>
           </div>
+
+          <footer v-if="editingClient" class="flex justify-end gap-3 border-t border-slate-700 px-6 py-4">
+            <button type="button" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800" :disabled="savingClient" @click="cancelClientEdit">Cancel</button>
+            <button type="button" class="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="savingClient" @click="saveClientChanges">{{ savingClient ? 'Saving…' : 'Save Changes' }}</button>
+          </footer>
         </div>
       </div>
     </main>
@@ -155,12 +169,13 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore'
+import { getFirestore, collection, query, where, doc, getDoc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { usePermissionsStore } from '@/stores/permissions'
 
 export default {
   name: 'ReceptionistClientList',
@@ -170,10 +185,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const permissions = usePermissionsStore()
 
     const currentBranchId = ref('')
     const searchQuery = ref('')
     const selectedClient = ref(null)
+    const editingClient = ref(false)
+    const savingClient = ref(false)
+    const editError = ref('')
+    const clientDraft = ref({ fullName: '', email: '', phone: '' })
     const branchClientRecords = ref([])
     const appointmentRecords = ref([])
     let unsubscribeClients = null
@@ -337,6 +357,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       })
     })
 
+    const canEditSelectedClient = computed(() => Boolean(
+      selectedClient.value
+      && branchClientRecords.value.some(client => client.id === selectedClient.value.id)
+      && permissions.hasPermission('clients:update')
+    ))
+
     const selectedClientHistory = computed(() => {
       if (!selectedClient.value) return []
 
@@ -411,10 +437,58 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const openClientView = (client) => {
       selectedClient.value = client ? { ...client } : null
+      cancelClientEdit()
     }
 
     const closeClientView = () => {
+      cancelClientEdit()
       selectedClient.value = null
+    }
+
+    const beginClientEdit = () => {
+      if (!canEditSelectedClient.value) return
+      clientDraft.value = {
+        fullName: String(selectedClient.value.fullName || '').trim(),
+        email: String(selectedClient.value.email || '').trim(),
+        phone: String(selectedClient.value.phone || '').trim(),
+      }
+      editError.value = ''
+      editingClient.value = true
+    }
+
+    const cancelClientEdit = () => {
+      editingClient.value = false
+      savingClient.value = false
+      editError.value = ''
+      clientDraft.value = { fullName: '', email: '', phone: '' }
+    }
+
+    const saveClientChanges = async () => {
+      if (!selectedClient.value || !canEditSelectedClient.value || savingClient.value) return
+      const fullName = String(clientDraft.value.fullName || '').trim().replace(/\s+/g, ' ')
+      const email = String(clientDraft.value.email || '').trim().toLowerCase()
+      const phone = String(clientDraft.value.phone || '').trim()
+      if (fullName.length < 2 || fullName.length > 201) return void (editError.value = 'Enter a client name between 2 and 201 characters.')
+      if (email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)) return void (editError.value = 'Enter a valid email address.')
+      if (phone.length > 32 || (phone && !/^\+?[0-9 ()-]{7,32}$/.test(phone))) return void (editError.value = 'Enter a valid phone number.')
+
+      savingClient.value = true
+      editError.value = ''
+      try {
+        const clientRef = doc(db, 'clients', selectedClient.value.id)
+        const [firstName, ...lastNameParts] = fullName.split(' ')
+        await updateDoc(clientRef, { fullName, firstName, lastName: lastNameParts.join(' '), email, phone, updatedAt: serverTimestamp() })
+        selectedClient.value = { ...selectedClient.value, fullName, firstName, lastName: lastNameParts.join(' '), email, phone }
+        toast.success('Client information updated.')
+        cancelClientEdit()
+      } catch (error) {
+        console.error(error)
+        editError.value = error?.code === 'permission-denied'
+          ? 'You do not have permission to update clients in this branch.'
+          : error?.message || 'Failed to update client information.'
+      } finally {
+        savingClient.value = false
+      }
     }
 
     const startClientsListener = () => {
@@ -488,8 +562,16 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       filteredClients,
       selectedClient,
       selectedClientHistory,
+      canEditSelectedClient,
+      editingClient,
+      savingClient,
+      editError,
+      clientDraft,
       openClientView,
       closeClientView,
+      beginClientEdit,
+      cancelClientEdit,
+      saveClientChanges,
       formatDate,
       getAppointmentTimelineTags,
       timelineTagClass

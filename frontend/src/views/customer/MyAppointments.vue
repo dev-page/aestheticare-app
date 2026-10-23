@@ -27,6 +27,20 @@
           </article>
         </section>
 
+        <section v-if="bookingOrders.length && !isUnpaidAppointmentsPage" class="appointments-panel">
+          <div class="panel-head"><div><p class="panel-kicker">Multiple service booking</p><h2 class="panel-title">Booking orders</h2></div></div>
+          <article v-for="order in bookingOrders" :key="order.id" class="unpaid-appointment-card">
+            <div class="unpaid-appointment-card-head">
+              <div><h3 class="unpaid-appointment-title">{{ formatAppointmentServices(order) }}</h3><p>{{ order.clinic }}</p></div>
+              <span class="status-badge" :class="statusToneClass(order.status)">{{ order.status }}</span>
+            </div>
+            <p class="mt-2">{{ order.appointmentIds?.length || 0 }} separately scheduled services · Total PHP {{ Number(order.totalAmount || order.amount || 0).toFixed(2) }}</p>
+            <p v-if="order.approvalStatus !== 'Approved'" class="mt-2 text-sm">The clinic will review this booking before payment is available.</p>
+            <button v-else-if="paymentDue(order) > 0" type="button" class="appointment-button appointment-button-primary mt-3" @click="payAppointment(order)">Pay order {{ formatBookingDue(order) }}</button>
+            <p v-else-if="paymentDue(order) <= 0" class="mt-2 text-sm">This order is fully paid.</p>
+          </article>
+        </section>
+
         <section v-if="isUnpaidAppointmentsPage" class="appointments-panel unpaid-appointments-panel">
           <div class="panel-head">
             <div>
@@ -1295,8 +1309,10 @@ const unpaidAppointments = computed(() =>
   upcomingAppointments.value.filter((appointment) => canPayAppointment(appointment))
 )
 
+const bookingOrders = computed(() => upcomingAppointments.value.filter(appointment => appointment.isBookingOrderParent))
+
 const activeUpcomingAppointments = computed(() =>
-  upcomingAppointments.value.filter((appointment) => !canPayAppointment(appointment))
+  upcomingAppointments.value.filter((appointment) => !appointment.isBookingOrderParent && !canPayAppointment(appointment))
 )
 
 const requestPolicyText = computed(() => {
@@ -1414,10 +1430,10 @@ const startAppointmentsListener = (userId) => {
       )
 
       upcomingAppointments.value = all
-        .filter((appt) =>
+        .filter((appt) => appt.isBookingOrderParent || (
           !isOnlineConsultationAppointment(appt) &&
           !['completed', 'cancelled', 'rejected', 'no-show'].includes(normalizeAppointmentStatus(appt.status))
-        )
+        ))
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
           const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
@@ -1598,6 +1614,7 @@ const contractsToSign = computed(() => upcomingAppointments.value.filter(appoint
 ))
 
 const canPayAppointment = (appointment) => {
+  if (appointment.isBookingOrderParent) return appointment.approvalStatus === 'Approved' && paymentDue(appointment) > 0
   if (appointment.paymentManagedByOrganizer && !appointment.isBookingOrderParent && !appointment.isGroupParent) return false
   const status = normalizeAppointmentStatus(appointment?.status)
   if (normalizeAppointmentStatus(appointment?.contract?.status) !== 'signed') return false
@@ -1732,6 +1749,7 @@ const payAppointment = async (appointment) => {
   const user = auth.currentUser
   if (!user || !appointment?.id) return
 
+  const bookingOrder = appointment.isBookingOrderParent === true
   if (!canPayAppointment(appointment)) {
     toast.error('Please sign the contract before proceeding to payment.')
     return
@@ -1769,6 +1787,7 @@ const payAppointment = async (appointment) => {
           appointmentTime: appointment.time || '',
           totalServiceDurationMinutes: appointment.totalServiceDurationMinutes || 60,
           paymentAgreementAcknowledged: true,
+          ...(bookingOrder ? { bookingOrder: true } : {}),
         },
         paymentAgreementAcknowledged: true,
       }),
