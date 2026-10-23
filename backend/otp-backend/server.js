@@ -68,6 +68,8 @@ const REGISTRATION_ATTEMPT_MAX_PER_WINDOW = 5
 const REGISTRATION_ATTEMPT_WINDOW_SECONDS = 15 * 60
 const REGISTRATION_ATTEMPT_MAX_PER_DAY = 10
 const REGISTRATION_ATTEMPT_DAY_SECONDS = 24 * 60 * 60
+const CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS = 3
+const CLINIC_REGISTRATION_LOCKOUT_DAYS = 14
 const CLINIC_REGISTRATION_OTP_PURPOSE = 'clinic-registration'
 const CUSTOMER_REGISTRATION_OTP_PURPOSE = 'customer-registration'
 const LOGIN_OTP_PURPOSE = 'login-otp'
@@ -1436,6 +1438,27 @@ const hashRateLimitKey = (value) => crypto
   .update(String(value || '').trim().toLowerCase())
   .digest('hex')
 
+const clinicSubmissionPolicyRef = (firestore, email) => firestore
+  .collection('clinicRegistrationSubmissionLimits')
+  .doc(hashRateLimitKey(`clinic:${String(email || '').trim().toLowerCase()}`))
+
+const getClinicSubmissionLock = async (email) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  if (!normalizedEmail) return null
+  const snapshot = await clinicSubmissionPolicyRef(admin.firestore(), normalizedEmail).get()
+  if (!snapshot.exists) return null
+  const lockedUntil = getTimestampDate(snapshot.data()?.lockedUntil)
+  return lockedUntil && lockedUntil.getTime() > Date.now() ? lockedUntil : null
+}
+
+const clinicSubmissionLockPayload = (lockedUntil) => ({
+  success: false,
+  code: 'CLINIC_REGISTRATION_LOCKED',
+  error: `You have used all ${CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS} document submissions. You may apply again after ${lockedUntil.toLocaleDateString('en-PH')}.`,
+  retryAfterSeconds: Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 1000)),
+  lockedUntil: lockedUntil.toISOString(),
+})
+
 const getRequestIp = (req) => {
   const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
   return forwardedFor || String(req.ip || req.socket?.remoteAddress || 'unknown').trim()
@@ -2635,6 +2658,148 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
 
   return { status: verificationStatus, approvalStatus, allVerified, hasRejectedDocument, results, expiryResubmissionExpiresAt, expiryHoldEmailSent }
 }
+
+app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) => {
+  const uid = String(req.user?.uid || '').trim()
+  const documents = req.body?.submittedDocuments && typeof req.body.submittedDocuments === 'object'
+    ? req.body.submittedDocuments
+    : {}
+  const permitHolderIsRegistrant = req.body?.permitHolderIsRegistrant
+  if (permitHolderIsRegistrant !== true && permitHolderIsRegistrant !== false) {
+    return res.status(400).json({ success: false, error: 'Confirm who is named on the business permit.' })
+  }
+
+  try {
+    const firestore = admin.firestore()
+    const userRef = firestore.collection('users').doc(uid)
+    const clinicRef = firestore.collection('clinics').doc(uid)
+    const [userSnapshot, clinicSnapshot] = await Promise.all([userRef.get(), clinicRef.get()])
+    if (!userSnapshot.exists || !clinicSnapshot.exists) {
+      return res.status(404).json({ success: false, error: 'Clinic registration account was not found.' })
+    }
+    const user = userSnapshot.data() || {}
+    const clinic = clinicSnapshot.data() || {}
+    const email = String(user.email || clinic.email || '').trim().toLowerCase()
+    if (!email || !EMAIL_ADDRESS_REGEX.test(email)) {
+      return res.status(400).json({ success: false, error: 'A verified registration email is required.' })
+    }
+    const authEmail = String(req.user?.email || '').trim().toLowerCase()
+    if (authEmail && authEmail !== email) {
+      return res.status(403).json({ success: false, error: 'Your signed-in email does not match this registration.' })
+    }
+
+    const requiredKeys = getRegistrationDocumentRequirements('clinic', {
+      ...clinic,
+      permitHolderIsRegistrant,
+    })
+    const submittedDocuments = {}
+    for (const docKey of requiredKeys) {
+      const entry = documents[docKey] || {}
+      const storagePath = String(entry.path || entry.storagePath || '').trim()
+      if (!storagePath.startsWith(`clinic-registration/${uid}/${docKey}/`)) {
+        return res.status(400).json({ success: false, error: `The ${registrationDocumentLabel(docKey)} file is missing or invalid.` })
+      }
+      const fileSize = Number(entry.size || 0)
+      const fileType = String(entry.type || '').toLowerCase()
+      if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > 10 * 1024 * 1024
+        || !['application/pdf', 'image/jpeg', 'image/png'].includes(fileType)) {
+        return res.status(400).json({ success: false, error: `The ${registrationDocumentLabel(docKey)} file type or size is invalid.` })
+      }
+      submittedDocuments[docKey] = {
+        name: String(entry.name || '').slice(0, 255),
+        size: fileSize,
+        type: fileType,
+        url: String(entry.url || '').slice(0, 2048),
+        path: storagePath,
+        uploadedAt: String(entry.uploadedAt || '').slice(0, 64),
+      }
+    }
+
+    const policyRef = clinicSubmissionPolicyRef(firestore, email)
+    const now = Date.now()
+    let submissionAttemptCount = 0
+    let lockedUntil = null
+    await firestore.runTransaction(async (transaction) => {
+      const [latestClinicSnapshot, policySnapshot] = await Promise.all([
+        transaction.get(clinicRef), transaction.get(policyRef),
+      ])
+      if (!latestClinicSnapshot.exists) {
+        throw Object.assign(new Error('Clinic registration account was not found.'), { statusCode: 404 })
+      }
+      const latestClinic = latestClinicSnapshot.data() || {}
+      const policy = policySnapshot.exists ? policySnapshot.data() || {} : {}
+      const existingLock = getTimestampDate(policy.lockedUntil)
+      if (existingLock && existingLock.getTime() > now) {
+        lockedUntil = existingLock
+        return
+      }
+      const status = String(latestClinic.approvalStatus || '')
+      if (!['Pending Document Submission', 'Pending Documents', 'Pending Approval'].includes(status)) {
+        throw Object.assign(new Error('This clinic application is not accepting document submissions.'), { statusCode: 409 })
+      }
+      const previousLock = getTimestampDate(policy.lockedUntil)
+      const lockExpired = Boolean(previousLock && previousLock.getTime() <= now)
+      const count = lockExpired ? 0 : Math.max(
+        Number(policy.submissionAttemptCount || 0),
+        Number(latestClinic.submissionAttemptCount || 0),
+        Number(latestClinic.resubmissionCount || 0) + (latestClinic.documentsSubmittedAt ? 1 : 0)
+      )
+      if (count >= CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS) {
+        lockedUntil = new Date(now + CLINIC_REGISTRATION_LOCKOUT_DAYS * DAY_MS)
+        transaction.set(policyRef, {
+          email,
+          submissionAttemptCount: count,
+          lockedUntil: admin.firestore.Timestamp.fromDate(lockedUntil),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true })
+        return
+      }
+
+      submissionAttemptCount = count + 1
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      transaction.set(clinicRef, {
+        approvalStatus: 'Pending Approval',
+        registrationStatus: 'Pending Review',
+        documentsSubmittedAt: timestamp,
+        submittedDocuments,
+        permitHolderIsRegistrant,
+        permitHolderName: String(req.body?.permitHolderName || '').trim().slice(0, 200),
+        permitHolderRelationship: permitHolderIsRegistrant
+          ? 'Self'
+          : String(req.body?.permitHolderRelationship || '').trim().slice(0, 200),
+        authorizationReviewRequired: permitHolderIsRegistrant === false,
+        submissionAttemptCount,
+        ...(req.body?.platformAgreementAcceptance && clinic.isClinicRegistrationActive !== false
+          ? { platformAgreementAcceptance: req.body.platformAgreementAcceptance }
+          : {}),
+        draftDocuments: admin.firestore.FieldValue.delete(),
+        draftDocumentsUpdatedAt: admin.firestore.FieldValue.delete(),
+        registrationLockedUntil: admin.firestore.FieldValue.delete(),
+        updatedAt: timestamp,
+      }, { merge: true })
+      transaction.set(userRef, {
+        status: 'Pending Approval',
+        registrationStatus: 'Pending Review',
+        submissionAttemptCount,
+        registrationLockedUntil: admin.firestore.FieldValue.delete(),
+        updatedAt: timestamp,
+      }, { merge: true })
+      transaction.set(policyRef, {
+        email,
+        submissionAttemptCount,
+        updatedAt: timestamp,
+      }, { merge: true })
+    })
+
+    if (lockedUntil) return res.status(429).json(clinicSubmissionLockPayload(lockedUntil))
+    return res.json({ success: true, data: { submissionAttemptCount } })
+  } catch (error) {
+    const status = Number(error?.statusCode || 500)
+    if (status >= 400 && status < 500) return res.status(status).json({ success: false, error: error.message })
+    console.error('Clinic document submission failed:', error)
+    return res.status(500).json({ success: false, error: 'Could not submit clinic documents. Please try again.' })
+  }
+})
 
 app.post('/registration/auto-verify-documents', requireAuth, async (req, res) => {
   const uid = String(req.body?.uid || '').trim()
@@ -4008,8 +4173,44 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
     const applicantName = String(userData.firstName || clinicData.ownerFirstName || '').trim() || 'Applicant'
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
     const resubmissionCount = Number(clinicData.resubmissionCount || 0) + 1
+    const submissionPolicyRef = clinicSubmissionPolicyRef(firestore, recipient)
+    let lockoutApplied = false
+    let lockoutUntil = null
 
     await firestore.runTransaction(async (transaction) => {
+      const policySnapshot = await transaction.get(submissionPolicyRef)
+      const policy = policySnapshot.exists ? policySnapshot.data() || {} : {}
+      const previousLock = getTimestampDate(policy.lockedUntil)
+      const submissionAttemptCount = previousLock && previousLock.getTime() <= Date.now() ? 0 : Math.max(
+        Number(policy.submissionAttemptCount || 0),
+        Number(clinicData.submissionAttemptCount || 0),
+        Number(clinicData.resubmissionCount || 0) + (clinicData.documentsSubmittedAt ? 1 : 0)
+      )
+      if (submissionAttemptCount >= CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS) {
+        lockoutUntil = new Date(Date.now() + CLINIC_REGISTRATION_LOCKOUT_DAYS * DAY_MS)
+        lockoutApplied = true
+        transaction.set(submissionPolicyRef, {
+          email: recipient,
+          submissionAttemptCount,
+          lockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil),
+          updatedAt: timestamp,
+        }, { merge: true })
+        transaction.set(userRef, {
+          status: 'Pending Documents',
+          approvalStatus: 'Pending Documents',
+          registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
+          registrationLockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil),
+          updatedAt: timestamp,
+        }, { merge: true })
+        transaction.set(clinicRef, {
+          approvalStatus: 'Pending Documents',
+          registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
+          registrationLockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil),
+          resubmissionRequired: true,
+          updatedAt: timestamp,
+        }, { merge: true })
+        return
+      }
       transaction.set(userRef, {
         status: 'Pending Documents',
         approvalStatus: 'Pending Documents',
@@ -4044,6 +4245,27 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
         createdAt: timestamp,
       })
     })
+
+    if (lockoutApplied) {
+      await writeSystemAdminActivity(req, {
+        action: 'Locked clinic registration after exhausted submissions',
+        module: 'Clinic Verification',
+        details: `Clinic registration for ${applicantName} reached the ${CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS}-submission limit. Locked until ${lockoutUntil.toISOString()}.`,
+        targetId: uid,
+        targetName: applicantName,
+      })
+      if (recipient && postmarkClient && senderEmail) {
+        const lockedMessage = `Your clinic registration has used all ${CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS} document submissions. You may start a new application after ${lockoutUntil.toLocaleDateString('en-PH')}.`
+        await sendPostmarkMessage({
+          to: recipient,
+          from: senderEmail,
+          subject: 'AesthetiCare - Clinic Registration Locked',
+          text: `Hi ${applicantName},\n\n${lockedMessage}\n\nRegards,\nThe AesthetiCare Team`,
+          html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${applicantName},</p><p>${lockedMessage}</p><p>Regards,<br>The AesthetiCare Team</p></div>`,
+        }).catch((emailError) => console.warn('Failed to send clinic registration lockout email:', emailError?.message || emailError))
+      }
+      return res.json({ success: true, data: { uid, lockedUntil: lockoutUntil.toISOString(), submissionAttemptCount: CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS } })
+    }
 
     await writeSystemAdminActivity(req, {
       action: 'Requested clinic registration resubmission',
@@ -4112,6 +4334,26 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
     const clinicData = clinicBeforeRejection.exists ? clinicBeforeRejection.data() || {} : {}
     const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
     const applicantName = [userData.firstName, userData.midName || userData.middleName, userData.lastName, userData.suffix].filter(Boolean).join(' ').trim() || 'Applicant'
+    let lockoutUntil = null
+    if (recipient) {
+      const submissionPolicyRef = clinicSubmissionPolicyRef(firestore, recipient)
+      const policySnapshot = await submissionPolicyRef.get()
+      const policy = policySnapshot.exists ? policySnapshot.data() || {} : {}
+      const submissionAttemptCount = Math.max(
+        Number(policy.submissionAttemptCount || 0),
+        Number(clinicData.submissionAttemptCount || 0),
+        Number(clinicData.resubmissionCount || 0) + (clinicData.documentsSubmittedAt ? 1 : 0)
+      )
+      if (submissionAttemptCount >= CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS) {
+        lockoutUntil = new Date(Date.now() + CLINIC_REGISTRATION_LOCKOUT_DAYS * DAY_MS)
+        await submissionPolicyRef.set({
+          email: recipient,
+          submissionAttemptCount,
+          lockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true })
+      }
+    }
 
     await firestore.collection('registrationRejectionHistory').add({
       email: recipient,
@@ -4120,6 +4362,7 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
       applicantName,
       clinicName: clinicData.clinicName || clinicData.companyName || '',
       reason: rejectionReason,
+      ...(lockoutUntil ? { registrationLockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil) } : {}),
       rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
       reviewedBy,
     })
@@ -4181,8 +4424,9 @@ Your clinic registration was not approved at this time.
 Reason provided by the system administrator:
 ${rejectionReason}
 
-You may correct the information or documents and submit a new clinic registration here:
-${registrationUrl}
+${lockoutUntil
+    ? `You have used all ${CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS} document submissions. You may start a new application after ${lockoutUntil.toLocaleDateString('en-PH')}.`
+    : `You may correct the information or documents and submit a new clinic registration here:\n${registrationUrl}`}
 
 Please make sure that your details and uploaded documents are complete, valid, and readable before submitting again.
 
@@ -4193,7 +4437,10 @@ The AesthetiCare Team`
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
           .replace(/\n/g, '<br>')
-        const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${applicantName},</p><p>Your clinic registration was not approved at this time.</p><p><strong>Reason provided by the system administrator:</strong></p><p>${htmlReason}</p><p>You may correct the information or documents and submit a new clinic registration here:</p><p><a href="${registrationUrl}">${registrationUrl}</a></p><p>Please make sure that your details and uploaded documents are complete, valid, and readable before submitting again.</p><p>Regards,<br>The AesthetiCare Team</p></div>`
+        const htmlNextStep = lockoutUntil
+          ? `<p>You have used all ${CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS} document submissions. You may start a new application after <strong>${lockoutUntil.toLocaleDateString('en-PH')}</strong>.</p>`
+          : `<p>You may correct the information or documents and submit a new clinic registration here: <a href="${registrationUrl}">${registrationUrl}</a></p>`
+        const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${applicantName},</p><p>Your clinic registration was not approved at this time.</p><p><strong>Reason provided by the system administrator:</strong></p><p>${htmlReason}</p>${htmlNextStep}<p>Please make sure that your details and uploaded documents are complete, valid, and readable before submitting again.</p><p>Regards,<br>The AesthetiCare Team</p></div>`
         await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
         emailSent = true
       } catch (emailError) {
@@ -4749,6 +4996,10 @@ app.post(CHECK_REGISTRATION_ATTEMPT_PATH, async (req, res) => {
   }
 
   try {
+    if (normalizedPurpose === CLINIC_REGISTRATION_OTP_PURPOSE) {
+      const lockedUntil = await getClinicSubmissionLock(normalizedEmail)
+      if (lockedUntil) return res.status(429).json(clinicSubmissionLockPayload(lockedUntil))
+    }
     const result = await recordRegistrationAttempt({
       email: normalizedEmail,
       purpose: normalizedPurpose,

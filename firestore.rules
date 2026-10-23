@@ -64,21 +64,6 @@ service cloud.firestore {
       ]);
     }
 
-    function applicantCanSubmitClinicDocuments() {
-      return resource.data.approvalStatus in ['Pending Document Submission', 'Pending Documents', 'Pending Approval']
-        && request.resource.data.approvalStatus == 'Pending Approval'
-        && request.resource.data.registrationStatus == 'Pending Review'
-        && (!('expiryResubmissionExpiresAt' in resource.data)
-          || request.time <= resource.data.expiryResubmissionExpiresAt)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'approvalStatus', 'registrationStatus', 'documentsSubmittedAt', 'submittedDocuments',
-          'draftDocuments', 'draftDocumentsUpdatedAt',
-          'platformAgreementAcceptance', 'permitHolderIsRegistrant',
-          'permitHolderName', 'permitHolderRelationship',
-          'authorizationReviewRequired'
-        ]);
-    }
-
     // Applicants save each registration document immediately so an interrupted
     // registration can be resumed. This is intentionally limited to the
     // document-draft fields while the backend has the clinic in its document
@@ -377,8 +362,7 @@ service cloud.firestore {
         && (isSuperadmin()
           || (isOwnerOfBranch(clinicId)
             && ((subscriptionAllowsBusinessWrite(clinicId) && applicantCannotChangeVerificationFields())
-              || applicantCanSaveClinicDocumentDraft()
-              || applicantCanSubmitClinicDocuments()))
+              || applicantCanSaveClinicDocumentDraft()))
           || (isOwnerOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
             && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields())
           || (isStaffOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)

@@ -3153,23 +3153,30 @@ const submitDocuments = async () => {
           signerEmail: email.value.trim().toLowerCase(),
           method: 'drawn-signature',
           signatureImage: clinicAgreementSignatureImage.value,
-          acceptedAt: serverTimestamp(),
+          acceptedAt: new Date().toISOString(),
         }
       : null
 
-    await updateDoc(doc(db, 'clinics', userUid.value), {
-      approvalStatus: 'Pending Approval',
-      registrationStatus: 'Pending Review',
-      documentsSubmittedAt: serverTimestamp(),
-      submittedDocuments: submittedDocumentsPayload,
-      permitHolderIsRegistrant: permitHolderIsRegistrant.value,
-      permitHolderName: permitHolderIsRegistrant.value ? registeredOwnerLegalName.value : permitHolderName.value.trim(),
-      permitHolderRelationship: permitHolderIsRegistrant.value ? 'Self' : permitHolderRelationship.value.trim(),
-      authorizationReviewRequired: permitHolderIsRegistrant.value === false,
-      ...(platformAgreementAcceptance ? { platformAgreementAcceptance } : {}),
-      draftDocuments: deleteField(),
-      draftDocumentsUpdatedAt: deleteField(),
+    const currentUser = auth.currentUser
+    if (!currentUser || currentUser.uid !== userUid.value) {
+      throw new Error('Your registration session expired. Please sign in again before submitting.')
+    }
+    const token = await currentUser.getIdToken()
+    const submissionResponse = await fetch(`${OTP_API_BASE}/registration/submit-clinic-documents`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        submittedDocuments: submittedDocumentsPayload,
+        permitHolderIsRegistrant: permitHolderIsRegistrant.value,
+        permitHolderName: permitHolderIsRegistrant.value ? registeredOwnerLegalName.value : permitHolderName.value.trim(),
+        permitHolderRelationship: permitHolderIsRegistrant.value ? 'Self' : permitHolderRelationship.value.trim(),
+        platformAgreementAcceptance,
+      }),
     })
+    const submissionPayload = await submissionResponse.json().catch(() => null)
+    if (!submissionResponse.ok || !submissionPayload?.success) {
+      throw new Error(submissionPayload?.error || 'Could not submit clinic documents. Please try again.')
+    }
     resubmissionReason.value = ''
 
     // Verification is a server-side follow-up. Show submission success as soon
