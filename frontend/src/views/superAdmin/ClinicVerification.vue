@@ -234,6 +234,21 @@
           </section>
 
           <section class="mb-6 bg-slate-800 border border-slate-700 rounded-xl p-4">
+            <h3 class="text-white font-semibold mb-3">Registration Submissions</h3>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-slate-700 bg-slate-900 p-3">
+                <p class="text-xs text-slate-400">Document submissions used</p>
+                <p class="mt-1 text-lg font-semibold text-white">{{ selectedRecord.submissionAttemptCount || 0 }} of {{ selectedRecord.submissionAttemptLimit || 3 }}</p>
+                <p class="mt-1 text-xs text-slate-500">Includes the original submission and any resubmissions. Rejection history: {{ selectedRecord.resubmissionCount || 0 }}.</p>
+              </div>
+              <div v-if="selectedRecord.registrationLockedUntil" class="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                <p class="text-xs text-red-200">Registration lockout ends</p>
+                <p class="mt-1 text-sm font-semibold text-white">{{ formatDateValue(selectedRecord.registrationLockedUntil) }}</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="mb-6 bg-slate-800 border border-slate-700 rounded-xl p-4">
             <h3 class="text-white font-semibold mb-3">Clinic Platform Agreement</h3>
             <div v-if="selectedRecord.platformAgreementAcceptance" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
               <div>
@@ -883,6 +898,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               approvalStatus: clinic.approvalStatus || 'Pending Approval',
               registrationStatus: clinic.registrationStatus || user.registrationStatus || '',
               resubmissionRequired: Boolean(clinic.resubmissionRequired),
+              submissionAttemptCount: Math.min(3, Math.max(
+                Number(clinic.submissionAttemptCount || 0),
+                Number(clinic.resubmissionCount || 0) + (clinic.documentsSubmittedAt ? 1 : 0),
+              )),
+              submissionAttemptLimit: 3,
+              registrationLockedUntil: clinic.registrationLockedUntil || null,
+              resubmissionCount,
               fullName,
               email: normalizedEmail,
               resubmissionCount,

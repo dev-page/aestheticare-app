@@ -3792,11 +3792,6 @@ const handleRegistrationSubmit = () => {
               <p class="text-sm text-charcoal-600">
                 Upload your required documents for legitimacy checks before approval.
               </p>
-              <div class="rounded-xl border border-gold-300 bg-gold-50 px-4 py-3 text-sm text-charcoal-700" role="status">
-                <p class="font-semibold text-charcoal-800">Document submission {{ nextClinicSubmissionAttempt }} of {{ clinicSubmissionMaxAttempts }}</p>
-                <p class="mt-1 text-xs text-charcoal-600">Your original submission and up to two resubmissions are allowed for this email.</p>
-                <p v-if="clinicRegistrationLockLabel" class="mt-2 text-xs font-semibold text-red-700">Registration is locked until {{ clinicRegistrationLockLabel }} (Philippine time).</p>
-              </div>
               <div v-if="resubmissionReason" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-charcoal-700" role="alert">
                 <p class="font-semibold text-charcoal-800">Document changes requested</p>
                 <p class="mt-1">{{ resubmissionReason }}</p>
