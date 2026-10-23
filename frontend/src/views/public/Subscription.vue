@@ -91,7 +91,7 @@ const defaultPlans = () => [
     price: 0,
     billingCycle: "trial",
     description: "One-branch service listings with direct online booking and no expiry.",
-    features: ["Service listings only", "Online service bookings", "One branch", "Upgrade anytime"],
+    features: ["Service listings and online bookings", "One branch", "Create employee accounts", "Upgrade anytime"],
     trialDays: 0,
     isActive: true,
   },

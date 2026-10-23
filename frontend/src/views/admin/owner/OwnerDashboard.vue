@@ -3,22 +3,28 @@ import { usePageLoading } from '@/composables/usePageLoading'
 
 import { ref, onMounted, nextTick, computed } from 'vue'
 import { auth } from '@/config/firebaseConfig'
-import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore'
+import { getFirestore, collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import { RouterLink } from 'vue-router'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { revenueByBranch, revenueTransactionAmount, sumNetRevenue } from '@/utils/revenue'
+import { useSubscriptionStore } from '@/stores/subscription'
 
 export default {
   name: 'OwnerDashboard',
-  components: { OwnerSidebar, DashboardSkeleton },
+  components: { OwnerSidebar, DashboardSkeleton, RouterLink },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp())
+    const subscriptionStore = useSubscriptionStore()
     const loading = ref(true)
+    const setupPolicyConfigured = ref(false)
+    const setupListings = ref([])
+    const selectedSetupBranchId = ref('')
 
     const totalBranches = ref(0)
     const totalEmployees = ref(0)
@@ -44,6 +50,28 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const inventoryItems = ref([])
     const purchaseRequests = ref([])
     const messages = ref([])
+
+    const activeSetupBranches = computed(() => branches.value.filter(branch => !branch.archived))
+    const setupBranch = computed(() => activeSetupBranches.value.find(branch => branch.id === selectedSetupBranchId.value) || activeSetupBranches.value[0] || null)
+    const setupTasks = computed(() => {
+      const linkedKeys = setupBranch.value?.enforcedPolicyKeys
+      const policiesLinked = Array.isArray(linkedKeys)
+        ? linkedKeys.some(key => ['paymentPolicy', 'cancellationPolicy', 'reschedulePolicy', 'noShowPolicy', 'walkInPolicy'].includes(key))
+        : Boolean(setupBranch.value?.policiesLinkedAt)
+      const postTypes = new Set(setupListings.value.map(post => String(post.postType || '').toLowerCase()))
+      const plan = String(subscriptionStore.activePlan || 'free').toLowerCase()
+      const canCreateAllListings = plan === 'basic' || plan === 'premium'
+      return [
+        { key: 'policies', label: 'Configure clinic policies', description: 'Choose and save the policies customers should follow.', done: setupPolicyConfigured.value, to: '/clinic/policies', action: 'Configure policies' },
+        { key: 'link-policies', label: 'Link policies to a branch', description: 'Choose which saved policies apply at your branch.', done: policiesLinked, to: '/clinic/branches', action: 'Link policies', disabled: !setupBranch.value },
+        { key: 'employee', label: 'Add your first employee', description: 'Create at least one employee account for your clinic.', done: totalEmployees.value > 0, to: '/hr/employees/new', action: 'Add employee' },
+        { key: 'consultation', label: 'Add a consultation', description: 'Create a consultation listing for your clinic.', done: postTypes.has('consultation'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add consultation' : 'Upgrade to add', disabled: !canCreateAllListings },
+        { key: 'service', label: 'Add a service', description: 'Create a service customers can book.', done: postTypes.has('service'), to: '/catalog/products-services', action: 'Add service', disabled: plan !== 'free' && !canCreateAllListings },
+        { key: 'package', label: 'Add a package', description: 'Bundle services into a treatment package.', done: postTypes.has('package'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add package' : 'Upgrade to add', disabled: !canCreateAllListings },
+      ]
+    })
+    const setupCompletedCount = computed(() => setupTasks.value.filter(task => task.done).length)
+    const setupComplete = computed(() => setupTasks.value.length > 0 && setupCompletedCount.value === setupTasks.value.length)
 
     const revenueChartRef = ref(null)
     const employeeChartRef = ref(null)
@@ -150,9 +178,32 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
           throw error
         }
-        const branchData = branchSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        const branchData = branchSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
 
         const branchIds = branchData.map(b => b.id)
+        if (!branchIds.includes(selectedSetupBranchId.value)) {
+          selectedSetupBranchId.value = branchData.find(branch => !branch.archived)?.id || branchData[0]?.id || ''
+        }
+
+        try {
+          let policies = await getDoc(doc(db, 'clinicPolicies', user.uid))
+          if (!policies.exists() && branchData.length) policies = await getDoc(doc(db, 'clinicPolicies', branchData[0].id))
+          const policyData = policies.exists() ? policies.data() || {} : {}
+          setupPolicyConfigured.value = [
+            policyData.servicePaymentPolicyEnabled,
+            policyData.paymentPolicyEnabled,
+            policyData.serviceCancellationPolicyEnabled,
+            policyData.cancellationPolicyEnabled,
+            policyData.serviceReschedulingPolicyEnabled,
+            policyData.reschedulePolicyEnabled,
+            policyData.serviceNoShowPolicyEnabled,
+            policyData.noShowPolicyEnabled,
+            policyData.walkInPolicyEnabled,
+          ].some(value => value === true)
+        } catch (error) {
+          if (!isPermissionDenied(error)) throw error
+          setupPolicyConfigured.value = false
+        }
 
         let staffData = []
         if (branchIds.length) {
@@ -178,13 +229,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         staff.value = staffData
         totalEmployees.value = staff.value.length
 
-        const [clientsData, appointmentsData, transactionsData, inventoryData, purchaseRequestData, messageData] = await Promise.all([
+        const [clientsData, appointmentsData, transactionsData, inventoryData, purchaseRequestData, messageData, listingData] = await Promise.all([
           loadDashboardCollection('clients', branchIds),
           loadDashboardCollection('appointments', branchIds),
           loadDashboardCollection('transactions', branchIds),
           loadDashboardCollection('inventoryItems', branchIds),
           loadDashboardCollection('purchaseRequests', branchIds),
-          loadDashboardCollection('messages', branchIds)
+          loadDashboardCollection('messages', branchIds),
+          loadDashboardCollection('productServicePosts', branchIds)
         ])
 
         appointments.value = sortRecordsNewestFirst(appointmentsData)
@@ -195,6 +247,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         inventoryItems.value = sortRecordsNewestFirst(inventoryData)
         purchaseRequests.value = sortRecordsNewestFirst(purchaseRequestData)
         messages.value = sortRecordsNewestFirst(messageData)
+        setupListings.value = listingData.filter(post => post.archived !== true)
 
         totalClients.value = clientsData.length
         unreadMessages.value = messages.value.filter((item) => !item.isRead).length
@@ -593,6 +646,12 @@ const renderEmployeeChart = () => {
     return {
       pageLoading,
       loading,
+      setupTasks,
+      setupCompletedCount,
+      setupComplete,
+      setupBranch,
+      activeSetupBranches,
+      selectedSetupBranchId,
       totalBranches,
       totalEmployees,
       monthlyRevenue,
@@ -658,6 +717,35 @@ const renderEmployeeChart = () => {
               Export PDF
             </button>
           </div>
+        </section>
+
+        <section class="setup-checklist" aria-labelledby="setup-checklist-title">
+          <div class="setup-checklist-heading">
+            <div>
+              <p class="dashboard-kicker">Clinic setup</p>
+              <h2 id="setup-checklist-title">{{ setupComplete ? 'You are all set!' : 'Your clinic setup checklist' }}</h2>
+              <p>{{ setupComplete ? 'Your essential clinic setup is complete. You can update these settings any time.' : 'Complete these essentials to get your clinic ready for customers.' }}</p>
+            </div>
+            <div class="setup-progress" :aria-label="`${setupCompletedCount} of ${setupTasks.length} setup tasks complete`">
+              <strong>{{ setupCompletedCount }}/{{ setupTasks.length }}</strong><span>complete</span>
+            </div>
+          </div>
+          <label v-if="activeSetupBranches.length > 1" class="setup-branch-picker">Branch for policy linking
+            <select v-model="selectedSetupBranchId">
+              <option v-for="branch in activeSetupBranches" :key="branch.id" :value="branch.id">{{ branch.clinicBranch || branch.id }}</option>
+            </select>
+          </label>
+          <p v-else-if="!setupBranch" class="setup-no-branch">Create your clinic branch first to continue setup.</p>
+          <ol class="setup-task-list">
+            <li v-for="(task, index) in setupTasks" :key="task.key" :class="{ 'is-complete': task.done, 'is-disabled': task.disabled }">
+              <span class="setup-task-number" aria-hidden="true">{{ task.done ? '✓' : index + 1 }}</span>
+              <div class="setup-task-copy"><h3>{{ task.label }}</h3><p>{{ task.description }}</p></div>
+              <RouterLink v-if="!task.done && !task.disabled" :to="task.to" class="setup-task-action">{{ task.action }} <span aria-hidden="true">&gt;</span></RouterLink>
+              <span v-else-if="task.done" class="setup-task-status">Done</span>
+              <RouterLink v-else-if="task.disabled && task.key !== 'link-policies'" to="/subscription-features" class="setup-task-action">Upgrade to add</RouterLink>
+              <span v-else class="setup-task-status">Create a branch first</span>
+            </li>
+          </ol>
         </section>
 
         <section class="dashboard-metrics">
@@ -1313,6 +1401,34 @@ const renderEmployeeChart = () => {
 .dashboard-metrics,
 .dashboard-spotlight-grid,
 .dashboard-content-grid { display: none; }
+
+.setup-checklist { padding: 1.5rem; border: 1px solid #ead2b2; border-radius: 1.5rem; background: linear-gradient(180deg, #fffdf9, #fff8eb); box-shadow: 0 14px 34px rgba(72, 42, 23, .08); }
+.setup-checklist-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.setup-checklist-heading h2 { margin: 0; color: #342419; font-size: clamp(1.4rem, 3vw, 1.9rem); font-weight: 750; }
+.setup-checklist-heading p:last-child { max-width: 42rem; margin: .5rem 0 0; color: #624733; line-height: 1.55; }
+.setup-progress { display: grid; justify-items: center; min-width: 4.5rem; padding: .7rem; border: 1px solid #e6c196; border-radius: 1rem; background: #f8ead4; color: #7b4f37; }
+.setup-progress strong { font-size: 1.2rem; }
+.setup-progress span { font-size: .68rem; }
+.setup-branch-picker { display: grid; gap: .45rem; max-width: 22rem; margin-top: 1.25rem; color: #624733; font-size: .82rem; font-weight: 650; }
+.setup-branch-picker select { min-height: 2.7rem; padding: .5rem .7rem; border: 1px solid #dec19e; border-radius: .7rem; background: #fffaf4; color: #342419; }
+.setup-no-branch { margin: 1rem 0 0; color: #8a5b18; font-size: .85rem; }
+.setup-task-list { display: grid; gap: .65rem; margin: 1.2rem 0 0; padding: 0; list-style: none; }
+.setup-task-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .85rem; padding: .9rem; border: 1px solid #ead2b2; border-radius: 1rem; background: #fffaf4; }
+.setup-task-list li.is-complete { border-color: #c7dcc7; background: #f5faf2; }
+.setup-task-list li.is-disabled { opacity: .82; }
+.setup-task-number { display: grid; width: 2rem; height: 2rem; place-items: center; border: 1px solid #dec19e; border-radius: 50%; color: #956344; font-size: .82rem; font-weight: 750; }
+.is-complete .setup-task-number { border-color: #39734a; background: #39734a; color: white; }
+.setup-task-copy h3 { margin: 0; color: #342419; font-size: .92rem; font-weight: 700; }
+.setup-task-copy p { margin: .2rem 0 0; color: #786354; font-size: .78rem; line-height: 1.45; }
+.setup-task-action, .setup-task-status { justify-self: end; color: #7b4f37; font-size: .78rem; font-weight: 700; text-align: right; white-space: nowrap; }
+.setup-task-action:hover { color: #39734a; text-decoration: underline; }
+.setup-task-status { color: #39734a; }
+
+@media (max-width: 620px) {
+  .setup-checklist { padding: 1rem; }
+  .setup-task-list li { grid-template-columns: auto minmax(0, 1fr); }
+  .setup-task-action, .setup-task-status { grid-column: 2; justify-self: start; text-align: left; }
+}
 
 @media (min-width: 1280px) {
   .dashboard-chart-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

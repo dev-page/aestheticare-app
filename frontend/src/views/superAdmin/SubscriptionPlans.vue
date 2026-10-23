@@ -232,7 +232,7 @@ const defaultPlans = () => [
     description: 'Core tools for one-branch clinics with no expiration.',
     trialDays: 0,
     isActive: true,
-    features: ['One branch', 'Core operations', 'Upgrade anytime'],
+    features: ['One branch', 'Service listings and online bookings', 'Create employee accounts', 'Upgrade anytime'],
   },
   {
     id: 'basic',
