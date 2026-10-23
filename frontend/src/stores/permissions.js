@@ -21,6 +21,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const customRolePermissions = ref([])
   const loading = ref(false)
   const roleKey = ref('')
+  const isEmployeeAccount = ref(false)
   const customRoleIds = ref([])
   let unsubscribeUser = null
   let unsubscribeRole = null
@@ -150,6 +151,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
       if (!newUser) {
         userPermissions.value = []
         rolePermissions.value = []
+        isEmployeeAccount.value = false
         clearCustomRoleListeners()
         roleKey.value = ''
         customRoleIds.value = []
@@ -185,6 +187,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
         doc(db, 'users', newUser.uid),
         (snapshot) => {
           const data = snapshot.exists() ? snapshot.data() || {} : {}
+          isEmployeeAccount.value = String(data.userType || '').trim().toLowerCase() === 'staff'
           userPermissions.value = [
             ...(Array.isArray(data.permissions) ? data.permissions : []),
             ...(Array.isArray(data.effectivePermissions) ? data.effectivePermissions : []),
@@ -268,6 +271,12 @@ export const usePermissionsStore = defineStore('permissions', () => {
       set.delete(fullAccessPermissionKey)
     }
     defaultPermissionKeys.forEach((permissionKey) => set.add(permissionKey))
+    // Leave and overtime requests are personal employee self-service actions.
+    // They do not grant access to review other employees' requests.
+    if (isEmployeeAccount.value) {
+      set.add('leave:create')
+      set.add('overtime:create')
+    }
     if (userRole.value === 'Clinic Admin') {
       clinicAdminPermissions.forEach((permissionKey) => set.add(permissionKey))
       set.delete(fullAccessPermissionKey)

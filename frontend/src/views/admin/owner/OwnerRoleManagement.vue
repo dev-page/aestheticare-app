@@ -666,7 +666,7 @@ const ownerOnlyPermissionKeys = new Set(
 const permissionSuggestionRules = [
   {
     match: ['reception', 'front desk', 'frontdesk', 'receptionist', 'desk'],
-    permissions: ['clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'payments:view', 'payments:create', 'inbox:view', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
+    permissions: ['clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'payments:view', 'payments:create', 'inbox:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['practitioner', 'doctor', 'dentist', 'nurse', 'therapist', 'clinician'],
@@ -678,7 +678,7 @@ const permissionSuggestionRules = [
   },
   {
     match: ['finance', 'accounting', 'cashier'],
-    permissions: ['payments:view', 'reports:view', 'payroll:view', 'payroll:approve', 'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view', 'notifications:view', 'profile:view', 'password:update'],
+    permissions: ['payments:view', 'reports:view', 'payroll:view', 'payroll:approve', 'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['manager', 'operations', 'supervisor'],
@@ -686,7 +686,7 @@ const permissionSuggestionRules = [
   },
   {
     match: ['supply', 'inventory', 'warehouse', 'stock'],
-    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'reports:view', 'notifications:view', 'profile:view', 'password:update'],
+    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['admin', 'owner', 'administrator'],

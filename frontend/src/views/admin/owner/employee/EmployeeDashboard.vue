@@ -34,8 +34,8 @@
           </div>
         </section>
 
-        <section class="rounded-[1.75rem] border border-[rgba(123,79,55,0.34)] bg-[radial-gradient(circle_at_top_right,_rgba(230,193,150,0.12),_transparent_24%),linear-gradient(180deg,_rgba(47,31,21,0.96),_rgba(27,17,12,0.98))] shadow-[0_24px_56px_rgba(11,6,4,0.24)] overflow-hidden">
-          <div class="flex flex-col gap-2 border-b border-[rgba(123,79,55,0.24)] px-6 py-5 md:flex-row md:items-end md:justify-between">
+        <section class="overflow-hidden rounded-[1.75rem] border border-slate-700 bg-slate-800 shadow-md">
+          <div class="flex flex-col gap-2 border-b border-slate-700 px-6 py-5 md:flex-row md:items-end md:justify-between">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Quick Access</p>
               <h2 class="mt-2 font-serif text-2xl font-semibold text-[#fff0e1]" data-onboarding-key="employee-quick-access-title">Open the pages you need most</h2>
@@ -43,7 +43,7 @@
                 These shortcuts are filtered to what your account can actually use.
               </p>
             </div>
-            <span class="inline-flex w-fit rounded-full border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d8b38f]">
+            <span class="inline-flex w-fit rounded-full border border-slate-700 bg-slate-700 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
               {{ quickLinks.length }} shortcuts
             </span>
           </div>
@@ -53,19 +53,19 @@
               v-for="link in quickLinks"
               :key="link.to"
               :to="link.to"
-              class="group flex min-h-40 flex-col justify-between rounded-[1.4rem] border border-[rgba(123,79,55,0.28)] bg-[rgba(255,255,255,0.04)] p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:border-[rgba(216,179,143,0.55)] hover:bg-[rgba(255,255,255,0.06)]"
+              class="group flex min-h-40 flex-col justify-between rounded-[1.4rem] border border-slate-700 bg-slate-700 p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:border-amber-700 hover:bg-slate-600"
             >
               <div class="flex items-start justify-between gap-4">
                 <div>
                   <p class="text-base font-semibold text-[#fff0e1]">{{ link.label }}</p>
                   <p class="mt-2 max-w-xs text-sm leading-6 text-[#d4bead]">{{ link.description }}</p>
                 </div>
-                <span class="rounded-full border border-[rgba(123,79,55,0.34)] bg-[rgba(43,28,19,0.82)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#f2e2d2]">
+                <span class="rounded-full border border-slate-600 bg-slate-800 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
                   Open
                 </span>
               </div>
 
-              <div class="mt-6 flex items-center justify-between gap-3 border-t border-[rgba(123,79,55,0.24)] pt-4">
+              <div class="mt-6 flex items-center justify-between gap-3 border-t border-slate-600 pt-4">
                 <span class="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#d8b38f]">
                   {{ link.group }}
                 </span>
@@ -154,6 +154,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           { label: 'Add Shift', to: '/hr/shifts?tab=add', permission: 'hr:create', feature: 'hr', description: 'Create shift templates in Shift Management.' },
           { label: 'Shift Assignment', to: '/hr/shifts?tab=assignment', permission: 'hr:update', feature: 'hr', description: 'Assign recurring schedules in Shift Management.' },
           { label: 'Leave Request', to: '/hr/leave-request', permission: 'leave:create', feature: 'hr', description: 'Submit a new leave request.' },
+          { label: 'Overtime Request', to: '/hr/overtime', permissionsAny: ['overtime:view', 'overtime:create'], feature: 'hr', description: 'Submit and track overtime based on your recorded attendance.' },
           { label: 'Leave Management', to: '/hr/leave-management', permission: 'leave:review', feature: 'hr', description: 'Track or review leave requests.' },
           { label: 'Base Pay', to: '/hr/base-pay', permission: 'payroll:update', feature: 'payroll', description: 'Manage base pay settings.' },
           { label: 'Payroll', to: '/hr/payroll', permission: 'payroll:update', feature: 'payroll', description: 'Run payroll and payslip workflows.' },

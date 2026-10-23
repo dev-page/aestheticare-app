@@ -129,6 +129,8 @@ service cloud.firestore {
         || (userData().permissions != null && userData().permissions.hasAny([permission]))
         || (userData().effectivePermissions != null && userData().effectivePermissions.hasAny([permission]))
         || (rolePermissions() != null && rolePermissions().hasAny([permission]))
+        || ((userData().userType == 'Staff' || userData().userType == 'staff')
+          && (permission == 'leave:create' || permission == 'overtime:create'))
         ;
     }
 
@@ -959,7 +961,9 @@ service cloud.firestore {
       allow write: if false;
     }
     match /users/{employeeId}/payslips/{payslipId} {
-      allow read: if isSignedIn() && ((request.auth.uid == employeeId && planAllowsWorkforceManagement(resource.data.branchId)) || (canAccessBranch(resource.data.branchId) && hasPermission('payroll:view') && planAllowsWorkforceManagement(resource.data.branchId)) || isSuperadmin());
+      // Released payslips are personal payroll records. Employees retain read
+      // access to their own released copies even if the clinic plan later lapses.
+      allow read: if isSignedIn() && (request.auth.uid == employeeId || (canAccessBranch(resource.data.branchId) && hasPermission('payroll:view') && planAllowsWorkforceManagement(resource.data.branchId)) || isSuperadmin());
       allow write: if false;
     }
 
