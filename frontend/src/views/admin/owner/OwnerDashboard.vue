@@ -742,7 +742,7 @@ const renderEmployeeChart = () => {
               <div class="setup-task-copy"><h3>{{ task.label }}</h3><p>{{ task.description }}</p></div>
               <RouterLink v-if="!task.done && !task.disabled" :to="task.to" class="setup-task-action">{{ task.action }} <span aria-hidden="true">&gt;</span></RouterLink>
               <span v-else-if="task.done" class="setup-task-status">Done</span>
-              <RouterLink v-else-if="task.disabled && task.key !== 'link-policies'" to="/subscription-features" class="setup-task-action">Upgrade to add</RouterLink>
+              <RouterLink v-else-if="task.disabled && task.key !== 'link-policies'" to="/account/subscription" class="setup-task-action">Upgrade Plan to Add</RouterLink>
               <span v-else class="setup-task-status">Create a branch first</span>
             </li>
           </ol>

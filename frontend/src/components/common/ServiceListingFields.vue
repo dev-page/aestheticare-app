@@ -161,7 +161,7 @@
             </span>
           </label>
           <div v-if="form.postType === 'Consultation'" class="md:col-span-2">
-            <div v-if="form.consultationMode === 'online'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div v-if="form.postType === 'Consultation' && form.consultationModes.includes('online')" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <label class="block text-slate-400">Arrival grace (minutes)<input v-model.number="form.consultationGraceMinutes" type="number" min="0" max="30" step="1" placeholder="10" class="w-full px-3 py-2 rounded-lg border border-slate-600" /></label>
               <label class="block text-slate-400">Schedule buffer (minutes)<input v-model.number="form.consultationBufferMinutes" type="number" min="5" max="45" step="1" placeholder="15" class="w-full px-3 py-2 rounded-lg border border-slate-600" /></label>
               <p class="md:col-span-2 text-xs text-slate-400">The duration starts after verified attendance. The buffer reserves time between bookings and is at least the grace period plus five minutes. Connection interruptions can restore up to five minutes within this buffer. Unstarted sessions go to clinic review; no automatic customer penalty.</p>
@@ -203,8 +203,8 @@
             <input
               v-model.number="form.durationMinutes"
               type="number"
-              :min="form.postType === 'Consultation' && form.consultationMode === 'online' ? 5 : 1"
-              :max="form.postType === 'Consultation' && form.consultationMode === 'online' ? 240 : undefined"
+              :min="form.postType === 'Consultation' && form.consultationModes.includes('online') ? 5 : 1"
+              :max="form.postType === 'Consultation' && form.consultationModes.includes('online') ? 240 : undefined"
               step="1"
               class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -215,12 +215,14 @@
             </p>
           </div>
           <div v-if="form.postType === 'Consultation'" class="md:col-span-2">
-            <label class="block text-slate-400 mb-1">Consultation Mode</label>
-            <select v-model="form.consultationMode" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="on-site">On-site consultation</option>
-              <option value="online">Online consultation</option>
-            </select>
-            <p class="mt-1 text-xs text-slate-400">Choose one mode for this consultation. Packages inherit the mode of their included consultation.</p>
+            <fieldset class="rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+              <legend class="px-1 text-sm font-medium text-slate-200">Available consultation modes</legend>
+              <div class="mt-2 flex flex-wrap gap-4">
+                <label class="inline-flex items-center gap-2 text-sm text-slate-300"><input v-model="form.consultationModes" type="checkbox" value="on-site" class="h-4 w-4 accent-amber-500" /> On-site</label>
+                <label class="inline-flex items-center gap-2 text-sm text-slate-300"><input v-model="form.consultationModes" type="checkbox" value="online" class="h-4 w-4 accent-amber-500" /> Online</label>
+              </div>
+              <p class="mt-2 text-xs text-slate-400">Create one consultation listing. Customers choose one of the modes enabled here when booking.</p>
+            </fieldset>
           </div>
           <div v-if="form.postType === 'Service' && form.requiresConsultationFirst" class="md:col-span-2">
             <ContractAppearanceSelect :id="editing ? 'edit-linked-consultation' : 'linked-consultation'" v-model="form.linkedConsultationId" label="Linked consultation (required)" :disabled="disabled || !consultationOptions.length" :options="consultationOptions" />
@@ -242,7 +244,7 @@
           <p class="font-semibold text-white">{{ form.postType === 'Product' ? 'Listing Summary' : 'Booking Summary' }}</p>
           <p v-if="form.postType === 'Service'" class="mt-2 text-slate-300">Consultation: {{ form.requiresConsultationFirst ? 'Required before booking' : 'Not required' }}</p>
           <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Follow-up: {{ form.followUpAllowed ? `Available within ${form.followUpWindowDays || 14} days` : 'Not available' }}</p>
-          <p v-if="form.postType === 'Consultation'" class="mt-2 text-slate-300">Mode: {{ form.consultationMode === 'on-site' ? 'On-site consultation' : 'Online consultation' }}</p>
+          <p v-if="form.postType === 'Consultation'" class="mt-2 text-slate-300">Available modes: {{ consultationModeLabel }}</p>
           <p v-if="form.postType === 'Package'" class="mt-2 text-slate-300">Included appointments: {{ form.packageServiceIds.length }}</p>
           <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Appointments per booking: 1</p>
           <p v-if="form.postType === 'Package'" class="mt-1 text-slate-300">Package visits: {{ Math.max(1, Number(form.sessionCount || 1)) }}</p>
@@ -289,7 +291,8 @@ const setPositiveNumber = (key, event, min, max = Infinity, wholeNumber = false)
   form.value[key] = bounded
   if (bounded !== value) event.target.value = String(bounded)
 }
-const consultationOptions = computed(() => props.posts.filter(post => post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived).map(post => ({ value: post.id, label: `${post.title || post.consultationName || 'Consultation'} (${post.consultationMode === 'online' ? 'Online' : 'On-site'})` })))
+const consultationOptions = computed(() => props.posts.filter(post => post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived).map(post => { const modes = Array.isArray(post.consultationModes) ? post.consultationModes : [post.consultationMode || 'on-site']; return { value: post.id, label: `${post.title || post.consultationName || 'Consultation'} (${modes.map(mode => mode === 'online' ? 'Online' : 'On-site').join(' / ')})` } }))
+const consultationModeLabel = computed(() => (props.model.consultationModes || []).map(mode => mode === 'online' ? 'Online' : 'On-site').join(' and ') || 'Choose at least one')
 </script>
 
 <style scoped>

@@ -267,7 +267,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       requiresConsultationFirst: false,
         linkedConsultationId: '',
       consultationFee: 0,
-      consultationMode: 'on-site', consultationGraceMinutes: 10, consultationBufferMinutes: 15,
+      consultationModes: ['on-site'], consultationGraceMinutes: 10, consultationBufferMinutes: 15,
       followUpAllowed: false,
       followUpWindowDays: 14,
       staffingRequirements: [],
@@ -301,7 +301,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       requiresConsultationFirst: false,
         linkedConsultationId: '',
       consultationFee: 0,
-      consultationMode: 'on-site',
+      consultationModes: ['on-site'],
       followUpAllowed: false,
       followUpWindowDays: 14,
       staffingRequirements: [],
@@ -331,6 +331,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const normalizeConsultationMode = (value) =>
       String(value || '').trim().toLowerCase() === 'on-site' ? 'on-site' : 'online'
+    const normalizeConsultationModes = (modes, legacyMode = 'online') => {
+      const normalized = Array.isArray(modes)
+        ? [...new Set(modes.map(normalizeConsultationMode).filter(mode => ['online', 'on-site'].includes(mode)))]
+        : []
+      return normalized.length ? normalized : [normalizeConsultationMode(legacyMode)]
+    }
 
     const handleImageUpload = (event) => {
       const file = event.target.files?.[0]
@@ -386,7 +392,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         requiresConsultationFirst: false,
         linkedConsultationId: '',
         consultationFee: 0,
-        consultationMode: 'on-site',
+        consultationModes: ['on-site'],
         followUpAllowed: false,
         followUpWindowDays: 14,
         staffingRequirements: [],
@@ -418,7 +424,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         requiresConsultationFirst: false,
         linkedConsultationId: '',
         consultationFee: 0,
-        consultationMode: 'on-site',
+        consultationModes: ['on-site'],
         followUpAllowed: false,
         followUpWindowDays: 14,
         durationMinutes: 60,
@@ -606,7 +612,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('User branch is not available.')
         return
       }
-        if (form.value.postType === 'Consultation' && form.value.consultationMode === 'online' && (!Number.isInteger(Number(form.value.durationMinutes)) || Number(form.value.durationMinutes) < 5 || Number(form.value.durationMinutes) > 240)) { toast.error('Online consultation duration must be a whole number from 5 to 240 minutes.'); return }
+      if (form.value.postType === 'Consultation' && (!Array.isArray(form.value.consultationModes) || !form.value.consultationModes.length)) { toast.error('Choose at least one consultation mode.'); return }
+      if (form.value.postType === 'Consultation' && normalizeConsultationModes(form.value.consultationModes).includes('online') && (!Number.isInteger(Number(form.value.durationMinutes)) || Number(form.value.durationMinutes) < 5 || Number(form.value.durationMinutes) > 240)) { toast.error('Online consultation duration must be a whole number from 5 to 240 minutes.'); return }
       if (postType !== 'Product' && Number(form.value.durationMinutes) <= 0) {
         toast.error('Please enter a valid duration.')
         return
@@ -656,10 +663,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           consultationName: postType === 'Consultation' ? selectedName.trim() : '',
           packageName: postType === 'Package' ? String(form.value.packageName || selectedName || '').trim() : '',
           packageServiceIds: postType === 'Package' ? [...(form.value.packageServiceIds || [])] : [],
-          consultationMode: postType === 'Consultation'
-            ? normalizeConsultationMode(form.value.consultationMode)
+          consultationModes: postType === 'Consultation'
+            ? normalizeConsultationModes(form.value.consultationModes)
             : postType === 'Package'
-              ? normalizeConsultationMode(packageComponents.find((post) => post.postType === 'Consultation')?.consultationMode)
+              ? normalizeConsultationModes(packageComponents.filter(post => post.postType === 'Consultation').flatMap(post => normalizeConsultationModes(post.consultationModes, post.consultationMode)), 'on-site')
+              : [],
+          consultationMode: postType === 'Consultation'
+            ? normalizeConsultationModes(form.value.consultationModes)[0]
+            : postType === 'Package'
+              ? normalizeConsultationModes(packageComponents.filter(post => post.postType === 'Consultation').flatMap(post => normalizeConsultationModes(post.consultationModes, post.consultationMode)), 'on-site')[0]
               : null,
           title: selectedName.trim(),
           description: form.value.description.trim(),
@@ -741,7 +753,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
         linkedConsultationId: String(post.linkedConsultationId || ''),
         consultationFee: Number(post.consultationFee || post.price || 0),
-        consultationMode: normalizeConsultationMode(post.consultationMode), consultationGraceMinutes: post.consultationPolicy?.graceMinutes ?? 10, consultationBufferMinutes: post.consultationPolicy?.bufferMinutes ?? 15,
+        consultationModes: normalizeConsultationModes(post.consultationModes, post.consultationMode), consultationGraceMinutes: post.consultationPolicy?.graceMinutes ?? 10, consultationBufferMinutes: post.consultationPolicy?.bufferMinutes ?? 15,
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
         staffingRequirements: JSON.parse(JSON.stringify(post.staffingRequirements || [])),
@@ -827,7 +839,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('Please enter a valid consultation fee.')
         return
       }
-      if (editForm.value.postType === 'Consultation' && editForm.value.consultationMode === 'online' && (!Number.isInteger(Number(editForm.value.durationMinutes)) || Number(editForm.value.durationMinutes) < 5 || Number(editForm.value.durationMinutes) > 240)) { toast.error('Online consultation duration must be a whole number from 5 to 240 minutes.'); return }
+      if (editForm.value.postType === 'Consultation' && (!Array.isArray(editForm.value.consultationModes) || !editForm.value.consultationModes.length)) { toast.error('Choose at least one consultation mode.'); return }
+      if (editForm.value.postType === 'Consultation' && normalizeConsultationModes(editForm.value.consultationModes).includes('online') && (!Number.isInteger(Number(editForm.value.durationMinutes)) || Number(editForm.value.durationMinutes) < 5 || Number(editForm.value.durationMinutes) > 240)) { toast.error('Online consultation duration must be a whole number from 5 to 240 minutes.'); return }
       if (editForm.value.postType !== 'Product' && Number(editForm.value.durationMinutes) <= 0) {
         toast.error('Please enter a valid duration.')
         return
@@ -857,13 +870,16 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           consultationName: editForm.value.postType === 'Consultation' ? editForm.value.name.trim() : '',
           packageName: editForm.value.postType === 'Package' ? editForm.value.name.trim() : '',
           packageServiceIds: editForm.value.postType === 'Package' ? [...(editForm.value.packageServiceIds || [])] : [],
-          consultationMode: editForm.value.postType === 'Consultation'
-            ? normalizeConsultationMode(editForm.value.consultationMode)
+          consultationModes: editForm.value.postType === 'Consultation'
+            ? normalizeConsultationModes(editForm.value.consultationModes)
             : editForm.value.postType === 'Package'
-              ? normalizeConsultationMode(editPackageComponents.find((post) => post.postType === 'Consultation')?.consultationMode)
-              : editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst
-                ? normalizeConsultationMode(editForm.value.consultationMode)
-                : null,
+              ? normalizeConsultationModes(editPackageComponents.filter(post => post.postType === 'Consultation').flatMap(post => normalizeConsultationModes(post.consultationModes, post.consultationMode)), 'on-site')
+              : [],
+          consultationMode: editForm.value.postType === 'Consultation'
+            ? normalizeConsultationModes(editForm.value.consultationModes)[0]
+            : editForm.value.postType === 'Package'
+              ? normalizeConsultationModes(editPackageComponents.filter(post => post.postType === 'Consultation').flatMap(post => normalizeConsultationModes(post.consultationModes, post.consultationMode)), 'on-site')[0]
+              : null,
           price: editForm.value.postType === 'Product'
             ? Number(selectedProduct?.unitPrice || editForm.value.price || 0)
             : editForm.value.postType === 'Package'
