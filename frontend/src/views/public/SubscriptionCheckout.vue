@@ -103,7 +103,7 @@
               class="btn-secondary"
               @click="goBack"
             >
-              Back to Plans
+              Cancel
             </button>
           </div>
         </section>
@@ -197,6 +197,12 @@ const fieldErrors = ref({
 })
 
 const shouldPrefill = computed(() => String(route.query.from || '').trim().toLowerCase() === 'owner')
+const isOnboardingFlow = computed(() => String(route.query.onboarding || '').trim() === '1')
+const checkoutReturnQuery = (planId = selectedPlanId.value || 'basic') => ({
+  plan: planId,
+  ...(shouldPrefill.value ? { from: 'owner' } : {}),
+  ...(isOnboardingFlow.value ? { onboarding: '1' } : {}),
+})
 
 const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
 
@@ -464,7 +470,7 @@ const createPayMongoCheckoutSession = async () => {
   const referenceNumber = `SUB-${Date.now()}`
   const payerName = `${payerFirstName.value || ''} ${payerLastName.value || ''}`.trim()
 
-const flowSuffix = shouldPrefill.value ? '&from=owner' : ''
+const flowSuffix = `${shouldPrefill.value ? '&from=owner' : ''}${isOnboardingFlow.value ? '&onboarding=1' : ''}`
 const successUrl = `${window.location.origin}/subscription/checkout?plan=${selectedPlan.value.id}&paymongo_status=success${flowSuffix}`
 const cancelUrl = `${window.location.origin}/subscription/checkout?plan=${selectedPlan.value.id}&paymongo_status=cancelled${flowSuffix}`
 
@@ -555,11 +561,23 @@ const handlePayMongoReturn = async () => {
   const pending = loadPendingPayMongoState()
   if (!pending?.checkoutSessionId) {
     error.value = 'No pending PayMongo payment found.'
-    await router.replace({ path: '/subscription/checkout', query: { plan: selectedPlanId.value || 'basic' } })
+    await router.replace({ path: '/subscription/checkout', query: checkoutReturnQuery() })
     return
   }
 
   if (status === 'cancelled') {
+    // Keep the payer's form values when PayMongo returns to the checkout page.
+    // These values came from the form and may not exist in the saved profile.
+    payerFirstName.value = String(pending.payerFirstName || payerFirstName.value || '').trim()
+    payerLastName.value = String(pending.payerLastName || payerLastName.value || '').trim()
+    payerEmail.value = String(pending.payerEmail || payerEmail.value || '').trim().toLowerCase()
+    payerPhone.value = normalizePhilippinePhone(pending.payerPhone || payerPhone.value || '')
+    paymentMethod.value = String(pending.paymentMethod || paymentMethod.value || '')
+    validateField('firstName')
+    validateField('lastName')
+    validateField('email')
+    validateField('phone')
+    validateField('paymentMethod')
     clearPendingPayMongoState()
     await Swal.fire({
       title: 'Payment Cancelled',
@@ -568,7 +586,7 @@ const handlePayMongoReturn = async () => {
       timer: 1600,
       showConfirmButton: false,
     })
-    await router.replace({ path: '/subscription/checkout', query: { plan: pending.planId || selectedPlanId.value || 'basic' } })
+    await router.replace({ path: '/subscription/checkout', query: checkoutReturnQuery(pending.planId || selectedPlanId.value || 'basic') })
     return
   }
 
@@ -690,14 +708,14 @@ const handlePayMongoReturn = async () => {
   } catch (err) {
     console.error(err)
     error.value = err?.message || 'Failed to finalize PayMongo payment.'
-    await router.replace({ path: '/subscription/checkout', query: { plan: pending.planId || selectedPlanId.value || 'basic' } })
+    await router.replace({ path: '/subscription/checkout', query: checkoutReturnQuery(pending.planId || selectedPlanId.value || 'basic') })
   } finally {
     saving.value = false
   }
 }
 
 const goBack = () => {
-  if (String(route.query.onboarding || '').trim() === '1') {
+  if (isOnboardingFlow.value) {
     router.push({ path: '/clinic/onboarding', query: { plan: selectedPlanId.value || 'basic' } })
     return
   }
