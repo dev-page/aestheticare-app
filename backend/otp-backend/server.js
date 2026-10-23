@@ -3115,12 +3115,12 @@ const getEffectiveClinicPlan = (clinic = {}) => {
 }
 
 const PLAN_FEATURES = Object.freeze({
-  // Free clinics can publish and accept bookings for services only. Product,
-  // package, consultation, finance, and workforce features remain paid.
-  free: new Set(['booking_availability']),
+  // Employee accounts are a basic clinic need, separate from premium HR
+  // workflows such as shifts, attendance, and payroll.
+  free: new Set(['booking_availability', 'staff_management']),
   // Basic is a single-clinic operational plan: bookings, consultations,
   // services/packages, orders, inventory and operational finance.
-  basic: new Set(['booking_availability', 'online_consultations', 'reports']),
+  basic: new Set(['booking_availability', 'staff_management', 'online_consultations', 'reports']),
   // Workforce management is intentionally a Premium boundary.
   premium: new Set(['booking_availability', 'online_consultations', 'reports', 'multi_branch', 'hr', 'attendance', 'payroll']),
 })
@@ -7843,6 +7843,7 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     const branches = branchSnaps.map((snap) => ({ id: snap.id, ...(snap.data() || {}) }))
     const ownerId = String(branches[0].ownerId || '').trim()
     if (!ownerId || branches.some((branch) => String(branch.ownerId || '') !== ownerId)) return res.status(403).json({ success: false, error: 'Employees may only be assigned within one clinic organization.' })
+    await assertClinicPlanFeature(firestore, branches[0].id, 'staff_management')
     const actor = await loadUserContext(req.user.uid)
     const actorIsOwner = String(actor.roleKey || '') === 'Owner' && req.user.uid === ownerId
     if (!actorIsOwner && !(await Promise.all(branchIds.map((id) => resolveBranchAccess(req.user.uid, id)))).every(Boolean)) {
