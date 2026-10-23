@@ -629,8 +629,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           return
         }
       }
-      if (postType === 'Service' && form.value.requiresConsultationFirst && !posts.value.some(post => post.id === form.value.linkedConsultationId && post.postType === 'Consultation' && post.consultationMode === 'online' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
-        toast.error('Link an existing published online consultation before saving this service.');
+      if (postType === 'Service' && form.value.requiresConsultationFirst && !posts.value.some(post => post.id === form.value.linkedConsultationId && post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
+        toast.error('Link an existing published online or on-site consultation before saving this service.');
         return
       }
       if (postType === 'Consultation' && Number(form.value.consultationFee) <= 0) {
@@ -817,8 +817,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         ? (editForm.value.packageServiceIds || []).map((id) => posts.value.find((post) => post.id === id)).filter(Boolean)
         : []
       const editPackageFollowUpComponents = editPackageComponents.filter((post) => post.followUpAllowed === true)
-      if (editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst && !posts.value.some(post => post.id === editForm.value.linkedConsultationId && post.postType === 'Consultation' && post.consultationMode === 'online' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
-        toast.error('Link an existing published online consultation before saving this service.');
+      if (editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst && !posts.value.some(post => post.id === editForm.value.linkedConsultationId && post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
+        toast.error('Link an existing published online or on-site consultation before saving this service.');
         return
       }
       if (editForm.value.postType === 'Consultation' && Number(editForm.value.consultationFee) <= 0) {

@@ -219,7 +219,7 @@
           </div>
           <div v-if="form.postType === 'Service' && form.requiresConsultationFirst" class="md:col-span-2">
             <ContractAppearanceSelect :id="editing ? 'edit-linked-consultation' : 'linked-consultation'" v-model="form.linkedConsultationId" label="Linked consultation (required)" :disabled="disabled || !consultationOptions.length" :options="consultationOptions" />
-            <p class="mt-2 text-xs text-slate-400">{{ consultationOptions.length ? 'Clients must complete this linked online consultation before booking this service.' : 'No published online consultations are available. Create and publish an online consultation first.' }}</p>
+            <p class="mt-2 text-xs text-slate-400">{{ consultationOptions.length ? 'Clients must complete this linked consultation before booking this service.' : 'No published consultations are available. Create and publish an online or on-site consultation first.' }}</p>
           </div>
         </div>
         <div class="mb-4">
@@ -283,7 +283,7 @@ const setPositiveNumber = (key, event, min, max = Infinity, wholeNumber = false)
   form.value[key] = bounded
   if (bounded !== value) event.target.value = String(bounded)
 }
-const consultationOptions = computed(() => props.posts.filter(post => post.postType === 'Consultation' && post.consultationMode === 'online' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived).map(post => ({ value: post.id, label: post.title || post.consultationName || 'Online consultation' })))
+const consultationOptions = computed(() => props.posts.filter(post => post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived).map(post => ({ value: post.id, label: `${post.title || post.consultationName || 'Consultation'} (${post.consultationMode === 'online' ? 'Online' : 'On-site'})` })))
 </script>
 
 <style scoped>

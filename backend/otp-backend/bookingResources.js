@@ -3,7 +3,7 @@ import { assertWorkflow as check, normalized, resourceConflict } from './booking
 import crypto from 'node:crypto'
 import { normalizeStaffing, appointmentStaffIds } from '../../shared/practitionerTeam.js'
 import { buildClientContract, buildClientContractDocument } from '../../shared/clientContract.js'
-import { hasCompletedOnlineConsultation } from '../../shared/consultationRequirements.js'
+import { hasCompletedLinkedConsultation } from '../../shared/consultationRequirements.js'
 
 export const prepareBooking = async ({ tx, db, reservation, getBookingRange, rangesOverlap, appointmentId = null }) => {
   const branchId = reservation.branchId
@@ -48,7 +48,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   if (consultationRequiredService?.requiresConsultationFirst === true && normalized(consultationRequiredService.postType) !== 'consultation' && !packageIncludesConsultation) {
     const customerId = reservation.customerId
     const consultations = await tx.get(db.collection('appointments').where('customerId', '==', customerId))
-    check(hasCompletedOnlineConsultation(consultationRequiredService, consultations.docs.map(doc => doc.data()), branchId), 'Complete the linked online consultation before booking this service. Packages that include a consultation are exempt.', 422)
+    check(hasCompletedLinkedConsultation(consultationRequiredService, consultations.docs.map(doc => doc.data()), branchId), 'Complete the linked consultation before booking this service. Packages that include a consultation are exempt.', 422)
   }
   const requirements = new Map()
   for (const service of services) {

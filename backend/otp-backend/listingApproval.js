@@ -90,7 +90,7 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         if (['submit', 'publish'].includes(action) && post.postType === 'Service' && post.requiresConsultationFirst) {
           const linkedId = String(post.linkedConsultationId || '').trim()
           const linked = linkedId ? (await tx.get(db.collection('productServicePosts').doc(linkedId))).data() : null
-          if (!linked || linked.branchId !== post.branchId || linked.postType !== 'Consultation' || linked.consultationMode !== 'online' || linked.isPublished !== true || linked.financeStatus !== 'approved' || linked.archived) throw Object.assign(new Error('Link a published online consultation from this branch before submitting or publishing this service.'), { status: 409 })
+          if (!linked || linked.branchId !== post.branchId || linked.postType !== 'Consultation' || linked.isPublished !== true || linked.financeStatus !== 'approved' || linked.archived) throw Object.assign(new Error('Link a published online or on-site consultation from this branch before submitting or publishing this service.'), { status: 409 })
         }
         const update = listingTransition(
           post,

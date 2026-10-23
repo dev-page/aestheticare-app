@@ -22,7 +22,7 @@ import { registerWalkInPayments } from './walkInWorkflow.js'
 import { registerWalkInBookings } from './walkInBookings.js'
 import { registerGoogleConsultations } from './googleConsultations.js'
 import { prepareBooking } from './bookingResources.js'
-import { hasCompletedOnlineConsultation } from '../../shared/consultationRequirements.js'
+import { hasCompletedLinkedConsultation } from '../../shared/consultationRequirements.js'
 import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow, resetAppointmentAccess } from './bookingWorkflow.js'
 import express from 'express'
 import { registerPublicContact } from './publicContact.js'
@@ -5368,7 +5368,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         .where('type', '==', 'Consultation')
         .get()
       const requiredServices = await Promise.all(consultationRequiredIds.map(async id => ({ ...(await firestore.collection('productServicePosts').doc(id).get()).data(), id })))
-      const hasCompletedConsultation = requiredServices.every(service => hasCompletedOnlineConsultation(service, consultationSnap.docs.map(snapshot => snapshot.data()), branchId))
+      const hasCompletedConsultation = requiredServices.every(service => hasCompletedLinkedConsultation(service, consultationSnap.docs.map(snapshot => snapshot.data()), branchId))
       if (!hasCompletedConsultation) {
         return res.status(422).json({
           success: false,
@@ -8225,7 +8225,7 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
       .where('type', '==', 'Consultation')
       .get()
     const requiredServices = await Promise.all(consultationRequiredIds.map(async id => ({ ...(await firestore.collection('productServicePosts').doc(id).get()).data(), id })))
-      const hasCompletedConsultation = requiredServices.every(service => hasCompletedOnlineConsultation(service, consultationSnap.docs.map(snapshot => snapshot.data()), branchId))
+      const hasCompletedConsultation = requiredServices.every(service => hasCompletedLinkedConsultation(service, consultationSnap.docs.map(snapshot => snapshot.data()), branchId))
     if (!hasCompletedConsultation) {
       return res.status(422).json({
         success: false,

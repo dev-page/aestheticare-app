@@ -12,12 +12,12 @@ export const hasConsultationRequirement = (service, appointments = [], clearance
   })
 }
 
-// Treatment bookings that require an online consultation must be preceded by
-// a completed online consultation linked to that treatment, in the same branch.
-export const hasCompletedOnlineConsultation = (service, appointments = [], branchId = service?.branchId) => {
+// Treatment bookings that require consultation must be preceded by the
+// completed consultation linked to that treatment, in the same branch.
+export const hasCompletedLinkedConsultation = (service, appointments = [], branchId = service?.branchId) => {
   if (!service?.requiresConsultationFirst) return true
   return appointments.some(record => {
-    if (record.branchId !== branchId || String(record.status || '').toLowerCase() !== 'completed' || String(record.type || '').toLowerCase() !== 'consultation' || String(record.consultationMode || '').toLowerCase() !== 'online') return false
+    if (record.branchId !== branchId || String(record.status || '').toLowerCase() !== 'completed' || String(record.type || '').toLowerCase() !== 'consultation') return false
     const ids = [...(record.selectedServiceIds || []), ...(record.serviceIds || []), ...(record.selectedServices || []).map(item => item.id)]
     return service.linkedConsultationId ? ids.includes(service.linkedConsultationId) : (record.consultationForServiceIds || []).includes(service.id)
   })

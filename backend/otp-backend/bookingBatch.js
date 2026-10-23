@@ -1,7 +1,7 @@
 import { prepareBooking } from './bookingResources.js'
 import { assertWorkflow as check, normalized } from './bookingWorkflow.js'
 import { prepareClinicBookingRecipients, writeClinicBookingNotifications } from './clinicBookingNotifications.js'
-import { hasCompletedOnlineConsultation } from '../../shared/consultationRequirements.js'
+import { hasCompletedLinkedConsultation } from '../../shared/consultationRequirements.js'
 
 export const validateSchedules = rows => {
   check(Array.isArray(rows) && rows.length >= 1 && rows.length <= 10, 'Schedule between one and ten services.', 400)
@@ -55,7 +55,7 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
               const component = (await tx.get(db.collection('productServicePosts').doc(String(componentId)))).data()
               if (normalized(component?.postType) === 'consultation') packageHasConsultation = true
             }
-            check(packageHasConsultation || hasCompletedOnlineConsultation(service, consultations.docs.map(doc => doc.data()), branchId), 'Complete the linked online consultation before booking this service. Packages that include a consultation are exempt.', 422)
+            check(packageHasConsultation || hasCompletedLinkedConsultation(service, consultations.docs.map(doc => doc.data()), branchId), 'Complete the linked consultation before booking this service. Packages that include a consultation are exempt.', 422)
           }
           prepared.push({ reservation, visit, worker, service })
         }
