@@ -55,6 +55,23 @@
             </div>
 
             <div class="field-block field-block-wide">
+              <label class="field-label">Mobile Phone <span class="field-optional">(optional)</span></label>
+              <div class="phone-input">
+                <span>+63</span>
+                <input
+                  v-model="payerPhone"
+                  type="tel"
+                  inputmode="numeric"
+                  autocomplete="tel-national"
+                  maxlength="10"
+                  placeholder="9XXXXXXXXX"
+                  @input="handlePhoneInput"
+                />
+              </div>
+              <p v-if="fieldErrors.phone" class="field-error">{{ fieldErrors.phone }}</p>
+            </div>
+
+            <div class="field-block field-block-wide">
               <label class="field-label">Payment Method</label>
               <select
                 v-model="paymentMethod"
@@ -169,11 +186,13 @@ let unsubscribePlans = null
 const payerFirstName = ref('')
 const payerLastName = ref('')
 const payerEmail = ref('')
+const payerPhone = ref('')
 const paymentMethod = ref('')
 const fieldErrors = ref({
   firstName: '',
   lastName: '',
   email: '',
+  phone: '',
   paymentMethod: ''
 })
 
@@ -200,6 +219,23 @@ const validateField = (field) => {
   if (field === 'paymentMethod') {
     fieldErrors.value.paymentMethod = paymentMethod.value ? '' : 'Please select a payment method.'
   }
+  if (field === 'phone') {
+    fieldErrors.value.phone = payerPhone.value && !/^9\d{9}$/.test(payerPhone.value)
+      ? 'Enter 10 digits starting with 9, or leave this field blank.'
+      : ''
+  }
+}
+
+const normalizePhilippinePhone = (value) => {
+  let digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('63')) digits = digits.slice(2)
+  if (digits.startsWith('0')) digits = digits.slice(1)
+  return digits.slice(0, 10)
+}
+
+const handlePhoneInput = () => {
+  payerPhone.value = normalizePhilippinePhone(payerPhone.value)
+  validateField('phone')
 }
 
 const defaultPlans = () => [
@@ -355,9 +391,10 @@ const validateForm = () => {
   validateField('firstName')
   validateField('lastName')
   validateField('email')
+  validateField('phone')
   validateField('paymentMethod')
 
-  if (fieldErrors.value.firstName || fieldErrors.value.lastName || fieldErrors.value.email || fieldErrors.value.paymentMethod) {
+  if (fieldErrors.value.firstName || fieldErrors.value.lastName || fieldErrors.value.email || fieldErrors.value.phone || fieldErrors.value.paymentMethod) {
     return false
   }
 
@@ -376,13 +413,16 @@ const applyPrefill = (data = {}) => {
   if (!payerEmail.value && data.email) {
     payerEmail.value = String(data.email || '').trim().toLowerCase()
   }
+  if (!payerPhone.value && data.phone) {
+    payerPhone.value = normalizePhilippinePhone(data.phone)
+  }
   validateField('firstName')
   validateField('lastName')
   validateField('email')
+  validateField('phone')
 }
 
 const prefillFromAccount = async () => {
-  if (!shouldPrefill.value) return
   const currentUser = auth.currentUser || await new Promise((resolve) => {
     const unsub = pageListener(onAuthStateChanged, auth, (user) => {
       unsub()
@@ -393,10 +433,18 @@ const prefillFromAccount = async () => {
   try {
     const userSnap = await getDoc(doc(db, 'users', currentUser.uid))
     const userData = userSnap.exists() ? userSnap.data() : {}
+    let clinicData = {}
+    try {
+      const clinicSnap = await getDoc(doc(db, 'clinics', currentUser.uid))
+      clinicData = clinicSnap.exists() ? clinicSnap.data() : {}
+    } catch (clinicError) {
+      console.info('Clinic phone was unavailable for checkout prefill:', clinicError?.message || clinicError)
+    }
     applyPrefill({
       firstName: userData.firstName,
       lastName: userData.lastName,
-      email: userData.email || currentUser.email
+      email: userData.email || currentUser.email,
+      phone: userData.contactNumber || userData.phoneNumber || clinicData.contactNumber || currentUser.phoneNumber
     })
   } catch (err) {
     console.error('Failed to prefill payer info:', err)
@@ -431,6 +479,7 @@ const cancelUrl = `${window.location.origin}/subscription/checkout?plan=${select
       billing: {
         name: payerName,
         email: payerEmail.value.trim().toLowerCase(),
+        ...(payerPhone.value ? { phone: `0${payerPhone.value}` } : {}),
       },
       metadata: {
         module: 'subscription',
@@ -486,6 +535,7 @@ const startPayMongoCheckout = async () => {
       payerFirstName: payerFirstName.value.trim(),
       payerLastName: payerLastName.value.trim(),
       payerEmail: payerEmail.value.trim().toLowerCase(),
+      payerPhone: payerPhone.value,
       paymentMethod: paymentMethod.value,
       createdAt: Date.now(),
     })
@@ -813,6 +863,53 @@ onBeforeRouteLeave((_to, _from, next) => {
   text-transform: uppercase;
   letter-spacing: 0.16em;
   color: #8b5b3d;
+}
+
+.field-optional {
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: #9b816d;
+}
+
+.phone-input {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid rgba(230, 193, 150, 0.95);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.phone-input:focus-within {
+  border-color: rgba(198, 148, 108, 0.95);
+  box-shadow: 0 0 0 4px rgba(214, 169, 123, 0.16);
+}
+
+.phone-input span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.9rem;
+  border-right: 1px solid rgba(230, 193, 150, 0.95);
+  color: #7b4f37;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.phone-input input {
+  min-width: 0;
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border: 0;
+  background: transparent;
+  color: #342419;
+  font: inherit;
+  outline: none;
+}
+
+.phone-input input::placeholder {
+  color: #9b816d;
 }
 
 .field-input {
