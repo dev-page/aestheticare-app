@@ -5362,7 +5362,10 @@ app.post('/appointments/demo-service-booking', requireAuth, async (req, res) => 
       createdAt: timestamp,
       updatedAt: timestamp,
     })
-    return res.status(201).json({ success: true, data: { id: appointmentRef.id, service: serviceDetails.title, date, time, noCharge: true } })
+    const actorRole = String(context?.userData?.role || context?.userData?.userType || '').trim().toLowerCase()
+    const clinicPreview = ['owner', 'clinic owner', 'clinicowner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator', 'practitioner', 'receptionist', 'manager', 'hr', 'finance', 'employee', 'staff'].includes(actorRole)
+      || ['staff', 'employee'].includes(String(context?.userData?.userType || '').trim().toLowerCase())
+    return res.status(201).json({ success: true, data: { id: appointmentRef.id, service: serviceDetails.title, date, time, noCharge: true, clinicPreview } })
   } catch (error) {
     console.error('Demo service booking failed:', error?.message || error)
     return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Unable to create a demo booking.' })

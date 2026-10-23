@@ -47,9 +47,6 @@ const tabs = computed(() => [
     <main class="flex-1 min-w-0 p-4 md:p-8">
       <h1 class="text-2xl md:text-3xl font-bold text-white">Appointment Management</h1>
       <p class="mt-2 text-sm text-slate-400">Manage walk-ins, online bookings, requests, and your service queue.</p>
-      <a v-if="branchId" :href="`/customer/center/${branchId}?demo=service`" target="_blank" rel="noopener" class="mt-4 inline-flex rounded-xl border border-amber-700/40 bg-amber-950/20 px-4 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-900/30">
-        Preview customer service-booking demo
-      </a>
       <nav class="appointment-tabs" aria-label="Appointment management tabs">
         <template v-for="tab in tabs" :key="tab.key">
           <router-link v-if="tab.allowed" :to="{ path: '/crm/appointments', query: { ...route.query, tab: tab.key } }" class="appointment-tab" :class="{ 'is-active': activeTab === tab.key }" :aria-current="activeTab === tab.key ? 'page' : undefined">{{ tab.label }}</router-link>

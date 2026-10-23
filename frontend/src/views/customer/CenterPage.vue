@@ -526,15 +526,6 @@
                 >
                   {{ bookingPaymentSaving ? 'Processing...' : 'Confirm Booking' }}
                 </button>
-                <button
-                  v-if="canCreateServiceDemo"
-                  type="button"
-                  :disabled="bookingPaymentSaving"
-                  class="rounded-2xl border border-amber-700/40 bg-amber-50 px-4 py-2 text-[#6d4b30] hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  @click="submitDemoServiceBooking"
-                >
-                  {{ bookingPaymentSaving ? 'Creating demo…' : 'Create demo booking · no charge' }}
-                </button>
                 <button @click="clearBookingSelection" class="px-4 py-2 rounded-2xl border border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]">Cancel</button>
               </div>
             </div>
@@ -2830,7 +2821,11 @@ const submitDemoServiceBooking = async () => {
       confirmButtonColor: '#8d5a3b',
     })
     clearBookingSelection()
-    await router.replace({ name: 'customer-appointments' })
+    if (result.data?.clinicPreview === true) {
+      await router.replace({ path: '/crm/appointments', query: { tab: 'all', branchId: activeBranchId.value } })
+    } else {
+      await router.replace({ name: 'customer-appointments' })
+    }
   } catch (error) {
     toast.error(error?.message || 'Unable to create the demo appointment.')
   } finally {

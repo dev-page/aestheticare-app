@@ -552,7 +552,11 @@ router.beforeEach(async (to, from, next) => {
     const application = await getDoc(doc(db, 'supplierApplications', currentUser.uid))
     if (application.data()?.verificationStatus !== 'Verified') return next('/supplier/verification')
   }
-  if (currentUser && routePath.startsWith('/customer') && !isCustomerRole(currentUserData)) {
+  const isClinicServiceDemoPreview = to.name === 'customer-center'
+    && to.query.demo === 'service'
+    && to.query.clinicPreview === '1'
+    && isClinicAccount(currentUserData)
+  if (currentUser && routePath.startsWith('/customer') && !isCustomerRole(currentUserData) && !isClinicServiceDemoPreview) {
     return next(safeUnauthorizedRedirect(currentUser, currentUserData))
   }
   if (

@@ -6,13 +6,6 @@
       <div class="mb-8">
         <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Online Consultation</h1>
         <p class="text-slate-400">Customers check in to the virtual waiting room with their service code. Invite a waiting customer to Meet when you are ready; the consultation timer starts when both participants are detected and you start the session.</p>
-        <div class="mt-4 rounded-xl border border-amber-700/40 bg-amber-950/20 p-4">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div><strong class="text-amber-100">End-to-end demo</strong><p class="mt-1 text-sm text-slate-300">Creates a zero-charge consultation for your signed-in account. Open My Appointments to check in as the customer, then return here as the clinic. No service-code email is sent. Check-in creates a real Google Meet event on the connected hosting account's calendar.</p></div>
-            <button type="button" class="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50" :disabled="isSeedingDemo || !currentBranchId || Boolean(activeDemoAppointment)" @click="seedDemoConsultation">{{ isSeedingDemo ? 'Creating demo…' : activeDemoAppointment ? 'Demo appointment active' : 'Create demo appointment' }}</button>
-          </div>
-          <a v-if="lastDemoAppointmentId || activeDemoAppointment" href="/customer/appointments?tab=online" class="mt-3 inline-block text-sm text-amber-200 underline">Open the customer appointment view</a>
-        </div>
       </div>
 
       <GoogleHostingAccount />
