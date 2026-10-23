@@ -548,7 +548,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-shell-module {
-  background: #1f120b;
+  background: #fff8eb;
 }
 
 .support-main {
@@ -561,7 +561,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-main-module {
-  background: transparent;
+  background: linear-gradient(180deg, #fffdf9 0%, #fff8eb 100%);
 }
 
 .support-content {
@@ -580,11 +580,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .support-header-module,
 .support-panel-module {
   border-radius: 1.5rem;
-  border: 1px solid rgba(123, 79, 55, 0.34);
-  background:
-    radial-gradient(circle at top right, rgba(230, 193, 150, 0.12), transparent 24%),
-    linear-gradient(180deg, rgba(47, 31, 21, 0.94), rgba(27, 17, 12, 0.96));
-  box-shadow: 0 24px 56px rgba(11, 6, 4, 0.24);
+  border: 1px solid #ead2b2;
+  background: #fffdf9;
+  box-shadow: 0 12px 30px rgba(72, 42, 23, 0.08);
 }
 
 .support-header {
@@ -617,7 +615,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-eyebrow-module {
-  color: #7dd3fc;
+  color: #795f4b;
 }
 
 .support-title {
@@ -629,7 +627,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-title-module {
-  color: #fff0e1;
+  color: #342419;
   font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
 }
 
@@ -644,7 +642,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .support-subtitle-module,
 .support-note-module,
 .support-upload-note-module {
-  color: #d4bead;
+  color: #795f4b;
 }
 
 .support-subtitle {
@@ -668,7 +666,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-field-label-module {
-  color: #d4bead;
+  color: #624733;
 }
 
 .support-display-field,
@@ -684,9 +682,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .support-display-field-module,
 .support-input-module {
-  border-color: rgba(123, 79, 55, 0.34);
-  background: rgba(255, 255, 255, 0.04);
-  color: #fff0e1;
+  border-color: #d9b68f;
+  background: #fff;
+  color: #342419;
 }
 
 .support-input-module option {
@@ -714,7 +712,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-input-module::placeholder {
-  color: #cbb19c;
+  color: #a78a6e;
 }
 
 .support-input:focus {
@@ -723,8 +721,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-input-module:focus {
-  border-color: rgba(216, 179, 143, 0.9);
-  box-shadow: 0 0 0 4px rgba(216, 179, 143, 0.12);
+  border-color: #a66d48;
+  box-shadow: 0 0 0 4px rgba(185, 121, 79, 0.16);
 }
 
 .support-upload-box {
@@ -738,12 +736,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-upload-box-module {
-  border-color: rgba(123, 79, 55, 0.24);
-  background: rgba(255, 255, 255, 0.03);
+  border-color: #d9b68f;
+  background: #fffaf3;
 }
 
 .support-file-input {
-  color: #d4bead;
+  color: #624733;
   font-size: 0.92rem;
 }
 
@@ -751,8 +749,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   margin-right: 0.75rem;
   border: 0;
   border-radius: 0.85rem;
-  background: rgba(43, 28, 19, 0.82);
-  color: #f2e2d2;
+  background: #2d1b13;
+  color: #fffaf3;
   padding: 0.7rem 0.95rem;
   font-weight: 700;
 }
@@ -766,7 +764,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-remove-file {
-  color: #d8b38f;
+  color: #795235;
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -783,9 +781,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   gap: 0.5rem;
   padding: 0.82rem 1.15rem;
   border-radius: 1rem;
-  border: 1px solid rgba(123, 79, 55, 0.44);
-  background: rgba(43, 28, 19, 0.82);
-  color: #f2e2d2;
+  border: 1px solid #2d1b13;
+  background: #2d1b13;
+  color: #fffaf3;
   font-size: 0.86rem;
   font-weight: 700;
   transition: transform 0.18s ease, filter 0.18s ease;
@@ -797,7 +795,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .support-submit-button-module {
-  background: rgba(43, 28, 19, 0.82);
+  background: #2d1b13;
 }
 
 .support-submit-button:disabled {
@@ -822,7 +820,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 [data-panel="supplier"] .support-file-input,
 [data-panel="supplier"] .support-remove-file {
-  color: #ead8ca;
+  color: #624733;
 }
 
 [data-panel="supplier"] .support-eyebrow-module {

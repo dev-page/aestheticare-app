@@ -10,6 +10,7 @@
           <p class="mt-2 max-w-3xl text-sm text-slate-400">
             Overtime is based on the employee's scheduled shift and recorded attendance, then reviewed before payroll.
           </p>
+          <p v-if="pageError" class="mt-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">{{ pageError }}</p>
         </div>
 
         <section v-if="canSubmit" class="mb-6 rounded-3xl border border-slate-700 bg-slate-800/85 p-5 shadow-lg sm:p-6">
@@ -117,6 +118,7 @@ const currentBranchId = ref('')
 const currentOwnerId = ref('')
 const currentEmployeeProfile = ref({})
 const formError = ref('')
+const pageError = ref('')
 const attendanceEvidence = ref({})
 const form = ref({ date: todayKey, reason: '' })
 
@@ -174,11 +176,6 @@ async function resolveContext() {
 async function loadOwnAttendance() {
   attendanceEvidence.value = {}
   if (!currentUserId.value || !form.value.date) return
-  const direct = await getDoc(doc(db, 'attendance', `${currentUserId.value}_${form.value.date}`))
-  if (direct.exists()) {
-    attendanceEvidence.value = direct.data() || {}
-    return
-  }
   const snapshot = await getDocs(query(collection(db, 'attendance'), where('employeeId', '==', currentUserId.value)))
   attendanceEvidence.value = snapshot.docs.map((entry) => entry.data() || {}).find((entry) => entry.date === form.value.date) || {}
 }
@@ -260,8 +257,12 @@ async function reviewRequest(request, status) {
 onMounted(trackPageLoad(() => pageListener(onAuthStateChanged, auth, async () => {
   try {
     loading.value = true
+    pageError.value = ''
     await resolveContext()
     await Promise.all([loadOwnAttendance(), loadRequests()])
+  } catch (error) {
+    console.error('Failed to load overtime page:', error)
+    pageError.value = 'We could not load your overtime and attendance records. Refresh the page or contact your clinic administrator if this continues.'
   } finally {
     loading.value = false
   }

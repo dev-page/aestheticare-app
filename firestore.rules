@@ -588,7 +588,7 @@ service cloud.firestore {
 
     match /attendance/{attendanceId} {
       allow read: if isSignedIn()
-        && ((resource.data.employeeId == request.auth.uid && planAllowsWorkforceManagement(resource.data.branchId))
+        && ((resource.data.employeeId == request.auth.uid)
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('attendance:view') && planAllowsWorkforceManagement(resource.data.branchId))
           || isSuperadmin());
       allow create, update: if false;
@@ -598,7 +598,7 @@ service cloud.firestore {
     match /overtimeRequests/{requestId} {
       allow read: if isSignedIn()
         && (isSuperadmin()
-          || (resource.data.requesterId == request.auth.uid && planAllowsWorkforceManagement(resource.data.branchId))
+          || (resource.data.requesterId == request.auth.uid)
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
             && (hasPermission('overtime:view') || hasPermission('payroll:update'))
@@ -625,7 +625,7 @@ service cloud.firestore {
     match /leaveRequests/{requestId} {
       allow read: if isSignedIn()
         && (isSuperadmin()
-          || (resource.data.requesterId == request.auth.uid && planAllowsWorkforceManagement(resource.data.branchId))
+          || (resource.data.requesterId == request.auth.uid)
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
             && hasPermission('leave:review')

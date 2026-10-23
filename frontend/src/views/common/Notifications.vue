@@ -496,7 +496,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-shell-module {
-  background: #1f120b;
+  background: #fff8eb;
 }
 
 .notifications-main {
@@ -510,7 +510,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .notifications-main-module {
   padding: 2rem;
-  background: transparent;
+  background: linear-gradient(180deg, #fffdf9 0%, #fff8eb 100%);
 }
 
 .notifications-content {
@@ -533,11 +533,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .notifications-header-module,
 .notifications-panel-module {
   border-radius: 1.5rem;
-  border: 1px solid rgba(123, 79, 55, 0.34);
-  background:
-    radial-gradient(circle at top right, rgba(230, 193, 150, 0.12), transparent 24%),
-    linear-gradient(180deg, rgba(47, 31, 21, 0.94), rgba(27, 17, 12, 0.96));
-  box-shadow: 0 24px 56px rgba(11, 6, 4, 0.24);
+  border: 1px solid #ead2b2;
+  background: #fffdf9;
+  box-shadow: 0 12px 30px rgba(72, 42, 23, 0.08);
 }
 
 .notifications-header-module {
@@ -566,7 +564,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .notifications-title-module,
 .notifications-modal-heading-module {
-  color: #fff0e1;
+  color: #342419;
   font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
 }
 
@@ -590,7 +588,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .notifications-item-date-module,
 .notifications-empty-module,
 .notifications-modal-label-module {
-  color: #d4bead;
+  color: #795f4b;
 }
 
 .notifications-error {
@@ -599,7 +597,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-error-module {
-  color: #f7c7c7;
+  color: #a13f38;
 }
 
 .notifications-toolbar,
@@ -618,7 +616,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .notifications-toolbar-module {
   padding: 0.95rem 1rem;
-  border-bottom: 1px solid rgba(123, 79, 55, 0.24);
+  border-bottom: 1px solid #ead2b2;
 }
 
 .notifications-delete-button,
@@ -643,9 +641,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .notifications-toolbar-module .notifications-delete-button,
 .notifications-toolbar-module .notifications-view-button {
-  border-color: rgba(123, 79, 55, 0.44);
-  background: rgba(43, 28, 19, 0.82);
-  color: #f2e2d2;
+  border-color: #ead2b2;
+  background: #f8e3df;
+  color: #842f2a;
 }
 
 .notifications-delete-button:disabled {
@@ -662,9 +660,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-toolbar-module .notifications-icon-button {
-  border-color: rgba(123, 79, 55, 0.34);
-  background: rgba(255, 255, 255, 0.04);
-  color: #f2dcc4;
+  border-color: #ead2b2;
+  background: #fff7ec;
+  color: #795235;
 }
 
 .notifications-icon-button-read {
@@ -705,7 +703,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .notifications-select-all-module,
 .notifications-item-module {
   padding: 1rem;
-  border-top: 1px solid rgba(123, 79, 55, 0.24);
+  border-top: 1px solid #f0e1cf;
+  color: #624733;
 }
 
 .notifications-checkbox {
@@ -715,7 +714,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-toolbar-module .notifications-checkbox {
-  accent-color: #d8b38f;
+  accent-color: #8d5a3b;
 }
 
 .notifications-item-title {
@@ -724,7 +723,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-item-title-module {
-  color: #fff0e1;
+  color: #342419;
 }
 
 .notifications-item-message {
@@ -738,7 +737,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-item-date-module {
-  color: #cbb19c;
+  color: #876e59;
 }
 
 .notifications-item-actions {
@@ -760,9 +759,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-panel-module .notifications-new-badge {
-  background: rgba(213, 160, 94, 0.12);
-  color: #ffd17f;
-  border-color: rgba(213, 160, 94, 0.2);
+  background: #fbefcf;
+  color: #8a5b18;
+  border-color: #f1d5a3;
 }
 
 :deep(.notifications-modal-panel) {
@@ -781,10 +780,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   width: 100%;
   max-width: 40rem;
   border-radius: 1.5rem;
-  border: 1px solid rgba(123, 79, 55, 0.34);
-  background: linear-gradient(180deg, rgba(44, 29, 20, 0.98), rgba(31, 20, 14, 0.98));
-  color: #ead9ca;
-  box-shadow: 0 24px 60px rgba(11, 6, 4, 0.34);
+  border: 1px solid #ead2b2;
+  background: #fffdf9;
+  color: #342419;
+  box-shadow: 0 24px 60px rgba(72, 42, 23, 0.18);
 }
 
 .notifications-modal-heading {
@@ -792,7 +791,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-modal-text-module {
-  color: #fff1e3;
+  color: #342419;
 }
 
 .notifications-modal-body {
@@ -809,8 +808,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 :deep(.notifications-modal-body-shell-module) {
-  background: #21140e;
-  color: #fff1e3;
+  background: #fffdf9;
+  color: #342419;
 }
 
 .notifications-modal-label {
@@ -821,7 +820,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-modal-label-module {
-  color: #d4bead;
+  color: #795f4b;
 }
 
 .notifications-modal-text {
