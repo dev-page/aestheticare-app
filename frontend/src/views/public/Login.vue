@@ -41,6 +41,7 @@ let redirectInProgress = false
 
 const inactivityExpired = ref(route.query.expired === 'inactivity')
 const passwordResetSuccess = ref(route.query.reset === 'success')
+let inactivityCleanupPromise = Promise.resolve()
 
 const EMAIL_REGEX = /^[A-Za-z0-9._]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
 
@@ -256,6 +257,9 @@ const handleLogin = async () => {
     isSubmitting.value = true
 
     try {
+      // An inactivity redirect must start from a clean Firebase session. A
+      // stale persisted user from another tab can otherwise race this login.
+      await inactivityCleanupPromise
       await setPersistence(
         auth,
         isRememberMe.value ? browserLocalPersistence : browserSessionPersistence
@@ -434,6 +438,22 @@ onBeforeUnmount(() => {
   if (loginOtpInterval) clearInterval(loginOtpInterval)
   // Navigation owns the overlay until the destination has rendered.
   if (!redirectInProgress) setProcessLoading(false)
+})
+
+onMounted(() => {
+  if (!inactivityExpired.value) return
+  inactivityCleanupPromise = (async () => {
+    try {
+      await signOut(auth)
+    } catch (error) {
+      console.warn('Could not clear the expired Firebase session before login:', error)
+    }
+    try {
+      window.localStorage.removeItem('auth:last-activity-at')
+    } catch {
+      // The timestamp is only a convenience for the inactivity timer.
+    }
+  })()
 })
 
 </script>

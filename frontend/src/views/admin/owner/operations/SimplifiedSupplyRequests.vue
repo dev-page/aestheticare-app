@@ -1,5 +1,5 @@
 <template>
-  <div class="module-theme flex min-h-screen bg-slate-900 text-slate-100" :class="{ 'finance-page': mode === 'finance' }">
+  <div class="module-theme flex min-h-screen bg-slate-900 text-slate-100" :class="{ 'finance-page': mode === 'finance', 'inventory-requests-page': mode === 'inventory' }">
     <OwnerSidebar />
     <main v-page-loading="{ active: pageLoading, blocks: mode === 'inventory' ? [{ variant: 'form', fields: 4, sections: 2 }, { variant: 'table', columns: 6, rows: 4 }] : [{ variant: 'table', columns: 6, rows: 5 }] }" class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
       <div class="mx-auto max-w-6xl">
@@ -23,7 +23,7 @@
             <label class="form-field"><span>Quantity requested <b>*</b></span><input v-model.number="draft.quantity" type="number" min="1" required /><small>Enter the amount of supply the clinic needs.</small></label>
             <label class="form-field"><span>Unit of measure <b>*</b></span><select v-model="draft.unit" required><option value="units">Units</option><option value="boxes">Boxes</option><option value="packs">Packs</option><option value="bottles">Bottles</option><option value="pairs">Pairs</option><option value="pieces">Pieces</option><option value="rolls">Rolls</option><option value="tubes">Tubes</option><option value="grams">Grams</option><option value="kilograms">Kilograms</option><option value="milliliters">Milliliters</option><option value="liters">Liters</option></select><small>Choose how the requested quantity is measured.</small></label>
             <label class="form-field"><span>Required by <b>*</b></span><input v-model="draft.requiredDate" type="date" required /><small>Choose the date when this supply is needed.</small></label>
-            <section class="delivery-location-panel md:col-span-2"><div><p class="form-field-label">Delivery location <b>*</b></p><p class="mt-1 text-sm text-slate-400">Choose the clinic branch that should receive the supplies. Its registered map pin and address are used automatically.</p></div><label class="form-field mt-4"><span>Clinic branch <b>*</b></span><select v-model="selectedDeliveryBranchId" required><option value="" disabled>Select delivery branch</option><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select></label><LocationPicker v-if="branchCoordinates" class="mt-4" :initial-address="branchAddress" :initial-lat="activeBranch.latitude" :initial-lng="activeBranch.longitude" map-height="220px" theme="dark" readonly :show-actions="false" pinned-address-label="Pinned branch location" /><div v-else class="mt-4 rounded-xl border border-amber-600/50 bg-amber-950/20 p-4 text-sm text-amber-100">This branch does not have a map pin yet. Ask the clinic owner to set the branch location in Clinic Profile.</div><div class="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-4"><p class="text-xs font-bold uppercase tracking-[.12em] text-amber-300">Full address</p><p class="mt-1 text-sm leading-6 text-slate-100">{{ branchAddress || 'No registered branch address.' }}</p></div></section>
+            <section class="delivery-location-panel md:col-span-2"><div><p class="form-field-label">Delivery location <b>*</b></p><p class="mt-1 text-sm text-slate-400">Choose the clinic branch that should receive the supplies. Its registered map pin and address are used automatically.</p></div><label class="form-field mt-4"><span>Clinic branch <b>*</b></span><select v-model="selectedDeliveryBranchId" required><option value="" disabled>Select delivery branch</option><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select></label><LocationPicker v-if="branchCoordinates" class="mt-4" :initial-address="branchAddress" :initial-lat="activeBranch.latitude" :initial-lng="activeBranch.longitude" map-height="220px" theme="light" readonly :show-actions="false" pinned-address-label="Pinned branch location" /><div v-else class="mt-4 rounded-xl border border-amber-600/50 bg-amber-950/20 p-4 text-sm text-amber-100">This branch does not have a map pin yet. Ask the clinic owner to set the branch location in Clinic Profile.</div><div class="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-4"><p class="text-xs font-bold uppercase tracking-[.12em] text-amber-300">Full address</p><p class="mt-1 text-sm leading-6 text-slate-100">{{ branchAddress || 'No registered branch address.' }}</p></div></section>
             <label class="form-field"><span>Priority <b>*</b></span><select v-model="draft.priority" required><option>Low</option><option>Normal</option><option>High</option><option>Urgent</option></select><small>Use urgent only when operations would be affected without the supply.</small></label>
             <label class="form-field md:col-span-2"><span>Reason for request <b>*</b></span><textarea v-model.trim="draft.reason" placeholder="Explain why this supply is needed and how it will be used." required /><small>This helps Procurement and Finance assess the request.</small></label>
           </div>
@@ -329,4 +329,25 @@ select:disabled { cursor: not-allowed; opacity: .55; }
 :global(.procurement-modal-body) dd { margin-top: .3rem; color: rgb(241 245 249); line-height: 1.45; }
 :global(.procurement-modal-panel) { border-color: rgb(180 83 9 / .7) !important; background: rgb(36 22 15) !important; color: rgb(241 245 249); }
 :global(.procurement-modal-body) { background: rgb(36 22 15) !important; }
+.inventory-requests-page, .inventory-requests-page.bg-slate-900 { background: #f8f3ea; color: #3d281d; }
+.inventory-requests-page main { background: #f8f3ea; }
+.inventory-requests-page header { border-color: #ead8c2; }
+.inventory-requests-page header h1, .inventory-requests-page h2 { color: #3d281d; }
+.inventory-requests-page header p.text-slate-400, .inventory-requests-page p.text-slate-400 { color: #806b5a; }
+.inventory-requests-page section.rounded-2xl { border-color: #ead8c2; background: #fffdf9; box-shadow: 0 12px 32px rgb(75 49 30 / .07); }
+.inventory-requests-page section.rounded-2xl > div:first-child { border-color: #ead8c2; }
+.inventory-requests-page .form-field, .inventory-requests-page .form-field-label { color: #503727; }
+.inventory-requests-page .form-field b { color: #a24d32; }
+.inventory-requests-page .form-field small, .inventory-requests-page .delivery-location-panel .text-slate-400 { color: #806b5a; }
+.inventory-requests-page .delivery-location-panel { border-color: #ead8c2; background: #fffaf3; }
+.inventory-requests-page input, .inventory-requests-page select, .inventory-requests-page textarea { border-color: #dec7aa; background: #fff; color: #3d281d; }
+.inventory-requests-page input::placeholder, .inventory-requests-page textarea::placeholder { color: #9a8877; }
+.inventory-requests-page input:focus, .inventory-requests-page select:focus, .inventory-requests-page textarea:focus { border-color: #a86f44; box-shadow: 0 0 0 3px rgb(168 111 68 / .15); }
+.inventory-requests-page [class*="bg-slate-"] { background-color: #fffdf9; }
+.inventory-requests-page [class*="border-slate-"] { border-color: #ead8c2; }
+.inventory-requests-page [class~="text-slate-100"], .inventory-requests-page [class~="text-slate-200"], .inventory-requests-page [class~="text-slate-300"] { color: #503727; }
+.inventory-requests-page [class~="text-slate-400"], .inventory-requests-page [class~="text-slate-500"] { color: #806b5a; }
+.inventory-requests-page table thead { background: #f4e8d8; color: #684c37; }
+.inventory-requests-page table tbody tr:hover { background: #fff7ed; }
+.inventory-requests-page button:focus-visible, .inventory-requests-page a:focus-visible, .inventory-requests-page input:focus-visible, .inventory-requests-page select:focus-visible, .inventory-requests-page textarea:focus-visible { outline: 3px solid rgb(168 111 68 / .35); outline-offset: 2px; }
 </style>

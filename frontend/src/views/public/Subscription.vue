@@ -473,8 +473,10 @@ onBeforeUnmount(() => {
   color: #6f3f2a;
 }
 
-.trial-original-price { margin-right: .45rem; color: #a58c7b; font-size: .58em; font-weight: 600; letter-spacing: 0; }
-.trial-current-price { color: #28734a; font-size: .92em; }
+.trial-original-price { margin-right: .45rem; color: #fff7ed; font-size: .58em; font-weight: 700; letter-spacing: 0; text-decoration-thickness: 2px; text-underline-offset: .12em; opacity: 1; }
+.plan-card-free .trial-original-price,
+.plan-card-basic .trial-original-price { color: #51311f; }
+.trial-current-price { display: inline-block; border-radius: .35em; background: #ecfdf5; padding: .12em .3em; color: #14532d; font-size: .82em; font-weight: 900; line-height: 1.15; }
 
 .plan-cycle {
   font-size: 0.84rem;
