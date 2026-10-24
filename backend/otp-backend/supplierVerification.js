@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { assertWorkflow as check, normalized } from './bookingWorkflow.js'
 
 export const supplierIsVerified = application => application?.verificationStatus === 'Verified'
+const SUPPLIER_DELIVERY_CITIES = ['Bacoor', 'Cavite City', 'Dasmarinas City', 'General Trias', 'Imus', 'Tagaytay', 'Trece Martires', 'Alfonso', 'Amadeo', 'Carmona', 'General Emilio Aguinaldo', 'General Mariano Alvarez', 'Indang', 'Kawit', 'Magallanes', 'Maragondon', 'Mendez', 'Naic', 'Noveleta', 'Rosario', 'Silang', 'Tanza', 'Ternate']
 export const supplierDecision = (current, action, reason) => {
   const status = { approve: 'Verified', revise: 'Needs revision', reject: 'Rejected', suspend: 'Suspended' }[action]
   check(status, 'Choose a valid review decision.', 400)
@@ -156,6 +157,18 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
     }
     const businessType = String(req.body.businessType || '').trim().slice(0, 120)
     const categories = [...new Set((Array.isArray(req.body.categories) ? req.body.categories : []).map(value => String(value || '').trim()).filter(value => ['Injectables', 'Equipment', 'Skincare', 'Medical Supplies'].includes(value)))].slice(0, 20)
+    const deliveryFeePolicy = String(req.body.deliveryFeePolicy || '')
+    const submittedFees = Array.isArray(req.body.deliveryFees) ? req.body.deliveryFees : []
+    check(deliveryFeePolicy === 'configured' || deliveryFeePolicy === 'free', 'Set your delivery fees or confirm that you do not charge a delivery fee.', 400)
+    check(submittedFees.length <= SUPPLIER_DELIVERY_CITIES.length, 'Too many delivery fee locations.', 400)
+    const deliveryFees = submittedFees.map(entry => {
+      const city = SUPPLIER_DELIVERY_CITIES.find(option => option === String(entry?.city || '').trim())
+      const amount = Number(entry?.amount)
+      check(city && Number.isFinite(amount) && amount >= 0 && amount <= 10000000, 'Choose a valid city and non-negative delivery fee for every row.', 400)
+      return { city, amount: Math.round(amount * 100) / 100 }
+    })
+    check(new Set(deliveryFees.map(entry => entry.city)).size === deliveryFees.length, 'Each city can only have one delivery fee.', 400)
+    check((deliveryFeePolicy === 'configured' && deliveryFees.length > 0) || (deliveryFeePolicy === 'free' && deliveryFees.length === 0), 'Add a fee for at least one city, or confirm that delivery is free.', 400)
     if (req.body.businessType !== undefined) check(businessType.length > 0, 'Provide a valid business type.', 400)
     if (req.body.categories !== undefined) check(categories.length > 0, 'Select at least one supplier category.', 400)
     check(/^\S+@\S+\.\S+$/.test(fields.contactEmail), 'Provide a valid contact email.', 400)
@@ -205,7 +218,7 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       const identifiersDetected = Boolean(ocrRegistrationNumber && ocrTaxNumber)
       const ocrStatus = allDocuments.every(document => document.ocr?.status === 'verified') && identifiersDetected ? 'OCR Verified' : 'Manual Review Required'
       const ocrReviewReason = identifiersDetected ? '' : 'OCR could not confidently locate both the business registration number and tax number. Please compare the entered values with the uploaded documents.'
-      tx.set(ref, { ...fields, ...(businessType ? { businessType } : {}), ...(req.body.categories !== undefined ? { categories } : {}), documents: updatedDocuments, ownerId: req.user.uid, verificationStatus: 'Submitted', ocrStatus, ocrReviewReason, revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
+      tx.set(ref, { ...fields, ...(businessType ? { businessType } : {}), ...(req.body.categories !== undefined ? { categories } : {}), deliveryFees, deliveryFeePolicy, documents: updatedDocuments, ownerId: req.user.uid, verificationStatus: 'Submitted', ocrStatus, ocrReviewReason, revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
       tx.set(db.collection('supplierVerificationAudit').doc(), { supplierUid: req.user.uid, actorId: req.user.uid, action: 'submitted', previousStatus: current.verificationStatus || 'Draft', nextStatus: 'Submitted', createdAt: stamp() })
     })
     res.json({ success: true, data: { verificationStatus: 'Submitted' } })
@@ -298,6 +311,8 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
           contactPerson: current.representativeName || '',
           email: current.contactEmail || doc.data()?.email || '',
           phone: current.contactPhone || '',
+          deliveryFees: Array.isArray(current.deliveryFees) ? current.deliveryFees : [],
+          deliveryFeePolicy: current.deliveryFeePolicy || 'free',
           status: 'Active',
         } : {}
         tx.set(doc.ref, { ...profile, verificationStatus: status, updatedAt: stamp() }, { merge: true })

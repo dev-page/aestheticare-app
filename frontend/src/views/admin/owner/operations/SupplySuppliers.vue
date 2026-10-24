@@ -1,17 +1,18 @@
 <template>
-  <div :class="embedded ? 'module-theme' : 'flex module-theme bg-slate-900 min-h-screen'">
+  <div :class="embedded ? 'module-theme supplier-directory' : 'flex module-theme supplier-directory min-h-screen'">
     <OwnerSidebar v-if="!embedded" />
 
-    <div v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'stat', cards: 4 }" :class="embedded ? '' : 'flex-1 p-8'">
-      <div class="mb-8 flex items-center justify-between">
+    <div v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'stat', cards: 4 }" :class="embedded ? 'directory-content' : 'directory-content flex-1'">
+      <div class="directory-heading">
         <div>
-          <h1 class="text-3xl font-bold text-white mb-2">Supplier Directory</h1>
-          <p class="text-slate-400">Manage suppliers, browse their offered supplies, and start an inventory request.</p>
+          <p class="directory-eyebrow">PROCUREMENT</p>
+          <h1 class="directory-title">Supplier Directory</h1>
+          <p class="directory-subtitle">Manage supplier relationships, browse offered supplies, and start an inventory request.</p>
         </div>
         <button
           v-if="canCreateSuppliers"
           @click="openAddModal"
-          class="bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors"
+          class="directory-primary-button"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
@@ -20,27 +21,28 @@
         </button>
       </div>
 
-      <nav class="mb-6 flex gap-2 border-b border-slate-700" aria-label="Supplier directory sections">
-        <button type="button" class="border-b-2 border-amber-500 px-4 py-3 text-sm font-semibold text-amber-300">Supplier List</button>
-        <router-link to="/inventory/requests" class="px-4 py-3 text-sm font-semibold text-slate-400 hover:text-white">Inventory Requests</router-link>
-      </nav>
+      <section class="directory-summary" aria-label="Supplier summary">
+        <article><span class="summary-mark">01</span><div><p class="summary-value">{{ suppliers.length }}</p><p class="summary-label">Total suppliers</p></div></article>
+        <article><span class="summary-mark summary-mark-active">●</span><div><p class="summary-value">{{ suppliers.filter(s => (s.status || 'Active') === 'Active').length }}</p><p class="summary-label">Active suppliers</p></div></article>
+        <article><span class="summary-mark summary-mark-pending">◷</span><div><p class="summary-value">{{ suppliers.filter(s => ['Invited', 'Pending Activation'].includes(s.status)).length }}</p><p class="summary-label">Awaiting activation</p></div></article>
+      </section>
 
-      <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="directory-filters">
+        <div class="filters-grid">
           <div>
-            <label class="block text-slate-400 text-sm mb-2">Search</label>
+            <label class="filter-label">Search suppliers</label>
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="Search by name or contact..."
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
+              placeholder="Business name or contact person"
+              class="directory-input"
             />
           </div>
           <div>
-            <label class="block text-slate-400 text-sm mb-2">Filter by Category</label>
+            <label class="filter-label">Category</label>
             <select
               v-model="selectedCategory"
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
+              class="directory-input"
             >
               <option value="">All Categories</option>
               <option value="Injectables">Injectables</option>
@@ -50,10 +52,10 @@
             </select>
           </div>
           <div>
-            <label class="block text-slate-400 text-sm mb-2">Filter by Status</label>
+            <label class="filter-label">Status</label>
             <select
               v-model="selectedStatus"
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
+              class="directory-input"
             >
               <option value="">All Status</option>
               <option value="Invited">Invited</option>
@@ -64,74 +66,75 @@
         </div>
       </div>
 
-      <div v-if="suppliers.length === 0" class="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center text-slate-400">
-        There are no suppliers yet.
+      <div v-if="suppliers.length === 0" class="directory-empty">
+        <span class="empty-icon">＋</span><h2>No suppliers yet</h2><p>Add a supplier business or link an existing verified supplier account to get started.</p>
+        <button v-if="canCreateSuppliers" type="button" class="directory-primary-button" @click="openAddModal">Add Supplier</button>
       </div>
 
       <div v-else>
-        <div v-if="filteredSuppliers.length === 0" class="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center text-slate-400">
-          No suppliers matched your filters.
+        <div v-if="filteredSuppliers.length === 0" class="directory-empty">
+          <span class="empty-icon">⌕</span><h2>No matching suppliers</h2><p>Try another search term or adjust the selected filters.</p>
         </div>
 
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div v-for="supplier in filteredSuppliers" :key="supplier.id" class="bg-slate-800 rounded-xl p-6 border border-slate-700 hover:border-amber-500 transition-colors">
-            <div class="flex items-start justify-between mb-4">
-              <div class="h-12 w-12 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                <svg class="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div v-else class="supplier-grid">
+          <div v-for="supplier in filteredSuppliers" :key="supplier.id" class="supplier-card">
+            <div class="supplier-card-top">
+              <div class="supplier-avatar">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"></path>
                 </svg>
               </div>
-              <span :class="['px-3 py-1 rounded-full text-xs font-medium', statusClass(supplier.status)]">
+              <span :class="['supplier-status', statusClass(supplier.status)]">
                 {{ supplier.status === 'Pending Activation' ? 'Pending' : (supplier.status || 'Inactive') }}
               </span>
             </div>
 
-            <h3 class="text-white font-semibold text-lg mb-2">{{ supplier.name }}</h3>
-            <div class="flex flex-wrap gap-1 mb-4">
+            <h3 class="supplier-name">{{ supplier.name || supplier.businessName || 'Supplier business' }}</h3>
+            <p v-if="supplier.businessType" class="supplier-type">{{ supplier.businessType }}</p>
+            <div class="supplier-categories">
               <span
                 v-for="cat in normalizedCategories(supplier)"
                 :key="`${supplier.id}-${cat}`"
-                class="px-2 py-0.5 rounded-full text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                class="supplier-category"
               >
                 {{ cat }}
               </span>
               <span
                 v-if="normalizedCategories(supplier).length === 0"
-                class="text-slate-500 text-xs"
+                class="supplier-muted"
               >
                 No category
               </span>
             </div>
 
-            <div class="space-y-2 mb-4 text-sm">
-              <p class="text-slate-300">Contact: {{ supplier.contact || '-' }}</p>
-              <p class="text-slate-300">Email: {{ supplier.email || '-' }}</p>
-              <p class="text-slate-300">Phone: {{ supplier.phone || '-' }}</p>
-              <p class="text-slate-300">Business Type: {{ supplier.businessType || '-' }}</p>
-              <p class="text-slate-300">Accreditation: {{ supplier.accreditationStatus || 'Pending Accreditation' }}</p>
+            <div class="supplier-details">
+              <p><span>Contact</span>{{ supplier.contact || '-' }}</p>
+              <p><span>Email</span>{{ supplier.email || '-' }}</p>
+              <p><span>Phone</span>{{ supplier.phone ? `+63 ${supplier.phone}` : '-' }}</p>
+              <p><span>Accreditation</span>{{ supplier.accreditationStatus || 'Pending Accreditation' }}</p>
             </div>
 
-            <div class="pt-4 border-t border-slate-700">
-              <p class="text-slate-400 text-xs mb-2">Offered Items</p>
-              <div class="space-y-1">
+            <div class="supplier-offerings">
+              <p class="offerings-heading">Offered items <span>{{ normalizedOfferedItems(supplier).length }}</span></p>
+              <div class="offerings-list">
                 <p
                   v-for="(item, idx) in normalizedOfferedItems(supplier).slice(0, 3)"
                   :key="`${supplier.id}-item-${idx}`"
-                  class="text-slate-300 text-xs"
+                  class="offered-item"
                 >
                   {{ item.name }}
-                  <span class="text-slate-500">({{ item.category || 'Uncategorized' }})</span>
-                  <span class="text-emerald-400">- PHP {{ Number(item.unitCost || item.costPerUnit || item.price || 0).toLocaleString() }}</span>
+                  <span class="offered-item-category">{{ item.category || 'Uncategorized' }}</span>
+                  <span class="offered-item-price">PHP {{ Number(item.unitCost || item.costPerUnit || item.price || 0).toLocaleString() }}</span>
                 </p>
-                <p v-if="normalizedOfferedItems(supplier).length === 0" class="text-slate-500 text-xs">No offered items listed.</p>
-                <p v-else-if="normalizedOfferedItems(supplier).length > 3" class="text-slate-500 text-xs">
+                <p v-if="normalizedOfferedItems(supplier).length === 0" class="supplier-muted">No offered items listed.</p>
+                <p v-else-if="normalizedOfferedItems(supplier).length > 3" class="supplier-muted">
                   +{{ normalizedOfferedItems(supplier).length - 3 }} more
                 </p>
               </div>
-              <div class="mt-4 flex items-center justify-end gap-2">
+              <div class="supplier-card-actions">
                 <router-link
                   :to="{ path: '/inventory/requests', query: { supplierId: supplier.id } }"
-                  class="px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 text-xs"
+                  class="directory-secondary-button"
                 >Start Inventory Request</router-link>
               </div>
             </div>
@@ -796,4 +799,69 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   }
 }
 </script>
+
+<style scoped>
+.supplier-directory {
+  --directory-ink: #482d20;
+  --directory-muted: #846b58;
+  --directory-line: #ead7c2;
+  --directory-accent: #925a3a;
+  color: var(--directory-ink);
+  background: #fcf8f1;
+}
+.directory-content { min-width: 0; padding: 2rem clamp(1rem, 3vw, 2.75rem); }
+.directory-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.65rem; }
+.directory-eyebrow { margin: 0 0 .35rem; color: #ae7654; font-size: .68rem; font-weight: 800; letter-spacing: .18em; }
+.directory-title { margin: 0; color: #482d20; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.8rem, 3vw, 2.45rem); font-weight: 700; letter-spacing: -.035em; }
+.directory-subtitle { max-width: 650px; margin: .45rem 0 0; color: var(--directory-muted); font-size: .93rem; line-height: 1.55; }
+.directory-primary-button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: .5rem; min-height: 2.85rem; padding: .7rem 1.2rem; border: 1px solid #74462e; border-radius: .8rem; background: #74462e; color: #fffaf4; font-size: .88rem; font-weight: 700; box-shadow: 0 5px 14px #74462e20; transition: background .18s, transform .18s, box-shadow .18s; }
+.directory-primary-button:hover { transform: translateY(-1px); background: #59341f; box-shadow: 0 8px 18px #74462e2b; }
+.directory-primary-button:focus-visible,.directory-secondary-button:focus-visible { outline: 3px solid #d59e68; outline-offset: 2px; }
+.directory-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .85rem; margin-bottom: 1.15rem; }
+.directory-summary article { display: flex; align-items: center; gap: .85rem; min-height: 5.3rem; padding: 1rem 1.1rem; border: 1px solid var(--directory-line); border-radius: 1rem; background: #fffdf9; box-shadow: 0 3px 12px #70432a08; }
+.summary-mark { display: grid; width: 2.45rem; height: 2.45rem; place-items: center; border-radius: .8rem; background: #f5e9d9; color: #855337; font-size: .78rem; font-weight: 800; }
+.summary-mark-active { background: #e7f1e6; color: #397344; font-size: .8rem; }
+.summary-mark-pending { background: #fff1da; color: #a36b20; font-size: 1.2rem; }
+.summary-value { margin: 0; color: #482d20; font-size: 1.35rem; font-weight: 800; line-height: 1.1; }
+.summary-label { margin: .25rem 0 0; color: #8d7560; font-size: .75rem; }
+.directory-filters { margin-bottom: 1.35rem; padding: 1.05rem; border: 1px solid var(--directory-line); border-radius: 1rem; background: #f7eee2; }
+.filters-grid { display: grid; grid-template-columns: minmax(220px,1.6fr) repeat(2,minmax(155px,1fr)); gap: .8rem; }
+.filter-label { display: block; margin-bottom: .42rem; color: #765b46; font-size: .76rem; font-weight: 700; }
+.directory-input { width: 100%; min-height: 2.65rem; padding: .65rem .8rem; border: 1px solid #dfc8ae; border-radius: .65rem; background: #fffdf9; color: #482d20; font-size: .86rem; outline: none; transition: border-color .16s, box-shadow .16s; }
+.directory-input::placeholder { color: #aa9988; }
+.directory-input:focus { border-color: #a56b46; box-shadow: 0 0 0 3px #a56b461c; }
+.supplier-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1rem; align-items: stretch; }
+.supplier-card { display: flex; min-width: 0; flex-direction: column; padding: 1.15rem; border: 1px solid var(--directory-line); border-radius: 1rem; background: #fffdf9; box-shadow: 0 5px 20px #70432a0a; transition: transform .18s, box-shadow .18s, border-color .18s; }
+.supplier-card:hover { transform: translateY(-2px); border-color: #d2ae8d; box-shadow: 0 10px 24px #70432a13; }
+.supplier-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; margin-bottom: .8rem; }
+.supplier-avatar { display: grid; width: 2.8rem; height: 2.8rem; place-items: center; border: 1px solid #ead5bd; border-radius: .85rem; background: #f7ecde; color: #805137; }
+.supplier-status { display: inline-flex; align-items: center; min-height: 1.55rem; padding: .25rem .6rem; border-radius: 999px; font-size: .68rem; font-weight: 800; }
+.supplier-status.bg-green-500\/20 { background: #e7f2e5; color: #376e3c; }
+.supplier-status.bg-amber-500\/20 { background: #fff0d6; color: #8a5d16; }
+.supplier-status.bg-red-500\/20 { background: #fae8e3; color: #994c3d; }
+.supplier-name { margin: 0; color: #482d20; font-size: 1.04rem; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+.supplier-type { margin: .2rem 0 0; color: #92775f; font-size: .76rem; }
+.supplier-categories { display: flex; min-height: 1.7rem; flex-wrap: wrap; gap: .35rem; margin: .65rem 0 .8rem; }
+.supplier-category { padding: .22rem .5rem; border: 1px solid #e8d4be; border-radius: 999px; background: #f8efe4; color: #795339; font-size: .65rem; font-weight: 700; }
+.supplier-muted { color: #9b8876; font-size: .72rem; }
+.supplier-details { display: grid; gap: .45rem; margin-bottom: .9rem; }
+.supplier-details p { display: grid; grid-template-columns: 4.15rem minmax(0,1fr); gap: .45rem; margin: 0; color: #594434; font-size: .77rem; line-height: 1.4; overflow-wrap: anywhere; }
+.supplier-details p span { color: #9a806a; font-weight: 600; }
+.supplier-offerings { margin-top: auto; padding-top: .8rem; border-top: 1px solid #eee1d2; }
+.offerings-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 .55rem; color: #72553f; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.offerings-heading span { display: grid; min-width: 1.4rem; height: 1.4rem; place-items: center; border-radius: 999px; background: #f3e7d8; color: #845338; font-size: .66rem; }
+.offerings-list { display: grid; gap: .45rem; }
+.offered-item { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .12rem .5rem; color: #543c2a; font-size: .75rem; font-weight: 700; }
+.offered-item-category { color: #a08a74; font-size: .67rem; font-weight: 400; }
+.offered-item-price { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: #477047; font-size: .71rem; white-space: nowrap; }
+.supplier-card-actions { display: flex; justify-content: flex-end; margin-top: .85rem; }
+.directory-secondary-button { display: inline-flex; align-items: center; justify-content: center; min-height: 2.2rem; padding: .48rem .7rem; border: 1px solid #d7b99b; border-radius: .6rem; background: #fffaf4; color: #70452c; font-size: .69rem; font-weight: 800; text-decoration: none; transition: background .16s, border-color .16s; }
+.directory-secondary-button:hover { border-color: #a66b45; background: #f8eee2; }
+.directory-empty { display: flex; min-height: 15rem; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; border: 1px dashed #d9c1a8; border-radius: 1rem; background: #fffdf9; text-align: center; }
+.empty-icon { display: grid; width: 3rem; height: 3rem; place-items: center; border-radius: 1rem; background: #f6eadd; color: #855337; font-size: 1.8rem; }
+.directory-empty h2 { margin: .85rem 0 .3rem; color: #482d20; font-family: Georgia, 'Times New Roman', serif; font-size: 1.25rem; }
+.directory-empty p { max-width: 400px; margin: 0 0 1rem; color: #8a725d; font-size: .84rem; line-height: 1.5; }
+@media (max-width: 1050px) { .supplier-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 720px) { .directory-content { padding: 1.25rem 1rem; } .directory-heading { align-items: stretch; flex-direction: column; gap: 1rem; } .directory-primary-button { align-self: flex-start; } .directory-summary { grid-template-columns: 1fr; gap: .55rem; } .directory-summary article { min-height: 4.3rem; } .filters-grid { grid-template-columns: 1fr; } .supplier-grid { grid-template-columns: 1fr; } }
+</style>
 

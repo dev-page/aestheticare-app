@@ -60,7 +60,8 @@ service cloud.firestore {
         'pendingSubscriptionPlan', 'pendingSubscriptionApplyAt',
         'pendingSubscriptionRequestedAt', 'pendingSubscriptionChangeType',
         'pendingSubscriptionPaymentId', 'pendingSubscriptionPaidAt',
-        'pendingSubscriptionNextExpiresAt', 'pendingSubscriptionBillingCycle'
+        'pendingSubscriptionNextExpiresAt', 'pendingSubscriptionBillingCycle',
+        'deliveryFees', 'deliveryFeePolicy'
       ]);
     }
 

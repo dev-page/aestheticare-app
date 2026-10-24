@@ -51,7 +51,7 @@
 
     <AppLoadingScreen v-if="isLoading || processLoading" :label="processLoading ? processLabel : 'Preparing your experience...'" />
 
-    <div v-if="inactivityWarning" class="fixed inset-0 z-[9998] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="alertdialog" aria-modal="true" aria-labelledby="inactivity-title">
+    <div v-if="inactivityWarning" class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 p-4 backdrop-blur-md" role="alertdialog" aria-modal="true" aria-labelledby="inactivity-title">
       <section class="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-slate-800 shadow-2xl shadow-slate-950/20">
         <p class="text-xs font-semibold uppercase tracking-widest text-amber-700">Session timeout</p>
         <h2 id="inactivity-title" class="mt-2 text-xl font-semibold text-slate-900">You will be signed out soon</h2>

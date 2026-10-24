@@ -52,6 +52,8 @@
             search-hint="Search first, then drag or click the pin to fine-tune the exact location."
             allowed-area-label="Cavite, Philippines"
             pinned-address-label="Pinned Address"
+            map-height="440px"
+            map-class="clinic-profile-location-map"
             :initial-address="clinic.clinicLocationAddress || buildLocationSearchQuery()"
             :initial-lat="clinic.clinicLocationLat"
             :initial-lng="clinic.clinicLocationLng"
