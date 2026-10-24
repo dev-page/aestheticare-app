@@ -4,6 +4,7 @@ import { auth } from '@/config/firebaseConfig'
 import { signOut } from 'firebase/auth'
 import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
+import { clearSidebarTransientState } from '@/composables/useSidebarState'
 
 export function useAuth() {
   const authStore = useAuthStore()
@@ -130,6 +131,7 @@ export function useAuth() {
 
   // ── Cache cleanup ───────────────────────────────────────────────────────
   const clearCache = () => {
+    clearSidebarTransientState()
     try {
       Object.keys(localStorage).forEach((key) => {
         if (

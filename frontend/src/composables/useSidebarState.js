@@ -2,6 +2,30 @@ import { computed, ref, unref } from 'vue'
 
 const sidebarStates = new Map()
 
+export const clearSidebarTransientState = () => {
+  if (typeof window === 'undefined') return
+
+  try {
+    Object.keys(window.localStorage).forEach((key) => {
+      if (key.startsWith('sidebar:') && key.endsWith(':groups')) {
+        window.localStorage.removeItem(key)
+      }
+    })
+  } catch (_error) {
+    // ignore storage errors
+  }
+
+  try {
+    Object.keys(window.sessionStorage).forEach((key) => {
+      if (key.startsWith('sidebar:') && key.endsWith(':scroll-top')) {
+        window.sessionStorage.removeItem(key)
+      }
+    })
+  } catch (_error) {
+    // ignore storage errors
+  }
+}
+
 const getStorageKey = (panelKey) => `sidebar:${panelKey}:collapsed`
 
 const readStoredValue = (panelKey) => {

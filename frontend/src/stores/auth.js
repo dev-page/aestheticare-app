@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
+import { clearSidebarTransientState } from '@/composables/useSidebarState'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -17,7 +18,10 @@ export const useAuthStore = defineStore('auth', () => {
     unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       user.value = firebaseUser
       isLoading.value = false
-      if (!firebaseUser) return
+      if (!firebaseUser) {
+        clearSidebarTransientState()
+        return
+      }
 
       try {
         const userRef = doc(db, 'users', firebaseUser.uid)

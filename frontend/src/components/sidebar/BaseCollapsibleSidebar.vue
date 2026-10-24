@@ -295,7 +295,7 @@ import Swal from 'sweetalert2'
 import { useAuth } from '@/composables/useAuth'
 import { useSubscription } from '@/composables/useSubscription'
 import { usePermissions } from '@/composables/usePermissions'
-import { useSidebarState } from '@/composables/useSidebarState'
+import { clearSidebarTransientState, useSidebarState } from '@/composables/useSidebarState'
 import { sidebarRouteMatches } from '@/utils/sidebarRouteMatch'
 
 export default {
@@ -869,6 +869,7 @@ export default {
 
       openGroups.value = {}
       persistGroups()
+      clearSidebarTransientState()
 
       window.dispatchEvent(
         new CustomEvent('app-process-loading', {
@@ -937,6 +938,12 @@ export default {
       restoreSidebarScrollPosition()
 
       unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (!user) {
+          openGroups.value = {}
+          persistGroups()
+          clearSidebarTransientState()
+          return
+        }
         await loadUserDetails(user)
       })
     })
