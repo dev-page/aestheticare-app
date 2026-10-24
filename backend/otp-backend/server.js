@@ -11,6 +11,7 @@ import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { registerPractitionerTeams } from './practitionerTeams.js'
 import { appointmentStaffIds, practitionerTypes } from '../../shared/practitionerTeam.js'
 import { registerSupplyWorkflow } from './supplyWorkflow.js'
+import { registerPharmacyWorkflow } from './pharmacyWorkflow.js'
 import { registerFinanceWorkflow } from './financeWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
@@ -1801,7 +1802,7 @@ const CLINIC_ADMIN_PERMISSIONS = new Set([
   'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import',
   'clients:view', 'clients:update', 'clients:disable',
   'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create',
-  'payments:view', 'inbox:view', 'reports:view',
+  'payments:view', 'payments:create', 'inbox:view', 'reports:view',
   'services:view', 'services:create', 'services:update', 'services:disable',
   'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review',
   'suppliers:create', 'suppliers:update', 'orders:view', 'orders:update',
@@ -2922,6 +2923,7 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
 })
 
 registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
+registerPharmacyWorkflow(app, { admin, requireAuth, loadUserContext })
 registerSupplierVerification(app, {
   admin,
   requireAuth,

@@ -229,6 +229,20 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             }
             update.treatmentNotes = String(req.body?.treatmentNotes || '').trim().slice(0, 5000)
             update.aftercareInstructions = String(req.body?.aftercareInstructions || '').trim().slice(0, 5000)
+            if (req.body?.prescriptions !== undefined) {
+              check(normalized(appointment.type) === 'consultation', 'Prescriptions can only be recorded for consultations.', 400)
+              check(Array.isArray(req.body.prescriptions) && req.body.prescriptions.length <= 20, 'Enter up to 20 prescription items.', 400)
+              update.prescriptions = req.body.prescriptions.map((item, index) => {
+                check(item && typeof item === 'object' && !Array.isArray(item), `Prescription item ${index + 1} is invalid.`, 400)
+                const field = value => String(value || '').trim()
+                const name = field(item.name || item.medication || item.productName, 160)
+                check(name, `Prescription item ${index + 1} needs a name.`, 400)
+                const dosage = field(item.dosage || item.strength), frequency = field(item.frequency), duration = field(item.duration), instructions = field(item.instructions || item.notes)
+                check(name.length <= 160 && dosage.length <= 160 && frequency.length <= 160 && duration.length <= 160 && instructions.length <= 500, `Prescription item ${index + 1} is too long.`, 400)
+                return { name, dosage, frequency, duration, instructions }
+              })
+              update.prescriptionStatus = update.prescriptions.length ? 'pending' : 'none'
+            }
             update.workerCompleted = true; update.workerCompletedAt = timestamp; update.workerCompletedById = req.user.uid
             update.status = walkIn ? 'Completed' : 'Awaiting Customer Confirmation'
           } else if (transition === 'end_online_window') {

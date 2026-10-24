@@ -454,7 +454,7 @@ service cloud.firestore {
         && request.resource.data.get('bookingWorkflowVersion', 0) != 2
         && request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('appointments:create');
       allow update: if isSignedIn()
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['treatmentTeam', 'staffingRequirements', 'teamAssignedBy', 'staffEarningsStatus', 'staffEarningsApprovedBy', 'staffEarningsReviewNote'])
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['treatmentTeam', 'staffingRequirements', 'teamAssignedBy', 'staffEarningsStatus', 'staffEarningsApprovedBy', 'staffEarningsReviewNote', 'prescriptions', 'prescription', 'prescriptionStatus', 'prescriptionDispensedAt', 'prescriptionDispensedBy', 'pharmacySaleId'])
         && ((resource.data.customerId == request.auth.uid && customerCanRequestAppointmentChange())
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('appointments:update')
             && (resource.data.get('bookingWorkflowVersion', 0) != 2

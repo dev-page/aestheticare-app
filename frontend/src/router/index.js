@@ -92,6 +92,8 @@ const routes = [
   { path: "/clinical/clients", name: "clinical-clients", component: () => import("@/views/admin/owner/clinic/PractitionerClients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/clinical/appointments", name: "clinical-appointments", redirect: { path: "/crm/appointments", query: { tab: "queue" } } },
   { path: "/clinical/treatment-sessions", name: "clinical-treatment-sessions", component: () => import("@/views/admin/owner/clinic/TreatmentSessions.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:update" } },
+  { path: "/clinical/prescriptions", name: "clinical-prescriptions", component: () => import("@/views/admin/owner/clinic/ClinicPrescriptions.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["appointments:view", "appointments:update", "consultations:view"], requiresFeature: "appointments" } },
+  { path: "/pharmacy/pos", name: "clinic-pharmacy-pos", component: () => import("@/views/admin/owner/clinic/PharmacyPOS.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view", requiresFeature: "inventory" } },
   { path: "/clinical/consultations/online", name: "clinical-online-consultation", redirect: { path: "/crm/appointments", query: { tab: "queue", mode: "online" } } },
   { path: "/activities", name: "activities", component: () => import("@/views/common/Activities.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
 

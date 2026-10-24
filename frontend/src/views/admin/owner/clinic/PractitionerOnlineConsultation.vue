@@ -158,6 +158,7 @@ import { Icon } from '@iconify/vue'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { initialPaymentReceived, normalized } from '../../../../../../backend/otp-backend/bookingWorkflow.js'
+import { promptForPrescriptions } from '@/utils/prescriptions'
 
 export default {
   name: 'PractitionerOnlineConsultation',
@@ -413,10 +414,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const treatmentNotes = window.prompt('Consultation notes and recommendations (at least 10 characters):', appointment.treatmentNotes || '')
         if (treatmentNotes === null) return
         if (treatmentNotes.trim().length < 10) throw Error('Enter consultation notes of at least 10 characters.')
+        const prescriptions = promptForPrescriptions(appointment.prescriptions)
+        if (prescriptions === null) return
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'worker_complete', treatmentNotes }),
+          body: JSON.stringify({ action: 'worker_complete', treatmentNotes, prescriptions }),
         })
         const payload = await response.json()
         if (!response.ok || !payload?.success) {

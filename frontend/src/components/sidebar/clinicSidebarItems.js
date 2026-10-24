@@ -28,6 +28,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       { label: 'Walk-In', icon: 'mdi:walk', to: '/crm/clients/new', permission: 'clients:create' },
       { type: 'section', label: 'APPOINTMENTS' },
       { label: 'Appointment Management', icon: 'mdi:calendar-month-outline', to: '/crm/appointments', feature: 'appointments', permissionsAny: ['appointments:view', 'appointments:update', 'appointments:review', 'consultations:view'] },
+      { label: 'Prescriptions', icon: 'mdi:prescription', to: '/clinical/prescriptions', feature: 'appointments', permissionsAny: ['appointments:view', 'appointments:update', 'consultations:view'] },
       { label: 'Booking Availability', icon: 'mdi:calendar-clock-outline', to: '/appointments/booking-availability', feature: 'booking_availability', plans: ['basic'], permission: 'appointments:review' },
       { type: 'section', label: 'OTHERS' },
       { label: 'Transactions', icon: 'mdi:receipt-text-outline', to: '/crm/transactions', feature: 'appointments', permission: 'payments:view' },
@@ -88,6 +89,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     feature: 'inventory',
     children: [
       ...supplyLinks('inventory', 'inventory:view', [['items', 'Inventory List & DSS', 'mdi:package-variant-closed'], ['requests', 'Inventory Requests', 'mdi:clipboard-plus-outline']]),
+      { label: 'Pharmacy POS', icon: 'mdi:cash-register', to: '/pharmacy/pos', feature: 'inventory', permission: 'inventory:view' },
       { label: 'Delivery Onboarding', icon: 'mdi:package-down', to: '/inventory/onboarding', permission: 'inventory:create' },
     ]
   },

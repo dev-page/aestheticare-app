@@ -139,6 +139,7 @@ import BookingContractModal from '@/components/BookingContractModal.vue'
 import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
 import { usePermissions } from '@/composables/usePermissions'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+import { promptForPrescriptions } from '@/utils/prescriptions'
 
 export default {
   name: 'PractitionerAppointments',
@@ -177,7 +178,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           if (treatmentNotes === null) return false
           const aftercareInstructions = window.prompt('Aftercare instructions (optional):', '')
           if (aftercareInstructions === null) return false
-          extra = { treatmentNotes, aftercareInstructions }
+          const prescriptions = String(appointment.type || '').toLowerCase() === 'consultation' ? promptForPrescriptions(appointment.prescriptions) : undefined
+          if (prescriptions === null) return false
+          extra = { treatmentNotes, aftercareInstructions, ...(prescriptions ? { prescriptions } : {}) }
         }
         const response = await fetch(OTP_API_BASE + '/appointments/' + appointment.id + '/' + path, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(action === 'key' ? { serviceKey } : { action, ...extra }) })
         const payload = await response.json()
