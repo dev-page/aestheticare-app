@@ -164,7 +164,7 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
     const deliveryFees = submittedFees.map(entry => {
       const city = SUPPLIER_DELIVERY_CITIES.find(option => option === String(entry?.city || '').trim())
       const amount = Number(entry?.amount)
-      check(city && Number.isFinite(amount) && amount >= 0 && amount <= 10000000, 'Choose a valid city and non-negative delivery fee for every row.', 400)
+      check(city && String(entry?.amount ?? '').trim() !== '' && Number.isFinite(amount) && amount >= 0 && amount <= 10000000, 'Choose a valid city and non-negative delivery fee for every row.', 400)
       return { city, amount: Math.round(amount * 100) / 100 }
     })
     check(new Set(deliveryFees.map(entry => entry.city)).size === deliveryFees.length, 'Each city can only have one delivery fee.', 400)

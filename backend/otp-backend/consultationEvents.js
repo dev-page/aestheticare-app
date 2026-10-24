@@ -68,7 +68,7 @@ export const registerConsultationEvents = (app, { admin, requireAuth, authorizeC
             update.consultationInterruption = { open: true, reportedBy: req.user.uid, startedAt: now.toISOString(), note }
             update.consultationNeedsReview = true
           } else if (action === 'resume') {
-            check(worker && normalized(appointment.status) === 'ongoing' && appointment.consultationInterruption?.open && now < window.end, 'Only the practitioner can resume an active interrupted consultation.', 403)
+            check(worker && normalized(appointment.status) === 'ongoing' && appointment.consultationInterruption?.open, 'Only the practitioner can resume an interrupted active consultation.', 403)
             check(req.body?.participantVerified === true, 'Confirm both participants have reconnected.', 400)
             const interruption = appointment.consultationInterruption
             const seconds = Math.max(0, Math.floor((now - timestampDate(interruption.startedAt)) / 1000))
@@ -78,6 +78,12 @@ export const registerConsultationEvents = (app, { admin, requireAuth, authorizeC
             update.consultationInterruptions = [...(appointment.consultationInterruptions || []), update.consultationInterruption]
             update.consultationExtensionSeconds = used + extension
             update.consultationWindowEndAt = new Date(window.end.getTime() + extension * 1000).toISOString()
+          } else if (action === 'extend') {
+            check(worker && normalized(appointment.status) === 'ongoing' && appointment.startedAt, 'Only the assigned practitioner can extend an active consultation.', 403)
+            const reservedEnd = window.reservedEnd
+            const nextEnd = new Date(Math.min(window.end.getTime() + 5 * 60000, reservedEnd.getTime()))
+            check(nextEnd > window.end, 'The reserved appointment buffer has been used. Continue the call and mark it done when finished.')
+            update.consultationWindowEndAt = nextEnd.toISOString()
           } else check(false, 'Invalid consultation action.', 400)
         }
         tx.update(ref, update)

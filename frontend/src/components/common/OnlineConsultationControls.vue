@@ -17,9 +17,16 @@ const online = computed(() => String(props.appointment.type).toLowerCase() === '
 const windowInfo = computed(() => onlineWindow(props.appointment))
 const worker = computed(() => !props.customer && auth.currentUser?.uid === (props.appointment.assignedPractitionerId || props.appointment.practitionerId))
 const reviewer = computed(() => !props.customer && !worker.value && props.appointment.customerId !== auth.currentUser?.uid && !(props.appointment.treatmentTeam || []).some(member => member.employeeId === auth.currentUser?.uid) && hasPermission('appointments:review'))
-const active = computed(() => props.appointment.status === 'Ongoing' && now.value < windowInfo.value.end.getTime())
+const active = computed(() => props.appointment.status === 'Ongoing')
 const remaining = computed(() => Math.max(0, Math.ceil((windowInfo.value.end.getTime() - now.value) / 1000)))
-const clock = computed(() => props.appointment.startedAt ? `${Math.floor(remaining.value / 60)}:${String(remaining.value % 60).padStart(2, '0')} remaining` : `Waiting room opens five minutes early. Arrival grace: ${windowInfo.value.policy.graceMinutes} minutes.`)
+const canExtend = computed(() => active.value && windowInfo.value.reservedEnd > windowInfo.value.end)
+const clock = computed(() => {
+  if (props.appointment.startedAt && remaining.value === 0) {
+    const elapsed = Math.max(0, Math.floor((now.value - windowInfo.value.end.getTime()) / 1000))
+    return `Booked time ended · continuing ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')} past booked time`
+  }
+  return props.appointment.startedAt ? `${Math.floor(remaining.value / 60)}:${String(remaining.value % 60).padStart(2, '0')} remaining in booked time` : `Waiting room opens five minutes early. Arrival grace: ${windowInfo.value.policy.graceMinutes} minutes.`
+})
 const warning = computed(() => props.appointment.startedAt && remaining.value <= 300 ? remaining.value <= 60 ? 'One minute or less remains. Finish your discussion and prepare to end the call.' : 'Five minutes or less remain.' : '')
 const reporting = computed(() => !['Cancelled', 'Rejected'].includes(props.appointment.status) && props.appointment.consultationDispute?.status !== 'Open')
 const send = async (action, extra = {}) => {
@@ -48,7 +55,8 @@ const send = async (action, extra = {}) => {
       <div class="consultation-controls">
         <p class="clock" aria-live="polite">{{ clock }}</p>
         <p v-if="warning && active" class="notice">{{ warning }}</p>
-        <p>Booked duration: {{ windowInfo.duration }} minutes from the confirmed start. A new appointment receives a separate meeting link.</p>
+        <p>Booked duration: {{ windowInfo.duration }} minutes from the confirmed start. The call stays available after booked time; the practitioner ends the consultation when it is finished. A new appointment receives a separate meeting link.</p>
+        <p v-if="worker && canExtend" class="notice">You can extend the booked time by 5 minutes using the reserved appointment buffer.</p>
         <p v-if="worker" class="notice">After finishing, choose <strong>End meeting for all</strong> in Google Meet. The app cannot disconnect the call.</p>
         <p v-if="!onlineAccessOpen(appointment, now)">Joining through this app is closed. A previously copied Google Meet URL may still exist.</p>
         <p v-if="appointment.consultationReviewReason" class="notice">{{ appointment.consultationReviewReason }}</p>
@@ -56,7 +64,7 @@ const send = async (action, extra = {}) => {
         <p v-if="appointment.consultationReview">Review: {{ appointment.consultationReview.outcome }} — {{ appointment.consultationReview.note }}</p>
         <p v-if="appointment.treatmentNotes"><strong>Saved consultation notes:</strong> {{ appointment.treatmentNotes }}</p>
         <p v-if="customer && appointment.workerCompleted && !appointment.customerCompleted && (String(appointment.treatmentNotes || '').trim().length < 10 || (appointment.treatmentTeam || []).some(member => !member.participationConfirmed))" class="notice">The practitioner must save consultation notes and the treatment team must confirm participation before you can confirm completion. You can still report a problem below.</p>
-        <p v-if="appointment.consultationInterruption?.open" class="notice">An interruption is recorded. Rejoin while access is open; the practitioner confirms reconnection. Up to five minutes can be restored within the reserved buffer. Further lost time needs clinic review.</p>
+        <p v-if="appointment.consultationInterruption?.open" class="notice">An interruption is recorded. Both participants can rejoin the same Google Meet link. The practitioner can reopen it with Join Call, then confirm reconnection here. Reconnection remains available while the consultation is ongoing.</p>
         <label for="consultation-note">{{ worker ? 'Consultation notes or connection issue' : reviewer ? 'Review findings' : 'Describe a problem or connection issue' }}</label>
         <textarea id="consultation-note" v-model="note" rows="4" maxlength="2000" placeholder="Provide details (at least 10 characters)." />
         <div v-if="worker && appointment.consultationInterruption?.open" class="presence"><label><input v-model="present" type="checkbox" /> Both participants have reconnected and are ready.</label></div>
@@ -64,6 +72,7 @@ const send = async (action, extra = {}) => {
         <p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="message" role="status">{{ message }}</p>
         <div class="actions">
           <button v-if="worker && appointment.startedAt" :disabled="busy || note.trim().length < 10" @click="send('save_notes')">Save notes</button>
+          <button v-if="worker && active && canExtend" :disabled="busy" @click="send('extend')">Add 5 minutes</button>
           <button v-if="active && (customer || worker) && !appointment.consultationInterruption?.open" :disabled="busy || note.trim().length < 10" @click="send('report_interruption')">Report connection interruption</button>
           <button v-if="worker && active && appointment.consultationInterruption?.open" :disabled="busy || !present" @click="send('resume')">Confirm reconnection</button>
           <button v-if="customer && reporting" :disabled="busy || note.trim().length < 10" @click="send('report_problem')">Report a problem</button>

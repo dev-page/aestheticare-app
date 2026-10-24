@@ -221,7 +221,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
               const window = getOnlineConsultationWindow(appointment)
               check(window, 'This consultation needs a valid scheduled window.')
               check(String(req.body?.treatmentNotes || '').trim().length >= 10, 'Save consultation notes and recommendations (at least 10 characters).', 400)
-              const end = new Date(Math.min(timestampDate(appointment.consultationEndedAt || new Date()).getTime(), window.endsAt.getTime()))
+              const end = new Date()
               update.consultationEndedAt = end.toISOString()
               update.consultationEndedById = appointment.consultationEndedById || req.user.uid
               update.consultationActualDurationSeconds = Math.max(0, Math.floor((end - timestampDate(appointment.startedAt)) / 1000))
@@ -245,21 +245,6 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             }
             update.workerCompleted = true; update.workerCompletedAt = timestamp; update.workerCompletedById = req.user.uid
             update.status = walkIn ? 'Completed' : 'Awaiting Customer Confirmation'
-          } else if (transition === 'end_online_window') {
-            check(worker, 'Only the assigned worker can close this consultation window.', 403)
-            const onlineConsultation = normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online'
-            check(onlineConsultation && status === 'ongoing' && appointment.startedAt, 'Only an active online consultation can be closed by its time limit.')
-            const window = getOnlineConsultationWindow(appointment)
-            check(window && new Date() >= window.endsAt, 'The official consultation window has not ended yet.')
-            update.workerCompleted = true; update.workerCompletedAt = timestamp; update.workerCompletedById = req.user.uid
-            update.consultationWindowEndedAt = timestamp; update.consultationEndedByTimer = true
-            update.consultationEndedAt = appointment.consultationEndedAt || window.endsAt.toISOString()
-            update.consultationEndedById = appointment.consultationEndedById || req.user.uid
-            const actualEnd = new Date(appointment.consultationEndedAt?.toDate?.() || appointment.consultationEndedAt || window.endsAt)
-            update.consultationActualDurationSeconds = Math.max(0, Math.floor((actualEnd.getTime() - new Date(appointment.startedAt?.toDate?.() || appointment.startedAt).getTime()) / 1000))
-            update.consultationNeedsReview = Boolean(appointment.consultationNeedsReview) || !appointment.clientJoinedAt || !appointment.practitionerJoinedAt || update.consultationActualDurationSeconds < 60
-            if (!appointment.treatmentNotes) update.consultationNeedsReview = true
-            update.status = appointment.consultationDispute?.status === 'Open' ? 'Consultation Review' : 'Awaiting Customer Confirmation'
           } else if (transition === 'customer_complete') {
             check(customer, 'Only the customer can confirm completion.', 403)
             check(appointment.workerCompleted && !appointment.customerCompleted && ['awaiting customer confirmation', 'balance due'].includes(status), 'The worker must finish the service first, and completion can only be confirmed once.')

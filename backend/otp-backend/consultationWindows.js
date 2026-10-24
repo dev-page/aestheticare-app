@@ -30,15 +30,15 @@ export const closeExpiredConsultations = async admin => {
         return false
       }
       if (!['paid', 'scheduled', 'ready to start', 'ongoing'].includes(normalized(appointment.status))) return false
-      const active = normalized(appointment.status) === 'ongoing' && appointment.startedAt
-      if (now < (active ? window.end : window.arrivalDeadline)) return false
-      const status = active && appointment.consultationDispute?.status !== 'Open' ? 'Awaiting Customer Confirmation' : 'Consultation Review'
-      const actualEnd = timestampDate(appointment.consultationEndedAt || window.end)
-      const duration = active ? Math.max(0, Math.floor((actualEnd - timestampDate(appointment.startedAt)) / 1000)) : 0
-      tx.update(doc.ref, { status, consultationReviewReason: active ? 'Consultation time elapsed; review documentation and any interruptions.' : 'Arrival grace period elapsed. Review attendance, practitioner availability, and technical problems before assigning fault.', consultationWindowEndedAt: stamp, consultationEndedByTimer: true, consultationEndedAt: appointment.consultationEndedAt || (active ? window.end : window.arrivalDeadline).toISOString(), consultationEndedById: appointment.consultationEndedById || 'system', consultationActualDurationSeconds: duration, consultationNeedsReview: true, ...(active ? { workerCompleted: true, workerCompletedAt: stamp, workerCompletedById: 'system' } : {}), updatedAt: stamp })
+      // Keep active calls open past the booked window. The practitioner ends
+      // the record explicitly after the real consultation is over.
+      if (normalized(appointment.status) === 'ongoing' && appointment.startedAt) return false
+      if (now < window.arrivalDeadline) return false
+      const status = 'Consultation Review'
+      tx.update(doc.ref, { status, consultationReviewReason: 'Arrival grace period elapsed. Review attendance, practitioner availability, and technical problems before assigning fault.', consultationWindowEndedAt: stamp, consultationEndedByTimer: true, consultationEndedAt: appointment.consultationEndedAt || window.arrivalDeadline.toISOString(), consultationEndedById: appointment.consultationEndedById || 'system', consultationActualDurationSeconds: 0, consultationNeedsReview: true, updatedAt: stamp })
       tx.set(db.collection('appointmentAudit').doc(), { appointmentId: doc.id, branchId: appointment.branchId, actorId: 'system', action: 'consultation_window_expired', previousStatus: appointment.status, nextStatus: status, createdAt: stamp })
-      tx.set(db.collection('notifications').doc('consultation-host-end-' + doc.id), { recipientUserId: appointment.assignedPractitionerId || appointment.practitionerId, branchId: appointment.branchId, title: 'Consultation window closed', message: 'End Google Meet for everyone and save your notes. Closing this record does not disconnect the external call.', link: '/crm/appointments?tab=queue&mode=online', read: false, createdAt: stamp })
-      if (appointment.customerId) tx.set(db.collection('notifications').doc('consultation-ended-' + doc.id), { recipientUserId: appointment.customerId, title: 'Consultation window ended', message: active ? 'Confirm receipt or report a problem from your appointments.' : 'The consultation needs clinic review. Contact the clinic about a reschedule or refund; no automatic no-show penalty was applied.', link: '/customer/appointments', read: false, createdAt: stamp })
+      tx.set(db.collection('notifications').doc('consultation-host-end-' + doc.id), { recipientUserId: appointment.assignedPractitionerId || appointment.practitionerId, branchId: appointment.branchId, title: 'Consultation needs review', message: 'The arrival grace period elapsed. Review attendance and contact the customer before deciding what happens next.', link: '/crm/appointments?tab=queue&mode=online', read: false, createdAt: stamp })
+      if (appointment.customerId) tx.set(db.collection('notifications').doc('consultation-ended-' + doc.id), { recipientUserId: appointment.customerId, title: 'Consultation needs review', message: 'The clinic will review attendance and contact you about next steps. No automatic no-show penalty was applied.', link: '/customer/appointments', read: false, createdAt: stamp })
       return true
     })
     if (result) { closed++; appointmentIds.push(doc.id) }

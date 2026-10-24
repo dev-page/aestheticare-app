@@ -17,8 +17,21 @@ export const onlineWindow = appointment => {
   const reserved = appointment.endTime ? new Date(`${appointment.date}T${appointment.endTime}+08:00`) : new Date(start.getTime() + (duration + policy.bufferMinutes) * 60000)
   return { start, actualStart, end, duration, policy, opensAt: new Date(start.getTime() - 5 * 60000), arrivalDeadline: new Date(start.getTime() + policy.graceMinutes * 60000), reservedEnd: reserved }
 }
+export const consultationRecoveryDeadline = appointment => {
+  const window = onlineWindow(appointment)
+  if (!appointment?.consultationInterruption?.open) return window.end
+  const used = Math.max(0, Number(appointment.consultationExtensionSeconds) || 0)
+  const policyAllowance = Math.max(0, window.policy.interruptionMinutes * 60 - used)
+  const reservedAllowance = Math.max(0, Math.floor((window.reservedEnd.getTime() - window.end.getTime()) / 1000))
+  const remainingAllowance = Math.min(policyAllowance, reservedAllowance)
+  return new Date(window.end.getTime() + remainingAllowance * 1000)
+}
 export const onlineAccessOpen = (appointment, now = Date.now()) => {
   if (!['paid', 'scheduled', 'ready to start', 'ongoing'].includes(String(appointment.status || '').toLowerCase()) || appointment.consultationClientEndedAt) return false
+  // Once a consultation has started, keep its app entry open until the
+  // practitioner records completion. The booked duration is a scheduling
+  // target, not an automatic lockout for an active call.
+  if (String(appointment.status || '').toLowerCase() === 'ongoing' && appointment.startedAt) return true
   const window = onlineWindow(appointment)
-  return now >= window.opensAt.getTime() && now < (appointment.startedAt ? window.end : window.arrivalDeadline).getTime()
+  return now >= window.opensAt.getTime() && now < (appointment.startedAt ? consultationRecoveryDeadline(appointment) : window.arrivalDeadline).getTime()
 }

@@ -111,7 +111,7 @@
                       {{ startingId === appointment.id ? 'Starting...' : 'Start Consultation' }}
                     </button>
                     <button
-                      v-if="appointment.status === 'Ongoing' && !hasConsultationWindowEnded(appointment)"
+                      v-if="appointment.status === 'Ongoing'"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-500 disabled:opacity-60"
                       :disabled="finishingId === appointment.id"
@@ -119,7 +119,6 @@
                     >
                       {{ finishingId === appointment.id ? 'Completing...' : 'Mark Consultation Done' }}
                     </button>
-                    <span v-else-if="appointment.status === 'Ongoing'" class="text-xs font-medium text-amber-300">Official consultation window ended</span>
                     <p v-if="appointment.status === 'Ongoing'" class="w-full text-xs font-medium" :class="hasConsultationWindowEnded(appointment) ? 'text-amber-300' : 'text-emerald-300'">{{ consultationTimerLabel(appointment) }}</p>
                     <p v-if="meetLinkGateReason(appointment)" class="w-full text-xs text-amber-300">
                       {{ meetLinkGateReason(appointment) }}
@@ -180,7 +179,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const startingId = ref('')
     const finishingId = ref('')
     const invitingId = ref('')
-    const endingId = ref('')
     const clockNow = ref(Date.now())
     const isSeedingDemo = ref(false)
     const lastDemoAppointmentId = ref('')
@@ -219,7 +217,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const activeDemoAppointment = computed(() => appointments.value.find(item => {
       if (item.demoMode !== true || ['completed', 'cancelled', 'rejected', 'no-show'].includes(normalized(item.status))) return false
       const window = onlineWindow(item)
-      const expiresAt = item.startedAt ? window.end.getTime() : window.arrivalDeadline.getTime()
+      if (normalized(item.status) === 'ongoing' && item.startedAt) return true
+      const expiresAt = window.arrivalDeadline.getTime()
       return Number.isFinite(expiresAt) && expiresAt > clockNow.value
     }))
 
@@ -287,15 +286,18 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const hasConsultationWindowEnded = (appointment) => {
       const window = consultationWindow(appointment)
-      return Boolean(window && clockNow.value > window.end.getTime())
+      return Boolean(window && clockNow.value >= window.end.getTime())
     }
 
     const consultationTimerLabel = (appointment) => {
       const window = consultationWindow(appointment)
       if (!window) return 'Consultation schedule is unavailable.'
       const remainingSeconds = Math.max(0, Math.ceil((window.end.getTime() - clockNow.value) / 1000))
-      if (!remainingSeconds) return 'The official consultation time has ended.'
-      return `${remainingSeconds <= 60 ? 'One minute or less left. ' : remainingSeconds <= 300 ? 'Five minutes or less left. ' : ''}Official time remaining: ${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
+      if (!remainingSeconds) {
+        const elapsed = Math.max(0, Math.floor((clockNow.value - window.end.getTime()) / 1000))
+        return `Booked time ended. Consultation continues; ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')} past booked time.`
+      }
+      return `${remainingSeconds <= 60 ? 'One minute or less left. ' : remainingSeconds <= 300 ? 'Five minutes or less left. ' : ''}Booked time remaining: ${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
     }
 
     const isCancelledAppointment = (appointment) =>
@@ -435,22 +437,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
 
-    const endElapsedConsultation = async (appointment) => {
-      if (!appointment?.id || appointment.status !== 'Ongoing' || !hasConsultationWindowEnded(appointment) || endingId.value === appointment.id) return
-      endingId.value = appointment.id
-      try {
-        const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'end_online_window' }),
-        })
-        const payload = await response.json()
-        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to close the elapsed consultation.')
-        appointment.status = payload?.data?.status || 'Awaiting Customer Confirmation'
-        toast.info('Consultation time ended. End meeting for all in Google Meet, save notes, and ask the customer to confirm receipt.')
-      } catch (error) {
-        console.error('Failed to close elapsed consultation:', error)
-      } finally { endingId.value = '' }
-    }
-
     const copyMeetLink = async (meetLink) => {
       const url = String(meetLink || '').trim()
       if (!url) return
@@ -503,7 +489,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     onMounted(trackPageLoad(() => {
       consultationClock = window.setInterval(() => {
         clockNow.value = Date.now()
-        appointments.value.filter((appointment) => appointment.status === 'Ongoing' && hasConsultationWindowEnded(appointment)).forEach(endElapsedConsultation)
       }, 1000)
       meetPresenceClock = window.setInterval(refreshMeetPresence, 15000)
       unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
