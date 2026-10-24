@@ -479,7 +479,7 @@ onBeforeUnmount(() => {
 .plan-card-free .trial-original-price,
 .plan-card-basic .trial-original-price,
 .plan-card-premium .trial-original-price { color: #684c37; }
-.trial-current-price { display: inline-block; border: 1px solid rgba(40, 118, 92, .25); border-radius: .4em; background: #e4f2e9; padding: .14em .4em; color: #205d47; font-size: .72em; font-weight: 900; line-height: 1.15; white-space: nowrap; }
+.trial-current-price { display: inline-block; border: 0; border-radius: 0; background: transparent; padding: 0; color: #fff; font-size: .78em; font-weight: 900; line-height: 1.15; white-space: nowrap; text-shadow: 0 1px 2px rgba(72, 39, 19, .35); }
 .plan-trial-note { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .3rem .55rem; margin-top: .7rem; padding: .6rem .7rem; border: 1px solid rgba(91, 57, 33, .15); border-radius: .75rem; background: rgba(255, 250, 241, .55); color: #543b2a; font-size: .76rem; line-height: 1.35; }
 .trial-duration { padding: .2rem .48rem; border-radius: 999px; background: #fff8e9; color: #6b482f; font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .plan-trial-note small { grid-column: 1 / -1; color: #68452f; font-size: .72rem; font-weight: 700; }
