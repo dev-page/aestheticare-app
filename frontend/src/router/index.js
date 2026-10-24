@@ -8,6 +8,7 @@ import { auth, db } from "@/config/firebaseConfig";
 import { subscriptionDate } from '../../../shared/subscriptionDates.js';
 import { isFreeClinicRoute as isFreePlanRoute } from '../../../shared/freeClinicRoutes.js';
 import { CUSTOMER_APP_LOGIN, customerAppAuthRedirect, isCustomerAppAccount, isCustomerAppContext, isCustomerAppRoute } from '@/utils/customerApp';
+import { recoverFromStaleAsset } from '@/utils/appUpdate';
 
 const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 
@@ -630,24 +631,8 @@ router.beforeEach(async (to, from, next) => {
 });
 
 router.onError((error) => {
-  const message = String(error?.message || error || '')
-  const isChunkLoadFailure = /dynamically imported module|importing a module script failed|failed to fetch dynamically imported module/i.test(message)
-  if (!isChunkLoadFailure || typeof window === 'undefined') {
-    console.error('Router navigation failed:', error)
-    return
-  }
-
-  // Recover once from an old cached index that points to a removed Vite chunk.
-  // The deployment cache headers prevent this in new releases; the guard keeps
-  // an existing browser session from getting stuck during rollout.
-  const reloadKey = `chunk-reload:${window.location.pathname}`
-  if (!sessionStorage.getItem(reloadKey)) {
-    sessionStorage.setItem(reloadKey, '1')
-    window.location.reload()
-    return
-  }
-  sessionStorage.removeItem(reloadKey)
-  console.error('A page asset could not be loaded after a cache refresh:', error)
+  if (recoverFromStaleAsset(error)) return
+  console.error('Router navigation failed:', error)
 });
 
 export default router;

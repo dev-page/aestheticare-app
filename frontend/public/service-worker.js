@@ -50,6 +50,11 @@ self.addEventListener('fetch', (event) => {
   // Cache keys do not distinguish users by their Authorization header.
   if (url.pathname === '/api' || url.pathname.startsWith('/api/') || request.headers.has('authorization')) return
 
+  // Build metadata must always reflect the active deployment. Vite assets are
+  // content-hashed and should use the browser's HTTP cache, never this
+  // service worker's cache-first fallback across app versions.
+  if (url.pathname === '/app-version.json' || url.pathname.startsWith('/assets/')) return
+
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)

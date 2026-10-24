@@ -5,13 +5,27 @@ import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const APP_BUILD_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+function appBuildVersion() {
+  return {
+    name: 'app-build-version',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'app-version.json',
+        source: JSON.stringify({ buildId: APP_BUILD_ID }),
+      })
+    },
+  }
+}
 
 export default defineConfig(({ mode }) => {
   const customerAppBuild = mode === 'customer-app'
   return {
   root: __dirname,
   envDir: path.resolve(__dirname, '..'),
-  plugins: [vue(), ...(customerAppBuild ? [{
+  plugins: [vue(), appBuildVersion(), ...(customerAppBuild ? [{
     name: 'customer-app-manifest',
     transformIndexHtml(html) {
       return {
@@ -24,7 +38,10 @@ export default defineConfig(({ mode }) => {
       }
     },
   }] : [])],
-  ...(customerAppBuild ? { define: { 'import.meta.env.VITE_MOBILE_APP': JSON.stringify('true') } } : {}),
+  define: {
+    'import.meta.env.VITE_APP_BUILD_ID': JSON.stringify(APP_BUILD_ID),
+    ...(customerAppBuild ? { 'import.meta.env.VITE_MOBILE_APP': JSON.stringify('true') } : {}),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
