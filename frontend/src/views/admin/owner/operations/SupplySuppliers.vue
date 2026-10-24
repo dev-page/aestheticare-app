@@ -108,7 +108,6 @@
               <p class="text-slate-300">Email: {{ supplier.email || '-' }}</p>
               <p class="text-slate-300">Phone: {{ supplier.phone || '-' }}</p>
               <p class="text-slate-300">Business Type: {{ supplier.businessType || '-' }}</p>
-              <p class="text-slate-300">TIN: {{ formatSupplierTin(supplier) || '-' }}</p>
               <p class="text-slate-300">Accreditation: {{ supplier.accreditationStatus || 'Pending Accreditation' }}</p>
             </div>
 
@@ -164,13 +163,14 @@
                 />
                 <button type="button" :disabled="checkingSupplierAccount || !newSupplier.email" class="shrink-0 rounded-lg border border-amber-400/50 px-4 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-500/10 disabled:opacity-50" @click="checkExistingSupplierAccount">{{ checkingSupplierAccount ? 'Checking…' : 'Check email' }}</button>
               </div>
-              <p v-if="existingSupplierAccount" class="mt-2 text-xs text-emerald-300">Existing supplier account found. Available details were filled in; review them before adding the supplier to this directory.</p>
-              <p v-else-if="supplierAccountChecked" class="mt-2 text-xs text-slate-400">No supplier account was found. A new supplier account will be created after saving.</p>
+              <p v-if="existingSupplierAccount?.verified" class="mt-2 text-xs text-emerald-300">This email belongs to a verified supplier. Use “Existing Supplier Accounts” to add their verified profile.</p>
+              <p v-else-if="existingSupplierAccount" class="mt-2 text-xs text-amber-200">An unverified supplier account was found. Adding it will link the business name and email; the supplier must complete verification before ordering is enabled.</p>
+              <p v-else-if="supplierAccountChecked" class="mt-2 text-xs text-slate-400">No supplier account was found. An invitation will be sent so the supplier can create an account and complete verification.</p>
               <p v-if="showAddError('email')" class="mt-1 text-xs text-red-400">{{ addErrors.email }}</p>
             </div>
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 gap-4">
               <div>
-                <label class="block text-slate-400 text-sm mb-2">Supplier Name</label>
+                <label class="block text-slate-400 text-sm mb-2">Supplier Business Name</label>
                 <input
                   v-model="newSupplier.name"
                   type="text"
@@ -183,96 +183,8 @@
                 />
                 <p v-if="showAddError('name')" class="mt-1 text-xs text-red-400">{{ addErrors.name }}</p>
               </div>
-              <div class="col-span-2">
-                <label class="block text-slate-400 text-sm mb-2">Business Type</label>
-                <select
-                  v-model="newSupplier.businessType"
-                  required
-                  :class="inputClass(showAddError('businessType'))"
-                  @change="markTouched('businessType')"
-                  @blur="markTouched('businessType')"
-                >
-                  <option value="">Select business type</option>
-                  <option v-for="type in SUPPLIER_BUSINESS_TYPES" :key="type" :value="type">{{ type }}</option>
-                </select>
-                <p v-if="showAddError('businessType')" class="mt-1 text-xs text-red-400">{{ addErrors.businessType }}</p>
-              </div>
-              <div class="col-span-2">
-                <label class="block text-slate-400 text-sm mb-2">TIN</label>
-                <input
-                  :value="formatTinDisplay(newSupplier.taxRegistrationNumber)"
-                  type="text"
-                  inputmode="numeric"
-                  maxlength="15"
-                  autocomplete="off"
-                  placeholder="XXX-XXX-XXX-XXX"
-                  :class="inputClass(showAddError('taxRegistrationNumber'))"
-                  @input="handleTinInput(newSupplier, $event)"
-                  @blur="markTouched('taxRegistrationNumber')"
-                />
-                <p class="mt-1 text-xs text-slate-400">Enter the registered TIN of the taxpayer or business entity.</p>
-                <p v-if="showAddError('taxRegistrationNumber')" class="mt-1 text-xs text-red-400">{{ addErrors.taxRegistrationNumber }}</p>
-              </div>
-              <div class="col-span-2">
-                <label class="block text-slate-400 text-sm mb-2">Categories (Multiple)</label>
-                <div class="grid grid-cols-2 gap-2 bg-slate-700 rounded-lg border border-slate-600 p-3">
-                  <label v-for="cat in categoryOptions" :key="cat" class="flex items-center gap-2 text-slate-200 text-sm">
-                    <input
-                      type="checkbox"
-                      :value="cat"
-                      v-model="newSupplier.categories"
-                      @change="markTouched('categories')"
-                      class="h-4 w-4 rounded border-slate-500 bg-slate-800 text-amber-500 focus:ring-amber-500"
-                    />
-                    <span>{{ cat }}</span>
-                  </label>
-                </div>
-                <p v-if="showAddError('categories')" class="mt-1 text-xs text-red-400">{{ addErrors.categories }}</p>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-sm mb-2">Contact Person</label>
-                <input
-                  v-model="newSupplier.contact"
-                  type="text"
-                  required
-                  maxlength="100"
-                  autocomplete="name"
-                  :class="inputClass(showAddError('contact'))"
-                  @input="markTouched('contact')"
-                  @blur="markTouched('contact')"
-                />
-                <p v-if="showAddError('contact')" class="mt-1 text-xs text-red-400">{{ addErrors.contact }}</p>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-sm mb-2">Phone</label>
-                <div class="relative">
-                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-sm">+63</span>
-                  <input
-                    v-model="newSupplier.phone"
-                    type="tel"
-                    required
-                    maxlength="10"
-                    autocomplete="tel"
-                    :class="[inputClass(showAddError('phone')), 'pl-12']"
-                    @input="handlePhoneInput(newSupplier, $event); markTouched('phone')"
-                    @blur="markTouched('phone')"
-                    inputmode="numeric"
-                  />
-                </div>
-                <p v-if="showAddError('phone')" class="mt-1 text-xs text-red-400">{{ addErrors.phone }}</p>
-              </div>
             </div>
-            <div>
-              <label class="block text-slate-400 text-sm mb-2">Address</label>
-              <textarea
-                v-model="newSupplier.address"
-                rows="3"
-                :class="inputClass(showAddError('address'))"
-                @input="markTouched('address')"
-                @blur="markTouched('address')"
-              ></textarea>
-              <p v-if="showAddError('address')" class="mt-1 text-xs text-red-400">{{ addErrors.address }}</p>
-            </div>
+            <p class="text-xs text-slate-400">The supplier will provide their contact person, phone, address, categories, and verification details during business verification.</p>
             <div class="flex justify-end gap-3 mt-6">
               <button type="button" @click="showAddModal = false" class="px-6 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">Cancel</button>
               <button type="submit" :disabled="saving" class="px-6 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors disabled:opacity-50">
@@ -307,19 +219,6 @@
                   <option value="">Select business type</option>
                   <option v-for="type in SUPPLIER_BUSINESS_TYPES" :key="`edit-${type}`" :value="type">{{ type }}</option>
                 </select>
-              </div>
-              <div class="col-span-2">
-                <label class="block text-slate-400 text-sm mb-2">TIN</label>
-                <input
-                  :value="formatTinDisplay(editSupplier.taxRegistrationNumber)"
-                  type="text"
-                  inputmode="numeric"
-                  maxlength="15"
-                  placeholder="XXX-XXX-XXX-XXX"
-                  class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-amber-500 focus:outline-none"
-                  @input="handleTinInput(editSupplier, $event)"
-                />
-                <p class="mt-1 text-xs text-slate-400">Enter the registered TIN of the taxpayer or business entity.</p>
               </div>
               <div class="col-span-2">
                 <label class="block text-slate-400 text-sm mb-2">Categories (Multiple)</label>
@@ -408,12 +307,7 @@ import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
 import { loadOwnerBranchScope, loadScopedCollectionDocs } from '@/utils/ownerBranchScope'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
-import {
-  SUPPLIER_BUSINESS_TYPES,
-  formatTinDisplay,
-  isValidTinDigits,
-  normalizeTinDigits,
-} from '@/utils/supplierTin'
+import { SUPPLIER_BUSINESS_TYPES } from '@/utils/supplierTin'
 
 export default {
   name: 'ManagerSuppliers',
@@ -441,10 +335,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const currentScopeMode = ref('owner')
     const addTouched = ref({
       name: false,
-      businessType: false,
-      taxRegistrationNumber: false,
-      categories: false,
-      contact: false,
       email: false,
       phone: false,
       address: false
@@ -473,7 +363,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const getEmptySupplier = () => ({
       name: '',
       businessType: '',
-      taxRegistrationNumber: '',
       categories: [],
       contact: '',
       email: '',
@@ -508,10 +397,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return supplier.offeredItems.filter((item) => item?.name)
     }
 
-    const formatSupplierTin = (supplier) => formatTinDisplay(supplier.taxRegistrationNumber || supplier.tinNumber || '')
-    const handleTinInput = (supplier, event) => {
-      supplier.taxRegistrationNumber = normalizeTinDigits(event?.target?.value || '')
-    }
     const handlePhoneInput = (supplier, event) => {
       const digits = String(event?.target?.value || '').replace(/\D/g, '').slice(0, 10)
       supplier.phone = digits
@@ -548,7 +433,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return {
         name: supplier.name,
         businessType: supplier.businessType,
-        taxRegistrationNumber: normalizeTinDigits(supplier.taxRegistrationNumber || ''),
         categories: supplier.categories,
         contact: supplier.contact,
         email: supplier.email,
@@ -619,20 +503,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to check the supplier account.')
         supplierAccountChecked.value = true
         if (!payload.found || !payload.supplier) return
-        const account = payload.supplier
+        const account = { ...payload.supplier, verified: payload.verified === true }
         existingSupplierAccount.value = account
-        newSupplier.value = {
-          ...newSupplier.value,
-          name: account.name || newSupplier.value.name,
-          businessType: account.businessType || newSupplier.value.businessType,
-          taxRegistrationNumber: normalizeTinDigits(account.taxRegistrationNumber || newSupplier.value.taxRegistrationNumber),
-          categories: Array.isArray(account.categories) && account.categories.length ? account.categories : newSupplier.value.categories,
-          contact: account.contact || newSupplier.value.contact,
-          email: normalizedEmail,
-          phone: String(account.phone || newSupplier.value.phone || '').replace(/\D/g, '').slice(-10),
-          address: account.address || newSupplier.value.address,
-        }
-        toast.success('Existing supplier account found. Details were filled in.')
+        if (account.verified) toast.info('Verified supplier account found. Add it from Existing Supplier Accounts.')
       } catch (error) {
         console.error(error)
         toast.error(error?.message || 'Unable to check the supplier account.')
@@ -647,21 +520,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     ]
 
     const addErrors = computed(() => {
-      const errors = {
-        name: '',
-        businessType: '',
-        taxRegistrationNumber: '',
-        categories: '',
-        contact: '',
-        email: '',
-        phone: '',
-        address: ''
-      }
+      const errors = { name: '', email: '' }
 
       const hasLettersOrNumbers = (value) => /[A-Za-z0-9]/.test(value || '')
       const supplierNameRegex = /^[A-Za-z0-9][A-Za-z0-9\s'.,&()/-]*$/
-      const contactRegex = /^[A-Za-z][A-Za-z\s'.-]*$/
-      const addressRegex = /^[A-Za-z0-9][A-Za-z0-9\s'.,#/-]*$/
       const emailRegex = /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
 
       if (!newSupplier.value.name.trim()) {
@@ -670,43 +532,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         errors.name = 'Use letters/numbers with basic punctuation only.'
       }
 
-      if ((newSupplier.value.categories || []).length === 0) {
-        errors.categories = 'Select at least one category.'
-      }
-
-      if (!newSupplier.value.businessType) {
-        errors.businessType = 'Business type is required.'
-      }
-
-      if (!isValidTinDigits(newSupplier.value.taxRegistrationNumber)) {
-        errors.taxRegistrationNumber = 'Enter a valid 12-digit TIN.'
-      }
-
-      if (!newSupplier.value.contact.trim()) {
-        errors.contact = 'Contact person is required.'
-      } else if (!contactRegex.test(newSupplier.value.contact.trim())) {
-        errors.contact = 'Use letters, spaces, apostrophes, or periods only.'
-      }
-
       if (!newSupplier.value.email.trim()) {
         errors.email = 'Email is required.'
       } else if (!emailRegex.test(newSupplier.value.email.trim())) {
         errors.email = 'Enter a valid email address.'
-      }
-
-      if (!newSupplier.value.phone.trim()) {
-        errors.phone = 'Phone is required.'
-      } else {
-        const digits = newSupplier.value.phone.replace(/\D/g, '')
-        if (!/^9\d{9}$/.test(digits)) {
-          errors.phone = 'Enter exactly 10 digits starting with 9.'
-        }
-      }
-
-      if (newSupplier.value.address.trim()) {
-        if (!hasLettersOrNumbers(newSupplier.value.address) || !addressRegex.test(newSupplier.value.address.trim())) {
-          errors.address = 'Use letters/numbers with basic punctuation only.'
-        }
       }
 
       return errors
@@ -715,13 +544,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const hasAddErrors = computed(() => {
       return (
         addErrors.value.name ||
-        addErrors.value.businessType ||
-        addErrors.value.taxRegistrationNumber ||
-        addErrors.value.categories ||
-        addErrors.value.contact ||
-        addErrors.value.email ||
-        addErrors.value.phone ||
-        addErrors.value.address
+        addErrors.value.email
       )
     })
 
@@ -743,7 +566,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('Your account has no branch assignment.')
         return
       }
-      if (existingSupplierAccount.value?.uid) {
+      if (existingSupplierAccount.value?.verified) {
         addSupplierTab.value = 'existing'
         toast.info('This account already exists. Select it from Existing Supplier Accounts to link it safely.')
         await showExistingSupplierAccounts()
@@ -757,11 +580,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const response = await fetch(`${OTP_API_BASE}/supply/suppliers/account`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ branchId: currentBranchId.value, ...getSupplierPayload(newSupplier.value), existingSupplierUid: existingSupplierAccount.value?.uid || '' }),
+          body: JSON.stringify({ branchId: currentBranchId.value, name: newSupplier.value.name, email: newSupplier.value.email, existingSupplierUid: existingSupplierAccount.value?.uid || '' }),
         })
         const payload = await response.json().catch(() => null)
         if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to create supplier account.')
         if (payload?.data?.alreadyLinked) toast.info('This supplier account is already linked in the directory.')
+        else if (payload?.data?.pendingVerification) toast.success('Supplier account linked. Business verification is still required before ordering is enabled.')
         else if (payload?.data?.linkedExistingAccount) toast.success('Existing supplier account linked to the directory.')
         else toast.success('Supplier added. An activation email was sent to the supplier.')
         showAddModal.value = false
@@ -783,7 +607,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         sharedAcrossBranches: supplier.sharedAcrossBranches !== false,
         name: supplier.name || '',
         businessType: supplier.businessType || '',
-        taxRegistrationNumber: normalizeTinDigits(supplier.taxRegistrationNumber || supplier.tinNumber || ''),
         categories: [...normalizedCategories(supplier)],
         contact: supplier.contact || '',
         email: supplier.email || '',
@@ -807,10 +630,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
       if (!editSupplier.value.businessType) {
         toast.error('Please select a business type.')
-        return
-      }
-      if (!isValidTinDigits(editSupplier.value.taxRegistrationNumber)) {
-        toast.error('Please enter a valid 12-digit TIN.')
         return
       }
       if ((editSupplier.value.categories || []).length === 0) {
@@ -915,7 +734,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       addTouched.value = {
         name: false,
         businessType: false,
-        taxRegistrationNumber: false,
         categories: false,
         contact: false,
         email: false,
@@ -956,9 +774,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       SUPPLIER_BUSINESS_TYPES,
       normalizedCategories,
       normalizedOfferedItems,
-      formatTinDisplay,
-      formatSupplierTin,
-      handleTinInput,
       handlePhoneInput,
       newSupplier,
       checkingSupplierAccount,

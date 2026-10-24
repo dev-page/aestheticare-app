@@ -7913,22 +7913,13 @@ app.post(SUPPLIER_ACCOUNT_LOOKUP_PATH, requireAuth, async (req, res) => {
     const accountKind = String(userData.role || userData.userType || '').trim().toLowerCase()
     if (accountKind !== 'supplier') return res.json({ success: true, found: false })
     const supplierSnap = await firestore.collection('suppliers').where('ownerId', '==', authUser.uid).limit(1).get()
-    const supplier = supplierSnap.empty ? {} : supplierSnap.docs[0].data() || {}
+    const application = (await firestore.collection('supplierApplications').doc(authUser.uid).get()).data() || {}
     return res.json({
       success: true,
       found: true,
+      verified: application.verificationStatus === 'Verified',
       linkedSupplierId: supplierSnap.empty ? '' : supplierSnap.docs[0].id,
-      supplier: {
-        uid: authUser.uid,
-        name: String(supplier.name || supplier.businessName || userData.businessName || '').trim(),
-        businessType: String(supplier.businessType || userData.businessType || '').trim(),
-        taxRegistrationNumber: String(supplier.taxRegistrationNumber || supplier.tinNumber || userData.taxRegistrationNumber || '').replace(/\D/g, ''),
-        categories: Array.isArray(supplier.categories) ? supplier.categories : (supplier.category ? [supplier.category] : []),
-        contact: String(supplier.contact || supplier.contactPerson || userData.fullName || authUser.displayName || '').trim(),
-        email,
-        phone: String(supplier.phone || userData.phone || userData.phoneNumber || '').replace(/\D/g, '').replace(/^63/, '').slice(-10),
-        address: String(supplier.address || userData.address || '').trim(),
-      },
+      supplier: { uid: authUser.uid, email },
     })
   } catch (error) {
     console.error('Supplier account lookup failed:', error?.message || error)
@@ -7991,7 +7982,7 @@ app.post(SUPPLIER_ACCOUNT_LINK_PATH, requireAuth, async (req, res) => {
     if (!source) return res.status(404).json({ success: false, error: 'The selected supplier account is unavailable.' })
     const supplierRef = firestore.collection('suppliers').doc(), now = admin.firestore.FieldValue.serverTimestamp(), branch = branchSnap.data() || {}
     const linkedSupplier = {
-      name: source.name || source.businessName, businessName: source.businessName || source.name, businessType: source.businessType || '', taxRegistrationNumber: source.taxRegistrationNumber || '',
+      name: source.name || source.businessName, businessName: source.businessName || source.name, businessType: source.businessType || '',
       categories: Array.isArray(source.categories) ? source.categories : (source.category ? [source.category] : []), category: source.category || source.categories?.[0] || '',
       contact: source.contact || source.contactPerson || '', contactPerson: source.contactPerson || source.contact || '', email: source.email || '', phone: source.phone || '', address: source.address || '',
       branchId, clinicOwnerId: String(branch.ownerId || actorId), ownerId: supplierUid, supplierUserId: supplierUid, sourceSupplierId: source.id || '', sharedAcrossBranches: true,
@@ -8019,19 +8010,9 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
   const text = (value, max = 500) => String(value || '').trim().slice(0, max)
   const normalizedEmail = text(input.email, 320).toLowerCase()
   const supplierName = text(input.name, 120)
-  const contact = text(input.contact, 120)
-  const businessType = text(input.businessType, 120)
-  const taxRegistrationNumber = text(input.taxRegistrationNumber, 32).replace(/\D/g, '')
-  const phone = text(input.phone, 32).replace(/\D/g, '')
-  const categories = [...new Set((Array.isArray(input.categories) ? input.categories : [])
-    .map((category) => text(category, 80))
-    .filter(Boolean))].slice(0, 20)
 
   if (!/^[A-Za-z0-9_-]{1,150}$/.test(branchId)) return res.status(400).json({ success: false, error: 'A valid clinic branch is required.' })
-  if (!supplierName || !contact || !businessType || !EMAIL_ADDRESS_REGEX.test(normalizedEmail)) return res.status(400).json({ success: false, error: 'Supplier name, contact, business type, and a valid email are required.' })
-  if (!/^\d{12}$/.test(taxRegistrationNumber)) return res.status(400).json({ success: false, error: 'A valid 12-digit TIN is required.' })
-  if (!/^9\d{9}$/.test(phone)) return res.status(400).json({ success: false, error: 'A valid Philippine mobile number is required.' })
-  if (!categories.length) return res.status(400).json({ success: false, error: 'At least one supplier category is required.' })
+  if (!supplierName || !EMAIL_ADDRESS_REGEX.test(normalizedEmail)) return res.status(400).json({ success: false, error: 'Supplier business name and a valid email are required.' })
 
   let supplierId = ''
   let supplierUid = ''
@@ -8049,17 +8030,32 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
     if (!branchSnap.exists) return res.status(404).json({ success: false, error: 'Clinic branch not found.' })
     const branch = branchSnap.data() || {}
     const existingSupplierUid = String(input.existingSupplierUid || '').trim()
-    const temporaryPassword = `${crypto.randomBytes(18).toString('base64url')}Aa1!`
     let authUser
     if (existingSupplierUid) {
       authUser = await admin.auth().getUser(existingSupplierUid)
       const existingUserSnap = await firestore.collection('users').doc(existingSupplierUid).get()
       const existingUser = existingUserSnap.exists ? existingUserSnap.data() || {} : {}
       if (String(authUser.email || '').trim().toLowerCase() !== normalizedEmail || String(existingUser.role || existingUser.userType || '').trim().toLowerCase() !== 'supplier') return res.status(400).json({ success: false, error: 'The selected account is not a matching supplier account.' })
-      return res.status(409).json({ success: false, error: 'Use the existing supplier directory to link an existing supplier account.' })
+      supplierUid = authUser.uid
+      const existingLinks = await firestore.collection('suppliers').where('ownerId', '==', supplierUid).get()
+      const sameBranch = existingLinks.docs.find(doc => String(doc.data()?.branchId || '') === branchId)
+      if (sameBranch) return res.json({ success: true, data: { supplierId: sameBranch.id, uid: supplierUid, alreadyLinked: true } })
+      const applicationRef = firestore.collection('supplierApplications').doc(supplierUid)
+      const application = (await applicationRef.get()).data() || {}
+      if (application.verificationStatus === 'Verified') return res.status(409).json({ success: false, error: 'This supplier is verified. Add it from Existing Supplier Accounts.' })
+      const supplierRef = firestore.collection('suppliers').doc()
+      supplierId = supplierRef.id
+      const createdAt = admin.firestore.FieldValue.serverTimestamp()
+      const supplierData = { name: supplierName, businessName: supplierName, email: normalizedEmail, branchId, clinicOwnerId: String(branch.ownerId || actorId), ownerId: supplierUid, supplierUserId: supplierUid, sharedAcrossBranches: true, status: 'Pending Verification', verificationStatus: application.verificationStatus || 'Draft', accreditationStatus: 'Pending Accreditation', procurementAccess: 'Online', accountActivated: true, offeredItems: [], createdBy: actorId, createdAt, updatedAt: createdAt }
+      const batch = firestore.batch()
+      batch.set(supplierRef, supplierData)
+      batch.set(applicationRef, { ownerId: supplierUid, invitedBusinessName: supplierName, businessName: application.businessName || supplierName, contactEmail: normalizedEmail, updatedAt: createdAt }, { merge: true })
+      batch.set(firestore.collection('supplyAudit').doc(), { branchId, recordId: supplierId, actorId, actorName: actor.userData?.fullName || actor.userData?.email || actorId, role: actor.roleKey, module: 'supplier', action: 'supplier-account-invited', after: supplierData, createdAt })
+      await batch.commit()
+      return res.status(201).json({ success: true, data: { supplierId, uid: supplierUid, linkedExistingAccount: true, pendingVerification: true } })
     } else {
       try {
-        authUser = await admin.auth().createUser({ email: normalizedEmail, password: temporaryPassword, displayName: contact })
+        authUser = await admin.auth().createUser({ email: normalizedEmail, password: `${crypto.randomBytes(18).toString('base64url')}Aa1!`, displayName: supplierName })
       } catch (error) {
         if (String(error?.code || '') === 'auth/email-already-exists') return res.status(409).json({ success: false, error: 'This supplier email already has an account. Search the email first to link it.' })
         throw error
@@ -8072,33 +8068,26 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
     const supplierData = {
       name: supplierName,
       businessName: supplierName,
-      businessType,
-      taxRegistrationNumber,
-      categories,
-      category: categories[0],
-      contact,
-      contactPerson: contact,
       email: normalizedEmail,
-      phone,
-      address: text(input.address, 500),
       branchId,
       clinicOwnerId: String(branch.ownerId || actorId),
       ownerId: supplierUid,
       supplierUserId: supplierUid,
       sharedAcrossBranches: true,
-      status: usesExistingAccount ? 'Active' : 'Pending Activation',
+      status: 'Pending Verification',
+      verificationStatus: 'Draft',
       accreditationStatus: 'Pending Accreditation',
       procurementAccess: 'Online',
-      accountActivated: usesExistingAccount,
+      accountActivated: false,
       offeredItems: [],
       createdBy: actorId,
       createdAt,
       updatedAt: createdAt,
     }
     const supplierUserData = {
-      firstName: contact,
+      firstName: supplierName,
       lastName: '',
-      fullName: contact,
+      fullName: supplierName,
       email: normalizedEmail,
       role: 'Supplier',
       userType: 'Supplier',
@@ -8114,7 +8103,10 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
     }
     const batch = firestore.batch()
     batch.set(supplierRef, supplierData)
-    if (!usesExistingAccount) batch.set(firestore.collection('users').doc(supplierUid), supplierUserData)
+    if (!usesExistingAccount) {
+      batch.set(firestore.collection('users').doc(supplierUid), supplierUserData)
+      batch.set(firestore.collection('supplierApplications').doc(supplierUid), { ownerId: supplierUid, businessName: supplierName, invitedBusinessName: supplierName, contactEmail: normalizedEmail, verificationStatus: 'Draft', createdAt, updatedAt: createdAt }, { merge: true })
+    }
     batch.set(firestore.collection('supplyAudit').doc(), {
       branchId,
       recordId: supplierId,
@@ -8129,7 +8121,7 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
       createdAt,
     })
     await batch.commit()
-    const activation = usesExistingAccount ? null : await createAccountActivation({ firestore, uid: supplierUid, email: normalizedEmail, name: contact, req, temporaryPassword })
+    const activation = usesExistingAccount ? null : await createAccountActivation({ firestore, uid: supplierUid, email: normalizedEmail, name: supplierName, req })
     return res.status(usesExistingAccount ? 200 : 201).json({ success: true, data: { supplierId, uid: supplierUid, linkedExistingAccount: usesExistingAccount, activationEmailSent: !usesExistingAccount, devMode: Boolean(activation?.delivery?.devMode) } })
   } catch (error) {
     console.error('Supplier account creation failed:', error?.message || error)
@@ -8137,6 +8129,7 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
       const firestore = admin.firestore()
       await Promise.all([
         supplierId ? firestore.collection('suppliers').doc(supplierId).delete().catch(() => {}) : Promise.resolve(),
+        supplierUid && !usesExistingAccount ? firestore.collection('supplierApplications').doc(supplierUid).delete().catch(() => {}) : Promise.resolve(),
         supplierUid && !usesExistingAccount ? firestore.collection('users').doc(supplierUid).delete().catch(() => {}) : Promise.resolve(),
         supplierUid && !usesExistingAccount ? admin.auth().deleteUser(supplierUid).catch(() => {}) : Promise.resolve(),
       ])
@@ -8163,6 +8156,11 @@ app.post('/supply/supplier-profile', requireAuth, async (req, res) => {
     if (email && accountEmail && email !== accountEmail) return res.status(400).json({ success: false, error: 'Email changes must be made through account settings.' })
     const tin = text(input.taxRegistrationNumber, 32).replace(/\D/g, '')
     if (tin && !/^\d{12}$/.test(tin)) return res.status(400).json({ success: false, error: 'TIN must contain 12 digits.' })
+    const applicationRef = firestore.collection('supplierApplications').doc(req.user.uid)
+    const applicationSnap = await applicationRef.get(), application = applicationSnap.data() || {}
+    const currentTin = String(application.taxNumber || '').replace(/\D/g, '')
+    if (application.verificationStatus === 'Verified' && tin && currentTin && tin !== currentTin) return res.status(409).json({ success: false, error: 'A verified tax number cannot be changed from profile settings. Contact support to update verified business documents.' })
+    if (tin && application.verificationStatus !== 'Verified') await applicationRef.set({ taxNumber: tin, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
     const picture = text(input.profilePicture, 4000)
     if (picture && !/^https:\/\//.test(picture)) return res.status(400).json({ success: false, error: 'Profile image must be a secure uploaded image.' })
     const data = {
@@ -8172,12 +8170,12 @@ app.post('/supply/supplier-profile', requireAuth, async (req, res) => {
       businessAddressStreet: text(input.businessAddressStreet, 250), businessAddressBarangay: text(input.businessAddressBarangay, 150),
       businessAddressCity: text(input.businessAddressCity, 150), businessAddressProvince: text(input.businessAddressProvince, 150),
       businessAddressPostalCode: text(input.businessAddressPostalCode, 20), businessAddressLat: text(input.businessAddressLat, 40), businessAddressLng: text(input.businessAddressLng, 40),
-      businessType: text(input.businessType, 120), taxRegistrationNumber: tin, profilePicture: picture,
+      businessType: text(input.businessType, 120), profilePicture: picture,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
     await supplierSnap.ref.set(data, { merge: true })
     await firestore.collection('supplyAudit').add({ branchId: supplierSnap.data()?.branchId || '', recordId: supplierSnap.id, actorId: req.user.uid, actorName: context.userData?.fullName || context.userData?.email || req.user.uid, role: context.roleKey, module: 'supplier', action: 'supplier-profile-updated', createdAt: admin.firestore.FieldValue.serverTimestamp() })
-    return res.json({ success: true, data: { id: supplierSnap.id, ...data } })
+    return res.json({ success: true, data: { id: supplierSnap.id, ...data, taxRegistrationNumber: currentTin || tin } })
   } catch (error) {
     return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to update the supplier profile.' })
   }

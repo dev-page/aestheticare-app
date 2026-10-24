@@ -31,6 +31,9 @@ export const extractSupplierBusinessIdentifiers = text => {
 
 export const registerSupplierVerification = (app, { admin, requireAuth, loadUserContext, storageBucket, createVisionClient, createRegistrationVisionRequest, getVisionResponseError, getVisionWordConfidence, getOcrExpiryValidation = () => ({ valid: null, expired: false, invalidRange: false, daysRemaining: null, accountHold: false, validTo: '', type: 'not_found' }), normalizeOcrComparable, autoVerificationThreshold = 0.74, expiryHoldDays = 7 }) => {
   const db = admin.firestore(), stamp = () => admin.firestore.FieldValue.serverTimestamp()
+  const normalizedTin = value => String(value || '').replace(/\D/g, '')
+  const normalizedTaxNumber = value => String(value || '').replace(/\D/g, '')
+  const taxIdentityRef = (kind, value) => db.collection('supplierBusinessIdentities').doc(crypto.createHash('sha256').update(`${kind}:${value}`).digest('hex'))
   const bucket = () => admin.storage().bucket(storageBucket() || admin.app().options.storageBucket)
   const expiryRequiredKinds = new Set(['permit', 'distribution'])
   const nameMatchesOcrText = (expectedName, text) => {
@@ -151,7 +154,14 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       fields[name] = String(req.body[name] || '').trim()
       check(fields[name].length > 0 && fields[name].length <= 500, `Provide a valid ${name.replace(/([A-Z])/g, ' $1').toLowerCase()}.`, 400)
     }
+    const businessType = String(req.body.businessType || '').trim().slice(0, 120)
+    const categories = [...new Set((Array.isArray(req.body.categories) ? req.body.categories : []).map(value => String(value || '').trim()).filter(value => ['Injectables', 'Equipment', 'Skincare', 'Medical Supplies'].includes(value)))].slice(0, 20)
+    if (req.body.businessType !== undefined) check(businessType.length > 0, 'Provide a valid business type.', 400)
+    if (req.body.categories !== undefined) check(categories.length > 0, 'Select at least one supplier category.', 400)
     check(/^\S+@\S+\.\S+$/.test(fields.contactEmail), 'Provide a valid contact email.', 400)
+    const phoneDigits = fields.contactPhone.replace(/\D/g, '').replace(/^63/, '').replace(/^0/, '')
+    check(/^9\d{9}$/.test(phoneDigits), 'Provide a Philippine mobile number with 10 digits starting with 9.', 400)
+    fields.contactPhone = `+63${phoneDigits}`
     const addressLat = Number(req.body.businessAddressLat), addressLng = Number(req.body.businessAddressLng)
     check(Number.isFinite(addressLat) && addressLat >= -90 && addressLat <= 90 && Number.isFinite(addressLng) && addressLng >= -180 && addressLng <= 180, 'Select the business location on the map.', 400)
     fields.businessAddressLat = addressLat
@@ -195,7 +205,7 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       const identifiersDetected = Boolean(ocrRegistrationNumber && ocrTaxNumber)
       const ocrStatus = allDocuments.every(document => document.ocr?.status === 'verified') && identifiersDetected ? 'OCR Verified' : 'Manual Review Required'
       const ocrReviewReason = identifiersDetected ? '' : 'OCR could not confidently locate both the business registration number and tax number. Please compare the entered values with the uploaded documents.'
-      tx.set(ref, { ...fields, documents: updatedDocuments, ownerId: req.user.uid, verificationStatus: 'Submitted', ocrStatus, ocrReviewReason, revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
+      tx.set(ref, { ...fields, ...(businessType ? { businessType } : {}), ...(req.body.categories !== undefined ? { categories } : {}), documents: updatedDocuments, ownerId: req.user.uid, verificationStatus: 'Submitted', ocrStatus, ocrReviewReason, revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
       tx.set(db.collection('supplierVerificationAudit').doc(), { supplierUid: req.user.uid, actorId: req.user.uid, action: 'submitted', previousStatus: current.verificationStatus || 'Draft', nextStatus: 'Submitted', createdAt: stamp() })
     })
     res.json({ success: true, data: { verificationStatus: 'Submitted' } })
@@ -220,6 +230,7 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       const snap = await tx.get(ref)
       check(snap.exists, 'Application not found.', 404)
       const current = snap.data() || {}, status = supplierDecision(current.verificationStatus, req.body.action, reason)
+      let businessIdentity = null
       if (req.body.action === 'approve') {
         const requiredDocuments = ['registration', 'permit', 'representative'].map(kind => current.documents?.[kind] || {})
         const documentsToApprove = [...requiredDocuments, ...(current.documents?.distribution?.path ? [current.documents.distribution] : [])]
@@ -238,13 +249,60 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
             if (expiryRequiredKinds.has(kind)) check(expiry.valid === true, 'A current expiry date or validity period is required for the business permit or distribution credential.', 400)
           }
         }
+        const taxNumber = normalizedTaxNumber(current.taxNumber)
+        const registrationNumber = String(current.registrationNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+        const identities = [
+          ...(/^\d{12}$/.test(taxNumber) ? [{ kind: 'tin', value: taxNumber }] : []),
+          ...(registrationNumber.length >= 4 ? [{ kind: 'registration', value: registrationNumber }] : []),
+        ]
+        businessIdentity = []
+        for (const identityValue of identities) {
+          const identityRef = taxIdentityRef(identityValue.kind, identityValue.value)
+          const identity = await tx.get(identityRef)
+          check(!identity.exists || identity.data()?.supplierUid === req.params.id, `This ${identityValue.kind === 'tin' ? 'tax number' : 'registration number'} is already associated with another verified supplier account.`, 409)
+          businessIdentity.push({ ref: identityRef, ...identityValue })
+        }
+        if (/^\d{12}$/.test(taxNumber)) {
+          const legacyMatches = await tx.get(db.collection('suppliers').where('taxRegistrationNumber', '==', taxNumber))
+          check(legacyMatches.docs.every(document => String(document.data()?.ownerId || document.data()?.supplierUserId || '') === req.params.id || document.data()?.verificationStatus !== 'Verified'), 'This tax number is already associated with another verified supplier account.', 409)
+          const legacyApplications = await tx.get(db.collection('supplierApplications').where('taxNumber', '==', current.taxNumber))
+          check(legacyApplications.docs.every(document => document.id === req.params.id || document.data()?.verificationStatus !== 'Verified'), 'This tax number is already associated with another verified supplier account.', 409)
+        }
+        if (registrationNumber.length >= 4) {
+          const legacyRegistrationMatches = await tx.get(db.collection('suppliers').where('registrationNumber', '==', current.registrationNumber))
+          check(legacyRegistrationMatches.docs.every(document => String(document.data()?.ownerId || document.data()?.supplierUserId || '') === req.params.id || document.data()?.verificationStatus !== 'Verified'), 'This registration number is already associated with another verified supplier account.', 409)
+          const legacyRegistrationApplications = await tx.get(db.collection('supplierApplications').where('registrationNumber', '==', current.registrationNumber))
+          check(legacyRegistrationApplications.docs.every(document => document.id === req.params.id || document.data()?.verificationStatus !== 'Verified'), 'This registration number is already associated with another verified supplier account.', 409)
+        }
       }
       const accounts = await tx.get(db.collection('suppliers').where('ownerId', '==', req.params.id))
       const linked = await tx.get(db.collection('suppliers').where('supplierUserId', '==', req.params.id))
       tx.set(ref, { verificationStatus: status, revisionReason: reason, reviewedById: req.user.uid, reviewedAt: stamp(), updatedAt: stamp() }, { merge: true })
       tx.set(db.collection('users').doc(req.params.id), { supplierVerificationStatus: status, ...(status === 'Verified' ? { status: 'Active' } : {}), updatedAt: stamp() }, { merge: true })
       const unique = new Map([...accounts.docs, ...linked.docs].map(doc => [doc.id, doc]))
-      for (const doc of unique.values()) tx.set(doc.ref, { verificationStatus: status, updatedAt: stamp() }, { merge: true })
+      for (const doc of unique.values()) {
+        const profile = status === 'Verified' ? {
+          name: current.businessName || doc.data()?.name || '',
+          businessName: current.businessName || doc.data()?.businessName || '',
+          taxRegistrationNumber: admin.firestore.FieldValue.delete(),
+          tinNumber: admin.firestore.FieldValue.delete(),
+          businessType: current.businessType || doc.data()?.businessType || '',
+          categories: Array.isArray(current.categories) && current.categories.length ? current.categories : (Array.isArray(doc.data()?.categories) ? doc.data().categories : []),
+          category: Array.isArray(current.categories) && current.categories.length ? current.categories[0] : (doc.data()?.category || ''),
+          registrationNumber: current.registrationNumber || '',
+          address: current.businessAddress || '',
+          businessAddress: current.businessAddress || '',
+          businessAddressLat: Number(current.businessAddressLat) || null,
+          businessAddressLng: Number(current.businessAddressLng) || null,
+          contact: current.representativeName || '',
+          contactPerson: current.representativeName || '',
+          email: current.contactEmail || doc.data()?.email || '',
+          phone: current.contactPhone || '',
+          status: 'Active',
+        } : {}
+        tx.set(doc.ref, { ...profile, verificationStatus: status, updatedAt: stamp() }, { merge: true })
+      }
+      for (const identity of businessIdentity || []) tx.set(identity.ref, { supplierUid: req.params.id, identityType: identity.kind, createdAt: stamp(), updatedAt: stamp() }, { merge: true })
       tx.set(db.collection('supplierVerificationAudit').doc(), { supplierUid: req.params.id, actorId: req.user.uid, action: req.body.action, previousStatus: current.verificationStatus, nextStatus: status, reason, createdAt: stamp() })
       tx.set(db.collection('notifications').doc(), { recipientUserId: req.params.id, title: `Supplier verification: ${status}`, message: reason || 'Your business documents were approved. You can now publish your catalogue and receive orders.', link: '/supplier/verification', read: false, createdAt: stamp() })
       return { verificationStatus: status }
