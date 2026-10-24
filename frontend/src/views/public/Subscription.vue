@@ -45,7 +45,7 @@
             </p>
             <span class="plan-cycle">{{ plan.cycleLabel || plan.cycle || '-' }}</span>
           </div>
-          <p v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0" class="plan-caption">PHP 0 for {{ plan.trialDays }} days after approval. One trial per clinic; later purchases use the regular price.</p>
+          <div v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0" class="plan-trial-note"><span class="trial-duration">{{ plan.trialDays }} days free</span><span>after clinic approval · one trial per clinic</span><small>Then {{ plan.priceLabel }}{{ plan.cycleLabel || plan.cycle || '/month' }}.</small></div>
 
           <p class="plan-desc">{{ plan.description }}</p>
           <p class="plan-caption">{{ planCaption(plan) }}</p>
@@ -474,17 +474,21 @@ onBeforeUnmount(() => {
   color: #6f3f2a;
 }
 
-.trial-price-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
-.trial-original-price { color: #684c37; font-size: .42em; font-weight: 700; letter-spacing: 0; text-decoration-thickness: 2px; text-underline-offset: .12em; opacity: 1; }
+.trial-price-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .7rem; }
+.trial-original-price { color: #684c37; font-size: .48em; font-weight: 700; letter-spacing: 0; text-decoration-thickness: 2px; text-underline-offset: .14em; opacity: .9; }
 .plan-card-free .trial-original-price,
 .plan-card-basic .trial-original-price,
 .plan-card-premium .trial-original-price { color: #684c37; }
-.trial-current-price { display: inline-block; border: 1px solid rgba(40, 118, 92, .25); border-radius: .35em; background: #e4f2e9; padding: .12em .3em; color: #205d47; font-size: .68em; font-weight: 900; line-height: 1.15; }
+.trial-current-price { display: inline-block; border: 1px solid rgba(40, 118, 92, .25); border-radius: .4em; background: #e4f2e9; padding: .14em .4em; color: #205d47; font-size: .72em; font-weight: 900; line-height: 1.15; white-space: nowrap; }
+.plan-trial-note { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .3rem .55rem; margin-top: .7rem; padding: .6rem .7rem; border: 1px solid rgba(91, 57, 33, .15); border-radius: .75rem; background: rgba(255, 250, 241, .55); color: #543b2a; font-size: .76rem; line-height: 1.35; }
+.trial-duration { padding: .2rem .48rem; border-radius: 999px; background: #fff8e9; color: #6b482f; font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.plan-trial-note small { grid-column: 1 / -1; color: #68452f; font-size: .72rem; font-weight: 700; }
 
 .plan-cycle {
   font-size: 0.84rem;
   font-weight: 600;
   color: #8f6a51;
+  white-space: nowrap;
 }
 
 .plan-card-basic .plan-desc, .plan-card-basic .plan-caption,

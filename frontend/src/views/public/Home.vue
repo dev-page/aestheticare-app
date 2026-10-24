@@ -38,11 +38,6 @@
                       before:transition-all before:duration-300 hover:before:w-full">FAQ</button>
           </li>
           <li>
-            <button @click="scrollToSection('contact')" class="relative whitespace-nowrap text-charcoal-700 uppercase hover:text-gold-700 hover:font-bold transition-all duration-300
-                      before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
-                      before:transition-all before:duration-300 hover:before:w-full">Contact Us</button>
-          </li>
-          <li>
             <router-link to="/centers"
               class="flex items-center gap-2 px-4 py-2 rounded-full border-2 border-gold-500 text-gold-500 font-medium
                     hover:bg-gold-500 hover:text-white transition-all duration-300"
