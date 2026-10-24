@@ -8165,6 +8165,8 @@ app.post('/supply/supplier-profile', requireAuth, async (req, res) => {
     if (tin && application.verificationStatus !== 'Verified') await applicationRef.set({ taxNumber: tin, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
     const picture = text(input.profilePicture, 4000)
     if (picture && !/^https:\/\//.test(picture)) return res.status(400).json({ success: false, error: 'Profile image must be a secure uploaded image.' })
+    const banner = text(input.bannerPicture, 4000)
+    if (banner && !/^https:\/\//.test(banner)) return res.status(400).json({ success: false, error: 'Banner image must be a secure uploaded image.' })
     const data = {
       name: text(input.businessName, 120), businessName: text(input.businessName, 120),
       contact: text(input.contactNumber, 32), contactNumber: text(input.contactNumber, 32), phone: text(input.contactNumber, 32),
@@ -8172,7 +8174,7 @@ app.post('/supply/supplier-profile', requireAuth, async (req, res) => {
       businessAddressStreet: text(input.businessAddressStreet, 250), businessAddressBarangay: text(input.businessAddressBarangay, 150),
       businessAddressCity: text(input.businessAddressCity, 150), businessAddressProvince: text(input.businessAddressProvince, 150),
       businessAddressPostalCode: text(input.businessAddressPostalCode, 20), businessAddressLat: text(input.businessAddressLat, 40), businessAddressLng: text(input.businessAddressLng, 40),
-      businessType: text(input.businessType, 120), profilePicture: picture,
+      businessType: text(input.businessType, 120), profilePicture: picture, bannerPicture: banner,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
     await supplierSnap.ref.set(data, { merge: true })

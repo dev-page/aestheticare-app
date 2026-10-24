@@ -24,6 +24,16 @@
             <div class="space-y-5">
               <div class="rounded-3xl border border-dashed border-[#dfb98d] bg-[#fff8ef] p-6">
                 <div class="flex flex-col items-center gap-4">
+                  <div class="w-full">
+                    <div class="relative h-36 overflow-hidden rounded-2xl border border-[#ead1b0] bg-[#f8eddf]">
+                      <img v-if="profile.bannerPicture" :src="profile.bannerPicture" alt="Supplier business banner" class="h-full w-full object-cover" />
+                      <span v-else class="grid h-full place-items-center text-sm text-[#8b6b53]">Business banner preview</span>
+                    </div>
+                    <label class="mt-3 inline-flex cursor-pointer rounded-xl border border-[#d8b289] bg-white px-4 py-2 text-sm font-semibold text-[#7b4a2f] transition hover:bg-[#f6eadc]">
+                      Upload Business Banner
+                      <input type="file" accept="image/jpeg,image/png,image/webp" class="hidden" @change="handleBannerPictureChange" />
+                    </label>
+                  </div>
                   <div class="flex h-32 w-32 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-[#f0d4b2] to-[#c88f63] text-4xl font-bold text-white shadow-lg">
                     <img v-if="profile.profilePicture" :src="profile.profilePicture" alt="Supplier profile picture" class="h-full w-full object-cover" />
                     <span v-else>{{ businessInitial }}</span>
@@ -209,6 +219,7 @@ const userEmail = ref('')
 const supplierDocId = ref('')
 const locationSearchValue = ref('')
 const profilePictureFile = ref(null)
+const bannerPictureFile = ref(null)
 const contactNumberError = ref('')
 
 const profile = ref({
@@ -226,6 +237,7 @@ const profile = ref({
   businessType: '',
   taxRegistrationNumber: '',
   profilePicture: '',
+  bannerPicture: '',
   status: '',
   approvalStatus: '',
 })
@@ -307,6 +319,19 @@ const handleProfilePictureChange = (event) => {
   profile.value.profilePicture = URL.createObjectURL(file)
 }
 
+const handleBannerPictureChange = (event) => {
+  const file = event?.target?.files?.[0]
+  if (!file) return
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+    toast.error('Please upload a JPG, PNG, or WebP image smaller than 5 MB.')
+    event.target.value = ''
+    return
+  }
+  bannerPictureFile.value = file
+  profile.value.bannerPicture = URL.createObjectURL(file)
+  event.target.value = ''
+}
+
 const loadProfile = trackPageLoad(async (user) => {
   if (!user) return
 
@@ -344,6 +369,7 @@ const loadProfile = trackPageLoad(async (user) => {
       businessType: merged.businessType || '',
       taxRegistrationNumber: normalizeTinDigits(merged.taxRegistrationNumber || merged.tinNumber || ''),
       profilePicture: merged.profilePicture || '',
+      bannerPicture: merged.bannerPicture || '',
       status: merged.status || '',
       approvalStatus: merged.approvalStatus || '',
     }
@@ -370,6 +396,7 @@ const saveProfile = async () => {
   saving.value = true
   try {
     let profilePicture = profile.value.profilePicture || ''
+    let bannerPicture = profile.value.bannerPicture || ''
     if (profilePictureFile.value) {
       const ref = storageRef(storage, `supplier-profile-images/${user.uid}/${Date.now()}-${profilePictureFile.value.name}`)
       const snapshot = await uploadBytes(ref, profilePictureFile.value)
@@ -377,13 +404,20 @@ const saveProfile = async () => {
       profilePictureFile.value = null
       profile.value.profilePicture = profilePicture
     }
+    if (bannerPictureFile.value) {
+      const imageRef = storageRef(storage, `supplier-profile-images/${user.uid}/${Date.now()}-banner`)
+      const snapshot = await uploadBytes(imageRef, bannerPictureFile.value, { contentType: bannerPictureFile.value.type })
+      bannerPicture = await getDownloadURL(snapshot.ref)
+      bannerPictureFile.value = null
+      profile.value.bannerPicture = bannerPicture
+    }
     const payload = {
       businessName: profile.value.businessName || '', email: profile.value.email || '', contactNumber: `+63${profile.value.contactNumber}`,
       businessAddress: profile.value.businessAddress || '', businessAddressStreet: profile.value.businessAddressStreet || '',
       businessAddressBarangay: profile.value.businessAddressBarangay || '', businessAddressCity: profile.value.businessAddressCity || '',
       businessAddressProvince: profile.value.businessAddressProvince || '', businessAddressPostalCode: profile.value.businessAddressPostalCode || '',
       businessAddressLat: profile.value.businessAddressLat || '', businessAddressLng: profile.value.businessAddressLng || '',
-      businessType: profile.value.businessType || '', taxRegistrationNumber: normalizeTinDigits(profile.value.taxRegistrationNumber || ''), profilePicture,
+      businessType: profile.value.businessType || '', taxRegistrationNumber: normalizeTinDigits(profile.value.taxRegistrationNumber || ''), profilePicture, bannerPicture,
     }
     const token = await user.getIdToken()
     let result

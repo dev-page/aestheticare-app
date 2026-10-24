@@ -117,6 +117,32 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
     const snap = await db.collection('supplierApplications').doc(req.user.uid).get()
     res.json({ success: true, data: { id: req.user.uid, verificationStatus: 'Draft', ...(snap.data() || {}) } })
   }))
+  app.post('/supplier-verification/draft', requireAuth, wrap(async (req, res) => {
+    await supplier(req.user.uid)
+    const ref = db.collection('supplierApplications').doc(req.user.uid)
+    const step = Number(req.body.completedStep)
+    check([1, 2].includes(step), 'Invalid onboarding checkpoint.', 400)
+    const fields = {}
+    if (step === 1) {
+      for (const name of ['businessName', 'registrationNumber', 'taxNumber', 'businessAddress', 'representativeName', 'contactEmail', 'contactPhone', 'businessType']) {
+        fields[name] = String(req.body[name] || '').trim().slice(0, 500)
+      }
+      fields.categories = [...new Set((Array.isArray(req.body.categories) ? req.body.categories : []).map(value => String(value || '').trim()).filter(value => ['Injectables', 'Equipment', 'Skincare', 'Medical Supplies'].includes(value)))].slice(0, 20)
+      const phoneDigits = fields.contactPhone.replace(/\D/g, '').replace(/^63/, '').replace(/^0/, '')
+      check(fields.businessName && fields.representativeName && /^\S+@\S+\.\S+$/.test(fields.contactEmail) && /^9\d{9}$/.test(phoneDigits) && fields.businessType && fields.categories.length, 'Complete the business details before continuing.', 400)
+      fields.contactPhone = phoneDigits
+      const lat = Number(req.body.businessAddressLat), lng = Number(req.body.businessAddressLng)
+      check(fields.businessAddress && Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180, 'Select your business location before continuing.', 400)
+      fields.businessAddressLat = lat
+      fields.businessAddressLng = lng
+    }
+    await db.runTransaction(async tx => {
+      const current = (await tx.get(ref)).data() || {}
+      check(!['Submitted', 'Under review', 'Verified', 'Suspended'].includes(current.verificationStatus), 'This application can no longer be edited.')
+      tx.set(ref, { ...fields, onboardingCompletedStep: step, updatedAt: stamp() }, { merge: true })
+    })
+    res.json({ success: true, data: { completedStep: step } })
+  }))
   app.post('/supplier-verification/documents', requireAuth, wrap(async (req, res) => {
     await supplier(req.user.uid)
     const application = (await db.collection('supplierApplications').doc(req.user.uid).get()).data() || {}
@@ -172,6 +198,17 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
     if (req.body.businessType !== undefined) check(businessType.length > 0, 'Provide a valid business type.', 400)
     if (req.body.categories !== undefined) check(categories.length > 0, 'Select at least one supplier category.', 400)
     check(/^\S+@\S+\.\S+$/.test(fields.contactEmail), 'Provide a valid contact email.', 400)
+    const supplierImageUrl = (value, kind) => {
+      const imageUrl = String(value || '').trim()
+      if (!imageUrl) return ''
+      check(imageUrl.length <= 4000, `Supplier ${kind} URL is too long.`, 400)
+      let parsed, decodedPath
+      try { parsed = new URL(imageUrl); decodedPath = decodeURIComponent(parsed.pathname) } catch { check(false, `Supplier ${kind} URL is invalid.`, 400) }
+      check(parsed.protocol === 'https:' && parsed.hostname === 'firebasestorage.googleapis.com' && decodedPath.includes(`/o/supplier-profile-images/${req.user.uid}/`), `Upload the supplier ${kind} using the onboarding image picker.`, 400)
+      return imageUrl
+    }
+    const profilePicture = supplierImageUrl(req.body.profilePicture, 'logo')
+    const bannerPicture = supplierImageUrl(req.body.bannerPicture, 'banner')
     const phoneDigits = fields.contactPhone.replace(/\D/g, '').replace(/^63/, '').replace(/^0/, '')
     check(/^9\d{9}$/.test(phoneDigits), 'Provide a Philippine mobile number with 10 digits starting with 9.', 400)
     fields.contactPhone = `+63${phoneDigits}`
@@ -218,7 +255,7 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
       const identifiersDetected = Boolean(ocrRegistrationNumber && ocrTaxNumber)
       const ocrStatus = allDocuments.every(document => document.ocr?.status === 'verified') && identifiersDetected ? 'OCR Verified' : 'Manual Review Required'
       const ocrReviewReason = identifiersDetected ? '' : 'OCR could not confidently locate both the business registration number and tax number. Please compare the entered values with the uploaded documents.'
-      tx.set(ref, { ...fields, ...(businessType ? { businessType } : {}), ...(req.body.categories !== undefined ? { categories } : {}), deliveryFees, deliveryFeePolicy, documents: updatedDocuments, ownerId: req.user.uid, verificationStatus: 'Submitted', ocrStatus, ocrReviewReason, revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
+      tx.set(ref, { ...fields, ...(businessType ? { businessType } : {}), ...(req.body.categories !== undefined ? { categories } : {}), profilePicture, bannerPicture, deliveryFees, deliveryFeePolicy, documents: updatedDocuments, ownerId: req.user.uid, verificationStatus: 'Submitted', ocrStatus, ocrReviewReason, revisionReason: '', submittedAt: stamp(), updatedAt: stamp() }, { merge: true })
       tx.set(db.collection('supplierVerificationAudit').doc(), { supplierUid: req.user.uid, actorId: req.user.uid, action: 'submitted', previousStatus: current.verificationStatus || 'Draft', nextStatus: 'Submitted', createdAt: stamp() })
     })
     res.json({ success: true, data: { verificationStatus: 'Submitted' } })
@@ -313,6 +350,8 @@ export const registerSupplierVerification = (app, { admin, requireAuth, loadUser
           phone: current.contactPhone || '',
           deliveryFees: Array.isArray(current.deliveryFees) ? current.deliveryFees : [],
           deliveryFeePolicy: current.deliveryFeePolicy || 'free',
+          profilePicture: current.profilePicture || doc.data()?.profilePicture || '',
+          bannerPicture: current.bannerPicture || doc.data()?.bannerPicture || '',
           status: 'Active',
         } : {}
         tx.set(doc.ref, { ...profile, verificationStatus: status, updatedAt: stamp() }, { merge: true })
