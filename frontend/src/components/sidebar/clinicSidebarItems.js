@@ -13,6 +13,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     icon: 'mdi:hospital-building',
     tourKey: 'clinic-setup',
     children: [
+      { label: 'Clinic Profile', icon: 'profile', to: '/clinic/profile', permission: 'clinic_profile:update' },
       { label: 'Branch Management', icon: 'mdi:map-marker-outline', to: '/clinic/branches', permissionsAny: ['branches:view', 'branches:create'] },
       { label: 'Policy & Contract Management', icon: 'mdi:file-document-outline', to: '/clinic/policies', permissionsAny: ['policies:view', 'policies:update'] }
     ]
@@ -118,7 +119,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     label: 'Account Settings',
     icon: 'settings',
     children: [
-      { label: 'Profile', icon: 'profile', to: isEmployee ? '/account/profile' : '/clinic/profile' },
+      { label: 'Profile', icon: 'profile', to: '/account/profile' },
       { label: 'Change Password', icon: 'key', to: '/account/change-password' },
       { label: 'Subscription Plan', icon: 'mdi:card-account-details-star-outline', to: '/account/subscription', permission: 'subscription:view' },
       { label: 'Backup Database', icon: 'mdi:database-export-outline', to: '/account/backup', permission: 'backups:view' },

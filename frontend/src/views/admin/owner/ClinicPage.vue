@@ -5,8 +5,8 @@
     <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 4, sections: 2 }" class="flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-white mb-1">Clinic Page</h1>
-          <p class="text-slate-400">Manage public-facing page content per clinic branch.</p>
+          <h1 class="text-3xl font-bold text-white mb-1">Clinic Profile</h1>
+          <p class="text-slate-400">Edit your clinic’s contact details, description, operating hours, services, logo, and banner.</p>
           <p v-if="branchScopeLabel" class="mt-2 inline-flex rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold text-gold-200">
             Viewing: {{ branchScopeLabel }}
           </p>
@@ -70,7 +70,7 @@
                   @click="startEdit"
                   class="px-4 py-2 rounded-lg bg-gold-700 hover:bg-gold-800 text-white text-sm font-medium transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  Edit Info
+                  Edit Clinic Profile
                 </button>
               </div>
             </div>
@@ -922,7 +922,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             ? requestedBranchId
             : branches.value[0].id
           hydrateEditForm()
-          if (route.query.edit === 'branding') startEdit()
+          if (route.query.edit === 'branding' || route.query.edit === 'profile') startEdit()
           await loadBranchPostsAndReviews(selectedBranchId.value)
           listenToBranchPolicies(selectedBranchId.value)
           await nextTick()
