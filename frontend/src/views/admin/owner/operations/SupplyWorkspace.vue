@@ -611,11 +611,13 @@ input:not([type=checkbox]),select,textarea{display:block;width:100%;margin-top:.
 .inventory-page { background: #f8f3ea; color: #3d281d; }
 .inventory-page main { background: #f8f3ea; }
 .inventory-page header h1, .inventory-page h2, .inventory-page h3, .inventory-page h4 { color: #3d281d; }
+.inventory-page header > div > p:first-child { color: #91643f; }
 .inventory-page header p.text-slate-400, .inventory-page p.text-slate-400, .inventory-page label.text-slate-400 { color: #806b5a; }
 .inventory-page [class*="bg-slate-"] { background-color: #fffdf9; }
 .inventory-page [class*="border-slate-"] { border-color: #ead8c2; }
 .inventory-page [class~="text-slate-100"], .inventory-page [class~="text-slate-200"], .inventory-page [class~="text-slate-300"] { color: #503727; }
 .inventory-page [class~="text-slate-400"], .inventory-page [class~="text-slate-500"] { color: #806b5a; }
+.inventory-page [class~="text-amber-200"], .inventory-page [class~="text-amber-300"], .inventory-page [class~="text-amber-400"] { color: #8a552b; }
 .inventory-page [class~="text-white"]:not(button) { color: #3d281d; }
 .inventory-page input:not([type=checkbox]), .inventory-page select, .inventory-page textarea { border-color: #dec7aa; background: #fff; color: #3d281d; }
 .inventory-page input::placeholder, .inventory-page textarea::placeholder { color: #9a8877; }

@@ -730,7 +730,7 @@ const renderEmployeeChart = () => {
               <strong>{{ setupCompletedCount }}/{{ setupTasks.length }}</strong><span>complete</span>
             </div>
           </div>
-          <label v-if="activeSetupBranches.length > 1" class="setup-branch-picker">Branch for policy linking
+          <label v-if="activeSetupBranches.length > 1" class="setup-branch-picker">Branch
             <select v-model="selectedSetupBranchId">
               <option v-for="branch in activeSetupBranches" :key="branch.id" :value="branch.id">{{ branch.clinicBranch || branch.id }}</option>
             </select>

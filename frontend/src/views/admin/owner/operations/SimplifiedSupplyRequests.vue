@@ -347,6 +347,7 @@ select:disabled { cursor: not-allowed; opacity: .55; }
 .inventory-requests-page [class*="border-slate-"] { border-color: #ead8c2; }
 .inventory-requests-page [class~="text-slate-100"], .inventory-requests-page [class~="text-slate-200"], .inventory-requests-page [class~="text-slate-300"] { color: #503727; }
 .inventory-requests-page [class~="text-slate-400"], .inventory-requests-page [class~="text-slate-500"] { color: #806b5a; }
+.inventory-requests-page [class~="text-amber-200"], .inventory-requests-page [class~="text-amber-300"], .inventory-requests-page [class~="text-amber-400"] { color: #8a552b; }
 .inventory-requests-page table thead { background: #f4e8d8; color: #684c37; }
 .inventory-requests-page table tbody tr:hover { background: #fff7ed; }
 .inventory-requests-page button:focus-visible, .inventory-requests-page a:focus-visible, .inventory-requests-page input:focus-visible, .inventory-requests-page select:focus-visible, .inventory-requests-page textarea:focus-visible { outline: 3px solid rgb(168 111 68 / .35); outline-offset: 2px; }
