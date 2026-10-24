@@ -39,11 +39,12 @@
         <span v-if="plan.id !== 'free-trial'" class="card-shine"></span>
         <p class="plan-name">{{ plan.name }}</p>
         <p class="plan-price">
-          {{ plan.priceLabel }}
+          <template v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0"><s class="trial-original-price">{{ plan.priceLabel }}</s><strong class="trial-current-price">PHP 0</strong></template>
+          <template v-else>{{ plan.priceLabel }}</template>
           <span class="plan-cycle">{{ plan.cycleLabel }}</span>
         </p>
         <p class="plan-desc">{{ plan.description }}</p>
-        <p v-if="plan.freeTrialEnabled" class="plan-desc">{{ plan.trialDays }}-day free trial after clinic approval, once per clinic. Later purchases use the normal plan price.</p>
+        <p v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0" class="plan-desc">PHP 0 for {{ plan.trialDays }} days after approval, once per clinic. Later purchases use the regular price.</p>
         <ul class="plan-features">
           <li v-for="item in plan.features" :key="item">{{ item }}</li>
         </ul>
@@ -480,6 +481,9 @@ onBeforeUnmount(() => {
   font-weight: 800;
   color: #6f3f2a;
 }
+
+.trial-original-price { margin-right: .4rem; color: #a58c7b; font-size: .62em; font-weight: 500; }
+.trial-current-price { color: #28734a; font-size: .92em; }
 
 .plan-cycle {
   font-size: 0.85rem;

@@ -64,9 +64,10 @@
           </div>
 
           <div class="mb-4">
-            <div class="text-3xl font-bold text-white">{{ plan.priceLabel }}</div>
+            <div v-if="trialEligible && plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0" class="flex flex-wrap items-baseline gap-3"><s class="text-lg font-medium text-slate-400">{{ plan.priceLabel }}</s><strong class="text-3xl font-bold text-emerald-300">PHP 0</strong></div>
+            <div v-else class="text-3xl font-bold text-white">{{ plan.priceLabel }}</div>
             <div class="text-sm text-slate-400">{{ plan.cycleLabel || '-' }}</div>
-            <p v-if="trialEligible && plan.freeTrialEnabled" class="mt-2 text-sm font-semibold text-emerald-300">{{ plan.trialDays }}-day free trial · PHP 0 due today</p>
+            <p v-if="trialEligible && plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0" class="mt-2 text-sm font-semibold text-emerald-300">PHP 0 for {{ plan.trialDays }} days after approval</p>
             <p v-else-if="plan.freeTrialEnabled" class="mt-2 text-sm text-slate-400">{{ plan.trialDays }}-day trial available once per clinic before normal billing.</p>
           </div>
 
