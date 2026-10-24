@@ -17,9 +17,9 @@
             <p v-else-if="!pharmacyItems.length" class="muted">No inventory items match your search.</p>
             <div v-else class="item-grid">
               <article v-for="item in pharmacyItems" :key="item.id" class="item-card">
-                <div><strong>{{ item.name }}</strong><small>{{ item.unit || 'units' }} · {{ available(item) }} in stock</small></div>
+                <div><strong>{{ item.name }}</strong><small>{{ item.unit || 'units' }} · {{ available(item) }} in stock · {{ dispensingLabel(item.dispensingClass) }}</small></div>
                 <span class="price">{{ Number(item.retailPrice) > 0 ? currency(item.retailPrice) : 'Price needed' }}</span>
-                <button type="button" :disabled="available(item) < 1 || Number(item.retailPrice) <= 0" @click="addItem(item)">Add</button>
+                <button type="button" :disabled="!canAdd(item)" @click="addItem(item)">Add</button>
               </article>
             </div>
           </section>
@@ -40,10 +40,10 @@
         </div>
 
         <section class="panel settings-panel">
-          <div class="section-heading"><div><p class="eyebrow">Retail setup</p><h2>Set pharmacy retail prices</h2></div></div>
-          <p class="muted">All inventory items appear in pharmacy automatically. Set a customer retail price before checkout; procurement cost is not used as the sale price.</p>
-          <div class="settings-list"><div v-for="item in items" :key="item.id" class="setting-row"><div><strong>{{ item.name }}</strong><small>{{ available(item) }} {{ item.unit || 'units' }} in stock</small></div><label class="price-field">Retail price (PHP)<input v-model="prices[item.id]" type="number" min="0.01" step="0.01" :disabled="!canManage" /></label><button v-if="canManage" type="button" :disabled="savingId === item.id" @click="saveSettings(item)">{{ savingId === item.id ? 'Saving…' : 'Save price' }}</button></div></div>
-          <p v-if="!items.length && !loading" class="muted">No inventory items are registered for this branch yet.</p>
+          <div class="section-heading"><div><p class="eyebrow">Retail setup</p><h2>Adjust pharmacy retail prices</h2></div></div>
+          <p class="muted">Only items explicitly added from Inventory appear here. Procurement cost is not used as the sale price.</p>
+          <div class="settings-list"><div v-for="item in pharmacyListedItems" :key="item.id" class="setting-row"><div><strong>{{ item.name }}</strong><small>{{ available(item) }} {{ item.unit || 'units' }} in stock · {{ dispensingLabel(item.dispensingClass) }}</small></div><label class="price-field">Retail price (PHP)<input v-model="prices[item.id]" type="number" min="0.01" step="0.01" :disabled="!canManage" /></label><button v-if="canManage" type="button" :disabled="savingId === item.id" @click="saveSettings(item)">{{ savingId === item.id ? 'Saving…' : 'Save price' }}</button></div></div>
+          <p v-if="!pharmacyListedItems.length && !loading" class="muted">No items have been added to Pharmacy yet. Add them from Inventory.</p>
         </section>
 
         <section class="panel sales-panel"><div class="section-heading"><div><p class="eyebrow">Recent activity</p><h2>Recent pharmacy sales</h2></div></div><div v-if="sales.length" class="sales-list"><article v-for="sale in sales" :key="sale.id"><div><strong>{{ sale.receiptNumber }}</strong><small>{{ sale.customerName || 'Walk-in customer' }} · {{ formatDate(sale.createdAt) }} · {{ sale.paymentMethod || 'Payment' }}</small></div><strong>{{ currency(sale.total) }}</strong></article></div><p v-else class="muted">Completed sales will appear here.</p></section>
@@ -73,11 +73,14 @@ const appointmentId = computed(() => String(route.query.appointmentId || ''))
 const linkedPrescriptionItems = computed(() => { const value = linkedPrescription.value?.prescriptions; return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : value && typeof value === 'object' ? [value] : [] })
 const canManage = computed(() => hasPermission('inventory:update'))
 const canSell = computed(() => canManage.value && hasPermission('payments:create'))
-const pharmacyItems = computed(() => items.value.filter(item => !search.value || String(item.name || '').toLowerCase().includes(search.value.toLowerCase())))
+const pharmacyListedItems = computed(() => items.value.filter(item => item.pharmacyEnabled === true))
+const pharmacyItems = computed(() => pharmacyListedItems.value.filter(item => !search.value || String(item.name || '').toLowerCase().includes(search.value.toLowerCase())))
 const total = computed(() => Math.round(cart.value.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0) * 100) / 100)
 let stopAuth, stopInventory, generation = 0
 const currency = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0))
 const available = item => Math.max(0, Number(item?.currentStock || 0) - Number(item?.reservedStock || 0))
+const canAdd = item => available(item) > 0 && Number(item?.retailPrice || 0) > 0 && item?.dispensingClass !== 'restricted' && item?.dispensingClass !== 'unclassified' && (item?.dispensingClass !== 'prescription_required' || Boolean(appointmentId.value))
+const dispensingLabel = value => ({ general_sale: 'General sale', prescription_required: 'Prescription required', restricted: 'Restricted', unclassified: 'Unclassified' })[value || 'unclassified']
 const itemFor = id => items.value.find(item => item.id === id)
 const formatDate = value => { const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value || ''); return Number.isNaN(date.getTime()) ? 'Just now' : date.toLocaleString('en-PH') }
 const api = async (path, body) => { const token = await auth.currentUser.getIdToken(); const response = await fetch(`${OTP_API_BASE}${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const payload = await response.json(); if (!response.ok || !payload.success) throw new Error(payload.error || 'Pharmacy request failed.'); return payload.data }
@@ -107,7 +110,7 @@ const load = async user => {
 const switchBranch = async () => { if (auth.currentUser) { cart.value = []; receipt.value = null; checkoutId.value = crypto.randomUUID(); await load(auth.currentUser) } }
 const addItem = item => { const existing = cart.value.find(line => line.itemId === item.id); if (existing) { if (existing.quantity < available(item)) existing.quantity++ } else cart.value.push({ itemId: item.id, name: item.name, unitPrice: Number(item.retailPrice), quantity: 1 }) }
 const changeQuantity = (id, delta) => { const line = cart.value.find(entry => entry.itemId === id); if (!line) return; line.quantity += delta; if (line.quantity <= 0) cart.value = cart.value.filter(entry => entry.itemId !== id) }
-const saveSettings = async item => { savingId.value = item.id; try { await api(`/pharmacy/items/${encodeURIComponent(item.id)}/settings`, { branchId: branchId.value, retailPrice: prices.value[item.id] }); toast.success('Pharmacy retail price saved.') } catch (cause) { toast.error(cause.message) } finally { savingId.value = '' } }
+const saveSettings = async item => { savingId.value = item.id; try { await api(`/pharmacy/items/${encodeURIComponent(item.id)}/settings`, { branchId: branchId.value, pharmacyEnabled: true, dispensingClass: item.dispensingClass || 'unclassified', retailPrice: prices.value[item.id] }); toast.success('Pharmacy retail price saved.') } catch (cause) { toast.error(cause.message) } finally { savingId.value = '' } }
 const checkout = async () => { if (!canSell.value || !cart.value.length || busy.value) return; busy.value = true; try { receipt.value = await api('/pharmacy/checkout', { checkoutId: checkoutId.value, branchId: branchId.value, items: cart.value.map(line => ({ itemId: line.itemId, quantity: line.quantity })), customerName: customerName.value, paymentMethod: paymentMethod.value, cashTendered: paymentMethod.value === 'Cash' ? cashTendered.value : undefined, appointmentId: appointmentId.value || undefined }); checkoutId.value = crypto.randomUUID(); cart.value = []; cashTendered.value = ''; customerName.value = ''; sales.value = [receipt.value, ...sales.value.filter(sale => sale.id !== receipt.value.id)].slice(0, 30); toast.success('Sale completed and inventory updated.') } catch (cause) { toast.error(cause.message) } finally { busy.value = false } }
 const printReceipt = () => window.print()
 onMounted(trackPageLoad(() => { stopAuth = pageListener(onAuthStateChanged, auth, load) }))
