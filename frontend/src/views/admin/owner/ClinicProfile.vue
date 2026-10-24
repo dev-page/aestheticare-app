@@ -1,109 +1,71 @@
 <template>
-  <div class="flex owner-theme bg-slate-900 min-h-screen">
+  <div class="clinic-profile-layout owner-theme">
     <OwnerSidebar />
-
-    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 6, sections: 2 }" class="flex-1 flex items-center justify-center p-8">
-      <!-- Centered Card -->
-      <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 w-full max-w-3xl">
-        <div v-if="branchScopeLabel" class="mb-4 inline-flex rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold text-gold-200">
-          Viewing: {{ branchScopeLabel }}
+    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 6, sections: 2 }" class="clinic-profile-main">
+      <div class="clinic-profile-heading">
+        <div>
+          <p class="clinic-profile-eyebrow">CLINIC SETUP</p>
+          <h1>Clinic Profile</h1>
+          <p class="clinic-profile-subtitle">Manage the information customers see on your clinic page.</p>
         </div>
-        <div class="flex flex-col items-center mb-6">
-          <div class="relative w-32 h-32 rounded-full overflow-hidden bg-slate-700 flex items-center justify-center">
-            <img v-if="clinic.profilePicture" :src="clinic.profilePicture" alt="Clinic Profile" class="w-full h-full object-cover" />
-            <span v-else class="text-white font-bold text-3xl">{{ clinicDisplayName ? clinicDisplayName.charAt(0) : 'C' }}</span>
-          </div>
-          <p class="mt-4 text-lg font-semibold text-white">{{ clinicDisplayName }}</p>
-        </div>
-
-        <!-- Clinic Details Form -->
-        <form @submit.prevent="saveClinicProfile" class="space-y-4">
-          <div>
-            <label class="block text-slate-400 text-sm mb-1">Clinic Name <span class="text-xs text-slate-500">(registered name)</span></label>
-            <input
-              :value="clinic.clinicName"
-              type="text"
-              readonly
-              aria-readonly="true"
-              class="w-full cursor-not-allowed rounded-lg border border-slate-600 bg-slate-800 p-3 text-slate-400"
-            />
-            <p class="mt-1 text-xs text-slate-500">The registered clinic name is protected from changes here.</p>
-          </div>
-
-          <div>
-            <label class="block text-slate-400 text-sm mb-1">Owner Email</label>
-            <input
-              v-model="clinic.email"
-              type="email"
-              placeholder="owner@example.com"
-              class="w-full rounded-lg p-3 bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-
-          <div>
-            <label class="block text-slate-400 text-sm mb-1">Clinic Email Address</label>
-            <input
-              v-model="clinic.businessEmail"
-              type="email"
-              placeholder="clinic@example.com"
-              class="w-full rounded-lg p-3 bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-
-          <div>
-            <label class="block text-slate-400 text-sm mb-1">Clinic Phone Number</label>
-            <div class="flex overflow-hidden rounded-lg border border-slate-600 bg-slate-700 focus-within:ring-2 focus-within:ring-purple-500">
-              <span class="inline-flex items-center border-r border-slate-600 px-3 text-sm font-semibold text-slate-300">+63</span>
-              <input :value="clinic.contactNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" class="min-w-0 flex-1 bg-transparent p-3 text-white outline-none" @input="handleContactNumberInput" @blur="validateContactNumber" />
-            </div>
-            <p v-if="contactNumberError" class="mt-1 text-xs text-rose-300">{{ contactNumberError }}</p>
-          </div>
-
-          <div>
-            <label class="block text-slate-400 text-sm mb-1">Address Search</label>
-            <LocationPicker
-              region="cavite"
-              title="Select Address in Cavite"
-              instruction-title="Cavite only"
-              instruction-text="Pinning is limited to land locations inside Cavite. Pins in the ocean, water, or outside Cavite are blocked."
-              search-placeholder="Search a city, barangay, or address in Cavite"
-              search-hint="Search first, then drag or click the pin to fine-tune the exact location."
-              allowed-area-label="Cavite, Philippines"
-              pinned-address-label="Pinned Address"
-              :show-actions="false"
-              :initial-address="clinic.clinicLocationAddress || buildLocationSearchQuery()"
-              :initial-lat="clinic.clinicLocationLat"
-              :initial-lng="clinic.clinicLocationLng"
-              @selection-change="handleLocationSelection"
-              @error="locationError = $event"
-            />
-          </div>
-          <button
-            type="submit"
-            class="w-full bg-gold-700 hover:bg-yellow-600 text-white font-semibold py-3 rounded-lg transition-colors"
-          >
-            Save Changes
-          </button>
-        </form>
-
-        <section id="help-guidance" class="mt-6 rounded-xl border border-slate-700 bg-slate-900/60 p-5">
-          <h2 class="text-lg font-semibold text-white">Help & Guidance</h2>
-          <p class="mt-2 text-sm leading-6 text-slate-400">Use the sidebar to manage clinic operations, staff access, attendance, finance, and procurement. Contact support when you need help with a platform workflow.</p>
-          <label class="mt-5 flex items-center gap-3 text-sm text-slate-300">
-            <input v-model="tutorialEnabled" type="checkbox" class="h-4 w-4 accent-yellow-500" @change="saveTutorialPreference" />
-            <span>Show the workspace tutorial when I sign in</span>
-          </label>
-        </section>
-
-        <section id="privacy-data" class="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-5">
-          <h2 class="text-lg font-semibold text-white">Privacy & Data</h2>
-          <p class="mt-2 text-sm leading-6 text-slate-400">Clinic and staff information is used to provide your authorized clinic services. Use Report Issue for privacy questions or requests involving clinic data.</p>
-          <button type="button" :disabled="exporting" class="mt-5 rounded-lg border border-yellow-500/60 px-4 py-3 text-sm font-semibold text-yellow-200 transition hover:bg-yellow-500/10 disabled:cursor-not-allowed disabled:opacity-60" @click="exportAccountData">
-            {{ exporting ? 'Preparing export...' : 'Export My Data' }}
-          </button>
-          <p class="mt-2 text-xs text-slate-500">The export excludes passwords, OTPs, tokens, and unrelated users' information.</p>
-        </section>
+        <span v-if="branchScopeLabel" class="clinic-branch-chip">{{ branchScopeLabel }}</span>
       </div>
+
+      <form class="clinic-profile-form" @submit.prevent="saveClinicProfile">
+        <section class="clinic-profile-card clinic-branding-card">
+          <div class="clinic-card-heading">
+            <div><h2>Clinic branding</h2><p>Choose the logo and banner customers will see on your public clinic page.</p></div>
+          </div>
+          <div class="clinic-banner-preview" :style="bannerPreview ? { backgroundImage: `url('${bannerPreview}')` } : undefined">
+            <div v-if="!bannerPreview" class="clinic-banner-placeholder"><span>Clinic banner preview</span></div>
+            <label class="clinic-upload-button clinic-banner-upload">{{ bannerFile ? 'Change banner' : 'Upload banner' }}<input ref="bannerInput" type="file" accept="image/jpeg,image/png,image/webp" @change="handleBannerUpload" /></label>
+          </div>
+          <div class="clinic-branding-footer">
+            <div class="clinic-logo-preview">
+              <img v-if="logoPreview" :src="logoPreview" alt="Clinic logo preview" />
+              <span v-else>{{ clinicDisplayName ? clinicDisplayName.charAt(0) : 'C' }}</span>
+            </div>
+            <div class="clinic-logo-copy"><strong>Clinic logo</strong><small>Square image, JPG, PNG, or WebP. Maximum 5 MB.</small></div>
+            <label class="clinic-upload-button">{{ logoFile ? 'Change logo' : 'Upload logo' }}<input ref="logoInput" type="file" accept="image/jpeg,image/png,image/webp" @change="handleLogoUpload" /></label>
+          </div>
+          <p class="clinic-upload-hint">Banner: JPG, PNG, or WebP, maximum 5 MB. Use a wide image for the best fit.</p>
+        </section>
+
+        <section class="clinic-profile-card">
+          <div class="clinic-card-heading"><div><h2>Clinic information</h2><p>Keep your public contact details and description up to date.</p></div></div>
+          <div class="clinic-form-grid">
+            <label class="clinic-field clinic-field-full"><span>Clinic name <small>Registered name</small></span><input :value="clinic.clinicName" type="text" readonly /><small class="clinic-field-note">The registered clinic name is protected from changes here.</small></label>
+            <label class="clinic-field"><span>Clinic email address</span><input v-model="clinic.businessEmail" type="email" placeholder="clinic@example.com" autocomplete="email" /></label>
+            <label class="clinic-field"><span>Clinic phone number</span><div class="clinic-phone-input"><b>+63</b><input :value="clinic.contactNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" @input="handleContactNumberInput" @blur="validateContactNumber" /></div><small v-if="contactNumberError" class="clinic-error">{{ contactNumberError }}</small></label>
+            <label class="clinic-field clinic-field-full"><span>About the clinic</span><textarea v-model="clinic.description" rows="4" maxlength="1200" placeholder="Introduce your clinic, its approach, and what customers can expect."></textarea><small class="clinic-field-note">{{ (clinic.description || '').length }}/1200 characters</small></label>
+          </div>
+        </section>
+
+        <section class="clinic-profile-card">
+          <div class="clinic-card-heading"><div><h2>Clinic location</h2><p>Search for the address and pin the clinic location customers should use.</p></div></div>
+          <LocationPicker
+            region="cavite"
+            title="Select Address in Cavite"
+            instruction-title="Cavite only"
+            instruction-text="Pinning is limited to land locations inside Cavite. Pins in the ocean, water, or outside Cavite are blocked."
+            search-placeholder="Search a city, barangay, or address in Cavite"
+            search-hint="Search first, then drag or click the pin to fine-tune the exact location."
+            allowed-area-label="Cavite, Philippines"
+            pinned-address-label="Pinned Address"
+            :initial-address="clinic.clinicLocationAddress || buildLocationSearchQuery()"
+            :initial-lat="clinic.clinicLocationLat"
+            :initial-lng="clinic.clinicLocationLng"
+            @selection-change="handleLocationSelection"
+            @error="locationError = $event"
+          />
+          <p v-if="locationError" class="clinic-error clinic-location-error">{{ locationError }}</p>
+        </section>
+
+        <div class="clinic-profile-actions">
+          <p>Changes are saved to the selected clinic branch.</p>
+          <button type="submit" :disabled="saving">{{ saving ? 'Saving clinic profile…' : 'Save Clinic Profile' }}</button>
+        </div>
+      </form>
     </main>
   </div>
 </template>
@@ -113,13 +75,13 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue';
-import { ref, onMounted, computed } from 'vue';
-import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, query, where } from 'firebase/firestore';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, query, where, serverTimestamp } from 'firebase/firestore';
 import { getApp } from 'firebase/app';
-import { auth } from '@/config/firebaseConfig';
+import { auth, storage } from '@/config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { toast } from 'vue3-toastify';
-import { flattenAddressComponents, validateCavitePinSelection } from '@/utils/locationValidation';
 import LocationPicker from '@/components/common/LocationPicker.vue';
 
 export default {
@@ -131,7 +93,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const db = getFirestore(getApp());
     const clinic = ref({
       clinicName: '',
-      email: '',
       businessEmail: '',
       contactNumber: '',
       clinicLocation: '',
@@ -142,26 +103,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       clinicLocationLng: '',
       description: '',
       profilePicture: null,
+      bannerPicture: null,
     });
-    const locationMapEl = ref(null);
-    let locationMap = null;
-    let locationMarker = null;
-    let geocoder = null;
-    let lastValidLocation = null;
     const locationSearchQuery = ref('');
     const branchScopeLabel = ref('');
     const activeClinicId = ref('');
-    const caviteBounds = {
-      north: 14.459,
-      south: 13.709,
-      east: 121.199,
-      west: 120.626,
-    };
-    const defaultCaviteCenter = { lat: 14.3294, lng: 120.9367 };
     const locationError = ref('');
     const contactNumberError = ref('');
-    const exporting = ref(false);
-    const tutorialEnabled = ref(true);
+    const saving = ref(false);
+    const logoInput = ref(null);
+    const bannerInput = ref(null);
+    const logoFile = ref(null);
+    const bannerFile = ref(null);
+    const logoPreview = ref('');
+    const bannerPreview = ref('');
 
     const isOwnerLikeRole = (role) => {
       const normalized = String(role || '').trim().toLowerCase();
@@ -203,6 +158,30 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         .map((part) => String(part || '').trim())
         .filter(Boolean)
         .join(', ') || clinicDisplayName.value || '';
+
+    const chooseImage = (event, kind) => {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size >= 5 * 1024 * 1024) {
+        toast.error('Choose a JPG, PNG, or WebP image smaller than 5 MB.');
+        event.target.value = '';
+        return;
+      }
+      const preview = URL.createObjectURL(file);
+      if (kind === 'logo') {
+        if (logoPreview.value.startsWith('blob:')) URL.revokeObjectURL(logoPreview.value);
+        logoFile.value = file;
+        logoPreview.value = preview;
+      } else {
+        if (bannerPreview.value.startsWith('blob:')) URL.revokeObjectURL(bannerPreview.value);
+        bannerFile.value = file;
+        bannerPreview.value = preview;
+      }
+      event.target.value = '';
+    };
+
+    const handleLogoUpload = (event) => chooseImage(event, 'logo');
+    const handleBannerUpload = (event) => chooseImage(event, 'banner');
 
     const loadOwnerInfo = trackPageLoad(async (user) => {
       if (!user) return;
@@ -457,11 +436,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               }
             }
           }
-          await loadOwnerInfo(user);
+          clinic.value.contactNumber = normalizePhilippineMobile(clinic.value.contactNumber);
+          logoPreview.value = String(clinic.value.profilePicture || '');
+          bannerPreview.value = String(clinic.value.bannerPicture || '');
           if (!locationSearchQuery.value) {
             locationSearchQuery.value = buildLocationSearchQuery();
           }
-          await initLocationMap();
         }
       });
     });
@@ -610,7 +590,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const saveClinicProfile = async () => {
       const user = auth.currentUser;
       if (!user) {
-        toast.error('User not authenticated');
+        toast.error('Sign in to edit the clinic profile.');
         return;
       }
       if (!validateContactNumber()) {
@@ -629,39 +609,425 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return;
       }
 
-      const clinicRef = doc(db, 'clinics', activeClinicId.value || user.uid);
-      const { clinicName, ...editableClinicFields } = clinic.value;
-      await updateDoc(clinicRef, {
-        ...editableClinicFields,
-      });
-      toast.success('Clinic profile updated successfully!');
+      saving.value = true;
+      try {
+        const clinicId = activeClinicId.value || user.uid;
+        let profilePicture = String(clinic.value.profilePicture || '');
+        let bannerPicture = String(clinic.value.bannerPicture || '');
+        const uploadImage = async (file, prefix) => {
+          if (!file) return '';
+          const extension = (file.name?.split('.').pop() || 'jpg').toLowerCase();
+          const imageRef = storageRef(storage, `clinicMedia/${clinicId}/${prefix}-${Date.now()}.${extension}`);
+          await uploadBytes(imageRef, file, { contentType: file.type });
+          return getDownloadURL(imageRef);
+        };
+
+        if (logoFile.value) profilePicture = await uploadImage(logoFile.value, 'profile');
+        if (bannerFile.value) bannerPicture = await uploadImage(bannerFile.value, 'banner');
+
+        const payload = {
+          businessEmail: String(clinic.value.businessEmail || '').trim(),
+          contactNumber: `+63${clinic.value.contactNumber}`,
+          description: String(clinic.value.description || '').trim(),
+          clinicLocation: String(clinic.value.clinicLocation || '').trim(),
+          clinicLocationAddress: String(clinic.value.clinicLocationAddress || '').trim(),
+          clinicBarangay: String(clinic.value.clinicBarangay || '').trim(),
+          clinicPostalCode: String(clinic.value.clinicPostalCode || '').trim(),
+          clinicProvince: String(clinic.value.clinicProvince || 'Cavite').trim(),
+          clinicLocationLat: String(clinic.value.clinicLocationLat || ''),
+          clinicLocationLng: String(clinic.value.clinicLocationLng || ''),
+          profilePicture,
+          bannerPicture,
+          updatedAt: serverTimestamp(),
+        };
+        await updateDoc(doc(db, 'clinics', clinicId), payload);
+        if (logoPreview.value.startsWith('blob:')) URL.revokeObjectURL(logoPreview.value);
+        if (bannerPreview.value.startsWith('blob:')) URL.revokeObjectURL(bannerPreview.value);
+        clinic.value = { ...clinic.value, ...payload, contactNumber: normalizePhilippineMobile(payload.contactNumber) };
+        logoFile.value = null;
+        bannerFile.value = null;
+        logoPreview.value = profilePicture;
+        bannerPreview.value = bannerPicture;
+        toast.success('Clinic profile saved.');
+      } catch (error) {
+        console.error('Unable to save clinic profile:', error);
+        toast.error('Unable to save the clinic profile. Please try again.');
+      } finally {
+        saving.value = false;
+      }
     };
 
     onMounted(loadClinicProfile);
+    onUnmounted(() => {
+      if (logoPreview.value.startsWith('blob:')) URL.revokeObjectURL(logoPreview.value);
+      if (bannerPreview.value.startsWith('blob:')) URL.revokeObjectURL(bannerPreview.value);
+    });
 
     return {
       pageLoading,
       clinic,
       contactNumberError,
       handleContactNumberInput,
+      handleLogoUpload,
+      handleBannerUpload,
+      logoInput,
+      bannerInput,
+      logoFile,
+      bannerFile,
+      logoPreview,
+      bannerPreview,
+      saving,
       saveClinicProfile,
-      locationMapEl,
-      hasLocationCoords,
       locationError,
       branchScopeLabel,
       clinicDisplayName,
       buildLocationSearchQuery,
-      locationSearchQuery,
-      searchLocation,
-      exporting,
-      exportAccountData,
-      tutorialEnabled,
       validateContactNumber,
-      saveTutorialPreference,
     };
   },
 };
 </script>
 
 <style scoped>
+.clinic-profile-layout {
+  display: flex;
+  min-height: 100vh;
+  color: #493021;
+  background: #fffaf4;
+}
+
+.clinic-profile-main {
+  flex: 1;
+  min-width: 0;
+  padding: clamp(1.25rem, 3vw, 2.75rem);
+}
+
+.clinic-profile-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1040px;
+  margin: 0 auto 1.5rem;
+}
+
+.clinic-profile-eyebrow {
+  margin: 0 0 .35rem;
+  color: #a66d43;
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .17em;
+}
+
+.clinic-profile-heading h1 {
+  margin: 0;
+  color: #4a2e1f;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  line-height: 1.15;
+}
+
+.clinic-profile-subtitle,
+.clinic-card-heading p {
+  margin: .45rem 0 0;
+  color: #7e6758;
+  font-size: .92rem;
+  line-height: 1.55;
+}
+
+.clinic-branch-chip {
+  flex: none;
+  border: 1px solid #ead0b3;
+  border-radius: 999px;
+  background: #fff5e8;
+  padding: .5rem .85rem;
+  color: #80512f;
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.clinic-profile-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+.clinic-profile-card {
+  min-width: 0;
+  border: 1px solid #ecd7be;
+  border-radius: 1.15rem;
+  background: #fffdf9;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  box-shadow: 0 12px 28px rgb(88 55 31 / 5%);
+}
+
+.clinic-card-heading {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1.1rem;
+}
+
+.clinic-card-heading h2 {
+  margin: 0;
+  color: #4a2e1f;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.clinic-banner-preview {
+  position: relative;
+  display: flex;
+  min-height: 190px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  overflow: hidden;
+  border: 1px solid #ead4bb;
+  border-radius: .9rem;
+  background-color: #f1e2d0;
+  background-image: linear-gradient(115deg, #ead4bb, #f8ede0 55%, #e4c6a7);
+  background-position: center;
+  background-size: cover;
+}
+
+.clinic-banner-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #8c6c54;
+  font-size: .9rem;
+  font-weight: 650;
+}
+
+.clinic-banner-upload {
+  position: relative;
+  z-index: 1;
+  margin: .8rem;
+}
+
+.clinic-branding-footer {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  padding-top: 1rem;
+}
+
+.clinic-logo-preview {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #f2e2d0;
+  box-shadow: 0 0 0 1px #e4c6a7;
+  color: #7b4b2d;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.clinic-logo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.clinic-logo-copy {
+  display: grid;
+  flex: 1;
+  gap: .2rem;
+  color: #533927;
+  font-size: .9rem;
+}
+
+.clinic-logo-copy small,
+.clinic-upload-hint,
+.clinic-field-note {
+  color: #897463;
+  font-size: .75rem;
+  line-height: 1.45;
+}
+
+.clinic-upload-hint {
+  margin: .7rem 0 0;
+}
+
+.clinic-upload-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d9ae7c;
+  border-radius: .65rem;
+  background: #fff9f0;
+  padding: .55rem .85rem;
+  color: #754a2b;
+  cursor: pointer;
+  font-size: .8rem;
+  font-weight: 700;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.clinic-upload-button:hover {
+  border-color: #b9824f;
+  background: #f9eddd;
+}
+
+.clinic-upload-button input {
+  display: none;
+}
+
+.clinic-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.clinic-field {
+  display: grid;
+  align-content: start;
+  gap: .45rem;
+  min-width: 0;
+  color: #664b39;
+  font-size: .82rem;
+  font-weight: 650;
+}
+
+.clinic-field > span small {
+  margin-left: .25rem;
+  color: #927d6b;
+  font-size: .72rem;
+  font-weight: 500;
+}
+
+.clinic-field-full {
+  grid-column: 1 / -1;
+}
+
+.clinic-field input,
+.clinic-field textarea,
+.clinic-phone-input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #e2c5a4;
+  border-radius: .65rem;
+  background: #fff;
+  color: #493021;
+  font: inherit;
+  font-size: .9rem;
+}
+
+.clinic-field input,
+.clinic-field textarea {
+  padding: .75rem .85rem;
+}
+
+.clinic-field textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.clinic-field input:focus,
+.clinic-field textarea:focus,
+.clinic-phone-input:focus-within {
+  border-color: #b9824f;
+  outline: 3px solid rgb(185 130 79 / 17%);
+}
+
+.clinic-field input[readonly] {
+  background: #f7f0e7;
+  color: #796856;
+}
+
+.clinic-phone-input {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.clinic-phone-input b {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  border-right: 1px solid #e2c5a4;
+  padding: 0 .8rem;
+  color: #73543d;
+  font-weight: 700;
+}
+
+.clinic-phone-input input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+}
+
+.clinic-field-note {
+  font-weight: 400;
+}
+
+.clinic-error {
+  color: #b42318;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.clinic-location-error {
+  display: block;
+  margin-top: .75rem;
+}
+
+.clinic-profile-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1040px;
+  width: 100%;
+  margin: 0 auto;
+  padding: .25rem 0 1.5rem;
+}
+
+.clinic-profile-actions p {
+  margin: 0;
+  color: #806b58;
+  font-size: .8rem;
+}
+
+.clinic-profile-actions button {
+  min-height: 46px;
+  border: 1px solid #74462b;
+  border-radius: .7rem;
+  background: #74462b;
+  padding: .7rem 1.2rem;
+  color: #fff;
+  cursor: pointer;
+  font-size: .9rem;
+  font-weight: 750;
+  transition: background .15s ease, transform .15s ease;
+}
+
+.clinic-profile-actions button:hover:not(:disabled) {
+  background: #5d3824;
+  transform: translateY(-1px);
+}
+
+.clinic-profile-actions button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
+@media (max-width: 680px) {
+  .clinic-profile-main { padding: 1rem; }
+  .clinic-profile-heading { align-items: flex-start; flex-direction: column; }
+  .clinic-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .clinic-field-full { grid-column: auto; }
+  .clinic-branding-footer { flex-wrap: wrap; }
+  .clinic-profile-actions { align-items: stretch; flex-direction: column; }
+  .clinic-profile-actions button { width: 100%; }
+}
 </style>
