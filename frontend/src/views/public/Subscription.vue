@@ -40,7 +40,7 @@
 
           <div class="plan-price-wrap">
             <p class="plan-price">
-              <template v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0"><s class="trial-original-price">{{ plan.priceLabel }}</s><strong class="trial-current-price">PHP 0</strong></template>
+              <template v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0"><span class="trial-price-group"><s class="trial-original-price">{{ plan.priceLabel }}</s><strong class="trial-current-price">PHP 0</strong></span></template>
               <template v-else>{{ plan.priceLabel }}</template>
             </p>
             <span class="plan-cycle">{{ plan.cycleLabel || plan.cycle || '-' }}</span>
@@ -372,7 +372,7 @@ onBeforeUnmount(() => {
 .plan-card-basic {
   background:
     radial-gradient(circle at top right, rgba(255, 247, 236, 0.18), transparent 24%),
-    linear-gradient(145deg, #eec79c 0%, #ddac75 48%, #c68b58 100%);
+    linear-gradient(145deg, #f8dfbf 0%, #f1d0a5 48%, #e8bd8d 100%);
   box-shadow: 0 22px 42px rgba(168, 107, 58, 0.17);
 }
 
@@ -384,15 +384,15 @@ onBeforeUnmount(() => {
 .plan-card-basic .plan-cycle,
 .plan-card-basic .plan-kicker,
 .plan-card-basic .plan-select-indicator {
-  color: #fff9ee;
+  color: #4d3426;
 }
 
 .plan-card-premium {
-  border-color: rgba(185, 112, 56, 0.78);
+  border-color: rgba(185, 112, 56, 0.56);
   background:
     radial-gradient(circle at top right, rgba(255, 221, 170, 0.16), transparent 22%),
-    linear-gradient(145deg, #f1a24e 0%, #ce7634 44%, #8f4321 100%);
-  box-shadow: 0 24px 48px rgba(127, 58, 26, 0.22);
+    linear-gradient(145deg, #f6c17f 0%, #efaa61 48%, #e5984e 100%);
+  box-shadow: 0 24px 48px rgba(127, 58, 26, 0.16);
 }
 
 .plan-card-premium .plan-name,
@@ -403,7 +403,7 @@ onBeforeUnmount(() => {
 .plan-card-premium .plan-cycle,
 .plan-card-premium .plan-kicker,
 .plan-card-premium .plan-select-indicator {
-  color: #fff7ea;
+  color: #452a1c;
 }
 
 .plan-orb {
@@ -459,7 +459,8 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1;
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 0.45rem;
   margin-top: 0.8rem;
 }
@@ -473,16 +474,26 @@ onBeforeUnmount(() => {
   color: #6f3f2a;
 }
 
-.trial-original-price { margin-right: .45rem; color: #fff7ed; font-size: .58em; font-weight: 700; letter-spacing: 0; text-decoration-thickness: 2px; text-underline-offset: .12em; opacity: 1; }
+.trial-price-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
+.trial-original-price { color: #684c37; font-size: .42em; font-weight: 700; letter-spacing: 0; text-decoration-thickness: 2px; text-underline-offset: .12em; opacity: 1; }
 .plan-card-free .trial-original-price,
-.plan-card-basic .trial-original-price { color: #51311f; }
-.trial-current-price { display: inline-block; border-radius: .35em; background: #ecfdf5; padding: .12em .3em; color: #14532d; font-size: .82em; font-weight: 900; line-height: 1.15; }
+.plan-card-basic .trial-original-price,
+.plan-card-premium .trial-original-price { color: #684c37; }
+.trial-current-price { display: inline-block; border: 1px solid rgba(40, 118, 92, .25); border-radius: .35em; background: #e4f2e9; padding: .12em .3em; color: #205d47; font-size: .68em; font-weight: 900; line-height: 1.15; }
 
 .plan-cycle {
   font-size: 0.84rem;
   font-weight: 600;
   color: #8f6a51;
 }
+
+.plan-card-basic .plan-desc, .plan-card-basic .plan-caption,
+.plan-card-premium .plan-desc, .plan-card-premium .plan-caption { color: #5c3d2c; }
+.plan-card-basic .plan-cycle, .plan-card-basic .plan-kicker,
+.plan-card-premium .plan-cycle, .plan-card-premium .plan-kicker { color: #68452f; }
+.plan-card-basic .plan-features, .plan-card-premium .plan-features { color: #503727; border-top-color: rgba(104, 76, 55, .2); }
+.plan-card-basic .plan-features li::before, .plan-card-premium .plan-features li::before { color: #8d5a3b; }
+.plan-card-basic .plan-select-indicator, .plan-card-premium .plan-select-indicator { color: #68452f; }
 
 .plan-desc {
   position: relative;

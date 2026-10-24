@@ -72,16 +72,6 @@
                 >
                   Edit Info
                 </button>
-                <button
-                  @click="togglePublish"
-                  :disabled="saving"
-                  :class="[
-                    'px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-70 disabled:cursor-not-allowed',
-                    selectedBranch.isPublished ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                  ]"
-                >
-                  {{ selectedBranch.isPublished ? 'Unpublish Page' : 'Publish Page' }}
-                </button>
               </div>
             </div>
           </div>
@@ -192,7 +182,7 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label class="block text-slate-300 text-sm mb-1">Profile Picture</label>
+                    <label class="block text-slate-300 text-sm mb-1">Clinic Logo</label>
                     <input
                       type="file"
                       accept="image/*"
@@ -201,7 +191,7 @@
                     />
                   </div>
                   <div>
-                    <label class="block text-slate-300 text-sm mb-1">Banner Picture</label>
+                    <label class="block text-slate-300 text-sm mb-1">Clinic Banner</label>
                     <input
                       type="file"
                       accept="image/*"
@@ -394,6 +384,7 @@ import { getFirestore, collection, getDocs, query, where, doc, getDoc, onSnapsho
 import { getApp } from 'firebase/app'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { onAuthStateChanged } from 'firebase/auth'
+import { useRoute } from 'vue-router'
 import { auth, storage } from '@/config/firebaseConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
@@ -408,6 +399,7 @@ export default {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp())
+    const route = useRoute()
     const { initSubscription } = useSubscription()
 
     const loading = ref(true)
@@ -925,8 +917,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
         }
         if (branches.value.length > 0) {
-          selectedBranchId.value = branches.value[0].id
+          const requestedBranchId = String(route.query.branchId || '')
+          selectedBranchId.value = branches.value.some((branch) => branch.id === requestedBranchId)
+            ? requestedBranchId
+            : branches.value[0].id
           hydrateEditForm()
+          if (route.query.edit === 'branding') startEdit()
           await loadBranchPostsAndReviews(selectedBranchId.value)
           listenToBranchPolicies(selectedBranchId.value)
           await nextTick()
@@ -1077,29 +1073,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
 
-    const togglePublish = async () => {
-      if (!selectedBranch.value?.id || saving.value) return
-      saving.value = true
-      try {
-        const nextState = !(selectedBranch.value.isPublished === true)
-        await updateDoc(doc(db, 'clinics', selectedBranch.value.id), {
-          isPublished: nextState,
-          updatedAt: serverTimestamp()
-        })
-
-        branches.value = branches.value.map((branch) =>
-          branch.id === selectedBranch.value.id ? { ...branch, isPublished: nextState } : branch
-        )
-
-        toast.success(nextState ? 'Clinic page is now public.' : 'Clinic page is now hidden from public view.')
-      } catch (error) {
-        console.error('Failed to toggle publish state:', error)
-        toast.error('Failed to update publish status.')
-      } finally {
-        saving.value = false
-      }
-    }
-
     let unsubscribeAuth = null
     onMounted(trackPageLoad(() => {
       unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
@@ -1174,7 +1147,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       startEdit,
       cancelEdit,
       saveEdit,
-      togglePublish,
       selectBranch,
       branchMapEl,
       branchCoordinates,
