@@ -35,7 +35,7 @@
             <p v-if="paymentMethod === 'Cash' && cashTendered >= total && total > 0" class="change-row">Change <strong>{{ currency(cashTendered - total) }}</strong></p>
             <p class="payment-note">For card or e-wallet, collect payment on your external terminal before completing this sale.</p>
             <button class="checkout-button" type="button" :disabled="!cart.length || busy || !canSell || (paymentMethod === 'Cash' && cashTendered < total)" @click="checkout">{{ busy ? 'Processing…' : 'Complete sale' }}</button>
-            <p v-if="!canSell" class="muted">You need inventory update and payment creation access to complete sales.</p>
+            <p v-if="!canSell" class="muted">You need Pharmacy dispensing access to complete sales.</p>
           </section>
         </div>
 
@@ -71,8 +71,8 @@ const route = useRoute(), { pageLoading, trackPageLoad, pageListener } = usePage
 const branches = ref([]), branchId = ref(''), items = ref([]), sales = ref([]), cart = ref([]), prices = ref({}), search = ref(''), customerName = ref(''), paymentMethod = ref('Cash'), cashTendered = ref(''), error = ref(''), loading = ref(true), busy = ref(false), savingId = ref(''), receipt = ref(null), linkedPrescription = ref(null), checkoutId = ref(crypto.randomUUID())
 const appointmentId = computed(() => String(route.query.appointmentId || ''))
 const linkedPrescriptionItems = computed(() => { const value = linkedPrescription.value?.prescriptions; return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : value && typeof value === 'object' ? [value] : [] })
-const canManage = computed(() => hasPermission('inventory:update'))
-const canSell = computed(() => canManage.value && hasPermission('payments:create'))
+const canManage = computed(() => hasPermission('pharmacy:manage'))
+const canSell = computed(() => hasPermission('pharmacy:dispense'))
 const pharmacyListedItems = computed(() => items.value.filter(item => item.pharmacyEnabled === true))
 const pharmacyItems = computed(() => pharmacyListedItems.value.filter(item => !search.value || String(item.name || '').toLowerCase().includes(search.value.toLowerCase())))
 const total = computed(() => Math.round(cart.value.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0) * 100) / 100)

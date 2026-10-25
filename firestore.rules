@@ -396,9 +396,17 @@ service cloud.firestore {
           || isStaffOfOwner(resource.data.ownerId));
       allow create: if isSignedIn()
         && canManageClinicRoles(request.resource.data.ownerId);
-      allow update, delete: if isSignedIn()
+      allow update: if isSignedIn()
         && canManageClinicRoles(resource.data.ownerId)
-        && (request.method == 'delete' || request.resource.data.ownerId == resource.data.ownerId);
+        && request.resource.data.ownerId == resource.data.ownerId
+        // Built-in identity is immutable so a role manager cannot remove its
+        // protection by editing the document through the client SDK.
+        && request.resource.data.get('builtinKey', '') == resource.data.get('builtinKey', '')
+        && request.resource.data.get('isBuiltIn', false) == resource.data.get('isBuiltIn', false);
+      allow delete: if isSignedIn()
+        && canManageClinicRoles(resource.data.ownerId)
+        && resource.data.get('isBuiltIn', false) != true
+        && resource.data.get('builtinKey', '') == '';
     }
 
     match /ownerModuleSettings/{ownerId} {
@@ -662,7 +670,7 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
           || (canAccessBranch(resource.data.branchId)
-            && (hasPermission('inventory:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
+          && (hasPermission('inventory:view') || hasPermission('pharmacy:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'))
         && !request.resource.data.keys().hasAny(['pharmacyEnabled', 'dispensingClass', 'retailPrice']);

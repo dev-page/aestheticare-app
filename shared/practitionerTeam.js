@@ -1,4 +1,5 @@
 export const practitionerTypes = ['Doctor', 'Registered Nurse', 'Aesthetician', 'Therapist', 'Other']
+export const employeeSpecialtyTypes = [...practitionerTypes.slice(0, 2), 'Pharmacist', ...practitionerTypes.slice(2)]
 export const isPractitionerEmployee = user => {
   if (!user || user.archived || (user.userType && String(user.userType).toLowerCase() !== 'staff')) return false
   if (user.status && String(user.status).toLowerCase() !== 'active') return false

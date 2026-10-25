@@ -15,6 +15,7 @@ import { useSubscription } from '@/composables/useSubscription'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { storage } from '@/config/firebaseConfig'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { employeeSpecialtyTypes } from '../../../../../shared/practitionerTeam.js'
 
 const PASSWORD_LENGTH = 12
 const PASSWORD_PARTS = {
@@ -838,8 +839,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           <div>
             <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Role & Employment</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <ContractAppearanceSelect id="new-staff-specialty" label="Professional specialty" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not a clinical practitioner' }, ...['Doctor', 'Registered Nurse', 'Aesthetician', 'Therapist', 'Other'].map(type => ({ value: type, label: type }))]" />
-              <p class="text-xs text-slate-400">Choose “Not a clinical practitioner” for non-clinical employees. Specialty does not grant system permissions; the clinic owner verifies credentials and approves services separately.</p>
+              <div class="professional-specialty-block sm:col-span-2">
+                <ContractAppearanceSelect id="new-staff-specialty" label="Professional specialty (optional)" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not specified / non-clinical' }, ...employeeSpecialtyTypes.map(type => ({ value: type, label: type }))]" />
+                <p class="mt-1 text-xs leading-relaxed text-slate-400">Optional employee credential or specialty for reference. This does not grant system access; Pharmacy access comes from the assigned role. Appointment practitioner types are configured separately.</p>
+              </div>
               <div v-if="showCredentialNumber" class="sm:col-span-2">
                 <label for="new-staff-license-number" class="mb-1 block text-slate-400">Credential / license number</label>
                 <input id="new-staff-license-number" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="OCR suggestion appears here; review or enter it" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1026,4 +1029,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .assignment-name { display: block; font-weight: 600; }
 .assignment-location { display: block; font-size: 12px; color: #786354; }
 .assignment-empty { padding: 12px; font-size: 13px; color: #786354; }
+.professional-specialty-block { display: grid; gap: 4px; }
+.professional-specialty-block :deep(.appearance-select) { margin: 0; }
 </style>

@@ -1,5 +1,5 @@
 import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
-import { demand, money, quantity, hasPermission } from './supplyModel.js'
+import { demand, money, quantity } from './supplyModel.js'
 
 const cleanId = value => { const id = String(value || ''); demand(/^[A-Za-z0-9_-]{1,150}$/.test(id), 'Invalid identifier.', 400); return id }
 const localDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
@@ -21,7 +21,7 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
     catch (error) { res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Pharmacy request failed.' }) }
   }
   app.get('/pharmacy/pos', requireAuth, wrap(async (req, res, ctx) => {
-    const { branchId } = await branchAccess(ctx, req.query.branchId, 'inventory:view')
+    const { branchId } = await branchAccess(ctx, req.query.branchId, 'pharmacy:view')
     const [itemsSnap, salesSnap] = await Promise.all([
       db.collection('inventoryItems').where('branchId', '==', branchId).get(),
       db.collection('pharmacySales').where('branchId', '==', branchId).get(),
@@ -31,14 +31,14 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
     res.json({ success: true, data: { items, sales } })
   }))
   app.get('/pharmacy/prescription', requireAuth, wrap(async (req, res, ctx) => {
-    const { branchId } = await branchAccess(ctx, req.query.branchId, 'inventory:view')
+    const { branchId } = await branchAccess(ctx, req.query.branchId, 'pharmacy:view')
     const appointmentId = cleanId(req.query.appointmentId), snapshot = await db.collection('appointments').doc(appointmentId).get(), appointment = snapshot.data() || {}
     demand(snapshot.exists && appointment.branchId === branchId && String(appointment.type || '').toLowerCase() === 'consultation' && String(appointment.status || '').toLowerCase() === 'completed' && (Array.isArray(appointment.prescriptions) ? appointment.prescriptions.length > 0 : Boolean(appointment.prescription)), 'The linked consultation prescription is unavailable.', 404)
     res.json({ success: true, data: { appointment: { id: appointmentId, branchId, customerName: appointment.customerName || appointment.clientName || '', service: appointment.service || appointment.serviceName || '', prescriptions: appointment.prescriptions || appointment.prescription, prescriptionStatus: appointment.prescriptionStatus || 'pending' } } })
   }))
   app.post('/pharmacy/items/:id/settings', requireAuth, wrap(async (req, res, ctx) => {
     const branchId = cleanId(req.body.branchId), itemId = cleanId(req.params.id)
-    await branchAccess(ctx, branchId, 'inventory:update')
+    await branchAccess(ctx, branchId, 'pharmacy:manage')
     const pharmacyEnabled = req.body.pharmacyEnabled === true
     const dispensingClass = String(req.body.dispensingClass || 'unclassified')
     demand(['general_sale', 'prescription_required', 'restricted', 'unclassified'].includes(dispensingClass), 'Choose a valid dispensing classification.', 400)
@@ -55,8 +55,7 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
     res.json({ success: true, data: { id: itemId, pharmacyEnabled, dispensingClass, retailPrice: retailPrice / 100 } })
   }))
   app.post('/pharmacy/checkout', requireAuth, wrap(async (req, res, ctx) => {
-    const { branchId } = await branchAccess(ctx, req.body.branchId, 'payments:create')
-    demand(hasPermission(ctx, 'inventory:update'), 'Inventory update permission is required to sell pharmacy items.', 403)
+    const { branchId } = await branchAccess(ctx, req.body.branchId, 'pharmacy:dispense')
     const lines = Array.isArray(req.body.items) ? req.body.items : []
     demand(lines.length > 0 && lines.length <= 40, 'Add 1–40 pharmacy items to the sale.', 400)
     const seen = new Set(), requested = lines.map(line => {

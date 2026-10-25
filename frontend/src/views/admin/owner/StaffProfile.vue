@@ -10,7 +10,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import { compensationApi } from '@/utils/compensationApi'
-import { practitionerTypes } from '../../../../../shared/practitionerTeam.js'
+import { employeeSpecialtyTypes } from '../../../../../shared/practitionerTeam.js'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
@@ -295,7 +295,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       else if (!normalizePhoneNumber(staff.phoneNumber)) errors.phoneNumber = 'Enter a valid Philippine mobile number.'
       if (!Array.isArray(staff.branchIds) || !staff.branchIds.length) errors.branchId = 'Select at least one branch.'
       if (!String(staff.clinicLocation || '').trim()) errors.clinicLocation = 'Clinic location is required.'
-      if (staff.practitionerType && !practitionerTypes.includes(staff.practitionerType)) errors.practitionerType = 'Choose one of the suggested professional specialties.'
+      if (staff.practitionerType && !employeeSpecialtyTypes.includes(staff.practitionerType)) errors.practitionerType = 'Choose one of the suggested professional specialties.'
 
       editErrors.value = errors
       return Object.keys(errors).length === 0
@@ -540,11 +540,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               </td>
               <td class="py-2 px-2 sm:py-3 sm:px-4">
                 <div class="flex flex-wrap gap-2">
-                <button @click="openEditModal(staff)" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg transition">
-                  Edit
+                <button type="button" @click="openEditModal(staff)" :aria-label="`Edit ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Edit employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500 text-white transition hover:bg-yellow-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="m16.475 5.408l2.117 2.117m-.756-3.982L12.109 9.27a2.1 2.1 0 0 0-.58 1.082L11 13l2.648-.53c.41-.082.786-.283 1.082-.579l5.727-5.727a1.853 1.853 0 1 0-2.621-2.621"/><path d="M19 15v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3"/></g></svg>
                 </button>
-                <button @click="deactivateStaff(staff)" class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg transition">
-                  Disable
+                <button type="button" @click="deactivateStaff(staff)" :aria-label="`Disable ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Disable employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-red-600 text-white transition hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" class="h-5 w-5" fill="none" aria-hidden="true"><path d="M0 0h32v32H0z" fill="none"/><path fill="currentColor" d="M2.293 2.293a1 1 0 0 1 1.414 0l26 26a1 1 0 1 1-1.414 1.414l-3.127-3.127A13.94 13.94 0 0 1 16 30C8.268 30 2 23.732 2 16c0-3.506 1.288-6.712 3.418-9.168L2.293 3.707a1 1 0 0 1 0-1.414m4.545 5.959A11.95 11.95 0 0 0 4 16c0 6.627 5.373 12 12 12c2.954 0 5.656-1.07 7.746-2.84l-2.554-2.554C19.912 23.805 18.062 24.5 16 24.5c-3.866 0-7-2.428-7-6.071A2.43 2.43 0 0 1 11.429 16h3.157zM16 2c7.732 0 14 6.268 14 14c0 2.962-.921 5.708-2.491 7.97l-1.444-1.442A11.94 11.94 0 0 0 28 16c0-6.627-5.373-12-12-12c-2.409 0-4.65.712-6.53 1.934L8.028 4.49A13.94 13.94 0 0 1 16 2m4.571 14A2.43 2.43 0 0 1 23 18.429q-.002.494-.077.957L19.538 16zM16 7a3.75 3.75 0 0 1 1.653 7.115l-5.02-5.02A3.75 3.75 0 0 1 16 7"/></svg>
                 </button>
                 </div>
               </td>
@@ -578,8 +578,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <div><dt>Phone</dt><dd>{{ staff.phoneNumber || '-' }}</dd></div>
             </dl>
             <div class="flex gap-2 border-t border-slate-700/80 pt-3">
-              <button @click="openEditModal(staff)" class="flex-1 rounded-lg bg-yellow-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-yellow-600">Edit</button>
-              <button @click="deactivateStaff(staff)" class="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-red-700">Disable</button>
+              <button type="button" @click="openEditModal(staff)" :aria-label="`Edit ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Edit employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500 text-white transition hover:bg-yellow-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-600">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="m16.475 5.408l2.117 2.117m-.756-3.982L12.109 9.27a2.1 2.1 0 0 0-.58 1.082L11 13l2.648-.53c.41-.082.786-.283 1.082-.579l5.727-5.727a1.853 1.853 0 1 0-2.621-2.621"/><path d="M19 15v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3"/></g></svg>
+              </button>
+              <button type="button" @click="deactivateStaff(staff)" :aria-label="`Disable ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Disable employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-red-600 text-white transition hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" class="h-5 w-5" fill="none" aria-hidden="true"><path d="M0 0h32v32H0z" fill="none"/><path fill="currentColor" d="M2.293 2.293a1 1 0 0 1 1.414 0l26 26a1 1 0 1 1-1.414 1.414l-3.127-3.127A13.94 13.94 0 0 1 16 30C8.268 30 2 23.732 2 16c0-3.506 1.288-6.712 3.418-9.168L2.293 3.707a1 1 0 0 1 0-1.414m4.545 5.959A11.95 11.95 0 0 0 4 16c0 6.627 5.373 12 12 12c2.954 0 5.656-1.07 7.746-2.84l-2.554-2.554C19.912 23.805 18.062 24.5 16 24.5c-3.866 0-7-2.428-7-6.071A2.43 2.43 0 0 1 11.429 16h3.157zM16 2c7.732 0 14 6.268 14 14c0 2.962-.921 5.708-2.491 7.97l-1.444-1.442A11.94 11.94 0 0 0 28 16c0-6.627-5.373-12-12-12c-2.409 0-4.65.712-6.53 1.934L8.028 4.49A13.94 13.94 0 0 1 16 2m4.571 14A2.43 2.43 0 0 1 23 18.429q-.002.494-.077.957L19.538 16zM16 7a3.75 3.75 0 0 1 1.653 7.115l-5.02-5.02A3.75 3.75 0 0 1 16 7"/></svg>
+              </button>
             </div>
           </article>
           <div v-if="filteredStaffList.length === 0" class="py-8 text-center text-slate-400">No Results Found</div>
@@ -651,8 +655,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             <fieldset class="employee-professional-fields" :disabled="loadingSpecialty || savingEmployee || !!specialtyError">
               <legend>Professional information</legend>
               <p v-if="loadingSpecialty" role="status" class="employee-edit-caption">Loading professional details...</p>
-              <ContractAppearanceSelect id="employee-edit-specialty" label="Professional specialty" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not a clinical practitioner' }, ...practitionerTypes.map(type => ({ value: type, label: type }))]" @update:model-value="clearEditError('practitionerType')" />
-              <p class="employee-edit-caption">Choose “Not a clinical practitioner” for non-clinical employees. Specialty does not grant system permissions; credential reviews and service approvals are managed separately.</p>
+              <ContractAppearanceSelect id="employee-edit-specialty" label="Professional specialty (optional)" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not specified / non-clinical' }, ...employeeSpecialtyTypes.map(type => ({ value: type, label: type }))]" @update:model-value="clearEditError('practitionerType')" />
+              <p class="employee-edit-caption">This employee reference does not grant system access. Pharmacy access comes from the assigned role; appointment practitioner types and service approvals are managed separately.</p>
               <p v-if="editErrors.practitionerType" class="employee-edit-error" role="alert">{{ editErrors.practitionerType }}</p>
               <template v-if="showLicenseField">
                 <label for="employee-edit-license">Credential / license number</label><input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="OCR suggestion appears here; review or enter it" />

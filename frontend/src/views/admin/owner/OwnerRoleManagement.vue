@@ -688,6 +688,10 @@ const permissionSuggestionRules = [
     permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
+    match: ['pharmacist', 'pharmacy'],
+    permissions: ['pharmacy:view', 'pharmacy:dispense', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
+  },
+  {
     match: ['admin', 'owner', 'administrator'],
     permissions: ['branches:view', 'branches:create', 'clinic_profile:view', 'clinic_profile:update', 'staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:update', 'clients:disable', 'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'reports:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:view', 'payroll:update', 'roles:manage', 'subscription:view', 'backups:view', 'backups:create', 'profile:view', 'password:update', 'activities:view', 'notifications:view'],
   },
@@ -735,6 +739,13 @@ const builtInRoleTemplates = [
     description: 'Maintains supplies, suppliers, purchase requests, procurement records, and orders.',
     color: '#99704d',
     suggestion: 'supply',
+  },
+  {
+    key: 'pharmacist',
+    name: 'Pharmacist',
+    description: 'Views pharmacy stock and prescription information, and processes permitted pharmacy sales.',
+    color: '#5b8f72',
+    suggestion: 'pharmacist',
   },
   {
     key: 'clinic-admin',
