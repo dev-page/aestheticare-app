@@ -132,7 +132,7 @@
               </div>
             </aside>
 
-            <div class="min-h-0 overflow-y-auto bg-[#24160f]">
+            <div class="min-h-0 min-w-0 overflow-y-auto bg-[#24160f]">
               <div v-if="loading" class="p-5 sm:p-6">
                 <div class="space-y-5 rounded-[1.5rem] border border-[#5a3927] bg-[#2a180f] p-5">
                   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -448,7 +448,7 @@
                       <h3 class="mt-1 text-xl font-semibold text-[#f3e7e0]">{{ selectedRoleDraft.name || selectedRole.name }}</h3>
                       <p class="mt-2 text-sm text-[#e2c7b6]">Turn access on or off, then save the permission set for this role.</p>
                     </div>
-                    <span class="rounded-full border border-[#5a3927] bg-[#24160f] px-3 py-1 text-xs uppercase tracking-[0.18em] text-[#d2b7a6]">
+                    <span class="permission-count rounded-full border border-[#5a3927] bg-[#24160f] px-3 py-1 text-xs uppercase tracking-[0.18em] text-[#d2b7a6]">
                       {{ selectedPermissionsCount }}/{{ allPermissionKeys.length }} enabled
                     </span>
                   </div>
@@ -465,7 +465,7 @@
                       <span
                         v-for="group in accessPreview"
                         :key="`preview-${group.key}`"
-                        class="rounded-full border border-[#8d5a3b] bg-[#24160f] px-3 py-1 text-xs text-[#f3e7e0]"
+                        class="permission-chip rounded-full border border-[#8d5a3b] bg-[#24160f] px-3 py-1 text-xs text-[#f3e7e0]"
                       >
                         {{ group.label }} ({{ group.enabledCount }})
                       </span>
@@ -542,7 +542,7 @@
                             <div
                               v-for="permission in section.permissions"
                               :key="permission.key"
-                              class="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+                          class="permission-row flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                             >
                               <div class="flex min-w-0 items-start gap-3">
                                 <span class="mt-0.5 inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-[#5a3927] bg-[#3a2417] text-[#d2b7a6]">
@@ -557,7 +557,7 @@
                               <div class="flex flex-col items-end gap-2">
                                 <button
                                   type="button"
-                                  class="discord-switch"
+                                class="discord-switch"
                                   :class="{
                                     'discord-switch-on': isPermissionEnabled(permission.key),
                                     'opacity-50 cursor-not-allowed': isPermissionLocked(permission.key) || isDefaultPermission(permission.key)
@@ -1771,14 +1771,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   height: 1.85rem;
   border-radius: 999px;
   border: 1px solid var(--ac-border);
-  background: var(--ac-surface-muted);
+  background: #f1e2cf;
   transition: background 0.2s ease, border-color 0.2s ease;
   flex-shrink: 0;
 }
 
 .discord-switch-on {
-  background: var(--ac-primary);
-  border-color: var(--ac-primary);
+  background: #8d5a3b;
+  border-color: #8d5a3b;
 }
 
 .discord-switch-thumb {
@@ -1788,11 +1788,52 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   width: 1.35rem;
   height: 1.35rem;
   border-radius: 999px;
-  background: var(--ac-surface);
+  background: #fffdf9;
   transition: transform 0.2s ease;
 }
 
 .discord-switch-on .discord-switch-thumb {
   transform: translateX(1.45rem);
+}
+
+/* The global owner theme lightens panel surfaces. Keep these controls in the
+   same palette so their labels and states remain legible after that override. */
+.permission-count {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+  white-space: nowrap;
+}
+
+.permission-chip {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+.permission-row {
+  min-width: 0;
+}
+
+.discord-switch:focus-visible {
+  outline: 3px solid rgba(141, 90, 59, .32);
+  outline-offset: 2px;
+}
+
+.discord-switch:disabled {
+  cursor: not-allowed;
+}
+
+.discord-switch:disabled .discord-switch-thumb {
+  background: #fffdf9;
+}
+
+@media (max-width: 640px) {
+  .permission-row > :last-child {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
 }
 </style>
