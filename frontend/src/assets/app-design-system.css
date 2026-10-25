@@ -629,3 +629,49 @@ body .supplier-theme :is(.chat-compose button, .exact-item-card footer button[ty
     padding: .75rem;
   }
 }
+/* Keep refresh actions consistent with the compact outlined toolbar control. */
+button:has(> svg + .sr-only),
+button[aria-label*="Refresh"],
+button[title*="Refresh"] {
+  display: inline-grid !important;
+  width: 2.5rem !important;
+  min-width: 2.5rem !important;
+  height: 2.5rem !important;
+  min-height: 2.5rem !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border: 1px solid var(--ac-border-strong) !important;
+  border-radius: .75rem !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+button:has(> svg + .sr-only):hover:not(:disabled),
+button[aria-label*="Refresh"]:hover:not(:disabled),
+button[title*="Refresh"]:hover:not(:disabled) {
+  border-color: var(--ac-primary) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-primary) !important;
+}
+
+button[aria-label*="Refresh"]:not(:has(> svg + .sr-only))::before,
+button[title*="Refresh"]:not(:has(> svg + .sr-only))::before {
+  content: '';
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  background-color: currentColor;
+  -webkit-mask: url('/icons/icons8-refresh.png') center / contain no-repeat;
+  mask: url('/icons/icons8-refresh.png') center / contain no-repeat;
+}
+
+button[aria-label*="Refresh"]:not(:has(> svg + .sr-only)) > svg,
+button[title*="Refresh"]:not(:has(> svg + .sr-only)) > svg {
+  display: none;
+}
+
+button:has(> svg.animate-spin + .sr-only)::before {
+  animation: icons8-refresh-spin .8s linear infinite;
+}
+
