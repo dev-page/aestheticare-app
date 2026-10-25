@@ -109,7 +109,7 @@
                   @click="selectRole(role.id)"
                 >
                   <div class="flex min-w-0 items-center gap-3">
-                    <span class="role-swatch" :style="{ background: role.color || '#38bdf8' }"></span>
+                    <span class="role-swatch"></span>
                     <div class="min-w-0 text-left">
                       <p class="truncate text-sm font-semibold text-[#f3e7e0]">{{ role.name }}</p>
                       <p class="truncate text-xs text-[#d2b7a6]">{{ role.memberCount }} assigned staff</p>
@@ -209,7 +209,7 @@
                     >
                       <div class="flex items-start justify-between gap-4">
                         <div class="flex min-w-0 items-center gap-3">
-                          <span class="role-swatch h-4 w-4" :style="{ background: role.color || '#38bdf8' }"></span>
+                          <span class="role-swatch h-4 w-4"></span>
                           <div class="min-w-0">
                             <h4 class="truncate text-base font-semibold text-[#f3e7e0]">{{ role.name }}</h4>
                             <p class="mt-1 text-xs uppercase tracking-[0.16em] text-[#d2b7a6]">
@@ -225,9 +225,6 @@
                       <div class="mt-4 flex flex-wrap gap-2">
                         <span class="rounded-full border border-[#ead8c4] bg-[#f4eadc] px-3 py-1 text-xs font-medium text-[#5c4533]">
                           {{ role.permissions.length }} permissions enabled
-                        </span>
-                        <span class="rounded-full px-3 py-1 text-xs font-medium" :style="{ background: `${role.color || '#38bdf8'}22`, color: role.color || '#38bdf8' }">
-                          {{ role.color || '#38bdf8' }}
                         </span>
                       </div>
                       <div class="mt-5 flex flex-wrap gap-2">
@@ -274,29 +271,6 @@
                       ></textarea>
                     </label>
 
-                    <div class="field-block">
-                      <span class="field-label">Role Color</span>
-                      <div class="grid grid-cols-5 gap-2 sm:grid-cols-10">
-                        <button
-                          v-for="color in colorPresets"
-                          :key="`new-${color}`"
-                          type="button"
-                          class="color-chip"
-                          :class="{ 'color-chip-active': newRole.color === color }"
-                          :style="{ background: color }"
-                          @click="newRole.color = color"
-                        ></button>
-                      </div>
-                    </div>
-
-                    <div class="rounded-2xl border border-[#5a3927] bg-[#24160f] p-4">
-                      <p class="text-sm font-semibold text-[#f3e7e0]">Preview</p>
-                      <div class="mt-3 flex items-center gap-3">
-                        <span class="role-swatch h-4 w-4" :style="{ background: newRole.color }"></span>
-                        <span class="text-base font-semibold" :style="{ color: newRole.color }">{{ newRole.name || 'New Role' }}</span>
-                      </div>
-                    </div>
-
                     <div class="flex flex-wrap justify-end gap-3">
                       <button type="button" class="ghost-action" @click="resetNewRole">Reset</button>
                       <button
@@ -316,7 +290,7 @@
                 <div v-if="selectedRole" class="mx-auto max-w-4xl rounded-[1.5rem] border border-[#5a3927] bg-[#2a180f] p-5 sm:p-6">
                   <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div class="flex items-center gap-4">
-                      <div class="role-badge" :style="{ background: selectedRoleDraft.color }">
+                      <div class="role-badge">
                         <Icon icon="mdi:shield-account-outline" class="h-6 w-6 text-white" />
                       </div>
                       <div>
@@ -374,32 +348,6 @@
                     </div>
 
                     <div class="space-y-5">
-                      <div class="field-block">
-                        <span class="field-label">Role Color</span>
-                        <div class="grid grid-cols-5 gap-2">
-                          <button
-                            v-for="color in colorPresets"
-                            :key="`selected-${color}`"
-                            type="button"
-                            class="color-chip"
-                            :class="{ 'color-chip-active': selectedRoleDraft.color === color }"
-                            :style="{ background: color }"
-                            @click="selectedRoleDraft.color = color"
-                          ></button>
-                        </div>
-                      </div>
-
-                      <div class="rounded-2xl border border-[#5a3927] bg-[#24160f] p-4">
-                        <p class="field-label">Live Preview</p>
-                        <div class="mt-3 rounded-2xl border border-[#5a3927] bg-[#2a180f] p-4">
-                          <div class="flex items-center gap-3">
-                            <span class="role-swatch h-4 w-4" :style="{ background: selectedRoleDraft.color }"></span>
-                            <span class="font-semibold" :style="{ color: selectedRoleDraft.color }">{{ selectedRoleDraft.name || 'Untitled Role' }}</span>
-                          </div>
-                          <p class="mt-3 text-xs leading-5 text-[#d2b7a6]">{{ selectedRoleDraft.description || 'No description added yet.' }}</p>
-                        </div>
-                      </div>
-
                       <div class="rounded-2xl border border-[#5a3927] bg-[#24160f] p-4">
                         <p class="field-label">Assigned Staff</p>
                         <p class="mt-2 text-2xl font-semibold text-[#f3e7e0]">{{ selectedRole.memberCount }}</p>
@@ -545,7 +493,7 @@
                           class="permission-row flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                             >
                               <div class="flex min-w-0 items-start gap-3">
-                                <span class="mt-0.5 inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-[#5a3927] bg-[#3a2417] text-[#d2b7a6]">
+                                <span class="permission-icon mt-0.5 inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-[#5a3927] bg-[#3a2417] text-[#d2b7a6]">
                                   <Icon :icon="permission.icon" class="h-5 w-5" />
                                 </span>
                                 <div class="min-w-0">
@@ -652,7 +600,7 @@ import {
   permissionLabelMap,
 } from '@/config/clinicPermissionRegistry'
 
-const colorPresets = ['#5865F2', '#57F287', '#FEE75C', '#EB459E', '#ED4245', '#3BA55D', '#1ABC9C', '#FAA61A', '#2D7DFA', '#A56EFF']
+const ROLE_COLOR = '#d2a679'
 // These pages are always available to clinic staff as self-service. Request
 // permissions do not grant access to review other employees' submissions.
 const defaultPermissionKeys = new Set(['activities:view', 'notifications:view', 'leave:create', 'overtime:create'])
@@ -702,56 +650,56 @@ const builtInRoleTemplates = [
     key: 'clinic-manager',
     name: 'Manager',
     description: 'Oversees clinic operations, staff coordination, services, inventory, and orders.',
-    color: '#b9784f',
+    color: ROLE_COLOR,
     suggestion: 'manager',
   },
   {
     key: 'receptionist',
     name: 'Receptionist',
     description: 'Handles walk-ins, customer booking requests, appointment records, payments, inbox messages, and notifications.',
-    color: '#c58b5c',
+    color: ROLE_COLOR,
     suggestion: 'reception',
   },
   {
     key: 'practitioner',
     name: 'Practitioner',
     description: 'Works with clients, appointments, consultations, and personal leave requests.',
-    color: '#9f765b',
+    color: ROLE_COLOR,
     suggestion: 'practitioner',
   },
   {
     key: 'hr',
     name: 'HR',
     description: 'Manages employee records, attendance, leave, overtime, and payroll preparation.',
-    color: '#8f6a52',
+    color: ROLE_COLOR,
     suggestion: 'hr',
   },
   {
     key: 'finance',
     name: 'Finance',
     description: 'Reviews sales, purchases, payables, refunds, financial reports, and payroll approval.',
-    color: '#a8895d',
+    color: ROLE_COLOR,
     suggestion: 'finance',
   },
   {
     key: 'inventory-procurement',
     name: 'Inventory & Procurement',
     description: 'Maintains supplies, suppliers, purchase requests, procurement records, and orders.',
-    color: '#99704d',
+    color: ROLE_COLOR,
     suggestion: 'supply',
   },
   {
     key: 'pharmacist',
     name: 'Pharmacist',
     description: 'Views pharmacy stock and prescription information, and processes permitted pharmacy sales.',
-    color: '#5b8f72',
+    color: ROLE_COLOR,
     suggestion: 'pharmacist',
   },
   {
     key: 'clinic-admin',
     name: 'Clinic Admin',
     description: 'Operational access is determined by the permissions assigned to this role.',
-    color: '#d09a61',
+    color: ROLE_COLOR,
     suggestion: 'admin',
   },
 ]
@@ -777,7 +725,7 @@ const normalizeRole = (docId, data, memberCount = 0) => ({
   id: docId,
   name: String(data.name || '').trim(),
   description: String(data.description || '').trim(),
-  color: String(data.color || colorPresets[0]).trim() || colorPresets[0],
+  color: ROLE_COLOR,
   permissions: Array.isArray(data.permissions) ? data.permissions.filter(Boolean) : [],
   ownerId: String(data.ownerId || '').trim(),
   builtinKey: String(data.builtinKey || '').trim(),
@@ -788,7 +736,7 @@ const normalizeRole = (docId, data, memberCount = 0) => ({
 const createBlankRole = () => ({
   name: '',
   description: '',
-  color: colorPresets[0],
+  color: ROLE_COLOR,
 })
 
 export default {
@@ -806,7 +754,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const selectedRoleDraft = ref({
       name: '',
       description: '',
-      color: colorPresets[0],
+      color: ROLE_COLOR,
       permissions: [],
     })
     const newRole = ref(createBlankRole())
@@ -938,7 +886,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         selectedRoleDraft.value = {
           name: '',
           description: '',
-          color: colorPresets[0],
+          color: ROLE_COLOR,
           permissions: [],
         }
         return
@@ -947,7 +895,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       selectedRoleDraft.value = {
         name: selectedRole.value.name,
         description: selectedRole.value.description,
-        color: selectedRole.value.color,
+        color: ROLE_COLOR,
         permissions: allPermissionKeys.filter(
           (key) => normalizePermissionSet(selectedRole.value.permissions).has(key) || defaultPermissionKeys.has(key)
         ),
@@ -1064,7 +1012,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         await updateDoc(doc(db, 'clinicRoles', legacyRoleDoc.id), {
           name: template.name,
           description: template.description,
-          color: template.color,
+          color: ROLE_COLOR,
           builtinKey: template.key,
           isBuiltIn: true,
           permissions: getTemplatePermissions(template.suggestion),
@@ -1146,7 +1094,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 ownerId,
                 name: template.name,
                 description: template.description,
-                color: template.color,
+                color: ROLE_COLOR,
                 builtinKey: template.key,
                 isBuiltIn: true,
                 permissions: getTemplatePermissions(template.suggestion),
@@ -1237,7 +1185,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           ownerId,
           name: newRole.value.name.trim(),
           description: newRole.value.description.trim(),
-          color: newRole.value.color,
+          color: ROLE_COLOR,
           permissions: [],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -1274,7 +1222,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         await updateDoc(doc(db, 'clinicRoles', selectedRole.value.id), {
           name: trimmedRoleName,
           description: selectedRoleDraft.value.description.trim(),
-          color: selectedRoleDraft.value.color,
+          color: ROLE_COLOR,
           updatedAt: serverTimestamp(),
         })
 
@@ -1448,7 +1396,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         selectedRoleDraft.value = {
           name: template.name,
           description: template.description,
-          color: template.color,
+          color: ROLE_COLOR,
           permissions: allPermissionKeys.filter((permissionKey) =>
             normalizePermissionSet(getTemplatePermissions(template.suggestion)).has(permissionKey)
           ),
@@ -1456,7 +1404,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         await updateDoc(doc(db, 'clinicRoles', role.id), {
           name: template.name,
           description: template.description,
-          color: template.color,
+          color: ROLE_COLOR,
           updatedAt: serverTimestamp(),
         })
         await saveRolePermissions()
@@ -1559,7 +1507,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       activeTab,
       allPermissionKeys,
       branchIds,
-      colorPresets,
       createRole,
       countPermissionsInGroup,
       enabledCountForGroup,
@@ -1668,6 +1615,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   height: 0.9rem;
   border-radius: 999px;
   flex-shrink: 0;
+  background: #d2a679;
   box-shadow: 0 0 0 3px var(--ac-surface-soft);
 }
 
@@ -1678,6 +1626,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   width: 4rem;
   height: 4rem;
   border-radius: 1.25rem;
+  background: #d2a679;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 20px 40px rgba(87, 56, 35, 0.18);
 }
 
@@ -1713,21 +1662,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .discord-textarea {
   min-height: 7rem;
   resize: vertical;
-}
-
-.color-chip {
-  height: 2.5rem;
-  border-radius: 0.95rem;
-  border: 2px solid transparent;
-  transition: transform 0.2s ease, border-color 0.2s ease;
-}
-
-.color-chip:hover {
-  transform: translateY(-1px);
-}
-
-.color-chip-active {
-  border-color: var(--ac-primary);
 }
 
 .ghost-action,
@@ -1774,6 +1708,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   background: #f1e2cf;
   transition: background 0.2s ease, border-color 0.2s ease;
   flex-shrink: 0;
+  cursor: pointer;
+  box-shadow: none !important;
 }
 
 .discord-switch-on {
@@ -1799,16 +1735,32 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 /* The global owner theme lightens panel surfaces. Keep these controls in the
    same palette so their labels and states remain legible after that override. */
 .permission-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: .35rem .75rem;
   border-color: var(--ac-border) !important;
   background: var(--ac-surface-soft) !important;
   color: var(--ac-text-secondary) !important;
   white-space: nowrap;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  line-height: 1.2;
 }
 
 .permission-chip {
   border-color: var(--ac-border) !important;
   background: var(--ac-surface-muted) !important;
   color: var(--ac-text-secondary) !important;
+}
+
+.permission-icon {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-primary) !important;
+  box-shadow: none !important;
 }
 
 .permission-row {
@@ -1822,6 +1774,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .discord-switch:disabled {
   cursor: not-allowed;
+  opacity: .58;
 }
 
 .discord-switch:disabled .discord-switch-thumb {
