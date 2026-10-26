@@ -25,7 +25,7 @@
           </div>
 
           <div class="flex gap-3">
-            <button class="px-3 py-2 rounded bg-slate-700 text-slate-200" @click="reload">Reload</button>
+            <button type="button" aria-label="Refresh activity logs" title="Refresh activity logs" class="inline-flex items-center gap-2 rounded bg-slate-700 px-3 py-2 text-slate-200" @click="reload"><svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg><span>Reload</span></button>
             <button class="px-3 py-2 rounded bg-emerald-600 text-white" @click="exportCsv">Export CSV</button>
           </div>
         </div>

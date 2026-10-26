@@ -25,7 +25,7 @@
           <template v-if="changeType === 'reschedule'"><label class="block text-sm">Preferred date<input v-model="changeDate" type="date" required class="block w-full rounded-xl border border-[#d9be9b] p-2" /></label><label class="block text-sm">Preferred time<input v-model="changeTime" type="time" required class="block w-full rounded-xl border border-[#d9be9b] p-2" /></label></template>
           <textarea v-model.trim="changeReason" required minlength="5" maxlength="1000" class="w-full rounded-xl border border-[#d9be9b] p-2" placeholder="Reason for your request" /><p class="text-sm">The clinic reviews changes under its policies. Approved refunds return to the organizer’s payment method.</p><button :disabled="busy" class="rounded-xl bg-[#8d5a3b] px-4 py-2 text-white">Submit request</button>
         </form>
-        <button type="button" class="mt-4 text-sm underline" :disabled="loading || busy" @click="load">Refresh appointment</button>
+        <button type="button" class="mt-4 inline-flex items-center gap-2 text-sm underline" aria-label="Refresh appointment" :disabled="loading || busy" @click="load"><svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg><span>Refresh appointment</span></button>
       </template>
     </section>
   </main>

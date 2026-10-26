@@ -178,7 +178,7 @@ onBeforeUnmount(() => clearInterval(timer))
             <img v-if="qr && remaining" :src="qr" alt="Branch attendance QR code" /><p v-else>No active QR. Refresh to issue a code.</p>
             <p>Employees open My Attendance and tap Scan QR on their phone.</p>
             <p>Expires in {{ remaining }} seconds · refreshes automatically</p>
-            <div class="heading"><button type="button" :disabled="qrBusy" aria-label="Refresh attendance QR" title="Refresh attendance QR" @click="attempt(()=>refreshQr(true))"><svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': qrBusy }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh QR</span></button><button @click="fullscreen">Full screen</button></div>
+            <div class="heading"><button type="button" :disabled="qrBusy" aria-label="Refresh attendance QR" title="Refresh attendance QR" @click="attempt(()=>refreshQr(true))"><svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': qrBusy }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg><span class="sr-only">Refresh QR</span></button><button @click="fullscreen">Full screen</button></div>
           </div>
         </section>
         <AttendanceImportWizard v-else-if="tab==='import' && hasPermission('attendance:import')" :branch-id="branchId" :fields="config.fields || []" :templates="config.templates || []" @configuration="attempt(loadConfiguration)" @done="tab='history'" />

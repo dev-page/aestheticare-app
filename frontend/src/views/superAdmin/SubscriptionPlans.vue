@@ -1,18 +1,18 @@
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
+  <div class="flex module-theme min-h-screen bg-[#fbf5eb]">
     <SuperAdminSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'plan', cards: 3 }" class="flex-1 p-8">
-      <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+    <main v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'plan', cards: 3 }" class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+      <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 class="text-3xl font-bold text-white mb-2">Setup Plans</h1>
-          <p class="text-slate-400">Configure pricing, cycle, and features for each subscription plan.</p>
+          <h1 class="mb-2 text-3xl font-bold text-[#4b3324]">Setup Plans</h1>
+          <p class="text-[#8a725f]">Configure pricing, cycle, and features for each subscription plan.</p>
         </div>
 
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="px-4 py-2 rounded-lg border border-sky-500/40 text-sky-200 hover:bg-slate-800"
+            class="rounded-lg border border-[#d9bea1] bg-[#fffaf3] px-4 py-2 text-[#684b35] transition hover:bg-[#f2e5d4]"
             :disabled="loading"
             @click="addNewPlan"
           >
@@ -20,49 +20,51 @@
           </button>
           <button
             type="button"
-            class="px-4 py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-800"
+            class="inline-flex items-center justify-center rounded-lg border border-[#d9bea1] bg-[#fffaf3] px-4 py-2 text-[#684b35] transition hover:bg-[#f2e5d4]"
             :disabled="loading"
             @click="loadPlans"
           >
-            <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.6m14.8 2A8 8 0 005.6 9M20 20v-5h-.6M4.6 13A8 8 0 0018.4 15" /></svg><span class="sr-only">Refresh</span>
+            <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg><span class="sr-only">Refresh</span>
           </button>
         </div>
       </div>
 
-      <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
+      <p v-if="error" class="mb-4 rounded-lg border border-[#c7a17d] bg-[#f6eadb] px-3 py-2 text-sm text-[#704d37]">{{ error }}</p>
 
-      <section class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <section class="grid grid-cols-1 gap-6 2xl:grid-cols-2">
         <article
           v-for="plan in plans"
           :key="plan.localKey || plan.id"
-          class="bg-slate-800 border border-slate-700 rounded-xl p-6"
+          :ref="(element) => setPlanCardRef(plan, element)"
+          class="min-w-0 scroll-mt-6 rounded-xl border border-[#e5d2bb] bg-[#fffdf9] p-4 shadow-sm sm:p-6"
+          :class="{ '2xl:col-span-2': plan.isDraft }"
         >
           <div class="flex items-start justify-between gap-3 mb-4">
             <div>
               <div class="flex items-center gap-2 flex-wrap">
-                <h2 class="text-white font-semibold text-lg">{{ plan.isDraft ? (plan.label || 'New Plan') : plan.label }}</h2>
+                <h2 class="text-lg font-semibold text-[#4b3324]">{{ plan.isDraft ? (plan.label || 'New Plan') : plan.label }}</h2>
                 <span
                   v-if="plan.isDraft"
-                  class="inline-flex items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-200"
+                  class="inline-flex items-center rounded-full border border-[#d9bea1] bg-[#f6eadb] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#76563d]"
                 >
                   New
                 </span>
               </div>
-              <p class="text-slate-400 text-xs">Plan ID: {{ plan.id || 'Pending' }}</p>
+              <p class="text-xs text-[#8a725f]">Plan ID: {{ plan.id || 'Pending' }}</p>
             </div>
             <div class="flex items-center gap-2">
-              <label class="inline-flex items-center gap-2 text-xs text-slate-300">
+              <label class="inline-flex items-center gap-2 text-xs text-[#765f4b]">
                 <input
                   v-model="plan.isActive"
                   type="checkbox"
-                  class="accent-emerald-500"
+                  class="accent-[#806044]"
                   @change="clearPlanFieldError(plan, 'isActive')"
                 />
                 Active
               </label>
               <button
                 type="button"
-                class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-500/40 text-rose-300 transition hover:bg-rose-500/10 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-40"
+                class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#d9bea1] text-[#76563d] transition hover:bg-[#f2e5d4] disabled:cursor-not-allowed disabled:opacity-40"
                 :disabled="savingId === (plan.localKey || plan.id)"
                 :title="plan.isDraft ? 'Discard draft' : 'Delete plan'"
                 @click="deletePlan(plan)"
@@ -76,108 +78,110 @@
 
           <div class="space-y-4">
             <div v-if="plan.isDraft">
-              <label class="block text-xs text-slate-400 mb-1">Plan ID</label>
+              <label class="mb-1 block text-xs text-[#765f4b]">Plan ID</label>
               <input
                 v-model="plan.id"
                 type="text"
-                class="w-full bg-slate-900 rounded-lg px-3 py-2 text-slate-100 focus:outline-none"
+                class="w-full rounded-lg bg-[#fffaf3] px-3 py-2 text-[#4b3324] focus:outline-none"
                 :class="fieldClass(plan, 'id')"
                 placeholder="e.g. standard"
                 @input="clearPlanFieldError(plan, 'id')"
               />
-              <p v-if="fieldError(plan, 'id')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'id') }}</p>
-              <p class="mt-1 text-[11px] text-slate-500">Use lowercase letters, numbers, and hyphens only.</p>
+              <p v-if="fieldError(plan, 'id')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'id') }}</p>
+              <p class="mt-1 text-[11px] text-[#9b846e]">Use lowercase letters, numbers, and hyphens only.</p>
             </div>
 
             <div v-if="plan.isDraft">
-              <label class="block text-xs text-slate-400 mb-1">Plan Label</label>
+              <label class="mb-1 block text-xs text-[#765f4b]">Plan Label</label>
               <input
                 v-model="plan.label"
                 type="text"
-                class="w-full bg-slate-900 rounded-lg px-3 py-2 text-slate-100 focus:outline-none"
+                class="w-full rounded-lg bg-[#fffaf3] px-3 py-2 text-[#4b3324] focus:outline-none"
                 :class="fieldClass(plan, 'label')"
                 placeholder="Visible card title"
                 @input="clearPlanFieldError(plan, 'label')"
               />
-              <p v-if="fieldError(plan, 'label')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'label') }}</p>
+              <p v-if="fieldError(plan, 'label')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'label') }}</p>
             </div>
 
             <div>
-              <label class="block text-xs text-slate-400 mb-1">Display Name</label>
+              <label class="mb-1 block text-xs text-[#765f4b]">Display Name</label>
               <input
                 v-model="plan.name"
                 type="text"
-                class="w-full bg-slate-900 rounded-lg px-3 py-2 text-slate-100 focus:outline-none"
+                class="w-full rounded-lg bg-[#fffaf3] px-3 py-2 text-[#4b3324] focus:outline-none"
                 :class="fieldClass(plan, 'name')"
                 placeholder="Plan name"
                 @input="clearPlanFieldError(plan, 'name')"
               />
-              <p v-if="fieldError(plan, 'name')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'name') }}</p>
+              <p v-if="fieldError(plan, 'name')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'name') }}</p>
             </div>
 
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label class="block text-xs text-slate-400 mb-1">Price (PHP)</label>
+                <label class="mb-1 block text-xs text-[#765f4b]">Price (PHP)</label>
                 <input
                   v-model="plan.price"
                   type="number"
                   min="0"
                   step="0.01"
-                  class="w-full bg-slate-900 rounded-lg px-3 py-2 text-slate-100 focus:outline-none"
+                  class="w-full rounded-lg bg-[#fffaf3] px-3 py-2 text-[#4b3324] focus:outline-none"
                   :class="fieldClass(plan, 'price')"
                   @input="clearPlanFieldError(plan, 'price')"
                 />
-                <p v-if="fieldError(plan, 'price')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'price') }}</p>
+                <p v-if="fieldError(plan, 'price')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'price') }}</p>
               </div>
 
               <div>
-                <label class="block text-xs text-slate-400 mb-1">Billing Cycle</label>
-                <input
+                <label class="mb-1 block text-xs text-[#765f4b]">Billing Cycle</label>
+                <select
                   v-model="plan.billingCycle"
-                  type="text"
-                  class="w-full bg-slate-900 rounded-lg px-3 py-2 text-slate-100 focus:outline-none"
+                  class="w-full rounded-lg bg-[#fffaf3] px-3 py-2 text-[#4b3324] focus:outline-none"
                   :class="fieldClass(plan, 'billingCycle')"
-                  placeholder="month, year, one-time"
-                  @input="clearPlanFieldError(plan, 'billingCycle')"
-                />
-                <p v-if="fieldError(plan, 'billingCycle')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'billingCycle') }}</p>
+                  @change="clearPlanFieldError(plan, 'billingCycle')"
+                >
+                  <option value="month">Monthly</option>
+                  <option value="year">Yearly</option>
+                  <option value="one-time">One-time</option>
+                </select>
+                <p v-if="fieldError(plan, 'billingCycle')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'billingCycle') }}</p>
               </div>
             </div>
 
-            <div v-if="plan.id !== 'free' && Number(plan.price) > 0" class="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
-              <label class="inline-flex items-center gap-2 text-sm font-medium text-slate-200">
-                <input v-model="plan.freeTrialEnabled" type="checkbox" class="accent-emerald-500" />
+            <div v-if="plan.id !== 'free' && Number(plan.price) > 0" class="rounded-lg border border-[#e5d2bb] bg-[#fbf5eb] p-3">
+              <label class="inline-flex items-center gap-2 text-sm font-medium text-[#5c4230]">
+                <input v-model="plan.freeTrialEnabled" type="checkbox" class="accent-[#806044]" />
                 Offer a free trial for this plan
               </label>
               <div v-if="plan.freeTrialEnabled" class="mt-3">
-                <label class="block text-xs text-slate-400 mb-1">Trial length (days)</label>
-                <input v-model="plan.trialDays" type="number" min="1" max="365" step="1" class="w-full rounded-lg bg-slate-800 px-3 py-2 text-slate-100" :class="fieldClass(plan, 'trialDays')" @input="clearPlanFieldError(plan, 'trialDays')" />
-                <p v-if="fieldError(plan, 'trialDays')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'trialDays') }}</p>
+                <label class="mb-1 block text-xs text-[#765f4b]">Trial length (days)</label>
+                <input v-model="plan.trialDays" type="number" min="1" max="365" step="1" class="w-full rounded-lg bg-[#fffdf9] px-3 py-2 text-[#4b3324]" :class="fieldClass(plan, 'trialDays')" @input="clearPlanFieldError(plan, 'trialDays')" />
+                <p v-if="fieldError(plan, 'trialDays')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'trialDays') }}</p>
               </div>
-              <p class="mt-2 text-xs text-slate-400">Each clinic can use one paid-plan trial once. No charge is collected during the trial; when it ends, the clinic returns to Free. A later purchase uses this plan’s normal price.</p>
+              <p class="mt-2 text-xs text-[#8a725f]">Each clinic can use one paid-plan trial once. No charge is collected during the trial; when it ends, the clinic returns to Free. A later purchase uses this plan’s normal price.</p>
             </div>
 
             <div>
-              <label class="block text-xs text-slate-400 mb-1">Description</label>
+              <label class="mb-1 block text-xs text-[#765f4b]">Description</label>
               <textarea
                 v-model="plan.description"
                 rows="2"
-                class="w-full bg-slate-900 rounded-lg px-3 py-2 text-slate-100 focus:outline-none"
+                class="w-full rounded-lg bg-[#fffaf3] px-3 py-2 text-[#4b3324] focus:outline-none"
                 :class="fieldClass(plan, 'description')"
                 placeholder="Short plan description"
                 @input="clearPlanFieldError(plan, 'description')"
               ></textarea>
-              <p v-if="fieldError(plan, 'description')" class="mt-1 text-xs text-rose-300">{{ fieldError(plan, 'description') }}</p>
+              <p v-if="fieldError(plan, 'description')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'description') }}</p>
             </div>
 
-            <p v-if="plan.id === 'free'" class="text-sm text-slate-400">Free is permanent and has no expiry. Free trials are configured separately on paid plans.</p>
+            <p v-if="plan.id === 'free'" class="text-sm text-[#8a725f]">Free is permanent and has no expiry. Free trials are configured separately on paid plans.</p>
 
             <div>
               <div class="flex items-center justify-between mb-2">
-                <label class="block text-xs text-slate-400">Features</label>
+                <label class="block text-xs text-[#765f4b]">Features</label>
                 <button
                   type="button"
-                  class="text-xs text-sky-300 hover:text-sky-200"
+                  class="text-xs text-[#76563d] hover:text-[#4b3324]"
                   @click="addFeature(plan)"
                 >
                   + Add feature
@@ -186,34 +190,34 @@
 
               <div class="space-y-2">
                 <div v-for="(feature, index) in plan.features" :key="`${plan.localKey || plan.id}-feature-${index}`" class="space-y-1">
-                  <div class="flex gap-2">
+                  <div class="flex min-w-0 gap-2">
                     <input
                       v-model="plan.features[index]"
                       type="text"
-                      class="flex-1 bg-slate-900 rounded-lg px-3 py-2 text-slate-100 focus:outline-none"
+                      class="min-w-0 flex-1 rounded-lg bg-[#fffaf3] px-3 py-2 text-[#4b3324] focus:outline-none"
                       :class="featureFieldClass(plan, index)"
                       placeholder="Feature"
                       @input="clearPlanFeatureError(plan, index)"
                     />
                     <button
                       type="button"
-                      class="px-3 py-2 rounded-lg bg-rose-600/80 hover:bg-rose-500 text-white text-xs"
+                      class="rounded-lg border border-[#c7a17d] bg-[#f3e6d5] px-3 py-2 text-xs text-[#684b35] transition hover:bg-[#ead7c1]"
                       @click="removeFeature(plan, index)"
                     >
                       Remove
                     </button>
                   </div>
-                  <p v-if="featureError(plan, index)" class="text-xs text-rose-300">{{ featureError(plan, index) }}</p>
+                  <p v-if="featureError(plan, index)" class="text-xs text-[#76563d]">{{ featureError(plan, index) }}</p>
                 </div>
 
-                <p v-if="!plan.features.length" class="text-xs text-slate-500">No features yet.</p>
-                <p v-if="fieldError(plan, 'features')" class="text-xs text-rose-300">{{ fieldError(plan, 'features') }}</p>
+                <p v-if="!plan.features.length" class="text-xs text-[#9b846e]">No features yet.</p>
+                <p v-if="fieldError(plan, 'features')" class="text-xs text-[#76563d]">{{ fieldError(plan, 'features') }}</p>
               </div>
             </div>
 
             <button
               type="button"
-              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white transition hover:bg-emerald-500 disabled:cursor-wait disabled:opacity-70"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#5a3d2b] px-4 py-2 text-sm font-semibold text-[#fffaf3] transition hover:bg-[#704d37] disabled:cursor-wait disabled:opacity-70"
               :disabled="Boolean(savingId)"
               :aria-busy="savingId === (plan.localKey || plan.id)"
               @click="savePlan(plan)"
@@ -234,7 +238,7 @@
 <script>
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
@@ -341,6 +345,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const savingId = ref('')
     const plans = ref(defaultPlans())
     const planErrors = ref({})
+    const planCardElements = new Map()
+
+    const setPlanCardRef = (plan, element) => {
+      const key = String(plan?.localKey || plan?.id || '').trim()
+      if (!key) return
+      if (element) planCardElements.set(key, element)
+      else planCardElements.delete(key)
+    }
 
     const planKey = (plan) => String(plan?.localKey || plan?.id || '').trim()
 
@@ -469,8 +481,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return errors
     }
 
-    const appendPlan = () => {
-      plans.value = [...plans.value, createDraftPlan()]
+    const appendPlan = async () => {
+      const draft = createDraftPlan()
+      plans.value = [...plans.value, draft]
+      await nextTick()
+      planCardElements.get(planKey(draft))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
 
     const deletePlan = async (plan) => {
@@ -486,7 +501,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         showCancelButton: true,
         confirmButtonText: plan.isDraft ? 'Discard' : 'Delete',
         cancelButtonText: 'Cancel',
-        confirmButtonColor: '#dc2626',
+        confirmButtonColor: '#6b4b34',
       })
 
       if (!confirmation.isConfirmed) return
@@ -669,6 +684,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       removeFeature,
       savePlan,
       planKey,
+      setPlanCardRef,
       fieldError,
       featureError,
       clearPlanFieldError,
@@ -676,14 +692,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       fieldClass: (plan, field) => {
         const hasError = Boolean(fieldError(plan, field))
         return hasError
-          ? 'border border-rose-500/70 focus:border-rose-400'
-          : 'border border-slate-700 focus:border-slate-500'
+          ? 'border border-[#9a7656] bg-[#f6eadb] focus:border-[#76563d]'
+          : 'border border-[#e2cbb0] focus:border-[#9a7656]'
       },
       featureFieldClass: (plan, index) => {
         const hasError = Boolean(featureError(plan, index))
         return hasError
-          ? 'border border-rose-500/70 focus:border-rose-400'
-          : 'border border-slate-700 focus:border-slate-500'
+          ? 'border border-[#9a7656] bg-[#f6eadb] focus:border-[#76563d]'
+          : 'border border-[#e2cbb0] focus:border-[#9a7656]'
       },
     }
   },

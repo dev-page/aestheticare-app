@@ -21,7 +21,7 @@
                 :disabled="loading"
                 @click="loadRoles()"
               >
-                <Icon icon="mdi:refresh" class="h-5 w-5" />
+                <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg>
                 <span class="sr-only">Refresh</span>
               </button>
               <button
