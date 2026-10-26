@@ -628,7 +628,7 @@ const permissionSuggestionRules = [
     permissions: ['payments:view', 'reports:view', 'payroll:view', 'payroll:approve', 'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
-    match: ['manager', 'operations', 'supervisor'],
+    match: ['branch manager', 'manager', 'operations', 'supervisor'],
     permissions: ['staff:view', 'staff:update', 'staff:disable', 'appointments:view', 'appointments:review', 'inventory:view', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'inventory:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'reports:view', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
@@ -648,8 +648,8 @@ const permissionSuggestionRules = [
 const builtInRoleTemplates = [
   {
     key: 'clinic-manager',
-    name: 'Manager',
-    description: 'Oversees clinic operations, staff coordination, services, inventory, and orders.',
+    name: 'Branch Manager',
+    description: 'Manages day-to-day operations for the branch where this employee is assigned.',
     color: ROLE_COLOR,
     suggestion: 'manager',
   },
@@ -1106,6 +1106,48 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           roleSnapshot = await getDocs(
             query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId))
           )
+        }
+
+        const managerTemplate = builtInRoleTemplates.find((template) => template.key === 'clinic-manager')
+        const managerRoleDoc = roleSnapshot.docs.find((roleDoc) => roleDoc.data()?.builtinKey === 'clinic-manager')
+        if (managerTemplate && managerRoleDoc) {
+          const managerRoleData = managerRoleDoc.data() || {}
+          if (managerRoleData.name !== managerTemplate.name || managerRoleData.description !== managerTemplate.description) {
+            await updateDoc(managerRoleDoc.ref, {
+              name: managerTemplate.name,
+              description: managerTemplate.description,
+              updatedAt: serverTimestamp(),
+            })
+
+            const [primaryAssignments, multiAssignments] = await Promise.all([
+              getDocs(query(collection(db, 'users'), where('customRoleId', '==', managerRoleDoc.id))),
+              getDocs(query(collection(db, 'users'), where('customRoleIds', 'array-contains', managerRoleDoc.id))),
+            ])
+            const assignedUsers = new Map()
+            ;[...primaryAssignments.docs, ...multiAssignments.docs].forEach((userDoc) => assignedUsers.set(userDoc.id, userDoc))
+            const commits = []
+            let batch = writeBatch(db)
+            let batchSize = 0
+            assignedUsers.forEach((userDoc) => {
+              const userData = userDoc.data() || {}
+              const roleNames = String(userData.customRoleName || '').split(',').map((name) => {
+                const trimmed = name.trim()
+                return trimmed.toLowerCase() === 'manager' ? managerTemplate.name : trimmed
+              }).filter(Boolean)
+              const nextRoleName = [...new Set(roleNames)].join(', ')
+              if (nextRoleName === String(userData.customRoleName || '').trim()) return
+              batch.update(userDoc.ref, { customRoleName: nextRoleName, updatedAt: serverTimestamp() })
+              batchSize += 1
+              if (batchSize >= 450) {
+                commits.push(batch.commit())
+                batch = writeBatch(db)
+                batchSize = 0
+              }
+            })
+            if (batchSize) commits.push(batch.commit())
+            if (commits.length) await Promise.all(commits)
+            roleSnapshot = await getDocs(query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId)))
+          }
         }
 
         await removeOwnerFromStaffRoles(ownerId, roleSnapshot)

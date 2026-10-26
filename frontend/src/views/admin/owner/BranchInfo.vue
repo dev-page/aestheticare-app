@@ -146,13 +146,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return
       }
 
-      const staffResults = [{
-        id: ownerProfile.value.branchAdminId,
-        branchId: '',
-        fullName: ownerProfile.value.branchAdminName || 'Owner',
-        role: 'Clinic Admin',
-        isOwner: true
-      }]
+      const roleSnapshot = await getDocs(query(
+        collection(db, 'clinicRoles'),
+        where('ownerId', '==', currentOwnerId.value)
+      ))
+      const branchManagerRoleIds = new Set(roleSnapshot.docs
+        .filter((roleDoc) => roleDoc.data()?.builtinKey === 'clinic-manager')
+        .map((roleDoc) => roleDoc.id))
+      const staffResults = []
       for (let index = 0; index < branchIds.length; index += 10) {
         const chunk = branchIds.slice(index, index + 10)
         const staffQuery = query(
@@ -164,12 +165,18 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         staffResults.push(
           ...staffSnapshot.docs.map((staffDoc) => {
             const data = staffDoc.data() || {}
+            const assignedRoleIds = [
+              ...(Array.isArray(data.customRoleIds) ? data.customRoleIds : []),
+              data.customRoleId,
+            ].map((roleId) => String(roleId || '').trim()).filter(Boolean)
             const fullName = formatFullName(data)
             return {
               id: staffDoc.id,
               branchId: String(data.branchId || ''),
               fullName: fullName || 'Unnamed Staff',
-              role: String(data.customRoleName || data.role || 'Staff'),
+              role: 'Branch Manager',
+              isBranchManager: assignedRoleIds.some((roleId) => branchManagerRoleIds.has(roleId)),
+              isActive: !data.archived && !['inactive', 'disabled', 'archived'].includes(String(data.status || '').toLowerCase()),
               isOwner: false
             }
           })
@@ -178,6 +185,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       staffOptions.value = staffResults
         .filter((staff, index, array) => array.findIndex((entry) => entry.id === staff.id) === index)
         .filter((staff) => staff.id)
+        .filter((staff) => staff.isBranchManager && staff.isActive)
         .sort((left, right) => left.fullName.localeCompare(right.fullName))
       } catch (error) {
         console.error('Failed to load branch management data:', error)
@@ -194,9 +202,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       currentBranch.value = {
         ...branch,
       }
-      if (!String(currentBranch.value.branchAdminId || '').trim() && currentBranch.value.isMainBranch) {
-        currentBranch.value.branchAdminId = ownerProfile.value.branchAdminId
-        currentBranch.value.branchAdminName = ownerProfile.value.branchAdminName
+      if (String(currentBranch.value.branchAdminId || '').trim() === ownerProfile.value.branchAdminId) {
+        currentBranch.value.branchAdminId = ''
+        currentBranch.value.branchAdminName = ''
       }
       showEditModal.value = true
     }
@@ -333,16 +341,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           return
         }
 
-        const ownerId = user.uid
-        const ownerProfileData = ownerProfile.value.branchAdminId ? ownerProfile.value : await loadOwnerProfile(ownerId)
-        const shouldUseOwnerAsBranchAdmin =
-          Boolean(currentBranch.value.isMainBranch) && !String(currentBranch.value.branchAdminId || '').trim()
-        const branchAdminId = shouldUseOwnerAsBranchAdmin
-          ? ownerProfileData.branchAdminId
-          : String(currentBranch.value.branchAdminId || '').trim()
-        const branchAdminName = shouldUseOwnerAsBranchAdmin
-          ? ownerProfileData.branchAdminName
-          : String(currentBranch.value.branchAdminName || '').trim()
+        const branchAdminId = String(currentBranch.value.branchAdminId || '').trim()
+        const branchAdminName = String(currentBranch.value.branchAdminName || '').trim()
 
         if (currentBranch.value.id) {
           const result = await Swal.fire({
@@ -472,7 +472,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             <tr class="border-b border-slate-700 text-xs uppercase text-slate-400 sm:text-sm">
               <th class="px-2 py-2 sm:px-4 sm:py-3">Branch Name</th>
               <th class="px-2 py-2 sm:px-4 sm:py-3">Location</th>
-              <th class="px-2 py-2 sm:px-4 sm:py-3">Branch Admin</th>
+              <th class="px-2 py-2 sm:px-4 sm:py-3">Branch Manager</th>
               <th class="px-2 py-2 sm:px-4 sm:py-3">Revenue</th>
               <th class="px-2 py-2 sm:px-4 sm:py-3">Status</th>
               <th class="px-2 py-2 sm:px-4 sm:py-3">Actions</th>
@@ -535,7 +535,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             <tr class="border-b border-slate-700 text-xs uppercase text-slate-400 sm:text-sm">
               <th class="px-2 py-2 sm:px-4 sm:py-3">Branch Name</th>
               <th class="px-2 py-2 sm:px-4 sm:py-3">Location</th>
-              <th class="px-2 py-2 sm:px-4 sm:py-3">Branch Admin</th>
+              <th class="px-2 py-2 sm:px-4 sm:py-3">Branch Manager</th>
               <th class="px-2 py-2 sm:px-4 sm:py-3">Revenue</th>
               <th class="px-2 py-2 sm:px-4 sm:py-3">Status</th>
               <th class="px-2 py-2 sm:px-4 sm:py-3">Actions</th>
@@ -597,12 +597,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <select id="branch-edit-status" v-model="currentBranch.status"><option>Active</option><option>Inactive</option></select>
             </div>
             <div class="branch-field">
-              <label for="branch-edit-admin">Branch Admin</label>
+              <label for="branch-edit-admin">Branch Manager</label>
               <select id="branch-edit-admin" v-model="currentBranch.branchAdminId" @change="currentBranch.branchAdminName = staffOptions.find((staff) => staff.id === currentBranch.branchAdminId)?.fullName || ''">
-                <option value="">Select branch admin</option>
-                <option v-for="staff in staffOptions" :key="staff.id" :value="staff.id">{{ staff.fullName }} - {{ staff.role }}{{ staff.isOwner ? ' (Clinic Admin)' : '' }}</option>
+                <option value="">Select branch manager</option>
+                <option v-for="staff in staffOptions.filter((option) => option.branchId === currentBranch.id)" :key="staff.id" :value="staff.id">{{ staff.fullName }} - Branch Manager</option>
               </select>
-              <p class="branch-field-help">Choose who manages this branch.</p>
+              <p class="branch-field-help">Choose an active employee assigned to this branch with the Branch Manager role. The clinic owner keeps access to every branch automatically.</p>
             </div>
             <div class="branch-dialog-note">
               <strong>{{ currentBranch.isMainBranch ? 'Main branch' : 'Additional branch' }}</strong>
