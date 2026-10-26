@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="flex-1 p-8 overflow-x-hidden">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Subscription Permissions</h1>
@@ -22,136 +22,49 @@
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
       <input v-model.trim="planSearch" type="search" placeholder="Filter subscription plans..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 
-      <section class="mb-6 rounded-xl border border-slate-700 bg-slate-800 p-4">
-        <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 class="font-semibold text-white">Feature Registry</h2>
-            <p class="text-xs text-slate-400">Add subscription feature keys used by plans and module access checks.</p>
-          </div>
-          <button
-            type="button"
-            class="rounded-lg border border-sky-500/40 px-3 py-2 text-xs text-sky-200 hover:bg-slate-700"
-            :disabled="savingFeature"
-            @click="addFeatureDefinition"
-          >
-            + Add Feature
-          </button>
-        </div>
-
-        <div class="mb-4 grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_1.4fr_0.8fr]">
-          <input v-model="newFeature.key" class="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100" placeholder="feature_key" />
-          <input v-model="newFeature.label" class="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100" placeholder="Feature label" />
-          <input v-model="newFeature.description" class="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100" placeholder="Description" />
-          <input v-model="newFeature.module" class="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100" placeholder="Module" />
-        </div>
-
-        <div class="space-y-2">
-          <div v-for="feature in featureDefinitions" :key="feature.key" class="grid grid-cols-1 gap-2 rounded-lg border border-slate-700/70 p-2 md:grid-cols-[1fr_1fr_1.4fr_0.8fr_auto_auto] md:items-center">
-            <input v-model="feature.key" disabled class="rounded bg-slate-900/70 px-2 py-1.5 text-xs text-slate-400" />
-            <input v-model="feature.label" class="rounded bg-slate-900 px-2 py-1.5 text-xs text-slate-100" />
-            <input v-model="feature.description" class="rounded bg-slate-900 px-2 py-1.5 text-xs text-slate-100" />
-            <input v-model="feature.module" class="rounded bg-slate-900 px-2 py-1.5 text-xs text-slate-100" />
-            <button type="button" class="rounded bg-emerald-600 px-2 py-1.5 text-xs text-white hover:bg-emerald-500" :disabled="savingFeature" @click="saveFeatureDefinition(feature)">Save</button>
-            <button type="button" class="rounded px-2 py-1.5 text-xs hover:bg-slate-700" :class="feature.isActive ? 'text-amber-300' : 'text-emerald-300'" :disabled="savingFeature" @click="toggleFeatureDefinition(feature)">
-              {{ feature.isActive ? 'Deactivate' : 'Activate' }}
-            </button>
-          </div>
-        </div>
-      </section>
-
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <div class="px-4 py-3 border-b border-slate-700 flex items-center justify-between gap-3">
           <div>
             <h2 class="text-white font-semibold">Plan Feature Access</h2>
-            <p class="text-slate-400 text-xs">Toggle which features are available per plan.</p>
+            <p class="text-slate-400 text-xs">Turn features on or off for each plan, then save your changes.</p>
           </div>
         </div>
 
-        <div class="overflow-x-auto">
-          <table class="w-full text-[11px] table-fixed">
-            <thead class="bg-slate-900/70">
-              <tr>
-                <th class="text-left text-slate-300 px-3 py-2 w-40">Plan</th>
-                <th
-                  v-for="feature in planFeatureCatalog"
-                  :key="`head-${feature.key}`"
-                  class="text-center text-slate-300 px-2 py-2 whitespace-normal leading-tight"
-                >
-                  {{ feature.label }}
-                </th>
-                <th class="text-center text-slate-300 px-2 py-2 whitespace-normal leading-tight">Full Access</th>
-                <th class="text-right text-slate-300 px-3 py-2 w-20">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="loading">
-                <td class="px-3 py-2 text-slate-300" :colspan="planFeatureCatalog.length + 3">
-                  Loading plan permissions...
-                </td>
-              </tr>
-              <tr v-else-if="!filteredPlanEntries.length">
-                <td class="px-3 py-2 text-slate-300" :colspan="planFeatureCatalog.length + 3">
-                  No plans found.
-                </td>
-              </tr>
-              <tr
-                v-else
-                v-for="planEntry in paginatedPlanEntries"
-                :key="planEntry.key"
-                class="border-t border-slate-700/60"
-              >
-                <td class="px-3 py-2 text-slate-100">
-                  <div class="font-semibold">{{ planEntry.label }}</div>
-                  <div class="text-[11px] text-slate-400">{{ planEntry.key }}</div>
-                </td>
-                <td
-                  v-for="feature in planFeatureCatalog"
-                  :key="`${planEntry.key}-${feature.key}`"
-                  class="px-2 py-2 text-center"
-                  :title="feature.description"
-                >
-                  <button
-                    type="button"
-                    class="relative inline-flex h-5 w-9 items-center rounded-full border transition"
-                    :class="toggleClass(hasFeature(planEntry, feature.key))"
-                    @click="toggleFeature(planEntry, feature.key)"
-                    :aria-pressed="hasFeature(planEntry, feature.key)"
-                    :title="feature.description"
-                  >
-                    <span
-                      class="inline-block h-3 w-3 transform rounded-full bg-white transition"
-                      :class="hasFeature(planEntry, feature.key) ? 'translate-x-5' : 'translate-x-1'"
-                    ></span>
-                  </button>
-                </td>
-                <td class="px-2 py-2 text-center">
-                  <button
-                    type="button"
-                    class="relative inline-flex h-5 w-9 items-center rounded-full border transition"
-                    :class="toggleClass(isPlanFullAccess(planEntry.key))"
-                    @click="togglePlanFullAccess(planEntry.key)"
-                    :aria-pressed="isPlanFullAccess(planEntry.key)"
-                    title="Toggle full access for this plan"
-                  >
-                    <span
-                      class="inline-block h-3 w-3 transform rounded-full bg-white transition"
-                      :class="isPlanFullAccess(planEntry.key) ? 'translate-x-5' : 'translate-x-1'"
-                    ></span>
-                  </button>
-                </td>
-                <td class="px-3 py-2 text-right">
-                  <button
-                    type="button"
-                    class="px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px]"
-                    :disabled="savingPlan === planEntry.key"
-                    @click="savePlan(planEntry)"
-                  >
-                    {{ savingPlan === planEntry.key ? 'Saving...' : 'Save' }}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-if="loading" class="p-4 text-sm text-slate-300">Loading plan permissions...</div>
+        <div v-else-if="!filteredPlanEntries.length" class="p-4 text-sm text-slate-300">No plans found.</div>
+        <div v-else class="grid min-w-0 grid-cols-1 gap-4 p-4 xl:grid-cols-2">
+          <article v-for="planEntry in paginatedPlanEntries" :key="planEntry.key" class="min-w-0 rounded-xl border border-slate-700 bg-slate-900/50 p-4 sm:p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-700 pb-4">
+              <div class="min-w-0">
+                <h3 class="truncate font-semibold text-white">{{ planEntry.label }}</h3>
+                <p class="mt-1 text-xs text-slate-400">{{ planEntry.key }}</p>
+              </div>
+              <div class="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2">
+                <span class="text-xs font-medium text-slate-200">All features</span>
+                <button type="button" role="switch" class="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" :class="toggleClass(isPlanFullAccess(planEntry.key))" :aria-checked="isPlanFullAccess(planEntry.key)" :aria-label="`Toggle all features for ${planEntry.label}`" @click="togglePlanFullAccess(planEntry.key)">
+                  <span class="inline-block h-4 w-4 transform rounded-full bg-white transition" :class="isPlanFullAccess(planEntry.key) ? 'translate-x-6' : 'translate-x-1'"></span>
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div v-for="feature in planFeatureCatalog" :key="`${planEntry.key}-${feature.key}`" class="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-700/70 bg-slate-800/60 px-3 py-3" :title="feature.description">
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium text-slate-100">{{ feature.label }}</p>
+                  <p class="truncate text-[11px] text-slate-400">{{ feature.description }}</p>
+                </div>
+                <button type="button" role="switch" class="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" :class="toggleClass(hasFeature(planEntry, feature.key))" :aria-checked="hasFeature(planEntry, feature.key)" :aria-label="`${feature.label} for ${planEntry.label}`" @click="toggleFeature(planEntry, feature.key)">
+                  <span class="inline-block h-4 w-4 transform rounded-full bg-white transition" :class="hasFeature(planEntry, feature.key) ? 'translate-x-6' : 'translate-x-1'"></span>
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-4 flex justify-end border-t border-slate-700 pt-4">
+              <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60" :disabled="savingPlan === planEntry.key" @click="savePlan(planEntry)">
+                {{ savingPlan === planEntry.key ? 'Saving…' : 'Save changes' }}
+              </button>
+            </div>
+          </article>
         </div>
         <TablePagination v-model:page="planPage" v-model:page-size="planPageSize" :total-items="filteredPlanEntries.length" />
       </section>
@@ -172,10 +85,7 @@ import {
   buildSubscriptionPlanCatalog,
   filterActiveSubscriptionPlans,
 } from '@/utils/subscriptionPlans'
-import {
-  buildSubscriptionFeatureRegistry,
-  DEFAULT_SUBSCRIPTION_FEATURES,
-} from '@/utils/subscriptionFeatureRegistry'
+import { DEFAULT_SUBSCRIPTION_FEATURES } from '@/utils/subscriptionFeatureRegistry'
 
 const defaultPlanCatalog = [
   { id: 'free', key: 'free', label: 'Free Plan' },
@@ -197,13 +107,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const planPage = ref(1)
     const planPageSize = ref(10)
     const planPermissions = ref({})
-    const featureDefinitions = ref(DEFAULT_SUBSCRIPTION_FEATURES.map((feature) => ({ ...feature })))
-    const newFeature = ref({ key: '', label: '', description: '', module: 'Other' })
-    const savingFeature = ref(false)
     const planCatalogLoaded = ref(false)
     const planPermissionsLoaded = ref(false)
 
-    const planFeatureCatalog = computed(() => featureDefinitions.value.filter((feature) => feature.isActive !== false))
+    const planFeatureCatalog = computed(() => DEFAULT_SUBSCRIPTION_FEATURES.filter((feature) => feature.isActive !== false))
 
     const finishLoading = () => {
       if (planCatalogLoaded.value && planPermissionsLoaded.value) {
@@ -235,7 +142,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       let unsubscribePermissions = null
     let unsubscribePlans = null
-    let unsubscribeFeatures = null
 
     const loadPermissions = () => {
       loading.value = true
@@ -250,11 +156,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         unsubscribePlans()
         unsubscribePlans = null
       }
-      if (unsubscribeFeatures) {
-        unsubscribeFeatures()
-        unsubscribeFeatures = null
-      }
-
       try {
         unsubscribePlans = pageListener(
           onSnapshot, collection(db, 'subscriptionPlans'),
@@ -290,71 +191,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
         )
 
-        unsubscribeFeatures = pageListener(
-          onSnapshot, collection(db, 'subscriptionFeatures'),
-          (snapshot) => {
-            featureDefinitions.value = buildSubscriptionFeatureRegistry(snapshot.docs)
-          },
-          (err) => {
-            console.error('Error loading subscription feature registry:', err)
-            error.value = 'Failed to load the subscription feature registry. Please try again.'
-          }
-        )
       } catch (err) {
         console.error('Error loading plan permissions:', err)
         error.value = 'Failed to load plan permissions. Please try again.'
         loading.value = false
       }
-    }
-
-    const normalizeFeatureKey = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
-
-    const saveFeatureDefinition = async (feature) => {
-      const key = normalizeFeatureKey(feature.key)
-      if (!key || !String(feature.label || '').trim()) {
-        error.value = 'Feature key and label are required.'
-        return
-      }
-      savingFeature.value = true
-      error.value = ''
-      try {
-        await setDoc(doc(db, 'subscriptionFeatures', key), {
-          key,
-          label: String(feature.label || '').trim(),
-          description: String(feature.description || '').trim(),
-          module: String(feature.module || 'Other').trim() || 'Other',
-          isActive: feature.isActive !== false,
-          updatedAt: serverTimestamp(),
-        }, { merge: true })
-        feature.key = key
-        await systemAdminSwal.fire({ title: 'Saved', text: `${feature.label} feature updated.`, icon: 'success', timer: 1100, showConfirmButton: false })
-      } catch (err) {
-        console.error('Error saving subscription feature:', err)
-        error.value = 'Failed to save the subscription feature.'
-      } finally {
-        savingFeature.value = false
-      }
-    }
-
-    const addFeatureDefinition = async () => {
-      const key = normalizeFeatureKey(newFeature.value.key)
-      if (!key || !String(newFeature.value.label || '').trim()) {
-        error.value = 'Feature key and label are required.'
-        return
-      }
-      if (featureDefinitions.value.some((feature) => feature.key === key)) {
-        error.value = 'That feature key already exists.'
-        return
-      }
-      const feature = { key, label: newFeature.value.label, description: newFeature.value.description, module: newFeature.value.module, isActive: true }
-      await saveFeatureDefinition(feature)
-      featureDefinitions.value = [...featureDefinitions.value, feature].sort((a, b) => a.label.localeCompare(b.label))
-      newFeature.value = { key: '', label: '', description: '', module: 'Other' }
-    }
-
-    const toggleFeatureDefinition = async (feature) => {
-      feature.isActive = feature.isActive === false
-      await saveFeatureDefinition(feature)
     }
 
     const savePlan = async (planEntry) => {
@@ -446,7 +287,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     onUnmounted(() => {
       if (unsubscribePermissions) unsubscribePermissions()
       if (unsubscribePlans) unsubscribePlans()
-      if (unsubscribeFeatures) unsubscribeFeatures()
     })
 
     return {
@@ -460,13 +300,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       planPageSize,
       filteredPlanEntries,
       paginatedPlanEntries,
-      featureDefinitions,
-      newFeature,
-      savingFeature,
       planFeatureCatalog,
-      addFeatureDefinition,
-      saveFeatureDefinition,
-      toggleFeatureDefinition,
       loadPermissions,
       savePlan,
       hasFeature,
