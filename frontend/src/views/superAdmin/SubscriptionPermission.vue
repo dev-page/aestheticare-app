@@ -41,8 +41,8 @@
               </div>
               <div class="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2">
                 <span class="text-xs font-medium text-slate-200">All features</span>
-                <button type="button" role="switch" class="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" :class="toggleClass(isPlanFullAccess(planEntry.key))" :aria-checked="isPlanFullAccess(planEntry.key)" :aria-label="`Toggle all features for ${planEntry.label}`" @click="togglePlanFullAccess(planEntry.key)">
-                  <span class="inline-block h-4 w-4 transform rounded-full bg-white transition" :class="isPlanFullAccess(planEntry.key) ? 'translate-x-6' : 'translate-x-1'"></span>
+                <button type="button" role="switch" class="feature-switch" :class="isPlanFullAccess(planEntry.key) ? 'feature-switch-on' : 'feature-switch-off'" :aria-checked="isPlanFullAccess(planEntry.key)" :aria-label="`Toggle all features for ${planEntry.label}`" @click="togglePlanFullAccess(planEntry.key)">
+                  <span class="feature-switch-thumb" :class="isPlanFullAccess(planEntry.key) ? 'feature-switch-thumb-on' : 'feature-switch-thumb-off'"></span>
                 </button>
               </div>
             </div>
@@ -53,15 +53,15 @@
                   <p class="truncate text-sm font-medium text-slate-100">{{ feature.label }}</p>
                   <p class="truncate text-[11px] text-slate-400">{{ feature.description }}</p>
                 </div>
-                <button type="button" role="switch" class="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" :class="toggleClass(hasFeature(planEntry, feature.key))" :aria-checked="hasFeature(planEntry, feature.key)" :aria-label="`${feature.label} for ${planEntry.label}`" @click="toggleFeature(planEntry, feature.key)">
-                  <span class="inline-block h-4 w-4 transform rounded-full bg-white transition" :class="hasFeature(planEntry, feature.key) ? 'translate-x-6' : 'translate-x-1'"></span>
+                <button type="button" role="switch" class="feature-switch" :class="hasFeature(planEntry, feature.key) ? 'feature-switch-on' : 'feature-switch-off'" :aria-checked="hasFeature(planEntry, feature.key)" :aria-label="`${feature.label} for ${planEntry.label}`" @click="toggleFeature(planEntry, feature.key)">
+                  <span class="feature-switch-thumb" :class="hasFeature(planEntry, feature.key) ? 'feature-switch-thumb-on' : 'feature-switch-thumb-off'"></span>
                 </button>
               </div>
             </div>
 
             <div class="mt-4 flex justify-end border-t border-slate-700 pt-4">
               <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60" :disabled="savingPlan === planEntry.key" @click="savePlan(planEntry)">
-                {{ savingPlan === planEntry.key ? 'Saving…' : 'Save changes' }}
+                {{ savingPlan === planEntry.key ? 'Saving...' : 'Save changes' }}
               </button>
             </div>
           </article>
@@ -277,11 +277,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
 
-    const toggleClass = (enabled) =>
-      enabled
-        ? 'bg-emerald-500 border-emerald-300/50 shadow-[0_0_0_2px_rgba(16,185,129,0.15)]'
-        : 'bg-slate-900 border-slate-600 hover:border-slate-400'
-
     onMounted(loadPermissions)
 
     onUnmounted(() => {
@@ -307,8 +302,50 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       toggleFeature,
       isPlanFullAccess,
       togglePlanFullAccess,
-      toggleClass,
     }
   },
 }
 </script>
+
+<style scoped>
+.feature-switch {
+  position: relative;
+  display: inline-flex;
+  width: 2.75rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 2px solid #9b6847;
+  border-radius: 9999px;
+  padding: 0;
+  transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+
+.feature-switch-off {
+  border-color: #9b6847;
+  background: #f5e7d6;
+}
+
+.feature-switch-on {
+  border-color: #39734a;
+  background: #39734a;
+}
+
+.feature-switch-thumb {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: #fffdf9;
+  box-shadow: 0 1px 3px rgba(52, 36, 25, .32);
+  transition: transform .16s ease;
+}
+
+.feature-switch-thumb-off { transform: translateX(.1rem); }
+.feature-switch-thumb-on { transform: translateX(1.2rem); }
+
+.feature-switch:focus-visible {
+  outline: 3px solid rgba(141, 90, 59, .35);
+  outline-offset: 2px;
+}
+</style>
