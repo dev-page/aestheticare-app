@@ -1,96 +1,58 @@
 !START HERE!
 
 <template>
-  <div class="flex module-theme bg-slate-900 min-h-screen">
+  <div class="flex module-theme min-h-screen bg-[#f8f3ea] text-[#4a3324]">
     <OwnerSidebar />
 
     <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 4, panels: 2 }" class="flex-1 p-6 md:p-8">
       <DashboardSkeleton v-if="loading" />
 
       <div v-else class="space-y-6">
-        <section class="rounded-[1.75rem] border border-[rgba(123,79,55,0.34)] bg-[radial-gradient(circle_at_top_right,_rgba(230,193,150,0.12),_transparent_24%),linear-gradient(180deg,_rgba(47,31,21,0.96),_rgba(27,17,12,0.98))] p-6 shadow-[0_24px_56px_rgba(11,6,4,0.24)]">
-          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-[#d8b38f]">Employee Panel</p>
-          <h1 class="mt-3 font-serif text-3xl font-bold text-[#fff0e1] md:text-4xl">{{ headingTitle }}</h1>
-          <p class="mt-2 max-w-3xl text-sm leading-7 text-[#d4bead]">
-            Your workspace is tailored to the permissions enabled for your role. Use the quick access cards below to jump into the tools you use most.
+        <section class="rounded-[1.75rem] border border-[#ead8c2] bg-[#fffdf9] p-6 shadow-[0_18px_44px_rgba(75,49,30,0.08)]">
+          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-[#91643f]">Employee Panel</p>
+          <h1 class="mt-3 font-serif text-3xl font-bold text-[#402719] md:text-4xl">{{ headingTitle }}</h1>
+          <p class="mt-2 max-w-3xl text-sm leading-7 text-[#806b5a]">
+            Your dashboard combines the tools and operational summaries for every role assigned to your account.
           </p>
         </section>
 
         <section class="grid gap-4 md:grid-cols-2">
-          <div class="rounded-[1.5rem] border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] p-5 shadow-[0_18px_44px_rgba(11,6,4,0.16)]">
-            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Role</p>
-            <p class="mt-3 text-lg font-semibold text-[#fff0e1]">{{ roleLabel || headingTitle || 'Employee' }}</p>
-            <p class="mt-1 text-sm text-[#d4bead]">Your current access level in the panel.</p>
+          <div class="rounded-[1.5rem] border border-[#ead8c2] bg-[#fffdf9] p-5 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#91643f]">Roles</p>
+            <p class="mt-3 text-lg font-semibold text-[#402719]">{{ roleLabel || headingTitle || 'Employee' }}</p>
+            <p class="mt-1 text-sm text-[#806b5a]">Dashboard sections follow your assigned roles and permissions.</p>
           </div>
-              <div data-onboarding-key="employee-branch-info" class="rounded-[1.5rem] border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] p-5 shadow-[0_18px_44px_rgba(11,6,4,0.16)]">
-                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Assigned Branch</p>
-                <p class="mt-3 text-lg font-semibold text-[#fff0e1]">{{ branchLabel || 'No branch assigned' }}</p>
-                <p class="mt-1 text-sm text-[#d4bead]">This updates when your branch assignment changes.</p>
+              <div data-onboarding-key="employee-branch-info" class="rounded-[1.5rem] border border-[#ead8c2] bg-[#fffdf9] p-5 shadow-sm">
+                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#91643f]">Assigned Branch</p>
+                <p class="mt-3 text-lg font-semibold text-[#402719]">{{ branchLabel || 'No branch assigned' }}</p>
+                <p class="mt-1 text-sm text-[#806b5a]">This updates when your branch assignment changes.</p>
               </div>
-          <div class="rounded-[1.5rem] border border-[rgba(123,79,55,0.34)] bg-[rgba(255,255,255,0.04)] p-5 shadow-[0_18px_44px_rgba(11,6,4,0.16)]">
-            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Today's Shift</p>
-            <p class="mt-3 text-lg font-semibold text-[#fff0e1]">{{ todayShiftLabel }}</p>
-            <p class="mt-1 text-sm text-[#d4bead]">{{ todayShiftTime }}</p>
+          <div class="rounded-[1.5rem] border border-[#ead8c2] bg-[#fffdf9] p-5 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#91643f]">Today's Shift</p>
+            <p class="mt-3 text-lg font-semibold text-[#402719]">{{ todayShiftLabel }}</p>
+            <p class="mt-1 text-sm text-[#806b5a]">{{ todayShiftTime }}</p>
           </div>
         </section>
 
-        <section v-if="hasReceptionistDashboard" class="space-y-4">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#8d6a50]">Receptionist</p>
-            <h2 class="mt-1 font-serif text-2xl font-semibold text-[#4a2d1c]">Front desk workspace</h2>
-          </div>
-          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <router-link v-for="card in receptionistCards" :key="card.to" :to="card.to" class="rounded-2xl border border-[#ead7c2] bg-[#fffdfa] p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#b68a65]">
-              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#8d6a50]">{{ card.label }}</p>
-              <p class="mt-2 text-sm leading-6 text-[#674a36]">{{ card.description }}</p>
-              <span class="mt-4 inline-flex text-sm font-semibold text-[#71482e]">Open workspace</span>
-            </router-link>
-          </div>
-        </section>
+        <BranchManagerDashboard v-if="hasBranchManagerDashboard" :appointments="dashboardData.appointments" :staff="dashboardData.staff" :inventory="dashboardData.inventory" />
+        <HumanResourceDashboard v-if="hasHumanResourceDashboard" :staff="dashboardData.staff" :attendance="dashboardData.attendance" />
+        <FinanceDashboard v-if="hasFinanceDashboard" :transactions="dashboardData.transactions" />
+        <InventoryDashboard v-if="hasInventoryDashboard" :items="dashboardData.inventory" />
+        <ProcurementDashboard v-if="hasProcurementDashboard" :orders="dashboardData.purchaseOrders" />
+        <PharmacistDashboard v-if="hasPharmacistDashboard" :items="dashboardData.inventory" />
+        <PractitionerDashboard v-if="hasPractitionerDashboard" :appointments="dashboardData.appointments" :user-id="currentUserId" />
+        <ReceptionistDashboard v-if="hasReceptionistDashboard" :appointments="dashboardData.appointments" />
 
-        <section v-if="hasPractitionerDashboard" class="space-y-4">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#8d6a50]">Practitioner</p>
-            <h2 class="mt-1 font-serif text-2xl font-semibold text-[#4a2d1c]">My appointment calendar</h2>
-          </div>
-          <div class="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
-            <div class="rounded-2xl border border-[#ead7c2] bg-[#fffdfa] p-4 shadow-sm sm:p-5">
-              <div class="mb-4 flex items-center justify-between gap-3">
-                <button type="button" class="rounded-lg border border-[#ead7c2] px-3 py-2 text-sm text-[#674a36] hover:bg-[#f8efe5]" @click="changeCalendarMonth(-1)">Previous</button>
-                <h3 class="text-base font-semibold text-[#4a2d1c]">{{ calendarMonthLabel }}</h3>
-                <button type="button" class="rounded-lg border border-[#ead7c2] px-3 py-2 text-sm text-[#674a36] hover:bg-[#f8efe5]" @click="changeCalendarMonth(1)">Next</button>
-              </div>
-              <div class="grid grid-cols-7 gap-1 sm:gap-2">
-                <span v-for="day in calendarWeekdays" :key="day" class="py-2 text-center text-[10px] font-semibold uppercase text-[#8d6a50] sm:text-xs">{{ day }}</span>
-                <button v-for="cell in practitionerCalendarCells" :key="cell.key" type="button" :disabled="!cell.inMonth" class="min-h-[66px] rounded-lg border p-1.5 text-left sm:min-h-[82px] sm:p-2" :class="cellClass(cell)" @click="selectedCalendarDate = cell.dateKey">
-                  <span class="text-xs font-semibold">{{ cell.dayNumber }}</span>
-                  <span v-if="cell.appointments.length" class="mt-1 block truncate rounded bg-[#f2e3d1] px-1 py-0.5 text-[9px] text-[#674a36] sm:text-[10px]">{{ cell.appointments.length }} appointment{{ cell.appointments.length === 1 ? '' : 's' }}</span>
-                </button>
-              </div>
-            </div>
-            <aside class="rounded-2xl border border-[#ead7c2] bg-[#fffdfa] p-5 shadow-sm">
-              <h3 class="font-semibold text-[#4a2d1c]">{{ selectedCalendarDateLabel }}</h3>
-              <div v-if="selectedPractitionerAppointments.length" class="mt-4 space-y-3">
-                <article v-for="appointment in selectedPractitionerAppointments" :key="appointment.id" class="rounded-xl border border-[#ead7c2] bg-[#fcf7f0] p-3">
-                  <p class="text-sm font-semibold text-[#4a2d1c]">{{ appointment.clientName || appointment.patientName || 'Client' }}</p>
-                  <p class="mt-1 text-xs text-[#76583f]">{{ appointment.service || 'Service not specified' }}  -  {{ formatAppointmentTime(appointment.time) }}</p>
-                </article>
-              </div>
-              <p v-else class="mt-4 text-sm text-[#76583f]">No assigned appointments for this day.</p>
-            </aside>
-          </div>
-        </section>
-
-        <section class="overflow-hidden rounded-[1.75rem] border border-slate-700 bg-slate-800 shadow-md">
-          <div class="flex flex-col gap-2 border-b border-slate-700 px-6 py-5 md:flex-row md:items-end md:justify-between">
+        <section class="overflow-hidden rounded-[1.75rem] border border-[#ead8c2] bg-[#fffdf9] shadow-sm">
+          <div class="flex flex-col gap-2 border-b border-[#ead8c2] px-6 py-5 md:flex-row md:items-end md:justify-between">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#d8b38f]">Quick Access</p>
-              <h2 class="mt-2 font-serif text-2xl font-semibold text-[#fff0e1]" data-onboarding-key="employee-quick-access-title">Open the pages you need most</h2>
-              <p class="mt-1 text-sm text-[#d4bead]">
+              <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#91643f]">Quick Access</p>
+              <h2 class="mt-2 font-serif text-2xl font-semibold text-[#402719]" data-onboarding-key="employee-quick-access-title">Open the pages you need most</h2>
+              <p class="mt-1 text-sm text-[#806b5a]">
                 These shortcuts are filtered to what your account can actually use.
               </p>
             </div>
-            <span class="inline-flex w-fit rounded-full border border-slate-700 bg-slate-700 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <span class="inline-flex w-fit rounded-full border border-[#ead8c2] bg-[#f7ede0] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#76583f]">
               {{ quickLinks.length }} shortcuts
             </span>
           </div>
@@ -100,23 +62,23 @@
               v-for="link in quickLinks"
               :key="link.to"
               :to="link.to"
-              class="group flex min-h-40 flex-col justify-between rounded-[1.4rem] border border-slate-700 bg-slate-700 p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:border-amber-700 hover:bg-slate-600"
+              class="group flex min-h-40 flex-col justify-between rounded-[1.4rem] border border-[#ead8c2] bg-[#fffaf4] p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:border-[#b68a65] hover:bg-[#f8efe5]"
             >
               <div class="flex items-start justify-between gap-4">
                 <div>
-                  <p class="text-base font-semibold text-[#fff0e1]">{{ link.label }}</p>
-                  <p class="mt-2 max-w-xs text-sm leading-6 text-[#d4bead]">{{ link.description }}</p>
+                  <p class="text-base font-semibold text-[#402719]">{{ link.label }}</p>
+                  <p class="mt-2 max-w-xs text-sm leading-6 text-[#806b5a]">{{ link.description }}</p>
                 </div>
-                <span class="rounded-full border border-slate-600 bg-slate-800 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
+                <span class="rounded-full border border-[#ead8c2] bg-[#f7ede0] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#76583f]">
                   Open
                 </span>
               </div>
 
-              <div class="mt-6 flex items-center justify-between gap-3 border-t border-slate-600 pt-4">
-                <span class="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#d8b38f]">
+              <div class="mt-6 flex items-center justify-between gap-3 border-t border-[#ead8c2] pt-4">
+                <span class="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#91643f]">
                   {{ link.group }}
                 </span>
-                <span class="text-sm font-medium text-[#fff0e1] transition group-hover:translate-x-1">
+                <span class="text-sm font-medium text-[#674a36] transition group-hover:translate-x-1">
                   Go to page
                 </span>
               </div>
@@ -124,8 +86,8 @@
           </div>
 
           <div v-else class="px-6 py-10 text-center">
-            <h3 class="text-lg font-semibold text-[#fff0e1]">No quick access available yet</h3>
-            <p class="mt-2 text-sm text-[#d4bead]">
+            <h3 class="text-lg font-semibold text-[#402719]">No quick access available yet</h3>
+            <p class="mt-2 text-sm text-[#806b5a]">
               This account does not currently have any active module access.
             </p>
           </div>
@@ -147,11 +109,29 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { usePermissions } from '@/composables/usePermissions'
 import { useSubscription } from '@/composables/useSubscription'
 import { formatClockTime } from '@/utils/appointmentDss'
-import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import BranchManagerDashboard from './dashboards/BranchManagerDashboard.vue'
+import HumanResourceDashboard from './dashboards/HumanResourceDashboard.vue'
+import FinanceDashboard from './dashboards/FinanceDashboard.vue'
+import InventoryDashboard from './dashboards/InventoryDashboard.vue'
+import ProcurementDashboard from './dashboards/ProcurementDashboard.vue'
+import PharmacistDashboard from './dashboards/PharmacistDashboard.vue'
+import PractitionerDashboard from './dashboards/PractitionerDashboard.vue'
+import ReceptionistDashboard from './dashboards/ReceptionistDashboard.vue'
 
 export default {
   name: 'EmployeeDashboard',
-  components: { OwnerSidebar, DashboardSkeleton },
+  components: {
+    OwnerSidebar,
+    DashboardSkeleton,
+    BranchManagerDashboard,
+    HumanResourceDashboard,
+    FinanceDashboard,
+    InventoryDashboard,
+    ProcurementDashboard,
+    PharmacistDashboard,
+    PractitionerDashboard,
+    ReceptionistDashboard,
+  },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -166,9 +146,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const branchLabel = ref('')
     const currentUserId = ref('')
     const practitionerBranchId = ref('')
-    const practitionerAppointments = ref([])
-    const calendarMonth = ref(new Date())
-    const selectedCalendarDate = ref('')
+    const dashboardData = ref({ appointments: [], transactions: [], staff: [], attendance: [], inventory: [], purchaseOrders: [] })
     const todayShiftLabel = ref('Loading...')
     const todayShiftTime = ref('Checking today\'s schedule...')
     let unsubscribeAuth = null
@@ -179,38 +157,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const assignedRoleKeys = computed(() => assignedRoleNames.value.map(normalizeRoleName))
     const hasReceptionistDashboard = computed(() => assignedRoleKeys.value.some((role) => role.includes('reception') || role.includes('frontdesk')))
     const hasPractitionerDashboard = computed(() => assignedRoleKeys.value.some((role) => ['practitioner', 'doctor', 'dentist', 'nurse', 'therapist', 'clinician'].some((name) => role.includes(name))))
-    const calendarWeekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-    const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-    const calendarMonthLabel = computed(() => calendarMonth.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))
-    const practitionerAssignedAppointments = computed(() => sortRecordsNewestFirst(practitionerAppointments.value.filter((appointment) => [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo].some((id) => String(id || '') === currentUserId.value))))
-    const practitionerCalendarCells = computed(() => {
-      const year = calendarMonth.value.getFullYear()
-      const month = calendarMonth.value.getMonth()
-      const first = new Date(year, month, 1)
-      const start = new Date(year, month, 1 - first.getDay())
-      return Array.from({ length: 42 }, (_, index) => {
-        const date = new Date(start)
-        date.setDate(start.getDate() + index)
-        const key = dateKey(date)
-        return { key, dateKey: key, dayNumber: date.getDate(), inMonth: date.getMonth() === month, appointments: practitionerAssignedAppointments.value.filter((appointment) => appointment.date === key) }
-      })
-    })
-    const selectedCalendarDateLabel = computed(() => {
-      const date = new Date(`${selectedCalendarDate.value}T12:00:00`)
-      return Number.isNaN(date.getTime()) ? 'Select a day' : date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-    })
-    const selectedPractitionerAppointments = computed(() => practitionerAssignedAppointments.value.filter((appointment) => appointment.date === selectedCalendarDate.value))
-    const changeCalendarMonth = (offset) => {
-      const next = new Date(calendarMonth.value)
-      next.setMonth(next.getMonth() + offset)
-      calendarMonth.value = next
-    }
-    const cellClass = (cell) => {
-      if (!cell.inMonth) return 'border-[#f4ece3] bg-[#fbf8f4] text-[#c5b3a2]'
-      if (cell.dateKey === selectedCalendarDate.value) return 'border-[#9a6b48] bg-[#f4e6d7] text-[#4a2d1c]'
-      return 'border-[#ead7c2] bg-[#fffdfa] text-[#674a36] hover:bg-[#f8efe5]'
-    }
-    const formatAppointmentTime = (value) => formatClockTime(value) || 'Time TBD'
+    const hasBranchManagerDashboard = computed(() => assignedRoleKeys.value.some((role) => role.includes('branchmanager') || role === 'manager'))
+    const hasHumanResourceDashboard = computed(() => assignedRoleKeys.value.some((role) => role === 'hr' || role.includes('humanresource')))
+    const hasFinanceDashboard = computed(() => assignedRoleKeys.value.some((role) => role.includes('finance') || role.includes('accounting')))
+    const hasInventoryDashboard = computed(() => assignedRoleKeys.value.some((role) => role === 'inventory' || role.includes('inventorymanager')))
+    const hasProcurementDashboard = computed(() => assignedRoleKeys.value.some((role) => role.includes('procurement')))
+    const hasPharmacistDashboard = computed(() => assignedRoleKeys.value.some((role) => role.includes('pharmacist') || role.includes('pharmacy')))
+    const formatShiftTime = (value) => formatClockTime(value) || value
 
     const moduleCatalog = [
       {
@@ -298,41 +251,56 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return permissionAllowed && featureAllowed
     }
 
-    const receptionistCards = computed(() => [
-      { label: 'Appointments', to: '/crm/appointments', description: "View today's bookings and appointment records.", permission: 'appointments:view' },
-      { label: 'Appointment Requests', to: '/crm/appointments/requests', description: 'Review cancellation and reschedule requests.', permission: 'appointments:review' },
-      { label: 'Clients', to: '/crm/clients', description: 'Find and manage clinic client records.', permission: 'clients:view' },
-      { label: 'Transactions', to: '/crm/transactions', description: 'Review recent client payments.', permission: 'payments:view' }
-    ].filter((entry) => canAccessEntry({ permission: entry.permission, feature: 'appointments' })))
-
     const loadAssignedRoleNames = async (userData = {}) => {
       const roleIds = [...new Set([...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []), userData.customRoleId].map((id) => String(id || '').trim()).filter(Boolean))]
       const roleDocs = await Promise.all(roleIds.map((id) => getDoc(doc(db, 'clinicRoles', id)).catch(() => null)))
       const names = roleDocs.filter((snapshot) => snapshot?.exists()).map((snapshot) => String(snapshot.data()?.name || '').trim()).filter(Boolean)
-      const fallbackName = String(userData.customRoleName || userData.role || '').trim()
-      assignedRoleNames.value = [...new Set([...names, ...(fallbackName ? [fallbackName] : [])])]
+      const fallbackNames = String(userData.customRoleName || userData.role || '').split(',').map(name => name.trim()).filter(Boolean)
+      assignedRoleNames.value = [...new Set([...names, ...fallbackNames])]
     }
 
-    const loadPractitionerAppointments = async (branchId) => {
-      practitionerAppointments.value = []
-      if (!hasPractitionerDashboard.value || !branchId || !hasPermission('appointments:view') || !hasFeature('appointments')) return
+    const loadDashboardCollection = async (name, permission, feature, branchId, extraConstraints = []) => {
+      if (!branchId || !hasPermission(permission) || (feature && !hasFeature(feature))) return []
       try {
-        const snapshot = await getDocs(query(collection(db, 'appointments'), where('branchId', '==', branchId)))
-        practitionerAppointments.value = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+        const snapshot = await getDocs(query(collection(db, name), where('branchId', '==', branchId), ...extraConstraints))
+        return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
       } catch (error) {
-        console.warn('Unable to load practitioner dashboard appointments:', error)
+        console.warn(`Unable to load ${name} for the employee dashboard:`, error)
+        return []
+      }
+    }
+
+    let dashboardRequest = 0
+    const refreshDashboardData = async (branchId) => {
+      const requestId = ++dashboardRequest
+      if (!branchId) {
+        dashboardData.value = { appointments: [], transactions: [], staff: [], attendance: [], inventory: [], purchaseOrders: [] }
+        return
+      }
+      const [appointments, transactions, staff, attendance, inventory, purchaseOrders] = await Promise.all([
+        loadDashboardCollection('appointments', 'appointments:view', 'appointments', branchId),
+        loadDashboardCollection('transactions', 'payments:view', 'pos_payments', branchId),
+        loadDashboardCollection('users', 'staff:view', 'staff_management', branchId, [where('userType', '==', 'Staff')]),
+        loadDashboardCollection('attendance', 'attendance:view', 'hr', branchId),
+        (hasPermission('inventory:view') || hasPermission('pharmacy:view') || hasPermission('finance:purchases:view')) && hasFeature('inventory')
+          ? loadDashboardCollection('inventoryItems', hasPermission('inventory:view') ? 'inventory:view' : hasPermission('pharmacy:view') ? 'pharmacy:view' : 'finance:purchases:view', 'inventory', branchId)
+          : Promise.resolve([]),
+        loadDashboardCollection('purchaseOrders', 'procurement:view', 'inventory', branchId),
+      ])
+      if (requestId !== dashboardRequest) return
+      dashboardData.value = {
+        appointments,
+        transactions,
+        staff: staff.filter(member => !member.archived),
+        attendance,
+        inventory,
+        purchaseOrders,
       }
     }
 
     watch(
-      () => [hasPractitionerDashboard.value, hasPermission('appointments:view'), hasFeature('appointments'), practitionerBranchId.value],
-      ([isPractitioner, canViewAppointments, appointmentsEnabled, branchId]) => {
-        if (isPractitioner && canViewAppointments && appointmentsEnabled && branchId) {
-          void loadPractitionerAppointments(branchId)
-        } else {
-          practitionerAppointments.value = []
-        }
-      },
+      () => [practitionerBranchId.value, assignedRoleKeys.value.join('|'), hasPermission('appointments:view'), hasPermission('payments:view'), hasPermission('staff:view'), hasPermission('attendance:view'), hasPermission('inventory:view'), hasPermission('pharmacy:view'), hasPermission('procurement:view')],
+      ([branchId]) => { void refreshDashboardData(branchId) },
       { immediate: true }
     )
 
@@ -427,7 +395,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           return entry.id === assignment || label === assignmentLabel || label === assignment
         })
         todayShiftLabel.value = shift?.shiftType || assignmentLabel || 'Assigned Shift'
-        todayShiftTime.value = shift?.start && shift?.end ? `${shift.start} - ${shift.end}` : 'Shift time is not configured.'
+        todayShiftTime.value = shift?.start && shift?.end ? `${formatShiftTime(shift.start)} - ${formatShiftTime(shift.end)}` : 'Shift time is not configured.'
       } catch (error) {
         console.warn('Unable to load branch shift details for employee dashboard:', error)
         todayShiftLabel.value = assignmentLabel || 'Assigned Shift'
@@ -471,7 +439,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     onMounted(trackPageLoad(async () => {
-      selectedCalendarDate.value = dateKey(new Date())
       await initSubscription()
       unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
@@ -479,7 +446,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           assignedRoleNames.value = []
           currentUserId.value = ''
           practitionerBranchId.value = ''
-          practitionerAppointments.value = []
+          dashboardData.value = { appointments: [], transactions: [], staff: [], attendance: [], inventory: [], purchaseOrders: [] }
           branchLabel.value = ''
           loading.value = false
           if (unsubscribeProfile) {
@@ -531,18 +498,16 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       headingTitle,
       loading,
       roleLabel,
+      currentUserId,
+      dashboardData,
+      hasBranchManagerDashboard,
+      hasHumanResourceDashboard,
+      hasFinanceDashboard,
+      hasInventoryDashboard,
+      hasProcurementDashboard,
+      hasPharmacistDashboard,
       hasReceptionistDashboard,
       hasPractitionerDashboard,
-      receptionistCards,
-      calendarWeekdays,
-      calendarMonthLabel,
-      practitionerCalendarCells,
-      selectedCalendarDate,
-      selectedCalendarDateLabel,
-      selectedPractitionerAppointments,
-      changeCalendarMonth,
-      cellClass,
-      formatAppointmentTime,
       quickLinks,
       todayShiftLabel,
       todayShiftTime

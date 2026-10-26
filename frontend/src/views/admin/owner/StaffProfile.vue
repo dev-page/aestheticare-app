@@ -432,9 +432,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const filteredStaffList = computed(() => {
-      if (!searchQuery.value.trim()) return staffList.value
+      const records = Array.isArray(staffList.value) ? staffList.value : []
+      if (!searchQuery.value.trim()) return records
       const query = searchQuery.value.toLowerCase()
-      return staffList.value.filter(staff =>
+      return records.filter(staff =>
         [staff.firstName, staff.lastName, staff.fullName, staff.email, staff.role].some((value) =>
           String(value || '').toLowerCase().includes(query)
         ) ||

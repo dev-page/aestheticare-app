@@ -405,8 +405,9 @@ service cloud.firestore {
         && request.resource.data.get('isBuiltIn', false) == resource.data.get('isBuiltIn', false);
       allow delete: if isSignedIn()
         && canManageClinicRoles(resource.data.ownerId)
-        && resource.data.get('isBuiltIn', false) != true
-        && resource.data.get('builtinKey', '') == '';
+        && ((resource.data.get('isBuiltIn', false) != true
+          && resource.data.get('builtinKey', '') == '')
+          || resource.data.get('builtinKey', '') in ['clinic-admin', 'clinic-owner', 'inventory-procurement']);
     }
 
     match /ownerModuleSettings/{ownerId} {

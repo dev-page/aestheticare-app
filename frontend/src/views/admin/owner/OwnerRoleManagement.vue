@@ -632,16 +632,16 @@ const permissionSuggestionRules = [
     permissions: ['staff:view', 'staff:update', 'staff:disable', 'appointments:view', 'appointments:review', 'inventory:view', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'inventory:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'reports:view', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
-    match: ['supply', 'inventory', 'warehouse', 'stock'],
-    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
+    match: ['inventory'],
+    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'orders:view', 'orders:update', 'reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
+  },
+  {
+    match: ['procurement'],
+    permissions: ['procurement:view', 'procurement:create', 'procurement:review', 'finance:purchases:view', 'orders:view', 'orders:update', 'suppliers:create', 'suppliers:update', 'reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['pharmacist', 'pharmacy'],
     permissions: ['pharmacy:view', 'pharmacy:dispense', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
-  },
-  {
-    match: ['admin', 'owner', 'administrator'],
-    permissions: ['branches:view', 'branches:create', 'clinic_profile:view', 'clinic_profile:update', 'staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:update', 'clients:disable', 'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'reports:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'suppliers:create', 'suppliers:update', 'procurement:view', 'procurement:create', 'procurement:review', 'orders:view', 'orders:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review', 'payroll:view', 'payroll:update', 'roles:manage', 'subscription:view', 'backups:view', 'backups:create', 'profile:view', 'password:update', 'activities:view', 'notifications:view'],
   },
 ]
 
@@ -682,11 +682,18 @@ const builtInRoleTemplates = [
     suggestion: 'finance',
   },
   {
-    key: 'inventory-procurement',
-    name: 'Inventory & Procurement',
-    description: 'Maintains supplies, suppliers, purchase requests, procurement records, and orders.',
+    key: 'inventory',
+    name: 'Inventory',
+    description: 'Maintains branch stock, item records, replenishment requests, and inventory movement.',
     color: ROLE_COLOR,
-    suggestion: 'supply',
+    suggestion: 'inventory',
+  },
+  {
+    key: 'procurement',
+    name: 'Procurement',
+    description: 'Coordinates supplier quotes, purchase orders, deliveries, and procurement records.',
+    color: ROLE_COLOR,
+    suggestion: 'procurement',
   },
   {
     key: 'pharmacist',
@@ -695,22 +702,12 @@ const builtInRoleTemplates = [
     color: ROLE_COLOR,
     suggestion: 'pharmacist',
   },
-  {
-    key: 'clinic-admin',
-    name: 'Clinic Admin',
-    description: 'Operational access is determined by the permissions assigned to this role.',
-    color: ROLE_COLOR,
-    suggestion: 'admin',
-  },
 ]
 
 const getTemplatePermissions = (suggestion) => {
   const rule = permissionSuggestionRules.find((entry) => entry.match.includes(suggestion))
   if (!rule) return []
-  const branchAdminRestricted = new Set([fullAccessPermissionKey])
-  return [...new Set(rule.permissions)].filter((permission) =>
-    suggestion === 'admin' ? !branchAdminRestricted.has(permission) : true
-  )
+  return [...new Set(rule.permissions)]
 }
 
 const chunkArray = (items, size = 10) => {
@@ -996,63 +993,129 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       })
     }
 
-    const migrateLegacyClinicOwnerRole = async (ownerId, roleSnapshot) => {
-      const legacyRoleDoc = roleSnapshot.docs.find(
-        (roleDoc) => roleDoc.data()?.builtinKey === 'clinic-owner'
-      )
-      if (!legacyRoleDoc) return roleSnapshot
+    const removeClinicAdminRoles = async (ownerId, roleSnapshot) => {
+      const deprecatedRoleKeys = new Set(['clinic-admin', 'clinic-owner'])
+      const deprecatedRoles = roleSnapshot.docs.filter((roleDoc) => deprecatedRoleKeys.has(roleDoc.data()?.builtinKey))
+      if (!deprecatedRoles.length) return roleSnapshot
 
-      const currentRoleDoc = roleSnapshot.docs.find(
-        (roleDoc) => roleDoc.data()?.builtinKey === 'clinic-admin'
-      )
-      const targetRoleId = currentRoleDoc?.id || legacyRoleDoc.id
-      const template = builtInRoleTemplates.find((entry) => entry.key === 'clinic-admin')
+      const removedRoleIds = new Set(deprecatedRoles.map((roleDoc) => roleDoc.id))
+      const roleDataById = new Map(roleSnapshot.docs.map((roleDoc) => [roleDoc.id, roleDoc.data() || {}]))
+      const assignedUsers = new Map()
+      const ownerBranchIds = [...new Set([ownerId, ...branchIds.value].filter(Boolean))]
 
-      if (!currentRoleDoc) {
-        await updateDoc(doc(db, 'clinicRoles', legacyRoleDoc.id), {
-          name: template.name,
-          description: template.description,
-          color: ROLE_COLOR,
-          builtinKey: template.key,
-          isBuiltIn: true,
-          permissions: getTemplatePermissions(template.suggestion),
+      for (const branchIdChunk of chunkArray(ownerBranchIds, 10)) {
+        const snapshot = await getDocs(query(collection(db, 'users'), where('branchId', 'in', branchIdChunk)))
+        snapshot.docs.forEach((userDoc) => assignedUsers.set(userDoc.id, userDoc))
+      }
+      const ownerSnapshot = await getDoc(doc(db, 'users', ownerId))
+      if (ownerSnapshot.exists()) assignedUsers.set(ownerSnapshot.id, ownerSnapshot)
+
+      let batch = writeBatch(db)
+      let batchSize = 0
+      const commits = []
+      assignedUsers.forEach((userDoc) => {
+        const userData = userDoc.data() || {}
+        const assignedRoleIds = [...new Set([
+          ...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []),
+          userData.customRoleId,
+        ].map((value) => String(value || '').trim()).filter(Boolean))]
+        if (!assignedRoleIds.some((roleId) => removedRoleIds.has(roleId))) return
+
+        const remainingRoleIds = assignedRoleIds.filter((roleId) => !removedRoleIds.has(roleId))
+        const remainingPermissions = [
+          ...(Array.isArray(userData.permissions) ? userData.permissions : []),
+          ...remainingRoleIds.flatMap((roleId) => Array.isArray(roleDataById.get(roleId)?.permissions)
+            ? roleDataById.get(roleId).permissions
+            : []),
+        ]
+        const existingRoleNames = String(userData.customRoleName || '').split(',').map((name) => name.trim()).filter(Boolean)
+        const remainingRoleNames = remainingRoleIds
+          .map((roleId) => String(roleDataById.get(roleId)?.name || '').trim())
+          .filter(Boolean)
+        const customRoleName = [...new Set(remainingRoleNames.length
+          ? remainingRoleNames
+          : existingRoleNames.filter((name) => !['clinic admin', 'clinic owner'].includes(name.toLowerCase())))].join(', ')
+
+        batch.update(userDoc.ref, {
+          customRoleId: remainingRoleIds[0] || null,
+          customRoleIds: remainingRoleIds,
+          customRoleName: customRoleName || null,
+          effectivePermissions: [...normalizePermissionSet(remainingPermissions)],
           updatedAt: serverTimestamp(),
         })
-        return getDocs(query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId)))
-      }
-
-      const [legacyUsers, multiRoleUsers] = await Promise.all([
-        getDocs(query(collection(db, 'users'), where('customRoleId', '==', legacyRoleDoc.id))),
-        getDocs(query(collection(db, 'users'), where('customRoleIds', 'array-contains', legacyRoleDoc.id))),
-      ])
-      const assignedUsers = new Map()
-      ;[...legacyUsers.docs, ...multiRoleUsers.docs].forEach((userDoc) => {
-        assignedUsers.set(userDoc.id, userDoc)
+        batchSize += 1
+        if (batchSize >= 450) {
+          commits.push(batch.commit())
+          batch = writeBatch(db)
+          batchSize = 0
+        }
       })
+      if (batchSize) commits.push(batch.commit())
+      if (commits.length) await Promise.all(commits)
 
-      if (assignedUsers.size) {
-        const batch = writeBatch(db)
-        assignedUsers.forEach((userDoc) => {
-          if (userDoc.id === ownerId) return
-          const userData = userDoc.data() || {}
-          const roleIds = [
-            ...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []),
-            userData.customRoleId,
-          ]
-            .map((value) => String(value || '').trim())
-            .filter(Boolean)
-            .filter((value) => value !== legacyRoleDoc.id)
-          const nextRoleIds = [...new Set([targetRoleId, ...roleIds])]
-          batch.update(userDoc.ref, {
-            customRoleId: nextRoleIds[0],
-            customRoleIds: nextRoleIds,
-            customRoleName: 'Clinic Admin',
-          })
-        })
-        await batch.commit()
+      await Promise.all(deprecatedRoles.map((roleDoc) => deleteDoc(roleDoc.ref)))
+      return getDocs(query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId)))
+    }
+
+    const splitLegacyInventoryProcurementRole = async (ownerId, roleSnapshot) => {
+      const legacyRoles = roleSnapshot.docs.filter((roleDoc) => roleDoc.data()?.builtinKey === 'inventory-procurement')
+      if (!legacyRoles.length) return roleSnapshot
+
+      const inventoryRole = roleSnapshot.docs.find((roleDoc) => roleDoc.data()?.builtinKey === 'inventory')
+      const procurementRole = roleSnapshot.docs.find((roleDoc) => roleDoc.data()?.builtinKey === 'procurement')
+      if (!inventoryRole || !procurementRole) return roleSnapshot
+
+      const removedIds = new Set(legacyRoles.map((roleDoc) => roleDoc.id))
+      const roleDataById = new Map(roleSnapshot.docs.map((roleDoc) => [roleDoc.id, roleDoc.data() || {}]))
+      const replacementIds = [inventoryRole.id, procurementRole.id]
+      const assignedUsers = new Map()
+      for (const branchIdChunk of chunkArray([...new Set([ownerId, ...branchIds.value].filter(Boolean))], 10)) {
+        const snapshot = await getDocs(query(collection(db, 'users'), where('branchId', 'in', branchIdChunk)))
+        snapshot.docs.forEach((userDoc) => assignedUsers.set(userDoc.id, userDoc))
       }
+      const ownerSnapshot = await getDoc(doc(db, 'users', ownerId))
+      if (ownerSnapshot.exists()) assignedUsers.set(ownerSnapshot.id, ownerSnapshot)
 
-      await deleteDoc(doc(db, 'clinicRoles', legacyRoleDoc.id))
+      let batch = writeBatch(db)
+      let batchSize = 0
+      const commits = []
+      assignedUsers.forEach((userDoc) => {
+        const userData = userDoc.data() || {}
+        const assignedRoleIds = [...new Set([
+          ...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []),
+          userData.customRoleId,
+        ].map((value) => String(value || '').trim()).filter(Boolean))]
+        if (!assignedRoleIds.some((roleId) => removedIds.has(roleId))) return
+
+        const nextRoleIds = [...new Set([
+          ...assignedRoleIds.filter((roleId) => !removedIds.has(roleId)),
+          ...replacementIds,
+        ])]
+        const nextPermissions = [
+          ...(Array.isArray(userData.permissions) ? userData.permissions : []),
+          ...nextRoleIds.flatMap((roleId) => Array.isArray(roleDataById.get(roleId)?.permissions)
+            ? roleDataById.get(roleId).permissions
+            : []),
+        ]
+        const roleNames = nextRoleIds.map((roleId) => String(roleDataById.get(roleId)?.name || '').trim()).filter(Boolean)
+        batch.update(userDoc.ref, {
+          customRoleId: nextRoleIds[0] || null,
+          customRoleIds: nextRoleIds,
+          customRoleName: [...new Set(roleNames)].join(', ') || null,
+          effectivePermissions: [...normalizePermissionSet(nextPermissions)],
+          updatedAt: serverTimestamp(),
+        })
+        batchSize += 1
+        if (batchSize >= 450) {
+          commits.push(batch.commit())
+          batch = writeBatch(db)
+          batchSize = 0
+        }
+      })
+      if (batchSize) commits.push(batch.commit())
+      if (commits.length) await Promise.all(commits)
+
+      await Promise.all(legacyRoles.map((roleDoc) => deleteDoc(roleDoc.ref)))
       return getDocs(query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId)))
     }
 
@@ -1075,7 +1138,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId))
         )
 
-        roleSnapshot = await migrateLegacyClinicOwnerRole(ownerId, roleSnapshot)
+        roleSnapshot = await removeClinicAdminRoles(ownerId, roleSnapshot)
 
         const existingBuiltInKeys = new Set(
           roleSnapshot.docs
@@ -1107,6 +1170,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             query(collection(db, 'clinicRoles'), where('ownerId', '==', ownerId))
           )
         }
+
+        roleSnapshot = await splitLegacyInventoryProcurementRole(ownerId, roleSnapshot)
 
         const managerTemplate = builtInRoleTemplates.find((template) => template.key === 'clinic-manager')
         const managerRoleDoc = roleSnapshot.docs.find((roleDoc) => roleDoc.data()?.builtinKey === 'clinic-manager')
