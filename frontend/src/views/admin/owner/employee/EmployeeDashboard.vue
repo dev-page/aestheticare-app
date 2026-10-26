@@ -34,6 +34,53 @@
           </div>
         </section>
 
+        <section v-if="hasReceptionistDashboard" class="space-y-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#8d6a50]">Receptionist</p>
+            <h2 class="mt-1 font-serif text-2xl font-semibold text-[#4a2d1c]">Front desk workspace</h2>
+          </div>
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <router-link v-for="card in receptionistCards" :key="card.to" :to="card.to" class="rounded-2xl border border-[#ead7c2] bg-[#fffdfa] p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#b68a65]">
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#8d6a50]">{{ card.label }}</p>
+              <p class="mt-2 text-sm leading-6 text-[#674a36]">{{ card.description }}</p>
+              <span class="mt-4 inline-flex text-sm font-semibold text-[#71482e]">Open workspace</span>
+            </router-link>
+          </div>
+        </section>
+
+        <section v-if="hasPractitionerDashboard" class="space-y-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-[#8d6a50]">Practitioner</p>
+            <h2 class="mt-1 font-serif text-2xl font-semibold text-[#4a2d1c]">My appointment calendar</h2>
+          </div>
+          <div class="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
+            <div class="rounded-2xl border border-[#ead7c2] bg-[#fffdfa] p-4 shadow-sm sm:p-5">
+              <div class="mb-4 flex items-center justify-between gap-3">
+                <button type="button" class="rounded-lg border border-[#ead7c2] px-3 py-2 text-sm text-[#674a36] hover:bg-[#f8efe5]" @click="changeCalendarMonth(-1)">Previous</button>
+                <h3 class="text-base font-semibold text-[#4a2d1c]">{{ calendarMonthLabel }}</h3>
+                <button type="button" class="rounded-lg border border-[#ead7c2] px-3 py-2 text-sm text-[#674a36] hover:bg-[#f8efe5]" @click="changeCalendarMonth(1)">Next</button>
+              </div>
+              <div class="grid grid-cols-7 gap-1 sm:gap-2">
+                <span v-for="day in calendarWeekdays" :key="day" class="py-2 text-center text-[10px] font-semibold uppercase text-[#8d6a50] sm:text-xs">{{ day }}</span>
+                <button v-for="cell in practitionerCalendarCells" :key="cell.key" type="button" :disabled="!cell.inMonth" class="min-h-[66px] rounded-lg border p-1.5 text-left sm:min-h-[82px] sm:p-2" :class="cellClass(cell)" @click="selectedCalendarDate = cell.dateKey">
+                  <span class="text-xs font-semibold">{{ cell.dayNumber }}</span>
+                  <span v-if="cell.appointments.length" class="mt-1 block truncate rounded bg-[#f2e3d1] px-1 py-0.5 text-[9px] text-[#674a36] sm:text-[10px]">{{ cell.appointments.length }} appointment{{ cell.appointments.length === 1 ? '' : 's' }}</span>
+                </button>
+              </div>
+            </div>
+            <aside class="rounded-2xl border border-[#ead7c2] bg-[#fffdfa] p-5 shadow-sm">
+              <h3 class="font-semibold text-[#4a2d1c]">{{ selectedCalendarDateLabel }}</h3>
+              <div v-if="selectedPractitionerAppointments.length" class="mt-4 space-y-3">
+                <article v-for="appointment in selectedPractitionerAppointments" :key="appointment.id" class="rounded-xl border border-[#ead7c2] bg-[#fcf7f0] p-3">
+                  <p class="text-sm font-semibold text-[#4a2d1c]">{{ appointment.clientName || appointment.patientName || 'Client' }}</p>
+                  <p class="mt-1 text-xs text-[#76583f]">{{ appointment.service || 'Service not specified' }}  -  {{ formatAppointmentTime(appointment.time) }}</p>
+                </article>
+              </div>
+              <p v-else class="mt-4 text-sm text-[#76583f]">No assigned appointments for this day.</p>
+            </aside>
+          </div>
+        </section>
+
         <section class="overflow-hidden rounded-[1.75rem] border border-slate-700 bg-slate-800 shadow-md">
           <div class="flex flex-col gap-2 border-b border-slate-700 px-6 py-5 md:flex-row md:items-end md:justify-between">
             <div>
@@ -91,7 +138,7 @@
 <script>
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, where } from 'firebase/firestore'
@@ -99,6 +146,8 @@ import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { usePermissions } from '@/composables/usePermissions'
 import { useSubscription } from '@/composables/useSubscription'
+import { formatClockTime } from '@/utils/appointmentDss'
+import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
 export default {
   name: 'EmployeeDashboard',
@@ -113,12 +162,55 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const loading = ref(true)
     const roleLabel = ref('')
+    const assignedRoleNames = ref([])
     const branchLabel = ref('')
+    const currentUserId = ref('')
+    const practitionerBranchId = ref('')
+    const practitionerAppointments = ref([])
+    const calendarMonth = ref(new Date())
+    const selectedCalendarDate = ref('')
     const todayShiftLabel = ref('Loading...')
     const todayShiftTime = ref('Checking today\'s schedule...')
     let unsubscribeAuth = null
     let unsubscribeProfile = null
     let unsubscribeBranch = null
+
+    const normalizeRoleName = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+    const assignedRoleKeys = computed(() => assignedRoleNames.value.map(normalizeRoleName))
+    const hasReceptionistDashboard = computed(() => assignedRoleKeys.value.some((role) => role.includes('reception') || role.includes('frontdesk')))
+    const hasPractitionerDashboard = computed(() => assignedRoleKeys.value.some((role) => ['practitioner', 'doctor', 'dentist', 'nurse', 'therapist', 'clinician'].some((name) => role.includes(name))))
+    const calendarWeekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const calendarMonthLabel = computed(() => calendarMonth.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))
+    const practitionerAssignedAppointments = computed(() => sortRecordsNewestFirst(practitionerAppointments.value.filter((appointment) => [appointment.practitionerId, appointment.assignedPractitionerId, appointment.staffId, appointment.assignedTo].some((id) => String(id || '') === currentUserId.value))))
+    const practitionerCalendarCells = computed(() => {
+      const year = calendarMonth.value.getFullYear()
+      const month = calendarMonth.value.getMonth()
+      const first = new Date(year, month, 1)
+      const start = new Date(year, month, 1 - first.getDay())
+      return Array.from({ length: 42 }, (_, index) => {
+        const date = new Date(start)
+        date.setDate(start.getDate() + index)
+        const key = dateKey(date)
+        return { key, dateKey: key, dayNumber: date.getDate(), inMonth: date.getMonth() === month, appointments: practitionerAssignedAppointments.value.filter((appointment) => appointment.date === key) }
+      })
+    })
+    const selectedCalendarDateLabel = computed(() => {
+      const date = new Date(`${selectedCalendarDate.value}T12:00:00`)
+      return Number.isNaN(date.getTime()) ? 'Select a day' : date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+    })
+    const selectedPractitionerAppointments = computed(() => practitionerAssignedAppointments.value.filter((appointment) => appointment.date === selectedCalendarDate.value))
+    const changeCalendarMonth = (offset) => {
+      const next = new Date(calendarMonth.value)
+      next.setMonth(next.getMonth() + offset)
+      calendarMonth.value = next
+    }
+    const cellClass = (cell) => {
+      if (!cell.inMonth) return 'border-[#f4ece3] bg-[#fbf8f4] text-[#c5b3a2]'
+      if (cell.dateKey === selectedCalendarDate.value) return 'border-[#9a6b48] bg-[#f4e6d7] text-[#4a2d1c]'
+      return 'border-[#ead7c2] bg-[#fffdfa] text-[#674a36] hover:bg-[#f8efe5]'
+    }
+    const formatAppointmentTime = (value) => formatClockTime(value) || 'Time TBD'
 
     const moduleCatalog = [
       {
@@ -205,6 +297,44 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const featureAllowed = !entry.feature || hasFeature(entry.feature)
       return permissionAllowed && featureAllowed
     }
+
+    const receptionistCards = computed(() => [
+      { label: 'Appointments', to: '/crm/appointments', description: "View today's bookings and appointment records.", permission: 'appointments:view' },
+      { label: 'Appointment Requests', to: '/crm/appointments/requests', description: 'Review cancellation and reschedule requests.', permission: 'appointments:review' },
+      { label: 'Clients', to: '/crm/clients', description: 'Find and manage clinic client records.', permission: 'clients:view' },
+      { label: 'Transactions', to: '/crm/transactions', description: 'Review recent client payments.', permission: 'payments:view' }
+    ].filter((entry) => canAccessEntry({ permission: entry.permission, feature: 'appointments' })))
+
+    const loadAssignedRoleNames = async (userData = {}) => {
+      const roleIds = [...new Set([...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []), userData.customRoleId].map((id) => String(id || '').trim()).filter(Boolean))]
+      const roleDocs = await Promise.all(roleIds.map((id) => getDoc(doc(db, 'clinicRoles', id)).catch(() => null)))
+      const names = roleDocs.filter((snapshot) => snapshot?.exists()).map((snapshot) => String(snapshot.data()?.name || '').trim()).filter(Boolean)
+      const fallbackName = String(userData.customRoleName || userData.role || '').trim()
+      assignedRoleNames.value = [...new Set([...names, ...(fallbackName ? [fallbackName] : [])])]
+    }
+
+    const loadPractitionerAppointments = async (branchId) => {
+      practitionerAppointments.value = []
+      if (!hasPractitionerDashboard.value || !branchId || !hasPermission('appointments:view') || !hasFeature('appointments')) return
+      try {
+        const snapshot = await getDocs(query(collection(db, 'appointments'), where('branchId', '==', branchId)))
+        practitionerAppointments.value = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+      } catch (error) {
+        console.warn('Unable to load practitioner dashboard appointments:', error)
+      }
+    }
+
+    watch(
+      () => [hasPractitionerDashboard.value, hasPermission('appointments:view'), hasFeature('appointments'), practitionerBranchId.value],
+      ([isPractitioner, canViewAppointments, appointmentsEnabled, branchId]) => {
+        if (isPractitioner && canViewAppointments && appointmentsEnabled && branchId) {
+          void loadPractitionerAppointments(branchId)
+        } else {
+          practitionerAppointments.value = []
+        }
+      },
+      { immediate: true }
+    )
 
     const accessibleModules = computed(() =>
       moduleCatalog
@@ -341,10 +471,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     onMounted(trackPageLoad(async () => {
+      selectedCalendarDate.value = dateKey(new Date())
       await initSubscription()
       unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
         if (!user) {
           roleLabel.value = ''
+          assignedRoleNames.value = []
+          currentUserId.value = ''
+          practitionerBranchId.value = ''
+          practitionerAppointments.value = []
           branchLabel.value = ''
           loading.value = false
           if (unsubscribeProfile) {
@@ -364,7 +499,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           onSnapshot, doc(db, 'users', user.uid),
           async (userSnap) => {
             const userData = userSnap.exists() ? userSnap.data() || {} : {}
-            roleLabel.value = String(userData.customRoleName || userData.role || 'Employee').trim()
+            currentUserId.value = user.uid
+            await loadAssignedRoleNames(userData)
+            roleLabel.value = assignedRoleNames.value.join(' + ') || String(userData.role || 'Employee').trim()
+            practitionerBranchId.value = String(userData.branchId || userData.clinicBranch || '').trim()
             subscribeToBranchSource(user, userData)
             await loadTodayShift(user.uid, userData)
             loading.value = false
@@ -393,6 +531,18 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       headingTitle,
       loading,
       roleLabel,
+      hasReceptionistDashboard,
+      hasPractitionerDashboard,
+      receptionistCards,
+      calendarWeekdays,
+      calendarMonthLabel,
+      practitionerCalendarCells,
+      selectedCalendarDate,
+      selectedCalendarDateLabel,
+      selectedPractitionerAppointments,
+      changeCalendarMonth,
+      cellClass,
+      formatAppointmentTime,
       quickLinks,
       todayShiftLabel,
       todayShiftTime

@@ -12,7 +12,6 @@ import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { revenueByBranch, revenueTransactionAmount, sumNetRevenue } from '@/utils/revenue'
 import { useSubscriptionStore } from '@/stores/subscription'
-import { formatClockTime } from '@/utils/appointmentDss'
 
 export default {
   name: 'OwnerDashboard',
@@ -22,6 +21,23 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp())
     const subscriptionStore = useSubscriptionStore()
+    const formatClockTime = (value) => {
+      const raw = String(value || '').trim()
+      const match = raw.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i)
+      if (!match) return raw
+      let hour = Number(match[1])
+      const minute = Number(match[2])
+      const marker = String(match[3] || '').toUpperCase()
+      if (hour > 23 || minute > 59) return raw
+      if (marker) {
+        if (hour < 1 || hour > 12) return raw
+        if (marker === 'PM' && hour !== 12) hour += 12
+        if (marker === 'AM' && hour === 12) hour = 0
+      }
+      const suffix = hour >= 12 ? 'PM' : 'AM'
+      const displayHour = hour % 12 || 12
+      return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`
+    }
     const loading = ref(true)
     const setupPolicyConfigured = ref(false)
     const setupListings = ref([])
@@ -675,6 +691,7 @@ const renderEmployeeChart = () => {
       lowStockItems,
       recentPurchaseRequests,
       formatCurrency,
+      formatClockTime,
       exportCsv,
       exportWord,
       exportPdf
