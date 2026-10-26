@@ -1546,23 +1546,20 @@ const submitRequest = async () => {
 
   if (requestModal.value.type === 'cancel') {
     try {
-      const totalAmount = Number(appt.totalAmount || appt.amountPaid || appt.amount || 0)
-      const commissionAmount = Number(appt.commissionAmount || 0)
-      const refundableAmount = Math.max(0, totalAmount - commissionAmount)
-      await updateDoc(doc(db, 'appointments', appt.id), {
-        status: 'Cancellation Requested',
-        cancellationReason: reason,
-        cancellationRequestedAt: new Date().toISOString(),
-        cancellationPolicySnapshot: getClinicPolicy(appt, 'cancel'),
-        refundRequestedAmount: refundableAmount,
-        refundCommissionAmount: commissionAmount,
-        refundStatus: 'Pending Approval',
+      if (!canRequestCancellation(appt)) {
+        toast.error('This appointment has already started or passed and can no longer be cancelled here.')
+        closeRequestModal()
+        return
+      }
+      await postAppointmentAction(appt.id, `/appointments/${appt.id}/request-change`, {
+        type: 'cancel',
+        reason,
       })
       toast.success('Cancellation request submitted for review.')
       closeRequestModal()
     } catch (error) {
       console.error(error)
-      toast.error('Failed to submit cancellation request.')
+      toast.error(error?.message || 'Failed to submit cancellation request.')
     }
     return
   }

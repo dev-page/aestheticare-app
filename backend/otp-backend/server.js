@@ -8910,6 +8910,108 @@ app.post('/appointments/finalize-booking', requireAuth, async (req, res) => {
   return res.status(409).json({ success: false, error: 'Submit a booking request for clinic approval, then pay from My Appointments. Contact the clinic about any earlier checkout.' })
 })
 
+app.post('/appointments/:id/request-change', requireAuth, async (req, res) => {
+  if (!adminReady) return res.status(500).json({ success: false, error: adminInitError || 'firebase-admin is not ready' })
+  const appointmentId = String(req.params.id || '').trim()
+  const type = String(req.body?.type || '').trim().toLowerCase()
+  const reason = String(req.body?.reason || '').trim()
+  if (!appointmentId) return res.status(400).json({ success: false, error: 'appointment id is required' })
+  if (type !== 'cancel') return res.status(400).json({ success: false, error: 'Unsupported appointment change request.' })
+  if (!reason || reason.length > 1000) return res.status(400).json({ success: false, error: 'Provide a reason of up to 1,000 characters.' })
+
+  try {
+    const firestore = admin.firestore()
+    const appointmentRef = firestore.collection('appointments').doc(appointmentId)
+    const appointmentSnap = await appointmentRef.get()
+    if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
+    const appointment = appointmentSnap.data() || {}
+    assertWorkflow(String(appointment.customerId || '') === req.user.uid, 'You can only request changes to your own appointment.', 403)
+    assertWorkflow(!appointment.isGroupParent && !appointment.isBookingOrderParent, 'This booking cannot be cancelled from this appointment record.', 400)
+
+    const branchId = String(appointment.branchId || '').trim()
+    const { policy, branch } = await getClinicPoliciesForBranch(firestore, branchId)
+    assertWorkflow(policy.cancellationPolicyEnabled === true && String(policy.cancellationPolicy || '').trim(), 'This clinic does not allow cancellation requests.', 403)
+    const scheduledStart = new Date(`${appointment.date}T${appointment.time}+08:00`)
+    assertWorkflow(Number.isFinite(scheduledStart.getTime()) && scheduledStart.getTime() > Date.now(), 'This appointment has already started or passed. Contact the clinic to resolve it.', 409)
+    const allowedStatuses = ['paid', 'scheduled', 'awaiting payment', 'contract pending', 'ready to start']
+    assertWorkflow(allowedStatuses.includes(normalizeBookingStatus(appointment.status)) && !appointment.startedAt && !appointment.checkedInAt, 'This appointment can no longer be cancelled.', 409)
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    await firestore.runTransaction(async tx => {
+      const freshSnap = await tx.get(appointmentRef)
+      const fresh = freshSnap.exists ? freshSnap.data() || {} : null
+      assertWorkflow(fresh && String(fresh.customerId || '') === req.user.uid, 'Appointment not found.', 404)
+      assertWorkflow(['paid', 'scheduled', 'awaiting payment', 'contract pending', 'ready to start'].includes(normalizeBookingStatus(fresh.status)) && !fresh.startedAt && !fresh.checkedInAt, 'This appointment can no longer be cancelled.', 409)
+      const freshStart = new Date(`${fresh.date}T${fresh.time}+08:00`)
+      assertWorkflow(Number.isFinite(freshStart.getTime()) && freshStart.getTime() > Date.now(), 'This appointment has already started or passed. Contact the clinic to resolve it.', 409)
+      const commissionAmount = Math.max(0, Number(fresh.commissionAmount || 0))
+      const paidAmount = Math.max(0, Number(fresh.amountPaid || 0))
+      const refundableAmount = Math.max(0, paidAmount - commissionAmount)
+      tx.update(appointmentRef, {
+        status: 'Cancellation Requested',
+        cancellationReason: reason,
+        cancellationRequestedAt: timestamp,
+        cancellationPolicySnapshot: String(policy.cancellationPolicy || '').trim(),
+        refundRequestedAmount: refundableAmount,
+        refundCommissionAmount: commissionAmount,
+        refundStatus: 'Pending Approval',
+        updatedAt: timestamp,
+      })
+      tx.set(firestore.collection('appointmentAudit').doc(), {
+        appointmentId,
+        branchId,
+        action: 'cancellation_requested',
+        actorId: req.user.uid,
+        previousStatus: fresh.status || '',
+        nextStatus: 'Cancellation Requested',
+        createdAt: timestamp,
+      })
+    })
+
+    const clinicRecipients = [...new Set([
+      String(branch.ownerId || branch.organizationOwnerId || '').trim(),
+      String(branch.branchAdminId || '').trim(),
+    ].filter((uid) => uid && uid !== req.user.uid))]
+    await Promise.all(clinicRecipients.map(async recipientUserId => {
+      try {
+        await firestore.collection('notifications').add({
+          recipientUserId,
+          branchId,
+          title: 'Appointment cancellation requested',
+          message: `${appointment.customerName || 'A customer'} requested to cancel ${appointment.service || 'an appointment'} scheduled for ${appointment.date || ''} ${appointment.time || ''}.`,
+          link: '/crm/appointments',
+          read: false,
+          deleted: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+      } catch (notificationError) {
+        console.warn('Failed to notify clinic about cancellation request:', notificationError?.message || notificationError)
+      }
+    }))
+    await createAppointmentNotification({
+      firestore,
+      customerId: req.user.uid,
+      title: 'Cancellation request submitted',
+      message: 'Your cancellation request was sent to the clinic for review. You will be notified when it is decided.',
+    }).catch(error => console.warn('Failed to create cancellation request notification:', error?.message || error))
+    const customerEmail = String(appointment.customerEmail || '').trim().toLowerCase()
+    if (customerEmail && postmarkClient && senderEmail) {
+      try {
+        await sendPostmarkMessage({
+          to: customerEmail,
+          subject: 'Your appointment cancellation request was received',
+          text: `We sent your cancellation request for ${appointment.service || 'your appointment'} on ${[appointment.date, appointment.time].filter(Boolean).join(' at ')} to the clinic for review. The appointment is not cancelled until the clinic makes a decision.`,
+        })
+      } catch (emailError) {
+        console.warn('Failed to email cancellation request confirmation:', emailError?.message || emailError)
+      }
+    }
+    return res.json({ success: true, data: { appointmentId, status: 'Cancellation Requested' } })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error?.message || 'Unable to submit the cancellation request.' })
+  }
+})
+
 app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
   if (!adminReady) return res.status(500).json({ success: false, error: adminInitError || 'firebase-admin is not ready' })
   const appointmentId = String(req.params.id || '').trim()
@@ -8933,7 +9035,9 @@ app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
       assertWorkflow(fresh && ['scheduled', 'ready to start', 'paid'].includes(normalized(fresh.status)) && !fresh.checkedInAt && !fresh.workerKeyVerified && !fresh.startedAt && !fresh.isGroupParent && !fresh.isBookingOrderParent, 'Only an unattended individual appointment can be marked as a no-show.')
       const start = new Date(`${fresh.date}T${fresh.time}+08:00`)
       const end = fresh.endTime ? new Date(`${fresh.date}T${fresh.endTime}+08:00`) : new Date(start.getTime() + Number(fresh.totalServiceDurationMinutes || 60) * 60000)
-      assertWorkflow(Number.isFinite(end.getTime()) && new Date() > end, 'Wait until the appointment window has ended before recording a no-show.')
+      const configuredGracePeriod = Number(policy.noShowGracePeriodMinutes || 0)
+      const gracePeriodMinutes = Number.isFinite(configuredGracePeriod) ? Math.max(0, configuredGracePeriod) : 0
+      assertWorkflow(Number.isFinite(end.getTime()) && Date.now() >= end.getTime() + gracePeriodMinutes * 60 * 1000, `Wait until the appointment ends and its ${gracePeriodMinutes}-minute no-show grace period passes before recording a no-show.`)
       const planId = fresh.treatmentPlanAppointmentId || appointmentId
       const planRef = firestore.collection('appointments').doc(planId)
       const plan = planId === appointmentId ? fresh : (await tx.get(planRef)).data()
@@ -8959,7 +9063,23 @@ app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
         ? 'Your clinic recorded a missed appointment. Contact the clinic to arrange a staff-approved reschedule under its no-show policy.'
         : 'Your clinic recorded a missed appointment. This appointment is forfeited under the clinic no-show policy.',
       link: '/customer/appointments',
-    })
+    }).catch(notificationError => console.warn('Failed to create appointment no-show notification:', notificationError?.message || notificationError))
+    const customerEmail = String(appointment.customerEmail || '').trim().toLowerCase()
+    if (customerEmail && postmarkClient && senderEmail) {
+      try {
+        const customerName = String(appointment.customerName || 'Customer').trim() || 'Customer'
+        const outcomeText = rescheduleAllowed
+          ? 'Contact the clinic to arrange a staff-approved reschedule under its no-show policy.'
+          : 'This appointment is forfeited under the clinic no-show policy.'
+        await sendPostmarkMessage({
+          to: customerEmail,
+          subject: 'Your appointment was marked as a no-show',
+          text: `Hi ${customerName},\n\nThe clinic recorded your ${appointment.service || 'appointment'} on ${[appointment.date, appointment.time].filter(Boolean).join(' at ')} as a no-show. ${outcomeText}\n\nIf you believe this is incorrect, please contact the clinic.`,
+        })
+      } catch (emailError) {
+        console.warn('Failed to email appointment no-show notice:', emailError?.message || emailError)
+      }
+    }
     return res.json({ success: true, data: { appointmentId, status: 'No-show', noShowOutcome } })
   } catch (error) {
     return res.status(error.status || 500).json({ success: false, error: error?.message || 'Unable to mark the appointment as a no-show.' })
