@@ -77,7 +77,7 @@
                 <p class="text-white text-sm font-medium">{{ appointment.clientName || 'Unknown Client' }}</p>
                 <p class="text-slate-400 text-xs">{{ appointment.service || 'Service not set' }}</p>
               </div>
-              <p class="text-slate-300 text-sm">{{ appointment.date }} {{ appointment.time || '' }}</p>
+              <p class="text-slate-300 text-sm">{{ appointment.date }} {{ formatClockTime(appointment.time) }}</p>
             </div>
             <p v-if="upcomingAppointments.length === 0" class="text-slate-400 text-sm">No upcoming appointments.</p>
           </div>
@@ -118,6 +118,7 @@ import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { toast } from 'vue3-toastify'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { formatClockTime } from '@/utils/appointmentDss'
 
 export default {
   name: 'ReceptionistDashboard',

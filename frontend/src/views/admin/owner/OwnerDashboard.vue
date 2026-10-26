@@ -12,6 +12,7 @@ import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { revenueByBranch, revenueTransactionAmount, sumNetRevenue } from '@/utils/revenue'
 import { useSubscriptionStore } from '@/stores/subscription'
+import { formatClockTime } from '@/utils/appointmentDss'
 
 export default {
   name: 'OwnerDashboard',
@@ -525,7 +526,7 @@ const renderEmployeeChart = () => {
         ? upcomingAppointments.value.map((appointment) => ({
             section: 'Upcoming Appointments',
             label: appointment.clientName || 'Unknown Client',
-            value: `${appointment.date || '-'} ${appointment.time || ''}`.trim()
+            value: `${appointment.date || '-'} ${formatClockTime(appointment.time)}`.trim()
           }))
         : [{ section: 'Upcoming Appointments', label: 'Status', value: 'No upcoming appointments.' }]
 
@@ -921,7 +922,7 @@ const renderEmployeeChart = () => {
                   <p class="dashboard-list-title">{{ appointment.clientName || 'Unknown Client' }}</p>
                   <p class="dashboard-list-copy">{{ appointment.service || 'Service not set' }}</p>
                 </div>
-                <p class="dashboard-list-meta">{{ appointment.date }} {{ appointment.time || '' }}</p>
+                <p class="dashboard-list-meta">{{ appointment.date }} {{ formatClockTime(appointment.time) }}</p>
               </div>
               <p v-if="upcomingAppointments.length === 0" class="dashboard-empty">No upcoming appointments.</p>
             </div>

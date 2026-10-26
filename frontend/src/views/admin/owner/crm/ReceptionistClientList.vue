@@ -114,7 +114,7 @@
                   <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p class="text-base font-semibold text-white">{{ appointment.service || appointment.type || 'Appointment' }}</p>
-                      <p class="mt-1 text-sm text-slate-400">{{ appointment.date || '-' }} {{ appointment.time || '' }}</p>
+                      <p class="mt-1 text-sm text-slate-400">{{ appointment.date || '-' }} {{ formatClockTime(appointment.time) }}</p>
                       <p class="mt-1 text-xs text-slate-500">Practitioner: {{ appointment.practitionerName || appointment.assignedPractitionerName || '-' }}</p>
                     </div>
                     <div class="flex flex-col items-end gap-2">
@@ -175,6 +175,7 @@ import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { formatClockTime } from '@/utils/appointmentDss'
 import { usePermissionsStore } from '@/stores/permissions'
 
 export default {

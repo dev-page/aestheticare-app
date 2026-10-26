@@ -22,7 +22,7 @@
               <div>
                 <p class="clinic-name">{{ record.branchName || branchNames[record.branchId] || 'Clinic' }}</p>
                 <h2>{{ record.customerName || record.clientName || 'Customer' }}</h2>
-                <p class="visit-meta">{{ record.serviceName || record.service || 'Consultation' }} · {{ formatDate(record.date) }}<span v-if="record.time"> · {{ record.time }}</span><span v-if="record.consultationMode"> · {{ record.consultationMode }}</span></p>
+                <p class="visit-meta">{{ record.serviceName || record.service || 'Consultation' }} · {{ formatDate(record.date) }}<span v-if="record.time"> · {{ formatClockTime(record.time) }}</span><span v-if="record.consultationMode"> · {{ record.consultationMode }}</span></p>
               </div>
               <span class="record-badge">{{ record.prescriptionStatus === 'dispensed' ? 'Dispensed' : 'Pending pickup' }}</span>
             </header>
@@ -62,6 +62,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import { usePageLoading } from '@/composables/usePageLoading'
+import { formatClockTime } from '@/utils/appointmentDss'
 import { usePermissions } from '@/composables/usePermissions'
 import { loadOwnerBranchScope, loadClinicDocsByIds } from '@/utils/ownerBranchScope'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'

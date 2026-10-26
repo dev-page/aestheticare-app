@@ -70,7 +70,7 @@
               <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-slate-700/50 transition-colors">
                 <td class="px-6 py-4 text-white"><p>{{ appointment.clientName || appointment.customerName || appointment.patientName || '-' }}</p><p v-if="appointment.isGroupRecipient" class="mt-1 text-xs text-violet-300">Group recipient {{ appointment.groupRecipientIndex }} of {{ appointment.groupRecipientCount }} · Paid by {{ appointment.groupOrganizerName || 'organizer' }}</p></td>
                 <td class="px-6 py-4 text-slate-300"><p>{{ appointment.service || appointment.type || '-' }}</p><p v-if="appointment.treatmentPlan?.totalSessions > 1" class="mt-1 text-xs text-amber-300">Treatment plan: {{ appointment.treatmentPlan.completedSessions || 0 }}/{{ appointment.treatmentPlan.totalSessions }} completed</p></td>
-                <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ appointment.time || '' }}</td>
+                <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ formatClockTime(appointment.time) }}</td>
                 <td class="px-6 py-4">
                   <span :class="statusClass(appointment.status)">
                     {{ appointment.status || 'Scheduled' }}
@@ -127,6 +127,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { formatClockTime } from '@/utils/appointmentDss'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'

@@ -21,7 +21,7 @@
           <p class="p-4 text-sm">1. Clinic approval ? 2. Review and e-sign ? 3. Payment ? 4. Your appointment</p>
           <article v-for="appt in contractsToSign" :key="appt.id" class="unpaid-appointment-card">
             <h3 class="unpaid-appointment-title">{{ formatAppointmentServices(appt) }}</h3>
-            <p>{{ appt.clinic }} ? {{ appt.date }} ? {{ appt.time }}</p>
+            <p>{{ appt.clinic }} ? {{ appt.date }} ? {{ formatClockTime(appt.time) }}</p>
             <button v-if="appt.contract?.terms || appt.contract?.templateUrl" type="button" class="appointment-button appointment-button-primary" @click="openContract(appt)">Review &amp; e-sign contract</button>
             <p v-else class="text-sm">Your clinic is preparing the contract. Payment will be available after you sign.</p>
           </article>
@@ -66,7 +66,7 @@
 
               <dl class="unpaid-appointment-details">
                 <div><dt>Date</dt><dd>{{ appt.date }}</dd></div>
-                <div><dt>Time</dt><dd>{{ appt.time }}</dd></div>
+                <div><dt>Time</dt><dd>{{ formatClockTime(appt.time) }}</dd></div>
                 <div><dt>Amount due</dt><dd>{{ formatBookingDue(appt) }}</dd></div>
               </dl>
 
@@ -104,7 +104,7 @@
 
         <section v-if="activeAppointmentTab === 'sessions'" class="appointments-panel">
           <div class="panel-head"><div><p class="panel-kicker">Treatment Plan</p><h2 class="panel-title">My Treatment Sessions</h2></div><p class="panel-note">{{ treatmentSessions.length }} session{{ treatmentSessions.length === 1 ? '' : 's' }}</p></div>
-<div v-if="treatmentSessions.length" class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead><tbody><tr v-for="session in treatmentSessions" :key="session.id"><td>Session {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.date ? `${session.date} ${session.time || ''}` : session.requestedDate ? `Requested: ${session.requestedDate} ${session.requestedTime || ''}` : session.earliestScheduleDate ? `Eligible from ${session.earliestScheduleDate}` : 'Not scheduled yet' }}</td><td>{{ session.status }}</td><td><button v-if="session.status === 'Schedule Proposed'" type="button" class="appointment-button appointment-button-secondary" @click="confirmSessionSchedule(session)">Confirm proposed date</button><button v-if="canRequestSessionSchedule(session)" type="button" class="appointment-button appointment-button-secondary" @click="openRequestModal('session', session)">{{ session.status === 'Scheduled' ? 'Request reschedule' : 'Request schedule' }}</button><span v-else-if="String(session.status || '').toLowerCase().includes('requested')" class="text-sm text-[#7f6654]">Awaiting clinic review</span><span v-else class="text-sm text-[#7f6654]">{{ session.sessionNumber > 1 ? 'Available after the prior visit is resolved' : '' }}</span></td></tr></tbody></table></div>
+<div v-if="treatmentSessions.length" class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead><tbody><tr v-for="session in treatmentSessions" :key="session.id"><td>Session {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.date ? `${session.date} ${formatClockTime(session.time)}` : session.requestedDate ? `Requested: ${session.requestedDate} ${formatClockTime(session.requestedTime)}` : session.earliestScheduleDate ? `Eligible from ${session.earliestScheduleDate}` : 'Not scheduled yet' }}</td><td>{{ session.status }}</td><td><button v-if="session.status === 'Schedule Proposed'" type="button" class="appointment-button appointment-button-secondary" @click="confirmSessionSchedule(session)">Confirm proposed date</button><button v-if="canRequestSessionSchedule(session)" type="button" class="appointment-button appointment-button-secondary" @click="openRequestModal('session', session)">{{ session.status === 'Scheduled' ? 'Request reschedule' : 'Request schedule' }}</button><span v-else-if="String(session.status || '').toLowerCase().includes('requested')" class="text-sm text-[#7f6654]">Awaiting clinic review</span><span v-else class="text-sm text-[#7f6654]">{{ session.sessionNumber > 1 ? 'Available after the prior visit is resolved' : '' }}</span></td></tr></tbody></table></div>
           <div v-else class="state-panel">No treatment sessions have been scheduled yet.</div>
         </section>
         <section v-if="activeAppointmentTab === 'online'" class="appointments-panel">
@@ -144,7 +144,7 @@
                     <div class="table-primary">{{ appt.clinic }}</div>
                   </td>
                   <td data-label="Date">{{ appt.date }}</td>
-                  <td data-label="Time">{{ appt.time }}</td>
+                  <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
                   <td data-label="Meeting Link">
                     <span class="table-secondary">{{ appt.meetLink ? 'Meet invitation ready' : appt.consultationCustomerReadyAt ? 'You are in the virtual waiting room' : 'Waiting for check-in' }}</span>
                     <span v-if="appt.consultationCustomerReadyAt && !appt.consultationInviteAt" class="table-secondary">Your practitioner will invite you to Meet when ready.</span>
@@ -228,7 +228,7 @@
                     <div class="table-primary">{{ appt.clinic }}</div>
                   </td>
                   <td data-label="Date">{{ appt.date }}</td>
-                  <td data-label="Time">{{ appt.time }}</td>
+                  <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
                   <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
                   </td>
@@ -327,7 +327,7 @@
                     <div class="table-primary">{{ appt.clinic }}</div>
                   </td>
                   <td data-label="Date">{{ appt.date }}</td>
-                  <td data-label="Time">{{ appt.time }}</td>
+                  <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
                   <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
                   </td>
@@ -379,7 +379,7 @@
                 {{ requestModal.type === 'cancel' ? 'Request Appointment Cancellation' : requestModal.type === 'session' ? 'Request Treatment Session Schedule' : 'Request Appointment Reschedule' }}
               </h3>
               <p class="request-modal-summary">
-                {{ requestModal.appointment ? (requestModal.type === 'session' ? `Session ${requestModal.appointment.sessionNumber} of ${requestModal.appointment.totalSessions}` : `${formatAppointmentServices(requestModal.appointment)} - ${requestModal.appointment.date} - ${requestModal.appointment.time}`) : '' }}
+                {{ requestModal.appointment ? (requestModal.type === 'session' ? `Session ${requestModal.appointment.sessionNumber} of ${requestModal.appointment.totalSessions}` : `${formatAppointmentServices(requestModal.appointment)} - ${requestModal.appointment.date} - ${formatClockTime(requestModal.appointment.time)}`) : '' }}
               </p>
             </div>
             <button type="button" class="request-close-button" @click="closeRequestModal">
@@ -568,6 +568,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { formatClockTime } from '@/utils/appointmentDss'
 import BookingContractModal from '@/components/BookingContractModal.vue'
 import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()

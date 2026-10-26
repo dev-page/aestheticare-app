@@ -253,7 +253,7 @@
             <section v-if="scheduledBookings.length" class="mt-6 rounded-2xl border border-[#e0c09a] bg-[#fffaf3] p-5">
               <h4 class="center-panel-title">Your scheduled services</h4>
               <p class="mt-1 text-sm text-[#6f4a2d]">Each service has its own date. Submit them together for one checkout after clinic approval.</p>
-              <ul class="mt-3 space-y-2"><li v-for="(visit, index) in scheduledBookings" :key="index" class="flex items-center justify-between gap-3 rounded-xl bg-[#f7ead7] p-3 text-sm"><span>{{ visit.selectedServices[0].title || visit.selectedServices[0].name }} · {{ visit.date }} {{ visit.time }} · {{ visit.practitionerName }}</span><button type="button" :disabled="bookingPaymentSaving" @click="scheduledBookings.splice(index, 1)">Remove</button></li></ul>
+              <ul class="mt-3 space-y-2"><li v-for="(visit, index) in scheduledBookings" :key="index" class="flex items-center justify-between gap-3 rounded-xl bg-[#f7ead7] p-3 text-sm"><span>{{ visit.selectedServices[0].title || visit.selectedServices[0].name }} · {{ visit.date }} {{ formatClockTime(visit.time) }} · {{ visit.practitionerName }}</span><button type="button" :disabled="bookingPaymentSaving" @click="scheduledBookings.splice(index, 1)">Remove</button></li></ul>
               <button type="button" :disabled="bookingPaymentSaving" class="mt-4 rounded-xl bg-[#8d5a3b] px-4 py-2 text-white disabled:opacity-50" @click="submitScheduledBookings">Submit scheduled services</button>
             </section>
             <div v-if="selectedServices.length" class="booking-panel center-booking-panel mt-8 rounded-2xl border p-6">
@@ -660,6 +660,7 @@ import { isCustomerCareListing } from '../../../../shared/customerCatalog.js'
 import { onlinePolicy } from '../../../../shared/onlineConsultation.js'
 import { isCategorizedService, normalizeServiceCategory, serviceCategoryOptions, filterCategorizedServices } from '../../../../shared/serviceCategories.js'
 import { usePageLoading } from '@/composables/usePageLoading'
+import { formatClockTime } from '@/utils/appointmentDss'
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { hasCompletedLinkedConsultation } from '../../../../shared/consultationRequirements.js'

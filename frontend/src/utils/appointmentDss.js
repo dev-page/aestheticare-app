@@ -56,6 +56,11 @@ export const minutesToTime12 = (minutes) => {
   return `${hour}:${String(minute).padStart(2, '0')} ${suffix}`
 }
 
+export const formatClockTime = (value) => {
+  const minutes = parseClockToMinutes(value)
+  return minutes === null ? String(value || '') : minutesToTime12(minutes)
+}
+
 export const getWeekStartKey = (dateString) => {
   const match = String(dateString || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (!match) return ''

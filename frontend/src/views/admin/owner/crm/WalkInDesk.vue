@@ -48,7 +48,7 @@
         <section v-else class="desk-card">
           <div class="section-heading"><div><p class="eyebrow">Step 3</p><h2>Appointments &amp; payments</h2><p class="muted small">Booking confirmed. Collect payment for each appointment; the client receives a separate service code for each service.</p></div><button type="button" class="desk-button secondary" :disabled="busy" @click="startNewBooking">New booking</button></div>
           <article v-for="appointment in createdAppointments" :key="appointment.id" class="payment-card">
-            <div class="section-heading"><div><h3>{{ appointment.clientName || appointment.customerName }}</h3><p>{{ appointment.service }}</p><p class="muted small">{{ dateLabel(appointment.date) }} · {{ appointment.time }} · {{ appointment.practitionerName }}</p><p class="muted small">{{ appointment.customerEmail }}</p></div><strong>{{ currency(appointment.totalAmount ?? appointment.amount) }}</strong></div>
+            <div class="section-heading"><div><h3>{{ appointment.clientName || appointment.customerName }}</h3><p>{{ appointment.service }}</p><p class="muted small">{{ dateLabel(appointment.date) }} · {{ formatClockTime(appointment.time) }} · {{ appointment.practitionerName }}</p><p class="muted small">{{ appointment.customerEmail }}</p></div><strong>{{ currency(appointment.totalAmount ?? appointment.amount) }}</strong></div>
             <p class="muted small">Arranged by {{ appointment.bookedByName }} · Booking terms signed. Treatment agreement: {{ appointment.contract?.status === 'signed' ? 'Signed by recipient' : 'Awaiting recipient signature' }}.</p>
             <div v-if="!receipts[appointment.id] && appointment.paymentStatus !== 'Paid'" class="payment-form"><div><label :for="`cash-${appointment.id}`" class="field-label">Cash received</label><input :id="`cash-${appointment.id}`" v-model.number="cashReceived[appointment.id]" type="number" min="0" step="0.01" class="desk-input" :disabled="busy" placeholder="0.00" /></div><button type="button" class="desk-button primary" :disabled="busy" @click="collectPayment(appointment)">Record cash payment</button></div>
             <div v-else class="payment-success"><p>Payment recorded<span v-if="receipts[appointment.id]"> · Change: {{ currency(receipts[appointment.id].change) }}</span></p><template v-if="receipts[appointment.id]"><p>Service code: <strong>{{ receipts[appointment.id].serviceKey }}</strong></p><p class="small">{{ receipts[appointment.id].emailSent ? 'Service code emailed to the client.' : 'Email delivery was not confirmed. Give the client their receipt and service code.' }}</p><button type="button" class="desk-button secondary" @click="printReceipt(receipts[appointment.id])">Print receipt</button></template></div>
@@ -83,6 +83,7 @@ import ElectronicSignaturePad from '@/components/common/ElectronicSignaturePad.v
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { buildWeekScheduleMap } from '@/utils/employeeSchedules'
 import { manilaDate, walkInSlots } from '@/utils/walkInScheduling'
+import { formatClockTime } from '@/utils/appointmentDss'
 import { buildClientContractDocument, buildBookingTermsDocument } from '../../../../../../shared/clientContract.js'
 
 const { pageLoading, trackPageLoad } = usePageLoading()
@@ -225,7 +226,7 @@ function printReceipt(receipt) {
   const popup = window.open('', '_blank')
   if (!popup) return void (error.value = 'Allow pop-ups to print the receipt.')
   const content = popup.document.createElement('pre')
-  content.textContent = `Walk-in receipt\n${receipt.clientName}\n${receipt.service}\n${receipt.date} at ${receipt.time}\nPaid: ${currency(receipt.total)}\nCash received: ${currency(receipt.tendered)}\nChange: ${currency(receipt.change)}\nService code: ${receipt.serviceKey}`
+  content.textContent = `Walk-in receipt\n${receipt.clientName}\n${receipt.service}\n${receipt.date} at ${formatClockTime(receipt.time)}\nPaid: ${currency(receipt.total)}\nCash received: ${currency(receipt.tendered)}\nChange: ${currency(receipt.change)}\nService code: ${receipt.serviceKey}`
   popup.document.body.append(content)
   popup.print()
 }

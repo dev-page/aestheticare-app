@@ -113,11 +113,11 @@
                       <p class="text-xs text-slate-400">{{ request.serviceLabel }}</p>
                     </td>
                     <td class="px-6 py-4 text-slate-300">
-                      <p>{{ request.date || '-' }} {{ request.time || '' }}</p>
+                      <p>{{ request.date || '-' }} {{ formatClockTime(request.time) }}</p>
                       <p class="text-xs text-slate-400">{{ request.assignedPractitionerName || 'Assigned Practitioner' }}</p>
                     </td>
                     <td class="px-6 py-4 text-slate-300">
-                      <p>{{ request.requestedDate || '-' }} {{ request.requestedTime || '' }}</p>
+                      <p>{{ request.requestedDate || '-' }} {{ formatClockTime(request.requestedTime) }}</p>
                       <p class="text-xs text-slate-400">{{ request.requestedPractitionerName || 'Assigned Practitioner' }}</p>
                     </td>
                     <td class="px-6 py-4">
@@ -164,11 +164,11 @@
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span>Original Schedule</span>
-                <span class="font-semibold text-white">{{ selectedRequest.date || '-' }} {{ selectedRequest.time || '' }}</span>
+                <span class="font-semibold text-white">{{ selectedRequest.date || '-' }} {{ formatClockTime(selectedRequest.time) }}</span>
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span>Requested Schedule</span>
-                <span class="font-semibold text-cyan-200">{{ selectedRequest.requestedDate || '-' }} {{ selectedRequest.requestedTime || '' }}</span>
+                <span class="font-semibold text-cyan-200">{{ selectedRequest.requestedDate || '-' }} {{ formatClockTime(selectedRequest.requestedTime) }}</span>
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span>Practitioner</span>
@@ -235,6 +235,7 @@
 
 <script setup>
 import { usePageLoading } from '@/composables/usePageLoading'
+import { formatClockTime } from '@/utils/appointmentDss'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 const props = defineProps({ embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' } })
 

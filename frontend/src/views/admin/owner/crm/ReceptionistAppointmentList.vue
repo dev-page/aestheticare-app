@@ -67,7 +67,7 @@
               <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-slate-700/50 transition-colors">
                 <td class="px-6 py-4 text-white">{{ appointment.clientName || appointment.customerName || appointment.patientName || '-' }}</td>
                 <td class="px-6 py-4 text-slate-300">{{ appointment.service || appointment.type || '-' }}</td>
-                <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ appointment.time || '' }}</td>
+                <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ formatClockTime(appointment.time) }}</td>
                 <td class="px-6 py-4">
                   <span :class="statusClass(appointment.status)">
                     {{ appointment.status || 'Scheduled' }}
@@ -125,6 +125,7 @@ import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import BookingContractModal from '@/components/BookingContractModal.vue'
 import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
+import { formatClockTime } from '@/utils/appointmentDss'
 
 export default {
   name: 'ReceptionistAppointmentList',

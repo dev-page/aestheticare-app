@@ -59,7 +59,7 @@
               <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-slate-700/50 transition-colors">
                 <td class="px-6 py-4 text-white">{{ appointment.clientName || appointment.patientName || '-' }} <span v-if="appointment.demoMode" class="ml-2 rounded-full bg-amber-700/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Demo</span></td>
                 <td class="px-6 py-4 text-slate-300">{{ appointment.service || appointment.type || '-' }}</td>
-                <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ appointment.time || '' }}</td>
+                <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ formatClockTime(appointment.time) }}</td>
                 <td class="px-6 py-4">
                   <div v-if="appointment.consultationMode === 'online' && appointment.meetLink && appointment.consultationInviteAt" class="flex items-center gap-2">
                     <span class="text-sky-300 text-sm break-all">
@@ -156,6 +156,7 @@ import GoogleHostingAccount from '@/components/common/GoogleHostingAccount.vue'
 import { Icon } from '@iconify/vue'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { formatClockTime } from '@/utils/appointmentDss'
 import { initialPaymentReceived, normalized } from '../../../../../../backend/otp-backend/bookingWorkflow.js'
 import { promptForPrescriptions } from '@/utils/prescriptions'
 

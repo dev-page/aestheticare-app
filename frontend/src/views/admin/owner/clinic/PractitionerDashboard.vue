@@ -86,7 +86,7 @@
                   :key="item.id"
                   class="text-[11px] rounded px-2 py-1 truncate bg-purple-500/20 text-purple-300"
                 >
-                  {{ item.time || 'Time TBD' }} · {{ item.clientName || 'Client' }}
+                  {{ formatClockTime(item.time) || 'Time TBD' }} · {{ item.clientName || 'Client' }}
                 </p>
                 <p v-if="cell.appointments.length > 2" class="text-[11px] text-slate-400">
                   +{{ cell.appointments.length - 2 }} more
@@ -109,7 +109,7 @@
               <p class="text-white text-sm font-medium">{{ appointment.clientName || 'Unknown Client' }}</p>
               <p class="text-slate-300 text-xs mt-1">{{ appointment.service || 'Service not set' }}</p>
               <div class="flex items-center justify-between mt-2">
-                <p class="text-slate-400 text-xs">{{ appointment.time || 'Time TBD' }}</p>
+                <p class="text-slate-400 text-xs">{{ formatClockTime(appointment.time) || 'Time TBD' }}</p>
                 <span class="text-[11px] px-2 py-1 rounded-full bg-blue-500/20 text-blue-300">
                   {{ appointment.status || 'Scheduled' }}
                 </span>
@@ -139,6 +139,7 @@ import { toast } from 'vue3-toastify'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { formatClockTime } from '@/utils/appointmentDss'
 
 export default {
   name: 'PractitionerDashboard',

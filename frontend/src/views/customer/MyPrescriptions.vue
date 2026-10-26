@@ -20,7 +20,7 @@
               <div>
                 <p class="clinic-name">{{ record.clinicName || 'Clinic' }}</p>
                 <h2>{{ record.service || 'Consultation' }}</h2>
-                <p class="visit-meta">{{ formatDate(record.date) }}<span v-if="record.time"> · {{ record.time }}</span><span v-if="record.consultationMode"> · {{ record.consultationMode }} consultation</span></p>
+                <p class="visit-meta">{{ formatDate(record.date) }}<span v-if="record.time"> · {{ formatClockTime(record.time) }}</span><span v-if="record.consultationMode"> · {{ record.consultationMode }} consultation</span></p>
               </div>
               <span class="record-badge">{{ record.prescriptions.length ? 'Prescription' : 'Care instructions' }}</span>
             </div>
@@ -64,6 +64,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import { usePageLoading } from '@/composables/usePageLoading'
+import { formatClockTime } from '@/utils/appointmentDss'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 
