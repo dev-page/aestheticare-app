@@ -42,14 +42,10 @@
         </section>
 
         <section class="clinic-profile-card">
-          <div class="clinic-card-heading"><div><h2>Clinic location</h2><p>Search for the address and pin the clinic location customers should use.</p></div></div>
+          <div class="clinic-card-heading"><div><h2>Clinic location</h2><p>View the saved clinic location customers will use.</p></div></div>
           <LocationPicker
+            v-if="hasLocationCoords"
             region="cavite"
-            title="Select Address in Cavite"
-            instruction-title="Cavite only"
-            instruction-text="Pinning is limited to land locations inside Cavite. Pins in the ocean, water, or outside Cavite are blocked."
-            search-placeholder="Search a city, barangay, or address in Cavite"
-            search-hint="Search first, then drag or click the pin to fine-tune the exact location."
             allowed-area-label="Cavite, Philippines"
             pinned-address-label="Pinned Address"
             map-height="440px"
@@ -57,9 +53,11 @@
             :initial-address="clinic.clinicLocationAddress || buildLocationSearchQuery()"
             :initial-lat="clinic.clinicLocationLat"
             :initial-lng="clinic.clinicLocationLng"
-            @selection-change="handleLocationSelection"
+            readonly
+            :show-actions="false"
             @error="locationError = $event"
           />
+          <p v-else class="clinic-location-empty">No saved map location is available for this clinic.</p>
           <p v-if="locationError" class="clinic-error clinic-location-error">{{ locationError }}</p>
         </section>
 
@@ -283,17 +281,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         locationMap.setCenter(fallback);
       }
       setLocationMarkerPosition(fallback);
-    };
-
-    const handleLocationSelection = ({ lat, lng, address, city, barangay, province, postalCode }) => {
-      clinic.value.clinicLocationLat = String(lat || '');
-      clinic.value.clinicLocationLng = String(lng || '');
-      clinic.value.clinicLocationAddress = String(address || '').trim();
-      clinic.value.clinicLocation = String(city || clinic.value.clinicLocation || '').trim();
-      clinic.value.clinicBarangay = String(barangay || clinic.value.clinicBarangay || '').trim();
-      clinic.value.clinicProvince = String(province || clinic.value.clinicProvince || 'Cavite').trim() || 'Cavite';
-      clinic.value.clinicPostalCode = String(postalCode || clinic.value.clinicPostalCode || '').trim();
-      locationSearchQuery.value = clinic.value.clinicLocationAddress || buildLocationSearchQuery();
     };
 
     const syncLocationFromGeocode = (result, position) => {
@@ -600,17 +587,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return;
       }
 
-      const lat = Number(clinic.value.clinicLocationLat);
-      const lng = Number(clinic.value.clinicLocationLng);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        toast.error('Please pin the clinic location on the Cavite map first.');
-        return;
-      }
-      if (locationError.value) {
-        toast.error(locationError.value);
-        return;
-      }
-
       saving.value = true;
       try {
         const clinicId = activeClinicId.value || user.uid;
@@ -631,13 +607,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           businessEmail: String(clinic.value.businessEmail || '').trim(),
           contactNumber: `+63${clinic.value.contactNumber}`,
           description: String(clinic.value.description || '').trim(),
-          clinicLocation: String(clinic.value.clinicLocation || '').trim(),
-          clinicLocationAddress: String(clinic.value.clinicLocationAddress || '').trim(),
-          clinicBarangay: String(clinic.value.clinicBarangay || '').trim(),
-          clinicPostalCode: String(clinic.value.clinicPostalCode || '').trim(),
-          clinicProvince: String(clinic.value.clinicProvince || 'Cavite').trim(),
-          clinicLocationLat: String(clinic.value.clinicLocationLat || ''),
-          clinicLocationLng: String(clinic.value.clinicLocationLng || ''),
           profilePicture,
           bannerPicture,
           updatedAt: serverTimestamp(),
@@ -684,6 +653,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       branchScopeLabel,
       clinicDisplayName,
       buildLocationSearchQuery,
+      hasLocationCoords,
       validateContactNumber,
     };
   },
@@ -981,6 +951,16 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .clinic-location-error {
   display: block;
   margin-top: .75rem;
+}
+
+.clinic-location-empty {
+  margin: 0;
+  border: 1px solid #ead4bb;
+  border-radius: .9rem;
+  background: #fbf4e9;
+  padding: 1rem;
+  color: #897463;
+  font-size: .875rem;
 }
 
 .clinic-profile-actions {
