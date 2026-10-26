@@ -100,11 +100,11 @@ const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = Math.max(0.74, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.74)))
 const MANUAL_REVIEW_THRESHOLD = Math.max(0.5, Math.min(AUTO_VERIFICATION_THRESHOLD, Number(process.env.MANUAL_REVIEW_THRESHOLD || 0.5)))
-// A document is still usable for registration until it expires.  To avoid
-// activating an account with compliance paperwork that will lapse almost
-// immediately, documents with one to seven calendar days left are held for a
-// replacement. Eight days or more may proceed through normal review.
+// A 30-day window gives administrators and registrants advance notice. Only
+// documents with seven or fewer days remaining require replacement before
+// review; already expired documents remain rejected.
 const REGISTRATION_EXPIRY_HOLD_DAYS = 7
+const REGISTRATION_EXPIRY_WARNING_DAYS = 30
 const REGISTRATION_EXPIRY_RESUBMISSION_DAYS = 24
 // `registrationStatus` is the single, user-facing registration phase. Keep
 // account status, approval status, and OCR status separate: they describe
@@ -2245,6 +2245,8 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
       expiryValidationType: expiryValidation.type,
       expiryDaysRemaining: requiresExpiry ? expiryValidation.daysRemaining : null,
       expiryAccountHold: requiresExpiry ? expiryValidation.accountHold : false,
+      expiryWarning: requiresExpiry && expiryValidation.daysRemaining > REGISTRATION_EXPIRY_HOLD_DAYS
+        && expiryValidation.daysRemaining <= REGISTRATION_EXPIRY_WARNING_DAYS,
     }
     // Automatic approval requires the Step 1 registrant name to be found in
     // the extracted text. Documents that have an expiry date also require a
@@ -2550,6 +2552,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   const hasRejectedDocument = requiredKeys.some((key) => results[key]?.status === 'rejected')
   const expiryHoldDocuments = requiredKeys.filter((key) => results[key]?.checks?.expiryAccountHold)
   const hasExpiryHold = expiryHoldDocuments.length > 0
+  const expiryWarningDocuments = requiredKeys.filter((key) => results[key]?.checks?.expiryWarning)
+  const hasExpiryWarning = expiryWarningDocuments.length > 0
   const requiresExpiryResubmission = hasExpiryHold && !hasRejectedDocument
   const existingExpiryDeadline = typeof application.expiryResubmissionExpiresAt?.toDate === 'function'
     ? application.expiryResubmissionExpiresAt.toDate()
@@ -2570,6 +2574,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     verificationProcessedAt: admin.firestore.FieldValue.serverTimestamp(),
     verificationProcessedBy: processedBy || 'automatic_processor',
     expiryAccountHold: hasExpiryHold,
+    expiryWarningDocuments,
     expiryHoldDocuments,
     expiryHoldPolicy: hasExpiryHold ? `Document expires within ${REGISTRATION_EXPIRY_HOLD_DAYS} calendar days.` : admin.firestore.FieldValue.delete(),
     expiryResubmissionExpiresAt: expiryResubmissionExpiresAt || admin.firestore.FieldValue.delete(),
@@ -2618,11 +2623,11 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     senderId: uid,
     type: `${normalizedType}_registration_verification`,
     title: `${notificationLabel} Registration Ready for Review`,
-    message: allVerified
+    message: `${allVerified
       ? `A ${normalizedType} registration passed OCR verification and is awaiting your approval.`
       : hasRejectedDocument
         ? `A ${normalizedType} registration was rejected because one or more documents did not meet the OCR threshold.`
-        : `A ${normalizedType} registration requires manual document review.`,
+        : `A ${normalizedType} registration requires manual document review.`}${hasExpiryWarning ? ` Expiry warning: ${expiryWarningDocuments.map(registrationDocumentLabel).join(', ')} expire within ${REGISTRATION_EXPIRY_WARNING_DAYS} days.` : ''}`,
     link: '/superadmin/clinics/verification',
     read: false,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2630,6 +2635,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   await batch.commit()
 
   let expiryHoldEmailSent = false
+  let expiryWarningEmailSent = false
   if (shouldSendExpiryHoldEmail) {
     const recipient = String(user.email || application.email || '').trim().toLowerCase()
     if (recipient && postmarkClient && senderEmail) {
@@ -2657,7 +2663,32 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     }
   }
 
-  return { status: verificationStatus, approvalStatus, allVerified, hasRejectedDocument, results, expiryResubmissionExpiresAt, expiryHoldEmailSent }
+  const shouldSendExpiryWarningEmail = hasExpiryWarning && !application.expiryWarningEmailSentAt
+  if (shouldSendExpiryWarningEmail) {
+    const recipient = String(user.email || application.email || '').trim().toLowerCase()
+    if (recipient && postmarkClient && senderEmail) {
+      try {
+        const applicantName = String(user.firstName || application.ownerFirstName || '').trim() || 'Applicant'
+        const expiringDocuments = expiryWarningDocuments.map((key) => {
+          const result = results[key]
+          return `${registrationDocumentLabel(key)} (expires ${result.checks.expiryDate}; ${result.checks.expiryDaysRemaining} days remaining)`
+        }).join(', ')
+        await sendPostmarkMessage({
+          to: recipient,
+          from: senderEmail,
+          subject: 'Reminder: A Clinic Registration Document Expires Soon',
+          text: `Hi ${applicantName},\n\nOur document check found that the following clinic registration document${expiryWarningDocuments.length === 1 ? '' : 's'} will expire within 30 days: ${expiringDocuments}.\n\nYour registration can continue through its normal review while the document is still valid. Please renew it before it expires and contact the platform administrator if an updated document is needed for review.\n\nRegards,\nThe AesthetiCare Team`,
+          html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${applicantName},</p><p>Our document check found that the following clinic registration document${expiryWarningDocuments.length === 1 ? '' : 's'} will expire within 30 days:</p><p><strong>${expiringDocuments}</strong></p><p>Your registration can continue through its normal review while the document is still valid. Please renew it before it expires and contact the platform administrator if an updated document is needed for review.</p><p>Regards,<br>The AesthetiCare Team</p></div>`,
+        })
+        expiryWarningEmailSent = true
+        await applicationRef.set({ expiryWarningEmailSentAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+      } catch (emailError) {
+        console.warn('Failed to send clinic expiry-warning email:', emailError?.message || emailError)
+      }
+    }
+  }
+
+  return { status: verificationStatus, approvalStatus, allVerified, hasRejectedDocument, results, expiryResubmissionExpiresAt, expiryHoldEmailSent, expiryWarningEmailSent }
 }
 
 app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) => {
@@ -2688,17 +2719,50 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
     if (authEmail && authEmail !== email) {
       return res.status(403).json({ success: false, error: 'Your signed-in email does not match this registration.' })
     }
+    if (clinic.resubmissionRequired === true
+      && typeof clinic.permitHolderIsRegistrant === 'boolean'
+      && permitHolderIsRegistrant !== clinic.permitHolderIsRegistrant) {
+      return res.status(409).json({ success: false, error: 'The permit-holder details cannot be changed during document resubmission. Refresh your registration and try again.' })
+    }
 
     const requiredKeys = getRegistrationDocumentRequirements('clinic', {
       ...clinic,
       permitHolderIsRegistrant,
     })
+    const expiryDeadline = getTimestampDate(clinic.expiryResubmissionExpiresAt)
+    const expiryHoldKeys = Array.isArray(clinic.expiryHoldDocuments)
+      ? [...new Set(clinic.expiryHoldDocuments.filter((key) => requiredKeys.includes(key)))]
+      : []
+    if (clinic.resubmissionRequired === true && expiryDeadline && expiryDeadline.getTime() <= Date.now()) {
+      return res.status(409).json({ success: false, error: 'The document-resubmission period has ended. Please start a new clinic registration.' })
+    }
+    const isExpiryPartialResubmission = clinic.approvalStatus === 'Pending Documents'
+      && clinic.resubmissionRequired === true
+      && Boolean(expiryDeadline && expiryDeadline.getTime() > Date.now())
+      && expiryHoldKeys.length > 0
+    const expiryHoldKeySet = new Set(expiryHoldKeys)
+    const previousDocuments = clinic.submittedDocuments || {}
     const submittedDocuments = {}
     for (const docKey of requiredKeys) {
+      if (isExpiryPartialResubmission && !expiryHoldKeySet.has(docKey)) {
+        const existing = previousDocuments[docKey]
+        const existingPath = String(existing?.path || existing?.storagePath || '').trim()
+        if (!existingPath.startsWith(`clinic-registration/${uid}/${docKey}/`)) {
+          return res.status(409).json({ success: false, error: `The saved ${registrationDocumentLabel(docKey)} is unavailable. Please contact support.` })
+        }
+        submittedDocuments[docKey] = existing
+        continue
+      }
       const entry = documents[docKey] || {}
       const storagePath = String(entry.path || entry.storagePath || '').trim()
       if (!storagePath.startsWith(`clinic-registration/${uid}/${docKey}/`)) {
         return res.status(400).json({ success: false, error: `The ${registrationDocumentLabel(docKey)} file is missing or invalid.` })
+      }
+      if (isExpiryPartialResubmission) {
+        const previousPath = String(previousDocuments[docKey]?.path || previousDocuments[docKey]?.storagePath || '').trim()
+        if (previousPath && storagePath === previousPath) {
+          return res.status(400).json({ success: false, error: `Upload a replacement for ${registrationDocumentLabel(docKey)}.` })
+        }
       }
       const fileSize = Number(entry.size || 0)
       const fileType = String(entry.type || '').toLowerCase()
@@ -2729,6 +2793,27 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       }
       const latestClinic = latestClinicSnapshot.data() || {}
       const policy = policySnapshot.exists ? policySnapshot.data() || {} : {}
+      if (isExpiryPartialResubmission) {
+        const latestDeadline = getTimestampDate(latestClinic.expiryResubmissionExpiresAt)
+        const latestHeldKeys = Array.isArray(latestClinic.expiryHoldDocuments)
+          ? [...new Set(latestClinic.expiryHoldDocuments.filter((key) => requiredKeys.includes(key)))].sort()
+          : []
+        if (latestClinic.resubmissionRequired !== true
+          || !latestDeadline
+          || latestDeadline.getTime() <= now
+          || latestHeldKeys.join('|') !== [...expiryHoldKeys].sort().join('|')) {
+          throw Object.assign(new Error('The expiry resubmission request changed or has expired. Refresh your registration and try again.'), { statusCode: 409 })
+        }
+        const latestDocuments = latestClinic.submittedDocuments || {}
+        const savedDocumentsChanged = requiredKeys.some((docKey) => {
+          const initialPath = String(previousDocuments[docKey]?.path || previousDocuments[docKey]?.storagePath || '').trim()
+          const latestPath = String(latestDocuments[docKey]?.path || latestDocuments[docKey]?.storagePath || '').trim()
+          return initialPath !== latestPath
+        })
+        if (savedDocumentsChanged) {
+          throw Object.assign(new Error('The saved documents changed while you were preparing this submission. Refresh the page and try again.'), { statusCode: 409 })
+        }
+      }
       const existingLock = getTimestampDate(policy.lockedUntil)
       if (existingLock && existingLock.getTime() > now) {
         lockedUntil = existingLock
@@ -2776,6 +2861,13 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
         draftDocuments: admin.firestore.FieldValue.delete(),
         draftDocumentsUpdatedAt: admin.firestore.FieldValue.delete(),
         registrationLockedUntil: admin.firestore.FieldValue.delete(),
+        expiryWarningDocuments: admin.firestore.FieldValue.delete(),
+        expiryWarningEmailSentAt: admin.firestore.FieldValue.delete(),
+        expiryHoldDocuments: admin.firestore.FieldValue.delete(),
+        expiryResubmissionExpiresAt: admin.firestore.FieldValue.delete(),
+        expiryAccountHold: admin.firestore.FieldValue.delete(),
+        resubmissionRequired: admin.firestore.FieldValue.delete(),
+        resubmissionReason: admin.firestore.FieldValue.delete(),
         updatedAt: timestamp,
       }, { merge: true })
       transaction.set(userRef, {
@@ -4272,6 +4364,9 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
         reviewedBy,
         submittedDocuments: {},
         documentsSubmittedAt: admin.firestore.FieldValue.delete(),
+        expiryHoldDocuments: admin.firestore.FieldValue.delete(),
+        expiryResubmissionExpiresAt: admin.firestore.FieldValue.delete(),
+        expiryAccountHold: admin.firestore.FieldValue.delete(),
         updatedAt: timestamp,
       }, { merge: true })
       transaction.set(firestore.collection('notifications').doc(), {
@@ -6732,6 +6827,9 @@ app.post('/auth/registration-profile', async (req, res) => {
         permitHolderRelationship: clinicData.permitHolderRelationship || '',
         submittedDocuments: clinicData.submittedDocuments || {},
         draftDocuments: clinicData.draftDocuments || {},
+        expiryHoldDocuments: clinicData.expiryHoldDocuments || [],
+        expiryResubmissionExpiresAt: safeDate(clinicData.expiryResubmissionExpiresAt),
+        resubmissionReason: clinicData.resubmissionReason || '',
         status: userData.status || '',
         approvalStatus: clinicData.approvalStatus || '',
       },

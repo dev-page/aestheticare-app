@@ -220,6 +220,7 @@ const otpVerifiedForRegistration = ref(false)
 const pendingApprovalMode = ref(false)
 const resubmissionReason = ref('')
 const expiryResubmissionExpiresAt = ref(null)
+const expiryHoldDocumentKeys = ref([])
 const clinicSubmissionAttemptCount = ref(0)
 const clinicSubmissionMaxAttempts = ref(3)
 const clinicRegistrationLockedUntil = ref(null)
@@ -376,6 +377,7 @@ const APPROVAL_REDIRECT_DURATION_SECONDS = 5
 const approvalReviewState = ref('pending')
 const approvalReviewMessage = ref('Your registration is under review. Please allow at least 24 hours for admin review.')
 const approvalReviewReason = ref('')
+const approvalExpiryWarningMessage = ref('')
 const approvalUserExists = ref(false)
 const approvalClinicExists = ref(false)
 const approvalUserStatus = ref('')
@@ -540,6 +542,17 @@ const requiredDocumentKeys = computed(() => permitHolderIsRegistrant.value === f
   ? [...companyDocumentKeys, 'authorizationLetter']
   : companyDocumentKeys
 )
+const isExpiryPartialResubmission = computed(() => Boolean(
+  expiryResubmissionExpiresAt.value
+  && expiryHoldDocumentKeys.value.some((key) => requiredDocumentKeys.value.includes(key))
+))
+const documentsToUpload = computed(() => isExpiryPartialResubmission.value
+  ? requiredDocumentKeys.value.filter((key) => expiryHoldDocumentKeys.value.includes(key))
+  : requiredDocumentKeys.value
+)
+const expiryHoldDocumentLabels = computed(() => documentsToUpload.value
+  .map((key) => documentLabelMap[key] || key)
+)
 const permitHolderDetailsComplete = computed(() => (
   typeof permitHolderIsRegistrant.value === 'boolean'
   && (permitHolderIsRegistrant.value || (
@@ -567,7 +580,9 @@ const documentKeysExcludingGovId = computed(() =>
   )
 )
 const allDocumentsUploaded = computed(() =>
-  requiredDocumentKeys.value.every((key) => Boolean(existingSubmittedDocuments.value[key] || documentFileMap[key]?.value))
+  documentsToUpload.value.every((key) => isExpiryPartialResubmission.value
+    ? Boolean(documentFileMap[key]?.value)
+    : Boolean(existingSubmittedDocuments.value[key] || documentFileMap[key]?.value))
 )
 
 const resolveAuthorizedRepPosition = () => {
@@ -1147,6 +1162,7 @@ const refreshClinicSubmissionStatus = async () => {
 const startApprovalCheck = () => {
   if (!userUid.value) return
   stopApprovalCheck()
+  approvalExpiryWarningMessage.value = ''
   approvalReviewState.value = 'reviewing'
   approvalReviewMessage.value = 'Your registration is under review. Please allow at least 24 hours for admin review.'
   approvalReviewReason.value = ''
@@ -1172,9 +1188,21 @@ const startApprovalCheck = () => {
     doc(db, 'clinics', userUid.value),
     (snapshot) => {
       approvalClinicExists.value = snapshot.exists()
-      approvalClinicStatus.value = snapshot.exists() ? String(snapshot.data()?.approvalStatus || '') : ''
+      const clinicData = snapshot.exists() ? snapshot.data() || {} : {}
+      approvalClinicStatus.value = String(clinicData.approvalStatus || '')
       if (snapshot.exists()) {
-        approvalReviewReason.value = String(snapshot.data()?.rejectionReason || '')
+        approvalReviewReason.value = String(clinicData.rejectionReason || '')
+        const warnings = Object.entries(clinicData.verificationResults || {})
+          .filter(([, result]) => result?.checks?.expiryWarning === true)
+          .map(([key, result]) => {
+            const label = documentLabelMap[key] || key
+            const date = result.checks.expiryDate ? ` on ${result.checks.expiryDate}` : ''
+            const days = Number.isFinite(Number(result.checks.expiryDaysRemaining)) ? ` (${result.checks.expiryDaysRemaining} days remaining)` : ''
+            return `${label}${date}${days}`
+          })
+        approvalExpiryWarningMessage.value = warnings.length
+          ? `Our document check found an item that expires within 30 days: ${warnings.join('; ')}. Your registration can continue through review while the document is valid. Please renew it before it expires.`
+          : ''
       }
       updateApprovalReviewState()
     },
@@ -1507,6 +1535,7 @@ const applyProfileData = (profile) => {
   permitHolderRelationship.value = safe(profile.permitHolderRelationship) || permitHolderRelationship.value
   resubmissionReason.value = safe(profile.resubmissionReason) || resubmissionReason.value
   expiryResubmissionExpiresAt.value = profile.expiryResubmissionExpiresAt || null
+  expiryHoldDocumentKeys.value = Array.isArray(profile.expiryHoldDocuments) ? profile.expiryHoldDocuments : []
 
   if (profile.birthDate) {
     const birth = new Date(profile.birthDate)
@@ -1966,6 +1995,8 @@ if (statusResult.resumeStep === 4) {
       clinicProvince: clinicData.clinicProvince,
       clinicPostalCode: clinicData.clinicPostalCode,
       submittedDocuments: clinicData.submittedDocuments,
+      expiryHoldDocuments: clinicData.expiryHoldDocuments,
+      expiryResubmissionExpiresAt: clinicData.expiryResubmissionExpiresAt,
       draftDocuments: clinicData.draftDocuments,
       resubmissionReason: clinicData.resubmissionReason,
     })
@@ -3200,7 +3231,7 @@ const submitDocuments = async () => {
       const selectedFile = documentFileMap[docKey]?.value
       return [docKey, selectedFile ? uploaded || null : existing]
     }))
-    await Promise.all(requiredDocumentKeys.value.map(async (docKey) => {
+    await Promise.all(documentsToUpload.value.map(async (docKey) => {
       if (submittedDocumentsPayload[docKey]?.path || submittedDocumentsPayload[docKey]?.storagePath) return
       const file = documentFileMap[docKey]?.value
       if (!file) return
@@ -3256,6 +3287,8 @@ const submitDocuments = async () => {
     clinicSubmissionAttemptCount.value = Number(submissionPayload.data?.submissionAttemptCount || clinicSubmissionAttemptCount.value + 1)
     clinicRegistrationLockedUntil.value = null
     resubmissionReason.value = ''
+    expiryHoldDocumentKeys.value = []
+    expiryResubmissionExpiresAt.value = null
 
     // Verification is a server-side follow-up. Show submission success as soon
     // as the durable Firestore write completes instead of holding the applicant
@@ -3816,7 +3849,10 @@ const handleRegistrationSubmit = () => {
                 <p class="font-semibold text-charcoal-800">Document changes requested</p>
                 <p class="mt-1">{{ resubmissionReason }}</p>
                 <p v-if="expiryResubmissionDeadlineLabel" class="mt-2 text-xs font-semibold text-charcoal-700">Submit the replacement documents by {{ expiryResubmissionDeadlineLabel }}. No extension is available.</p>
-                <p class="mt-2 text-xs text-charcoal-600">Upload a complete replacement set of the required documents, then submit them for review again.</p>
+                <p v-if="isExpiryPartialResubmission" class="mt-2 text-xs text-charcoal-600">
+                  Replace only: <strong>{{ expiryHoldDocumentLabels.join(', ') }}</strong>. Your other submitted documents will be kept.
+                </p>
+                <p v-else class="mt-2 text-xs text-charcoal-600">Upload a complete replacement set of the required documents, then submit them for review again.</p>
               </div>
               <section class="space-y-4 rounded-2xl border border-gold-200/80 bg-cream-50/70 p-4 sm:p-5" aria-labelledby="permit-holder-heading">
                 <div>
@@ -3833,14 +3869,14 @@ const handleRegistrationSubmit = () => {
                       class="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition"
                       :class="permitHolderIsRegistrant === true ? 'border-gold-600 bg-gold-100/70 text-charcoal-800' : 'border-gold-200 bg-white/70 text-charcoal-700 hover:border-gold-400'"
                     >
-                      <input v-model="permitHolderIsRegistrant" :value="true" type="radio" name="permit-holder-is-registrant" class="accent-gold-700" />
+                      <input v-model="permitHolderIsRegistrant" :value="true" type="radio" name="permit-holder-is-registrant" :disabled="isExpiryPartialResubmission" class="accent-gold-700" />
                       <span><strong class="block">Yes, I am</strong><span class="text-xs text-charcoal-500">My name appears as the permit holder.</span></span>
                     </label>
                     <label
                       class="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition"
                       :class="permitHolderIsRegistrant === false ? 'border-gold-600 bg-gold-100/70 text-charcoal-800' : 'border-gold-200 bg-white/70 text-charcoal-700 hover:border-gold-400'"
                     >
-                      <input v-model="permitHolderIsRegistrant" :value="false" type="radio" name="permit-holder-is-registrant" class="accent-gold-700" />
+                      <input v-model="permitHolderIsRegistrant" :value="false" type="radio" name="permit-holder-is-registrant" :disabled="isExpiryPartialResubmission" class="accent-gold-700" />
                       <span><strong class="block">No, someone else is</strong><span class="text-xs text-charcoal-500">I am registering as an authorized representative.</span></span>
                     </label>
                   </div>
@@ -3868,6 +3904,7 @@ const handleRegistrationSubmit = () => {
                   <li>Business Permit, BIR Registration, Sanitary Certificate, and DOH License must show the clinic/business name entered in Step 1.</li>
                   <li v-if="permitHolderIsRegistrant === false">The business permit should show the declared permit holder, and the authorization document should clearly identify both the permit holder and registrant.</li>
                   <li>Upload clear, complete, and unexpired documents. Documents with an expiry date must still be valid.</li>
+                  <li>We will flag documents expiring within 30 days and email you a reminder. Documents expiring within 7 days require replacement before review; expired documents cannot be accepted.</li>
                 </ul>
               </div>
               <div class="upload-grid">
@@ -3886,7 +3923,7 @@ const handleRegistrationSubmit = () => {
                       </ul>
                     </div>
                   </details>
-                  <div class="upload-card">
+                  <div v-if="documentsToUpload.includes('governmentIdRepresentativeFront')" class="upload-card">
                     <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeFront }}</p>
                     <input :key="documentInputKeys.governmentIdRepresentativeFront" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeFront', $event)" class="upload-input" />
                     <img
@@ -3911,7 +3948,8 @@ const handleRegistrationSubmit = () => {
                       </div>
                     </div>
                   </div>
-                  <div class="upload-card">
+                  <div v-else class="upload-card flex items-center text-xs text-charcoal-600">{{ documentLabelMap.governmentIdRepresentativeFront }} will be kept from your previous submission.</div>
+                  <div v-if="documentsToUpload.includes('governmentIdRepresentativeBack')" class="upload-card">
                     <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeBack }}</p>
                     <input :key="documentInputKeys.governmentIdRepresentativeBack" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeBack', $event)" class="upload-input" />
                     <img
@@ -3936,6 +3974,7 @@ const handleRegistrationSubmit = () => {
                       </div>
                     </div>
                   </div>
+                  <div v-else class="upload-card flex items-center text-xs text-charcoal-600">{{ documentLabelMap.governmentIdRepresentativeBack }} will be kept from your previous submission.</div>
                 </div>
                 <div
                   v-for="docKey in documentKeysExcludingGovId"
@@ -3943,6 +3982,7 @@ const handleRegistrationSubmit = () => {
                   class="upload-card"
                 >
                   <p class="upload-label">{{ documentLabelMap[docKey] || docKey }}</p>
+                  <template v-if="documentsToUpload.includes(docKey)">
                   <input :key="documentInputKeys[docKey]" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange(docKey, $event)" class="upload-input" />
 
                   <img
@@ -3966,6 +4006,8 @@ const handleRegistrationSubmit = () => {
                       ></div>
                     </div>
                   </div>
+                  </template>
+                  <p v-else class="text-xs text-charcoal-600">This document will be kept from your previous submission.</p>
                 </div>
               </div>
 
@@ -4035,6 +4077,11 @@ const handleRegistrationSubmit = () => {
                   </p>
                 </div>
                 <Icon :icon="approvalStateIcon" class="h-10 w-10 shrink-0" :class="approvalStateIconTone" aria-hidden="true" />
+              </div>
+
+              <div v-if="approvalExpiryWarningMessage" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-charcoal-700" role="status">
+                <p class="font-semibold text-charcoal-800">Document expiring soon</p>
+                <p class="mt-1">{{ approvalExpiryWarningMessage }}</p>
               </div>
 
               <div v-if="isApprovalUnderReview" class="rounded-2xl border border-gold-200 bg-white/70 p-4 text-sm text-charcoal-600">

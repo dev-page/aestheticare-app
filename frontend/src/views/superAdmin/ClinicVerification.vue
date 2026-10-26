@@ -81,7 +81,10 @@
             </tr>
             <tr v-for="row in paginatedOcrClinics" :key="row.id" class="border-b border-slate-700/50 transition-colors last:border-b-0 hover:bg-slate-700/25">
               <td class="px-4 py-3 text-center"><input type="checkbox" :value="row.id" v-model="selectedOcrVerified" :aria-label="`Select ${row.fullName}`" /></td>
-              <td class="truncate px-4 py-3 font-medium text-slate-100" :title="row.fullName">{{ row.fullName }}</td>
+              <td class="px-4 py-3 font-medium text-slate-100" :title="row.fullName">
+                <span class="block truncate">{{ row.fullName }}</span>
+                <span v-if="row.verificationResults?.some(result => result.checks.expiryWarning)" class="mt-1 block text-[11px] font-medium text-amber-300">Document expiring within 30 days</span>
+              </td>
               <td class="truncate px-4 py-3 text-slate-300" :title="row.email || 'No email available'">{{ row.email || '—' }}</td>
               <td class="px-4 py-3 text-right">
                 <button
@@ -312,7 +315,10 @@
               <article v-for="result in selectedRecord.verificationResults" :key="result.key" class="rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-sm">
                 <div class="flex items-start justify-between gap-3">
                   <p class="text-sm font-medium text-slate-100">{{ documentLabel(result.key) }}</p>
-                  <span class="rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize" :class="result.status === 'verified' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'">{{ result.status }}</span>
+                  <div class="flex flex-wrap justify-end gap-1.5">
+                    <span v-if="result.checks.expiryWarning" class="rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-200">Expiring soon</span>
+                    <span class="rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize" :class="result.status === 'verified' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'">{{ result.status }}</span>
+                  </div>
                 </div>
                 <div class="mt-4 flex items-end justify-between gap-3">
                   <div>
@@ -332,7 +338,7 @@
                 <div class="mt-4 border-t border-slate-800 pt-3">
                   <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Assessment</p>
                   <p class="mt-1 text-xs leading-relaxed text-slate-300">{{ result.reason }}</p>
-                  <p v-if="result.checks.expiryDate" class="mt-2 text-xs text-amber-200">
+                  <p v-if="result.checks.expiryDate" class="mt-2 text-xs" :class="result.checks.expiryWarning || result.checks.expiryAccountHold ? 'text-amber-200' : 'text-slate-400'">
                     Expiry: {{ result.checks.expiryDate }}<span v-if="result.checks.expiryDaysRemaining !== null"> · {{ result.checks.expiryDaysRemaining }} day{{ result.checks.expiryDaysRemaining === 1 ? '' : 's' }} remaining</span>
                   </p>
                 </div>
@@ -536,6 +542,7 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
     expiryDate: String(result.checks?.expiryDate || '').trim(),
     expiryDaysRemaining: Number.isFinite(Number(result.checks?.expiryDaysRemaining)) ? Number(result.checks.expiryDaysRemaining) : null,
     expiryAccountHold: result.checks?.expiryAccountHold === true,
+    expiryWarning: result.checks?.expiryWarning === true,
   },
   scoreBreakdown: result.scoreBreakdown || null,
   reason: String(result.reason || 'No verification explanation was returned.'),
