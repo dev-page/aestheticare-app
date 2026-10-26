@@ -58,11 +58,20 @@
                   v-model="plan.isActive"
                   type="checkbox"
                   class="accent-[#806044]"
+                  :disabled="!plan.isDraft && plan.id === 'free' && plan.isActive !== false"
+                  :title="!plan.isDraft && plan.id === 'free' ? 'Free Plan must remain active as the fallback.' : undefined"
                   @change="clearPlanFieldError(plan, 'isActive')"
                 />
                 Active
               </label>
+              <span
+                v-if="!plan.isDraft && isBuiltInPlan(plan)"
+                class="rounded-full border border-[#d9bea1] bg-[#f6eadb] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#76563d]"
+              >
+                Built-in
+              </span>
               <button
+                v-if="plan.isDraft || !isBuiltInPlan(plan)"
                 type="button"
                 class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#d9bea1] text-[#76563d] transition hover:bg-[#f2e5d4] disabled:cursor-not-allowed disabled:opacity-40"
                 :disabled="savingId === (plan.localKey || plan.id)"
@@ -239,7 +248,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
@@ -289,6 +298,10 @@ const toNumber = (value) => {
 }
 
 const billingCyclePattern = /^(month|year|one-time)$/i
+const LAST_ACTIVE_PLAN_ERROR = 'LAST_ACTIVE_PLAN'
+const FREE_PLAN_PROTECTED_ERROR = 'FREE_PLAN_PROTECTED'
+const BUILT_IN_PLAN_PROTECTED_ERROR = 'BUILT_IN_PLAN_PROTECTED'
+const BUILT_IN_PLAN_IDS = new Set(['free', 'basic', 'premium'])
 
 let draftPlanCounter = 0
 
@@ -355,6 +368,67 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const planKey = (plan) => String(plan?.localKey || plan?.id || '').trim()
+    const isBuiltInPlan = (plan) => BUILT_IN_PLAN_IDS.has(String(plan?.id || '').trim().toLowerCase())
+
+    const showLastActivePlanNotice = async () => {
+      await systemAdminSwal.fire({
+        title: 'Keep one plan active',
+        text: 'Activate and save another plan before deactivating or deleting this one.',
+        icon: 'info',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#6b4b34',
+      })
+    }
+
+    const showProtectedPlanNotice = async () => {
+      await systemAdminSwal.fire({
+        title: 'Free Plan stays active',
+        text: 'The built-in Free Plan cannot be deactivated or deleted. Basic and Premium can be deactivated when another plan is active.',
+        icon: 'info',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#6b4b34',
+      })
+    }
+
+    const savePlanDocument = async (planId, data) => {
+      const normalizedId = String(planId || '').trim()
+      const planRef = doc(db, 'subscriptionPlans', normalizedId)
+
+      await runTransaction(db, async (transaction) => {
+        if (data.isDeleted === true && BUILT_IN_PLAN_IDS.has(normalizedId.toLowerCase())) {
+          throw new Error(BUILT_IN_PLAN_PROTECTED_ERROR)
+        }
+        if (normalizedId.toLowerCase() === 'free' && (data.isDeleted === true || data.isActive === false)) {
+          throw new Error(FREE_PLAN_PROTECTED_ERROR)
+        }
+
+        const currentPlans = plans.value.filter((plan) => !plan.isDraft && String(plan.id || '').trim())
+        const planIds = new Set(currentPlans.map((plan) => String(plan.id).trim()))
+        planIds.add(normalizedId)
+        const planRefs = [...planIds].map((id) => doc(db, 'subscriptionPlans', id))
+        const snapshots = await Promise.all(planRefs.map((reference) => transaction.get(reference)))
+        const defaultPlanById = new Map(defaultPlans().map((plan) => [plan.id, plan]))
+        const isActivePlanSnapshot = (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data()
+            return data.isDeleted !== true && data.isActive !== false
+          }
+          return defaultPlanById.get(snapshot.id)?.isActive !== false && defaultPlanById.has(snapshot.id)
+        }
+        const targetSnapshot = snapshots.find((snapshot) => snapshot.id === normalizedId)
+        const targetWasActive = isActivePlanSnapshot(targetSnapshot)
+        const anotherActivePlanExists = snapshots.some((snapshot) =>
+          snapshot.id !== normalizedId && isActivePlanSnapshot(snapshot),
+        )
+
+        const targetWillRemainActive = data.isDeleted !== true && data.isActive !== false
+        if (targetWasActive && !targetWillRemainActive && !anotherActivePlanExists) {
+          throw new Error(LAST_ACTIVE_PLAN_ERROR)
+        }
+
+        transaction.set(planRef, data, { merge: true })
+      })
+    }
 
     const getPlanErrors = (plan) => planErrors.value[planKey(plan)] || {}
 
@@ -492,6 +566,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const key = planKey(plan)
       const planLabel = String(plan.label || plan.name || plan.id || 'this plan').trim()
 
+      if (!plan.isDraft && isBuiltInPlan(plan)) {
+        await systemAdminSwal.fire({
+          title: 'Built-in plan protected',
+          text: 'Free, Basic, and Premium are built-in plans and cannot be deleted. You can still edit them and deactivate Basic or Premium when another plan is active.',
+          icon: 'info',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#6b4b34',
+        })
+        return
+      }
+
       const confirmation = await systemAdminSwal.fire({
         title: plan.isDraft ? 'Discard this draft?' : 'Delete this plan?',
         text: plan.isDraft
@@ -516,12 +601,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       error.value = ''
 
       try {
-        await setDoc(doc(db, 'subscriptionPlans', String(plan.id || '').trim()), {
+        await savePlanDocument(plan.id, {
           isDeleted: true,
           isActive: false,
           deletedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        }, { merge: true })
+        })
 
         plans.value = plans.value.filter((entry) => planKey(entry) !== key)
         delete planErrors.value[key]
@@ -534,8 +619,22 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           showConfirmButton: false,
         })
       } catch (err) {
-        console.error('Error deleting plan:', err)
-        error.value = `Failed to delete ${planLabel}. Please try again.`
+        if (err.message === BUILT_IN_PLAN_PROTECTED_ERROR) {
+          await systemAdminSwal.fire({
+            title: 'Built-in plan protected',
+            text: 'Free, Basic, and Premium are built-in plans and cannot be deleted.',
+            icon: 'info',
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#6b4b34',
+          })
+        } else if (err.message === FREE_PLAN_PROTECTED_ERROR) {
+          await showProtectedPlanNotice()
+        } else if (err.message === LAST_ACTIVE_PLAN_ERROR) {
+          await showLastActivePlanNotice()
+        } else {
+          console.error('Error deleting plan:', err)
+          error.value = `Failed to delete ${planLabel}. Please try again.`
+        }
       } finally {
         savingId.value = ''
       }
@@ -645,7 +744,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           delete payload.createdAt
         }
 
-        await setDoc(doc(db, 'subscriptionPlans', normalizedId), payload, { merge: true })
+        await savePlanDocument(normalizedId, payload)
         plan.features = cleanFeatures
         plan.isDraft = false
         plan.localKey = normalizedId
@@ -661,8 +760,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           showConfirmButton: false,
         })
       } catch (err) {
-        console.error('Error saving plan:', err)
-        error.value = `Failed to save ${plan.label}. Please try again.`
+        if (err.message === FREE_PLAN_PROTECTED_ERROR) {
+          await showProtectedPlanNotice()
+        } else if (err.message === LAST_ACTIVE_PLAN_ERROR) {
+          await showLastActivePlanNotice()
+        } else {
+          console.error('Error saving plan:', err)
+          error.value = `Failed to save ${plan.label}. Please try again.`
+        }
       } finally {
         savingId.value = ''
       }
@@ -680,6 +785,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       loadPlans,
       addNewPlan: appendPlan,
       deletePlan,
+      isBuiltInPlan,
       addFeature,
       removeFeature,
       savePlan,
