@@ -88,7 +88,7 @@ import LocationPicker from '@/components/common/LocationPicker.vue';
 
 export default {
   name: 'ClinicProfile',
-  components: { OwnerSidebar },
+  components: { OwnerSidebar, LocationPicker },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 

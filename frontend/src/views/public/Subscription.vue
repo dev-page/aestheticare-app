@@ -40,12 +40,10 @@
 
           <div class="plan-price-wrap">
             <p class="plan-price">
-              <template v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0"><span class="trial-price-group"><s class="trial-original-price">{{ plan.priceLabel }}</s><strong class="trial-current-price">PHP 0</strong></span></template>
-              <template v-else>{{ plan.priceLabel }}</template>
+              {{ plan.priceLabel }}
             </p>
             <span class="plan-cycle">{{ plan.cycleLabel || plan.cycle || '-' }}</span>
           </div>
-          <div v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0" class="plan-trial-note"><span class="trial-duration">{{ plan.trialDays }} days free</span><span>after clinic approval · one trial per clinic</span><small>Then {{ plan.priceLabel }}{{ plan.cycleLabel || plan.cycle || '/month' }}.</small></div>
 
           <p class="plan-desc">{{ plan.description }}</p>
           <p class="plan-caption">{{ planCaption(plan) }}</p>
@@ -473,16 +471,6 @@ onBeforeUnmount(() => {
   letter-spacing: -0.04em;
   color: #6f3f2a;
 }
-
-.trial-price-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .7rem; }
-.trial-original-price { color: #684c37; font-size: .48em; font-weight: 700; letter-spacing: 0; text-decoration-thickness: 2px; text-underline-offset: .14em; opacity: .9; }
-.plan-card-free .trial-original-price,
-.plan-card-basic .trial-original-price,
-.plan-card-premium .trial-original-price { color: #684c37; }
-.trial-current-price { display: inline-block; border: 0; border-radius: 0; background: transparent; padding: 0; color: #fff; font-size: .78em; font-weight: 900; line-height: 1.15; white-space: nowrap; text-shadow: 0 1px 2px rgba(72, 39, 19, .35); }
-.plan-trial-note { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .3rem .55rem; margin-top: .7rem; padding: .6rem .7rem; border: 1px solid rgba(91, 57, 33, .15); border-radius: .75rem; background: rgba(255, 250, 241, .55); color: #543b2a; font-size: .76rem; line-height: 1.35; }
-.trial-duration { padding: .2rem .48rem; border-radius: 999px; background: #fff8e9; color: #6b482f; font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
-.plan-trial-note small { grid-column: 1 / -1; color: #68452f; font-size: .72rem; font-weight: 700; }
 
 .plan-cycle {
   font-size: 0.84rem;
