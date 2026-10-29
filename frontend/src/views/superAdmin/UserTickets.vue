@@ -30,7 +30,6 @@
               <th class="text-left text-slate-300 px-4 py-3">Date</th>
               <th class="text-left text-slate-300 px-4 py-3">Topic</th>
               <th class="text-left text-slate-300 px-4 py-3">Clinic</th>
-              <th class="text-left text-slate-300 px-4 py-3">Assigned To</th>
               <th class="text-left text-slate-300 px-4 py-3">Urgency</th>
               <th class="text-left text-slate-300 px-4 py-3">Status</th>
               <th class="text-right text-slate-300 px-4 py-3">Actions</th>
@@ -38,10 +37,10 @@
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td class="px-4 py-3 text-slate-200" colspan="8">Loading reported issues...</td>
+              <td class="px-4 py-3 text-slate-200" colspan="7">Loading reported issues...</td>
             </tr>
             <tr v-else-if="!filteredIssues.length">
-              <td class="px-4 py-3 text-slate-200" colspan="8">No matching reports.</td>
+              <td class="px-4 py-3 text-slate-200" colspan="7">No matching reports.</td>
             </tr>
             <tr
               v-else
@@ -56,10 +55,6 @@
               <td class="px-4 py-3 text-slate-300">{{ issue.createdLabel }}</td>
               <td class="px-4 py-3 text-slate-200">{{ issue.subject || '-' }}</td>
               <td class="px-4 py-3 text-slate-300">{{ issue.clinicName || issue.branchId || '-' }}</td>
-              <td class="px-4 py-3 text-slate-300">
-                <div>{{ issue.assignedAdminName || 'Unassigned' }}</div>
-                <div v-if="issue.assignedAdminEmail" class="mt-0.5 text-xs text-slate-500">{{ issue.assignedAdminEmail }}</div>
-              </td>
               <td class="px-4 py-3">
                 <span class="px-2 py-1 rounded-md text-xs font-medium" :class="issue.urgencyClass">
                   {{ issue.severity || 'Medium' }}
@@ -135,16 +130,9 @@
           <p class="text-white mt-1">{{ selectedIssue.location || '-' }}</p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p class="text-slate-400 text-xs uppercase tracking-wide">Clinic</p>
-            <p class="text-white mt-1">{{ selectedIssue.clinicName || selectedIssue.branchId || 'Not linked' }}</p>
-          </div>
-          <div>
-            <p class="text-slate-400 text-xs uppercase tracking-wide">Assigned To</p>
-            <p class="text-white mt-1">{{ selectedIssue.assignedAdminName || 'Unassigned' }}</p>
-            <p v-if="selectedIssue.assignedAdminEmail" class="mt-0.5 text-xs text-slate-500">{{ selectedIssue.assignedAdminEmail }}</p>
-          </div>
+        <div>
+          <p class="text-slate-400 text-xs uppercase tracking-wide">Clinic</p>
+          <p class="text-white mt-1">{{ selectedIssue.clinicName || selectedIssue.branchId || 'Not linked' }}</p>
         </div>
 
         <div>
@@ -169,30 +157,16 @@
           </a>
         </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <ContractAppearanceSelect id="report-edit-status" v-model="statusDraft" label="Status" :disabled="savingStatus" :options="reportStatuses.map(value => ({ value, label: value }))" />
-            </div>
-            <div class="flex items-end">
-              <span class="report-help">Update the status and notes, then save your changes below.</span>
-            </div>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-3">
-            <button type="button" class="report-secondary" :disabled="savingStatus || selectedIssue.assignedAdminId === currentAdminUid" @click="assignToMe">
-              {{ selectedIssue.assignedAdminId === currentAdminUid ? 'Assigned to you' : 'Assign to me' }}
-            </button>
-            <span class="text-xs text-slate-500">Assign yourself before investigating.</span>
-          </div>
+          <ContractAppearanceSelect id="report-edit-status" v-model="statusDraft" label="Status" :disabled="savingStatus" :options="reportStatuses.map(value => ({ value, label: value }))" />
 
           <label class="block">
             <span class="text-slate-400 text-xs uppercase tracking-wide">Internal Investigation Note</span>
             <textarea v-model.trim="internalNote" rows="3" class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none" placeholder="Record what was checked or found. This is visible to administrators only."></textarea>
           </label>
 
-          <label class="block">
-            <span class="text-slate-400 text-xs uppercase tracking-wide">Resolution Note</span>
-            <textarea v-model.trim="resolutionNote" rows="3" class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none" placeholder="Explain the solution or reason for dismissal."></textarea>
+          <label v-if="['Resolved', 'Dismissed'].includes(statusDraft)" class="block">
+            <span class="text-slate-400 text-xs uppercase tracking-wide">Resolution / dismissal note <span v-if="['Resolved', 'Dismissed'].includes(statusDraft)" class="text-amber-300">(required)</span></span>
+            <textarea v-model.trim="resolutionNote" rows="3" class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none" placeholder="Explain how the report was resolved or why it was dismissed."></textarea>
           </label>
 
           <label class="block">
@@ -211,7 +185,7 @@
           </div>
         <div class="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
           <p class="text-slate-400 text-xs uppercase tracking-wide">Handling Note</p>
-          <p class="mt-2 text-sm text-slate-200">Use the status selector above to manage this support ticket.</p>
+          <p class="mt-2 text-sm text-slate-200">Choose a status and save. Add a resolution or dismissal note before closing a report.</p>
         </div>
         <p v-if="statusMessage" class="report-success" role="status">{{ statusMessage }}</p>
         <p v-if="statusError" class="report-error" role="alert">{{ statusError }}</p>
@@ -227,7 +201,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { addDoc, arrayUnion, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { addDoc, arrayUnion, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
@@ -261,7 +235,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const reporterResponse = ref('')
     const reportStatuses = ['Open', 'Under Review', 'In Progress', 'Awaiting User Response', 'Resolved', 'Dismissed', 'Escalated']
     const reportCategories = ['Bug/Error', 'Data Issue', 'Performance', 'Billing/Payments', 'Clinic Complaint', 'Service Complaint', 'Employee Complaint', 'Feature Request', 'Other']
-    const currentAdminUid = computed(() => auth.currentUser?.uid || '')
 
     const formatDate = (value) => {
       if (!value) return '-'
@@ -384,51 +357,23 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       reporterResponse.value = ''
     }
 
-    const assignToMe = async () => {
-      if (!selectedIssue.value || !currentAdminUid.value) return
-      savingStatus.value = true
-      try {
-        const adminEmail = auth.currentUser?.email || ''
-        const adminSnapshot = await getDoc(doc(db, 'users', currentAdminUid.value))
-        const adminData = adminSnapshot.exists() ? adminSnapshot.data() || {} : {}
-        const adminName = String(adminData.fullName || `${adminData.firstName || ''} ${adminData.lastName || ''}`).trim() || 'System Administrator'
-        await updateDoc(doc(db, 'supportTickets', selectedIssue.value.id), {
-          assignedAdminId: currentAdminUid.value,
-          assignedAdminName: adminName,
-          assignedAdminEmail: adminEmail,
-          updatedAt: serverTimestamp(),
-        })
-        refreshSelectedIssue({ assignedAdminId: currentAdminUid.value, assignedAdminName: adminName, assignedAdminEmail: adminEmail })
-        statusMessage.value = 'Report assigned to you.'
-      } catch (err) {
-        console.error('Failed to assign report:', err)
-        statusError.value = 'Failed to assign report.'
-      } finally {
-        savingStatus.value = false
-      }
-    }
-
     const saveStatus = async () => {
       if (!selectedIssue.value) return
       savingStatus.value = true
       statusMessage.value = ''
       statusError.value = ''
       try {
-        if (statusDraft.value === 'Resolved' && !resolutionNote.value) {
-          statusError.value = 'A resolution note is required before resolving a report.'
+        if (['Resolved', 'Dismissed'].includes(statusDraft.value) && !resolutionNote.value) {
+          statusError.value = 'A resolution or dismissal note is required before closing a report.'
           return
         }
-        const adminEmail = auth.currentUser?.email || ''
-        const adminName = selectedIssue.value.assignedAdminName || 'System Administrator'
+        const adminName = auth.currentUser?.email || 'System Administrator'
         await updateDoc(doc(db, 'supportTickets', selectedIssue.value.id), {
           status: statusDraft.value,
           internalNote: internalNote.value,
           resolutionNote: resolutionNote.value,
           reporterResponse: reporterResponse.value,
-          assignedAdminId: selectedIssue.value.assignedAdminId || currentAdminUid.value,
-          assignedAdminName: selectedIssue.value.assignedAdminName || adminName,
-          assignedAdminEmail: selectedIssue.value.assignedAdminEmail || adminEmail,
-          statusHistory: arrayUnion({ status: statusDraft.value, byId: currentAdminUid.value, byName: adminName, at: new Date() }),
+          statusHistory: arrayUnion({ status: statusDraft.value, byId: auth.currentUser?.uid || '', byName: adminName, at: new Date() }),
           updatedAt: serverTimestamp()
         })
         if (selectedIssue.value.userId) {
@@ -448,9 +393,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           internalNote: internalNote.value,
           resolutionNote: resolutionNote.value,
           reporterResponse: reporterResponse.value,
-          assignedAdminId: selectedIssue.value.assignedAdminId || currentAdminUid.value,
-          assignedAdminName: selectedIssue.value.assignedAdminName || adminName,
-          assignedAdminEmail: selectedIssue.value.assignedAdminEmail || adminEmail,
         }
         refreshIssueInList(selectedIssue.value.id, updates)
         refreshSelectedIssue(updates)
@@ -484,7 +426,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       categoryFilter,
       reportStatuses,
       reportCategories,
-      currentAdminUid,
       internalNote,
       resolutionNote,
       reporterResponse,
@@ -494,7 +435,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       statusError,
       openIssue,
       closeIssue,
-      assignToMe,
       saveStatus,
       formatDate
     }

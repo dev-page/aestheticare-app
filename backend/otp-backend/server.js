@@ -59,6 +59,70 @@ if (typeof Object.prototype.getUniverseDomain !== 'function') {
 const app = express()
 const PORT = Number(process.env.PORT || 3000)
 const isDevelopment = String(process.env.NODE_ENV || 'development').toLowerCase() !== 'production'
+// The API is hosted behind one trusted reverse proxy in production. Keeping
+// this explicit prevents arbitrary X-Forwarded-For headers from being trusted.
+const configuredProxyHops = Number(process.env.TRUST_PROXY_HOPS)
+app.set('trust proxy', Number.isInteger(configuredProxyHops) && configuredProxyHops >= 0
+  ? configuredProxyHops
+  : isDevelopment ? false : 1)
+const API_RATE_LIMITS = Object.freeze({
+  general: { windowMs: 60_000, max: 300 },
+  authenticatedUser: { windowMs: 60_000, max: 180 },
+  sensitive: { windowMs: 60_000, max: 30 },
+  expensive: { windowMs: 60_000, max: 8 },
+  publicAuth: { windowMs: 60_000, max: 20 },
+})
+const apiRateLimitBuckets = new Map()
+const consumeApiRateLimit = (key, { windowMs, max }) => {
+  const now = Date.now()
+  let bucket = apiRateLimitBuckets.get(key)
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + windowMs }
+    apiRateLimitBuckets.set(key, bucket)
+  }
+  bucket.count += 1
+  return { allowed: bucket.count <= max, remaining: Math.max(0, max - bucket.count), resetAt: bucket.resetAt }
+}
+const sendRateLimitResponse = (res, result) => {
+  res.set('Retry-After', String(Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000))))
+  res.set('RateLimit-Limit', String(result.limit))
+  res.set('RateLimit-Remaining', String(result.remaining))
+  res.set('RateLimit-Reset', String(Math.ceil(result.resetAt / 1000)))
+  return res.status(429).json({ success: false, error: 'Too many requests. Please try again shortly.' })
+}
+const rateLimitApi = (req, res, next) => {
+  const ip = String(req.ip || req.socket?.remoteAddress || 'unknown').slice(0, 100)
+  const path = String(req.path || '').toLowerCase()
+  let policy = API_RATE_LIMITS.general
+  let scope = 'api'
+  if (/^\/(auth\/|send-otp|send-attendance-pin|send-staff-welcome|send-supplier-welcome|public\/contact|check-user|registration\/)/.test(path)) {
+    policy = API_RATE_LIMITS.publicAuth
+    scope = 'public-auth'
+  }
+  if (/\/(ocr|ocr-preflight|auto-verify|trigger-ocr|backup\/zip|attendance\/import|attendance\/imports)(\/|$)/.test(path)) {
+    policy = API_RATE_LIMITS.expensive
+    scope = 'expensive'
+  } else if (/\/(create|submit|approve|reject|cancel|checkout|payment|record|schedule|restore|close|connect|disconnect|upload|resend|verify|activate)(\/|$)/.test(path) || req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    policy = scope === 'public-auth' ? policy : API_RATE_LIMITS.sensitive
+    if (scope === 'api') scope = 'sensitive'
+  }
+  const result = consumeApiRateLimit(`${scope}:${ip}`, policy)
+  result.limit = policy.max
+  res.set('RateLimit-Limit', String(result.limit))
+  res.set('RateLimit-Remaining', String(result.remaining))
+  res.set('RateLimit-Reset', String(Math.ceil(result.resetAt / 1000)))
+  if (!result.allowed) return sendRateLimitResponse(res, result)
+  return next()
+}
+// Periodically reclaim expired keys so long-running instances do not retain
+// stale client addresses forever.
+const apiRateLimitCleanup = setInterval(() => {
+  const now = Date.now()
+  for (const [key, bucket] of apiRateLimitBuckets) {
+    if (bucket.resetAt <= now) apiRateLimitBuckets.delete(key)
+  }
+}, 60_000)
+apiRateLimitCleanup.unref?.()
 const DAY_MS = 24 * 60 * 60 * 1000
 const EMAIL_ADDRESS_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const REGISTRATION_OTP_EXPIRY_MINUTES = 10
@@ -389,6 +453,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions))
 app.options(/.*/, cors(corsOptions))
+app.use(rateLimitApi)
 app.use('/supply', express.json({ limit: '8mb' }))
 app.use('/attendance', express.json({ limit: '5mb' }))
 // Registration OCR preflight receives a document as base64 and never persists
@@ -1589,6 +1654,11 @@ const requireAuth = async (req, res, next) => {
   try {
     const decoded = await admin.auth().verifyIdToken(tokenMatch[1])
     req.user = decoded
+    const userLimit = consumeApiRateLimit(`user:${String(decoded.uid || '').slice(0, 128)}`, API_RATE_LIMITS.authenticatedUser)
+    if (!userLimit.allowed) {
+      userLimit.limit = API_RATE_LIMITS.authenticatedUser.max
+      return sendRateLimitResponse(res, userLimit)
+    }
     return next()
   } catch (error) {
     console.warn('Firebase ID token verification failed:', error?.code || 'unknown', error?.message || 'unknown error')

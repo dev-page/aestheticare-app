@@ -399,8 +399,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           proofUrl,
           proofPath,
           status: 'Open',
-          assignedAdminId: '',
-          assignedAdminName: '',
           internalNote: '',
           resolutionNote: '',
           statusHistory: [{ status: 'Open', byId: user.uid, byName: reporterName.value || user.email || 'Reporter', at: new Date() }],
