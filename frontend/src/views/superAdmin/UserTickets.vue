@@ -29,7 +29,6 @@
               <th class="text-left text-slate-300 px-4 py-3">Reporter</th>
               <th class="text-left text-slate-300 px-4 py-3">Date</th>
               <th class="text-left text-slate-300 px-4 py-3">Topic</th>
-              <th class="text-left text-slate-300 px-4 py-3">Clinic</th>
               <th class="text-left text-slate-300 px-4 py-3">Urgency</th>
               <th class="text-left text-slate-300 px-4 py-3">Status</th>
               <th class="text-right text-slate-300 px-4 py-3">Actions</th>
@@ -37,10 +36,10 @@
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td class="px-4 py-3 text-slate-200" colspan="7">Loading reported issues...</td>
+              <td class="px-4 py-3 text-slate-200" colspan="6">Loading reported issues...</td>
             </tr>
             <tr v-else-if="!filteredIssues.length">
-              <td class="px-4 py-3 text-slate-200" colspan="7">No matching reports.</td>
+              <td class="px-4 py-3 text-slate-200" colspan="6">No matching reports.</td>
             </tr>
             <tr
               v-else
@@ -54,7 +53,6 @@
               </td>
               <td class="px-4 py-3 text-slate-300">{{ issue.createdLabel }}</td>
               <td class="px-4 py-3 text-slate-200">{{ issue.subject || '-' }}</td>
-              <td class="px-4 py-3 text-slate-300">{{ issue.clinicName || issue.branchId || '-' }}</td>
               <td class="px-4 py-3">
                 <span class="px-2 py-1 rounded-md text-xs font-medium" :class="issue.urgencyClass">
                   {{ issue.severity || 'Medium' }}
@@ -69,10 +67,10 @@
                 <button
                   type="button"
                   class="report-secondary"
-                  :aria-label="`View report: ${issue.subject || 'Untitled report'}`"
+                  :aria-label="`Review report: ${issue.subject || 'Untitled report'}`"
                   @click="openIssue(issue)"
                 >
-                  View
+                  Review
                 </button>
               </td>
             </tr>
@@ -92,101 +90,47 @@
     @close="closeIssue"
   >
     <template #header>
-      <div><p class="reports-eyebrow">USER REPORT</p><h2 class="report-modal-title">Reported Issue</h2></div>
+      <div>
+        <p class="reports-eyebrow">USER REPORT</p>
+        <h2 class="report-modal-title">Review report</h2>
+      </div>
     </template>
 
     <template #body>
-      <div v-if="selectedIssue" class="report-details space-y-4 text-sm">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p class="text-slate-400 text-xs uppercase tracking-wide">Reporter</p>
-            <p class="text-white mt-1">{{ selectedIssue.userName || selectedIssue.userEmail || 'Unknown' }}</p>
-            <a v-if="selectedIssue.source === 'landing-contact' && selectedIssue.userEmail" :href="`mailto:${selectedIssue.userEmail}`" class="mt-1 inline-block text-amber-300 hover:underline">{{ selectedIssue.userEmail }}</a>
+      <div v-if="selectedIssue" class="report-details">
+        <section class="report-overview">
+          <div class="report-meta-card report-meta-card-wide">
+            <p>Reporter</p>
+            <strong>{{ selectedIssue.userName || selectedIssue.userEmail || 'Unknown' }}</strong>
+            <a v-if="selectedIssue.userEmail" :href="`mailto:${selectedIssue.userEmail}`">{{ selectedIssue.userEmail }}</a>
           </div>
-          <div>
-            <p class="text-slate-400 text-xs uppercase tracking-wide">Date</p>
-            <p class="text-white mt-1">{{ selectedIssue.createdLabel }}</p>
-          </div>
-        </div>
+          <div class="report-meta-card"><p>Submitted</p><strong>{{ selectedIssue.createdLabel }}</strong></div>
+          <div class="report-meta-card"><p>Category</p><strong>{{ selectedIssue.category || '-' }}</strong></div>
+          <div class="report-meta-card"><p>Urgency</p><strong>{{ selectedIssue.severity || 'Medium' }}</strong></div>
+          <div v-if="selectedIssue.clinicName || selectedIssue.branchId" class="report-meta-card report-meta-card-wide"><p>Clinic</p><strong>{{ selectedIssue.clinicName || selectedIssue.branchId }}</strong></div>
+          <div v-if="selectedIssue.location" class="report-meta-card"><p>Location</p><strong>{{ selectedIssue.location }}</strong></div>
+        </section>
 
-        <div>
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Topic</p>
-          <p class="text-white mt-1">{{ selectedIssue.subject || '-' }}</p>
-        </div>
+        <section class="report-section">
+          <p class="report-section-label">Report details</p>
+          <h3>{{ selectedIssue.subject || 'Untitled report' }}</h3>
+          <p class="report-copy whitespace-pre-line">{{ selectedIssue.description || '-' }}</p>
+          <div v-if="selectedIssue.steps" class="report-follow-up"><p>Steps to reproduce</p><span class="whitespace-pre-line">{{ selectedIssue.steps }}</span></div>
+          <a v-if="selectedIssue.proofUrl" :href="selectedIssue.proofUrl" target="_blank" rel="noopener" class="report-attachment">View attached proof</a>
+        </section>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p class="text-slate-400 text-xs uppercase tracking-wide">Category</p>
-            <p class="text-white mt-1">{{ selectedIssue.category || '-' }}</p>
-          </div>
-          <div>
-            <p class="text-slate-400 text-xs uppercase tracking-wide">Urgency</p>
-            <p class="text-white mt-1">{{ selectedIssue.severity || 'Medium' }}</p>
-          </div>
-        </div>
-
-        <div>
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Location</p>
-          <p class="text-white mt-1">{{ selectedIssue.location || '-' }}</p>
-        </div>
-
-        <div>
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Clinic</p>
-          <p class="text-white mt-1">{{ selectedIssue.clinicName || selectedIssue.branchId || 'Not linked' }}</p>
-        </div>
-
-        <div>
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Description</p>
-          <p class="text-white mt-1 whitespace-pre-line">{{ selectedIssue.description || '-' }}</p>
-        </div>
-
-        <div v-if="selectedIssue.steps">
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Steps to Reproduce</p>
-          <p class="text-white mt-1 whitespace-pre-line">{{ selectedIssue.steps }}</p>
-        </div>
-
-        <div v-if="selectedIssue.proofUrl" class="space-y-2">
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Proof</p>
-          <a
-            :href="selectedIssue.proofUrl"
-            target="_blank"
-            rel="noopener"
-            class="text-amber-300 hover:text-amber-200 text-sm"
-          >
-            View attachment
-          </a>
-        </div>
-
+        <section class="report-section report-update-section">
+          <div class="report-section-heading"><div><p class="report-section-label">Update report</p><h3>Record the next step</h3></div><span class="report-current-status">Current: {{ selectedIssue.statusLabel }}</span></div>
           <ContractAppearanceSelect id="report-edit-status" v-model="statusDraft" label="Status" :disabled="savingStatus" :options="reportStatuses.map(value => ({ value, label: value }))" />
+          <label class="report-field"><span>Internal investigation note</span><textarea v-model.trim="internalNote" rows="3" :disabled="savingStatus" placeholder="Record what was checked or found. Only administrators can see this."></textarea></label>
+          <label v-if="['Resolved', 'Dismissed'].includes(statusDraft)" class="report-field"><span>Resolution / dismissal note <em>(required)</em></span><textarea v-model.trim="resolutionNote" rows="3" :disabled="savingStatus" placeholder="Explain how the report was resolved or why it was dismissed."></textarea></label>
+          <label class="report-field"><span>Response to reporter</span><textarea v-model.trim="reporterResponse" rows="3" :disabled="savingStatus" placeholder="Tell the reporter what they need to know about this update."></textarea></label>
+        </section>
 
-          <label class="block">
-            <span class="text-slate-400 text-xs uppercase tracking-wide">Internal Investigation Note</span>
-            <textarea v-model.trim="internalNote" rows="3" class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none" placeholder="Record what was checked or found. This is visible to administrators only."></textarea>
-          </label>
-
-          <label v-if="['Resolved', 'Dismissed'].includes(statusDraft)" class="block">
-            <span class="text-slate-400 text-xs uppercase tracking-wide">Resolution / dismissal note <span v-if="['Resolved', 'Dismissed'].includes(statusDraft)" class="text-amber-300">(required)</span></span>
-            <textarea v-model.trim="resolutionNote" rows="3" class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none" placeholder="Explain how the report was resolved or why it was dismissed."></textarea>
-          </label>
-
-          <label class="block">
-            <span class="text-slate-400 text-xs uppercase tracking-wide">Response to Reporter</span>
-            <textarea v-model.trim="reporterResponse" rows="3" class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none" placeholder="Explain what the reporter should know about this update."></textarea>
-          </label>
-
-          <div v-if="selectedIssue.statusHistory?.length" class="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
-            <p class="text-slate-400 text-xs uppercase tracking-wide">Status History</p>
-            <div class="mt-3 space-y-2">
-              <div v-for="(entry, index) in selectedIssue.statusHistory" :key="`${entry.status}-${index}`" class="flex items-center justify-between gap-3 text-xs">
-                <span class="text-slate-200">{{ entry.status }} <span class="text-slate-500">by {{ entry.byName || 'Admin' }}</span></span>
-                <span class="text-slate-500">{{ formatDate(entry.at) }}</span>
-              </div>
-            </div>
-          </div>
-        <div class="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
-          <p class="text-slate-400 text-xs uppercase tracking-wide">Handling Note</p>
-          <p class="mt-2 text-sm text-slate-200">Choose a status and save. Add a resolution or dismissal note before closing a report.</p>
-        </div>
+        <section v-if="selectedIssue.statusHistory?.length" class="report-section report-history">
+          <p class="report-section-label">Status history</p>
+          <div v-for="(entry, index) in selectedIssue.statusHistory" :key="`${entry.status}-${index}`" class="report-history-entry"><strong>{{ entry.status }}</strong><span>by {{ entry.byName || 'Admin' }} · {{ formatDate(entry.at) }}</span></div>
+        </section>
         <p v-if="statusMessage" class="report-success" role="status">{{ statusMessage }}</p>
         <p v-if="statusError" class="report-error" role="alert">{{ statusError }}</p>
       </div>
@@ -458,7 +402,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .reports-filters input { display: block; width: 100%; min-height: 44px; border: 1px solid #dec19e; border-radius: 10px; margin-top: 8px; padding: 10px 12px; font-size: 13px; font-weight: 400; }
 .reports-filters :deep(.appearance-select), .report-details :deep(.appearance-select) { margin: 0; }
 .reports-table-wrap { overflow-x: auto; border: 1px solid #ecd6be; border-radius: 12px; background: #fffdf9; }
-.reports-table-wrap table { min-width: 920px; }
+.reports-table-wrap table { min-width: 780px; }
 .reports-table-wrap th { white-space: nowrap; }
 .reports-table-wrap td { vertical-align: middle; line-height: 1.6; }
 .reports-table-wrap td:nth-child(3) { min-width: 180px; max-width: 300px; overflow-wrap: anywhere; }
@@ -481,14 +425,36 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 :global(.report-modal > div:first-child > button:hover) { background: #f8eddc; }
 :global(.report-modal-body) { background: #fffaf3; padding: 24px; scrollbar-color: #cfaf90 #fffaf3; }
 .report-modal-title { color: #3d281d; font-size: 22px; font-weight: 700; margin-top: 4px; }
-.report-details { color: #3d281d; line-height: 1.65; }
-.report-details > div:not(.flex) { padding: 16px; border: 1px solid #ecd6be; border-radius: 10px; background: #fffdf9 !important; }
-.report-details :is(.text-white, .text-slate-200) { color: #3d281d !important; overflow-wrap: anywhere; }
-.report-details :is(.text-slate-400, .text-slate-500) { color: #765d4c !important; }
-.report-details .uppercase { font-size: 11px; font-weight: 600; letter-spacing: .05em; }
-.report-details a { color: #8d5a3b !important; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
-.report-details textarea { background: #fffdf9 !important; color: #3d281d !important; border-color: #dec19e !important; border-radius: 10px; min-height: 104px; resize: vertical; line-height: 1.6; }
-.report-details > label > span { font-weight: 600; }
+.report-details { display: grid; gap: 16px; color: #3d281d; font-size: 14px; line-height: 1.6; }
+.report-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.report-meta-card, .report-section { border: 1px solid #ecd6be; border-radius: 12px; background: #fffdf9; }
+.report-meta-card { padding: 12px 14px; min-width: 0; }
+.report-meta-card-wide { grid-column: span 2; }
+.report-meta-card p, .report-section-label { margin: 0; color: #765d4c; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.report-meta-card strong { display: block; margin-top: 4px; color: #3d281d; font-size: 13px; overflow-wrap: anywhere; }
+.report-meta-card a, .report-attachment { color: #8d5a3b; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
+.report-meta-card a { display: inline-block; margin-top: 2px; font-size: 12px; }
+.report-section { padding: 18px; }
+.report-section h3 { margin: 3px 0 10px; color: #3d281d; font-size: 17px; font-weight: 700; }
+.report-copy { margin: 0; color: #4f3829; overflow-wrap: anywhere; }
+.report-follow-up { margin-top: 14px; padding: 12px 14px; border-radius: 8px; background: #fff7ea; color: #4f3829; }
+.report-follow-up p { margin: 0 0 4px; color: #765d4c; font-size: 12px; font-weight: 700; }
+.report-attachment { display: inline-flex; margin-top: 14px; font-size: 13px; font-weight: 600; }
+.report-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.report-section-heading h3 { margin-bottom: 0; }
+.report-current-status { flex-shrink: 0; padding: 4px 8px; border-radius: 999px; background: #f1ece5; color: #635344; font-size: 11px; font-weight: 700; }
+.report-update-section :deep(.appearance-select) { margin-bottom: 16px; }
+.report-field { display: block; margin-top: 16px; }
+.report-field > span { display: block; color: #5d4536; font-size: 12px; font-weight: 700; }
+.report-field em { color: #a13732; font-style: normal; }
+.report-field textarea { display: block; box-sizing: border-box; width: 100%; min-height: 96px; margin-top: 7px; padding: 10px 12px; border: 1px solid #dec19e; border-radius: 9px; background: #fffdf9; color: #3d281d; font: inherit; line-height: 1.6; resize: vertical; }
+.report-field textarea:focus { border-color: #8d5a3b; outline: 3px solid #f2dec6; }
+.report-field textarea:disabled { opacity: .7; cursor: not-allowed; }
+.report-history { padding-top: 14px; padding-bottom: 14px; }
+.report-history-entry { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid #f0dfcc; }
+.report-history-entry:first-of-type { margin-top: 8px; }
+.report-history-entry strong { color: #3d281d; font-size: 13px; }
+.report-history-entry span { color: #765d4c; font-size: 12px; text-align: right; }
 .report-help { color: #765d4c; font-size: 12px; line-height: 1.6; }
 .report-modal-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .report-success { background: #e6f3eb; color: #24634a; border-radius: 8px; padding: 12px; }
@@ -503,5 +469,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   :global(.report-modal > div:first-child), :global(.report-modal > div:last-child) { padding: 16px; }
   .report-modal-actions .report-help { display: none; }
   .report-modal-actions { justify-content: flex-end; }
+  .report-section-heading, .report-history-entry { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .report-history-entry span { text-align: left; }
 }
 </style>
