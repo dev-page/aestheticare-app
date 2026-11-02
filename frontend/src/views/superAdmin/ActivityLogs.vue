@@ -12,20 +12,33 @@
             <button type="button" class="activity-filter-button" @click="loadLogs">Filter</button>
           </div>
           <div class="activity-logs-actions">
-            <button type="button" aria-label="Refresh activity logs" title="Refresh activity logs" class="activity-reload-button" @click="reload"><svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg><span>Reload</span></button>
+            <button type="button" aria-label="Refresh activity logs" title="Refresh activity logs" class="activity-reload-button" @click="reload"><svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg></button>
             <button type="button" class="activity-export-button" @click="exportCsv">Export CSV</button>
           </div>
         </div>
-        <div class="activity-table-wrap"><table class="activity-table"><thead><tr><th>Timestamp</th><th>User</th><th>Role</th><th>Module</th><th>Action</th><th>Details</th></tr></thead><tbody>
+        <div class="activity-table-wrap"><table class="activity-table"><thead><tr><th>Timestamp</th><th>User</th><th>Role</th><th>Module</th><th>Action</th><th class="activity-view-heading">View</th></tr></thead><tbody>
           <tr v-if="loading"><td colspan="6">Loading activity logs...</td></tr>
           <tr v-else-if="error"><td class="activity-table-error" colspan="6">{{ error }}</td></tr>
           <tr v-else-if="!logs.length"><td colspan="6">No activity logs yet.</td></tr>
-          <tr v-else v-for="log in paginatedLogs" :key="log.id"><td>{{ formatDate(log.createdAt) }}</td><td class="activity-actor"><span>{{ log.actorName || log.actorEmail || '-' }}</span><small v-if="log.actorName && log.actorEmail">{{ log.actorEmail }}</small></td><td><span class="activity-role">System Administrator</span></td><td>{{ log.module || 'General' }}</td><td class="activity-action">{{ log.action || '-' }}</td><td class="activity-details" :title="log.details || ''">{{ log.details || '-' }}</td></tr>
+          <tr v-else v-for="log in paginatedLogs" :key="log.id"><td>{{ formatDate(log.createdAt) }}</td><td class="activity-actor"><span>{{ log.actorName || log.actorEmail || '-' }}</span><small v-if="log.actorName && log.actorEmail">{{ log.actorEmail }}</small></td><td><span class="activity-role">System Administrator</span></td><td>{{ log.module || 'General' }}</td><td class="activity-action">{{ log.action || '-' }}</td><td class="activity-view-cell"><button type="button" class="activity-view-button" :aria-label="`View activity details: ${log.action || 'activity log'}`" @click="openLogDetails(log)">View</button></td></tr>
         </tbody></table></div>
         <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="logs.length" />
       </section>
     </main>
   </div>
+
+  <Modal :isOpen="Boolean(selectedLog)" panelClass="activity-log-modal" :panel-style="{ background: '#fffdf9', color: '#3d281d', maxWidth: '620px' }" bodyClass="activity-log-modal-body" @close="closeLogDetails">
+    <template #header><div><p class="activity-logs-eyebrow">ACTIVITY LOG</p><h2 class="activity-log-modal-title">Activity details</h2></div></template>
+    <template #body>
+      <dl v-if="selectedLog" class="activity-log-detail-list">
+        <div><dt>Timestamp</dt><dd>{{ formatDate(selectedLog.createdAt) }}</dd></div>
+        <div><dt>Administrator</dt><dd>{{ selectedLog.actorName || selectedLog.actorEmail || '-' }}<small v-if="selectedLog.actorName && selectedLog.actorEmail">{{ selectedLog.actorEmail }}</small></dd></div>
+        <div><dt>Module</dt><dd>{{ selectedLog.module || 'General' }}</dd></div>
+        <div><dt>Action</dt><dd>{{ selectedLog.action || '-' }}</dd></div>
+        <div class="activity-log-detail-wide"><dt>Details</dt><dd class="whitespace-pre-line">{{ selectedLog.details || 'No additional details were recorded for this activity.' }}</dd></div>
+      </dl>
+    </template>
+  </Modal>
 </template>
 
 <script>
@@ -36,10 +49,11 @@ import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
+import Modal from '@/components/common/Modal.vue'
 
 export default {
   name: 'SuperAdminActivityLogs',
-  components: { SuperAdminSidebar, TablePagination },
+  components: { SuperAdminSidebar, TablePagination, Modal },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -48,6 +62,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const pageSize = ref(10)
     const loading = ref(false)
     const error = ref('')
+    const selectedLog = ref(null)
 
     const fromDate = ref(new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0,10))
     const toDate = ref(new Date().toISOString().slice(0,10))
@@ -107,6 +122,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const reload = () => { fromDate.value = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0,10); toDate.value = new Date().toISOString().slice(0,10); searchUser.value = ''; loadLogs() }
+    const openLogDetails = (log) => { selectedLog.value = log }
+    const closeLogDetails = () => { selectedLog.value = null }
     const paginatedLogs = computed(() => logs.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
     const totalPages = computed(() => Math.max(1, Math.ceil(logs.value.length / pageSize.value)))
     watch(pageSize, () => { currentPage.value = 1 })
@@ -137,12 +154,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       pageSize,
       loading,
       error,
+      selectedLog,
       formatDate,
       loadLogs,
       fromDate,
       toDate,
       searchUser,
       reload,
+      openLogDetails,
+      closeLogDetails,
       exportCsv,
     }
   }
@@ -167,7 +187,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .activity-filter-button, .activity-export-button, .activity-reload-button { min-height: 42px; border-radius: 9px; font-size: 13px; font-weight: 700; white-space: nowrap; }
 .activity-filter-button, .activity-export-button { padding: 9px 16px; border: 1px solid #8d5a3b; background: #8d5a3b; color: #fffdf9; }
 .activity-filter-button:hover, .activity-export-button:hover { background: #74462d; }
-.activity-reload-button { display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; border: 1px solid #d9b896; background: #fffdf9; color: #70482e; }
+.activity-reload-button { display: inline-flex; align-items: center; justify-content: center; width: 42px; padding: 9px; border: 1px solid #d9b896; background: #fffdf9; color: #70482e; }
 .activity-reload-button:hover { background: #f8eddc; }
 .activity-filter-button:focus-visible, .activity-export-button:focus-visible, .activity-reload-button:focus-visible { outline: 3px solid #dab999; outline-offset: 3px; }
 .activity-table-wrap { overflow-x: auto; }
@@ -180,10 +200,25 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .activity-actor > span, .activity-actor > small { display: block; overflow-wrap: anywhere; }
 .activity-actor > small { margin-top: 2px; color: #765d4c; font-size: 11px; font-weight: 400; }
 .activity-role { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #f1ece5; color: #635344; font-size: 11px; font-weight: 700; white-space: nowrap; }
-.activity-details { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-view-heading, .activity-view-cell { text-align: right !important; }
+.activity-view-button { min-height: 34px; padding: 6px 12px; border: 1px solid #d9b896; border-radius: 8px; background: #fffdf9; color: #70482e; font-size: 12px; font-weight: 700; }
+.activity-view-button:hover { background: #f8eddc; }
+.activity-view-button:focus-visible { outline: 3px solid #dab999; outline-offset: 2px; }
 .activity-table-error { color: #a13732 !important; }
 :deep(.table-pagination) { margin: 0; padding: 14px 16px; border-top: 1px solid #ecd6be; }
+:global(.app-modal-panel.activity-log-modal) { border: 1px solid #ecd6be; border-radius: 16px; }
+:global(.activity-log-modal > div:first-child), :global(.activity-log-modal > div:last-child) { padding: 20px 24px; background: #fffdf9; }
+:global(.activity-log-modal > div:first-child > button) { width: 34px; height: 34px; border: 1px solid #ecd6be; border-radius: 9px; color: #765d4c; }
+:global(.activity-log-modal-body) { padding: 24px; background: #fffaf3; }
+.activity-log-modal-title { margin: 4px 0 0; color: #3d281d; font-size: 22px; font-weight: 700; }
+.activity-log-detail-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.activity-log-detail-list > div { min-width: 0; padding: 13px 14px; border: 1px solid #ecd6be; border-radius: 10px; background: #fffdf9; }
+.activity-log-detail-list dt { color: #765d4c; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.activity-log-detail-list dd { margin: 5px 0 0; color: #3d281d; font-size: 13px; overflow-wrap: anywhere; }
+.activity-log-detail-list dd small { display: block; margin-top: 2px; color: #765d4c; font-size: 11px; }
+.activity-log-detail-wide { grid-column: span 2; }
 @media (max-width: 960px) { .activity-logs-toolbar { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 720px) { .activity-logs-main { padding: 20px 16px; } .activity-logs-toolbar { padding: 16px; } .activity-logs-filters { display: grid; grid-template-columns: 1fr 1fr; width: 100%; } .activity-logs-filters .activity-logs-search { min-width: 0; } .activity-logs-actions { width: 100%; } .activity-logs-actions button { flex: 1; } }
 @media (max-width: 460px) { .activity-logs-filters { grid-template-columns: 1fr; } .activity-filter-button { width: 100%; } }
+@media (max-width: 520px) { :global(.activity-log-modal-body) { padding: 16px; } .activity-log-detail-list { grid-template-columns: 1fr; } .activity-log-detail-wide { grid-column: span 1; } }
 </style>
