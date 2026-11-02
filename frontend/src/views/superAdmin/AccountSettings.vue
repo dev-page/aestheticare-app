@@ -1,29 +1,29 @@
 <template>
-  <div class="flex min-h-screen bg-slate-900 module-theme">
+  <div class="flex min-h-screen module-theme account-settings-page">
     <SuperAdminSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 2 }" class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
-      <div class="mx-auto max-w-6xl">
-        <header class="mb-7 overflow-hidden rounded-2xl border border-cyan-900/50 bg-gradient-to-br from-slate-800 via-slate-800 to-cyan-950/50 p-5 shadow-xl shadow-slate-950/20 sm:p-7">
+    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 2 }" class="account-settings-main min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+      <div class="account-settings-content mx-auto max-w-6xl">
+        <header class="account-settings-header mb-7 overflow-hidden rounded-2xl p-5 sm:p-7">
           <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">System Administration</p>
               <h1 class="mt-2 text-2xl font-bold text-white sm:text-3xl">Profile &amp; Security</h1>
               <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Manage your administrator profile and keep your account secure.</p>
             </div>
-            <span class="inline-flex items-center gap-2 rounded-full border border-cyan-800/70 bg-cyan-950/50 px-3 py-1.5 text-xs font-semibold text-cyan-200">
-              <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
+            <span class="account-role-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold">
+              <span class="h-2 w-2 rounded-full"></span>
               System Administrator
             </span>
           </div>
         </header>
 
-        <div v-if="loading" class="rounded-2xl border border-slate-700 bg-slate-800 p-6 text-slate-300">Loading profile and security settings...</div>
+        <div v-if="loading" class="account-settings-loading rounded-2xl p-6">Loading profile and security settings...</div>
 
         <div v-else class="grid items-start gap-5 xl:grid-cols-2">
-          <section class="min-w-0 rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-xl shadow-slate-950/20 sm:p-6">
-            <div class="mb-5 flex items-start gap-3 border-b border-slate-700/80 pb-4">
-              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-800/60 bg-cyan-950/50 text-cyan-300">
+          <section class="account-settings-card min-w-0 rounded-2xl p-5 sm:p-6">
+            <div class="account-card-heading mb-5 flex items-start gap-3 pb-4">
+              <span class="account-card-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
                 <Icon icon="mdi:account-edit-outline" class="text-xl" />
               </span>
               <div>
@@ -32,7 +32,7 @@
               </div>
             </div>
 
-            <div class="mb-5 flex flex-wrap items-center gap-4 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+            <div class="profile-photo-panel mb-5 flex flex-wrap items-center gap-4 rounded-xl p-4">
               <div class="flex h-[4.5rem] w-[4.5rem] shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-cyan-800/70 bg-slate-950 text-xl font-bold text-white shadow-lg shadow-black/20">
                 <img v-if="profilePreview || profile.profilePicture" :src="profilePreview || profile.profilePicture" alt="System administrator profile picture" class="h-full w-full object-cover" />
                 <span v-else>{{ profileInitial }}</span>
@@ -75,15 +75,15 @@
                 <span v-if="phoneNumberError" class="block text-xs text-rose-400">{{ phoneNumberError }}</span>
               </label>
 
-              <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-cyan-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto" :disabled="savingProfile">
+              <button type="submit" class="account-primary-button inline-flex min-h-11 w-full items-center justify-center rounded-lg px-4 py-2.5 font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto" :disabled="savingProfile">
                 {{ savingProfile ? 'Saving...' : 'Save Profile' }}
               </button>
             </form>
           </section>
 
-          <section class="min-w-0 rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-xl shadow-slate-950/20 sm:p-6">
-            <div class="mb-5 flex items-start gap-3 border-b border-slate-700/80 pb-4">
-              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-800/60 bg-violet-950/40 text-violet-300">
+          <section class="account-settings-card min-w-0 rounded-2xl p-5 sm:p-6">
+            <div class="account-card-heading mb-5 flex items-start gap-3 pb-4">
+              <span class="account-card-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
                 <Icon icon="mdi:shield-lock-outline" class="text-xl" />
               </span>
               <div>
@@ -106,13 +106,13 @@
                 <input v-model="passwords.confirm" type="password" autocomplete="new-password" required class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none transition focus:border-cyan-500" />
               </label>
 
-              <div class="rounded-xl border border-violet-900/60 bg-violet-950/20 p-4">
+              <div class="password-requirements rounded-xl p-4">
                 <p class="text-xs font-semibold text-violet-200">Password requirements</p>
                 <p class="mt-1 text-xs leading-5 text-slate-400">At least 8 characters, including uppercase and lowercase letters, a number, and a special character.</p>
               </div>
 
               <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-cyan-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto" :disabled="changingPassword">
+                <button type="submit" class="account-primary-button inline-flex min-h-11 w-full items-center justify-center rounded-lg px-4 py-2.5 font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto" :disabled="changingPassword">
                   {{ changingPassword ? 'Updating...' : 'Update Password' }}
                 </button>
                 <router-link :to="{ path: '/forgot-password', query: { returnTo: '/superadmin/account-settings' } }" class="text-center text-sm text-cyan-300 underline-offset-4 hover:underline sm:text-left">Forgot your password?</router-link>
@@ -267,3 +267,36 @@ const changePassword = async () => {
 
 onMounted(loadProfile)
 </script>
+
+<style scoped>
+.account-settings-page { background: #fffdf9; color: #3d281d; }
+.account-settings-header { border: 1px solid #8d5a3b; background: linear-gradient(120deg, #432719 0%, #6f422b 100%); box-shadow: 0 12px 28px rgba(92, 59, 37, .14); }
+.account-settings-header .text-cyan-400 { color: #f3d4ab !important; }
+.account-settings-header .text-white { color: #fff8ed !important; }
+.account-settings-header .text-slate-300 { color: #f0d9bd !important; }
+.account-role-chip { border: 1px solid #b98762; background: #392116; color: #f5ddbf; }
+.account-role-chip > span { background: #e2b06d; }
+.account-settings-loading, .account-settings-card { border: 1px solid #ecd6be; background: #fffdf9; box-shadow: 0 10px 24px rgba(92, 59, 37, .06); }
+.account-settings-loading { color: #765d4c; }
+.account-card-heading { border-bottom: 1px solid #ecd6be; }
+.account-card-heading .text-white { color: #3d281d !important; }
+.account-card-heading .text-slate-400 { color: #765d4c !important; }
+.account-card-icon { border: 1px solid #d9b896; background: #f8eddc; color: #70482e; }
+.profile-photo-panel { border: 1px solid #ecd6be; background: #fffaf3; }
+.profile-photo-panel > div:first-child { border-color: #8d5a3b !important; background: #f8eddc !important; color: #70482e !important; box-shadow: 0 6px 16px rgba(92, 59, 37, .12); }
+.account-settings-page :is(.text-slate-100, .text-slate-200, .text-slate-300) { color: #4f3829 !important; }
+.account-settings-page :is(.text-slate-400, .text-slate-500) { color: #765d4c !important; }
+.account-settings-page :is(input, .focus-within\:border-cyan-500) { border-color: #dec19e !important; background: #fffdf9 !important; color: #3d281d !important; }
+.account-settings-page input:focus, .account-settings-page .focus-within\:border-cyan-500:focus-within { border-color: #8d5a3b !important; box-shadow: 0 0 0 3px #f2dec6; }
+.account-settings-page input:disabled { background: #f4eee6 !important; color: #765d4c !important; }
+.profile-photo-panel label { border-color: #d9b896 !important; background: #fffdf9 !important; color: #70482e !important; }
+.profile-photo-panel label:hover { border-color: #8d5a3b !important; background: #f8eddc !important; color: #3d281d !important; }
+.account-primary-button { border: 1px solid #8d5a3b; background: #8d5a3b; color: #fffdf9; }
+.account-primary-button:hover { background: #74462d; }
+.password-requirements { border: 1px solid #e1c291; background: #fff3df; }
+.password-requirements .text-violet-200 { color: #70482e !important; }
+.password-requirements .text-slate-400 { color: #765d4c !important; }
+.account-settings-page a.text-cyan-300 { color: #70482e !important; font-weight: 600; }
+.account-settings-page .text-cyan-300 { color: #8d5a3b !important; }
+@media (max-width: 640px) { .account-settings-main { padding: 20px 16px; } .account-settings-header { padding: 20px; } }
+</style>
