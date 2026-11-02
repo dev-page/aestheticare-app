@@ -20,7 +20,7 @@
           <tr v-if="loading"><td colspan="6">Loading activity logs...</td></tr>
           <tr v-else-if="error"><td class="activity-table-error" colspan="6">{{ error }}</td></tr>
           <tr v-else-if="!logs.length"><td colspan="6">No activity logs yet.</td></tr>
-          <tr v-else v-for="log in paginatedLogs" :key="log.id"><td>{{ formatDate(log.createdAt) }}</td><td class="activity-actor">{{ log.actorName || log.actorEmail || '-' }}</td><td><span class="activity-role">System Administrator</span></td><td>{{ log.module || 'General' }}</td><td class="activity-action">{{ log.action || '-' }}</td><td class="activity-details" :title="log.details || ''">{{ log.details || '-' }}</td></tr>
+          <tr v-else v-for="log in paginatedLogs" :key="log.id"><td>{{ formatDate(log.createdAt) }}</td><td class="activity-actor"><span>{{ log.actorName || log.actorEmail || '-' }}</span><small v-if="log.actorName && log.actorEmail">{{ log.actorEmail }}</small></td><td><span class="activity-role">System Administrator</span></td><td>{{ log.module || 'General' }}</td><td class="activity-action">{{ log.action || '-' }}</td><td class="activity-details" :title="log.details || ''">{{ log.details || '-' }}</td></tr>
         </tbody></table></div>
         <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="logs.length" />
       </section>
@@ -177,6 +177,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .activity-table tbody tr:hover { background: #fffaf3; }
 .activity-table tbody tr:first-child td { border-top: 0; }
 .activity-actor, .activity-action { color: #3d281d !important; font-weight: 600; }
+.activity-actor > span, .activity-actor > small { display: block; overflow-wrap: anywhere; }
+.activity-actor > small { margin-top: 2px; color: #765d4c; font-size: 11px; font-weight: 400; }
 .activity-role { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #f1ece5; color: #635344; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .activity-details { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-table-error { color: #a13732 !important; }
