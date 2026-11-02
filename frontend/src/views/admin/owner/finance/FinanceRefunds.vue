@@ -402,7 +402,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const canManageRefunds = computed(() => hasPermission('finance:refunds:manage'))
 
     const formatCurrency = (value) =>
-      new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
+      new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value || 0))
 
     const formatDate = (value) => {
       if (!value) return 'N/A'

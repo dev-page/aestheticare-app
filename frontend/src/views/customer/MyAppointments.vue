@@ -34,7 +34,7 @@
               <div><h3 class="unpaid-appointment-title">{{ formatAppointmentServices(order) }}</h3><p>{{ order.clinic }}</p></div>
               <span class="status-badge" :class="statusToneClass(order.status)">{{ order.status }}</span>
             </div>
-            <p class="mt-2">{{ order.appointmentIds?.length || 0 }} separately scheduled services · Total PHP {{ Number(order.totalAmount || order.amount || 0).toFixed(2) }}</p>
+            <p class="mt-2">{{ order.appointmentIds?.length || 0 }} separately scheduled services · Total ₱{{ Number(order.totalAmount || order.amount || 0).toFixed(2) }}</p>
             <p v-if="order.approvalStatus !== 'Approved'" class="mt-2 text-sm">The clinic will review this booking before payment is available.</p>
             <button v-else-if="paymentDue(order) > 0" type="button" class="appointment-button appointment-button-primary mt-3" @click="payAppointment(order)">Pay order {{ formatBookingDue(order) }}</button>
             <p v-else-if="paymentDue(order) <= 0" class="mt-2 text-sm">This order is fully paid.</p>
@@ -72,7 +72,7 @@
 
               <div class="payment-agreement">
                 <p v-if="appt.installmentsAllowed && !initialPaymentReceived(appt)">Initial payment: {{ appt.depositPercent }}% of the total. The balance is due after you confirm the service is done.</p>
-                <p v-if="appt.installmentsAllowed">Total: PHP {{ Number(appt.totalAmount || appt.amount || 0).toFixed(2) }} · Paid: PHP {{ Number(appt.amountPaid || 0).toFixed(2) }} · Remaining: PHP {{ Math.max(0, Number(appt.totalAmount || appt.amount || 0) - Number(appt.amountPaid || 0)).toFixed(2) }}</p>
+                <p v-if="appt.installmentsAllowed">Total: ₱{{ Number(appt.totalAmount || appt.amount || 0).toFixed(2) }} · Paid: ₱{{ Number(appt.amountPaid || 0).toFixed(2) }} · Remaining: ₱{{ Math.max(0, Number(appt.totalAmount || appt.amount || 0) - Number(appt.amountPaid || 0)).toFixed(2) }}</p>
                 <details class="payment-agreement-details" @toggle="markPaymentAgreementViewed(appt.id, $event)">
                   <summary>View clinic policies</summary>
                   <div v-if="getAppointmentPolicyEntries(appt).length" class="payment-agreement-copy">

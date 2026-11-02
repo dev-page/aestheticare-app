@@ -49,7 +49,7 @@
                 <tr v-for="order in filteredOrders" :key="order.id">
                   <td class="orders-primary-cell" data-label="Order ID">{{ getDisplayOrderId(order) }}</td>
                   <td data-label="Items">{{ order.items.length }}</td>
-                  <td class="orders-total-cell" data-label="Total">PHP {{ Number(order.total || 0).toFixed(2) }}</td>
+                  <td class="orders-total-cell" data-label="Total">₱{{ Number(order.total || 0).toFixed(2) }}</td>
                   <td data-label="Payment">{{ order.paymentMethod || 'Cash' }}</td>
                   <td data-label="Status">
                     <span
@@ -122,7 +122,7 @@
           <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <p class="text-xs uppercase text-slate-400">Payment</p>
             <p class="text-white font-semibold mt-1">{{ selectedOrder.paymentMethod || 'Cash' }}</p>
-            <p class="text-xs text-slate-400 mt-2">Total: PHP {{ Number(selectedOrder.total || 0).toFixed(2) }}</p>
+            <p class="text-xs text-slate-400 mt-2">Total: ₱{{ Number(selectedOrder.total || 0).toFixed(2) }}</p>
             <p class="text-xs text-slate-400">Status: {{ selectedOrder.status || 'Pending' }}</p>
             <p v-if="selectedOrder.cancelledAt" class="text-xs text-slate-400">Cancelled: {{ formatDate(selectedOrder.cancelledAt) }}</p>
             <p v-if="selectedOrder.receivedAt" class="text-xs text-slate-400">Received: {{ formatDate(selectedOrder.receivedAt) }}</p>
@@ -142,7 +142,7 @@
               </p>
               <p v-if="item.termsAndConditions" class="mt-1 whitespace-pre-wrap text-xs text-slate-400">Terms: {{ item.termsAndConditions }}</p>
             </div>
-            <div class="text-amber-300">PHP {{ Number(item.price || 0).toFixed(2) }}</div>
+            <div class="text-amber-300">₱{{ Number(item.price || 0).toFixed(2) }}</div>
           </div>
         </div>
 

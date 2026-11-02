@@ -31,7 +31,7 @@
               <h2 class="cart-item-title">{{ item.name }}</h2>
               <p class="cart-item-meta">Variation: {{ item.variation || 'Default' }}</p>
               <p class="cart-item-meta">Center: {{ item.branchName || 'AesthetiCare' }}</p>
-              <p class="cart-item-price">PHP {{ Number(item.price || 0).toFixed(2) }}</p>
+              <p class="cart-item-price">₱{{ Number(item.price || 0).toFixed(2) }}</p>
 
               <div class="cart-qty-row">
                 <button @click="decreaseQty(item)" class="cart-qty-button">-</button>
@@ -47,7 +47,7 @@
         <section class="cart-summary-panel">
           <div class="cart-summary-head">
             <p class="cart-summary-value">Selected Items: {{ selectedItems.length }}</p>
-            <p class="cart-summary-value">Subtotal: PHP {{ cartSubtotal.toFixed(2) }}</p>
+            <p class="cart-summary-value">Subtotal: ₱{{ cartSubtotal.toFixed(2) }}</p>
           </div>
 
           <div class="cart-summary-footer">

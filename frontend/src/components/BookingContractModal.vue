@@ -21,7 +21,7 @@
           <p class="contract-record-line">Signed by {{ appointment.bookingAgreement.signer?.name }} as the booking arranger. This signature does not replace the service recipient's treatment consent.</p>
           <details><summary>View accepted booking terms and signature</summary>
             <ClientContractDocument :document="appointment.bookingAgreement.document" />
-            <p v-for="(visit, index) in appointment.bookingAgreement.appointments || []" :key="index" class="contract-record-line">{{ visit.service }} · {{ visit.date }} at {{ visit.time }} · PHP {{ Number(visit.amount || 0).toFixed(2) }}</p>
+            <p v-for="(visit, index) in appointment.bookingAgreement.appointments || []" :key="index" class="contract-record-line">{{ visit.service }} · {{ visit.date }} at {{ visit.time }} · ₱{{ Number(visit.amount || 0).toFixed(2) }}</p>
             <img :src="appointment.bookingAgreement.signer?.signatureImage" alt="Booking arranger signature" class="signature-preview" />
             <p class="contract-record-line">{{ appointment.bookingAgreement.signer?.signedAt }}</p>
           </details>

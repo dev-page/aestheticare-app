@@ -499,7 +499,7 @@ const renderEmployeeChart = () => {
       new Intl.NumberFormat('en-PH', {
         style: 'currency',
         currency: 'PHP',
-        currencyDisplay: 'code'
+        currencyDisplay: 'symbol'
       }).format(Number(value || 0))
 
     const createTimestampLabel = () => {

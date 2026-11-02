@@ -228,7 +228,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return new Intl.NumberFormat('en-PH', {
         style: 'currency',
         currency: 'PHP',
-        currencyDisplay: 'code'
+        currencyDisplay: 'symbol'
       }).format(Number(value) || 0)
     }
 

@@ -63,7 +63,7 @@ const posts = ref([]), branches = ref([]), selectedBranchId = ref('all'), filter
 const selectedPost = ref(null)
 const { userRole, isClinicAdminOwner } = usePermissions()
 const canReviewListings = computed(() => isClinicAdminOwner.value || String(userRole.value || '').trim().toLowerCase() === 'finance')
-const formatPrice = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
+const formatPrice = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value || 0))
 const reviewStatusLabel = post => ({ pending: 'Pending', approved: 'Approved', rejected: 'Changes Requested' })[listingStatus(post)] || 'Not reviewed'
 const listingStatus = (post) => String(post?.financeStatus || 'draft').trim().toLowerCase() || 'draft'
 const branchName = (branchId) => branches.value.find((branch) => branch.id === String(branchId || '').trim())?.name || 'Branch'

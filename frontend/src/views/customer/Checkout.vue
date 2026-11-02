@@ -54,7 +54,7 @@
                   <p class="text-xs text-[#8b6a4d]">Qty: {{ item.quantity }}</p>
                 </div>
                 <p class="shrink-0 font-semibold text-[#6f4329]">
-                  PHP {{ (Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2) }}
+                  ₱{{ (Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2) }}
                 </p>
               </div>
               <p class="mt-2 text-xs text-[#8b6a4d]">Center: {{ item.branchName || 'AesthetiCare' }}</p>
@@ -70,19 +70,19 @@
           <div class="space-y-3">
             <div class="checkout-summary-row">
               <span>Subtotal</span>
-              <strong>PHP {{ subtotal.toFixed(2) }}</strong>
+              <strong>₱{{ subtotal.toFixed(2) }}</strong>
             </div>
             <div class="checkout-summary-row">
               <span>System commission ({{ productCommissionPercent }}%)</span>
-              <strong>PHP {{ commissionAmount.toFixed(2) }}</strong>
+              <strong>₱{{ commissionAmount.toFixed(2) }}</strong>
             </div>
             <div class="checkout-summary-row checkout-summary-row-total">
               <span>Total due</span>
-              <strong>PHP {{ subtotal.toFixed(2) }}</strong>
+              <strong>₱{{ subtotal.toFixed(2) }}</strong>
             </div>
             <div class="checkout-summary-row checkout-summary-row-muted">
               <span>Clinic share after commission</span>
-              <strong>PHP {{ merchantNetAmount.toFixed(2) }}</strong>
+              <strong>₱{{ merchantNetAmount.toFixed(2) }}</strong>
             </div>
           </div>
         </div>

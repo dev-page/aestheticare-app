@@ -94,7 +94,7 @@
                   v-if="post.postType === 'Consultation' || (post.postType === 'Service' && post.requiresConsultationFirst)"
                   class="listing-detail-badge"
                 >
-                  Fee PHP {{ Number(post.consultationFee || post.price || 0).toFixed(2) }}
+                  Fee ₱{{ Number(post.consultationFee || post.price || 0).toFixed(2) }}
                 </span>
                 <span
                   v-if="post.postType === 'Service' && post.followUpAllowed"
@@ -318,7 +318,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const formatCurrency = (value) => {
       return new Intl.NumberFormat('en-PH', {
         style: 'currency',
-        currency: 'PHP', currencyDisplay: 'code'
+        currency: 'PHP', currencyDisplay: 'symbol'
       }).format(Number(value) || 0)
     }
 

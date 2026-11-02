@@ -89,9 +89,9 @@
               <input v-model.number="form.discountPercent" type="number" min="0" max="90" step="0.5" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
             </label>
             <div class="rounded-lg border border-slate-700 p-3 text-sm text-slate-300">
-              <p>Included total: PHP {{ packageSubtotal.toFixed(2) }}</p>
-              <p>Customer pays: PHP {{ packagePrice.toFixed(2) }}</p>
-              <p>Customer saves: PHP {{ packageSavings.toFixed(2) }}</p>
+              <p>Included total: ₱{{ packageSubtotal.toFixed(2) }}</p>
+              <p>Customer pays: ₱{{ packagePrice.toFixed(2) }}</p>
+              <p>Customer saves: ₱{{ packageSavings.toFixed(2) }}</p>
             </div>
           </div>
           <p class="mt-2 text-xs text-slate-400">The clinic sets the discount. The package price is calculated from the current prices of its included services and consultation.</p>
@@ -249,7 +249,7 @@
           <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Appointments per booking: 1</p>
           <p v-if="form.postType === 'Package'" class="mt-1 text-slate-300">Package visits: {{ Math.max(1, Number(form.sessionCount || 1)) }}</p>
           <p v-if="form.postType === 'Product'" class="mt-2 text-slate-300">Source: selected inventory product</p>
-          <p class="mt-1 text-slate-300">Proposed {{ String(form.postType || 'Service').toLowerCase() }} price: PHP {{ Number(form.price || form.consultationFee || 0).toFixed(2) }}</p>
+          <p class="mt-1 text-slate-300">Proposed {{ String(form.postType || 'Service').toLowerCase() }} price: ₱{{ Number(form.price || form.consultationFee || 0).toFixed(2) }}</p>
           <p class="mt-1 text-xs text-amber-200">{{ isFreePlan ? 'Free Plan service listings publish directly; Finance approval is not required.' : 'Financial terms, including installment settings, require Finance approval before publication.' }}</p>
         </div>
 

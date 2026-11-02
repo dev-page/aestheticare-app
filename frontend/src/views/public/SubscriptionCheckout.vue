@@ -291,7 +291,7 @@ const formatCurrency = (amount) => {
   const safe = Number.isFinite(value) ? value : 0
   return new Intl.NumberFormat('en-PH', {
     style: 'currency',
-    currency: 'PHP', currencyDisplay: 'code',
+    currency: 'PHP', currencyDisplay: 'symbol',
     minimumFractionDigits: 2,
   }).format(safe)
 }

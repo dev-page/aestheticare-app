@@ -205,7 +205,7 @@
                     <img :src="item.imageUrl || fallbackImage" alt="Item image" class="w-full h-40 object-cover rounded mb-4" />
                     <div class="p-4">
                       <h3 class="text-xl font-semibold text-[#3d281d]">{{ item.title || item.name }}</h3>
-                      <p class="mt-2 text-[#8b6a4d]">PHP {{ Number(item.consultationFee || item.price || 0).toFixed(2) }}</p>
+                      <p class="mt-2 text-[#8b6a4d]">₱{{ Number(item.consultationFee || item.price || 0).toFixed(2) }}</p>
                       <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
                       <div class="mt-3 flex flex-wrap gap-2">
                         <span class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium">
@@ -392,15 +392,15 @@
                     </p>
                     <p class="mt-3 text-xs text-[#8b6a4d]">
                       Full payment due after approval:
-                      <span class="ml-1 font-semibold text-[#3d281d]">PHP {{ bookingDueAmount.toFixed(2) }}</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">₱{{ bookingDueAmount.toFixed(2) }}</span>
                     </p>
                     <p class="mt-1 text-xs text-[#8b6a4d]">
                       System commission ({{ serviceCommissionPercent }}%):
-                      <span class="ml-1 font-semibold text-[#3d281d]">PHP {{ bookingCommissionAmount.toFixed(2) }}</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">₱{{ bookingCommissionAmount.toFixed(2) }}</span>
                     </p>
                     <p class="mt-1 text-xs text-[#8b6a4d]">
                       Clinic share:
-                      <span class="ml-1 font-semibold text-[#3d281d]">PHP {{ bookingNetAmount.toFixed(2) }}</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">₱{{ bookingNetAmount.toFixed(2) }}</span>
                     </p>
                     <p v-if="selectedServiceDurationMinutes" class="mt-1 text-xs text-[#8b6a4d]">
                       Total duration:
@@ -2101,7 +2101,7 @@ const sendChat = async () => {
 }
 
 const formatPriceRange = () => {
-  const formatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' })
+  const formatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' })
   const servicePrices = items.value
     .filter((item) => item.type === 'Service')
     .map((item) => Number(item.price || 0))

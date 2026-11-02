@@ -75,7 +75,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const formatAmount = (amount) => {
       const numeric = Number(amount || 0)
-      return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(numeric)
+      return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(numeric)
     }
 
     const formatDate = (timestamp) => {

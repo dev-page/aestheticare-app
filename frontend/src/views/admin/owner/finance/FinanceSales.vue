@@ -171,7 +171,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return date ? date.toLocaleString() : '-'
     }
     const formatCurrency = (value) =>
-      new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
+      new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value || 0))
 
     const isRefund = (tx) => String(tx.status || '').toLowerCase().includes('refund')
 

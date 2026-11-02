@@ -44,7 +44,7 @@
                   <div class="text-xs text-slate-400">{{ order.customerEmail || order.delivery?.email || 'No email' }}</div>
                 </td>
                 <td class="py-3 px-4">{{ order.items.length }}</td>
-                <td class="py-3 px-4 text-amber-300">PHP {{ Number(order.total || 0).toFixed(2) }}</td>
+                <td class="py-3 px-4 text-amber-300">₱{{ Number(order.total || 0).toFixed(2) }}</td>
                 <td class="py-3 px-4">{{ order.paymentMethod || 'Cash' }}</td>
                 <td class="py-3 px-4">
                   <span
@@ -91,7 +91,7 @@
           <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <p class="text-xs uppercase text-slate-400">Payment</p>
             <p class="text-white font-semibold mt-1">{{ selectedOrder.paymentMethod || 'Cash' }}</p>
-            <p class="text-xs text-slate-400 mt-2">Total: PHP {{ Number(selectedOrder.total || 0).toFixed(2) }}</p>
+            <p class="text-xs text-slate-400 mt-2">Total: ₱{{ Number(selectedOrder.total || 0).toFixed(2) }}</p>
             <p class="text-xs text-slate-400">Status: {{ selectedOrder.status || 'Pending' }}</p>
             <p class="text-xs text-slate-400">Created: {{ formatDate(selectedOrder.createdAt) }}</p>
           </div>
@@ -104,7 +104,7 @@
               <p class="text-white font-medium">{{ item.name }}</p>
               <p class="text-xs text-slate-400">Qty: {{ item.quantity }} • Branch: {{ item.branchName || 'N/A' }}</p>
             </div>
-            <div class="text-amber-300">PHP {{ Number(item.price || 0).toFixed(2) }}</div>
+            <div class="text-amber-300">₱{{ Number(item.price || 0).toFixed(2) }}</div>
           </div>
         </div>
       </div>

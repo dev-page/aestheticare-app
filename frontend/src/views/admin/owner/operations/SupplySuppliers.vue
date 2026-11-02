@@ -124,7 +124,7 @@
                 >
                   {{ item.name }}
                   <span class="offered-item-category">{{ item.category || 'Uncategorized' }}</span>
-                  <span class="offered-item-price">PHP {{ Number(item.unitCost || item.costPerUnit || item.price || 0).toLocaleString() }}</span>
+                  <span class="offered-item-price">₱{{ Number(item.unitCost || item.costPerUnit || item.price || 0).toLocaleString() }}</span>
                 </p>
                 <p v-if="normalizedOfferedItems(supplier).length === 0" class="supplier-muted">No offered items listed.</p>
                 <p v-else-if="normalizedOfferedItems(supplier).length > 3" class="supplier-muted">

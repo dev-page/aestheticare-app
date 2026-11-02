@@ -560,7 +560,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const formatAmount = (value) => {
       const numeric = Number(value || 0)
-      return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(numeric)
+      return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(numeric)
     }
 
     const listingTitle = (item) => String(item?.title || item?.productName || item?.serviceName || 'Untitled Listing').trim()

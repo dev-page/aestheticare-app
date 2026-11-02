@@ -137,7 +137,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const monthKey = (date) =>
       date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : ''
     const formatCurrency = (value) =>
-      new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
+      new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value || 0))
 
     const userById = computed(() => {
       const map = {}

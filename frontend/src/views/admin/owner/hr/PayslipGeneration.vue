@@ -126,7 +126,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const formatCurrency = (value) => {
       return new Intl.NumberFormat('en-PH', {
         style: 'currency',
-        currency: 'PHP', currencyDisplay: 'code'
+        currency: 'PHP', currencyDisplay: 'symbol'
       }).format(Number(value) || 0)
     }
 

@@ -490,7 +490,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 <div class="text-sm text-white">{{ branch.branchAdminName || 'Not assigned' }}</div>
                 <div v-if="branch.isMainBranch" class="text-xs text-amber-300 mt-1">Main branch</div>
               </td>
-              <td class="px-2 py-2 sm:px-4 sm:py-3">PHP {{ branch.revenue ? branch.revenue.toLocaleString() : 0 }}</td>
+              <td class="px-2 py-2 sm:px-4 sm:py-3">₱{{ branch.revenue ? branch.revenue.toLocaleString() : 0 }}</td>
               <td class="px-2 py-2 sm:px-4 sm:py-3">
                 <span
                   @click="canManageMultipleBranches && toggleStatus(branch)"
@@ -556,7 +556,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 <div class="text-sm text-white">{{ branch.branchAdminName || 'Not assigned' }}</div>
                 <div v-if="branch.isMainBranch" class="text-xs text-amber-300 mt-1">Main branch</div>
               </td>
-              <td class="px-2 py-2 sm:px-4 sm:py-3">PHP {{ branch.revenue ? branch.revenue.toLocaleString() : 0 }}</td>
+              <td class="px-2 py-2 sm:px-4 sm:py-3">₱{{ branch.revenue ? branch.revenue.toLocaleString() : 0 }}</td>
               <td class="px-2 py-2 sm:px-4 sm:py-3">
                 <span class="rounded-full bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-400 sm:px-3 sm:text-sm">
                   Inactive

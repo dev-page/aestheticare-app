@@ -270,7 +270,7 @@ const decisionNote = ref('')
 let unsubscribeAuth = null
 
 const formatCurrency = (value) =>
-  new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'code' }).format(Number(value || 0))
+  new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value || 0))
 
 const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
   const baseUrl = String(OTP_API_BASE || '').trim()
