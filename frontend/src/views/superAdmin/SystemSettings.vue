@@ -23,8 +23,8 @@
           <div v-if="activeType === 'maintenance'" class="form-grid">
             <label class="form-field"><span>Maintenance title</span><input v-model.trim="draft.title" required maxlength="120" placeholder="e.g. Scheduled platform maintenance" /></label>
             <label class="form-field"><span>Expected impact</span><select v-model="draft.impact"><option value="limited">Some features may be unavailable</option><option value="unavailable">Platform may be unavailable</option><option value="none">No expected interruption</option></select></label>
-            <label class="form-field"><span>Starts</span><input v-model="draft.startsAt" type="datetime-local" required /></label>
-            <label class="form-field"><span>Ends</span><input v-model="draft.endsAt" type="datetime-local" required /></label>
+            <label class="form-field"><span>Starts</span><input v-model="draft.startsAt" type="datetime-local" :min="minimumMaintenanceStart" required /></label>
+            <label class="form-field"><span>Ends</span><input v-model="draft.endsAt" type="datetime-local" :min="minimumMaintenanceEnd" required /></label>
             <label class="form-field form-field-wide"><span>Maintenance notice</span><textarea v-model.trim="draft.message" rows="4" required maxlength="3000" placeholder="Explain what is planned and what users should expect."></textarea></label>
           </div>
 
@@ -38,7 +38,6 @@
             <label class="form-field form-field-wide"><span>Announcement title</span><input v-model.trim="draft.title" required maxlength="120" placeholder="Give your announcement a clear title" /></label>
             <label class="form-field form-field-wide"><span>Message</span><textarea v-model.trim="draft.message" rows="5" required maxlength="3000" placeholder="Write the message you want users to see."></textarea></label>
             <label class="form-field"><span>Audience</span><select v-model="draft.audience"><option value="everyone">Everyone</option><option value="clinic_owners">Clinic owners and administrators</option><option value="customers">Customers</option></select></label>
-            <label class="form-checkbox"><input v-model="draft.notifyByEmail" type="checkbox" /><span><strong>Also send by email</strong><small>Email delivery depends on a configured backend email worker.</small></span></label>
           </div>
 
           <div class="form-footer">
@@ -57,7 +56,7 @@
         <ul v-else class="post-list">
           <li v-for="post in announcements" :key="post.id" class="post-item">
             <span class="post-type-badge" :class="`post-type-${post.type}`">{{ post.typeLabel }}</span>
-            <div class="post-item-content"><div class="post-item-title-row"><h3>{{ post.title || post.message || 'Untitled post' }}</h3><span>{{ post.createdLabel }}</span></div><p v-if="post.title" class="post-item-message">{{ post.message || 'No message provided.' }}</p><p v-if="post.type === 'maintenance' && post.startsLabel" class="post-item-meta">{{ post.startsLabel }}<template v-if="post.endsLabel"> – {{ post.endsLabel }}</template> · {{ post.impactLabel }}</p><p v-if="post.type === 'update' && post.releaseDate" class="post-item-meta">Release date: {{ post.releaseDate }}</p><p v-if="post.type === 'announcement'" class="post-item-meta">Audience: {{ post.audienceLabel }}<template v-if="post.notifyByEmail"> · Email requested</template></p></div>
+            <div class="post-item-content"><div class="post-item-title-row"><h3>{{ post.title || post.message || 'Untitled post' }}</h3><span>{{ post.createdLabel }}</span></div><p v-if="post.title" class="post-item-message">{{ post.message || 'No message provided.' }}</p><p v-if="post.type === 'maintenance' && post.startsLabel" class="post-item-meta">{{ post.startsLabel }}<template v-if="post.endsLabel"> – {{ post.endsLabel }}</template> · {{ post.impactLabel }}</p><p v-if="post.type === 'update' && post.releaseDate" class="post-item-meta">Release date: {{ post.releaseDate }}</p><p v-if="post.type === 'announcement'" class="post-item-meta">Audience: {{ post.audienceLabel }}</p></div>
           </li>
         </ul>
       </section>
@@ -93,9 +92,14 @@ const localDateTime = (date) => {
   const offset = date.getTimezoneOffset() * 60000
   return new Date(date.getTime() - offset).toISOString().slice(0, 16)
 }
+const minimumMaintenanceStart = ref(localDateTime(new Date()))
+const minimumMaintenanceEnd = computed(() => {
+  const startsAt = new Date(draft.startsAt)
+  return Number.isNaN(startsAt.getTime()) ? minimumMaintenanceStart.value : localDateTime(new Date(Math.max(Date.now(), startsAt.getTime() + 60 * 1000)))
+})
 const draft = reactive({
   title: '', message: '', startsAt: localDateTime(new Date(Date.now() + 60 * 60 * 1000)), endsAt: localDateTime(new Date(Date.now() + 2 * 60 * 60 * 1000)),
-  impact: 'limited', releaseDate: new Date().toISOString().slice(0, 10), audience: 'everyone', notifyByEmail: false,
+  impact: 'limited', releaseDate: new Date().toISOString().slice(0, 10), audience: 'everyone',
 })
 const publishLabel = computed(() => activeType.value === 'maintenance' ? 'Publish maintenance notice' : activeType.value === 'update' ? 'Publish product update' : 'Publish announcement')
 const typeLabels = { maintenance: 'Maintenance', update: 'Product update', announcement: 'Announcement' }
@@ -114,7 +118,6 @@ const resetDraft = () => {
   draft.impact = 'limited'
   draft.releaseDate = new Date().toISOString().slice(0, 10)
   draft.audience = 'everyone'
-  draft.notifyByEmail = false
 }
 const validateDraft = () => {
   if (!draft.title.trim() || !draft.message.trim()) return 'Add a title and message before publishing.'
@@ -122,11 +125,13 @@ const validateDraft = () => {
     const startsAt = new Date(draft.startsAt)
     const endsAt = new Date(draft.endsAt)
     if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return 'Choose valid maintenance start and end times.'
+    if (startsAt <= new Date()) return 'The maintenance start time must be in the future.'
     if (endsAt <= startsAt) return 'The maintenance end time must be after the start time.'
   }
   return ''
 }
 const publish = async () => {
+  minimumMaintenanceStart.value = localDateTime(new Date())
   formError.value = ''
   formSuccess.value = ''
   const validationError = validateDraft()
@@ -146,7 +151,6 @@ const publish = async () => {
       impact: type === 'maintenance' ? draft.impact : null,
       releaseDate: type === 'update' ? draft.releaseDate : null,
       audience: type === 'announcement' ? draft.audience : 'everyone',
-      notifyByEmail: type === 'announcement' && !!draft.notifyByEmail,
       createdBy: auth.currentUser?.uid || null,
       createdAt: serverTimestamp(),
       published: true,
