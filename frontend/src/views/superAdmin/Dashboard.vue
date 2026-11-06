@@ -51,7 +51,7 @@
 
       <section class="bg-slate-800 rounded-xl border border-slate-700 p-6">
         <h2 class="text-xl text-white font-semibold mb-4">Subscription Overview</h2>
-        <p class="text-slate-400 text-sm mb-6">Number of clinics and users currently under the Free Plan, Basic, and Premium plans.</p>
+        <p class="text-slate-400 text-sm mb-6">Number of clinics and users currently in trial, Basic, and Premium subscription states.</p>
 
         <div class="space-y-4">
           <div v-for="entry in subscriptionChart" :key="entry.key">
@@ -151,8 +151,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const highest = Math.max(freeTrialCount.value, basicCount.value, premiumCount.value, 1)
       return [
         {
-          key: 'free',
-          label: 'Free Plan',
+          key: 'trial',
+          label: 'Trial',
           value: freeTrialCount.value,
           width: (freeTrialCount.value / highest) * 100,
           colorClass: 'bg-blue-500'

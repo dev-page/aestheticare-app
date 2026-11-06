@@ -88,7 +88,6 @@ import {
 import { DEFAULT_SUBSCRIPTION_FEATURES } from '@/utils/subscriptionFeatureRegistry'
 
 const defaultPlanCatalog = [
-  { id: 'free', key: 'free', label: 'Free Plan' },
   { id: 'basic', key: 'basic', label: 'Basic' },
   { id: 'premium', key: 'premium', label: 'Premium' },
 ]

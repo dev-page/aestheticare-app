@@ -84,7 +84,7 @@ const emit = defineEmits(['close'])
 const router = useRouter()
 
 const plans = ref([])
-const selectedPlan = ref('free')
+const selectedPlan = ref('basic')
 const error = ref('')
 const isLoading = ref(true)
 const showResume = ref(false)
@@ -94,25 +94,14 @@ const resumeLoading = ref(false)
 let unsubscribePlans = null
 const defaultPlans = () => [
   {
-    id: 'free',
-    name: 'FreePlan',
-    price: 0,
-    billingCycle: 'trial',
-    description: 'Essential clinic features with no subscription fee or expiry.',
-    features: ['Core modules', 'Limited users', 'Email support'],
-    trialDays: 0,
-    freeTrialEnabled: false,
-    isActive: true,
-  },
-  {
     id: 'basic',
     name: 'Basic',
     price: 499,
     billingCycle: 'month',
     description: 'Essential features for your clinic operations.',
     features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
-    trialDays: 0,
-    freeTrialEnabled: false,
+    trialDays: 14,
+    freeTrialEnabled: true,
     isActive: true,
   },
   {
@@ -146,7 +135,7 @@ const loadPlans = async () => {
         }
 
         if (!plans.value.some((plan) => plan.id === selectedPlan.value)) {
-          selectedPlan.value = plans.value[0]?.id || 'free'
+          selectedPlan.value = plans.value[0]?.id || 'basic'
         }
       },
       (err) => {
@@ -169,20 +158,11 @@ const selectedPlanData = computed(() => plans.value.find((plan) => plan.id === s
 const ctaLabel = computed(() => {
   const current = selectedPlanData.value
   if (!current) return 'Continue'
-  if (current.id === 'free-trial' || current.id === 'free') {
-    return `Proceed to FreePlan`
-  }
-  return 'Continue with Selected Plan'
+  return current.freeTrialEnabled ? `Start ${current.trialDays}-Day Free Trial` : 'Continue with Selected Plan'
 })
 
 const cardClass = (plan) => {
   const selected = selectedPlan.value === plan.id
-
-  if (plan.id === 'free-trial' || plan.id === 'free') {
-    return selected
-      ? 'bg-gray-100/80 border-4 border-gold-600 text-gray-800 shadow-lg'
-      : 'bg-gray-100/70 border border-gray-300 text-gray-800 shadow-lg hover:shadow-[0_0_25px_rgba(255,255,255,0.6)]'
-  }
 
   if (plan.id === 'premium') {
     return selected
@@ -196,12 +176,6 @@ const cardClass = (plan) => {
 }
 
 const continueWithPlan = () => {
-  if (selectedPlan.value === 'free-trial' || selectedPlan.value === 'free') {
-    router.push({ name: 'register', query: { account: 'clinic' } })
-    emit('close')
-    return
-  }
-
   router.push({ path: '/subscription/checkout', query: { plan: selectedPlan.value } })
   emit('close')
 }

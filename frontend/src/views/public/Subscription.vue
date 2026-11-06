@@ -88,24 +88,14 @@ let unsubscribePlans = null;
 
 const defaultPlans = () => [
   {
-    id: "free",
-    name: "Free Plan",
-    price: 0,
-    billingCycle: "trial",
-    description: "One-branch service listings with direct online booking and no expiry.",
-    features: ["Service listings and online bookings", "One branch", "Create employee accounts", "Upgrade anytime"],
-    trialDays: 0,
-    isActive: true,
-  },
-  {
     id: "basic",
     name: "Basic",
     price: 499,
     cycle: "/month",
     description: "For single-branch clinics with streamlined daily operations.",
     features: ["Scheduling, POS & payments", "Inventory, procurement & reports", "Staff account management", "Single-branch operations"],
-    trialDays: 0,
-    freeTrialEnabled: false,
+    trialDays: 14,
+    freeTrialEnabled: true,
     isActive: true,
     recommended: false,
   },
@@ -155,21 +145,19 @@ const maybeLater = () => {
 };
 
 const planCardClass = (plan) => {
-  if (plan.id === "free-trial" || plan.id === "free") return "plan-card-free";
   if (plan.id === "basic") return "plan-card-basic";
   if (plan.id === "premium") return "plan-card-premium";
   return "plan-card-premium";
 };
 
 const planKicker = (plan) => {
-  if (plan.id === "free-trial" || plan.id === "free") return "Always free";
   if (plan.id === "basic") return "For growing clinics";
   if (plan.id === "premium") return "For full operations";
   return plan.recommended ? "Featured option" : "Flexible option";
 };
 
 const planCaption = (plan) => {
-  if (plan.id === "free-trial" || plan.id === "free") return "Keep essential clinic features with no subscription fee or expiry.";
+  if (plan.freeTrialEnabled && plan.trialDays > 0) return `${plan.trialDays}-day free trial`;
   if (plan.id === "basic") return "Best fit for clinics focusing on daily bookings, staffing, and reporting.";
   if (plan.id === "premium") return "Built for teams that need deeper visibility, support, and multi-branch control.";
   return "A saved custom plan configured in Setup Plans.";

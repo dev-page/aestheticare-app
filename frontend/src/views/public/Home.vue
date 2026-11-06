@@ -535,7 +535,7 @@
               </router-link>
             </div>
             <div class="footer-cta-highlights">
-              <span class="footer-highlight-chip">Free Plan available</span>
+              <span class="footer-highlight-chip">14-day trial available</span>
               <span class="footer-highlight-chip">Clinic-ready setup</span>
             </div>
           </div>
@@ -643,7 +643,7 @@ export default {
       { question: 'What is AesthetiCare?', answer: 'AesthetiCare connects aesthetic clinics and their clients, with tools for appointments, client records, staff, inventory, and clinic operations.' },
       { question: 'How do I get started as a client?', answer: 'Create an account using Register, then explore Centers to find a clinic and view its available services.' },
       { question: 'How can I register my clinic?', answer: 'Choose Register Clinic in the footer to begin clinic registration. Complete the required information and verification steps before setting up your clinic.' },
-      { question: 'Is there a free plan?', answer: 'A Free Plan is available for clinic catalog and inquiry features. Visit Pricing to compare the features included in each subscription plan.' },
+      { question: 'Is there a free plan?', answer: 'No. Basic and Premium each include a one-time free trial. Visit Pricing to compare the plans.' },
       { question: 'Who should I contact about my appointment?', answer: 'Contact the clinic handling your booking for scheduling, treatment, cancellation, or payment questions. Use the contact form below for questions about the platform.' },
       { question: 'Do I need an account to contact the administrators?', answer: 'No. You can use the contact form below without signing in. Include your email address so administrators have a way to contact you.' },
     ];

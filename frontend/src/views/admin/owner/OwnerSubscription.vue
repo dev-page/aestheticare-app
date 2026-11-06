@@ -25,10 +25,10 @@
               <div v-if="!isFree && daysRemaining !== null && daysRemaining > 0"><dt>Time remaining</dt><dd>{{ daysRemaining }} {{ daysRemaining === 1 ? 'day' : 'days' }}</dd></div>
             </dl>
             <p v-if="!isFree" class="date-note">Dates are shown in Philippine time.</p>
-            <p v-if="isTrial" class="pending-notice">No automatic charge. Your clinic returns to Free when the trial ends unless you purchase a plan. Records and existing appointments are retained.</p>
+            <p v-if="isTrial" class="pending-notice">No automatic charge. When the trial ends, a 7-day grace period begins. Renew before it ends to keep operational access; clinic records remain retained.</p>
             <div v-if="!isFree && daysRemaining !== null && daysRemaining <= 7" class="renewal-notice" role="status">
               <Icon icon="lucide:clock-3" width="19" aria-hidden="true" />
-              <div><strong>{{ daysRemaining <= 0 ? 'Your paid plan has ended' : 'Your renewal is coming up' }}</strong><p>{{ daysRemaining <= 0 ? 'Free Plan access applies after expiry. Explore plans to restore your paid features.' : 'Review your plan options before expiry to keep your paid features.' }}</p></div>
+              <div><strong>{{ daysRemaining <= 0 ? 'Your plan has reached its end date' : 'Your renewal is coming up' }}</strong><p>{{ daysRemaining <= 0 ? 'A 7-day grace period applies before operational access is restricted. Your clinic records remain retained while you renew.' : 'Review your plan options before expiry to keep your paid features.' }}</p></div>
             </div>
             <div v-if="pendingPlanNotice" class="pending-notice"><Icon icon="lucide:calendar-clock" width="19" aria-hidden="true" /><p>{{ pendingPlanNotice }}</p></div>
             <div class="plan-inclusions">
@@ -84,7 +84,7 @@ const router = useRouter()
 const loading = ref(true)
 const error = ref('')
 
-const planKey = ref('free')
+const planKey = ref('basic')
 const isTrial = ref(false)
 const paymentStatus = ref('')
 const subscriptionExpiresAt = ref(null)
@@ -142,7 +142,7 @@ const formatDate = subscriptionDateLabel
 const normalizePlanLabel = (value) => {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return 'Not set'
-  if (raw.includes('free')) return 'Free Plan'
+  if (raw.includes('free')) return 'No active subscription'
   if (raw.includes('basic')) return 'Basic'
   if (raw.includes('premium')) return 'Premium'
   return value
@@ -171,15 +171,11 @@ const statusLabel = computed(() => {
   return daysRemaining.value <= 7 ? 'Expiring soon' : 'Active'
 })
 const planDescription = computed(() => {
-  if (planKey.value === 'free-trial' || planKey.value === 'free') {
-    return 'Permanent access to essential clinic features, with no subscription fee or expiry.'
-  }
+  if (planKey.value === 'free-trial' || planKey.value === 'free') return 'Operational access is restricted until the clinic renews. Historical records remain retained.'
   return planData.value?.description || 'No description available.'
 })
 const planFeatures = computed(() => {
-  if (planKey.value === 'free-trial' || planKey.value === 'free') {
-    return ['Primary clinic profile and branch', 'Service listings and clinic policies', 'Clients and inbox', 'Appointment management and existing transactions']
-  }
+  if (planKey.value === 'free-trial' || planKey.value === 'free') return []
   return planData.value?.features || []
 })
 const paymentStatusLabel = computed(() => {

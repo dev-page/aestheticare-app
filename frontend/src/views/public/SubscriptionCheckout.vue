@@ -247,21 +247,14 @@ const handlePhoneInput = () => {
 
 const defaultPlans = () => [
   {
-    id: 'free',
-    name: 'FreePlan',
-    price: 0,
-    billingCycle: 'trial',
-    description: 'For new clinics trying the platform.',
-    features: ['Core modules', 'Limited users', 'Email support'],
-    isActive: true,
-  },
-  {
     id: 'basic',
     name: 'Basic',
     price: 499,
     billingCycle: 'month',
     description: 'Essential tools for daily clinic operations.',
     features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
+    trialDays: 14,
+    freeTrialEnabled: true,
     isActive: true,
   },
   {

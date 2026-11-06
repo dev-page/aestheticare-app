@@ -12,14 +12,6 @@
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="rounded-lg border border-[#d9bea1] bg-[#fffaf3] px-4 py-2 text-[#684b35] transition hover:bg-[#f2e5d4]"
-            :disabled="loading"
-            @click="addNewPlan"
-          >
-            + Add New Plan
-          </button>
-          <button
-            type="button"
             class="inline-flex items-center justify-center rounded-lg border border-[#d9bea1] bg-[#fffaf3] px-4 py-2 text-[#684b35] transition hover:bg-[#f2e5d4]"
             :disabled="loading"
             @click="loadPlans"
@@ -58,8 +50,8 @@
                   v-model="plan.isActive"
                   type="checkbox"
                   class="accent-[#806044]"
-                  :disabled="!plan.isDraft && plan.id === 'free' && plan.isActive !== false"
-                  :title="!plan.isDraft && plan.id === 'free' ? 'Free Plan must remain active as the fallback.' : undefined"
+                  :disabled="!plan.isDraft && plan.isActive !== false"
+                  :title="!plan.isDraft ? 'Basic and Premium are the two built-in subscription plans.' : undefined"
                   @change="clearPlanFieldError(plan, 'isActive')"
                 />
                 Active
@@ -167,7 +159,7 @@
                 <input v-model="plan.trialDays" type="number" min="1" max="365" step="1" class="w-full rounded-lg bg-[#fffdf9] px-3 py-2 text-[#4b3324]" :class="fieldClass(plan, 'trialDays')" @input="clearPlanFieldError(plan, 'trialDays')" />
                 <p v-if="fieldError(plan, 'trialDays')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'trialDays') }}</p>
               </div>
-              <p class="mt-2 text-xs text-[#8a725f]">Each clinic can use one paid-plan trial once. No charge is collected during the trial; when it ends, the clinic returns to Free. A later purchase uses this plan’s normal price.</p>
+              <p class="mt-2 text-xs text-[#8a725f]">Each clinic can use one trial once. No charge is collected during the trial; expiry starts a 7-day grace period and clinic records remain retained if access is later restricted.</p>
             </div>
 
             <div>
@@ -182,8 +174,6 @@
               ></textarea>
               <p v-if="fieldError(plan, 'description')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'description') }}</p>
             </div>
-
-            <p v-if="plan.id === 'free'" class="text-sm text-[#8a725f]">Free is permanent and has no expiry. Free trials are configured separately on paid plans.</p>
 
             <div>
               <div class="flex items-center justify-between mb-2">
@@ -255,26 +245,14 @@ import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 
 const defaultPlans = () => [
   {
-    id: 'free',
-    label: 'Free Plan',
-    name: 'Free Plan',
-    price: 0,
-    billingCycle: 'month',
-    description: 'Core tools for one-branch clinics with no expiration.',
-    trialDays: 0,
-    freeTrialEnabled: false,
-    isActive: true,
-    features: ['One branch', 'Service listings and online bookings', 'Create employee accounts', 'Upgrade anytime'],
-  },
-  {
     id: 'basic',
     label: 'Basic',
     name: 'Basic',
     price: 499,
     billingCycle: 'month',
     description: 'Essential tools for daily clinic operations.',
-    trialDays: 0,
-    freeTrialEnabled: false,
+    trialDays: 14,
+    freeTrialEnabled: true,
     isActive: true,
     features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
   },
@@ -301,7 +279,7 @@ const billingCyclePattern = /^(month|year|one-time)$/i
 const LAST_ACTIVE_PLAN_ERROR = 'LAST_ACTIVE_PLAN'
 const FREE_PLAN_PROTECTED_ERROR = 'FREE_PLAN_PROTECTED'
 const BUILT_IN_PLAN_PROTECTED_ERROR = 'BUILT_IN_PLAN_PROTECTED'
-const BUILT_IN_PLAN_IDS = new Set(['free', 'basic', 'premium'])
+const BUILT_IN_PLAN_IDS = new Set(['basic', 'premium'])
 
 let draftPlanCounter = 0
 
@@ -382,8 +360,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const showProtectedPlanNotice = async () => {
       await systemAdminSwal.fire({
-        title: 'Free Plan stays active',
-        text: 'The built-in Free Plan cannot be deactivated or deleted. Basic and Premium can be deactivated when another plan is active.',
+        title: 'Built-in plans are protected',
+        text: 'Basic and Premium are the two supported subscription plans and cannot be deleted.',
         icon: 'info',
         confirmButtonText: 'OK',
         confirmButtonColor: '#6b4b34',
@@ -662,7 +640,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           .filter((plan) => !plan.isDeleted)
         const baseIds = new Set(basePlans.map((plan) => String(plan.id || '').trim()))
         const extraPlans = snapshot.docs
-          .filter((docSnap) => !baseIds.has(docSnap.id) && !(dbPlans.get(docSnap.id)?.isDeleted === true))
+          .filter((docSnap) => ['basic', 'premium'].includes(String(docSnap.id || '').toLowerCase()) && !baseIds.has(docSnap.id) && !(dbPlans.get(docSnap.id)?.isDeleted === true))
           .map((docSnap) => normalizePlan({
             id: docSnap.id,
             label: dbPlans.get(docSnap.id)?.label || prettifyId(docSnap.id),

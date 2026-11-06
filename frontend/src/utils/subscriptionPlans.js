@@ -106,6 +106,10 @@ export const normalizeSubscriptionPlan = (plan = {}, fallback = {}) => {
 }
 
 export const buildSubscriptionPlanCatalog = (basePlans = [], snapshotDocs = []) => {
+  // The product has two subscription plans. A trial is an access state on a
+  // selected paid plan, never a third plan or a permanent Free tier.
+  const supportedPlanIds = new Set(['basic', 'premium'])
+  basePlans = basePlans.filter((plan) => supportedPlanIds.has(String(plan?.id || '').trim().toLowerCase()))
   const dbPlans = new Map(snapshotDocs.map((docSnap) => [docSnap.id, docSnap.data() || {}]))
   const normalizedBasePlans = basePlans.map((basePlan) =>
     normalizeSubscriptionPlan(
@@ -113,12 +117,7 @@ export const buildSubscriptionPlanCatalog = (basePlans = [], snapshotDocs = []) 
         ...basePlan,
         ...dbPlans.get(basePlan.id),
         id: basePlan.id,
-        // Free Plan is a fixed fallback tier. Its feature list must not be
-        // widened by an older plan document (for example, one that still
-        // advertises online consultations or products).
-        features: basePlan.id === 'free'
-          ? basePlan.features
-          : (Array.isArray(dbPlans.get(basePlan.id)?.features) ? dbPlans.get(basePlan.id).features : basePlan.features),
+        features: Array.isArray(dbPlans.get(basePlan.id)?.features) ? dbPlans.get(basePlan.id).features : basePlan.features,
       },
       basePlan,
     ),
@@ -132,7 +131,7 @@ export const buildSubscriptionPlanCatalog = (basePlans = [], snapshotDocs = []) 
   })
 
   const customPlans = snapshotDocs
-    .filter((docSnap) => !baseIds.has(docSnap.id))
+    .filter((docSnap) => supportedPlanIds.has(String(docSnap.id || '').trim().toLowerCase()) && !baseIds.has(docSnap.id))
     .map((docSnap) =>
       normalizeSubscriptionPlan(
         {

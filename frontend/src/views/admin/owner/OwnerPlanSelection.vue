@@ -12,8 +12,8 @@
 
       <section v-if="!loading" class="trial-offer">
         <div>
-          <h2>{{ trialActive ? `Your ${trialPlanName} trial is active` : eligibleTrialPlan ? `Try ${eligibleTrialPlan.name} free for ${eligibleTrialPlan.trialDays} days` : 'Free stays available' }}</h2>
-          <p>{{ trialActive ? `Your trial ends on ${subscriptionDateLabel(currentPlanExpiresAt)}. Choose a paid plan to continue.` : eligibleTrialPlan ? 'One free trial per clinic. No payment is collected during the trial. Your clinic returns to Free when it ends; later purchases use the normal plan price.' : 'When your paid plan ends, your clinic returns to Free. Records and existing appointments are retained.' }}</p>
+          <h2>{{ trialActive ? `Your ${trialPlanName} trial is active` : eligibleTrialPlan ? `Try ${eligibleTrialPlan.name} free for ${eligibleTrialPlan.trialDays} days` : 'Choose a subscription plan' }}</h2>
+          <p>{{ trialActive ? `Your trial ends on ${subscriptionDateLabel(currentPlanExpiresAt)}. Renew before the grace period ends to keep operational access.` : eligibleTrialPlan ? 'One free trial per clinic. No payment is collected during the trial. After expiry, a 7-day grace period applies; records remain retained if you do not renew.' : 'Expired subscriptions restrict operations after the 7-day grace period. Clinic records remain retained while you renew or export authorised data.' }}</p>
         </div>
         <button v-if="trialEligible && eligibleTrialPlan" type="button" class="app-button app-button--primary" :disabled="submitting || startingTrial" @click="selectPlan(eligibleTrialPlan.id)">Select {{ eligibleTrialPlan.name }} trial</button>
       </section>
@@ -160,7 +160,7 @@ const defaultPlans = () => [
     price: 499,
     billingCycle: 'month',
     description: 'Essential features for daily clinic operations.',
-    features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
+    features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'], trialDays: 14, freeTrialEnabled: true,
     isActive: true,
   },
   {
