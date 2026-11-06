@@ -32,6 +32,10 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   const identity = async req => {
     const ctx = await loadUserContext(req.user.uid)
     const supplier = String(ctx.roleKey).toLowerCase() === 'supplier' || ctx.userData.userType === 'supplier'
+    // Supplier accounts have been retired. Historical supplier-linked records
+    // remain available to authorized clinic users, but an old supplier token
+    // cannot access any supply workflow endpoint.
+    demand(!supplier, 'Supplier accounts are retired. Suppliers are managed as clinic business contacts.', 403)
     const owned = supplier ? docs(await db.collection('suppliers').where('ownerId', '==', ctx.uid).get()).concat(docs(await db.collection('suppliers').where('supplierUserId', '==', ctx.uid).get())) : []
     if (supplier) demand(supplierIsVerified((await db.collection('supplierApplications').doc(ctx.uid).get()).data()), 'Complete supplier verification before using the supply portal.', 403)
     return { ...ctx, supplier, supplierIds: [...new Set(owned.filter(s => s.status === 'Active' && s.verificationStatus === 'Verified').map(s => s.id))] }
@@ -210,7 +214,21 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const internal = !ctx.supplier
     const broadRead = internal && ['inventory:view', 'procurement:view', 'orders:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
     const items = broadRead ? (await scopedDocs('inventoryItems')).map(i => ({ ...i, signals: stockSignals(i), availableStock: Math.max(0, Number(i.currentStock || 0) - Number(i.reservedStock || 0)) })) : []
-    let suppliers = broadRead ? await scopedDocs('suppliers') : []
+    // Supplier contacts are global/business records. Branch eligibility and
+    // private purchasing notes live in clinicSuppliers, so never infer access
+    // from the legacy suppliers.branchId field.
+    let suppliers = []
+    if (broadRead) {
+      const associationDocs = await scopedDocs('clinicSuppliers')
+      const supplierIds = [...new Set(associationDocs.map(link => String(link.supplierId || '')).filter(Boolean))]
+      const supplierDocs = await Promise.all(supplierIds.map(async id => {
+        const snapshot = await db.collection('suppliers').doc(id).get()
+        const association = associationDocs.find(link => link.supplierId === id)
+        return snapshot.exists ? { id, ...(snapshot.data() || {}), associationStatus: association?.status || 'Active', clinicSupplierId: association?.id || '' } : null
+      }))
+      const legacySuppliers = await scopedDocs('suppliers')
+      suppliers = [...supplierDocs.filter(Boolean), ...legacySuppliers.filter(legacy => !supplierDocs.some(supplier => supplier?.id === legacy.id))]
+    }
     // Historical POs can reference a supplier record that was later relinked
     // to another branch. Include only the supplier documents already named by
     // records the caller is authorized to read, so the UI can show its business
@@ -318,9 +336,12 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
 
   app.post('/supply/suppliers', requireAuth, wrap(async (req, res, ctx) => {
     allow(ctx, 'suppliers:create'); const input = req.body, branchId = cleanId(input.branchId); await branchAccess(ctx, branchId)
-    const ref = db.collection('suppliers').doc(), data = { branchId, name: required(input.name, 'Company name'), businessName: required(input.name, 'Company name'), contactPerson: required(input.contactPerson, 'Contact person'), email: String(input.email || ''), phone: String(input.phone || ''), address: String(input.address || ''), category: String(input.category || ''), registrationNumber: String(input.registrationNumber || ''), status: 'Pending Accreditation', accreditationStatus: 'Pending Accreditation', procurementAccess: 'Manual', offeredItems: [], createdBy: ctx.uid, createdAt: stamp() }
+    const clinic = (await db.collection('clinics').doc(branchId).get()).data() || {}
+    const ref = db.collection('suppliers').doc(), associationRef = db.collection('clinicSuppliers').doc()
+    const data = { businessName: required(input.name, 'Company name'), contactPerson: required(input.contactPerson, 'Contact person'), email: String(input.email || ''), contactNumber: String(input.phone || ''), address: String(input.address || ''), category: String(input.category || ''), registrationNumber: String(input.registrationNumber || ''), status: 'Active', sharedDirectory: false, createdForClinicId: String(clinic.ownerId || ctx.uid), createdBy: ctx.uid, createdAt: stamp(), updatedAt: stamp() }
     await db.runTransaction(async tx => {
       tx.set(ref, data)
+      tx.set(associationRef, { clinicId: String(clinic.ownerId || ctx.uid), branchId, supplierId: ref.id, status: 'Active', internalNotes: '', associatedAt: stamp(), createdBy: ctx.uid, updatedBy: ctx.uid, updatedAt: stamp() })
       tx.set(db.collection('supplyAudit').doc(), { branchId, recordId: ref.id, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: 'supplier', action: 'manual-supplier-created', after: data, ...ctx.auditContext, createdAt: stamp() })
     })
     res.json({ success: true, data: { id: ref.id } })
@@ -342,12 +363,15 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     res.json({ success: true, data: await mutate(ctx, r.branchId, req.body || {}, id) })
   }))
   const mutate = async (ctx, branchId, input, targetId) => db.runTransaction(async tx => {
-    const [recordSnap, itemSnap, supplierSnap, staffSnap, documentSnap, lotSnap, clinicSnap] = await Promise.all([
+    const [recordSnap, itemSnap, supplierLinkSnap, legacySupplierSnap, staffSnap, documentSnap, lotSnap, clinicSnap] = await Promise.all([
       tx.get(db.collection('supplyRecords').where('branchId', '==', branchId)), tx.get(db.collection('inventoryItems').where('branchId', '==', branchId)),
-      tx.get(db.collection('suppliers').where('branchId', '==', branchId)), tx.get(db.collection('users').where('branchId', '==', branchId)), tx.get(db.collection('supplyDocuments').where('branchId', '==', branchId)),
+      tx.get(db.collection('clinicSuppliers').where('branchId', '==', branchId)), tx.get(db.collection('suppliers').where('branchId', '==', branchId)), tx.get(db.collection('users').where('branchId', '==', branchId)), tx.get(db.collection('supplyDocuments').where('branchId', '==', branchId)),
       tx.get(db.collection('supplyLots').where('branchId', '==', branchId)), tx.get(db.collection('clinics').doc(branchId)),
     ])
-    const records = docs(recordSnap), items = docs(itemSnap), suppliers = docs(supplierSnap), documents = docs(documentSnap), clinic = clinicSnap.data() || {}
+    const supplierLinks = docs(supplierLinkSnap)
+    const supplierDocs = await Promise.all(supplierLinks.map(link => tx.get(db.collection('suppliers').doc(cleanId(link.supplierId)))))
+    const associationSuppliers = supplierDocs.map((snapshot, index) => snapshot.exists ? ({ id: snapshot.id, ...(snapshot.data() || {}), associationStatus: supplierLinks[index]?.status || 'Active' }) : null).filter(Boolean)
+    const records = docs(recordSnap), items = docs(itemSnap), suppliers = [...associationSuppliers, ...docs(legacySupplierSnap).filter(legacy => !associationSuppliers.some(supplier => supplier.id === legacy.id))], documents = docs(documentSnap), clinic = clinicSnap.data() || {}
     const writes = [], financialWrites = [], now = stamp()
     // FieldValue.serverTimestamp() cannot be used inside an array element.
     // Supplier catalog entries are stored in `offeredItems`, so their audit
@@ -365,7 +389,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       writes.push([db.collection('supplyRecords').doc(id), record, false]); return record
     }
     const evidence = (r, message) => demand(documents.some(d => d.recordId === r.id), message || 'Upload supporting documents before continuing.')
-    const supplier = id => { const s = suppliers.find(s => s.id === id); demand(s && s.status === 'Active' && s.verificationStatus === 'Verified', 'Select a verified, active supplier assigned to this branch.'); return s }
+    const supplier = id => { const s = suppliers.find(s => s.id === id); demand(s && s.status === 'Active' && (!s.associationStatus || s.associationStatus === 'Active'), 'Select an active supplier associated with this clinic branch.'); return s }
     const supplierCanProvideLine = (s, line) => (Array.isArray(s.offeredItems) ? s.offeredItems : []).some(product => {
       if (!product || typeof product !== 'object' || !line || typeof line !== 'object') return false
       const catalogMatch = s.id === line.supplierId && String(product.id || '') === String(line.supplierCatalogItemId || '')
@@ -384,6 +408,10 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     })
     const catalogCommercialTerms = (request, totals, allowOverride = false) => {
       const sourceSupplier = supplier([...new Set(request.lines.map(line => line.supplierId))][0])
+      // Supplier prices are now confirmed by the clinic from an external
+      // quotation. Legacy supplier-owned catalog terms remain supported, but
+      // are not required for a business-contact supplier.
+      if (!Array.isArray(sourceSupplier.offeredItems) || !sourceSupplier.offeredItems.length) return { tax: 0, discount: 0, otherCharges: 0 }
       let tax = 0, discount = 0, otherCharges = 0
       for (const line of totals.lines) {
         const source = request.lines.find(candidate => candidate.itemId === line.itemId)
@@ -398,7 +426,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       }
       return { tax, discount, otherCharges }
     }
-    const manualOrSupplier = (r, permission = 'procurement:create') => { if (ctx.supplier) demand(r.mode === 'Online' && supplierOwns(ctx, r), 'This record belongs to another supplier.', 403); else { allow(ctx, permission); demand(r.mode === 'Manual', 'The supplier must perform this action through their portal.'); } }
+    const manualOrSupplier = (r, permission = 'procurement:create') => { if (ctx.supplier) demand(r.mode === 'Online' && supplierOwns(ctx, r), 'This record belongs to another supplier.', 403); else { allow(ctx, permission); demand(r.mode === 'Manual', 'Record the supplier response from the clinic after external communication.'); } }
     const record = targetId ? records.find(r => r.id === targetId) : null
     let result, action = String(input.action || 'create'), before = record?.status || ''
     if (!targetId) {
@@ -463,7 +491,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           set(r, { status: 'Quotation Received', quotationReceivedAt: now }); set(get(r.procurementId, 'procurement'), { status: 'Quotations Received' }); break
         }
         case 'receiving': {
-          allow(ctx, 'orders:update'); const po = get(input.poId, 'po'); demand(['Claimed by Logistics', 'Partially Received'].includes(po.status), 'Logistics must claim a supplier-confirmed Purchase Order before recording a delivery.')
+          allow(ctx, 'orders:update'); const po = get(input.poId, 'po'); demand(['Supplier Confirmed', 'Claimed by Logistics', 'Partially Received'].includes(po.status), 'Record an external supplier confirmation before recording a delivery.')
           const lines = (input.lines || []).map(line => {
             const ordered = po.lines.find(l => l.itemId === line.itemId); demand(ordered, 'Item is not on this PO.')
             const delivered = quantity(line.delivered, true), accepted = quantity(line.accepted, true), rejected = quantity(line.rejected, true)
@@ -622,13 +650,14 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             const lines = Array.isArray(r.lines) ? r.lines : []
             demand(lines.length, 'This purchase order has no order lines to confirm.', 409)
             for (const line of lines) {
+              if (!catalog.length) break
               demand(line && typeof line === 'object', 'This purchase order contains an invalid order line.', 409)
               const index = supplierCatalogIndexForLine(catalog, line); demand(index >= 0, `The supplier catalog no longer contains ${line.name}.`)
               const product = catalog[index], onHand = quantity(product.quantity, true), reserved = quantity(product.reservedQuantity || 0, true)
               demand(onHand - reserved >= line.quantity, `Insufficient available supplier stock for ${line.name}.`)
               catalog[index] = { ...product, reservedQuantity: reserved + line.quantity, lastReservedAt: catalogEventAt, lastReservedPoId: r.id }
             }
-            writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
+            if (catalog.length) writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
           }
           const confirmation = oldConfirmation ? set(oldConfirmation, confirmationData) : create('supplierConfirmation', confirmationData, confirmationId); result = set(r, { status: action === 'confirm' ? 'Supplier Confirmed' : action === 'decline' ? 'Rejected' : 'Clarification Requested', supplierConfirmationId: confirmation.id, confirmationReason: reason, deliveryDate: confirmation.confirmedDeliveryDate, confirmedBy: ctx.uid, confirmedAt: now }) }
         else if (action === 'ship') { demand(supplierOwns(ctx, r), 'Only the assigned supplier can mark this order as shipped.', 403); demand(r.status === 'Supplier Confirmed', 'Confirm the purchase order before marking it as shipped.'); result = set(r, { status: 'Shipped', shippedDate: dateKey(input.shippedDate || day()), shippedAt: now, carrier: String(input.carrier || '').trim().slice(0, 120), trackingNumber: String(input.trackingNumber || '').trim().slice(0, 160), shippingNotes: String(input.shippingNotes || '').trim().slice(0, 1000), shippedBy: ctx.uid }) }
@@ -654,19 +683,22 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           if (isFirstReceipt) item = { id: line.itemId, branchId, name: ordered.name, category: ordered.category || '', description: ordered.specifications || '', unit: ordered.unit || 'units', minStock: Number(ordered.minStock || 0), targetStock: Number(ordered.targetStock || ordered.quantity), maxStock: Number(ordered.maxStock || ordered.quantity), itemType: String(ordered.category || '').toLowerCase() === 'equipment' ? 'Equipment' : 'Material', consumability: String(ordered.category || '').toLowerCase() === 'equipment' ? 'Non-consumable' : 'Consumable', currentStock: 0, supplierCatalogItemId: ordered.supplierCatalogItemId || '' }
           accepted[line.itemId] = Number(accepted[line.itemId] || 0) + line.accepted
           demand(accepted[line.itemId] <= ordered.quantity, 'Receipt exceeds ordered quantity.')
-          const catalogIndex = supplierCatalogIndexForLine(catalog, ordered); demand(catalogIndex >= 0, `The supplier catalog no longer contains ${ordered.name}.`)
-          const catalogItem = catalog[catalogIndex], onHand = quantity(catalogItem.quantity, true)
+          const catalogIndex = supplierCatalogIndexForLine(catalog, ordered)
+          const catalogItem = catalogIndex >= 0 ? catalog[catalogIndex] : null
           // Older confirmed POs had no reservation field; treating this accepted quantity as
           // their reservation lets existing transactions complete without creating negative stock.
-          const reserved = Object.hasOwn(catalogItem, 'reservedQuantity') ? quantity(catalogItem.reservedQuantity, true) : line.accepted
-          demand(onHand >= line.accepted && reserved >= line.accepted, `Supplier stock is insufficient to complete receipt for ${ordered.name}.`)
-          catalog[catalogIndex] = { ...catalogItem, quantity: onHand - line.accepted, reservedQuantity: reserved - line.accepted, lastFulfilledAt: catalogEventAt, lastFulfilledPoId: po.id }
+          if (catalogItem) {
+            const onHand = quantity(catalogItem.quantity, true)
+            const reserved = Object.hasOwn(catalogItem, 'reservedQuantity') ? quantity(catalogItem.reservedQuantity, true) : line.accepted
+            demand(onHand >= line.accepted && reserved >= line.accepted, `Supplier stock is insufficient to complete receipt for ${ordered.name}.`)
+            catalog[catalogIndex] = { ...catalogItem, quantity: onHand - line.accepted, reservedQuantity: reserved - line.accepted, lastFulfilledAt: catalogEventAt, lastFulfilledPoId: po.id }
+          }
           if (line.serialNumber) { demand(line.accepted === 1, 'Receive serialized equipment one unit per receiving record.'); demand(!docs(lotSnap).some(l => l.serialNumber === line.serialNumber && l.itemId === item.id), 'This equipment serial number has already been received.') }
           writes.push([db.collection('supplyLots').doc(`${r.id}-${item.id}`), { branchId, itemId: item.id, receivingId: r.id, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', receivedQuantity: line.accepted, remainingQuantity: line.accepted, lot: line.lot || '', manufacturingDate: line.manufacturingDate || '', expiryDate: line.expiryDate || '', serialNumber: line.serialNumber || '', modelNumber: line.modelNumber || '', warranty: line.warranty || '', condition: line.condition, location: po.deliveryLocation, unitCost: ordered.unitPrice, receivedAt: now }, false])
           writes.push([db.collection('inventoryItems').doc(item.id), { ...item, currentStock: Number(item.currentStock || 0) + line.accepted, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || item.supplierCatalogItemId || '', receivedAt: now, updatedAt: now, createdAt: isFirstReceipt ? now : item.createdAt || now, manufacturingDate: line.manufacturingDate || item.manufacturingDate || '', expiryDate: Number(item.currentStock || 0) > 0 && item.expiryDate ? [item.expiryDate, line.expiryDate].filter(Boolean).sort()[0] : line.expiryDate || '', serialNumber: line.serialNumber || item.serialNumber || '', modelNumber: line.modelNumber || item.modelNumber || '', warranty: line.warranty || item.warranty || '', condition: line.condition, location: ordered.location || po.deliveryLocation, costPrice: ordered.unitPrice / 100 }, true])
           writes.push([db.collection('inventoryMovements').doc(`${r.id}-${item.id}`), { branchId, inventoryItemId: item.id, receivingId: r.id, inspectionId: r.inspectionId, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', quantity: line.accepted, type: 'purchase_receipt', createdBy: ctx.uid, createdAt: now, lot: line.lot, expiryDate: line.expiryDate }, false])
         }
-        writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
+        if (catalog.length) writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
         const complete = po.lines.every(l => Number(accepted[l.itemId] || 0) === l.quantity)
         set(po, { accepted, status: complete ? 'Delivered' : 'Partially Received' }); result = set(r, { status: 'Onboarded', onboardedBy: ctx.uid, onboardedAt: now })
       } else if (r.kind === 'discrepancy' && action === 'resolve') { allow(ctx, 'orders:update'); demand(r.status === 'Open', 'Discrepancy is already resolved.'); demand(['Return to supplier', 'Replacement', 'Credit', 'Refund', 'Other resolution'].includes(input.resolutionType), 'Select a resolution type.', 400); result = set(r, { status: 'Resolved', resolutionType: input.resolutionType, resolution: required(input.remarks, 'Resolution'), resolvedBy: ctx.uid, resolvedAt: now }) }

@@ -30,11 +30,12 @@ const hasFreePlanOnboardingSessionAccess = (uid) => {
 }
 
 const routes = [
-  { path: '/supplier/verification', name: 'supplier-verification', component: () => import('@/views/supplier/SupplierVerification.vue'), meta: { requiresAuth: true } },
-  { path: '/superadmin/suppliers/verification', name: 'admin-supplier-verification', redirect: { name: 'superadmin-verification', query: { tab: 'supplier' } }, meta: { requiresAuth: true, requiresPermissionsAny: ['system:clinics:verify', 'system:suppliers:verify'] } },
+  // Legacy supplier URLs no longer expose a supplier portal or verification workflow.
+  { path: '/supplier/verification', redirect: '/login' },
+  { path: '/superadmin/suppliers/verification', redirect: '/superadmin/verification' },
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
-  { path: '/supplier/supply/rfqs', redirect: '/supplier/supply/orders' },
-  { path: '/supplier/chat', name: 'supplier-chat', component: () => import('@/views/supplier/SupplierChat.vue'), meta: { requiresAuth: true } },
+  { path: '/supplier/supply/rfqs', redirect: '/login' },
+  { path: '/supplier/chat', redirect: '/login' },
   { path: '/inventory/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true } },
   { path: '/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true } },
   { path: '/finance/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
@@ -42,7 +43,7 @@ const routes = [
   { path: '/:department(inventory|procurement|logistics)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true } },
   { path: '/finance/procurement/:page?', name: 'procurement-finance-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/management/supply/:page?', name: 'supply-management-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'management' } },
-  { path: '/supplier/supply/:page?', name: 'supplier-supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true } },
+  { path: '/supplier/supply/:page?', redirect: '/login' },
 
   ...(isMobileApp
     ? [{ path: "/", redirect: "/login" }]
@@ -254,11 +255,11 @@ const routes = [
   { path: "/customer/profile", name: "customer-profile", redirect: { path: "/customer/account-settings", query: { tab: "profile" } }, meta: { requiresAuth: true } },
   { path: "/customer/account-settings", name: "customer-account-settings", component: () => import("@/views/customer/AccountSettings.vue"), meta: { requiresAuth: true } },
 
-  // Supplier routes
-  { path: "/supplier", redirect: "/supplier/supplies" },
-  { path: "/supplier/dashboard", redirect: "/supplier/supplies" },
-  { path: "/supplier/profile", name: "supplier-profile", component: () => import("@/views/supplier/SupplierProfile.vue"), meta: { requiresAuth: true } },
-  { path: "/supplier/supplies", name: "supplier-supplies", component: () => import("@/views/supplier/SupplierSupplies.vue"), meta: { requiresAuth: true } },
+  // Supplier accounts are retired. Preserve no supplier-facing application routes.
+  { path: "/supplier", redirect: "/login" },
+  { path: "/supplier/dashboard", redirect: "/login" },
+  { path: "/supplier/profile", redirect: "/login" },
+  { path: "/supplier/supplies", redirect: "/login" },
 
   // Superadmin routes
   { path: "/superadmin/dashboard", name: "superadmin-dashboard", component: () => import("@/views/superAdmin/Dashboard.vue"), meta: { requiresAuth: true, requiresPermission: "system:dashboard:view" } },
@@ -374,7 +375,9 @@ const isAuthReady = (isLoading) => {
 
 const safeUnauthorizedRedirect = (user, userData = {}) => {
   if (!user?.uid) return '/login'
-  if (isSupplierRole(userData)) return '/supplier/supplies'
+  // Supplier accounts are no longer a supported application role. Historical
+  // supplier records remain readable through clinic procurement history only.
+  if (isSupplierRole(userData)) return '/login'
   if (isCustomerRole(userData)) return '/customer/home'
   if (isSuperadminRole(userData)) return '/superadmin/dashboard'
   if (isOwnerLikeRole(userData, user?.uid)) return '/clinic/dashboard'
@@ -540,20 +543,9 @@ router.beforeEach(async (to, from, next) => {
   if (currentUser && routePath.startsWith('/superadmin') && !isSuperadminRole(currentUserData)) {
     return next(safeUnauthorizedRedirect(currentUser, currentUserData))
   }
-  if (currentUser && routePath.startsWith('/supplier') && !isSupplierRole(currentUserData)) {
-    return next(safeUnauthorizedRedirect(currentUser, currentUserData))
-  }
-  if (
-    currentUser
-    && routePath.startsWith('/supplier')
-    && ['inactive', 'disabled', 'closed', 'archived'].includes(userStatus)
-  ) {
+  if (currentUser && (routePath.startsWith('/supplier') || isSupplierRole(currentUserData))) {
     await signOut(auth).catch(() => {})
     return next('/login')
-  }
-  if (currentUser && isSupplierRole(currentUserData) && routePath.startsWith('/supplier') && routePath !== '/supplier/verification') {
-    const application = await getDoc(doc(db, 'supplierApplications', currentUser.uid))
-    if (application.data()?.verificationStatus !== 'Verified') return next('/supplier/verification')
   }
   const isClinicServiceDemoPreview = to.name === 'customer-center'
     && to.query.demo === 'service'

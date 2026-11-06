@@ -17,7 +17,6 @@ import { registerListingApproval, approvedOrderLines } from './listingApproval.j
 import { registerBookingMilestones } from './bookingMilestones.js'
 import { registerBookingBatch } from './bookingBatch.js'
 import { prepareClinicBookingRecipients, writeClinicBookingNotifications } from './clinicBookingNotifications.js'
-import { registerSupplierVerification } from './supplierVerification.js'
 import { registerConsultationWindows, closeExpiredConsultations } from './consultationWindows.js'
 import { registerWalkInPayments } from './walkInWorkflow.js'
 import { registerWalkInBookings } from './walkInBookings.js'
@@ -3086,20 +3085,6 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
 
 registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
 registerPharmacyWorkflow(app, { admin, requireAuth, loadUserContext })
-registerSupplierVerification(app, {
-  admin,
-  requireAuth,
-  loadUserContext,
-  storageBucket: () => firebaseStorageBucket,
-  createVisionClient,
-  createRegistrationVisionRequest,
-  getVisionResponseError,
-  getVisionWordConfidence,
-  getOcrExpiryValidation,
-  normalizeOcrComparable,
-  autoVerificationThreshold: AUTO_VERIFICATION_THRESHOLD,
-  expiryHoldDays: REGISTRATION_EXPIRY_HOLD_DAYS,
-})
 registerFinanceWorkflow(app, { admin, requireAuth, loadUserContext })
 registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })

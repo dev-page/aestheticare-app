@@ -1,6 +1,6 @@
 <template>
   <div class="module-theme min-h-screen flex" :class="[supplierView ? 'supplier-workspace supplier-theme' : department === 'inventory' ? 'inventory-page' : 'bg-slate-900 text-slate-100', { 'purchase-orders-page': isClinicPurchaseOrders, 'logistics-page': department === 'logistics', 'finance-page': department === 'finance', 'finance-budget-workspace': department === 'finance' && page === 'budgets' }]">
-    <SupplierSidebar v-if="supplierView" /><OwnerSidebar v-else />
+    <OwnerSidebar />
     <main v-page-loading="{ active: pageLoading, variant: page === 'suppliers' ? 'cards' : 'table', columns: isClinicPurchaseOrders ? 8 : 6, rows: 5 }" class="min-w-0 flex-1 p-4 md:p-8">
       <header class="flex flex-wrap justify-between gap-4 mb-6"><div><p class="text-xs uppercase tracking-widest" :class="supplierView ? 'text-sky-300' : 'text-amber-300'">{{ departmentLabel }}</p><h1 class="text-2xl font-bold">{{ pageTitle }}</h1><p class="mt-2 text-sm text-slate-400">{{ intro }}</p></div><div class="workspace-header-controls"><select aria-label="Branch" v-if="!supplierView" v-model="branchId" @change="load"><option v-if="data.branches.length > 1" value="all">All Assigned Branches</option><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select><button type="button" class="workspace-refresh" aria-label="Refresh records" title="Refresh records" @click="load" :disabled="busy"><svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': busy }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg><span class="sr-only">Refresh</span></button></div></header>
       <p v-if="error" role="alert" class="mb-4 rounded border border-red-500 bg-red-900/30 p-4">{{ error }}</p>
@@ -114,7 +114,7 @@
         <component :is="selected.kind === 'po' ? 'details' : 'div'" :key="selected.id" :class="{ 'po-supporting-details': selected.kind === 'po' }">
           <summary v-if="selected.kind === 'po'">Documents, messages &amp; activity</summary>
         <section v-if="!supplierView && selected.kind !== 'budgetRequest'" class="my-5"><h3 class="font-semibold">Related records</h3><div class="mt-2 flex flex-wrap gap-2"><button v-for="r in relatedRecords" :key="r.id" @click="view(r)">{{ r.number || r.name || r.id }} · {{ r.status }}</button></div></section>
-        <section v-if="!supplierView && selected.kind !== 'budgetRequest' && data.records.some(r => r.id === selected.id)"><h3 class="font-semibold">Documents</h3><p class="mt-1 text-sm text-slate-400">{{ documentGuidance }}</p><div class="my-2 flex flex-wrap gap-2"><button v-for="d in history.documents" :key="d.id" @click="download(d)">{{ d.name }} · {{ d.visibility }}</button></div><label class="text-sm">Upload PDF or image (up to 5 MB)<input type="file" accept="application/pdf,image/png,image/jpeg" @change="upload" :disabled="busy" /></label><label class="my-2 block text-sm"><input type="checkbox" v-model="shareDocument" /> Share with the supplier(s) on this record</label></section>
+        <section v-if="!supplierView && selected.kind !== 'budgetRequest' && data.records.some(r => r.id === selected.id)"><h3 class="font-semibold">Documents</h3><p class="mt-1 text-sm text-slate-400">{{ documentGuidance }}</p><div class="my-2 flex flex-wrap gap-2"><button v-for="d in history.documents" :key="d.id" @click="download(d)">{{ d.name }} · {{ d.visibility }}</button></div><label class="text-sm">Upload PDF or image (up to 5 MB)<input type="file" accept="application/pdf,image/png,image/jpeg" @change="upload" :disabled="busy" /></label><p class="my-2 text-xs text-slate-400">Documents remain internal. Send approved PO documents to suppliers through your normal external channel.</p></section>
         <section v-if="history.messages?.length || ['rfq','po'].includes(selected.kind)" class="mt-5"><div class="flex items-center justify-between gap-3"><div><h3 class="font-semibold">Supplier communication</h3><p class="text-xs text-slate-400">Messages for this {{ selected.kind === 'po' ? 'Purchase Order' : 'RFQ' }} only.</p></div><button v-if="actions(selected).some(action => action.key === 'message')" @click="openForm('message', selected)">Send message</button></div><div class="record-message-thread"><article v-for="m in history.messages" :key="m.id" class="record-message" :class="m.from === 'Supplier' ? 'record-message-supplier' : 'record-message-clinic'"><p>{{ m.message }}</p><small>{{ m.from }} · {{ m.channel }} · {{ formatDate(m.createdAt) }}</small></article><p v-if="!history.messages?.length" class="py-4 text-center text-sm text-slate-400">No messages on this record yet.</p></div></section><section v-if="history.history.length" class="mt-5"><h3 class="font-semibold">Activity timeline</h3><p v-for="event in history.history" :key="event.id" class="mt-2 border-l-2 border-amber-500 pl-3 text-sm">{{ formatDate(event.createdAt) }} · {{ event.actorName || event.actorId }} · {{ event.action }} · {{ event.previousStatus }} → {{ event.newStatus }}</p></section>
           <details v-if="selected.kind === 'po' && !supplierView" class="po-extra-details"><summary>Additional order information</summary><dl class="grid gap-3 sm:grid-cols-2"><div v-for="[key, value] in detailFields" :key="key"><dt class="text-xs text-slate-400">{{ label(key) }}</dt><dd class="break-words text-sm">{{ formatValue(key, value) }}</dd></div></dl></details>
         </component>
@@ -194,14 +194,12 @@ import ContractAppearanceSelect from '@/components/common/ContractAppearanceSele
 import PurchaseOrderSummary from '@/components/common/PurchaseOrderSummary.vue'
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import '../../../supplier/supplierTheme.css'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { auth } from '@/config/firebaseConfig'
 import { useSubscription } from '@/composables/useSubscription'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
-import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 import SupplierDirectory from '@/views/admin/owner/operations/SupplySuppliers.vue'
 import Swal from 'sweetalert2'
 import { toast } from 'vue3-toastify'
@@ -214,13 +212,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 const route = useRoute()
 const { hasFeature } = useSubscription()
 const canUsePayroll = computed(() => hasFeature('payroll'))
-const supplierView = computed(() => route.path.startsWith('/supplier/'))
+// Supplier accounts have been retired. This workspace is clinic-side only.
+const supplierView = computed(() => false)
 const department = computed(() => supplierView.value ? 'supplier' : route.meta.supplyDepartment || route.params.department || 'inventory')
 const page = computed(() => route.params.page || 'dashboard')
 const isClinicPurchaseOrders = computed(() => department.value === 'procurement' && page.value === 'orders')
-const departmentLabel = computed(() => ({ inventory: 'Inventory Management', procurement: 'Procurement Management', logistics: 'Logistics Management', finance: 'Procurement Finance', management: 'Management Overview', supplier: 'Supplier Portal' })[department.value])
+const departmentLabel = computed(() => ({ inventory: 'Inventory Management', procurement: 'Procurement Management', logistics: 'Logistics Management', finance: 'Procurement Finance', management: 'Management Overview' })[department.value])
 const pageTitle = computed(() => ({ dashboard: 'Dashboard', items: department.value === 'logistics' ? 'Receiving & Inspection' : 'Inventory List · DSS', requests: department.value === 'procurement' ? 'Inventory Request Review' : 'Inventory Requests', onboarding: 'Delivery Onboarding', discrepancies: 'Discrepancies', orders: 'Purchase Orders', suppliers: 'Supplier Directory', reports: 'Reports & Traceability', budgets: 'Budget Allocations', invoices: 'Invoices & Payments' })[page.value] || 'Supply Management')
-const intro = computed(() => ({ inventory: 'Monitor stock, review DSS recommendations, send requests to Procurement, and onboard accepted deliveries into stock.', procurement: isClinicPurchaseOrders.value ? 'Track purchase orders, review supplier responses, and manage orders through delivery.' : 'Review inventory requests, select suppliers, and prepare purchase orders for Finance approval.', logistics: 'Claim supplier-confirmed orders and record delivery inspection. Inventory onboards only accepted quantities.', finance: page.value === 'budgets' ? 'Allocate branch purchasing budgets and track available, committed, and spent amounts.' : 'Review supplier invoices, match accepted deliveries, and record payments.', supplier: 'Confirm purchase orders and track invoice and payment status.' })[department.value])
+const intro = computed(() => ({ inventory: 'Monitor stock, create purchase requests, and onboard accepted deliveries into stock.', procurement: isClinicPurchaseOrders.value ? 'Track purchase orders, record external supplier responses, and manage receiving.' : 'Review approved purchase requests, select clinic-associated suppliers, and prepare purchase orders.', logistics: 'Record delivery inspection. Only accepted quantities can be added to usable inventory.', finance: page.value === 'budgets' ? 'Allocate branch purchasing budgets and track available, committed, and spent amounts.' : 'Review supplier invoices, match accepted deliveries, and record payments.' })[department.value])
 const tabMap = { management: ['dashboard','reports'], inventory: ['items','requests','onboarding'], procurement: ['requests','orders','suppliers'], logistics: ['items'], finance: ['budgets','requests','invoices'], supplier: ['dashboard','orders','invoices','reports'] }
 const clinicSupplyPath = (module, targetPage) => ({ finance: `/finance/procurement/${targetPage}`, management: `/management/supply/${targetPage}` })[module] || `/${module}/${targetPage}`
 const tabs = computed(() => (tabMap[department.value] || []).map(key => ({ key, label: ({ budgets: 'Budget Allocations', requests: department.value === 'finance' ? 'Purchase Order Approvals' : department.value === 'procurement' ? 'Inventory Request Review' : 'Inventory Requests', onboarding: 'Delivery Onboarding', discrepancies: 'Discrepancies', income: 'Sales & Revenue', invoices: 'Invoices & Payments', reports: department.value === 'finance' ? 'Financial Reports' : 'Reports', items: department.value === 'logistics' ? 'Receiving & Inspection' : 'Inventory List' })[key] || label(key), to: key === 'income' && department.value === 'finance' ? '/finance/sales' : supplierView.value ? `/supplier/supply/${key}` : clinicSupplyPath(department.value, key) })))
@@ -426,7 +425,7 @@ const actions = r => {
 const field=(key,text,type='text',required=true,readOnly=false,placeholder='')=>({key,label:text,type,required,readOnly,placeholder})
 const selectField=(key,text,options,multiple=false,required=true)=>({key,label:text,options,multiple,required})
 const itemOptions=()=>data.value.items.map(i=>({value:i.id,label:i.name}))
-const supplierOptions=()=>data.value.suppliers.filter(s=>s.status==='Active').map(s=>({value:s.id,label:supplierName(s.id)}))
+const supplierOptions=()=>data.value.suppliers.filter(s=>s.status==='Active'&&s.associationStatus==='Active').map(s=>({value:s.id,label:supplierName(s.id)}))
 const normalizedCatalogValue=value=>String(value||'').trim().toLowerCase()
 const supplierCanProvideLine=(supplier,line)=>supplierProducts(supplier).some(product=>{
   const sameCatalogItem=supplier.id===line.supplierId&&String(product.id||'')===String(line.supplierCatalogItemId||'')
@@ -448,7 +447,9 @@ const catalogQuoteDraft=(target,supplierId)=>{
   const otherCharges=lines.reduce((sum,line)=>sum+Number(line.quantity||0)*Number(productFor(line)?.otherChargePerUnit||0),0)
   return {lines,tax,discount,otherCharges}
 }
-const procurementSupplierOptions=procurement=>data.value.suppliers.filter(s=>s.status==='Active'&&(procurement?.lines||[]).every(line=>supplierCanProvideLine(s,line))).map(s=>({value:s.id,label:supplierName(s.id)}))
+// Quotes and prices are confirmed by clinic staff from external communication;
+// suppliers no longer maintain a portal catalog in this application.
+const procurementSupplierOptions=procurement=>data.value.suppliers.filter(s=>s.status==='Active'&&s.associationStatus==='Active').map(s=>({value:s.id,label:supplierName(s.id)}))
 const moneyFields=()=>['tax','delivery','otherCharges','discount'].map(k=>field(k,label(k)+' (PHP)','number',false))
 const catalogSuppliers=()=>data.value.suppliers.filter(s=>s.status==='Active'&&supplierProducts(s).length).map(s=>({value:s.id,label:supplierName(s.id)}))
 const selectedCatalogSupplier=()=>data.value.suppliers.find(s=>s.id===form.value.catalogSupplierId)
@@ -526,7 +527,7 @@ const openForm = (kind, target=null) => {
   if(kind==='budget') form.value={branchId:branchId.value === 'all' ? '' : branchId.value,department:'Inventory',category:'',period:budgetPeriod.value,total:'',notes:''}
   if(kind==='editBudget'){form.value={department:'Inventory',category:target.category,period:target.period||'',total:Number(target.total||0)/100,notes:target.notes||''};f.push(field('category','Purpose'),field('period','Budget period'),field('total','Allocated amount (PHP)','number'),field('notes','Notes','textarea',false))}
   if(kind==='cancelBudget')f.push(field('remarks','Cancellation reason','textarea'))
-  if(kind==='rfq'){const eligibleSuppliers=procurementSupplierOptions(target);form.value={mode:'Online',supplierIds:eligibleSuppliers.filter(s=>target.lines?.some(line=>(line.preferredSupplierId||line.supplierId)===s.value)).map(s=>s.value),deliveryDate:target.requiredDate,deadline:today()};f.push(selectField('mode','Procurement mode',['Manual','Online']),selectField('supplierIds','Invited suppliers',eligibleSuppliers,true),field('deadline','Quotation deadline','date'),field('deliveryDate','Required delivery date','date'),field('deliveryLocation','Delivery location'),field('terms','Terms and specifications','textarea'),field('conditions','Conditions','textarea',false),field('contact','Procurement contact'),field('method','Procurement method'),field('strategy','Supplier strategy','textarea'))}
+  if(kind==='rfq'){const eligibleSuppliers=procurementSupplierOptions(target);form.value={mode:'Manual',supplierIds:eligibleSuppliers.filter(s=>target.lines?.some(line=>(line.preferredSupplierId||line.supplierId)===s.value)).map(s=>s.value),deliveryDate:target.requiredDate,deadline:today()};f.push(selectField('supplierIds','Suppliers contacted externally',eligibleSuppliers,true),field('deadline','Quotation response deadline','date'),field('deliveryDate','Required delivery date','date'),field('deliveryLocation','Delivery location'),field('terms','Terms and specifications','textarea'),field('conditions','Conditions','textarea',false),field('contact','Clinic contact'),field('method','External communication method'),field('strategy','Supplier selection notes','textarea'))}
   if(['quotation','revise','invoice','reviseInvoice'].includes(kind)){
     const quoteSupplierId=supplierView.value?data.value.supplierIds?.[0]||'':data.value.supplierIds?.[0]||target.supplierIds?.[0]||''
     const catalogQuote=kind==='quotation'?catalogQuoteDraft(target,quoteSupplierId):null

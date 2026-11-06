@@ -701,30 +701,36 @@ service cloud.firestore {
     }
 
     match /suppliers/{supplierId} {
-      // Supplier accounts manage only their own catalog; approval stays with admins.
-      allow read: if isSignedIn() && resource.data.ownerId == request.auth.uid;
-      allow create: if isSignedIn()
-        && supplierId == request.auth.uid
-        && request.resource.data.ownerId == request.auth.uid
-        && userData().userType == 'supplier'
-        && request.resource.data.offeredItems.size() == 0
-        && request.resource.data.keys().hasOnly(['ownerId', 'name', 'businessName', 'offeredItems', 'categories', 'updatedAt']);
-      allow update: if isSignedIn()
-        && resource.data.ownerId == request.auth.uid
-        // Catalog terms are validated and audited by POST /supply/catalog.
-        // A browser must not be able to overwrite offeredItems directly.
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'businessName', 'categories', 'updatedAt']);
-      allow read: if isSignedIn()
-        && ((resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (hasPermission('inventory:view') || hasPermission('finance:purchases:view'))) || isSuperadmin());
-      allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'))
-        && !request.resource.data.keys().hasAny(['verificationStatus']);
-      allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:update'))
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verificationStatus']);
-      allow delete: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
+      // Suppliers are business contact records, never authenticated platform users.
+      // Only contacts explicitly marked shared are discoverable outside their clinic.
+      allow read: if isSignedIn() && (isSuperadmin()
+        || resource.data.sharedDirectory == true
+        || resource.data.createdForClinicId == request.auth.uid
+        || isStaffOfOwner(resource.data.createdForClinicId));
+      allow create: if isSignedIn() && hasPermission('suppliers:create')
+        && request.resource.data.createdForClinicId != null
+        && (request.resource.data.createdForClinicId == request.auth.uid || isStaffOfOwner(request.resource.data.createdForClinicId))
+        && !request.resource.data.keys().hasAny(['ownerId', 'supplierUserId', 'offeredItems', 'verificationStatus']);
+      allow update: if isSignedIn() && hasPermission('suppliers:update')
+        && (resource.data.createdForClinicId == request.auth.uid || isStaffOfOwner(resource.data.createdForClinicId))
+        && request.resource.data.createdForClinicId == resource.data.createdForClinicId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerId', 'supplierUserId', 'offeredItems']);
+      allow delete: if false;
+    }
+
+    match /clinicSuppliers/{associationId} {
+      allow read: if isSignedIn() && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId) && hasPermission('inventory:view');
+      allow create: if isSignedIn() && request.resource.data.branchId != null
+        && canAccessBranch(request.resource.data.branchId) && hasPermission('suppliers:create')
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.branchId != null
+        && canAccessBranch(resource.data.branchId) && hasPermission('suppliers:update')
+        && request.resource.data.branchId == resource.data.branchId
+        && request.resource.data.clinicId == resource.data.clinicId
+        && request.resource.data.supplierId == resource.data.supplierId;
+      // Associations are retained for history; mark inactive instead of deleting.
+      allow delete: if false;
     }
 
     match /supplierApplications/{supplierId} {
