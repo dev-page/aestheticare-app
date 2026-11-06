@@ -25,7 +25,6 @@ const currentPasswordVisible = ref(false)
 const roleRoutes = {
   Owner: '/clinic/dashboard',
   'Clinic Admin': '/clinic/dashboard',
-  Supplier: '/supplier/supplies',
   Customer: '/customer/home'
 }
 
@@ -43,9 +42,7 @@ const resolveRedirectPath = async (userData) => {
     return '/workspace/dashboard'
   }
 
-  if (userType === 'supplier' || String(userData?.role || '').toLowerCase().includes('supplier')) {
-    return '/supplier/supplies'
-  }
+  if (userType === 'supplier' || String(userData?.role || '').toLowerCase().includes('supplier')) return '/login'
 
   const role = normalizeRoleKey(userData?.role || userData?.customRoleName || userData?.userType)
   if (roleRoutes[role]) {
@@ -60,7 +57,7 @@ const resolvePanelTheme = (userData = {}) => {
   const role = String(userData.role || userData.customRoleName || '').trim().toLowerCase()
   if (userType === 'staff') return 'employee'
   if (role.includes('superadmin') || role.includes('system admin')) return 'superadmin'
-  if (role.includes('supplier')) return 'supplier'
+  if (role.includes('supplier')) return 'customer'
   if (role.includes('owner') || role.includes('clinic admin') || role.includes('clinicadmin')) return 'clinic'
   return 'customer'
 }

@@ -153,11 +153,13 @@ const ATTENDANCE_IMPORT_PATH = '/attendance/import'
 const ATTENDANCE_CORRECTION_PATH = '/attendance/correct'
 const ATTENDANCE_FIELDS_PATH = '/attendance/fields'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
-const SUPPLIER_WELCOME_PATH = '/send-supplier-welcome'
-const SUPPLIER_ACCOUNT_CREATE_PATH = '/supply/suppliers/account'
-const SUPPLIER_ACCOUNT_LOOKUP_PATH = '/supply/suppliers/account-lookup'
-const SUPPLIER_ACCOUNT_DIRECTORY_PATH = '/supply/suppliers/account-directory'
-const SUPPLIER_ACCOUNT_LINK_PATH = '/supply/suppliers/account-link'
+// Retired supplier-account handlers are intentionally mounted on internal
+// tombstone paths only. They cannot be reached by any public or clinic route.
+const SUPPLIER_WELCOME_PATH = '/_retired/supplier-account/welcome'
+const SUPPLIER_ACCOUNT_CREATE_PATH = '/_retired/supplier-account/create'
+const SUPPLIER_ACCOUNT_LOOKUP_PATH = '/_retired/supplier-account/lookup'
+const SUPPLIER_ACCOUNT_DIRECTORY_PATH = '/_retired/supplier-account/directory'
+const SUPPLIER_ACCOUNT_LINK_PATH = '/_retired/supplier-account/link'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
@@ -8317,7 +8319,7 @@ app.post(SUPPLIER_ACCOUNT_CREATE_PATH, requireAuth, async (req, res) => {
   }
 })
 
-app.post('/supply/supplier-profile', requireAuth, async (req, res) => {
+app.post('/_retired/supplier-account/profile', requireAuth, async (req, res) => {
   try {
     const firestore = admin.firestore()
     const context = await loadUserContext(req.user.uid)

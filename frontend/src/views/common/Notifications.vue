@@ -129,7 +129,6 @@ import NotificationDetailsDialog from '@/components/common/NotificationDetailsDi
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
-import SupplierSidebar from '@/components/sidebar/SupplierSidebar.vue'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 
 export default {
@@ -142,7 +141,6 @@ export default {
     CustomerSidebar,
     EmployeeSidebar,
     OwnerSidebar,
-    SupplierSidebar,
     SuperAdminSidebar
   },
   setup() {
@@ -172,13 +170,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       if (typeValue === 'customer' || roleValue === 'customer') return 'customer'
       if (roleValue.includes('superadmin')) return 'superadmin'
-      if (typeValue === 'supplier' || roleValue.includes('supplier')) return 'supplier'
       if (typeValue === 'staff') return 'employee'
       if (roleValue.includes('clinic admin') || roleValue === 'clinicadmin' || roleValue.includes('owner')) return 'owner'
       return ''
     })
 
-    const isModuleView = computed(() => ['owner', 'employee', 'superadmin', 'supplier'].includes(panelKey.value))
+    const isModuleView = computed(() => ['owner', 'employee', 'superadmin'].includes(panelKey.value))
     const isSystemAdminView = computed(() => panelKey.value === 'superadmin')
 
     const sidebarComponent = computed(() => {
@@ -188,7 +185,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!roleValue && !typeValue) return null
       if (roleValue.includes('superadmin')) return SuperAdminSidebar
       if (typeValue === 'customer' || roleValue === 'customer') return CustomerSidebar
-      if (typeValue === 'supplier' || roleValue.includes('supplier')) return SupplierSidebar
       if (typeValue === 'staff') return EmployeeSidebar
       if (roleValue.includes('clinic admin') || roleValue === 'clinicadmin' || roleValue.includes('owner')) return OwnerSidebar
       return CustomerSidebar
