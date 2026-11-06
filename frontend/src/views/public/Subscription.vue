@@ -8,14 +8,12 @@
         <div class="popup-copy">
           <p class="popup-eyebrow">AesthetiCare Plans</p>
           <h2 class="popup-title">Choose Your Plan</h2>
-          <p class="popup-subtitle">
-            Start with what fits your clinic today. You can always upgrade as your operations grow.
-          </p>
+          <p class="popup-subtitle">Choose the operating model that fits today, with a full-featured 14-day trial before billing begins.</p>
         </div>
 
         <div class="popup-aside">
-          <div class="aside-pill">Flexible monthly setup</div>
-          <p class="aside-copy">Compare access, team scale, and branch support before you continue.</p>
+          <div class="aside-pill">No card for trial</div>
+          <p class="aside-copy">Select Basic or Premium, try its real features for 14 days, then renew when you are ready.</p>
         </div>
       </div>
 
@@ -36,6 +34,7 @@
               <p class="plan-kicker">{{ planKicker(plan) }}</p>
               <p class="plan-name">{{ plan.name }}</p>
             </div>
+            <span v-if="plan.recommended" class="recommended-badge">Most flexible</span>
           </div>
 
           <div class="plan-price-wrap">
@@ -45,6 +44,7 @@
             <span class="plan-cycle">{{ plan.cycleLabel || plan.cycle || '-' }}</span>
           </div>
 
+          <p v-if="plan.freeTrialEnabled && plan.trialDays" class="trial-badge">{{ plan.trialDays }} days free • no card required</p>
           <p class="plan-desc">{{ plan.description }}</p>
           <p class="plan-caption">{{ planCaption(plan) }}</p>
 
@@ -62,6 +62,7 @@
         <button type="button" class="btn-secondary" @click="maybeLater">Maybe Later</button>
         <router-link to="/register" class="btn-primary">Register your clinic</router-link>
       </div>
+      <div class="pricing-reassurance" role="note"><span>✓ Real plan features during trial</span><span>✓ Upgrade when your clinic grows</span><span>✓ Records retained if your subscription expires</span></div>
     </div>
   </section>
 </template>
@@ -306,6 +307,7 @@ onBeforeUnmount(() => {
   padding: 1.05rem 1rem 0.95rem;
   transition: transform 0.24s ease, border-color 0.24s ease, box-shadow 0.24s ease;
 }
+.recommended-badge,.trial-badge{display:inline-flex;align-items:center;border-radius:999px;font-weight:800}.recommended-badge{padding:.35rem .6rem;background:#5d3422;color:#fff8ed;font-size:.65rem;letter-spacing:.04em}.trial-badge{position:relative;z-index:1;margin:.7rem 0 0;padding:.35rem .6rem;background:rgba(255,255,255,.55);color:#6f3f2a;font-size:.72rem}.pricing-reassurance{display:flex;flex-wrap:wrap;gap:.55rem 1.2rem;margin-top:1.15rem;padding:1rem 1.1rem;border:1px solid rgba(185,112,56,.18);border-radius:1rem;background:rgba(255,255,255,.48);color:#704a34;font-size:.8rem;font-weight:700}
 
 .plan-selected-badge {
   position: absolute;
@@ -594,7 +596,7 @@ onBeforeUnmount(() => {
 
 @media (min-width: 1024px) {
   .plan-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .popup-top {

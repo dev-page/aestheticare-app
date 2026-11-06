@@ -4087,6 +4087,30 @@ const subscriptionReminderDependencies = {
 registerSubscriptionReminders(app, subscriptionReminderDependencies)
 registerSubscriptionTrial(app, { admin, requireAuth, loadUserContext })
 
+// User profiles may be created by trusted registration flows, so initializing
+// this cosmetic one-time notification must not rely on a browser profile write.
+// The transaction keeps repeated logins idempotent.
+app.post('/auth/ensure-welcome-notification', requireAuth, async (req, res) => {
+  try {
+    const userRef = admin.firestore().collection('users').doc(req.user.uid)
+    const initialized = await admin.firestore().runTransaction(async (tx) => {
+      const user = await tx.get(userRef)
+      if (!user.exists) return false
+      if (user.data()?.welcomeNotificationSent === true) return false
+      tx.update(userRef, {
+        welcomeNotificationSent: true,
+        welcomeNotificationAt: admin.firestore.FieldValue.serverTimestamp(),
+        welcomeNotificationRead: false,
+        welcomeNotificationDeleted: false,
+      })
+      return true
+    })
+    return res.json({ success: true, data: { initialized } })
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Unable to initialize the welcome notification.' })
+  }
+})
+
 app.all('/cron/appointment-reminders', async (req, res) => {
   const secret = String(process.env.CRON_SECRET || '').trim()
   if (!secret || String(req.get('authorization') || '') !== `Bearer ${secret}`) return res.status(401).json({ success: false, error: 'Unauthorized.' })
