@@ -54,6 +54,10 @@ service cloud.firestore {
         'approvedBy', 'rejectedAt', 'rejectionReason', 'reviewedBy', 'reviewedAt',
         'subscriptionPlan', 'plan', 'paymentStatus', 'paymentId',
         'subscriptionStartedAt', 'subscriptionExpiresAt', 'subscriptionUpdatedAt',
+        'subscriptionAccessStatus', 'subscriptionStatus', 'subscriptionGraceStartedAt',
+        'subscriptionGraceEndsAt', 'subscriptionRetentionStartedAt',
+        'subscriptionRetentionEndsAt', 'subscriptionDispositionStatus',
+        'subscriptionDispositionEligibleAt',
         'subscriptionTrialPlan', 'subscriptionTrialUsedAt',
         'subscriptionTrialStartedAt', 'subscriptionTrialEndsAt',
         'subscriptionOnboardingRequired', 'subscriptionOnboardingCompletedAt',
@@ -182,9 +186,23 @@ service cloud.firestore {
     // or on the hourly maintenance job running first.
     function subscriptionAllowsBusinessWrite(branchId) {
       return exists(/databases/$(database)/documents/clinics/$(branchId))
-        && (!('subscriptionExpiresAt' in clinicDoc(branchId).data)
-          || clinicDoc(branchId).data.subscriptionExpiresAt == null
-          || request.time < clinicDoc(branchId).data.subscriptionExpiresAt);
+        // Subscription is a clinic-wide authorization layer. Role permissions
+        // are checked by the caller, but can never override an expired clinic.
+        && (clinicDoc(branchId).data.get('isActive', true) != false)
+        && (
+          (clinicDoc(branchId).data.get('subscriptionAccessStatus', '') == 'grace_period'
+            && clinicDoc(branchId).data.get('subscriptionGraceEndsAt', null) != null
+            && request.time < clinicDoc(branchId).data.subscriptionGraceEndsAt)
+          || (clinicDoc(branchId).data.get('subscriptionAccessStatus', '') in ['trial', 'active', 'canceled']
+            && (clinicDoc(branchId).data.get('subscriptionExpiresAt', null) == null
+              || request.time < clinicDoc(branchId).data.subscriptionExpiresAt))
+          // Legacy records remain usable until migrated, but an expired legacy
+          // date is never a bypass.
+          || (!('subscriptionAccessStatus' in clinicDoc(branchId).data)
+            && (!('subscriptionExpiresAt' in clinicDoc(branchId).data)
+              || clinicDoc(branchId).data.subscriptionExpiresAt == null
+              || request.time < clinicDoc(branchId).data.subscriptionExpiresAt))
+        );
     }
 
     function planAllowsBookingAvailability(branchId) {

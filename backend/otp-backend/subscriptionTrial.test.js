@@ -41,21 +41,34 @@ test('Premium trial activates atomically, charges nothing and retries retain its
   assert.equal([...h.records.keys()].filter(key => key.startsWith('planPayments/')).length, 0)
 })
 
-test('expiry returns Premium trials and paid plans to Free without a new trial entitlement', async () => {
+test('expired trial and paid plans retain their selected plan and trial entitlement remains spent', async () => {
   const now = new Date('2026-10-13T00:00:00Z')
   for (const paymentStatus of ['trial', 'paid']) {
     const state = subscriptionLifecycle({ subscriptionPlan: 'premium', paymentStatus,
       subscriptionExpiresAt: { seconds: now.getTime() / 1000 }, subscriptionTrialUsedAt: now }, now)
-    assert.equal(state.plan, 'free')
-    assert.equal(state.trial, false)
+    assert.equal(state.plan, 'premium')
     assert.equal(state.trialEligible, false)
-    assert.equal(state.expiresAt, null)
+    assert.ok(state.expiresAt)
   }
   const h = fixture()
   await h.call()
   h.records.get('users/owner').subscriptionExpiresAt = new Date(1)
+  h.records.get('users/owner').subscriptionTrialEndsAt = new Date(1)
   h.records.get('clinics/owner').subscriptionExpiresAt = new Date(1)
+  h.records.get('clinics/owner').subscriptionTrialEndsAt = new Date(1)
   assert.equal((await h.call()).status, 409)
+})
+
+test('Basic trials receive the same default duration', async () => {
+  const h = fixture()
+  let handler
+  registerSubscriptionTrial({ post: (_path, ...handlers) => { handler = handlers.at(-1) } }, {
+    admin: h.admin, requireAuth: () => {}, loadUserContext: async () => ({ roleKey: 'Owner' }),
+  })
+  let payload
+  await handler({ user: { uid: 'owner' }, body: { targetPlan: 'basic' } }, { status: () => ({ json: value => { payload = value } }), json: value => { payload = value } })
+  assert.equal(payload.data.plan, 'basic')
+  assert.equal(h.records.get('users/owner').subscriptionTrialDays, TRIAL_DAYS)
 })
 
 test('Premium trials allow an immediate paid purchase; paid cycles retain downgrade scheduling', () => {

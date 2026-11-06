@@ -19,25 +19,22 @@ function fixture(paymentStatus = 'paid') {
   return { ...h, run }
 }
 
-for (const paymentStatus of ['paid', 'trial']) test(`${paymentStatus} expiry changes owner and branches together, retains records and notifies only once`, async () => {
+for (const paymentStatus of ['paid', 'trial']) test(`${paymentStatus} expiry starts one grace period and retains records`, async () => {
   const h = fixture(paymentStatus)
   assert.equal((await h.run()).updated, 3)
   for (const key of ['users/owner', 'clinics/owner', 'clinics/branch']) {
     const record = h.records.get(key)
-    assert.equal(record.subscriptionPlan, 'free')
-    assert.equal(record.subscriptionAccessStatus, 'active')
-    assert.equal(record.subscriptionExpiresAt, null)
-    if (paymentStatus === 'trial') {
-      assert.ok(record.subscriptionTrialUsedAt)
-      assert.equal(record.lastPaidSubscriptionPlan, undefined)
-    } else assert.equal(record.lastPaidSubscriptionPlan, 'basic')
+    assert.equal(record.subscriptionPlan, paymentStatus === 'trial' ? 'premium' : 'basic')
+    assert.equal(record.subscriptionAccessStatus, 'grace_period')
+    assert.ok(record.subscriptionExpiresAt)
+    assert.ok(record.subscriptionGraceEndsAt)
+    if (paymentStatus === 'trial') assert.ok(record.subscriptionTrialUsedAt)
   }
   assert.equal(h.records.get('clinics/owner').isPublished, true)
   assert.equal(h.records.get('appointments/existing').status, 'Paid')
-  const notification = [...h.records].find(([key]) => key.startsWith('notifications/'))[1]
-  notification.read = true
+  const notification = [...h.records].find(([key]) => key.startsWith('notifications/'))
+  assert.equal(notification, undefined)
   assert.equal((await h.run()).updated, 0)
-  assert.equal(notification.read, true)
 })
 
 test('a scheduled paid cycle takes effect before the old cycle expires', async () => {
@@ -51,13 +48,13 @@ test('a scheduled paid cycle takes effect before the old cycle expires', async (
   assert.equal([...h.records.keys()].filter(key => key.startsWith('notifications/')).length, 0)
 })
 
-test('maintenance leaves active paid subscriptions intact and restores legacy Free access', async () => {
+test('maintenance leaves active paid subscriptions operational and writes its status once', async () => {
   const h = fixture()
   for (const key of ['users/owner', 'clinics/owner', 'clinics/branch']) h.records.get(key).subscriptionExpiresAt = new Date(now.getTime() + 86400000)
+  assert.equal((await h.run()).updated, 3)
+  assert.equal(h.records.get('users/owner').subscriptionAccessStatus, 'active')
   assert.equal((await h.run()).updated, 0)
-  h.records.get('users/owner').subscriptionPlan = 'free'
-  h.records.get('users/owner').subscriptionAccessStatus = 'read_only'
+  h.records.get('users/owner').subscriptionAccessStatus = 'grace_period'
   await h.run()
-  assert.equal(h.records.get('users/owner').subscriptionExpiresAt, null)
-  assert.equal(h.records.get('clinics/branch').subscriptionAccessStatus, 'active')
+  assert.equal(h.records.get('clinics/branch').subscriptionAccessStatus, 'grace_period')
 })

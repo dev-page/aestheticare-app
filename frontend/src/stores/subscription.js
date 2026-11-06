@@ -450,19 +450,15 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         // ignore cache errors
       }
 
-      if (resolvedExpiresAt) {
-        graceEndsAt.value = null
-        subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
-        isExpired.value = false
-        isReadOnly.value = false
-        isSuspended.value = false
-      } else {
-        isExpired.value = false
-        isReadOnly.value = false
-        isSuspended.value = false
-        subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
-        graceEndsAt.value = null
-      }
+      // Access status is written by the scheduled trusted backend.  The UI is
+      // advisory only; Firestore rules enforce the same clinic-wide block.
+      const lifecycleStatus = String(subscriptionMeta.status || '').toLowerCase()
+      const operational = ['trial', 'active', 'grace_period', 'canceled', ''].includes(lifecycleStatus)
+      isExpired.value = lifecycleStatus === 'expired'
+      isReadOnly.value = !operational
+      isSuspended.value = !operational
+      subscriptionStatus.value = operational ? SUBSCRIPTION_STATUS.ACTIVE : SUBSCRIPTION_STATUS.SUSPENDED
+      graceEndsAt.value = null
     } catch (error) {
       console.error('Failed to load subscription features:', error)
       activePlan.value = 'free'

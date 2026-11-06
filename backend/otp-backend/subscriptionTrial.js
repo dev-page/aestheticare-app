@@ -16,16 +16,15 @@ export function registerSubscriptionTrial(app, { admin, requireAuth, loadUserCon
         const [owner, clinic, payments, planSnap] = await Promise.all([tx.get(ownerRef), tx.get(clinicRef), tx.get(paymentQuery), tx.get(planRef)])
         if (!owner.exists || !clinic.exists || clinic.data().ownerId !== req.user.uid) throw Object.assign(new Error('Complete clinic registration before starting a trial.'), { status: 409 })
         const plan = planSnap.exists ? planSnap.data() || {} : {}
-        // Keep the existing Premium 14-day offer as the safe fallback when no
-        // plan document or trial settings have been configured yet.
-        const defaultEnabled = requestedPlan === 'premium'
+        // Both paid plans have the same configurable 14-day default trial.
+        const defaultEnabled = true
         const freeTrialEnabled = planSnap.exists && Object.hasOwn(plan, 'freeTrialEnabled')
           ? plan.freeTrialEnabled === true
           : defaultEnabled
         const configuredDays = Number(plan.trialDays)
         const trialDays = Number.isInteger(configuredDays) && configuredDays >= 1 && configuredDays <= 365
           ? configuredDays
-          : (requestedPlan === 'premium' && (!planSnap.exists || !Object.hasOwn(plan, 'trialDays')) ? TRIAL_DAYS : 0)
+          : (!planSnap.exists || !Object.hasOwn(plan, 'trialDays') ? TRIAL_DAYS : 0)
         if (plan.isActive === false || Number(plan.price ?? (requestedPlan === 'basic' ? 499 : 999)) <= 0 || !freeTrialEnabled || !trialDays) {
           throw Object.assign(new Error('A free trial is not currently available for this plan.'), { status: 409 })
         }
@@ -37,12 +36,14 @@ export function registerSubscriptionTrial(app, { admin, requireAuth, loadUserCon
         const paid = [...payments.docs, ...emailPayments.docs].some(row => ['paid', 'succeeded'].includes(String(row.data().status || row.data().paymongoStatus).toLowerCase()))
         // Retrying a successful activation returns the same trial, never a new end date.
         const existingTrialPlan = normalizeSubscriptionPlan(owner.data().subscriptionTrialPlan || clinic.data().subscriptionTrialPlan || lifecycle.plan)
-        if (lifecycle.trial && clinicLifecycle.trial && lifecycle.expiresAt && owner.data().subscriptionTrialUsedAt && existingTrialPlan === requestedPlan && !paid) return { plan: lifecycle.plan, trialDays: Number(owner.data().subscriptionTrialDays || trialDays), expiresAt: lifecycle.expiresAt.toISOString() }
+        if (lifecycle.trial && clinicLifecycle.trial && lifecycle.expiresAt && lifecycle.expiresAt > new Date() && owner.data().subscriptionTrialUsedAt && existingTrialPlan === requestedPlan && !paid) return { plan: lifecycle.plan, trialDays: Number(owner.data().subscriptionTrialDays || trialDays), expiresAt: lifecycle.expiresAt.toISOString() }
         if (!lifecycle.trialEligible || !clinicLifecycle.trialEligible || paid) throw Object.assign(new Error('The trial is available once to clinics that have not used a trial or paid subscription.'), { status: 409 })
         const now = new Date(), endsAt = new Date(now.getTime() + trialDays * 86400000)
         const stamp = admin.firestore.FieldValue.serverTimestamp()
         const fields = { subscriptionPlan: requestedPlan, paymentStatus: 'trial', paymentId: null,
           subscriptionStartedAt: null, subscriptionExpiresAt: endsAt,
+          subscriptionAccessStatus: 'trial', subscriptionGraceEndsAt: null,
+          subscriptionRetentionEndsAt: null,
           subscriptionTrialPlan: requestedPlan, subscriptionTrialUsedAt: stamp, subscriptionTrialDays: trialDays,
           subscriptionTrialStartedAt: now, subscriptionTrialEndsAt: endsAt,
           subscriptionUpdatedAt: stamp, updatedAt: stamp }
