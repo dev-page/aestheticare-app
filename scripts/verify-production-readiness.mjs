@@ -20,8 +20,6 @@ const requiredSnippets = [
   ['frontend/src/router/index.js', 'finance:refunds:view'],
   ['frontend/src/router/index.js', 'manager/purchase-history'],
   ['frontend/src/router/index.js', "'/:department(inventory|procurement|logistics)/:page?'"],
-  ['frontend/src/router/index.js', "'/supplier/supply/:page?'"],
-  ['frontend/src/router/index.js', "routePath.startsWith('/supplier')"],
   ['frontend/src/components/sidebar/clinicSidebarItems.js', "to: '/crm/clients'"],
   ['frontend/src/components/sidebar/clinicSidebarItems.js', "to: '/hr/employees'"],
   ['frontend/src/components/sidebar/clinicSidebarItems.js', "to: '/procurement/suppliers/directory'"],

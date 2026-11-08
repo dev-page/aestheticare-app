@@ -1,6 +1,5 @@
 import crypto from 'node:crypto'
 import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
-import { supplierIsVerified } from './supplierVerification.js'
 import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMatch, stockSignals, hasPermission, permissionsByKind, supplierCanRead, supplierProjection } from './supplyModel.js'
 
 const docs = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }))
@@ -32,13 +31,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   const identity = async req => {
     const ctx = await loadUserContext(req.user.uid)
     const supplier = String(ctx.roleKey).toLowerCase() === 'supplier' || ctx.userData.userType === 'supplier'
-    // Supplier accounts have been retired. Historical supplier-linked records
-    // remain available to authorized clinic users, but an old supplier token
-    // cannot access any supply workflow endpoint.
-    demand(!supplier, 'Supplier accounts are retired. Suppliers are managed as clinic business contacts.', 403)
-    const owned = supplier ? docs(await db.collection('suppliers').where('ownerId', '==', ctx.uid).get()).concat(docs(await db.collection('suppliers').where('supplierUserId', '==', ctx.uid).get())) : []
-    if (supplier) demand(supplierIsVerified((await db.collection('supplierApplications').doc(ctx.uid).get()).data()), 'Complete supplier verification before using the supply portal.', 403)
-    return { ...ctx, supplier, supplierIds: [...new Set(owned.filter(s => s.status === 'Active' && s.verificationStatus === 'Verified').map(s => s.id))] }
+    demand(!supplier, 'Supplier accounts are no longer supported. Suppliers are managed as clinic business contacts.', 403)
+    return { ...ctx, supplier: false, supplierIds: [] }
   }
   const branchAccess = async (ctx, branchId, paidModule = true) => {
     cleanId(branchId)
@@ -49,11 +43,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     if (paidModule) demand(subscriptionLifecycle(clinic).plan !== 'free', 'Inventory, procurement and logistics require Basic or Premium.', 403)
   }
   const clinicCanContactSupplier = async supplier => {
-    if (supplier?.status !== 'Active' || supplier?.verificationStatus !== 'Verified') return false
-    const supplierUid = String(supplier.ownerId || supplier.supplierUserId || '')
-    if (!supplierUid) return false
-    const application = await db.collection('supplierApplications').doc(supplierUid).get()
-    return supplierIsVerified(application.data())
+    return supplier?.status === 'Active' && supplier?.regulatory?.verificationStatus === 'checked_valid'
   }
   const canRead = (ctx, r) => ctx.supplier ? supplierCanRead(r, ctx.supplierIds) : hasPermission(ctx, 'reports:view') || (permissionsByKind[r.kind] || []).some(p => hasPermission(ctx, p))
   const ensureRead = async (ctx, r) => { demand(r && canRead(ctx, r), 'Record not available to this account.', 403); if (!ctx.supplier) await branchAccess(ctx, r.branchId) }

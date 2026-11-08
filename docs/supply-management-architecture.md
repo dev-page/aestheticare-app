@@ -76,6 +76,7 @@ All staff requests resolve role/custom-role permissions and branch ownership thr
 | Inventory view/manage/request | inventory:view, inventory:update, inventory:create |
 | Inventory approval | inventory:review, different user from requester |
 | Procurement read/source/evaluate/PO | procurement:view, procurement:create, procurement:review |
+| Supplier directory | procurement:view, suppliers:create, suppliers:update |
 | Logistics inspect/onboard/resolve | orders:view, orders:update |
 | Finance view/budgets/verify | finance:payables:view, finance:payables:approve |
 | Finance record settlement | finance:payables:settle |
@@ -94,7 +95,7 @@ All staff requests resolve role/custom-role permissions and branch ownership thr
 
 ## Notification, audit, documents, and reporting architecture
 
-Transitions create existing `notifications` records addressed to staff with the next department's permissions, and to relevant supplier accounts. Alert IDs combine record/day/event to avoid repeated reminders. Browser workspaces refresh to update DSS and deadlines; reminders do not place orders. Unattended scheduled execution requires a deployment scheduler to invoke the same service.
+Transitions create existing `notifications` records addressed to staff with the next department's permissions. Alert IDs combine record/day/event to avoid repeated reminders. Browser workspaces refresh to update DSS and deadlines; reminders do not place orders. Unattended scheduled execution requires a deployment scheduler to invoke the same service.
 
 Every mutation records an audit entry in the same database transaction. Document metadata is separate from Storage; failed metadata writes clean up the uploaded object. Allowed uploads: PDF, JPEG, PNG, up to 5 MB. No executable files or public buckets. Procurement documents are internal unless explicitly shared with the target supplier.
 
@@ -108,7 +109,7 @@ Pure model tests cover money, DSS thresholds, quotation arithmetic, invoice matc
 
 `SupplyWorkspace.vue` is the sole Inventory, Procurement, Logistics, and procurement-Finance transaction interface. Older URLs redirect to the matching workspace page so saved bookmarks keep working, but the duplicate components and write endpoints have been removed. Historical `purchaseRequests`, `supplierQuotes`, `purchaseOrders`, `manualPurchases`, and `purchasePayments` records remain read-only for prior reports; all new transactions use `supplyRecords`.
 
-Clinic users enter through module-owned namespaces: `/inventory`, `/procurement`, `/logistics`, `/finance/procurement`, and `/management/supply`. Suppliers are external identities with their own account lifecycle and isolated `/supplier/...` portal. Router guards, backend projections, and record permissions prevent supplier identities from opening clinic module routes or seeing internal requests, evaluations, budgets, approvals, and competing quotations.
+Clinic users enter through module-owned namespaces: `/inventory`, `/procurement`, `/logistics`, `/finance/procurement`, and `/management/supply`. Suppliers are represented as clinic-managed business contacts. Router guards, backend projections, and record permissions protect internal requests, evaluations, budgets, approvals, and competing quotations.
 
 ```mermaid
 flowchart TD

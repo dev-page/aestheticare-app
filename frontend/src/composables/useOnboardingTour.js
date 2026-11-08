@@ -31,14 +31,6 @@ const tourCatalog = {
       { title: 'Need help?', text: 'Ask your clinic administrator if you need access to another module or action.', selector: '[data-onboarding-key="employee-branch-info"]' },
     ],
   },
-  supplier: {
-    title: 'Your external supplier portal',
-    steps: [
-      { title: 'Publish your supply catalog', text: 'List the supplies your business offers so clinics can consider them during procurement.', selector: '[data-onboarding-key="supplier-catalog-save"]' },
-      { title: 'Respond to clinic requests', text: 'Purchase orders, invoices, and payment updates are available in the clinic requests section.', selector: '[data-onboarding-key="supplier-requests"]' },
-      { title: 'Keep information current', text: 'Accurate availability, specifications, and prices help clinics make informed purchasing decisions.', selector: '[data-onboarding-key="supplier-saved-catalog"]' },
-    ],
-  },
 }
 
 const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
@@ -47,7 +39,6 @@ const normalizeRole = (value) => String(value || '').trim().toLowerCase().replac
 // account record and never from the URL currently being viewed.
 const getAccountTourKey = (userData = {}) => {
   const roles = [normalizeRole(userData.role), normalizeRole(userData.userType), normalizeRole(userData.customRoleName)]
-  if (roles.some((role) => ['supplier', 'supplieradmin'].includes(role))) return 'supplier'
   if (roles.includes('customer')) return 'customer'
   if (roles.some((role) => ['superadmin', 'systemadmin', 'sysadmin'].includes(role))) return 'superadmin'
   if (roles.some((role) => ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(role))) return 'owner'
@@ -58,7 +49,6 @@ const getAccountTourKey = (userData = {}) => {
 const isTourLandingPath = (tourKey, path) => {
   const normalized = String(path || '').toLowerCase()
   if (tourKey === 'customer') return normalized.startsWith('/customer/')
-  if (tourKey === 'supplier') return normalized === '/supplier/supplies'
   if (tourKey === 'owner') return normalized === '/clinic/dashboard'
   if (tourKey === 'employee') return normalized === '/workspace/dashboard'
   return false

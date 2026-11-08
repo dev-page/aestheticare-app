@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { transactionDb } from './testTransactionDb.js'
 import { prepareBooking } from './bookingResources.js'
 import { registerBookingBatch, validateSchedules } from './bookingBatch.js'
-import { registerSupplierVerification, supplierDecision } from './supplierVerification.js'
 import { closeExpiredConsultations } from './consultationWindows.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
@@ -125,24 +124,6 @@ test('Group consultations and duplicate attendee emails are rejected', async () 
   groupBooking.guests[0].email = 'customer@test.invalid'
   await assert.rejects(h.db.runTransaction(tx => prepareBooking({ tx, db: h.db, reservation: { ...reservation(), groupBooking }, getBookingRange: range, rangesOverlap: overlap })), /different email/)
 })
-test('Supplier review needs documents, rejects self-review, and updates linked accounts', async () => {
-  const h = transactionDb(), routes = new Map()
-  h.seed('supplierApplications', 'supplier', { ownerId: 'supplier', verificationStatus: 'Draft' })
-  h.seed('suppliers', 'linked', { ownerId: 'supplier', status: 'Active' })
-  registerSupplierVerification({ get: (path, auth, handler) => routes.set(path, handler), post: (path, auth, handler) => routes.set(path, handler) }, { admin: h.admin, requireAuth() {}, loadUserContext: async uid => ({ roleKey: uid === 'admin' ? 'Superadmin' : 'Supplier', userData: { emailVerified: true }, permissions: new Set() }), storageBucket: () => 'test' })
-  const form = { businessName: 'Supplier', registrationNumber: 'R123', taxNumber: 'T123', businessAddress: 'Address', representativeName: 'Representative', contactEmail: 'supplier@test.invalid', contactPhone: '09123456789' }
-  assert.equal((await callRoute(routes.get('/supplier-verification/submit'), 'supplier', form)).code, 400)
-  h.seed('supplierApplications', 'supplier', { ownerId: 'supplier', verificationStatus: 'Draft', documents: Object.fromEntries(['registration', 'permit', 'representative'].map(kind => [kind, { path: `supplier-verification/supplier/${kind}` }])) })
-  assert.equal((await callRoute(routes.get('/supplier-verification/submit'), 'supplier', form)).code, 200)
-  assert.equal((await callRoute(routes.get('/admin/supplier-verification/:id/review'), 'supplier', { action: 'approve' }, { id: 'supplier' })).code, 403)
-  assert.equal((await callRoute(routes.get('/admin/supplier-verification/:id/review'), 'admin', { action: 'approve' }, { id: 'supplier' })).code, 200)
-  assert.equal(h.records.get('suppliers/linked').verificationStatus, 'Verified')
-  assert.equal((await callRoute(routes.get('/admin/supplier-verification/:id/review'), 'admin', { action: 'suspend', reason: 'Registration document expired.' }, { id: 'supplier' })).code, 200)
-  assert.equal(h.records.get('suppliers/linked').verificationStatus, 'Suspended')
-  assert.throws(() => supplierDecision('Draft', 'approve'), /review stage/)
-  assert.throws(() => supplierDecision('Submitted', 'reject', ''), /clear reason/)
-})
-
 test('A group can select different services, with individual times and a shared authoritative total', async () => {
   const h = fixture()
   h.seed('productServicePosts', 'laser', { branchId: 'clinic', postType: 'Service', title: 'Laser', price: 800, durationMinutes: 60, isPublished: true, financeStatus: 'approved', termsAndConditions: 'Laser terms', requiredSupplyIds: ['material'] })

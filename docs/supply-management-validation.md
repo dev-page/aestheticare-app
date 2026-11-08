@@ -7,9 +7,9 @@
 - Logistics: `/logistics/dashboard`
 - Finance: `/finance/procurement/dashboard`
 - Management: `/management/supply/dashboard`
-- Supplier catalog landing page: `/supplier/supplies`
+- Supplier catalog landing page: suppliers are now managed as clinic directory contacts.
 
-The clinic sidebar uses module-owned routes, while the external supplier portal remains under the isolated `/supplier/...` namespace. Older role-prefixed and `supply-management` URLs redirect to the corresponding canonical page, and no parallel procurement UI remains. Existing inventory items and supplier catalogs are shared; historical purchase records remain read-only and are not silently converted into funded purchase orders.
+The clinic sidebar uses module-owned routes and supplier business contacts remain clinic-managed. Older supplier-account URLs no longer expose a supplier portal. Existing inventory items and supplier catalogs are shared; historical purchase records remain read-only and are not silently converted into funded purchase orders.
 
 ## Implemented workflow
 

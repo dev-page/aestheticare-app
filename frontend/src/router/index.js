@@ -30,20 +30,16 @@ const hasFreePlanOnboardingSessionAccess = (uid) => {
 }
 
 const routes = [
-  // Legacy supplier URLs no longer expose a supplier portal or verification workflow.
-  { path: '/supplier/verification', redirect: '/login' },
   { path: '/superadmin/suppliers/verification', redirect: '/superadmin/verification' },
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
-  { path: '/supplier/supply/rfqs', redirect: '/login' },
-  { path: '/supplier/chat', redirect: '/login' },
   { path: '/inventory/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true } },
   { path: '/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true } },
   { path: '/finance/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/logistics/discrepancies', redirect: '/logistics/items' },
+  { path: '/procurement/suppliers/directory', name: 'procurement-supplier-directory', component: () => import('@/views/admin/owner/operations/SupplySuppliers.vue'), meta: { requiresAuth: true, requiresPermission: 'procurement:view', requiresFeature: 'inventory' } },
   { path: '/:department(inventory|procurement|logistics)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true } },
   { path: '/finance/procurement/:page?', name: 'procurement-finance-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/management/supply/:page?', name: 'supply-management-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'management' } },
-  { path: '/supplier/supply/:page?', redirect: '/login' },
 
   ...(isMobileApp
     ? [{ path: "/", redirect: "/login" }]
@@ -257,9 +253,6 @@ const routes = [
 
   // Supplier accounts are retired. Preserve no supplier-facing application routes.
   { path: "/supplier", redirect: "/login" },
-  { path: "/supplier/dashboard", redirect: "/login" },
-  { path: "/supplier/profile", redirect: "/login" },
-  { path: "/supplier/supplies", redirect: "/login" },
 
   // Superadmin routes
   { path: "/superadmin/dashboard", name: "superadmin-dashboard", component: () => import("@/views/superAdmin/Dashboard.vue"), meta: { requiresAuth: true, requiresPermission: "system:dashboard:view" } },

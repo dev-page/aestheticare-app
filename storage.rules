@@ -168,7 +168,6 @@ service firebase.storage {
     }
 
     // Business verification documents are served through short-lived URLs by the review API.
-    match /supplier-verification/{supplierUid}/{documentId} { allow read, write: if false; }
     match /practitioner-licenses/{uploaderId}/{staffId}/{fileName} {
       allow read: if isSignedIn()
         && (request.auth.uid == uploaderId || request.auth.uid == staffId || isSuperadmin());
