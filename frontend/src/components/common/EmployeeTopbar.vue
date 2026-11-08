@@ -7,6 +7,7 @@
         <span v-if="roleValue" class="employee-topbar-role">{{ roleValue }}</span>
       </div>
       <div class="employee-topbar-right">
+        <ThemeToggle />
         <div class="employee-topbar-notifications">
         <button type="button" class="employee-topbar-btn" aria-label="Notifications" @click="toggleNotifications">
           <svg class="employee-topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -59,6 +60,7 @@ import { auth, db } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
 import NotificationDetailsDialog from '@/components/common/NotificationDetailsDialog.vue'
 import { toast } from 'vue3-toastify'
+import ThemeToggle from '@/components/common/ThemeToggle.vue'
 
 const props = defineProps({
   title: {

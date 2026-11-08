@@ -20,6 +20,7 @@
         :badge-variant="customerTopbarVariant"
         :show-badge-status="showTopbarStatus"
       />
+      <ThemeToggle v-if="!showEmployeeTopbar && !isLandingRoute" class="global-theme-toggle" />
       <!-- Keep Account Settings mounted while its tab query changes. A fullPath
            key tears down the entire page for ?tab=notifications and causes a
            visible flash before the notification listener reconnects. Other
@@ -120,6 +121,7 @@ import { useSidebarState } from '@/composables/useSidebarState'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import OnboardingTour from '@/components/common/OnboardingTour.vue'
 import AppLoadingScreen from '@/components/common/AppLoadingScreen.vue'
+import ThemeToggle from '@/components/common/ThemeToggle.vue'
 
 // Initialize auth state globally
 const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking, continueSession } = useAuth()

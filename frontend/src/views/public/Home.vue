@@ -53,6 +53,7 @@
         </ul>
 
         <div class="hidden lg:flex items-center gap-2 sm:gap-4">
+          <ThemeToggle />
           <router-link
             to="/login"
             class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border border-gold-700 text-gold-700 text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-700 hover:text-white transition"
@@ -100,15 +101,18 @@
         >
           <div class="h-16 px-4 flex items-center justify-between border-b border-gold-300/40">
             <span class="text-xs tracking-[0.24em] uppercase text-charcoal-700">Menu</span>
-            <button
-              @click="closeMobileMenu"
-              class="inline-flex items-center justify-center h-9 w-9 rounded-md border border-gold-500/50 text-gold-700 hover:bg-gold-100 transition"
-              aria-label="Close navigation menu"
-            >
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div class="flex items-center gap-2">
+              <ThemeToggle />
+              <button
+                @click="closeMobileMenu"
+                class="inline-flex items-center justify-center h-9 w-9 rounded-md border border-gold-500/50 text-gold-700 hover:bg-gold-100 transition"
+                aria-label="Close navigation menu"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div class="flex-1 overflow-y-auto p-5 flex flex-col text-xs tracking-[0.2em] uppercase text-charcoal-700">
@@ -626,6 +630,7 @@
 
 <script>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import ThemeToggle from "@/components/common/ThemeToggle.vue";
 import { useAuth } from "@/composables/useAuth";
 import { OTP_API_BASE } from '@/utils/runtimeConfig';
 import bg from '@/assets/bg.jpg'

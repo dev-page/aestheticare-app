@@ -42,6 +42,45 @@
 
 html { color-scheme: light; }
 
+html.dark-theme {
+  color-scheme: dark;
+  --ac-bg: #2d1b13;
+  --ac-bg-soft: #3a241b;
+  --ac-bg-deep: #24150f;
+  --ac-surface: #42291f;
+  --ac-surface-soft: #503326;
+  --ac-surface-muted: #5b3b2c;
+  --ac-border: #8d6047;
+  --ac-border-strong: #b9794f;
+  --ac-text: #fff8eb;
+  --ac-text-secondary: #f1d5b5;
+  --ac-text-muted: #d7b99b;
+  --ac-primary: #fff8eb;
+  --ac-primary-hover: #f1d5b5;
+  --ac-primary-active: #e6c196;
+  --ac-on-primary: #2d1b13;
+  --ac-accent: #d7aa7d;
+  --ac-accent-soft: #8d6047;
+  --ac-success: #b7e0bd;
+  --ac-success-bg: #294d32;
+  --ac-warning: #f1d28c;
+  --ac-warning-bg: #5a421c;
+  --ac-danger: #ffb1a8;
+  --ac-danger-hover: #ffcec8;
+  --ac-danger-bg: #5b2925;
+  --ac-info: #c9cbed;
+  --ac-info-bg: #343650;
+  --ac-shadow-sm: 0 5px 16px rgba(0, 0, 0, .18);
+  --ac-shadow-md: 0 14px 34px rgba(0, 0, 0, .26);
+  --ac-shadow-lg: 0 24px 60px rgba(0, 0, 0, .36);
+}
+
+html.dark-theme body,
+html.dark-theme #app {
+  background: var(--ac-bg);
+  color: var(--ac-text);
+}
+
 body {
   background: var(--ac-bg);
   color: var(--ac-text);
@@ -63,6 +102,102 @@ button, input, select, textarea { font-family: var(--ac-font-ui); }
 :is(h3, h4, h5, h6) { letter-spacing: -.015em; }
 
 ::selection { background: #efd0aa; color: var(--ac-text); }
+
+.theme-toggle {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--ac-border);
+  border-radius: 999px;
+  background: var(--ac-surface);
+  color: var(--ac-text);
+  box-shadow: var(--ac-shadow-sm);
+  transition: background-color .2s ease, color .2s ease, transform .2s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--ac-surface-muted);
+  color: var(--ac-text);
+  transform: translateY(-1px);
+}
+
+.theme-toggle svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.global-theme-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 100;
+}
+
+html.dark-theme .public-glass-nav {
+  background: linear-gradient(135deg, rgba(45, 27, 19, .94) 0%, rgba(58, 36, 27, .92) 55%, rgba(80, 51, 38, .9) 100%);
+  border-bottom-color: var(--ac-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .24);
+}
+
+html.dark-theme .home-page {
+  background: var(--ac-bg) !important;
+  color: var(--ac-text) !important;
+}
+
+html.dark-theme .home-page :is(.text-charcoal-50, .text-charcoal-100, .text-charcoal-200, .text-charcoal-300, .text-charcoal-400, .text-charcoal-500, .text-charcoal-600, .text-charcoal-700, .text-charcoal-800, .text-charcoal-900) {
+  color: var(--ac-text) !important;
+}
+
+html.dark-theme .home-page :is(.bg-white, .bg-cream-50, .bg-cream-100, .bg-cream-200, .bg-gold-50, .bg-gold-100, .bg-gold-200) {
+  background-color: var(--ac-surface) !important;
+}
+
+html.dark-theme .home-page :is([class*="border-gold-"], [class*="border-cream-"]) {
+  border-color: var(--ac-border) !important;
+}
+
+html.dark-theme .home-page :is(.text-gold-500, .text-gold-600, .text-gold-700, .text-gold-800) {
+  color: var(--ac-accent) !important;
+}
+
+html.dark-theme .home-page :is(.bg-gold-500, .bg-gold-600, .bg-gold-700, .bg-gold-800) {
+  background-color: var(--ac-text) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html.dark-theme .home-page :is(.hover\:bg-gold-50:hover, .hover\:bg-gold-100:hover, .hover\:bg-gold-200:hover) {
+  background-color: var(--ac-surface-muted) !important;
+}
+
+html.dark-theme .public-nav-brand {
+  background: none;
+  color: var(--ac-text);
+}
+
+html.dark-theme .employee-topbar {
+  background: linear-gradient(180deg, rgba(45, 27, 19, .97) 0%, rgba(58, 36, 27, .95) 100%);
+  border-bottom-color: var(--ac-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
+}
+
+html.dark-theme .employee-topbar .notifications-menu,
+html.dark-theme .employee-topbar .notifications-item {
+  background: var(--ac-surface);
+  border-color: var(--ac-border);
+  color: var(--ac-text);
+}
+
+html.dark-theme .employee-topbar :is(.notifications-header, .notifications-item-title, .notifications-item-body, .notifications-item-date, .notifications-empty) {
+  color: var(--ac-text) !important;
+}
 
 /* ---------- Operational page canvas ---------- */
 
@@ -167,6 +302,22 @@ aside.app-sidebar {
   color: var(--ac-text-secondary) !important;
   box-shadow: 10px 0 34px rgba(76, 45, 25, .08) !important;
   font-family: var(--ac-font-ui) !important;
+}
+
+html.dark-theme aside.app-sidebar {
+  background: linear-gradient(180deg, #24150f 0%, #3a241b 100%) !important;
+  color: var(--ac-text-secondary) !important;
+  box-shadow: 10px 0 34px rgba(0, 0, 0, .24) !important;
+}
+
+html.dark-theme aside.app-sidebar :is(a, button):hover:not(:disabled) {
+  background: #5b3b2c !important;
+  color: var(--ac-text) !important;
+}
+
+html.dark-theme aside.app-sidebar :is(a, button)[aria-current="page"] {
+  background: var(--ac-text) !important;
+  color: var(--ac-on-primary) !important;
 }
 
 aside.app-sidebar [class*="border-[#3a"],
@@ -674,4 +825,3 @@ button[title*="Refresh"]:not(:has(> svg + .sr-only)) > svg {
 button:has(> svg.animate-spin + .sr-only)::before {
   animation: icons8-refresh-spin .8s linear infinite;
 }
-
