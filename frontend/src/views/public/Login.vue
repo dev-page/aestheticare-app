@@ -2,7 +2,7 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { auth, db } from '@/config/firebaseConfig'
+import { auth } from '@/config/firebaseConfig'
 import {
   signInWithEmailAndPassword,
   setPersistence,
@@ -10,11 +10,11 @@ import {
   browserLocalPersistence,
   signOut,
 } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
 import axios from 'axios'
 import { toast } from 'vue3-toastify'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { isCustomerAppAccount } from '@/utils/customerApp'
+import { fetchAuthenticatedProfile } from '@/utils/authenticatedProfile'
 
 const router = useRouter()
 const route = useRoute()
@@ -280,11 +280,8 @@ const handleLogin = async () => {
         // Session storage is optional; routing still enforces the Free plan.
       }
 
-      const userRef = doc(db, 'users', userCredentials.user.uid)
-      const userSnap = await getDoc(userRef)
-
-      if (userSnap.exists()) {
-        const userData = userSnap.data()
+      try {
+        const userData = await fetchAuthenticatedProfile(userCredentials.user)
 
         if (props.customerApp && !isCustomerAppAccount(userData)) {
           await signOut(auth)
@@ -375,6 +372,9 @@ const handleLogin = async () => {
 
         clearFormFields()
         startRedirectFlow(redirectPath)
+      } catch (profileError) {
+        await signOut(auth)
+        throw profileError
       }
     } catch (err) {
       console.error(err)
@@ -403,8 +403,7 @@ const verifyLoginOtp = async () => {
     })
     const credentials = await signInWithEmailAndPassword(auth, loginOtpEmail.value, password.value)
     await credentials.user.reload()
-    const userSnap = await getDoc(doc(db, 'users', credentials.user.uid))
-    const userData = userSnap.exists() ? userSnap.data() || {} : {}
+    const userData = await fetchAuthenticatedProfile(credentials.user)
     const redirectPath = await resolveRedirectPath(userData)
     loginOtpStep.value = false
     clearFormFields()

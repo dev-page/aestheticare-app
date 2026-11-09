@@ -1,10 +1,10 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { onAuthStateChanged } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
-import { auth, db } from '@/config/firebaseConfig'
+import { auth } from '@/config/firebaseConfig'
 import { clearSidebarTransientState } from '@/composables/useSidebarState'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
+import { fetchAuthenticatedProfile } from '@/utils/authenticatedProfile'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -48,14 +48,11 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       try {
-        const userRef = doc(db, 'users', firebaseUser.uid)
-        const userSnap = await getDoc(userRef)
-        if (!userSnap.exists()) return
-        const data = userSnap.data() || {}
+        const data = await fetchAuthenticatedProfile(firebaseUser)
 
         if (!data.welcomeNotificationSent) await ensureWelcomeNotification(firebaseUser)
       } catch (error) {
-        console.error('Failed to initialize welcome notification:', error)
+        console.warn('Unable to initialize the authenticated profile:', error)
       }
     })
   }

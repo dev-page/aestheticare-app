@@ -26,7 +26,8 @@ export function subscriptionLifecycle(record = {}, now = new Date()) {
   const paidBefore = Boolean(record.lastPaidSubscriptionPlan || record.paymentId || paymentStatus === 'paid')
   const status = storedStatus || (expiresAt && expiresAt <= now ? 'grace_period' : (trial ? 'trial' : (plan ? 'active' : 'expired')))
   return { plan, status, trial, expiresAt, graceEndsAt, retentionEndsAt,
-    isOperational: ['trial', 'active', 'grace_period', 'canceled'].includes(status) && (!expiresAt || expiresAt > now || status === 'grace_period'),
+    isOperational: ['trial', 'active', 'canceled'].includes(status) && (!expiresAt || expiresAt > now)
+      || status === 'grace_period' && Boolean(graceEndsAt && graceEndsAt > now),
     trialEligible: !usedTrial && !paidBefore }
 }
 

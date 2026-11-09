@@ -12,8 +12,12 @@ import 'sweetalert2/dist/sweetalert2.min.css'
 import './assets/app-design-system.css'
 import './assets/finance-pages.css'
 import { installAppUpdateCheck } from '@/utils/appUpdate'
+import { useThemeStore } from '@/stores/theme'
 
 installAppUpdateCheck()
+
+const pinia = createPinia()
+useThemeStore(pinia).initialize()
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -24,7 +28,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 createApp(App)
 .directive('page-loading', pageLoading)
-.use(createPinia())
+.use(pinia)
 .use(router)
 .use(Vue3Toastify, {
   autoClose: 3000,

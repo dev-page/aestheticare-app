@@ -53,6 +53,7 @@
         </ul>
 
         <div class="hidden lg:flex items-center gap-2 sm:gap-4">
+          <ThemeSelector />
           <router-link
             to="/login"
             class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border border-gold-700 text-gold-700 text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-700 hover:text-white transition"
@@ -100,15 +101,18 @@
         >
           <div class="h-16 px-4 flex items-center justify-between border-b border-gold-300/40">
             <span class="text-xs tracking-[0.24em] uppercase text-charcoal-700">Menu</span>
-            <button
-              @click="closeMobileMenu"
-              class="inline-flex items-center justify-center h-9 w-9 rounded-md border border-gold-500/50 text-gold-700 hover:bg-gold-100 transition"
-              aria-label="Close navigation menu"
-            >
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div class="flex items-center gap-2">
+              <ThemeSelector />
+              <button
+                @click="closeMobileMenu"
+                class="inline-flex items-center justify-center h-9 w-9 rounded-md border border-gold-500/50 text-gold-700 hover:bg-gold-100 transition"
+                aria-label="Close navigation menu"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div class="flex-1 overflow-y-auto p-5 flex flex-col text-xs tracking-[0.2em] uppercase text-charcoal-700">
@@ -367,12 +371,6 @@
       </div>
     </section>
 
-    <div class="section-wave-divider" aria-hidden="true">
-      <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
-        <path fill="#fff8ed" d="M0,88 C190,128 360,34 560,62 C760,90 920,126 1120,92 C1268,66 1368,48 1440,58 L1440,120 L0,120 Z" />
-      </svg>
-    </div>
-
     <!-- FEATURES / PLATFORM CAPABILITIES SHOWCASE -->
     <section class="capability-section pb-16 pt-8 sm:pb-24 sm:pt-12 md:pb-32 md:pt-16">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
@@ -466,12 +464,6 @@
         </div>
       </div>
     </section>
-
-    <div class="section-wave-divider section-wave-divider-footer" aria-hidden="true">
-      <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
-        <path fill="#f8eedf" d="M0,88 C190,128 360,34 560,62 C760,90 920,126 1120,92 C1268,66 1368,48 1440,58 L1440,120 L0,120 Z" />
-      </svg>
-    </div>
 
     <!-- CTA + Footer -->
     <section class="footer-cta-section">
@@ -633,9 +625,11 @@ import appointmentLanding from '@/assets/apointment_landing.jpg'
 import inventoryLanding from '@/assets/inventory_landing.jpg'
 import meetingRoomLanding from '@/assets/meetingroom_landing.jpg'
 import staffInsightLanding from '@/assets/staffinsight_landing.jpg'
+import ThemeSelector from '@/components/common/ThemeSelector.vue'
 
 export default {
   name: "HomePage",
+  components: { ThemeSelector },
   setup() {
     const { user, isLoading, initAuth } = useAuth();
     const isMobileMenuOpen = ref(false);

@@ -76,7 +76,7 @@ test('A supplier delivery fee is selected from the clinic branch city before Fin
   assert.equal(po.total, 35000)
 })
 
-test('Procurement creates a catalog-priced purchase order for Finance approval without an RFQ', async () => {
+test('Procurement creates a catalog-priced purchase order for review without an RFQ', async () => {
   const f = fixture(), date = '2099-12-31'
   const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date, location: 'Main clinic' })
   const procurement = f.read(request).procurementId
@@ -84,7 +84,7 @@ test('Procurement creates a catalog-priced purchase order for Finance approval w
   const po = f.read(f.read(procurement).purchaseOrderId)
   assert.equal(po.directSupplierCatalog, true)
   assert.equal(po.requestedAmount, 10000)
-  assert.equal(po.status, 'For Finance Approval')
+  assert.equal(po.status, 'For Review')
   const budget = await f.create('finance', 'budget', { department: 'Inventory', category: 'Materials', total: 200 })
   await f.act('finance', po.id, 'approve', { budgetId: budget, approvedAmount: 100, remarks: 'Approved from verified supplier catalog' })
   assert.equal(po.directSupplierCatalog, true)
@@ -105,13 +105,14 @@ test('Self approval, cross-branch writes and read-only document uploads are reje
 })
 
 
-test('A legacy purchase order without its Procurement parent can still be approved by Finance', async () => {
+test('A purchase order without its Procurement parent can still be approved by Finance', async () => {
   const f = fixture()
   const budget = await f.create('finance', 'budget', { category: 'Legacy inventory', total: 100 })
-  f.seed('supplyRecords', 'legacy-finance-po', { id: 'legacy-finance-po', kind: 'po', mode: 'Online', branchId: 'clinic', supplierId: 'vendor', status: 'For Finance Approval', department: 'Inventory', total: 5000, requestedAmount: 5000, lines: [{ itemId: 'item', name: 'Gloves', quantity: 10 }] })
+  f.seed('supplyRecords', 'legacy-finance-po', { id: 'legacy-finance-po', kind: 'po', mode: 'Manual', branchId: 'clinic', supplierId: 'vendor', status: 'For Review', department: 'Inventory', total: 5000, requestedAmount: 5000, lines: [{ itemId: 'item', name: 'Gloves', quantity: 10 }] })
   await f.act('finance', 'legacy-finance-po', 'approve', { budgetId: budget, approvedAmount: 50, remarks: 'Approved legacy order' })
   assert.equal(f.read('legacy-finance-po').status, 'Approved')
-  await f.act('finance', 'legacy-finance-po', 'issue')
-  assert.equal(f.read('legacy-finance-po').status, 'Sent to Supplier')
+  f.evidence('legacy-finance-po')
+  await f.act('procurement', 'legacy-finance-po', 'issue')
+  assert.equal(f.read('legacy-finance-po').status, 'Receiving')
   assert.equal(f.read(budget).committed, 5000)
 })

@@ -50,7 +50,7 @@ const props = defineProps({
 })
 const decisionReason = computed(() => ['Rejected', 'Clarification Requested', 'Returned to Procurement'].includes(props.record.status)
   ? props.record.confirmationReason || props.record.remarks || 'No reason was recorded. Check the activity and messages below.' : '')
-const showReceiving = computed(() => ['Partially Received', 'Delivered', 'Completed'].includes(props.record.status))
+const showReceiving = computed(() => ['Receiving', 'Completed'].includes(props.record.status))
 const deliveryDate = computed(() => {
   const key = String(props.record.deliveryDate || '').slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return 'Not scheduled'

@@ -8,6 +8,7 @@
     }"
   >
     <div>
+      <ThemeSelector v-if="!showEmployeeTopbar && !isLandingRoute" class="global-theme-selector" />
       <EmployeeTopbar
         v-if="showEmployeeTopbar && !isClinicOnboardingRoute"
         :title="topbarTitle"
@@ -120,6 +121,7 @@ import { useSidebarState } from '@/composables/useSidebarState'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import OnboardingTour from '@/components/common/OnboardingTour.vue'
 import AppLoadingScreen from '@/components/common/AppLoadingScreen.vue'
+import ThemeSelector from '@/components/common/ThemeSelector.vue'
 
 // Initialize auth state globally
 const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking, continueSession } = useAuth()

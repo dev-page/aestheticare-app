@@ -55,21 +55,21 @@ flowchart LR
 ## State machines and approval workflow
 
 - Request: Draft -> Submitted -> Under Review -> Approved / Rejected / Returned. Approval creates Procurement automatically, with a deterministic ID and Sent to Procurement status. Returned requests can be revised and resubmitted. Request creators cannot approve their own requests.
-- Procurement: Received -> Under Review -> RFQ Preparation -> RFQ Sent -> Quotations Received -> Evaluation -> For Finance Approval -> Ordered -> Completed/Cancelled.
-- RFQ: Draft -> Sent -> Open -> Quotation Received -> Closed -> Under Evaluation -> Awarded/Cancelled. Invited suppliers may quote until the deadline or closure. Procurement records a recommendation and justification; price alone never selects a supplier.
+- Procurement: Received -> Under Review -> Quotation Recorded -> For Review -> Approved/Rejected -> Ordered -> Completed.
+- Quotation: Procurement records an external supplier quotation or other price communication, including taxes, discounts, delivery fees and other charges. The quotation is supporting evidence for the PO and is not a supplier account workflow.
 - Budget request: Submitted -> Finance Review -> Approved/Rejected/Returned. Approved funding creates explicit Finance Approval and Budget Allocation records and commits funds atomically. A retry cannot reserve twice.
-- PO: Draft -> Pending Approval -> Approved -> Sent to Supplier -> Supplier Confirmed / Rejected / Clarification Requested -> Ongoing -> Partially Received -> Delivered -> Completed. Official issue requires committed funding. Cancellation releases unused commitment.
+- PO: Draft -> For Review -> Approved -> Receiving -> Completed, with For Review -> Rejected -> Draft for revisions. Procurement sends the approved PDF externally and records supplier confirmation, delivery, invoice and payment evidence. Official issue requires committed funding; only accepted quantities enter inventory and payment completion closes the PO.
 - Receiving: Inspected -> Onboarded. A separate Inspection record captures quantity and quality results. Accepted + rejected equals delivered; cumulative accepted cannot exceed ordered. Onboarding is idempotent and rejected stock never enters inventory.
 - Invoice: Submitted -> Under Verification -> Matched/Disputed -> Approved for Payment -> Paid. A separate Three-Way Match record compares PO, onboarded receiving, prior invoices, prices, and charges. Mismatches block payment.
 - Payment: Pending -> Under Verification -> Approved/Rejected -> Processing -> Paid. Preparation, approval by another Finance user, processing, and settlement are separate actions. Settlement records a real external transaction; it never pretends to transfer money.
 
-## Manual and online workflows
+## Clinic-only supplier workflow
 
-Both modes share every internal entity and transition. Manual sourcing requires uploaded RFQ, quotation and PO evidence before progression; staff record supplier confirmation and invoice with supporting documents. Online sourcing exposes RFQs only to addressed suppliers. Suppliers enter their own quotes, confirm their own POs, upload delivery/invoice files, and see their own invoice/payment status. Private evaluation, Finance comments and budgets are never projected to suppliers.
+Suppliers are clinic-managed business contacts and do not log in. Procurement records supplier-provided quotations, taxes, delivery fees, discounts and other charges from external documents or communication, then generates the approved PO PDF for external delivery. Staff record supplier confirmation, receiving, invoices and payment references with supporting documents. Finance/Owner review is separate from Procurement preparation and sending.
 
 ## Roles, scope, separation of duties
 
-All staff requests resolve role/custom-role permissions and branch ownership through the existing user context. Supplier access resolves `suppliers.ownerId` or `supplierUserId`, never a client-provided supplier identity.
+All staff requests resolve role/custom-role permissions and branch ownership through the existing user context. Suppliers are selected from clinic-associated business contacts; no supplier identity is accepted from a supplier login.
 
 | Responsibility | Existing permissions |
 |---|---|
@@ -77,7 +77,7 @@ All staff requests resolve role/custom-role permissions and branch ownership thr
 | Inventory approval | inventory:review, different user from requester |
 | Procurement read/source/evaluate/PO | procurement:view, procurement:create, procurement:review |
 | Supplier directory | procurement:view, suppliers:create, suppliers:update |
-| Logistics inspect/onboard/resolve | orders:view, orders:update |
+| Procurement receive/onboard/resolve | procurement:review, inventory:create |
 | Finance view/budgets/verify | finance:payables:view, finance:payables:approve |
 | Finance record settlement | finance:payables:settle |
 | Branch administration | explicit permissions or administrator:full_access; duty separation still applies |
@@ -147,14 +147,12 @@ stateDiagram-v2
   }
   state PO {
     [*] --> Draft
-    Draft --> PendingApproval
-    PendingApproval --> Approved
-    Approved --> SentToSupplier
-    SentToSupplier --> SupplierConfirmed
-    SupplierConfirmed --> Ongoing
-    Ongoing --> PartiallyReceived
-    PartiallyReceived --> Delivered
-    Delivered --> Completed
+    Draft --> ForReview
+    ForReview --> Approved
+    ForReview --> Rejected
+    Rejected --> Draft
+    Approved --> Receiving
+    Receiving --> Completed
   }
   state Payment {
     [*] --> Pending

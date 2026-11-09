@@ -4067,6 +4067,16 @@ const subscriptionReminderDependencies = {
 registerSubscriptionReminders(app, subscriptionReminderDependencies)
 registerSubscriptionTrial(app, { admin, requireAuth, loadUserContext })
 
+app.get('/auth/profile', requireAuth, async (req, res) => {
+  try {
+    const user = await admin.firestore().collection('users').doc(req.user.uid).get()
+    if (!user.exists) return res.status(404).json({ success: false, error: 'User profile not found.' })
+    return res.json({ success: true, data: user.data() || {} })
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Unable to load the authenticated profile.' })
+  }
+})
+
 // User profiles may be created by trusted registration flows, so initializing
 // this cosmetic one-time notification must not rely on a browser profile write.
 // The transaction keeps repeated logins idempotent.

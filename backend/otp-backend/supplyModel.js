@@ -41,6 +41,7 @@ export const quoteTotals = input => {
   demand(Number.isSafeInteger(total) && total > 0, 'Quotation total must be positive.', 400)
   return { lines, subtotal, ...charges, total }
 }
+export const PURCHASE_ORDER_STATUSES = ['Draft', 'For Review', 'Approved', 'Rejected', 'Receiving', 'Completed']
 export const invoiceMatch = (po, invoice, otherInvoices) => {
   const issues = []
   for (const line of invoice.lines) {
