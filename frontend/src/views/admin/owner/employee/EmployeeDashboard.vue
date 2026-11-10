@@ -221,7 +221,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         key: 'operations',
         label: 'Operations',
         entries: [
-          { label: 'Suppliers', to: '/procurement/suppliers/directory', permission: 'inventory:view', feature: 'inventory', description: 'Manage supplier records.' },
+          { label: 'Suppliers', to: '/procurement/suppliers/directory', permission: 'procurement:view', feature: 'inventory', description: 'Manage supplier records.' },
           { label: 'Inventory Requests', to: '/inventory/requests', permissionsAny: ['inventory:create', 'inventory:review'], feature: 'inventory', description: 'Create and review inventory requests.' },
           { label: 'Item Catalog', to: '/inventory/items', permission: 'inventory:view', feature: 'inventory', description: 'Browse the item catalog.' },
           { label: 'Supply Dashboard', to: '/supply/dashboard', permission: 'inventory:view', feature: 'inventory', description: 'Open the supply dashboard.' },

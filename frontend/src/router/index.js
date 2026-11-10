@@ -32,12 +32,12 @@ const hasFreePlanOnboardingSessionAccess = (uid) => {
 const routes = [
   { path: '/superadmin/suppliers/verification', redirect: '/superadmin/verification' },
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
-  { path: '/inventory/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true } },
-  { path: '/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true } },
+  { path: '/inventory/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
+  { path: '/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
   { path: '/finance/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/logistics/discrepancies', redirect: '/logistics/items' },
   { path: '/procurement/suppliers/directory', name: 'procurement-supplier-directory', component: () => import('@/views/admin/owner/operations/SupplySuppliers.vue'), meta: { requiresAuth: true, requiresPermission: 'procurement:view', requiresFeature: 'inventory' } },
-  { path: '/:department(inventory|procurement|logistics)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true } },
+  { path: '/:department(inventory|procurement|logistics)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
   { path: '/finance/procurement/:page?', name: 'procurement-finance-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/management/supply/:page?', name: 'supply-management-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'management' } },
 
@@ -139,7 +139,6 @@ const routes = [
   { path: "/operations/team", name: "operations-team", component: () => import("@/views/admin/owner/operations/ManagerStaffs.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view" } },
   { path: "/operations/attendance", name: "operations-attendance", component: () => import("@/views/admin/owner/operations/ManagerAttendance.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
   { path: "/catalog/archived", name: "catalog-archived", component: () => import("@/views/admin/owner/operations/ArchivedPosts.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },
-  { path: "/procurement/suppliers/directory", name: "procurement-supplier-directory", component: () => import("@/views/admin/owner/operations/SupplySuppliers.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
   { path: "/catalog/products-services", name: "catalog-products-services", component: () => import("@/views/admin/owner/operations/ProductServiceListing.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },
   { path: "/operations/orders", name: "operations-orders", component: () => import("@/views/admin/owner/operations/ManagerOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
 
@@ -385,6 +384,20 @@ const permissionAlternates = {
   'orders:update': ['inventory:update', 'inventory:review'],
 };
 
+const supplyRoutePermissions = (to) => {
+  if (!to.meta.requiresSupplyAccess) return { any: [], one: '' }
+  const department = String(to.params.department || '').toLowerCase()
+  const page = String(to.params.page || 'dashboard').toLowerCase()
+  if (department === 'inventory' && page === 'requests') return { any: ['inventory:create', 'inventory:review'], one: '' }
+  if (department === 'inventory' && page === 'onboarding') return { any: [], one: 'inventory:create' }
+  if (department === 'inventory') return { any: [], one: 'inventory:view' }
+  if (department === 'procurement') return { any: [], one: 'procurement:view' }
+  if (department === 'logistics') return { any: [], one: 'orders:view' }
+  if (to.path === '/inventory/requests') return { any: ['inventory:create', 'inventory:review'], one: '' }
+  if (to.path === '/procurement/requests') return { any: [], one: 'procurement:view' }
+  return { any: [], one: '' }
+}
+
 // 🔧 Global guard
 router.beforeEach(async (to, from, next) => {
   const customerApp = isCustomerAppContext(to.path, isMobileApp)
@@ -578,13 +591,16 @@ router.beforeEach(async (to, from, next) => {
   }
   if (!isSystemAdmin && to.meta.requiresFeature && !hasFeature(to.meta.requiresFeature)) return next('/subscription-features')
 
-  if ((to.meta.requiresPermission && !(to.path === '/account/change-password' && forcedEmployeePasswordChange) && !hasPermission(to.meta.requiresPermission)) || (to.meta.requiresPermissionsAny && !to.meta.requiresPermissionsAny.some(permission => hasPermission(permission)))) {
+  const supplyAccess = supplyRoutePermissions(to)
+  const requiredPermission = to.meta.requiresPermission || supplyAccess.one
+  const requiredPermissionsAny = to.meta.requiresPermissionsAny || supplyAccess.any
+  if ((requiredPermission && !(to.path === '/account/change-password' && forcedEmployeePasswordChange) && !hasPermission(requiredPermission)) || (requiredPermissionsAny.length && !requiredPermissionsAny.some(permission => hasPermission(permission)))) {
     if (currentUser?.uid) {
       try {
         const userSnap = await getDoc(doc(db, "users", currentUser.uid));
         const userData = userSnap.exists() ? userSnap.data() || {} : {};
-        const alternates = permissionAlternates[to.meta.requiresPermission] || [];
-        if (alternates.some((permission) => hasPermission(permission))) {
+        const alternates = permissionAlternates[requiredPermission] || [];
+        if (alternates.some((permission) => hasPermission(permission)) || requiredPermissionsAny.some((permission) => hasPermission(permission))) {
           return next();
         }
         if (isOwnerLikeRole(userData, currentUser?.uid)) {
