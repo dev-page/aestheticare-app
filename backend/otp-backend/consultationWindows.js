@@ -1,4 +1,4 @@
-import { onlineWindow, timestampDate } from '../../shared/onlineConsultation.js'
+import { onlineWindow, consultationRecoveryDeadline, timestampDate } from '../../shared/onlineConsultation.js'
 import { normalized } from './bookingWorkflow.js'
 
 // Close application records, never claim to disconnect an external Meet call.
@@ -30,9 +30,29 @@ export const closeExpiredConsultations = async admin => {
         return false
       }
       if (!['paid', 'scheduled', 'ready to start', 'ongoing'].includes(normalized(appointment.status))) return false
-      // Keep active calls open past the booked window. The practitioner ends
-      // the record explicitly after the real consultation is over.
-      if (normalized(appointment.status) === 'ongoing' && appointment.startedAt) return false
+      if (normalized(appointment.status) === 'ongoing' && appointment.startedAt) {
+        const deadline = appointment.consultationInterruption?.open ? consultationRecoveryDeadline(appointment) : window.end
+        if (now < deadline) return false
+        const start = timestampDate(appointment.startedAt)
+        const endedAt = deadline < now ? deadline : now
+        const durationSeconds = Math.max(0, Math.floor((endedAt - start) / 1000))
+        const notesComplete = String(appointment.treatmentNotes || '').trim().length >= 10
+        const teamIncomplete = (appointment.treatmentTeam || []).some(member => !member.participationConfirmed)
+        const status = 'Awaiting Customer Confirmation'
+        tx.update(doc.ref, {
+          status,
+          consultationWindowEndedAt: stamp,
+          consultationEndedByTimer: true,
+          consultationEndedAt: appointment.consultationEndedAt || endedAt.toISOString(),
+          consultationEndedById: appointment.consultationEndedById || 'system',
+          consultationActualDurationSeconds: durationSeconds,
+          consultationNeedsReview: Boolean(appointment.consultationNeedsReview) || durationSeconds < window.duration * 60 * 0.8 || !notesComplete || teamIncomplete,
+          updatedAt: stamp,
+        })
+        tx.set(db.collection('appointmentAudit').doc(), { appointmentId: doc.id, branchId: appointment.branchId, actorId: 'system', action: 'consultation_window_expired', previousStatus: appointment.status, nextStatus: status, createdAt: stamp })
+        if (appointment.customerId) tx.set(db.collection('notifications').doc('consultation-ended-' + doc.id), { recipientUserId: appointment.customerId, title: 'Confirm your consultation', message: 'The consultation window ended. Review the clinic notes and confirm receipt, or report a problem within 48 hours.', link: '/customer/appointments', read: false, createdAt: stamp })
+        return true
+      }
       if (now < window.arrivalDeadline) return false
       const status = 'Consultation Review'
       tx.update(doc.ref, { status, consultationReviewReason: 'Arrival grace period elapsed. Review attendance, practitioner availability, and technical problems before assigning fault.', consultationWindowEndedAt: stamp, consultationEndedByTimer: true, consultationEndedAt: appointment.consultationEndedAt || window.arrivalDeadline.toISOString(), consultationEndedById: appointment.consultationEndedById || 'system', consultationActualDurationSeconds: 0, consultationNeedsReview: true, updatedAt: stamp })

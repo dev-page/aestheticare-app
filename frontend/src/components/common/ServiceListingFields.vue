@@ -127,7 +127,7 @@
 
         <div v-if="form.postType === 'Product'" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4">
           <p class="mb-3 font-medium text-amber-200">FDA product documentation</p>
-          <p class="text-xs leading-5 text-slate-400">FDA details are supplied by the selected supplier and are copied from inventory when this product is published. Update them from the supplier catalog, not here.</p>
+          <p class="text-xs leading-5 text-slate-400">Product FDA registration details are maintained by clinic staff on the linked inventory item and copied to this listing.</p>
         </div>
 
         <div v-if="form.postType === 'Service' || form.postType === 'Consultation'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

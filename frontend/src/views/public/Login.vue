@@ -100,7 +100,7 @@ const normalizeRoleKey = (value) => {
   if (compact === 'crm') return 'CRM'
   if (compact === 'clinicowner' || compact === 'owner') return 'Owner'
   if (compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Clinic Admin'
-  if (compact === 'supplier') return 'Supplier'
+  if (compact === 'supplier' || compact === 'supplieradmin') return 'Supplier'
   if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') {
     return 'Superadmin'
   }
@@ -116,10 +116,10 @@ const requiresLoginOtp = (userData) => {
   const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
   const role = normalize(userData?.role)
   const userType = normalize(userData?.userType)
-  // Customers intentionally retain password-only login. Every operational
-  // account (system admin, owner, staff/employee, or supplier) needs OTP.
-  return ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicowner', 'clinicadmin', 'clinicadministrator', 'supplier', 'staff', 'employee'].includes(role)
-    || ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicowner', 'clinicadmin', 'clinicadministrator', 'supplier', 'staff', 'employee'].includes(userType)
+  // Customers intentionally retain password-only login. Every supported
+  // operational account (system admin, owner, staff/employee) needs OTP.
+  return ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicowner', 'clinicadmin', 'clinicadministrator', 'staff', 'employee'].includes(role)
+    || ['superadmin', 'systemadmin', 'sysadmin', 'owner', 'clinicowner', 'clinicadmin', 'clinicadministrator', 'staff', 'employee'].includes(userType)
 }
 
 const firebaseLoginMessages = {
@@ -283,6 +283,14 @@ const handleLogin = async () => {
       try {
         const userData = await fetchAuthenticatedProfile(userCredentials.user)
 
+        const signedInRole = normalizeRoleKey(userData.role || userData.userType)
+        if (signedInRole === 'Supplier') {
+          await signOut(auth)
+          toast.error('Supplier accounts are not supported. Contact your clinic to manage supplier records.')
+          setProcessLoading(false)
+          return
+        }
+
         if (props.customerApp && !isCustomerAppAccount(userData)) {
           await signOut(auth)
           toast.error('This sign-in page is for customer accounts only.')
@@ -318,7 +326,7 @@ const handleLogin = async () => {
           return
         }
 
-        if (['pending', 'pending approval'].includes(accountStatus) && String(userData.role || userData.userType || '').toLowerCase() !== 'supplier') {
+        if (['pending', 'pending approval'].includes(accountStatus)) {
           toast.error('Your account is still awaiting approval.')
           setProcessLoading(false)
           return
@@ -539,7 +547,7 @@ onMounted(() => {
               <p class="text-charcoal-600 text-sm mt-1">Sign in to continue your AesthetiCare experience.</p>
             </div>
 
-            <p v-if="props.customerApp && route.query.reason === 'customer-only'" role="alert" class="rounded-xl border border-gold-200 bg-cream-50 px-4 py-3 text-sm text-charcoal-800">This app is for customer accounts. Clinic staff, suppliers, and system administrators can sign in through the website.</p>
+            <p v-if="props.customerApp && route.query.reason === 'customer-only'" role="alert" class="rounded-xl border border-gold-200 bg-cream-50 px-4 py-3 text-sm text-charcoal-800">This app is for customer accounts. Clinic staff and system administrators use the clinic website. Supplier accounts are not supported.</p>
             <!-- Inactivity session-expired banner -->
             <div
               v-if="inactivityExpired"

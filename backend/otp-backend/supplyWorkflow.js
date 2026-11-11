@@ -1,28 +1,10 @@
 import crypto from 'node:crypto'
 import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
-import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMatch, stockSignals, hasPermission, permissionsByKind, supplierCanRead, supplierProjection } from './supplyModel.js'
+import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMatch, stockSignals, hasPermission, permissionsByKind } from './supplyModel.js'
+import { reconcileLotsToInventory } from './inventoryLots.js'
 
 const docs = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }))
 const cleanId = value => { const id = String(value || ''); demand(/^[A-Za-z0-9_-]{1,150}$/.test(id), 'Invalid record identifier.', 400); return id }
-const CAVITE_CITIES = ['Bacoor', 'Cavite City', 'Dasmarinas City', 'General Trias', 'Imus', 'Tagaytay', 'Trece Martires', 'Alfonso', 'Amadeo', 'Carmona', 'General Emilio Aguinaldo', 'General Mariano Alvarez', 'Indang', 'Kawit', 'Magallanes', 'Maragondon', 'Mendez', 'Naic', 'Noveleta', 'Rosario', 'Silang', 'Tanza', 'Ternate']
-const cityKey = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/^city of\s+/, '').replace(/\s+(city|municipality)$/, '').replace(/[^a-z0-9]/g, '')
-const deliveryFees = raw => {
-  const entries = Array.isArray(raw) ? raw : []
-  demand(entries.length <= CAVITE_CITIES.length, 'Too many delivery-fee locations.', 400)
-  const seen = new Set()
-  return entries.map(entry => {
-    const city = CAVITE_CITIES.find(option => cityKey(option) === cityKey(entry?.city))
-    demand(city, 'Choose a valid Cavite city or municipality.', 400)
-    demand(!seen.has(cityKey(city)), 'Each delivery location can be listed only once.', 400)
-    seen.add(cityKey(city))
-    return { city, amount: money(entry?.amount) / 100 }
-  })
-}
-const deliveryFeeForBranch = (supplier, clinic) => {
-  const branchCity = CAVITE_CITIES.find(city => cityKey(city) === cityKey(clinic?.clinicLocation || clinic?.location || clinic?.clinicBranch || '')) || ''
-  const entry = (Array.isArray(supplier?.deliveryFees) ? supplier.deliveryFees : []).find(fee => cityKey(fee?.city) === cityKey(branchCity))
-  return { city: branchCity, amount: entry ? money(entry.amount) : 0, configured: Boolean(entry) }
-}
 // Older workflow records did not always include relationship links.
 const linksOf = record => Array.isArray(record?.links) ? record.links.filter(Boolean) : []
 const names = { request: 'IR', procurement: 'PR', rfq: 'RFQ', quotation: 'QT', evaluation: 'EV', budget: 'BD', budgetRequest: 'BR', financeApproval: 'FA', budgetAllocation: 'BA', po: 'PO', supplierConfirmation: 'PC', receiving: 'RC', inspection: 'INSP', discrepancy: 'DS', invoice: 'INV', threeWayMatch: 'MT', payment: 'PAY' }
@@ -30,26 +12,22 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   const db = admin.firestore(), stamp = () => admin.firestore.FieldValue.serverTimestamp()
   const identity = async req => {
     const ctx = await loadUserContext(req.user.uid)
-    const supplier = String(ctx.roleKey).toLowerCase() === 'supplier' || ctx.userData.userType === 'supplier'
+    const supplier = [ctx.roleKey, ctx.userData.role, ctx.userData.userType].some(value => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '').startsWith('supplier'))
     demand(!supplier, 'Supplier accounts are no longer supported. Suppliers are managed as clinic business contacts.', 403)
-    return { ...ctx, supplier: false, supplierIds: [] }
+    return ctx
   }
   const branchAccess = async (ctx, branchId, paidModule = true) => {
     cleanId(branchId)
-    demand(!ctx.supplier, 'Staff access required.', 403)
     const clinic = (await db.collection('clinics').doc(branchId).get()).data()
     const assignedBranches = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
     demand(clinic && (assignedBranches.has(branchId) || clinic.ownerId === ctx.uid || clinic.branchAdminId === ctx.uid || branchId === ctx.uid), 'This branch is not assigned to your account.', 403)
     if (paidModule) {
       const subscription = subscriptionLifecycle(clinic)
-      demand(['basic', 'premium'].includes(subscription.plan) && subscription.isOperational, 'Inventory, procurement and logistics require an active Basic or Premium plan.', 403)
+      demand(['basic', 'premium'].includes(subscription.plan) && subscription.isOperational, 'Inventory and procurement require an active Basic or Premium plan.', 403)
     }
   }
-  const clinicCanContactSupplier = async supplier => {
-    return supplier?.status === 'Active' && supplier?.regulatory?.verificationStatus === 'checked_valid'
-  }
-  const canRead = (ctx, r) => ctx.supplier ? supplierCanRead(r, ctx.supplierIds) : hasPermission(ctx, 'reports:view') || (permissionsByKind[r.kind] || []).some(p => hasPermission(ctx, p))
-  const ensureRead = async (ctx, r) => { demand(r && canRead(ctx, r), 'Record not available to this account.', 403); if (!ctx.supplier) await branchAccess(ctx, r.branchId) }
+  const canRead = (ctx, r) => hasPermission(ctx, 'reports:view') || (permissionsByKind[r.kind] || []).some(p => hasPermission(ctx, p))
+  const ensureRead = async (ctx, r) => { demand(r && canRead(ctx, r), 'Record not available to this account.', 403); await branchAccess(ctx, r.branchId) }
   const wrap = handler => async (req, res) => {
     let ctx
     try {
@@ -88,61 +66,32 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       })
     }
   }
-  const supplierOwns = (ctx, r) => ctx.supplier && ctx.supplierIds.includes(r.supplierId)
-  const allow = (ctx, permission) => demand(!ctx.supplier && hasPermission(ctx, permission), 'You do not have permission for this action.', 403)
-  const catalogItem = raw => {
-    const text = (value, label, max = 4000, optional = true) => { const result = String(value || '').trim(); demand(optional || result, `${label} is required.`, 400); demand(result.length <= max, `${label} is too long.`, 400); return result }
-    const id = String(raw.id || ''); demand(/^[A-Za-z0-9_-]{1,150}$/.test(id), 'Invalid catalog item identifier.', 400)
-    const categoryGroup = text(raw.categoryGroup, 'Category', 80, false), customCategory = text(raw.customCategory, 'Custom category', 80)
-    demand(['Injectables', 'Skincare', 'Equipment', 'Medical Supplies', 'Others'].includes(categoryGroup), 'Choose a valid catalog category.', 400)
-    const category = categoryGroup === 'Others' ? text(customCategory, 'Custom category', 80, false) : categoryGroup
-    const taxTreatment = String(raw.taxTreatment || 'vat-inclusive'); demand(['vat-inclusive', 'vat-exclusive', 'zero-rated', 'vat-exempt'].includes(taxTreatment), 'Choose a valid tax treatment.', 400)
-    const rate = value => { const result = Number(value || 0); demand(Number.isFinite(result) && result >= 0 && result <= 100, 'Tax and discount rates must be between 0 and 100.', 400); return Math.round(result * 100) / 100 }
-    const tiers = Array.isArray(raw.tieredDiscounts) ? raw.tieredDiscounts : []; demand(tiers.length <= 10, 'A catalog item can have at most 10 bulk-discount tiers.', 400)
-    const tieredDiscounts = tiers.map(tier => ({ minQuantity: quantity(tier.minQuantity), discountRate: rate(tier.discountRate) })).sort((a, b) => a.minQuantity - b.minQuantity)
-    demand(tieredDiscounts.every((tier, index) => tier.minQuantity >= 2 && (!index || tier.minQuantity > tieredDiscounts[index - 1].minQuantity)), 'Bulk discount tiers must start at 2 units and use unique quantities.', 400)
-    const imageUrl = text(raw.imageUrl, 'Image URL'); demand(!imageUrl || /^https:\/\//.test(imageUrl), 'Catalog images must use HTTPS URLs.', 400)
-    const manufacturingDate = raw.manufacturingDate ? dateKey(raw.manufacturingDate) : '', expiryDate = raw.expiryDate ? dateKey(raw.expiryDate) : ''
-    demand(!manufacturingDate || !expiryDate || manufacturingDate <= expiryDate, 'Expiry date cannot be earlier than manufacturing date.', 400)
-    const fda = raw.fdaApprovalDocument && typeof raw.fdaApprovalDocument === 'object' ? raw.fdaApprovalDocument : null
-    const fdaSize = Number(fda?.size || 0); demand(Number.isSafeInteger(fdaSize) && fdaSize >= 0 && fdaSize < 25 * 1024 * 1024, 'FDA document size is invalid.', 400)
-    return { id, name: text(raw.name, 'Item name', 120, false), category, categoryGroup, customCategory, description: text(raw.description, 'Description', 2000), quantity: quantity(raw.quantity, true), minOrderQuantity: quantity(raw.minOrderQuantity, true), measurementValue: text(raw.measurementValue, 'Measurement', 80), measurementUnit: text(raw.measurementUnit, 'Measurement unit', 40), specifications: text(raw.specifications, 'Specifications', 2000), manufacturingDate, expiryDate, price: money(raw.price) / 100, unitCost: money(raw.price) / 100, taxTreatment, taxRate: ['vat-inclusive', 'vat-exclusive'].includes(taxTreatment) ? 12 : 0, discountRate: rate(raw.discountRate), tieredDiscounts, otherChargePerUnit: money(raw.otherChargePerUnit) / 100, imageUrl, imageName: text(raw.imageName, 'Image name', 400), fdaRegistrationNumber: text(raw.fdaRegistrationNumber, 'FDA registration number', 100), fdaApprovalDocument: fda ? { name: text(fda.name, 'FDA document name', 400), type: text(fda.type, 'FDA document type', 100), size: fdaSize, path: text(fda.path, 'FDA document path', 1000), url: text(fda.url, 'FDA document URL', 4000) } : null }
-  }
-
+  const allow = (ctx, permission) => demand(hasPermission(ctx, permission), 'You do not have permission for this action.', 403)
   // Deterministic per-day IDs prevent repeated workspace refreshes from sending
   // the same alert twice. A deployment scheduler may invoke this endpoint too.
   app.post('/supply/reminders', requireAuth, wrap(async (req, res, ctx) => {
     const today = day(), branchId = String(req.body.branchId || ''), alerts = []
     let records = []
-    if (ctx.supplier) {
-      const found = new Map()
-      for (const id of ctx.supplierIds) {
-        for (const r of docs(await db.collection('supplyRecords').where('supplierIds', 'array-contains', id).get())) found.set(r.id, r)
-        for (const r of docs(await db.collection('supplyRecords').where('supplierId', '==', id).get())) found.set(r.id, r)
-      }
-      records = [...found.values()].filter(r => canRead(ctx, r))
-    } else {
-      // Workspace refreshes can occur before a branch is selected, or while the
-      // user is viewing every assigned branch. Neither is an invalid reminder
-      // request: resolve the user's available branches instead of rejecting it.
-      const assigned = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
-      if (branchId === 'all') {
-        for (const field of ['ownerId', 'branchAdminId']) for (const clinic of docs(await db.collection('clinics').where(field, '==', ctx.uid).get())) assigned.add(clinic.id)
-        const own = await db.collection('clinics').doc(ctx.uid).get(); if (own.exists) assigned.add(own.id)
-      }
-      const scopes = branchId && branchId !== 'all' ? [branchId] : [...assigned]
-      for (const scope of scopes) {
-        await branchAccess(ctx, scope)
-        records.push(...docs(await db.collection('supplyRecords').where('branchId', '==', scope).get()).filter(r => canRead(ctx, r)))
-        if (hasPermission(ctx, 'inventory:view')) for (const item of docs(await db.collection('inventoryItems').where('branchId', '==', scope).get())) {
-          const signals = stockSignals(item, today)
-          if (signals.length) alerts.push({ id: item.id, branchId: scope, message: `${item.name}: ${signals.join(', ')}`, link: '/inventory/items' })
-        }
+    // Workspace refreshes can occur before a branch is selected, or while the
+    // user is viewing every assigned branch. Resolve the user's available
+    // branches instead of rejecting an empty reminder request.
+    const assigned = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
+    if (branchId === 'all') {
+      for (const field of ['ownerId', 'branchAdminId']) for (const clinic of docs(await db.collection('clinics').where(field, '==', ctx.uid).get())) assigned.add(clinic.id)
+      const own = await db.collection('clinics').doc(ctx.uid).get(); if (own.exists) assigned.add(own.id)
+    }
+    const scopes = branchId && branchId !== 'all' ? [branchId] : [...assigned]
+    for (const scope of scopes) {
+      await branchAccess(ctx, scope)
+      records.push(...docs(await db.collection('supplyRecords').where('branchId', '==', scope).get()).filter(r => canRead(ctx, r)))
+      if (hasPermission(ctx, 'inventory:view')) for (const item of docs(await db.collection('inventoryItems').where('branchId', '==', scope).get())) {
+        const signals = stockSignals(item, today)
+        if (signals.length) alerts.push({ id: item.id, branchId: scope, message: `${item.name}: ${signals.join(', ')}`, link: '/inventory/items' })
       }
     }
     for (const r of records) {
       const due = r.kind === 'rfq' && ['Sent', 'Open', 'Quotation Received'].includes(r.status) ? r.deadline : r.kind === 'po' && ['Shipped', 'Claimed by Logistics', 'Partially Received'].includes(r.status) ? r.deliveryDate : null
-      if (due && Date.parse(due) - Date.parse(today) <= 3 * 86400000) alerts.push({ id: r.id, branchId: r.branchId, message: `${r.number}: ${r.status}; due ${due}`, link: ctx.supplier ? (r.kind === 'rfq' ? '/supplier/supply/rfqs' : r.kind === 'po' ? '/supplier/supply/orders' : '/supplier/supply/invoices') : (r.kind === 'rfq' ? '/procurement/rfqs' : r.kind === 'po' ? '/logistics/items' : '/finance/procurement/invoices') })
+      if (due && Date.parse(due) - Date.parse(today) <= 3 * 86400000) alerts.push({ id: r.id, branchId: r.branchId, message: `${r.number}: ${r.status}; due ${due}`, link: r.kind === 'rfq' ? '/procurement/rfqs' : r.kind === 'po' ? '/inventory/receiving' : '/finance/procurement/invoices' })
     }
     await db.runTransaction(async tx => {
       const entries = alerts.slice(0, 100).map(a => ({ ...a, ref: db.collection('notifications').doc(`supply-${ctx.uid}-${a.id}-${today}`) }))
@@ -153,59 +102,27 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
   }))
 
   app.get('/supply/workspace', requireAuth, wrap(async (req, res, ctx) => {
-    let branches = []
-    if (!ctx.supplier) {
-      const branchIds = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
-      for (const field of ['ownerId', 'branchAdminId']) for (const clinic of docs(await db.collection('clinics').where(field, '==', ctx.uid).get())) branchIds.add(clinic.id)
-      const own = await db.collection('clinics').doc(ctx.uid).get(); if (own.exists) branchIds.add(own.id)
-      branches = await Promise.all([...branchIds].map(async id => {
-        const c = (await db.collection('clinics').doc(id).get()).data() || {}
-        const address = [c.clinicLocationAddress, c.clinicBarangay, c.clinicLocation, c.clinicProvince, c.clinicPostalCode]
-          .map(value => String(value || '').trim())
-          .filter((value, index, values) => value && values.indexOf(value) === index)
-          .join(', ')
-        return { id, name: c.clinicBranch || c.clinicName || id, address, latitude: String(c.clinicLocationLat || ''), longitude: String(c.clinicLocationLng || '') }
-      }))
-    }
+    const branchIds = new Set([ctx.userData.branchId, ...(Array.isArray(ctx.userData.branchIds) ? ctx.userData.branchIds : [])].filter(Boolean))
+    for (const field of ['ownerId', 'branchAdminId']) for (const clinic of docs(await db.collection('clinics').where(field, '==', ctx.uid).get())) branchIds.add(clinic.id)
+    const own = await db.collection('clinics').doc(ctx.uid).get(); if (own.exists) branchIds.add(own.id)
+    const branches = await Promise.all([...branchIds].map(async id => {
+      const c = (await db.collection('clinics').doc(id).get()).data() || {}
+      const address = [c.clinicLocationAddress, c.clinicBarangay, c.clinicLocation, c.clinicProvince, c.clinicPostalCode]
+        .map(value => String(value || '').trim())
+        .filter((value, index, values) => value && values.indexOf(value) === index)
+        .join(', ')
+      return { id, name: c.clinicBranch || c.clinicName || id, address, latitude: String(c.clinicLocationLat || ''), longitude: String(c.clinicLocationLng || '') }
+    }))
     const requestedScope = String(req.query.branchId || branches[0]?.id || '')
-    const allBranches = !ctx.supplier && requestedScope === 'all'
+    const allBranches = requestedScope === 'all'
     const branchId = allBranches ? 'all' : requestedScope
-    if (!ctx.supplier && !branchId) return res.json({ success: true, data: { branches, records: [], items: [], suppliers: [], movements: [], permissions: [...ctx.permissions], supplier: false } })
-    if (!ctx.supplier && !allBranches) await branchAccess(ctx, branchId)
+    if (!branchId) return res.json({ success: true, data: { branches, records: [], items: [], suppliers: [], movements: [], permissions: [...ctx.permissions], supplier: false } })
+    if (!allBranches) await branchAccess(ctx, branchId)
     if (allBranches) await Promise.all(branches.map(branch => branchAccess(ctx, branch.id)))
     const scopedDocs = async (collection) => (await Promise.all((allBranches ? branches.map(b => b.id) : [branchId]).map(id => db.collection(collection).where('branchId', '==', id).get()))).flatMap(docs)
-    let records
-    if (ctx.supplier) {
-      const found = new Map()
-      for (const id of ctx.supplierIds) {
-        for (const r of docs(await db.collection('supplyRecords').where('supplierId', '==', id).get())) found.set(r.id, r)
-        for (const r of docs(await db.collection('supplyRecords').where('supplierIds', 'array-contains', id).get())) found.set(r.id, r)
-      }
-      const rawSupplierRecords = [...found.values()].filter(r => canRead(ctx, r))
-      const supplierRecords = rawSupplierRecords.map(supplierProjection)
-      // Suppliers receive only the clinic identity and delivery branch details
-      // for purchase orders they are already authorized to view. This avoids
-      // exposing opaque Firestore IDs in their order list.
-      const branchIds = [...new Set(supplierRecords.map(record => String(record.branchId || '')).filter(Boolean))]
-      const clinicEntries = await Promise.all(branchIds.map(async id => {
-        const snapshot = await db.collection('clinics').doc(id).get()
-        const clinic = snapshot.data() || {}
-        const location = [clinic.clinicLocationAddress, clinic.clinicBarangay, clinic.clinicLocation, clinic.clinicProvince, clinic.clinicPostalCode]
-          .map(value => String(value || '').trim())
-          .filter((value, index, values) => value && values.indexOf(value) === index)
-          .join(', ')
-        return [id, { clinicName: String(clinic.clinicName || clinic.companyName || '').trim(), branchName: String(clinic.clinicBranch || '').trim(), branchLocation: location }]
-      }))
-      const clinicByBranch = new Map(clinicEntries)
-      const priorities = await Promise.all(rawSupplierRecords.filter(record => record.kind === 'po' && !['Low', 'Normal', 'High', 'Urgent'].includes(record.priority)).map(async record => {
-        const procurement = record.procurementId ? (await db.collection('supplyRecords').doc(record.procurementId).get()).data() : null
-        return [record.id, ['Low', 'Normal', 'High', 'Urgent'].includes(procurement?.priority) ? procurement.priority : 'Normal']
-      }))
-      const priorityByRecord = new Map(priorities)
-      records = supplierRecords.map(record => ({ ...record, ...(clinicByBranch.get(record.branchId) || {}), ...(record.kind === 'po' ? { priority: priorityByRecord.get(record.id) || record.priority || 'Normal' } : {}) }))
-    } else records = (await scopedDocs('supplyRecords')).filter(r => canRead(ctx, r))
-    const internal = !ctx.supplier
-    const broadRead = internal && ['inventory:view', 'procurement:view', 'orders:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
+    const records = (await scopedDocs('supplyRecords')).filter(r => canRead(ctx, r))
+    const internal = true
+    const broadRead = ['inventory:view', 'procurement:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
     const items = broadRead ? (await scopedDocs('inventoryItems')).map(i => ({ ...i, signals: stockSignals(i), availableStock: Math.max(0, Number(i.currentStock || 0) - Number(i.reservedStock || 0)) })) : []
     // Supplier contacts are global/business records. Branch eligibility and
     // private purchasing notes live in clinicSuppliers, so never infer access
@@ -235,54 +152,9 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       }))
       suppliers = [...suppliers, ...referenced.filter(Boolean)]
     }
-    const supplierAccounts = ctx.supplier
-      ? await Promise.all(ctx.supplierIds.map(async (id) => {
-        const supplier = (await db.collection('suppliers').doc(id).get()).data() || {}
-        const clinic = supplier.branchId
-          ? (await db.collection('clinics').doc(supplier.branchId).get()).data() || {}
-          : {}
-        return {
-          id,
-          clinicName: String(clinic.clinicName || clinic.companyName || clinic.clinicBranch || 'Linked clinic').trim() || 'Linked clinic',
-        }
-      }))
-      : []
     const movements = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('inventoryMovements') : []
     const snapshots = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('supplySnapshots') : []
-    res.json({ success: true, data: { branchId, branches, records, items, suppliers, supplierAccounts, movements, snapshots, permissions: [...ctx.permissions], roleKey: ctx.roleKey, supplier: ctx.supplier, supplierIds: ctx.supplierIds, uid: ctx.uid } })
-  }))
-
-  app.post('/supply/catalog', requireAuth, wrap(async (req, res, ctx) => {
-    demand(ctx.supplier, 'Supplier access is required.', 403)
-    const supplierId = cleanId(req.body.supplierId), requested = req.body.items
-    demand(Array.isArray(requested) && requested.length >= 1 && requested.length <= 100, 'Provide 1–100 catalog items.', 400)
-    const ref = db.collection('suppliers').doc(supplierId)
-    let items
-    await db.runTransaction(async tx => {
-      const snapshot = await tx.get(ref); demand(snapshot.exists, 'Supplier profile not found.', 404)
-      const supplier = snapshot.data() || {}; demand(supplier.ownerId === ctx.uid || supplier.supplierUserId === ctx.uid, 'This catalog belongs to another supplier.', 403)
-      demand(supplier.verificationStatus === 'Verified', 'This supplier has not been verified.', 403)
-      const oldItems = Array.isArray(supplier.offeredItems) ? supplier.offeredItems : [], ids = new Set()
-      const submitted = requested.map(raw => { const item = catalogItem(raw); demand(!ids.has(item.id), 'Duplicate catalog item identifiers are not allowed.', 400); ids.add(item.id); const old = oldItems.find(entry => entry.id === item.id); return { ...item, reservedQuantity: Number(old?.reservedQuantity || 0), lastReservedAt: old?.lastReservedAt || null, lastReservedPoId: old?.lastReservedPoId || '', lastFulfilledAt: old?.lastFulfilledAt || null, lastFulfilledPoId: old?.lastFulfilledPoId || '' } })
-      items = [...submitted, ...oldItems.filter(item => !ids.has(item.id))]
-      tx.set(ref, { offeredItems: items, categories: [...new Set(items.map(item => item.category))], updatedAt: stamp() }, { merge: true })
-      tx.set(db.collection('supplyAudit').doc(), { branchId: supplier.branchId || '', recordId: supplierId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: 'supplierCatalog', action: 'catalog-updated', itemCount: items.length, ...ctx.auditContext, createdAt: stamp() })
-    })
-    res.json({ success: true, data: { items } })
-  }))
-
-  app.post('/supply/delivery-fees', requireAuth, wrap(async (req, res, ctx) => {
-    demand(ctx.supplier, 'Supplier access is required.', 403)
-    const supplierId = cleanId(req.body.supplierId), fees = deliveryFees(req.body.deliveryFees)
-    const ref = db.collection('suppliers').doc(supplierId)
-    await db.runTransaction(async tx => {
-      const snapshot = await tx.get(ref); demand(snapshot.exists, 'Supplier profile not found.', 404)
-      const supplier = snapshot.data() || {}
-      demand(supplier.ownerId === ctx.uid || supplier.supplierUserId === ctx.uid, 'This delivery-fee profile belongs to another supplier.', 403)
-      tx.set(ref, { deliveryFees: fees, deliveryFeesUpdatedAt: stamp(), updatedAt: stamp() }, { merge: true })
-      tx.set(db.collection('supplyAudit').doc(), { branchId: supplier.branchId || '', recordId: supplierId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: 'supplierDeliveryFees', action: 'delivery-fees-updated', deliveryFees: fees, ...ctx.auditContext, createdAt: stamp() })
-    })
-    res.json({ success: true, data: { deliveryFees: fees } })
+    res.json({ success: true, data: { branchId, branches, records, items, suppliers, movements, snapshots, permissions: [...ctx.permissions], roleKey: ctx.roleKey, supplier: false, uid: ctx.uid } })
   }))
 
   app.post('/supply/items', requireAuth, wrap(async (req, res, ctx) => {
@@ -291,37 +163,59 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     await db.runTransaction(async tx => {
       const existing = await tx.get(ref), old = existing.data() || {}
       demand(!existing.exists || old.branchId === branchId, 'Item belongs to another branch.', 403)
-      const supplierId = String(input.supplierId || old.supplierId || '')
-      const catalogItemId = String(input.supplierCatalogItemId || old.supplierCatalogItemId || '')
+      const supplierId = Object.prototype.hasOwnProperty.call(input, 'supplierId') ? String(input.supplierId || '') : String(old.supplierId || '')
       const supplierSnap = supplierId ? await tx.get(db.collection('suppliers').doc(cleanId(supplierId))) : null
       const supplier = supplierSnap?.data()
-      const catalogItem = Array.isArray(supplier?.offeredItems) ? supplier.offeredItems.find(product => String(product.id) === catalogItemId) : null
-      if (!existing.exists) demand(supplier && supplier.branchId === branchId && supplier.status === 'Active' && supplier.verificationStatus === 'Verified' && catalogItem, 'Choose a verified supplier and an item from that supplier\'s catalog.', 400)
-      if (catalogItem) demand(supplier.branchId === branchId && supplier.status === 'Active' && supplier.verificationStatus === 'Verified', 'The selected supplier is not verified and active for this branch.', 400)
+      if (supplierId && (!existing.exists || supplierId !== String(old.supplierId || ''))) {
+        const associationSnapshot = await tx.get(db.collection('clinicSuppliers').where('branchId', '==', branchId))
+        const associated = docs(associationSnapshot).some(link => link.supplierId === supplierId && link.status === 'Active')
+        const legacyBranchSupplier = supplier?.branchId === branchId && supplier.status === 'Active'
+        demand(supplier && supplier.status === 'Active' && (associated || legacyBranchSupplier), 'Choose an active supplier associated with this clinic branch.', 400)
+      }
+      const lotSnapshot = await tx.get(db.collection('supplyLots').where('itemId', '==', ref.id))
       const currentStock = quantity(input.currentStock, true), minStock = quantity(input.minStock, true), targetStock = quantity(input.targetStock, true), maxStock = quantity(input.maxStock, true)
       demand(targetStock >= minStock && maxStock >= targetStock, 'Maximum stock must be at least target stock, and target must be at least the restocking threshold.', 400)
       demand(currentStock >= Number(old.reservedStock || 0), 'Stock cannot fall below reserved quantity.')
       const reason = required(input.adjustmentReason, 'Stock/edit reason')
-      const data = { branchId, name: required(catalogItem?.name || catalogItem?.itemName || catalogItem?.productName || old.name || input.name, 'Catalog item name'), currentStock, reservedStock: Number(old.reservedStock || 0), minStock, targetStock, maxStock, updatedAt: stamp(), ...(!existing.exists ? { createdAt: stamp() } : {}) }
-      for (const key of ['location', 'condition', 'serialNumber', 'modelNumber', 'warranty']) data[key] = String(input[key] || '').slice(0, 4000)
-      if (catalogItem) {
-        data.supplierId = supplierId; data.supplierCatalogItemId = catalogItemId
-        data.category = String(catalogItem.category || catalogItem.categoryGroup || catalogItem.customCategory || '').slice(0, 4000)
-        data.description = String(catalogItem.description || catalogItem.specifications || '').slice(0, 4000)
-        data.unit = String(catalogItem.measurementUnit || catalogItem.unit || 'units').slice(0, 4000)
-        data.imageUrl = String(catalogItem.imageUrl || '').slice(0, 4000)
-        data.costPrice = money(catalogItem.price || catalogItem.unitCost || 0) / 100
-      } else {
-        for (const key of ['brand', 'description', 'category', 'unit', 'imageUrl', 'supplierId', 'supplierCatalogItemId']) data[key] = String(old[key] || '').slice(0, 4000)
-        data.costPrice = Number(old.costPrice || 0)
+      const data = {
+        branchId,
+        name: required(input.name || old.name, 'Item name'),
+        category: required(input.category || old.category, 'Category'),
+        description: String(input.description ?? old.description ?? '').slice(0, 4000),
+        unit: required(input.unit || old.unit || 'units', 'Unit'),
+        currentStock,
+        reservedStock: Number(old.reservedStock || 0),
+        minStock,
+        targetStock,
+        maxStock,
+        supplierId,
+        supplierCatalogItemId: String(old.supplierCatalogItemId || ''),
+        costPrice: Number(input.costPrice ?? old.costPrice ?? 0),
+        fdaRegistrationNumber: String(input.fdaRegistrationNumber ?? old.fdaRegistrationNumber ?? '').slice(0, 200),
+        fdaApprovalDocument: old.fdaApprovalDocument || null,
+        updatedAt: stamp(),
+        ...(!existing.exists ? { createdAt: stamp() } : {}),
       }
+      demand(Number.isFinite(data.costPrice) && data.costPrice >= 0, 'Enter a valid non-negative unit cost.', 400)
+      for (const key of ['location', 'condition', 'serialNumber', 'modelNumber', 'warranty', 'brand', 'imageUrl']) data[key] = String(input[key] ?? old[key] ?? '').slice(0, 4000)
       demand(!data.imageUrl || /^https:\/\//.test(data.imageUrl), 'Images must use an HTTPS URL.', 400)
       demand(['Material', 'Equipment'].includes(input.itemType), 'Choose Material or Equipment.', 400)
       data.itemType = input.itemType; data.consumability = input.consumability === 'Non-consumable' ? 'Non-consumable' : 'Consumable'
       data.manufacturingDate = input.manufacturingDate ? dateKey(input.manufacturingDate) : ''
       data.expiryDate = input.expiryDate ? dateKey(input.expiryDate) : ''
+      const lotPlan = reconcileLotsToInventory({
+        branchId,
+        itemId: ref.id,
+        item: { ...old, ...data, currentStock },
+        lotRecords: lotSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+      })
       tx.set(ref, data, { merge: true })
-      tx.set(db.collection('inventoryMovements').doc(), { branchId, inventoryItemId: ref.id, type: existing.exists ? 'adjustment' : 'opening_stock', quantity: currentStock - Number(old.currentStock || 0), reason, createdBy: ctx.uid, createdAt: stamp() })
+      lotPlan.lotWrites.forEach(write => tx.set(db.collection('supplyLots').doc(write.id), {
+        ...write.data,
+        ...(write.created ? { receivedAt: stamp(), createdAt: stamp() } : {}),
+        updatedAt: stamp(),
+      }, { merge: true }))
+      tx.set(db.collection('inventoryMovements').doc(), { branchId, inventoryItemId: ref.id, type: existing.exists ? 'adjustment' : 'opening_stock', quantity: currentStock - Number(old.currentStock || 0), lotAdjustments: lotPlan.adjustments, reason, createdBy: ctx.uid, createdAt: stamp() })
       tx.set(db.collection('supplyAudit').doc(), { recordId: ref.id, branchId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: 'inventory', action: 'inventory-edit', before: old, after: data, reason, ...ctx.auditContext, createdAt: stamp() })
     })
     res.json({ success: true, data: { id: ref.id } })
@@ -346,7 +240,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const input = req.body || {}, rawBranchId = String(input.branchId || '').trim()
     demand(/^[A-Za-z0-9_-]{1,150}$/.test(rawBranchId), 'Select a valid assigned clinic branch before sending this request.', 400)
     const branchId = rawBranchId
-    if (!ctx.supplier) await branchAccess(ctx, branchId)
+    await branchAccess(ctx, branchId)
     const result = await mutate(ctx, branchId, input, null)
     res.json({ success: true, data: result })
   }))
@@ -356,20 +250,16 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     res.json({ success: true, data: await mutate(ctx, r.branchId, req.body || {}, id) })
   }))
   const mutate = async (ctx, branchId, input, targetId) => db.runTransaction(async tx => {
-    const [recordSnap, itemSnap, supplierLinkSnap, legacySupplierSnap, staffSnap, documentSnap, lotSnap, clinicSnap] = await Promise.all([
+    const [recordSnap, itemSnap, supplierLinkSnap, legacySupplierSnap, staffSnap, documentSnap, lotSnap] = await Promise.all([
       tx.get(db.collection('supplyRecords').where('branchId', '==', branchId)), tx.get(db.collection('inventoryItems').where('branchId', '==', branchId)),
       tx.get(db.collection('clinicSuppliers').where('branchId', '==', branchId)), tx.get(db.collection('suppliers').where('branchId', '==', branchId)), tx.get(db.collection('users').where('branchId', '==', branchId)), tx.get(db.collection('supplyDocuments').where('branchId', '==', branchId)),
-      tx.get(db.collection('supplyLots').where('branchId', '==', branchId)), tx.get(db.collection('clinics').doc(branchId)),
+      tx.get(db.collection('supplyLots').where('branchId', '==', branchId)),
     ])
     const supplierLinks = docs(supplierLinkSnap)
     const supplierDocs = await Promise.all(supplierLinks.map(link => tx.get(db.collection('suppliers').doc(cleanId(link.supplierId)))))
     const associationSuppliers = supplierDocs.map((snapshot, index) => snapshot.exists ? ({ id: snapshot.id, ...(snapshot.data() || {}), associationStatus: supplierLinks[index]?.status || 'Active' }) : null).filter(Boolean)
-    const records = docs(recordSnap), items = docs(itemSnap), suppliers = [...associationSuppliers, ...docs(legacySupplierSnap).filter(legacy => !associationSuppliers.some(supplier => supplier.id === legacy.id))], documents = docs(documentSnap), clinic = clinicSnap.data() || {}
+    const records = docs(recordSnap), items = docs(itemSnap), suppliers = [...associationSuppliers, ...docs(legacySupplierSnap).filter(legacy => !associationSuppliers.some(supplier => supplier.id === legacy.id))], documents = docs(documentSnap)
     const writes = [], financialWrites = [], now = stamp()
-    // FieldValue.serverTimestamp() cannot be used inside an array element.
-    // Supplier catalog entries are stored in `offeredItems`, so their audit
-    // timestamps need a concrete Firestore Timestamp (or Date in tests).
-    const catalogEventAt = admin.firestore.Timestamp?.now?.() || new Date()
     const get = (id, kind) => { const r = records.find(r => r.id === id && r.kind === kind); demand(r, `${kind} record not found.`, 404); return r }
     // Some records created before the current workflow did not retain every
     // parent link. A missing parent must not prevent the record that is in
@@ -383,43 +273,10 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     }
     const evidence = (r, message) => demand(documents.some(d => d.recordId === r.id), message || 'Upload supporting documents before continuing.')
     const supplier = id => { const s = suppliers.find(s => s.id === id); demand(s && s.status === 'Active' && (!s.associationStatus || s.associationStatus === 'Active'), 'Select an active supplier associated with this clinic branch.'); return s }
-    const supplierCanProvideLine = (s, line) => (Array.isArray(s.offeredItems) ? s.offeredItems : []).some(product => {
-      if (!product || typeof product !== 'object' || !line || typeof line !== 'object') return false
-      const catalogMatch = s.id === line.supplierId && String(product.id || '') === String(line.supplierCatalogItemId || '')
-      const nameMatch = String(product.name || product.itemName || product.productName || '').trim().toLowerCase() === String(line.name || '').trim().toLowerCase()
-      const productCategory = String(product.category || product.categoryGroup || product.customCategory || '').trim().toLowerCase()
-      const categoryMatch = !line.category || productCategory === String(line.category).trim().toLowerCase()
-      return catalogMatch || nameMatch && categoryMatch
-    })
-    const supplierCatalogIndexForLine = (items, line) => items.findIndex(product => {
-      if (!product || typeof product !== 'object' || !line || typeof line !== 'object') return false
-      const catalogMatch = String(product.id || '') === String(line.supplierCatalogItemId || '')
-      const nameMatch = String(product.name || product.itemName || product.productName || '').trim().toLowerCase() === String(line.name || '').trim().toLowerCase()
-      const productCategory = String(product.category || product.categoryGroup || product.customCategory || '').trim().toLowerCase()
-      const categoryMatch = !line.category || productCategory === String(line.category).trim().toLowerCase()
-      return catalogMatch || nameMatch && categoryMatch
-    })
-    const catalogCommercialTerms = (request, totals, allowOverride = false) => {
-      const sourceSupplier = supplier([...new Set(request.lines.map(line => line.supplierId))][0])
-      // Supplier prices are now confirmed by the clinic from an external
-      // quotation. Legacy supplier-owned catalog terms remain supported, but
-      // are not required for a business-contact supplier.
-      if (!Array.isArray(sourceSupplier.offeredItems) || !sourceSupplier.offeredItems.length) return { tax: 0, discount: 0, otherCharges: 0 }
-      let tax = 0, discount = 0, otherCharges = 0
-      for (const line of totals.lines) {
-        const source = request.lines.find(candidate => candidate.itemId === line.itemId)
-        const index = source && supplierCatalogIndexForLine(sourceSupplier.offeredItems || [], source)
-        demand(index >= 0, `The supplier catalog no longer contains ${line.name || line.itemId}.`, 400)
-        const product = sourceSupplier.offeredItems[index]
-        if (!allowOverride) demand(line.unitPrice === money(product.price || product.unitCost || 0), `${line.name || line.itemId}: unit price differs from the supplier catalog. Provide an override reason for a negotiated quote.`, 400)
-        if (product.taxTreatment === 'vat-exclusive') tax += Math.round(line.total * Number(product.taxRate || 0) / 100)
-        const tier = (Array.isArray(product.tieredDiscounts) ? product.tieredDiscounts : []).filter(entry => Number(entry.minQuantity) <= line.quantity).sort((a, b) => Number(b.minQuantity) - Number(a.minQuantity))[0]
-        discount += Math.round(line.total * Number(tier?.discountRate ?? product.discountRate ?? 0) / 100)
-        otherCharges += line.quantity * money(product.otherChargePerUnit || 0)
-      }
-      return { tax, discount, otherCharges }
+    const manualOrSupplier = (r, permission = 'procurement:create') => {
+      allow(ctx, permission)
+      demand(r.mode !== 'Online', 'Historical online supplier transactions are read-only.', 403)
     }
-    const manualOrSupplier = (r, permission = 'procurement:create') => { if (ctx.supplier) demand(r.mode === 'Online' && supplierOwns(ctx, r), 'This record belongs to another supplier.', 403); else { allow(ctx, permission); demand(r.mode === 'Manual', 'Record the supplier response from the clinic after external communication.'); } }
     const record = targetId ? records.find(r => r.id === targetId) : null
     let result, action = String(input.action || 'create'), before = record?.status || ''
     if (!targetId) {
@@ -430,27 +287,14 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           demand(suppliedLines.length <= 50, 'A request can include up to 50 items.', 400)
           const seenProducts = new Set()
           const lines = suppliedLines.map(raw => {
-            // Inventory states the need only. Supplier and catalog pricing are
-            // deliberately selected later by Procurement.
-            if (!raw.supplierId) {
-              const name = required(raw.name || raw.itemName, 'Supply name')
-              const category = required(raw.category, 'Supply category')
-              const requestedQuantity = quantity(raw.quantity)
-              demand(!seenProducts.has(`${category}:${name}`), 'Duplicate requested supplies are not allowed.', 400)
-              seenProducts.add(`${category}:${name}`)
-              const existingItem = items.find(item => String(item.name || '').trim().toLowerCase() === name.toLowerCase() && String(item.category || '').trim().toLowerCase() === category.toLowerCase())
-              return { itemId: existingItem?.id || crypto.randomUUID(), initialInventory: !existingItem, name, category, supplierId: '', preferredSupplierId: '', supplierCatalogItemId: '', quantity: requestedQuantity, unit: String(raw.unit || existingItem?.unit || 'units'), specifications: String(raw.specifications || ''), packaging: '', manufacturingDate: '', expiryDate: '', unitPrice: 0, subtotal: 0, taxRate: 0, taxTreatment: 'vat-inclusive', discountRate: 0, tieredDiscounts: [], otherChargePerUnit: 0, currentStock: Number(existingItem?.currentStock || 0), minStock: quantity(raw.minStock || existingItem?.minStock || 0, true), targetStock: quantity(raw.targetStock || existingItem?.targetStock || 0, true), maxStock: quantity(raw.maxStock || existingItem?.maxStock || 0, true), location: String(raw.location || input.location || '') }
-            }
-            const supplierId = cleanId(raw.supplierId), sourceSupplier = supplier(supplierId), catalogItemId = String(raw.supplierCatalogItemId || ''), product = (sourceSupplier.offeredItems || []).find(entry => String(entry.id) === catalogItemId)
-            demand(product, 'Select a supply from an active supplier catalog.', 400)
-            demand(!seenProducts.has(`${supplierId}:${catalogItemId}`), 'Duplicate supplier catalog items are not allowed.', 400); seenProducts.add(`${supplierId}:${catalogItemId}`)
-            const minStock = quantity(raw.minStock || 0, true), targetStock = quantity(raw.targetStock || minStock, true), maxStock = quantity(raw.maxStock || targetStock, true)
-            demand(targetStock >= minStock && maxStock >= targetStock, 'Maximum stock must be at least target stock, and target stock must be at least the restocking threshold.', 400)
-            const existingItem = items.find(item => item.supplierId === supplierId && String(item.supplierCatalogItemId || '') === catalogItemId)
-            const unitPrice = money(product.price || product.unitCost || 0), requestedQuantity = quantity(raw.quantity), availableUnits = Math.max(0, quantity(product.quantity || 0, true) - quantity(product.reservedQuantity || 0, true))
-            demand(requestedQuantity <= availableUnits, `Requested quantity cannot exceed the supplier's ${availableUnits} available unit(s).`, 400)
-            const tier = (Array.isArray(product.tieredDiscounts) ? product.tieredDiscounts : []).filter(entry => Number(entry.minQuantity) <= requestedQuantity).sort((a, b) => Number(b.minQuantity) - Number(a.minQuantity))[0]
-            return { itemId: existingItem?.id || crypto.randomUUID(), initialInventory: !existingItem, name: required(product.name || product.itemName || product.productName, 'Catalog item name'), category: String(product.category || product.categoryGroup || product.customCategory || ''), supplierId, preferredSupplierId: supplierId, supplierCatalogItemId: catalogItemId, quantity: requestedQuantity, unit: String(product.measurementUnit || product.unit || 'units'), specifications: String(product.description || product.specifications || ''), packaging: String(product.measurementValue || ''), manufacturingDate: product.manufacturingDate ? dateKey(product.manufacturingDate) : '', expiryDate: product.expiryDate ? dateKey(product.expiryDate) : '', unitPrice, subtotal: requestedQuantity * unitPrice, taxRate: Math.max(0, Number(product.taxRate || 0)), taxTreatment: String(product.taxTreatment || 'vat-inclusive'), discountRate: Math.max(0, Number((tier?.discountRate ?? product.discountRate) || 0)), tieredDiscounts: Array.isArray(product.tieredDiscounts) ? product.tieredDiscounts : [], otherChargePerUnit: money(product.otherChargePerUnit || 0), currentStock: Number(existingItem?.currentStock || 0), minStock, targetStock, maxStock, location: String(raw.location || input.location || '') }
+            demand(!raw.supplierId, 'Inventory requests describe the clinic need; Procurement selects a supplier.', 400)
+            const name = required(raw.name || raw.itemName, 'Supply name')
+            const category = required(raw.category, 'Supply category')
+            const requestedQuantity = quantity(raw.quantity)
+            demand(!seenProducts.has(`${category}:${name}`), 'Duplicate requested supplies are not allowed.', 400)
+            seenProducts.add(`${category}:${name}`)
+            const existingItem = items.find(item => String(item.name || '').trim().toLowerCase() === name.toLowerCase() && String(item.category || '').trim().toLowerCase() === category.toLowerCase())
+            return { itemId: existingItem?.id || crypto.randomUUID(), initialInventory: !existingItem, name, category, supplierId: '', preferredSupplierId: '', supplierCatalogItemId: '', quantity: requestedQuantity, unit: String(raw.unit || existingItem?.unit || 'units'), specifications: String(raw.specifications || ''), packaging: '', manufacturingDate: '', expiryDate: '', unitPrice: 0, subtotal: 0, taxRate: 0, taxTreatment: 'vat-inclusive', discountRate: 0, tieredDiscounts: [], otherChargePerUnit: 0, currentStock: Number(existingItem?.currentStock || 0), minStock: quantity(raw.minStock || existingItem?.minStock || 0, true), targetStock: quantity(raw.targetStock || existingItem?.targetStock || 0, true), maxStock: quantity(raw.maxStock || existingItem?.maxStock || 0, true), location: String(raw.location || input.location || '') }
           })
           const estimatedCost = lines.reduce((sum, line) => sum + line.subtotal, 0)
           const saveDraft = input.action === 'saveDraft'
@@ -462,29 +306,12 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           break
         }
         case 'budget': { allow(ctx, 'finance:payables:approve'); const category = required(input.category, 'Purpose'); result = create('budget', { status: 'Active', department: 'Inventory', category, period: input.period ? String(input.period).slice(0, 7) : '', notes: String(input.notes || '').slice(0, 4000), total: money(input.total), committed: 0, spent: 0 }); break }
-        case 'rfq': {
-          demand(false, 'RFQs are no longer used. Procurement sends the catalog-priced request directly to Finance.', 410)
-          allow(ctx, 'procurement:create'); const p = get(input.procurementId, 'procurement'); demand(['Received', 'Verified'].includes(p.status) && !p.rfqId, 'This procurement already has an active sourcing process.')
-          demand(['Manual', 'Online'].includes(input.mode), 'Choose a procurement mode.', 400)
-          const supplierIds = [...new Set(input.supplierIds || [])]; demand(supplierIds.length > 0 && supplierIds.length <= 20, 'Select 1–20 suppliers.'); supplierIds.forEach(id => { const selectedSupplier = supplier(id); demand(p.lines.every(line => supplierCanProvideLine(selectedSupplier, line)), 'Each invited supplier must offer every requested supply in its catalog.', 400) })
-          if (input.mode === 'Online') demand(supplierIds.every(id => { const s = supplier(id); return s.ownerId || s.supplierUserId }), 'Online procurement requires suppliers with activated portal accounts.')
-          const deadline = dateKey(input.deadline); demand(deadline >= day(), 'Quotation deadline cannot be in the past.')
-          result = create('rfq', { status: 'Draft', mode: input.mode, procurementId: p.id, links: [...linksOf(p), p.id], lines: p.lines, supplierIds, deadline, deliveryDate: dateKey(input.deliveryDate), deliveryLocation: required(input.deliveryLocation, 'Delivery location'), terms: required(input.terms, 'RFQ terms'), conditions: String(input.conditions || ''), contact: required(input.contact, 'Contact'), department: p.department })
-          set(p, { status: 'RFQ Preparation', mode: input.mode, rfqId: result.id, officer: ctx.uid, method: String(input.method || ''), strategy: String(input.strategy || '') }); break
-        }
-        case 'quotation': {
-          demand(false, 'Supplier quotations are no longer used. The supplier catalog is the source of commercial terms.', 410)
-          const r = get(input.rfqId, 'rfq'); const supplierId = cleanId(input.supplierId); supplier(supplierId)
-          demand(r.supplierIds.includes(supplierId), 'Supplier is not invited to this RFQ.', 403)
-          manualOrSupplier({ ...r, supplierId }); demand(['Open', 'Quotation Received'].includes(r.status) && r.deadline >= day(), 'RFQ is closed or its deadline has passed.')
-          demand(!records.some(q => q.kind === 'quotation' && q.rfqId === r.id && q.supplierId === supplierId), 'Edit the existing quotation instead.')
-          const totals = quoteTotals(input); validateQuoteLines(r, totals)
-          totals.lines = totals.lines.map(line => ({ ...r.lines.find(source => source.itemId === line.itemId), ...line }))
-          result = create('quotation', { ...totals, status: 'Submitted', mode: r.mode, supplierId, rfqId: r.id, procurementId: r.procurementId, links: [r.id], validUntil: dateKey(input.validUntil), leadDays: quantity(input.leadDays, true), paymentTerms: required(input.paymentTerms, 'Payment terms'), warranty: String(input.warranty || ''), notes: String(input.notes || '') })
-          set(r, { status: 'Quotation Received', quotationReceivedAt: now }); set(get(r.procurementId, 'procurement'), { status: 'Quotations Received' }); break
-        }
+        case 'rfq':
+        case 'quotation':
+          demand(false, 'Supplier accounts do not submit quotations. Record externally received quotation terms in Procurement.', 410)
+          break
         case 'receiving': {
-          allow(ctx, 'procurement:review'); const po = get(input.poId, 'po'); demand(po.status === 'Receiving', 'The purchase order must be in Receiving before recording a delivery.')
+          allow(ctx, 'inventory:create'); const po = get(input.poId, 'po'); demand(po.status === 'Receiving', 'The purchase order must be in Receiving before recording a delivery.'); demand(po.mode !== 'Manual' || po.confirmedAt, 'Record the supplier confirmation before receiving a delivery.')
           const lines = (input.lines || []).map(line => {
             const ordered = po.lines.find(l => l.itemId === line.itemId); demand(ordered, 'Item is not on this PO.')
             const delivered = quantity(line.delivered, true), accepted = quantity(line.accepted, true), rejected = quantity(line.rejected, true)
@@ -509,13 +336,14 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           const po = get(input.poId, 'po'); demand(hasPermission(ctx, 'procurement:review') || hasPermission(ctx, 'finance:payables:approve'), 'Procurement or Finance access is required to record an invoice.', 403); demand(po.status === 'Receiving', 'Receive and inspect goods before invoicing.')
           const invoiceNumber = required(input.invoiceNumber, 'Invoice number'); demand(!records.some(r => r.kind === 'invoice' && r.supplierId === po.supplierId && r.invoiceNumber === invoiceNumber), 'This supplier invoice number already exists.')
           const receiving = records.filter(r => r.kind === 'receiving' && r.poId === po.id && r.status === 'Onboarded')
-          result = create('invoice', { ...quoteTotals(input), mode: po.mode, status: 'Submitted', poId: po.id, supplierId: po.supplierId, invoiceNumber, invoiceDate: dateKey(input.invoiceDate), links: [...new Set([...linksOf(po), po.id, ...receiving.flatMap(record => [record.id, record.inspectionId].filter(Boolean))])], receivingIds: receiving.map(record => record.id) });
+          result = create('invoice', { ...quoteTotals(input, { requireStatedTotal: true }), mode: po.mode, status: 'Submitted', poId: po.id, supplierId: po.supplierId, invoiceNumber, invoiceDate: dateKey(input.invoiceDate), links: [...new Set([...linksOf(po), po.id, ...receiving.flatMap(record => [record.id, record.inspectionId].filter(Boolean))])], receivingIds: receiving.map(record => record.id) });
           financialWrites.push([db.collection('financialRecords').doc(`supply-${result.id}`), { id: `supply-${result.id}`, branchId, kind: 'procurementPayable', status: 'Unpaid', category: 'Procurement', description: `Supplier invoice ${invoiceNumber}`, payee: po.supplierId, amount: result.total, paidAmount: 0, outstandingAmount: result.total, supplyInvoiceId: result.id, purchaseOrderId: po.id, createdBy: ctx.uid, createdAt: now, updatedAt: now }, false]); break
         }
         default: demand(false, 'Unsupported record type.', 400)
       }
     } else {
       demand(record, 'Record not found.', 404); demand(canRead(ctx, record), 'Access denied.', 403)
+      demand(record.mode !== 'Online', 'Historical online supplier transactions are read-only.', 403)
       const r = record
       if (r.kind === 'budget') {
         allow(ctx, 'finance:payables:approve')
@@ -539,34 +367,37 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         if (['confirm', 'verifyRequest'].includes(action)) {
           demand(r.status === 'Received', 'Only newly received requests can be prepared for Finance.')
           demand(input.productsCorrect && input.quantitiesVerified && input.availabilityConfirmed && input.pricesVerified, 'Complete every procurement checklist item before requesting funding.', 400)
-          const existingSupplierIds = [...new Set(r.lines.map(line => line.supplierId).filter(Boolean))]
-          const supplierId = input.supplierId ? cleanId(input.supplierId) : existingSupplierIds[0]
-          demand(supplierId, 'Procurement must select a supplier before requesting Finance approval.', 400)
-          const selectedSupplier = supplier(supplierId)
+          const supplierId = cleanId(input.supplierId), selectedSupplier = supplier(supplierId)
           demand(!r.purchaseOrderId, 'A purchase order has already been created for this procurement request.')
-          const lines = r.lines.map(line => {
-            const selectedCatalogItemId = String(input.catalogSelections?.[line.itemId] || line.supplierCatalogItemId || '').trim()
-            const product = (selectedSupplier.offeredItems || []).find(entry => String(entry.id) === selectedCatalogItemId)
-              || (selectedSupplier.offeredItems || []).find(entry => String(entry.id) === String(line.supplierCatalogItemId || ''))
-              || (selectedSupplier.offeredItems || []).find(entry => String(entry.name || entry.itemName || entry.productName || '').trim().toLowerCase() === String(line.name || '').trim().toLowerCase() && (!line.category || String(entry.category || entry.categoryGroup || entry.customCategory || '').trim().toLowerCase() === String(line.category).trim().toLowerCase()))
-            demand(product, `Select a supplier catalog item for ${line.name}.`, 400)
-            const availableUnits = Math.max(0, quantity(product.quantity || 0, true) - quantity(product.reservedQuantity || 0, true))
-            demand(Number(line.quantity) <= availableUnits, `${line.name} exceeds the selected supplier's available quantity.`, 400)
-            const unitPrice = money(product.price || product.unitCost || 0)
-            const tier = (Array.isArray(product.tieredDiscounts) ? product.tieredDiscounts : []).filter(entry => Number(entry.minQuantity) <= Number(line.quantity)).sort((a, b) => Number(b.minQuantity) - Number(a.minQuantity))[0]
-            return { ...line, supplierId, preferredSupplierId: supplierId, supplierCatalogItemId: String(product.id), name: required(product.name || product.itemName || product.productName, 'Catalog item name'), category: String(product.category || product.categoryGroup || product.customCategory || line.category || ''), unit: String(product.measurementUnit || product.unit || line.unit || 'units'), specifications: String(product.description || product.specifications || line.specifications || ''), unitPrice, subtotal: Number(line.quantity) * unitPrice, taxRate: Math.max(0, Number(product.taxRate || 0)), taxTreatment: String(product.taxTreatment || 'vat-inclusive'), discountRate: Math.max(0, Number((tier?.discountRate ?? product.discountRate) || 0)), tieredDiscounts: Array.isArray(product.tieredDiscounts) ? product.tieredDiscounts : [], otherChargePerUnit: money(product.otherChargePerUnit || 0) }
+          evidence(r, 'Attach the supplier quotation received outside the platform before sending this request to Finance.')
+          const quoteLines = Array.isArray(input.lines) ? input.lines : []
+          demand(Array.isArray(r.lines) && r.lines.length > 0 && quoteLines.length === r.lines.length, 'Enter a price for every requested item.', 400)
+          r.lines.forEach(line => {
+            const quoteLine = quoteLines.find(candidate => String(candidate.itemId) === String(line.itemId))
+            demand(quoteLine && Number(quoteLine.quantity) === Number(line.quantity), `The quoted quantity for ${line.name} must match the inventory request.`, 400)
           })
-          // Procurement may verify catalog terms but cannot alter them. The
-          // supplier catalog is the authoritative source of price, tax,
-          // discount, and per-unit charges sent to Finance.
-          const pricedLines = lines.map(line => ({ ...line, total: Number(line.quantity) * Number(line.unitPrice) }))
-          const subtotal = pricedLines.reduce((sum, line) => sum + line.total, 0)
-          const catalogTerms = catalogCommercialTerms({ ...r, lines }, { lines: pricedLines })
-          const deliveryFee = deliveryFeeForBranch(selectedSupplier, clinic)
-          const totals = { lines: pricedLines, subtotal, tax: catalogTerms.tax, delivery: deliveryFee.amount, otherCharges: catalogTerms.otherCharges, discount: catalogTerms.discount }
-          totals.total = totals.subtotal + totals.tax + totals.delivery + totals.otherCharges - totals.discount
-          demand(totals.total > 0, 'The supplier catalog total must be positive.', 400)
-          const po = create('po', { status: 'For Review', mode: 'Manual', directSupplierCatalog: true, supplierId, supplierBusinessName: String(selectedSupplier.businessName || selectedSupplier.name || selectedSupplier.companyName || 'Supplier').trim() || 'Supplier', procurementId: r.id, department: r.department, priority: ['Low', 'Normal', 'High', 'Urgent'].includes(r.priority) ? r.priority : 'Normal', category: String(input.category || r.lines[0]?.category || 'Procurement'), lines: totals.lines, subtotal: totals.subtotal, tax: totals.tax, delivery: totals.delivery, deliveryFeeCity: deliveryFee.city, deliveryFeeConfigured: deliveryFee.configured, otherCharges: totals.otherCharges, discount: totals.discount, total: totals.total, requestedAmount: totals.total, warranty: String(input.warranty || ''), deliveryDate: dateKey(input.deliveryDate || r.requiredDate), deliveryLocation: String(input.deliveryLocation || r.lines[0]?.location || 'Clinic branch'), terms: String(input.terms || 'Per approved inventory request'), catalogPricingVerifiedBy: ctx.uid, catalogPricingVerifiedAt: now, committedAmount: 0, paidAmount: 0, accepted: {}, links: [...linksOf(r), r.id] }, `po-${r.id}`)
+          const pricing = quoteTotals({ ...input, lines: quoteLines }, { requireStatedTotal: true })
+          const lines = r.lines.map(line => {
+            const priced = pricing.lines.find(candidate => candidate.itemId === String(line.itemId))
+            return { ...line, supplierId, preferredSupplierId: supplierId, quantity: Number(line.quantity), unitPrice: priced.unitPrice, subtotal: priced.total }
+          })
+          const totals = { ...pricing, lines: lines.map(line => ({ ...line, total: line.subtotal })) }
+          const quoteDate = input.quoteDate ? dateKey(input.quoteDate) : ''
+          const po = create('po', {
+            status: 'For Review', mode: 'Manual', directSupplierQuote: true, supplierId,
+            supplierBusinessName: String(selectedSupplier.businessName || selectedSupplier.name || selectedSupplier.companyName || 'Supplier').trim() || 'Supplier',
+            procurementId: r.id, department: r.department,
+            priority: ['Low', 'Normal', 'High', 'Urgent'].includes(r.priority) ? r.priority : 'Normal',
+            category: String(input.category || r.lines[0]?.category || 'Procurement'), lines: totals.lines,
+            subtotal: totals.subtotal, tax: totals.tax, delivery: totals.delivery,
+            otherCharges: totals.otherCharges, discount: totals.discount, adjustments: totals.adjustments,
+            taxTreatment: totals.taxTreatment, statedTotal: totals.statedTotal, total: totals.total,
+            requestedAmount: totals.total, quoteReference: String(input.quoteReference || '').trim(), quoteDate,
+            warranty: String(input.warranty || ''), deliveryDate: dateKey(input.deliveryDate || r.requiredDate),
+            deliveryLocation: String(input.deliveryLocation || r.lines[0]?.location || 'Clinic branch'),
+            terms: String(input.terms || 'Per attached supplier quotation'), paymentTerms: String(input.paymentTerms || ''),
+            quotedBy: ctx.uid, quotedAt: now, committedAmount: 0, paidAmount: 0, accepted: {}, links: [...linksOf(r), r.id],
+          }, `po-${r.id}`)
           result = set(r, { status: 'For Review', supplierId, verifiedBy: ctx.uid, verifiedAt: now, purchaseOrderId: po.id, checklist: { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true } })
         } else if (action === 'return') {
           demand(r.status === 'Received', 'Only newly received requests can be returned.')
@@ -589,20 +420,20 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         else demand(false, 'Invalid RFQ action.')
       } else if (r.kind === 'quotation' && action === 'revise') {
         const rfq = get(r.rfqId, 'rfq'); manualOrSupplier(r); demand(r.status === 'Submitted' && ['Open', 'Quotation Received'].includes(rfq.status) && rfq.deadline >= day(), 'Quotation editing is closed.')
-        const totals = quoteTotals(input); validateQuoteLines(rfq, totals); result = set(r, { ...totals, validUntil: dateKey(input.validUntil), leadDays: quantity(input.leadDays, true), paymentTerms: required(input.paymentTerms, 'Payment terms'), warranty: String(input.warranty || ''), notes: String(input.notes || '') })
+        const totals = quoteTotals(input, { requireStatedTotal: true }); validateQuoteLines(rfq, totals); result = set(r, { ...totals, validUntil: dateKey(input.validUntil), leadDays: quantity(input.leadDays, true), paymentTerms: required(input.paymentTerms, 'Payment terms'), warranty: String(input.warranty || ''), notes: String(input.notes || '') })
       } else if (r.kind === 'quotation' && action === 'select') {
         allow(ctx, 'procurement:review'); const rfq = get(r.rfqId, 'rfq'), p = get(rfq.procurementId, 'procurement')
         demand(r.status === 'Submitted' && ['Open', 'Quotation Received'].includes(rfq.status) && !p.evaluationId, 'This quotation is no longer available for selection.'); demand(r.validUntil >= day(), 'Quotation has expired.')
         if (r.mode === 'Manual') evidence(r, 'Upload the supplier quotation first.')
         const justification = required(input.justification, 'Selection justification')
         const ev = create('evaluation', { status: 'Supplier Selected', quotationId: r.id, supplierId: r.supplierId, rfqId: rfq.id, procurementId: p.id, recommendation: String(input.recommendation || justification), justification, evaluatorId: ctx.uid, evaluatedAt: now, links: [...linksOf(p), p.id, rfq.id, r.id] })
-        const br = create('budgetRequest', { status: 'Submitted', quotationId: r.id, supplierId: r.supplierId, procurementId: p.id, evaluationId: ev.id, requestedAmount: r.total, recommendedAmount: r.total, department: p.department, category: required(input.category, 'Budget category'), lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, paymentTerms: r.paymentTerms, warranty: r.warranty, deliveryDate: rfq.deliveryDate, deliveryLocation: rfq.deliveryLocation, terms: rfq.terms, mode: r.mode, links: [...linksOf(ev), ev.id] })
+        const br = create('budgetRequest', { status: 'Submitted', quotationId: r.id, supplierId: r.supplierId, procurementId: p.id, evaluationId: ev.id, requestedAmount: r.total, recommendedAmount: r.total, department: p.department, category: required(input.category, 'Budget category'), lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, adjustments: r.adjustments || [], taxTreatment: r.taxTreatment || '', ...(r.statedTotal === undefined ? {} : { statedTotal: r.statedTotal }), paymentTerms: r.paymentTerms, warranty: r.warranty, deliveryDate: rfq.deliveryDate, deliveryLocation: rfq.deliveryLocation, terms: rfq.terms, mode: r.mode, links: [...linksOf(ev), ev.id] })
         result = set(r, { status: 'Selected' }); set(rfq, { status: 'Awarded' }); set(p, { status: 'For Finance Approval', evaluationId: ev.id, budgetRequestId: br.id }); records.filter(q => q.kind === 'quotation' && q.rfqId === rfq.id && q.id !== r.id).forEach(q => set(q, { status: 'Not Selected' }))
       } else if (r.kind === 'budgetRequest') {
         if (action === 'resubmit') { allow(ctx, 'procurement:review'); demand(['Returned', 'Rejected'].includes(r.status), 'This request cannot be resubmitted.'); result = set(r, { status: 'Submitted', revision: required(input.remarks, 'Revision details') }) }
         else { allow(ctx, 'finance:payables:approve'); const ownerSelfApproval = ctx.roleKey === 'Owner' && r.createdBy === ctx.uid; demand(r.createdBy !== ctx.uid || ownerSelfApproval, 'Finance approval must be performed by another user.'); demand(r.status === 'Submitted', 'Budget request is not awaiting a decision.')
           if (action === 'approve') {
-            demand((r.quotationId || r.directSupplierCatalog || r.directSupplierQuote) && Array.isArray(r.lines) && r.lines.length, 'Funding requests must include Procurement’s verified supplier catalog terms.', 400)
+            demand((r.quotationId || r.directSupplierCatalog || r.directSupplierQuote) && Array.isArray(r.lines) && r.lines.length, 'Funding requests must include Procurement’s documented supplier quotation terms.', 400)
             const budget = get(input.budgetId, 'budget'); demand(budget.department === r.department, 'Budget department must match the request.')
             const approvedAmount = money(input.approvedAmount); demand(approvedAmount >= r.requestedAmount && approvedAmount <= budget.total - budget.committed - budget.spent, 'Insufficient available budget, or approved amount is below the quotation.')
             set(budget, { committed: budget.committed + approvedAmount })
@@ -610,7 +441,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             const approval = create('financeApproval', { status: 'Approved', budgetRequestId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...linksOf(r), r.id] }, `approval-${r.id}`)
             const allocation = create('budgetAllocation', { status: 'Committed', budgetRequestId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...linksOf(approval), approval.id] }, `allocation-${r.id}`)
             result = set(r, { status: 'Approved', budgetId: budget.id, approvedAmount, approvedBy: ctx.uid, approvedAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
-            create('po', { lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, total: r.requestedAmount, sourceQuotationId: r.quotationId || '', directSupplierCatalog: Boolean(r.directSupplierCatalog || r.directSupplierQuote), mode: r.mode || 'Online', supplierId: r.supplierId, paymentTerms: r.paymentTerms, warranty: r.warranty, status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...linksOf(allocation), allocation.id, ...(r.quotationId ? [r.quotationId] : [])], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
+            create('po', { lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, adjustments: r.adjustments || [], taxTreatment: r.taxTreatment || '', ...(r.statedTotal === undefined ? {} : { statedTotal: r.statedTotal }), total: r.requestedAmount, sourceQuotationId: r.quotationId || '', directSupplierCatalog: Boolean(r.directSupplierCatalog || r.directSupplierQuote), mode: r.mode || 'Online', supplierId: r.supplierId, paymentTerms: r.paymentTerms, warranty: r.warranty, status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...linksOf(allocation), allocation.id, ...(r.quotationId ? [r.quotationId] : [])], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
           } else { demand(['reject', 'return'].includes(action), 'Invalid action.'); result = set(r, { status: action === 'reject' ? 'Rejected' : 'Returned', remarks: required(input.remarks, 'Decision reason'), reviewedBy: ctx.uid, reviewedAt: now }) }
         }
       } else if (r.kind === 'po') {
@@ -637,35 +468,31 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
             if (procurement) set(procurement, { status: 'Rejected', financeDecision: action, financeRemarks: remarks })
           }
         } else if (action === 'issue') { allow(ctx, 'procurement:review'); demand(r.status === 'Approved', 'Finance approval is required before sending the PO to the supplier.'); evidence(r, 'Upload the approved PO first.'); result = set(r, { status: 'Receiving', sentBy: ctx.uid, sentAt: now }); const procurement = linked(r.procurementId, 'procurement'); if (procurement) set(procurement, { status: 'Ordered' }) }
-        else if (action === 'confirm') { allow(ctx, 'procurement:review'); demand(r.status === 'Receiving', 'The PO is not ready for supplier confirmation.'); const response = 'Accepted', reason = required(input.remarks, 'Supplier confirmation details'), confirmationId = `confirmation-${r.id}`, oldConfirmation = records.find(x => x.id === confirmationId && x.kind === 'supplierConfirmation'), confirmationData = { status: response, poId: r.id, supplierId: r.supplierId, response, reason, confirmedDeliveryDate: input.deliveryDate ? dateKey(input.deliveryDate) : r.deliveryDate, respondedBy: ctx.uid, respondedAt: now, links: [...linksOf(r), r.id] }
-          if (action === 'confirm') {
-            const stockSupplier = supplier(r.supplierId), catalog = Array.isArray(stockSupplier.offeredItems) ? [...stockSupplier.offeredItems] : []
-            const lines = Array.isArray(r.lines) ? r.lines : []
-            demand(lines.length, 'This purchase order has no order lines to confirm.', 409)
-            for (const line of lines) {
-              if (!catalog.length) break
-              demand(line && typeof line === 'object', 'This purchase order contains an invalid order line.', 409)
-              const index = supplierCatalogIndexForLine(catalog, line); demand(index >= 0, `The supplier catalog no longer contains ${line.name}.`)
-              const product = catalog[index], onHand = quantity(product.quantity, true), reserved = quantity(product.reservedQuantity || 0, true)
-              demand(onHand - reserved >= line.quantity, `Insufficient available supplier stock for ${line.name}.`)
-              catalog[index] = { ...product, reservedQuantity: reserved + line.quantity, lastReservedAt: catalogEventAt, lastReservedPoId: r.id }
-            }
-            if (catalog.length) writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
+        else if (action === 'confirm') {
+          allow(ctx, 'procurement:review')
+          demand(r.status === 'Receiving', 'The PO is not ready for supplier confirmation.')
+          const reason = required(input.remarks, 'Supplier confirmation details')
+          const confirmationId = `confirmation-${r.id}`
+          const oldConfirmation = records.find(record => record.id === confirmationId && record.kind === 'supplierConfirmation')
+          const confirmationData = { status: 'Accepted', poId: r.id, supplierId: r.supplierId, response: 'Accepted', reason, confirmedDeliveryDate: input.deliveryDate ? dateKey(input.deliveryDate) : r.deliveryDate, respondedBy: ctx.uid, respondedAt: now, links: [...linksOf(r), r.id] }
+          const confirmation = oldConfirmation ? set(oldConfirmation, confirmationData) : create('supplierConfirmation', confirmationData, confirmationId)
+          result = set(r, { status: 'Receiving', supplierConfirmationId: confirmation.id, confirmationReason: reason, deliveryDate: confirmationData.confirmedDeliveryDate, confirmedBy: ctx.uid, confirmedAt: now })
+        }        else if (action === 'resend') { allow(ctx, 'procurement:review'); demand(r.status === 'Rejected', 'Only rejected POs can be revised.'); result = set(r, { status: 'Draft', revision: required(input.remarks, 'Revision details') }) }
+        else if (action === 'cancel') {
+          allow(ctx, 'procurement:review')
+          demand(!['Cancelled', 'Completed', 'Shipped', 'Claimed by Logistics', 'Partially Received', 'Delivered'].includes(r.status) && !records.some(record => record.poId === r.id && ['receiving', 'invoice', 'payment'].includes(record.kind)), 'A shipped, received, or invoiced order cannot be cancelled. Continue with delivery receiving and inspection instead.')
+          if (r.budgetId && Number(r.committedAmount || 0) > 0) {
+            const budget = get(r.budgetId, 'budget')
+            set(budget, { committed: Math.max(0, budget.committed - r.committedAmount) })
+            if (r.budgetAllocationId) set(get(r.budgetAllocationId, 'budgetAllocation'), { status: 'Released', releasedAmount: r.committedAmount, releasedBy: ctx.uid, releasedAt: now })
           }
-          const confirmation = oldConfirmation ? set(oldConfirmation, confirmationData) : create('supplierConfirmation', confirmationData, confirmationId); result = set(r, { status: 'Receiving', supplierConfirmationId: confirmation.id, confirmationReason: reason, deliveryDate: confirmation.confirmedDeliveryDate, confirmedBy: ctx.uid, confirmedAt: now }) }
-        else if (action === 'resend') { allow(ctx, 'procurement:review'); demand(r.status === 'Rejected', 'Only rejected POs can be revised.'); result = set(r, { status: 'Draft', revision: required(input.remarks, 'Revision details') }) }
-        else if (action === 'cancel') { allow(ctx, 'procurement:review'); demand(!['Cancelled', 'Completed', 'Shipped', 'Claimed by Logistics', 'Partially Received', 'Delivered'].includes(r.status) && !records.some(x => x.poId === r.id && ['receiving', 'invoice', 'payment'].includes(x.kind)), 'A shipped, received, or invoiced order cannot be cancelled. Continue with delivery receiving and inspection instead.'); const budget = get(r.budgetId, 'budget'); set(budget, { committed: budget.committed - r.committedAmount }); if (r.budgetAllocationId) set(get(r.budgetAllocationId, 'budgetAllocation'), { status: 'Released', releasedAmount: r.committedAmount, releasedBy: ctx.uid, releasedAt: now });
-          if (['Supplier Confirmed', 'Claimed by Logistics'].includes(r.status)) {
-            const stockSupplier = supplier(r.supplierId), catalog = [...(stockSupplier.offeredItems || [])]
-            for (const line of r.lines) { const index = supplierCatalogIndexForLine(catalog, line); if (index >= 0) { const product = catalog[index], reserved = quantity(product.reservedQuantity, true); catalog[index] = { ...product, reservedQuantity: Math.max(0, reserved - line.quantity), lastReleasedAt: catalogEventAt, lastReleasedPoId: r.id } } }
-            writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
-          }
-          result = set(r, { status: 'Cancelled', committedAmount: 0, remarks: required(input.remarks, 'Cancellation reason') }); set(get(r.procurementId, 'procurement'), { status: 'Cancelled' }) }
+          result = set(r, { status: 'Cancelled', committedAmount: 0, remarks: required(input.remarks, 'Cancellation reason') })
+          set(get(r.procurementId, 'procurement'), { status: 'Cancelled' })
+        }
         else demand(false, 'Invalid PO action.')
       } else if (r.kind === 'receiving' && action === 'onboard') {
         allow(ctx, 'inventory:create'); if (r.status === 'Onboarded') return { id: r.id, alreadyRecorded: true }
         demand(r.status === 'Inspected', 'Inspection is required.'); const po = get(r.poId, 'po'); const accepted = { ...po.accepted }
-        const stockSupplier = supplier(po.supplierId), catalog = [...(stockSupplier.offeredItems || [])]
         for (const line of r.lines) {
           if (!line.accepted) continue
           let item = items.find(i => i.id === line.itemId)
@@ -674,29 +501,18 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           if (isFirstReceipt) item = { id: line.itemId, branchId, name: ordered.name, category: ordered.category || '', description: ordered.specifications || '', unit: ordered.unit || 'units', minStock: Number(ordered.minStock || 0), targetStock: Number(ordered.targetStock || ordered.quantity), maxStock: Number(ordered.maxStock || ordered.quantity), itemType: String(ordered.category || '').toLowerCase() === 'equipment' ? 'Equipment' : 'Material', consumability: String(ordered.category || '').toLowerCase() === 'equipment' ? 'Non-consumable' : 'Consumable', currentStock: 0, supplierCatalogItemId: ordered.supplierCatalogItemId || '' }
           accepted[line.itemId] = Number(accepted[line.itemId] || 0) + line.accepted
           demand(accepted[line.itemId] <= ordered.quantity, 'Receipt exceeds ordered quantity.')
-          const catalogIndex = supplierCatalogIndexForLine(catalog, ordered)
-          const catalogItem = catalogIndex >= 0 ? catalog[catalogIndex] : null
-          // Older confirmed POs had no reservation field; treating this accepted quantity as
-          // their reservation lets existing transactions complete without creating negative stock.
-          if (catalogItem) {
-            const onHand = quantity(catalogItem.quantity, true)
-            const reserved = Object.hasOwn(catalogItem, 'reservedQuantity') ? quantity(catalogItem.reservedQuantity, true) : line.accepted
-            demand(onHand >= line.accepted && reserved >= line.accepted, `Supplier stock is insufficient to complete receipt for ${ordered.name}.`)
-            catalog[catalogIndex] = { ...catalogItem, quantity: onHand - line.accepted, reservedQuantity: reserved - line.accepted, lastFulfilledAt: catalogEventAt, lastFulfilledPoId: po.id }
-          }
           if (line.serialNumber) { demand(line.accepted === 1, 'Receive serialized equipment one unit per receiving record.'); demand(!docs(lotSnap).some(l => l.serialNumber === line.serialNumber && l.itemId === item.id), 'This equipment serial number has already been received.') }
           writes.push([db.collection('supplyLots').doc(`${r.id}-${item.id}`), { branchId, itemId: item.id, receivingId: r.id, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', receivedQuantity: line.accepted, remainingQuantity: line.accepted, lot: line.lot || '', manufacturingDate: line.manufacturingDate || '', expiryDate: line.expiryDate || '', serialNumber: line.serialNumber || '', modelNumber: line.modelNumber || '', warranty: line.warranty || '', condition: line.condition, location: po.deliveryLocation, unitCost: ordered.unitPrice, receivedAt: now }, false])
           writes.push([db.collection('inventoryItems').doc(item.id), { ...item, currentStock: Number(item.currentStock || 0) + line.accepted, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || item.supplierCatalogItemId || '', receivedAt: now, updatedAt: now, createdAt: isFirstReceipt ? now : item.createdAt || now, manufacturingDate: line.manufacturingDate || item.manufacturingDate || '', expiryDate: Number(item.currentStock || 0) > 0 && item.expiryDate ? [item.expiryDate, line.expiryDate].filter(Boolean).sort()[0] : line.expiryDate || '', serialNumber: line.serialNumber || item.serialNumber || '', modelNumber: line.modelNumber || item.modelNumber || '', warranty: line.warranty || item.warranty || '', condition: line.condition, location: ordered.location || po.deliveryLocation, costPrice: ordered.unitPrice / 100 }, true])
           writes.push([db.collection('inventoryMovements').doc(`${r.id}-${item.id}`), { branchId, inventoryItemId: item.id, receivingId: r.id, inspectionId: r.inspectionId, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', quantity: line.accepted, type: 'purchase_receipt', createdBy: ctx.uid, createdAt: now, lot: line.lot, expiryDate: line.expiryDate }, false])
         }
-        if (catalog.length) writes.push([db.collection('suppliers').doc(stockSupplier.id), { offeredItems: catalog, catalogStockUpdatedAt: now }, true])
         const complete = po.lines.every(l => Number(accepted[l.itemId] || 0) === l.quantity)
         set(po, { accepted, status: 'Receiving' }); result = set(r, { status: 'Onboarded', onboardedBy: ctx.uid, onboardedAt: now })
-      } else if (r.kind === 'discrepancy' && action === 'resolve') { allow(ctx, 'orders:update'); demand(r.status === 'Open', 'Discrepancy is already resolved.'); demand(['Return to supplier', 'Replacement', 'Credit', 'Refund', 'Other resolution'].includes(input.resolutionType), 'Select a resolution type.', 400); result = set(r, { status: 'Resolved', resolutionType: input.resolutionType, resolution: required(input.remarks, 'Resolution'), resolvedBy: ctx.uid, resolvedAt: now }) }
+      } else if (r.kind === 'discrepancy' && action === 'resolve') { allow(ctx, 'inventory:create'); demand(r.status === 'Open', 'Discrepancy is already resolved.'); demand(['Return to supplier', 'Replacement', 'Credit', 'Refund', 'Other resolution'].includes(input.resolutionType), 'Select a resolution type.', 400); result = set(r, { status: 'Resolved', resolutionType: input.resolutionType, resolution: required(input.remarks, 'Resolution'), resolvedBy: ctx.uid, resolvedAt: now }) }
       else if (r.kind === 'invoice' && action === 'reviseInvoice') {
         const po = get(r.poId, 'po'); manualOrSupplier(po, 'finance:payables:approve')
         demand(['Submitted', 'Disputed'].includes(r.status), 'Matched or approved invoices cannot be edited.')
-        result = set(r, { ...quoteTotals(input), status: 'Submitted', invoiceDate: dateKey(input.invoiceDate), revisionReason: required(input.remarks, 'Invoice revision reason'), matchIssues: [] })
+        result = set(r, { ...quoteTotals(input, { requireStatedTotal: true }), status: 'Submitted', invoiceDate: dateKey(input.invoiceDate), revisionReason: required(input.remarks, 'Invoice revision reason'), matchIssues: [] })
       }
       else if (r.kind === 'invoice') {
         allow(ctx, action === 'pay' ? 'finance:payables:settle' : 'finance:payables:approve'); const po = get(r.poId, 'po')
@@ -744,36 +560,29 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const staffContexts = staffResults.filter(result => result.status === 'fulfilled').map(result => result.value)
     for (const [ref, value, merge] of writes) {
       tx.set(ref, { ...value, updatedAt: now }, { merge })
-      const previous = records.find(r => r.id === ref.id), supplierCatalog = ref.parent.id === 'suppliers', changed = { ...previous, ...value }
-      const supplierBefore = supplierCatalog ? suppliers.find(s => s.id === ref.id) : null
-      tx.set(db.collection('supplyAudit').doc(), { branchId, recordId: ref.id, parentActionRecordId: result.id, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: changed.kind || (supplierCatalog ? 'supplierCatalog' : 'system'), action: supplierCatalog ? `catalog-stock-${action}` : action, previousStatus: previous?.status || '', newStatus: changed.status || '', before: supplierBefore || previous || null, after: changed, details: input, ...ctx.auditContext, createdAt: now })
+      const previous = records.find(r => r.id === ref.id), changed = { ...previous, ...value }
+      tx.set(db.collection('supplyAudit').doc(), { branchId, recordId: ref.id, parentActionRecordId: result.id, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: changed.kind || (ref.parent.id === 'inventoryItems' ? 'inventory' : 'system'), action, previousStatus: previous?.status || '', newStatus: changed.status || '', before: previous || null, after: changed, details: input, ...ctx.auditContext, createdAt: now })
       if (!changed.kind) continue
       // Supply alerts are handoffs, not general record-change broadcasts. This
       // keeps each team focused on the action that has just reached its queue.
       const staffWith = permission => staffContexts.filter(user => hasPermission(user, permission)).map(user => user.uid)
-      const supplierRecipient = supplierId => {
-        const supplier = suppliers.find(item => item.id === supplierId)
-        return changed.mode === 'Online' ? String(supplier?.ownerId || supplier?.supplierUserId || '').trim() : ''
-      }
       let recipients = [], title = '', message = '', link = ''
       if (changed.kind === 'procurement' && changed.status === 'Received') {
-        recipients = staffWith('procurement:review'); title = 'Inventory request awaiting procurement'; message = `${changed.number} was sent by Inventory. Select the supplier and prepare the purchase order.`; link = '/procurement/requests'
+        recipients = staffWith('procurement:review'); title = 'Inventory request awaiting procurement'; message = `${changed.number} was sent by Inventory. Select a supplier and record the external quotation.`; link = '/procurement/requests'
       } else if (changed.kind === 'procurement' && changed.status === 'Returned to Inventory') {
         recipients = [changed.requesterId]; title = 'Inventory request returned'; message = `${changed.number} needs revision before Procurement can continue.`; link = '/inventory/requests'
       } else if (changed.kind === 'po' && changed.status === 'For Review') {
         recipients = staffWith('finance:payables:approve'); title = 'Purchase order awaiting Finance approval'; message = `${changed.number} is ready for budget and financial approval.`; link = '/finance/procurement/requests'
       } else if (changed.kind === 'po' && changed.status === 'Approved') {
-        recipients = staffWith('finance:payables:approve'); title = 'Purchase order approved'; message = `${changed.number} is approved and ready to send to the supplier.`; link = '/finance/procurement/requests'
-      } else if (changed.kind === 'po' && changed.status === 'Receiving') {
-        recipients = [supplierRecipient(changed.supplierId)]; title = 'New purchase order'; message = `${changed.number} has been sent for your confirmation.`; link = '/supplier/supply/orders'
-      } else if (changed.kind === 'po' && changed.status === 'Shipped') {
-        recipients = staffWith('orders:update'); title = 'Shipped order awaiting Logistics'; message = `${changed.number} was marked as shipped by the supplier and is ready to be claimed.`; link = '/logistics/items'
+        recipients = staffWith('procurement:review'); title = 'Purchase order approved'; message = `${changed.number} is approved and ready for Procurement to send externally.`; link = '/procurement/orders'
+      } else if (changed.kind === 'po' && changed.status === 'Receiving' && changed.confirmedAt) {
+        recipients = staffWith('inventory:create'); title = 'Supplier confirmation recorded'; message = `${changed.number} is confirmed and ready for delivery receiving.`; link = '/inventory/receiving'
       } else if (changed.kind === 'po' && ['Returned to Procurement', 'Rejected', 'Clarification Requested'].includes(changed.status)) {
-        recipients = staffWith('procurement:review'); title = 'Purchase order needs Procurement action'; message = `${changed.number}: ${changed.status}. Review the supplier or Finance remarks.`; link = '/procurement/orders'
+        recipients = staffWith('procurement:review'); title = 'Purchase order needs Procurement action'; message = `${changed.number}: ${changed.status}. Review the external supplier or Finance response.`; link = '/procurement/orders'
       } else if (changed.kind === 'receiving' && changed.status === 'Inspected') {
-        recipients = staffWith('inventory:create'); title = 'Inspected delivery awaiting Inventory onboarding'; message = `${changed.number} has been inspected. Onboard accepted stock into Inventory.`; link = '/inventory/onboarding'
+        recipients = staffWith('inventory:create'); title = 'Inspected delivery awaiting Inventory onboarding'; message = `${changed.number} has been inspected. Onboard accepted stock into Inventory.`; link = '/inventory/receiving'
       } else if (changed.kind === 'discrepancy' && changed.status === 'Open') {
-        recipients = staffWith('procurement:review'); title = 'Delivery discrepancy needs resolution'; message = `${changed.number} contains rejected or discrepant delivery items.`; link = '/logistics/discrepancies'
+        recipients = staffWith('inventory:create'); title = 'Delivery discrepancy needs resolution'; message = `${changed.number} contains rejected or discrepant delivery items.`; link = '/inventory/receiving'
       } else if (changed.kind === 'invoice' && changed.status === 'Submitted') {
         recipients = staffWith('finance:payables:approve'); title = 'Supplier invoice awaiting verification'; message = `${changed.number} was submitted and needs three-way matching.`; link = '/finance/procurement/invoices'
       } else if (changed.kind === 'invoice' && changed.status === 'Approved for Payment') {
@@ -782,8 +591,6 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         recipients = staffWith('finance:payables:approve'); title = 'Supplier payment awaiting review'; message = `${changed.number} was prepared and needs Finance review.`; link = '/finance/procurement/invoices'
       } else if (changed.kind === 'payment' && changed.status === 'Approved') {
         recipients = staffWith('finance:payables:settle'); title = 'Supplier payment ready to process'; message = `${changed.number} was approved. Record the payment after it is made externally.`; link = '/finance/procurement/invoices'
-      } else if (changed.kind === 'payment' && changed.status === 'Paid') {
-        recipients = [supplierRecipient(changed.supplierId)]; title = 'Supplier payment recorded'; message = `Payment for ${changed.number} has been recorded by the clinic.`; link = '/supplier/supply/invoices'
       }
       for (const uid of new Set(recipients.filter(uid => uid && uid !== ctx.uid))) {
         tx.set(db.collection('notifications').doc(), { recipientUserId: uid, branchId, title, message, link, read: false, deleted: false, createdAt: now })
@@ -799,96 +606,34 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
 
   app.get('/supply/records/:id/history', requireAuth, wrap(async (req, res, ctx) => {
     const id = cleanId(req.params.id), record = (await db.collection('supplyRecords').doc(id).get()).data(); await ensureRead(ctx, record)
-    const history = ctx.supplier ? [] : docs(await db.collection('supplyAudit').where('recordId', '==', id).get())
-    const documents = docs(await db.collection('supplyDocuments').where('recordId', '==', id).get()).filter(d => !ctx.supplier || (d.visibility === 'supplier' && d.supplierIds.some(s => ctx.supplierIds.includes(s))))
-    const messages = ['rfq', 'po'].includes(record.kind) ? docs(await db.collection('supplyMessages').where('recordId', '==', id).get()).filter(m => !ctx.supplier || ctx.supplierIds.includes(m.supplierId)) : []
+    const history = docs(await db.collection('supplyAudit').where('recordId', '==', id).get())
+    const documents = docs(await db.collection('supplyDocuments').where('recordId', '==', id).get())
+    const messages = ['rfq', 'po'].includes(record.kind) ? docs(await db.collection('supplyMessages').where('recordId', '==', id).get()) : []
     res.json({ success: true, data: { history, messages, documents: documents.map(({ storagePath, ...d }) => d) } })
   }))
   app.post('/supply/records/:id/messages', requireAuth, wrap(async (req, res, ctx) => {
-    const id = cleanId(req.params.id), record = (await db.collection('supplyRecords').doc(id).get()).data(); await ensureRead(ctx, record)
+    const id = cleanId(req.params.id), record = (await db.collection('supplyRecords').doc(id).get()).data()
+    await ensureRead(ctx, record)
     demand(['rfq', 'po'].includes(record.kind) && record.status !== 'Draft', 'Communications require an issued RFQ or PO.')
-    if (!ctx.supplier) allow(ctx, 'procurement:create')
+    demand(record.mode !== 'Online', 'Historical online supplier transactions are read-only.', 403)
+    allow(ctx, 'procurement:create')
     const supplierId = cleanId(req.body.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data()
-    demand(supplier && supplier.branchId === record.branchId && (record.supplierId === supplierId || record.supplierIds?.includes(supplierId)), 'Supplier is not part of this record.', 403)
-    if (!ctx.supplier) demand(await clinicCanContactSupplier(supplier), 'Business verification is required before contacting this supplier.', 403)
-    demand(!ctx.supplier || ctx.supplierIds.includes(supplierId), 'Cannot communicate as another supplier.', 403)
-    const ref = db.collection('supplyMessages').doc(), message = required(req.body.message, 'Message'), now = stamp()
+    demand(supplier && (record.supplierId === supplierId || record.supplierIds?.includes(supplierId)), 'Supplier is not part of this record.', 403)
+    const channel = required(req.body.channel, 'External communication channel')
+    demand(['Email', 'Phone', 'Physical document', 'External platform'].includes(channel), 'Choose a valid external communication channel.', 400)
+    const ref = db.collection('supplyMessages').doc(), message = required(req.body.message, 'Communication notes'), now = stamp()
     await db.runTransaction(async tx => {
-      tx.set(ref, { recordId: id, branchId: record.branchId, supplierId, message, channel: record.mode === 'Manual' ? required(req.body.channel, 'External communication channel') : 'Portal', from: ctx.supplier ? 'Supplier' : 'Procurement', actorId: ctx.uid, createdAt: now })
-      tx.set(db.collection('supplyAudit').doc(), { recordId: id, branchId: record.branchId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: record.kind, action: 'supplier-communication', messageId: ref.id, supplierId, ...ctx.auditContext, createdAt: now })
-      const recipient = ctx.supplier ? record.createdBy : supplier.ownerId || supplier.supplierUserId
-      if (record.mode === 'Online' && recipient && recipient !== ctx.uid) tx.set(db.collection('notifications').doc(), { recipientUserId: recipient, branchId: record.branchId, title: 'Supplier communication', message: `New message on ${record.number}`, link: ctx.supplier ? '/procurement/rfqs' : '/supplier/supply/rfqs', read: false, deleted: false, createdAt: now })
-    })
-    res.json({ success: true, data: { id: ref.id } })
-  }))
-  // General supplier chat is deliberately separate from RFQ/PO messages. It is
-  // branch- and supplier-scoped, while record-specific conversations remain on
-  // their respective transaction for auditability.
-  const allowClinicSupplierChat = ctx =>
-    demand(!ctx.supplier && (hasPermission(ctx, 'procurement:create') || hasPermission(ctx, 'inbox:view')), 'Supplier chat access is required.', 403)
-
-  app.get('/supply/chats', requireAuth, wrap(async (req, res, ctx) => {
-    const branchId = cleanId(req.query.branchId)
-    allowClinicSupplierChat(ctx)
-    await branchAccess(ctx, branchId, false)
-    const [chatSnap, supplierSnap] = await Promise.all([
-      db.collection('supplyChats').where('branchId', '==', branchId).get(),
-      db.collection('suppliers').where('branchId', '==', branchId).get(),
-    ])
-    const chatsBySupplierId = new Map(docs(chatSnap).map(chat => [chat.supplierId, chat]))
-    const verifiedSuppliers = await Promise.all(docs(supplierSnap).map(async supplier => ({ supplier, verified: await clinicCanContactSupplier(supplier) })))
-    const chats = verifiedSuppliers.filter(entry => entry.verified).map(entry => entry.supplier)
-      .map(supplier => ({
-        ...(chatsBySupplierId.get(supplier.id) || {}),
-        chatId: chatsBySupplierId.get(supplier.id)?.chatId || `chat-${branchId}-${supplier.id}`,
-        branchId,
-        supplierId: supplier.id,
-        supplierName: String(supplier.businessName || supplier.name || 'Supplier').trim() || 'Supplier',
-        supplierEmail: String(supplier.email || '').trim(),
-        supplierStatus: String(supplier.status || '').trim(),
-      }))
-      .sort((a, b) => (b.updatedAt?._seconds || b.updatedAt?.seconds || 0) - (a.updatedAt?._seconds || a.updatedAt?.seconds || 0))
-    res.json({ success: true, data: { chats } })
-  }))
-
-  app.get('/supply/chat', requireAuth, wrap(async (req, res, ctx) => {
-    const supplierId = cleanId(req.query.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data()
-    demand(supplier, 'Supplier not found.', 404)
-    if (!ctx.supplier) demand(await clinicCanContactSupplier(supplier), 'Business verification is required before contacting this supplier.', 403)
-    if (ctx.supplier) demand(ctx.supplierIds.includes(supplierId), 'This chat belongs to another supplier.', 403)
-    else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId, false) }
-    const chatId = `chat-${supplier.branchId}-${supplierId}`, messages = docs(await db.collection('supplyChatMessages').where('chatId', '==', chatId).get()).sort((a, b) => (a.createdAt?._seconds || 0) - (b.createdAt?._seconds || 0))
-    res.json({ success: true, data: { chatId, supplierId, branchId: supplier.branchId, messages } })
-  }))
-  app.post('/supply/chat/:supplierId/messages', requireAuth, wrap(async (req, res, ctx) => {
-    const supplierId = cleanId(req.params.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data(), message = required(req.body.message, 'Message')
-    demand(supplier && supplier.status === 'Active', 'Supplier is unavailable.', 404)
-    if (!ctx.supplier) demand(await clinicCanContactSupplier(supplier), 'Business verification is required before contacting this supplier.', 403)
-    if (ctx.supplier) demand(ctx.supplierIds.includes(supplierId), 'This chat belongs to another supplier.', 403)
-    else { allowClinicSupplierChat(ctx); await branchAccess(ctx, supplier.branchId, false) }
-    const clinic = (await db.collection('clinics').doc(supplier.branchId).get()).data() || {}, chatId = `chat-${supplier.branchId}-${supplierId}`, now = stamp(), ref = db.collection('supplyChatMessages').doc()
-    const clinicRecipients = ctx.supplier
-      ? (await Promise.all(docs(await db.collection('users').where('branchId', '==', supplier.branchId).get()).map(async user => {
-          const userContext = await loadUserContext(user.id)
-          return hasPermission(userContext, 'inbox:view') || hasPermission(userContext, 'procurement:create') ? user.id : ''
-        }))).filter(Boolean)
-      : [supplier.ownerId || supplier.supplierUserId].filter(Boolean)
-    await db.runTransaction(async tx => {
-      tx.set(db.collection('supplyChats').doc(chatId), { branchId: supplier.branchId, supplierId, updatedAt: now, lastMessage: message.slice(0, 240), lastSender: ctx.supplier ? 'Supplier' : 'Clinic' }, { merge: true })
-      tx.set(ref, { chatId, branchId: supplier.branchId, supplierId, message, from: ctx.supplier ? 'Supplier' : 'Clinic', actorId: ctx.uid, createdAt: now })
-      for (const recipient of new Set(clinicRecipients.filter(id => id && id !== ctx.uid))) {
-        tx.set(db.collection('notifications').doc(), { recipientUserId: recipient, branchId: supplier.branchId, title: 'Supplier chat', message: `New message from ${ctx.supplier ? supplier.businessName || supplier.name || 'supplier' : 'your clinic'}.`, link: ctx.supplier ? '/crm/inbox?tab=suppliers' : '/supplier/chat', read: false, deleted: false, createdAt: now })
-      }
+      tx.set(ref, { recordId: id, branchId: record.branchId, supplierId, message, channel, from: 'Procurement', communicationMode: 'Externally recorded', actorId: ctx.uid, createdAt: now })
+      tx.set(db.collection('supplyAudit').doc(), { recordId: id, branchId: record.branchId, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: record.kind, action: 'external-supplier-communication-recorded', messageId: ref.id, supplierId, ...ctx.auditContext, createdAt: now })
     })
     res.json({ success: true, data: { id: ref.id } })
   }))
   app.post('/supply/records/:id/documents', requireAuth, wrap(async (req, res, ctx) => {
-    const id = cleanId(req.params.id), record = (await db.collection('supplyRecords').doc(id).get()).data(); await ensureRead(ctx, record)
-    demand(!ctx.supplier || (supplierOwns(ctx, record) && ['quotation', 'po', 'invoice'].includes(record.kind)), 'Supplier cannot upload to this record.', 403)
-    if (!ctx.supplier) {
-      const writers = { request: ['inventory:create'], procurement: ['procurement:create', 'procurement:review'], rfq: ['procurement:create', 'procurement:review'], quotation: ['procurement:create', 'procurement:review'], evaluation: ['procurement:review'], financeApproval: ['finance:payables:approve'], budgetAllocation: ['finance:payables:approve'], po: ['procurement:review', 'orders:update'], supplierConfirmation: ['procurement:review'], receiving: ['orders:update'], inspection: ['orders:update'], discrepancy: ['orders:update'], budget: ['finance:payables:approve'], budgetRequest: ['procurement:review', 'finance:payables:approve'], invoice: ['finance:payables:approve', 'finance:payables:settle'], threeWayMatch: ['finance:payables:approve'], payment: ['finance:payables:settle'] }
-      demand((writers[record.kind] || []).some(p => hasPermission(ctx, p)), 'Document upload requires write permission.', 403)
-    }
+    const id = cleanId(req.params.id), record = (await db.collection('supplyRecords').doc(id).get()).data()
+    await ensureRead(ctx, record)
+    demand(record.mode !== 'Online', 'Historical online supplier transactions are read-only.', 403)
+    const writers = { request: ['inventory:create'], procurement: ['procurement:create', 'procurement:review'], rfq: ['procurement:create', 'procurement:review'], quotation: ['procurement:create', 'procurement:review'], evaluation: ['procurement:review'], financeApproval: ['finance:payables:approve'], budgetAllocation: ['finance:payables:approve'], po: ['procurement:review', 'finance:payables:approve'], supplierConfirmation: ['procurement:review'], receiving: ['inventory:create'], inspection: ['inventory:create'], discrepancy: ['inventory:create'], budget: ['finance:payables:approve'], budgetRequest: ['procurement:review', 'finance:payables:approve'], invoice: ['finance:payables:approve', 'finance:payables:settle'], threeWayMatch: ['finance:payables:approve'], payment: ['finance:payables:settle'] }
+    demand((writers[record.kind] || []).some(permission => hasPermission(ctx, permission)), 'Document upload requires write permission.', 403)
     const { contentType, data, name } = req.body
     demand(['application/pdf', 'image/png', 'image/jpeg'].includes(contentType), 'Upload PDF, PNG or JPEG.', 400)
     const bytes = Buffer.from(String(data || ''), 'base64'); demand(bytes.length > 0 && bytes.length <= 5 * 1024 * 1024, 'File limit is 5 MB.', 400)
@@ -897,14 +642,13 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const ref = db.collection('supplyDocuments').doc(), storagePath = `supply-documents/${record.branchId}/${id}/${ref.id}`
     const file = admin.storage().bucket(storageBucket()).file(storagePath)
     await file.save(bytes, { metadata: { contentType }, resumable: false })
-    try { await ref.set({ recordId: id, branchId: record.branchId, name: required(name, 'Filename'), contentType, size: bytes.length, storagePath, visibility: ctx.supplier || req.body.visibility === 'supplier' ? 'supplier' : 'internal', supplierIds: record.supplierId ? [record.supplierId] : record.supplierIds || [], uploadedBy: ctx.uid, createdAt: stamp() }) } catch (e) { await file.delete().catch(() => {}); throw e }
+    try { await ref.set({ recordId: id, branchId: record.branchId, name: required(name, 'Filename'), contentType, size: bytes.length, storagePath, visibility: 'internal', supplierIds: record.supplierId ? [record.supplierId] : record.supplierIds || [], uploadedBy: ctx.uid, createdAt: stamp() }) } catch (e) { await file.delete().catch(() => {}); throw e }
     await db.collection('supplyAudit').add({ branchId: record.branchId, recordId: id, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: record.kind, action: 'document-upload', documentId: ref.id, filename: required(name, 'Filename'), ...ctx.auditContext, createdAt: stamp() })
     res.json({ success: true, data: { id: ref.id } })
   }))
   app.get('/supply/documents/:id', requireAuth, wrap(async (req, res, ctx) => {
     const d = (await db.collection('supplyDocuments').doc(cleanId(req.params.id)).get()).data(); demand(d, 'Document not found.', 404)
     const r = (await db.collection('supplyRecords').doc(d.recordId).get()).data(); await ensureRead(ctx, r)
-    demand(!ctx.supplier || (d.visibility === 'supplier' && d.supplierIds.some(id => ctx.supplierIds.includes(id))), 'This document is private.', 403)
     const [url] = await admin.storage().bucket(storageBucket()).file(d.storagePath).getSignedUrl({ action: 'read', expires: Date.now() + 60000 })
     res.json({ success: true, data: { url } })
   }))

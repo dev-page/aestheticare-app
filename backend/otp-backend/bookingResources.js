@@ -4,6 +4,26 @@ import crypto from 'node:crypto'
 import { normalizeStaffing, appointmentStaffIds } from '../../shared/practitionerTeam.js'
 import { buildClientContract, buildClientContractDocument } from '../../shared/clientContract.js'
 import { hasCompletedLinkedConsultation } from '../../shared/consultationRequirements.js'
+import { lotAvailableQuantity } from './inventoryLots.js'
+import { day as inventoryDay } from './supplyModel.js'
+
+const bookingInventoryRow = async ({ tx, db, branchId, resource, scheduledDate }) => {
+  const snapshot = await tx.get(db.collection('inventoryItems').doc(resource.id))
+  check(snapshot.exists && snapshot.data().branchId === branchId, 'A required resource is unavailable.')
+  const item = { ...snapshot.data(), id: snapshot.id }
+  if (resource.kind !== 'material') return item
+  const lots = await tx.get(db.collection('supplyLots').where('itemId', '==', resource.id))
+  return {
+    ...item,
+    materialAvailableStock: lotAvailableQuantity({
+      branchId,
+      itemId: resource.id,
+      item,
+      lotRecords: (lots.docs || []).map(doc => ({ id: doc.id, ...doc.data() })),
+      today: String(scheduledDate || inventoryDay()),
+    }),
+  }
+}
 
 export const prepareBooking = async ({ tx, db, reservation, getBookingRange, rangesOverlap, appointmentId = null }) => {
   const branchId = reservation.branchId
@@ -63,9 +83,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   check(new Set(resources.map((item) => item.id)).size === resources.length, 'A resource cannot be configured as both a consumable material and reusable equipment.')
   const inventory = []
   for (const resource of resources) {
-    const snapshot = await tx.get(db.collection('inventoryItems').doc(resource.id))
-    check(snapshot.exists && snapshot.data().branchId === branchId, 'A required resource is unavailable.')
-    inventory.push({ ...snapshot.data(), id: snapshot.id })
+    inventory.push(await bookingInventoryRow({ tx, db, branchId, resource, scheduledDate: reservation.date }))
   }
   const group = reservation.groupBooking && typeof reservation.groupBooking === 'object' ? reservation.groupBooking : null
   check(!group || !services.some(service => normalized(service.postType) === 'consultation'), 'Consultations are individual appointments. Group consultations are not available.', 400)
@@ -83,11 +101,16 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
     ? Math.max(0, ...services.map((service) => Math.min(365, Math.max(0, Number(service.sessionIntervalDays || 0)))))
     : 0
   const isConsultationOffer = normalized(services[0].postType) === 'consultation'
-  const legacyMode = normalized(services[0].consultationMode || 'online') === 'on-site' ? 'on-site' : 'online'
+  const consultationMode = value => {
+    const mode = normalized(value).replace(/[\s_]+/g, '-')
+    if (['on-site', 'onsite'].includes(mode)) return 'on-site'
+    return mode
+  }
+  const legacyMode = consultationMode(services[0].consultationMode || 'online') === 'on-site' ? 'on-site' : 'online'
   const supportedModes = Array.isArray(services[0].consultationModes) && services[0].consultationModes.length
-    ? [...new Set(services[0].consultationModes.map(mode => normalized(mode)).filter(mode => ['online', 'on-site'].includes(mode)))]
+    ? [...new Set(services[0].consultationModes.map(consultationMode).filter(mode => ['online', 'on-site'].includes(mode)))]
     : [legacyMode]
-  const requestedMode = normalized(reservation.consultationMode || reservation.selectedServices?.find(service => service?.consultationMode)?.consultationMode || legacyMode)
+  const requestedMode = consultationMode(reservation.consultationMode || reservation.selectedServices?.find(service => service?.consultationMode)?.consultationMode || legacyMode)
   check(!isConsultationOffer || supportedModes.includes(requestedMode), 'Choose an available consultation mode.', 400)
   if (isConsultationOffer) {
     services[0].consultationModes = supportedModes
@@ -221,7 +244,7 @@ const prepareGroupBooking = async ({ tx, db, reservation, getBookingRange, range
     resources.set(key, { ...resource, quantity: resource.kind === 'material' ? Number(prior?.quantity || 0) + resource.quantity : Math.max(Number(prior?.quantity || 0), resource.quantity) })
   }
   const inventory = []
-  for (const resource of resources.values()) inventory.push({ id: resource.id, ...(await tx.get(db.collection('inventoryItems').doc(resource.id))).data() })
+  for (const resource of resources.values()) inventory.push(await bookingInventoryRow({ tx, db, branchId: reservation.branchId, resource, scheduledDate: reservation.date }))
   const appointments = (await tx.get(db.collection('appointments').where('branchId', '==', reservation.branchId))).docs.filter(doc => doc.id !== appointmentId).map(doc => doc.data()).filter(row => !row.isGroupParent && !row.isBookingOrderParent && !['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(normalized(row.status)))
   const first = visits[0], duration = visits.reduce((sum, visit) => sum + visit.data.totalServiceDurationMinutes, 0)
   const groupRange = getBookingRange({ time: reservation.time, totalServiceDurationMinutes: duration })

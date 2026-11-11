@@ -633,11 +633,11 @@ const permissionSuggestionRules = [
   },
   {
     match: ['inventory'],
-    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'orders:view', 'orders:update', 'reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
+    permissions: ['inventory:view', 'inventory:create', 'inventory:review', 'inventory:update', 'inventory:disable', 'suppliers:create', 'suppliers:update', 'reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['procurement'],
-    permissions: ['procurement:view', 'procurement:create', 'procurement:review', 'finance:purchases:view', 'orders:view', 'orders:update', 'suppliers:create', 'suppliers:update', 'reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
+    permissions: ['procurement:view', 'procurement:create', 'procurement:review', 'finance:purchases:view', 'suppliers:create', 'suppliers:update', 'reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['pharmacist', 'pharmacy'],
@@ -684,14 +684,14 @@ const builtInRoleTemplates = [
   {
     key: 'inventory',
     name: 'Inventory',
-    description: 'Maintains branch stock, item records, replenishment requests, and inventory movement.',
+    description: 'Maintains branch stock, item records, replenishment requests, receiving, and inspection.',
     color: ROLE_COLOR,
     suggestion: 'inventory',
   },
   {
     key: 'procurement',
     name: 'Procurement',
-    description: 'Coordinates supplier quotes, purchase orders, deliveries, and procurement records.',
+    description: 'Selects clinic suppliers, records external quotations, and prepares purchase orders for Finance approval.',
     color: ROLE_COLOR,
     suggestion: 'procurement',
   },

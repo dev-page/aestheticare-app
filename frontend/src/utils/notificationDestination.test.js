@@ -8,13 +8,15 @@ test('legacy shopping notifications lead to clinic discovery instead of retired 
   }
 })
 
-test('opens the saved page including the correct inbox tab', () => {
+test('redirects saved supplier inbox notifications to Procurement', () => {
   assert.deepEqual(notificationDestination({ link: '/crm/inbox?tab=suppliers' }),
-    { to: '/crm/inbox?tab=suppliers', label: 'Open page' })
+    { to: '/procurement/orders', label: 'Open Procurement' })
 })
-test('legacy supplier chat notices route to the right portal', () => {
-  assert.equal(notificationDestination({ title: 'Supplier chat' }).to, '/crm/inbox?tab=suppliers')
-  assert.equal(notificationDestination({ title: 'Supplier chat' }, { userType: 'supplier' }).to, '/supplier/chat')
+test('legacy supplier chat notices route to clinic Procurement or sign-in', () => {
+  assert.deepEqual(notificationDestination({ title: 'Supplier chat' }),
+    { to: '/procurement/orders', label: 'Open Procurement' })
+  assert.deepEqual(notificationDestination({ title: 'Supplier chat' }, { userType: 'supplier' }),
+    { to: '/login', label: 'Go to sign in' })
 })
 test('notices without a destination always offer the appropriate notifications page', () => {
   assert.equal(notificationDestination({}).to, '/notifications')

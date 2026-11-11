@@ -87,7 +87,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     feature: 'inventory',
     children: [
       ...supplyLinks('inventory', 'inventory:view', [['items', 'Inventory List & DSS', 'mdi:package-variant-closed'], ['requests', 'Inventory Requests', 'mdi:clipboard-plus-outline']]),
-      { label: 'Delivery Onboarding', icon: 'mdi:package-down', to: '/inventory/onboarding', permission: 'inventory:create' },
+      { label: 'Receiving & Inspection', icon: 'mdi:clipboard-check-outline', to: '/inventory/receiving', permission: 'inventory:create' },
       { label: 'Pharmacy', icon: 'mdi:cash-register', to: '/pharmacy/pos', feature: 'inventory', permission: 'pharmacy:view' },
     ]
   },
@@ -103,13 +103,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       { type: 'section', label: 'SUPPLIER MANAGEMENT' },
       { label: 'Supplier Directory', icon: 'mdi:truck-delivery-outline', to: '/procurement/suppliers/directory', permission: 'procurement:view' },
     ]
-  },
-  {
-    key: 'logistics-module',
-    label: 'Logistics',
-    icon: 'mdi:truck-delivery-outline',
-    moduleKey: 'inventory',
-    children: supplyLinks('logistics', 'orders:view', [['items', 'Receiving & Inspection', 'mdi:clipboard-check-outline']])
   },
   {
     key: 'account',

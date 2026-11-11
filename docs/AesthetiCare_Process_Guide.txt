@@ -40,46 +40,47 @@ and without glare or reflections.
 2. GETTING CLINIC SUPPLIES
 
 Inventory request
--> Procurement verifies request and supplier catalog terms
+-> Procurement selects a clinic supplier and records an external quotation
 -> Finance approves funding
 -> Procurement issues purchase order
--> Supplier confirms or declines
--> Logistics receives and inspects goods
+-> Procurement records the supplier's external confirmation
+-> Inventory receives and inspects goods
 -> Inventory is updated
 -> Finance records invoice/payment
 
 Detailed steps:
 1. Inventory identifies low stock or a needed supply.
-2. Inventory creates a purchase request with items, quantities, and reason.
-3. Procurement reviews the request. It confirms the supplier catalog item,
-   quantity, availability, price, tax, discount, other charges, payment terms,
-   delivery date, and delivery location.
-4. Procurement may return or reject incomplete requests. Complete requests are
-   sent to Finance for funding approval.
-5. Finance approves, returns, or rejects the funding request.
-   - Approve: the request goes back to Procurement for ordering.
-   - Return: Procurement corrects and resubmits it.
-   - Reject: no purchase order is issued.
-6. Procurement issues the purchase order to the selected supplier.
-7. The supplier confirms or declines the purchase order.
-   - Declined: Procurement changes supplier, revises, or cancels the order.
-   - Confirmed: the order becomes available to Logistics.
-8. Logistics receives and inspects goods. It records accepted quantities,
-   partial deliveries, damaged/rejected goods, and discrepancies.
-9. Accepted quantities update Inventory stock.
-10. Finance reviews the supplier invoice/payable and records payment.
+2. Inventory creates a request with item names, categories, quantities,
+   specifications, and the reason for the need. A supplier is not required.
+3. Procurement selects a clinic-managed supplier, obtains a quotation outside
+   AesthetiCare, and records its prices and terms. The quotation document is
+   attached to the procurement record as internal evidence.
+   Procurement also records whether tax is included in item prices, added
+   separately, or not applicable. Any separate tax, delivery, handling, other
+   fees, and discounts are entered as named amounts from the supplier quote.
+   Procurement enters the supplier-stated grand total; the system checks that
+   it matches the calculated total and does not calculate tax rates.
+4. Procurement submits the purchase order for Finance approval. Finance
+   approves or rejects it against an available purchasing budget.
+5. Procurement sends the approved PO to the supplier through its usual channel
+   and records the supplier's response and expected delivery date.
+6. Inventory receives and inspects the goods. It records delivered, accepted,
+   and rejected quantities, partial deliveries, condition, lot/expiry details,
+   and discrepancies.
+7. Only accepted quantities are onboarded into usable Inventory stock.
+8. Finance reviews the supplier invoice/payable and records payment.
 
-Customer product orders are separate. They are pickup-only and do not enter
-the supplier logistics workflow.
+Customer product orders are separate from clinic supply procurement and use
+their existing customer-order fulfillment process.
 
 2A. HOW CLINIC SUPPLIES ARE PAID
 
 The supply workflow controls and records supplier payments. It does not yet
 initiate a real bank transfer or PayMongo payout to a supplier.
 
-Supplier-confirmed PO
--> Logistics receives and onboards accepted goods
--> supplier submits invoice (or Finance records the manual invoice)
+Procurement records supplier confirmation
+-> Inventory receives and onboards accepted goods
+-> Finance records the supplier invoice
 -> Finance performs three-way matching
 -> Finance approves invoice for payment
 -> Finance prepares, reviews, and approves payment record
@@ -87,18 +88,17 @@ Supplier-confirmed PO
 -> Finance uploads proof and records settlement
 
 Detailed steps:
-1. Procurement includes the agreed payment terms in the funding request and
-   purchase order. The supplier catalog remains the source for item price,
-   VAT/tax treatment, discounts, and per-unit charges.
-2. The supplier confirms the purchase order and Logistics receives/inspects
-   the goods. Accepted goods must be onboarded before invoicing.
-3. The supplier submits an invoice through the supplier flow, or Finance
-   creates/records the supplier invoice for a manual supplier arrangement.
-4. The invoice is initially Submitted. Finance attaches the invoice document
-   and starts verification.
+1. Procurement records the agreed prices, payment terms, and external quotation
+   reference, and attaches the quotation to the PO workflow.
+   The PO retains the tax treatment, named tax/fee/discount rows, and supplier-
+   stated total so Finance can compare the invoice with the approved quote.
+2. Procurement records supplier confirmation. Inventory receives and inspects
+   the goods; accepted goods must be onboarded before invoicing.
+3. Finance records the supplier invoice and attaches its document.
+4. The invoice is initially Submitted. Finance starts verification.
 5. Finance performs a three-way match:
    - Purchase Order: what the clinic ordered.
-   - Receiving/Inspection: what Logistics accepted into inventory.
+   - Receiving/Inspection: what Inventory accepted into stock.
    - Supplier Invoice: what the supplier is charging.
 6. A mismatch creates a Disputed invoice. Finance resolves it before payment.
 7. A matched invoice is approved for payment. The system requires separation

@@ -269,7 +269,7 @@
             <div class="video-feature-card video-feature-card-accent">
               <p class="video-feature-kicker">Operations Control</p>
               <h3 class="video-feature-title">Supplies to Payment</h3>
-              <p class="video-feature-copy">Connect suppliers, inventory, purchase requests, logistics, orders, payments, and financial records.</p>
+              <p class="video-feature-copy">Connect clinic-managed suppliers, Inventory requests, Procurement, customer orders, payments, and financial records.</p>
             </div>
             <div class="video-stat-card">
               <p class="video-stat-value">RBAC</p>
@@ -341,7 +341,7 @@
               </svg>
             </div>
             <h3 class="solution-title">Inventory & Procurement</h3>
-            <p class="solution-description">Track products and supplies, work with suppliers, submit purchase requests, manage procurement, and follow logistics.</p>
+            <p class="solution-description">Track products and supplies, manage clinic supplier contacts, submit Inventory requests, and process Procurement through receiving.</p>
             <div class="solution-footer">
               <span class="solution-chip">Stock control</span>
               <span class="solution-chip">Purchase orders</span>
@@ -378,7 +378,7 @@
           <p class="capability-section-kicker">Designed for modern clinic teams</p>
           <h2 class="capability-section-title">Platform Capabilities</h2>
           <p class="capability-section-subtitle">
-            Explore the operational systems that connect appointments, client care, inventory, procurement, logistics, staffing, payroll, and finance.
+            Explore the operational systems that connect appointments, client care, inventory, procurement, customer orders, staffing, payroll, and finance.
           </p>
         </div>
 

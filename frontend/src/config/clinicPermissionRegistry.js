@@ -100,7 +100,7 @@ export const permissionGroups = [
   {
     key: 'inventory-operations',
     label: 'Inventory & Operations',
-    description: 'Listings, inventory, suppliers, requests, logistics, and orders.',
+    description: 'Listings, Inventory, Procurement, and customer order fulfillment.',
     sections: [
       {
         key: 'posts',
@@ -116,20 +116,27 @@ export const permissionGroups = [
       {
         key: 'inventory',
         label: 'Supply & Inventory',
-        description: 'Catalog, suppliers, requests, logistics, and orders.',
+        description: 'Inventory, clinic supplier records, and replenishment requests.',
         permissions: [
-          { key: 'inventory:view', label: 'View Inventory', description: 'Open suppliers, catalog, and inventory pages.', icon: 'mdi:package-variant-closed' },
+          { key: 'inventory:view', label: 'View Inventory', description: 'Open inventory items, receiving, and stock pages.', icon: 'mdi:package-variant-closed' },
           { key: 'suppliers:create', label: 'Create Suppliers', description: 'Create clinic-managed supplier records.', icon: 'mdi:account-plus-outline' },
           { key: 'suppliers:update', label: 'Manage Suppliers', description: 'Edit, activate, deactivate, or archive supplier records.', icon: 'mdi:account-edit-outline' },
-          { key: 'inventory:create', label: 'Create Inventory Requests', description: 'Create replenishment requests and inventory actions.', icon: 'mdi:cart-plus' },
+          { key: 'inventory:create', label: 'Manage Inventory Receiving', description: 'Create replenishment requests, inspect deliveries, resolve discrepancies, and onboard accepted stock.', icon: 'mdi:cart-plus' },
           { key: 'inventory:review', label: 'Review Inventory Requests', description: 'Approve, reject, return, and manage inventory requests.', icon: 'mdi:cart-check' },
           { key: 'inventory:update', label: 'Update Inventory', description: 'Edit stock records and manage inventory item details.', icon: 'mdi:package-variant-edit' },
           { key: 'inventory:disable', label: 'Archive Inventory Records', description: 'Archive or restore inventory-related records.', icon: 'mdi:archive-outline' },
-          { key: 'orders:view', label: 'View Orders', description: 'Open branch order and fulfillment tracking.', icon: 'mdi:cart-outline' },
-          { key: 'orders:update', label: 'Update Logistics Orders', description: 'Claim orders and update shipment progress.', icon: 'mdi:truck-check-outline' },
           { key: 'procurement:view', label: 'View Procurement', description: 'View quotes, purchase orders, and manual purchases.', icon: 'mdi:file-document-multiple-outline' },
-          { key: 'procurement:create', label: 'Create Procurement Records', description: 'Create supplier quotations, purchase orders, and manual purchases.', icon: 'mdi:file-plus-outline' },
+          { key: 'procurement:create', label: 'Create Procurement Records', description: 'Record external supplier quotations, prepare purchase orders, and record manual purchases.', icon: 'mdi:file-plus-outline' },
           { key: 'procurement:review', label: 'Review Procurement', description: 'Review and advance procurement records.', icon: 'mdi:file-check-outline' },
+        ],
+      },
+      {
+        key: 'customer-orders',
+        label: 'Customer Order Fulfillment',
+        description: 'Permissions for customer orders and their fulfillment.',
+        permissions: [
+          { key: 'orders:view', label: 'View Customer Orders', description: 'Open customer order and fulfillment tracking.', icon: 'mdi:cart-outline' },
+          { key: 'orders:update', label: 'Update Customer Orders', description: 'Process customer orders and update their fulfillment status.', icon: 'mdi:cart-check' },
         ],
       },
       {

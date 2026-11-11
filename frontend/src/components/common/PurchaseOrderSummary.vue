@@ -29,18 +29,18 @@
       </dl></section>
       <section class="po-costs"><h3>Cost breakdown</h3><dl>
         <div><dt>Items subtotal</dt><dd>{{ record.subtotal == null ? 'Not recorded' : currency(record.subtotal) }}</dd></div>
-        <div><dt>Tax</dt><dd>{{ record.tax == null ? 'Not recorded' : currency(record.tax) }}</dd></div>
-        <div><dt>Delivery fee</dt><dd>{{ record.delivery == null ? 'Not recorded' : currency(record.delivery) }}</dd></div>
-        <div><dt>Other fees</dt><dd>{{ record.otherCharges == null ? 'Not recorded' : currency(record.otherCharges) }}</dd></div>
-        <div v-if="Number(record.discount)"><dt>Discount</dt><dd>−{{ currency(record.discount) }}</dd></div>
+        <div v-for="adjustment in pricingAdjustments" :key="adjustment.key"><dt>{{ adjustment.label }}</dt><dd>{{ adjustment.type === 'discount' ? '−' : '' }}{{ currency(adjustment.amount) }}</dd></div>
+        <div v-if="record.statedTotal != null"><dt>Supplier-stated total</dt><dd>{{ currency(record.statedTotal) }}</dd></div>
         <div class="po-total"><dt>Order total</dt><dd>{{ record.total == null ? 'Not recorded' : currency(record.total) }}</dd></div>
       </dl></section>
+      <p v-if="taxTreatmentText" class="text-xs text-slate-400">{{ taxTreatmentText }}.</p>
     </div>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { quoteAdjustmentRows, quoteTaxTreatment, quoteTaxTreatmentLabel } from '@/utils/supplyQuotePricing'
 const props = defineProps({
   record: { type: Object, required: true },
   supplierName: { type: String, required: true },
@@ -51,6 +51,8 @@ const props = defineProps({
 const decisionReason = computed(() => ['Rejected', 'Clarification Requested', 'Returned to Procurement'].includes(props.record.status)
   ? props.record.confirmationReason || props.record.remarks || 'No reason was recorded. Check the activity and messages below.' : '')
 const showReceiving = computed(() => ['Receiving', 'Completed'].includes(props.record.status))
+const pricingAdjustments = computed(() => quoteAdjustmentRows(props.record))
+const taxTreatmentText = computed(() => quoteTaxTreatmentLabel(quoteTaxTreatment(props.record)))
 const deliveryDate = computed(() => {
   const key = String(props.record.deliveryDate || '').slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return 'Not scheduled'

@@ -6,13 +6,19 @@ export function notificationDestination(notification = {}, { userType = '', role
   if (/^\/customer\/(cart|checkout|orders)(?:[/?#]|$)/.test(link)) {
     return { to: '/customer/home', label: 'Discover clinics' }
   }
+  const retiredSupplierDestination = kind.includes('supplier')
+    ? { to: '/login', label: 'Go to sign in' }
+    : { to: '/procurement/orders', label: 'Open Procurement' }
+  if (/^\/crm\/inbox\?tab=suppliers?$/i.test(link)) {
+    return retiredSupplierDestination
+  }
   // Notifications navigate within the application; never interpret an external URL as a route.
   if (/^\/(?!\/)/.test(link) && !/[\\\u0000-\u001f]/.test(link)) {
     return { to: link, label: 'Open page' }
   }
   // Older chat notifications did not always save their destination.
   if (String(notification.title || '').toLowerCase() === 'supplier chat') {
-    return { to: kind.includes('supplier') ? '/supplier/chat' : '/crm/inbox?tab=suppliers', label: 'Open inbox' }
+    return retiredSupplierDestination
   }
   return { to: fallback, label: 'View all notifications' }
 }

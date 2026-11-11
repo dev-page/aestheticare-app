@@ -689,7 +689,7 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
           || (canAccessBranch(resource.data.branchId)
-          && (hasPermission('inventory:view') || hasPermission('pharmacy:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
+          && (hasPermission('inventory:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
       allow create: if isSignedIn()
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'))
         && !request.resource.data.keys().hasAny(['pharmacyEnabled', 'dispensingClass', 'retailPrice']);

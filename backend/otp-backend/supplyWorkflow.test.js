@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { registerSupplyWorkflow } from './supplyWorkflow.js'
-import { stockSignals, dateKey, invoiceMatch, supplierProjection } from './supplyModel.js'
+import { stockSignals, dateKey, invoiceMatch } from './supplyModel.js'
 
 // Isolated transactional adapter: exercises the actual HTTP handlers without
 // touching a live Firebase project. Production concurrency still needs emulator tests.
@@ -34,15 +34,20 @@ test('Free and expired subscriptions block paid supply APIs while preserving inv
     f.seed('clinics', 'clinic', { ownerId: 'owner', ...subscription })
     assert.equal((await f.call('inventory', '/supply/workspace', {}, undefined, 'GET')).status, 403)
     assert.equal((await f.call('inventory', '/supply/records', { branchId: 'clinic', kind: 'request' })).status, 403)
-    assert.equal((await f.call('procurement', '/supply/chat', {}, undefined, 'GET', { supplierId: 'vendor' })).status, 403)
+    assert.equal((await f.call('procurement', '/supply/workspace', { branchId: 'clinic' }, undefined, 'GET')).status, 403)
     assert.ok(f.store.has('inventoryItems/item'))
   }
+})
+
+test('Retired supplier identities cannot access the clinic supply workflow', async () => {
+  const f = fixture()
+  assert.equal((await f.call('supplier', '/supply/workspace', {}, undefined, 'GET')).status, 403)
 })
 
 
 test('Inventory can save a request as a draft before sending it to Procurement', async () => {
   const f = fixture(), date = '2099-12-31'
-  const saved = await f.call('inventory', '/supply/records', { branchId: 'clinic', kind: 'request', action: 'saveDraft', supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 10, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Review stock requirement', requiredDate: date })
+  const saved = await f.call('inventory', '/supply/records', { branchId: 'clinic', kind: 'request', action: 'saveDraft', name: 'Gloves', category: 'Materials', unit: 'boxes', quantity: 10, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Review stock requirement', requiredDate: date })
   assert.equal(saved.status, 200, JSON.stringify(saved))
   const draft = f.read(saved.data.id)
   assert.equal(draft.status, 'Draft')
@@ -52,42 +57,71 @@ test('Inventory can save a request as a draft before sending it to Procurement',
   assert.ok(f.read(draft.id).procurementId)
 })
 
-test('DSS thresholds, invalid dates, privacy and invoice overbilling', () => {
+test('Inventory stock edits keep opening and adjustment quantities in the lot ledger', async () => {
+  const f = fixture()
+  const save = currentStock => f.call('inventory', '/supply/items', {
+    branchId: 'clinic', id: 'item', name: 'Gloves', category: 'Materials', unit: 'boxes', currentStock,
+    minStock: 10, targetStock: 20, maxStock: 30, supplierId: 'vendor', costPrice: 5,
+    itemType: 'Material', consumability: 'Consumable', adjustmentReason: 'Verified physical count',
+  })
+
+  const opening = await save(20)
+  assert.equal(opening.status, 200, JSON.stringify(opening))
+  assert.equal(f.store.get('supplyLots/opening-clinic-item').remainingQuantity, 20)
+
+  const adjustment = await save(15)
+  assert.equal(adjustment.status, 200, JSON.stringify(adjustment))
+  assert.equal(f.store.get('inventoryItems/item').currentStock, 15)
+  assert.equal(f.store.get('supplyLots/opening-clinic-item').remainingQuantity, 15)
+  const movements = [...f.store.entries()].filter(([key]) => key.startsWith('inventoryMovements/')).map(([, value]) => value)
+  assert.ok(movements.some(movement => movement.lotAdjustments?.some(row => row.direction === 'decrease' && row.quantity === 5)))
+})
+
+test('DSS thresholds, invalid dates, and invoice overbilling', () => {
   assert.deepEqual(stockSignals({ currentStock: 5, minStock: 5 }), ['For Restocking'])
   assert.ok(stockSignals({ currentStock: 11, maxStock: 10 }).includes('Overstocked'))
   assert.throws(() => dateKey('2099-99-99'), { status: 400 })
-  assert.deepEqual(supplierProjection({ id: 'x', budgetId: 'private', justification: 'private', links: ['private'] }), { id: 'x' })
   assert.ok(invoiceMatch({ lines: [{ itemId: 'a', unitPrice: 100 }], accepted: { a: 5 }, total: 500 }, { lines: [{ itemId: 'a', quantity: 6, unitPrice: 100 }], total: 600 }, []).length)
 })
 
 
-test('A supplier delivery fee is selected from the clinic branch city before Finance approval', async () => {
+test('Procurement records the supplier quoted delivery fee before Finance approval', async () => {
   const f = fixture(), date = '2099-12-31'
-  f.seed('clinics', 'clinic', { subscriptionPlan: 'basic', ownerId: 'owner', clinicLocation: 'Imus' })
-  const supplier = f.store.get('suppliers/vendor')
-  f.seed('suppliers', 'vendor', { ...supplier, deliveryFees: [{ city: 'Imus', amount: 250 }, { city: 'Bacoor', amount: 400 }] })
-  const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date })
+  const request = await f.create('inventory', 'request', { name: 'Gloves', category: 'Materials', unit: 'boxes', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date })
   const procurement = f.read(request).procurementId
-  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true, category: 'Materials', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes' })
+  f.evidence(procurement)
+  const line = f.read(request).lines[0]
+  await f.act('procurement', procurement, 'confirm', {
+    supplierId: 'vendor', productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true,
+    category: 'Materials', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes',
+    lines: [{ itemId: line.itemId, name: line.name, unit: line.unit, quantity: 20, unitPrice: 5 }],
+    taxTreatment: 'not-applicable', adjustments: [{ type: 'fee', label: 'Delivery to Imus', amount: 250 }], statedTotal: 350,
+  })
   const po = f.read(f.read(procurement).purchaseOrderId)
   assert.equal(po.delivery, 25000)
-  assert.equal(po.deliveryFeeCity, 'Imus')
-  assert.equal(po.deliveryFeeConfigured, true)
+  assert.deepEqual(po.adjustments, [{ type: 'fee', label: 'Delivery to Imus', amount: 25000 }])
   assert.equal(po.total, 35000)
 })
 
 test('Procurement creates a catalog-priced purchase order for review without an RFQ', async () => {
   const f = fixture(), date = '2099-12-31'
-  const request = await f.create('inventory', 'request', { supplierId: 'vendor', supplierCatalogItemId: 'catalog-gloves', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date, location: 'Main clinic' })
+  const request = await f.create('inventory', 'request', { name: 'Gloves', category: 'Materials', unit: 'boxes', quantity: 20, minStock: 25, targetStock: 120, maxStock: 150, department: 'Inventory', reason: 'Restock', requiredDate: date, location: 'Main clinic' })
   const procurement = f.read(request).procurementId
-  await f.act('procurement', procurement, 'confirm', { productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true, category: 'Materials', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes' })
+  f.evidence(procurement)
+  const line = f.read(request).lines[0]
+  await f.act('procurement', procurement, 'confirm', {
+    supplierId: 'vendor', productsCorrect: true, quantitiesVerified: true, availabilityConfirmed: true, pricesVerified: true,
+    category: 'Materials', deliveryDate: date, deliveryLocation: 'Main clinic', terms: 'Sealed boxes',
+    lines: [{ itemId: line.itemId, name: line.name, unit: line.unit, quantity: 20, unitPrice: 5 }],
+    taxTreatment: 'not-applicable', adjustments: [], statedTotal: 100,
+  })
   const po = f.read(f.read(procurement).purchaseOrderId)
-  assert.equal(po.directSupplierCatalog, true)
+  assert.equal(po.directSupplierQuote, true)
   assert.equal(po.requestedAmount, 10000)
   assert.equal(po.status, 'For Review')
   const budget = await f.create('finance', 'budget', { department: 'Inventory', category: 'Materials', total: 200 })
   await f.act('finance', po.id, 'approve', { budgetId: budget, approvedAmount: 100, remarks: 'Approved from verified supplier catalog' })
-  assert.equal(po.directSupplierCatalog, true)
+  assert.equal(po.directSupplierQuote, true)
   assert.equal(po.total, 10000)
   assert.equal(po.tax, 0)
   assert.equal(po.delivery, 0)

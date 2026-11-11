@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { paymentDue, afterPaymentStatus, resourceConflict, resetAppointmentAccess } from './bookingWorkflow.js'
+import { paymentDue, afterPaymentStatus, resourceConflict, reservedMaterialQuantity, resetAppointmentAccess } from './bookingWorkflow.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import fs from 'node:fs'
 import vm from 'node:vm'
@@ -201,6 +201,17 @@ test('Materials reserve stock; reusable equipment reserves overlapping slots onl
   appointments[0].materialsConsumed = true
   assert.equal(resourceConflict({ requirements, inventory, appointments, overlaps: () => false }), '')
   assert.match(resourceConflict({ requirements, inventory, appointments, overlaps: () => true }), /Machine/)
+})
+
+test('Material reservation totals exclude consumed, closed, and wrapper appointments', () => {
+  const appointments = [
+    { status: 'Paid', resources: [{ id: 'm', kind: 'material', quantity: 2 }] },
+    { status: 'Paid', isGroupParent: true, resources: [{ id: 'm', kind: 'material', quantity: 10 }] },
+    { status: 'Paid', isBookingOrderParent: true, resources: [{ id: 'm', kind: 'material', quantity: 10 }] },
+    { status: 'Paid', materialsConsumed: true, resources: [{ id: 'm', kind: 'material', quantity: 10 }] },
+    { status: 'Cancelled', resources: [{ id: 'm', kind: 'material', quantity: 10 }] },
+  ]
+  assert.equal(reservedMaterialQuantity(appointments, 'm'), 2)
 })
 
 test('Deposit rounding never underpays fractional cents', () => {

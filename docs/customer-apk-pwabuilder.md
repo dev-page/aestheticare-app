@@ -28,7 +28,7 @@ Official packaging instructions: https://github.com/pwa-builder/PWABuilder/blob/
 - Create account: `/customer-app/register`, which renders `RegisterCustomer` directly and creates a Customer account. No registration-type chooser appears.
 - Forgot password: `/customer-app/forgot-password`, with return navigation to customer login or the customer account page.
 - Registration completion, password-reset completion, logout and inactivity expiry stay in the customer authentication flow.
-- Existing clinic, supplier, staff and system admin accounts cannot enter app panels. They use the normal website login in a separate browser tab.
+- Existing clinic, staff and system admin accounts cannot enter app panels. They use the normal website login in a separate browser tab. Supplier-role accounts are unsupported and cannot sign in.
 - App mode is retained in the app's tab/session. Ordinary website tabs continue to use the website login, landing page and registration chooser.
 - Payments and Google Meet may intentionally open their external providers. This does not expose clinic/admin panels inside the app.
 
@@ -38,4 +38,4 @@ Official packaging instructions: https://github.com/pwa-builder/PWABuilder/blob/
 
 The customer build registers `/service-worker.js` directly from the HTML head, independently of the Vue/Firebase bundle and the page `load` event. If PWABuilder reports no worker, verify the deployed build includes `/customer-app/register-service-worker.js` and that `/service-worker.js` returns JavaScript rather than the SPA HTML or a deployment-protection login. In Chrome DevTools, check Application > Service Workers for an activated worker controlling `/`. Redeploy the customer build and rerun the scan after correcting deployment errors.
 
-Test the generated, signed APK on Android: fresh launch, direct customer signup and OTP, existing customer login, rejected operational-account login, password recovery, account recovery, booking/payment return, external consultation links, logout, app restart, and Android Back navigation. Test ordinary website clinic/supplier/admin login separately. Local automated checks and a frontend build do not replace these signed-APK checks.
+Test the generated, signed APK on Android: fresh launch, direct customer signup and OTP, existing customer login, rejected operational-account login, password recovery, account recovery, booking/payment return, external consultation links, logout, app restart, and Android Back navigation. Test ordinary website clinic/admin login separately and confirm retired supplier-role accounts are denied. Local implementation checks and a frontend build do not replace these signed-APK checks.

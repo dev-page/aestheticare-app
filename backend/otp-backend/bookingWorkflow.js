@@ -1,4 +1,14 @@
 export const normalized = (value) => String(value || '').trim().toLowerCase()
+const releasedMaterialStatuses = new Set(['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'])
+export const reservedMaterialQuantity = (appointments = [], itemId) => appointments.reduce((sum, appointment) => {
+  if (!appointment || appointment.isGroupParent || appointment.isBookingOrderParent || appointment.materialsConsumed || releasedMaterialStatuses.has(normalized(appointment.status))) return sum
+  return sum + (appointment.resources || [])
+    .filter(resource => resource.kind === 'material' && String(resource.id) === String(itemId))
+    .reduce((quantity, resource) => {
+      const value = Number(resource.quantity || 0)
+      return quantity + (Number.isSafeInteger(value) && value > 0 ? value : 0)
+    }, 0)
+}, 0)
 // Access evidence belongs to one schedule and assigned practitioner only.
 export const resetAppointmentAccess = () => ({
   checkedInAt: null, checkedInById: null, manualCheckInReason: null,
@@ -51,10 +61,15 @@ export const resourceConflict = ({ requirements, inventory, appointments, overla
   for (const requirement of requirements) {
     const stock = inventory.find((item) => item.id === requirement.id)
     if (!stock) return 'A required material or piece of equipment is unavailable.'
-    const used = appointments.reduce((sum, appointment) => sum + (appointment.resources || []).filter((entry) =>
-      entry.id === requirement.id && (entry.kind === 'material' ? !appointment.materialsConsumed : overlaps(appointment))
-    ).reduce((count, entry) => count + entry.quantity, 0), 0)
-    if (!Number.isFinite(Number(stock.currentStock)) || Number(stock.currentStock || 0) - used < requirement.quantity) return `${stock.name || 'Required resource'} is unavailable for this booking.`
+    const used = requirement.kind === 'material'
+      ? reservedMaterialQuantity(appointments, requirement.id)
+      : appointments.reduce((sum, appointment) => sum + (appointment.resources || []).filter((entry) =>
+        entry.id === requirement.id && entry.kind === requirement.kind && overlaps(appointment)
+      ).reduce((count, entry) => count + Number(entry.quantity || 0), 0), 0)
+    const stockQuantity = requirement.kind === 'material' && Number.isFinite(Number(stock.materialAvailableStock))
+      ? Number(stock.materialAvailableStock)
+      : Number(stock.currentStock || 0)
+    if (!Number.isFinite(stockQuantity) || stockQuantity - used < requirement.quantity) return `${stock.name || 'Required resource'} is unavailable for this booking.`
   }
   return ''
 }

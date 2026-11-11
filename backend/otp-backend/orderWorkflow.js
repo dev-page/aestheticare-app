@@ -1,4 +1,18 @@
 const check = (condition, message, status = 409) => { if (!condition) throw Object.assign(new Error(message), { status }) }
+import { planLotConsumption, planLotRestoration } from './inventoryLots.js'
+import { day as inventoryDay } from './supplyModel.js'
+import { reservedMaterialQuantity } from './bookingWorkflow.js'
+
+const persistLotWrites = (tx, db, writes, now) => {
+  for (const write of writes || []) tx.set(db.collection('supplyLots').doc(write.id), {
+    ...write.data,
+    ...(write.created ? { receivedAt: now, createdAt: now } : {}),
+    updatedAt: now,
+  }, { merge: true })
+}
+
+const orderAllocations = plan => plan.flatMap(item => (item.lotPlan?.allocations || []).map(allocation => ({ inventoryItemId: item.itemId, ...allocation })))
+
 export const stockPlan = async (tx, db, items) => {
   const quantities = new Map()
   for (const item of items) quantities.set(item.inventoryItemId, (quantities.get(item.inventoryItemId) || 0) + item.quantity)
@@ -6,14 +20,29 @@ export const stockPlan = async (tx, db, items) => {
   const appointments = []
   for (const branchId of new Set(items.map((item) => item.branchId))) {
     const snapshot = await tx.get(db.collection('appointments').where('branchId', '==', branchId))
-    appointments.push(...snapshot.docs.map((s) => s.data()).filter((a) => !a.materialsConsumed && !['cancelled', 'rejected', 'expired', 'completed'].includes(String(a.status || '').toLowerCase())))
+    appointments.push(...snapshot.docs.map((s) => s.data()))
   }
   for (const [id, quantity] of quantities) {
     const ref = db.collection('inventoryItems').doc(id), snap = await tx.get(ref)
     const current = Number(snap.data()?.currentStock || 0)
     check(snap.exists && items.filter((i) => i.inventoryItemId === id).every((i) => i.branchId === snap.data().branchId), 'Product inventory is unavailable.')
-    const reserved = appointments.reduce((sum, a) => sum + (a.resources || []).filter((r) => r.kind === 'material' && r.id === id).reduce((count, r) => count + Number(r.quantity || 0), 0), 0)
-    plan.push({ ref, quantity, current, available: current - reserved })
+    const reserved = reservedMaterialQuantity(appointments, id)
+    const item = snap.data() || {}
+    const lots = await tx.get(db.collection('supplyLots').where('itemId', '==', id))
+    let lotPlan = null
+    try {
+      lotPlan = planLotConsumption({
+        branchId: item.branchId,
+        itemId: id,
+        item: { ...item, reservedStock: Number(item.reservedStock || 0) + reserved },
+        lotRecords: lots.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+        quantity,
+        today: inventoryDay(),
+      })
+    } catch (error) {
+      if (error.status !== 409) throw error
+    }
+    plan.push({ itemId: id, ref, quantity, current, available: lotPlan ? Math.min(current - reserved - Number(item.reservedStock || 0), lotPlan.availableQuantity) : 0, lotPlan })
   }
   return plan
 }
@@ -53,11 +82,12 @@ export const recordVerifiedOrder = async ({ db, timestamp, sessionId, customerId
     const available = plan.every((p) => Number.isFinite(p.available) && p.available >= p.quantity)
     const clinic = (await tx.get(db.collection('clinics').doc(snapshot.branchId))).data() || {}
     const now = timestamp()
-    if (available) for (const p of plan) tx.update(p.ref, { currentStock: p.current - p.quantity, updatedAt: now })
-    tx.set(orderRef, { ...snapshot, customerName: snapshot.delivery.fullName, pickupBranchId: snapshot.branchId, fulfillmentType: 'pickup', orderNumber: snapshot.referenceNumber, paymentStatus: 'Paid', amountPaid: snapshot.total, status: available ? 'Preparing' : 'Awaiting Stock', inventoryDeducted: available, source: 'paymongo_checkout', paymongoCheckoutSessionId: sessionId, paymongoPaymentId: payment.id, createdAt: now, updatedAt: now })
+    if (available) for (const p of plan) { tx.update(p.ref, { currentStock: p.current - p.quantity, updatedAt: now }); persistLotWrites(tx, db, p.lotPlan?.lotWrites, now) }
+    const lotAllocations = available ? orderAllocations(plan) : []
+    tx.set(orderRef, { ...snapshot, customerName: snapshot.delivery.fullName, pickupBranchId: snapshot.branchId, fulfillmentType: 'pickup', orderNumber: snapshot.referenceNumber, paymentStatus: 'Paid', amountPaid: snapshot.total, status: available ? 'Preparing' : 'Awaiting Stock', inventoryDeducted: available, inventoryLotAllocations: lotAllocations, source: 'paymongo_checkout', paymongoCheckoutSessionId: sessionId, paymongoPaymentId: payment.id, createdAt: now, updatedAt: now })
     tx.set(db.collection('transactions').doc(`order-${sessionId}`), { branchId: snapshot.branchId, customerId, orderId: orderRef.id, items: snapshot.items, amount: snapshot.total, total: snapshot.total, type: 'product_sale', method: payment.attributes.source?.type || 'Online', status: 'Paid', createdAt: now })
-    if (available) tx.set(db.collection('inventoryMovements').doc(`order-${sessionId}`), { branchId: snapshot.branchId, orderId: orderRef.id, items: snapshot.items, type: 'product_sale', createdAt: now })
-    for (const recipientUserId of new Set([customerId, clinic.ownerId].filter(Boolean))) tx.set(db.collection('notifications').doc(), { recipientUserId, branchId: snapshot.branchId, title: available ? 'Order paid' : 'Paid order needs stock', message: available ? 'Payment confirmed. Your pickup order is being prepared.' : 'Payment confirmed, but stock changed during checkout. The clinic must replenish stock before preparing this order.', link: recipientUserId === customerId ? '/customer/orders' : '/logistics/dashboard', read: false, deleted: false, createdAt: now })
+    if (available) tx.set(db.collection('inventoryMovements').doc(`order-${sessionId}`), { branchId: snapshot.branchId, orderId: orderRef.id, items: snapshot.items, lotAllocations, type: 'product_sale', createdAt: now })
+    for (const recipientUserId of new Set([customerId, clinic.ownerId].filter(Boolean))) tx.set(db.collection('notifications').doc(), { recipientUserId, branchId: snapshot.branchId, title: available ? 'Order paid' : 'Paid order needs stock', message: available ? 'Payment confirmed. Your pickup order is being prepared.' : 'Payment confirmed, but stock changed during checkout. The clinic must replenish stock before preparing this order.', link: recipientUserId === customerId ? '/customer/orders' : '/operations/orders', read: false, deleted: false, createdAt: now })
     return { orderId: orderRef.id, status: available ? 'Preparing' : 'Awaiting Stock' }
   })
 }
@@ -72,10 +102,34 @@ export const finalizeCancelledOrder = async ({ db, timestamp, orderId, update })
   const ref = db.collection('customerOrders').doc(orderId), order = (await tx.get(ref)).data()
   check(order, 'Order not found.', 404)
   if (order.status === 'Cancelled') return { alreadyRecorded: true }
-  const plan = order.inventoryDeducted && !order.inventoryRestored ? await stockPlan(tx, db, order.items) : []
+  const plan = []
+  if (order.inventoryDeducted && !order.inventoryRestored) {
+    const quantities = new Map()
+    for (const line of order.items || []) quantities.set(line.inventoryItemId, (quantities.get(line.inventoryItemId) || 0) + Number(line.quantity || 0))
+    const saved = new Map()
+    for (const allocation of order.inventoryLotAllocations || []) {
+      const rows = saved.get(allocation.inventoryItemId) || []
+      rows.push(allocation)
+      saved.set(allocation.inventoryItemId, rows)
+    }
+    for (const [itemId, quantity] of quantities) {
+      const itemRef = db.collection('inventoryItems').doc(itemId), itemSnap = await tx.get(itemRef), item = itemSnap.data() || {}
+      check(itemSnap.exists && item.branchId === order.branchId, 'The inventory item for this return is unavailable.')
+      const lotSnapshot = await tx.get(db.collection('supplyLots').where('itemId', '==', itemId))
+      const allocations = saved.get(itemId) || [{ quantity, expiryDate: item.expiryDate || '' }]
+      const lotPlan = planLotRestoration({
+        branchId: order.branchId,
+        itemId,
+        allocations,
+        lotRecords: lotSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+        returnId: orderId,
+      })
+      plan.push({ itemId, ref: itemRef, quantity, current: Number(item.currentStock || 0), lotPlan })
+    }
+  }
   const now = timestamp()
-  for (const p of plan) tx.update(p.ref, { currentStock: p.current + p.quantity, updatedAt: now })
-  if (plan.length) tx.set(db.collection('inventoryMovements').doc(`cancel-${orderId}`), { branchId: order.branchId, orderId, type: 'cancelled_sale_return', items: order.items, createdAt: now })
+  for (const p of plan) { tx.update(p.ref, { currentStock: p.current + p.quantity, updatedAt: now }); persistLotWrites(tx, db, p.lotPlan?.lotWrites, now) }
+  if (plan.length) tx.set(db.collection('inventoryMovements').doc(`cancel-${orderId}`), { branchId: order.branchId, orderId, type: 'cancelled_sale_return', items: order.items, lotAllocations: orderAllocations(plan), restoredLots: plan.flatMap(({ lotPlan }) => lotPlan.restored || []), createdAt: now })
   tx.update(ref, { ...update, inventoryRestored: Boolean(order.inventoryDeducted), cancellationInProgress: false, updatedAt: now })
   if (update.refundAmount) tx.set(db.collection('transactions').doc(`refund-${orderId}`), { branchId: order.branchId, customerId: order.customerId, orderId, amount: -Math.abs(update.refundAmount), type: 'customer_order_refund', method: 'PayMongo', status: 'Refunded', paymongoRefundId: update.paymongoRefundId || null, createdAt: now })
   return { status: 'Cancelled' }
@@ -118,9 +172,10 @@ export const registerOrderWorkflow = (app, { admin, requireAuth, loadUserContext
           check(plan.every((p) => Number.isFinite(p.available) && p.available >= p.quantity), 'Replenish unreserved inventory before preparing this order.')
         }
         const now = timestamp()
-        for (const p of plan) tx.update(p.ref, { currentStock: p.current - p.quantity, updatedAt: now })
-        if (plan.length) tx.set(db.collection('inventoryMovements').doc(`order-${ref.id}`), { branchId: order.branchId, orderId: ref.id, items: order.items, type: 'product_sale', createdAt: now })
-        tx.update(ref, { status: next, logisticsStatus: next, inventoryDeducted: true, updatedAt: now })
+        for (const p of plan) { tx.update(p.ref, { currentStock: p.current - p.quantity, updatedAt: now }); persistLotWrites(tx, db, p.lotPlan?.lotWrites, now) }
+        const lotAllocations = order.inventoryLotAllocations?.length ? order.inventoryLotAllocations : orderAllocations(plan)
+        if (plan.length) tx.set(db.collection('inventoryMovements').doc(`order-${ref.id}`), { branchId: order.branchId, orderId: ref.id, items: order.items, lotAllocations, type: 'product_sale', createdAt: now })
+        tx.update(ref, { status: next, logisticsStatus: next, inventoryDeducted: true, inventoryLotAllocations: lotAllocations, updatedAt: now })
         tx.set(db.collection('notifications').doc(), { recipientUserId: order.customerId, branchId: order.branchId, title: 'Order updated', message: `${order.referenceNumber || 'Order'}: ${next}`, link: '/customer/orders', read: false, deleted: false, createdAt: now })
       })
       res.json({ success: true, data: { status: next } })

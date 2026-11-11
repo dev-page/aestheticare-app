@@ -26,7 +26,44 @@ export const stockSignals = (item, today = day()) => {
   if (item.itemType === 'Equipment' && ['damaged', 'defective', 'under repair', 'bad'].includes(String(item.condition || '').toLowerCase())) flags.push('Needs Attention')
   return flags
 }
-export const quoteTotals = input => {
+const legacyQuoteAdjustments = input => [
+  { type: 'tax', label: 'Tax', amount: input.tax || 0 },
+  { type: 'fee', label: 'Delivery', amount: input.delivery || 0 },
+  { type: 'fee', label: 'Other supplier charges', amount: input.otherCharges || 0 },
+  { type: 'discount', label: 'Discount', amount: input.discount || 0 },
+]
+const hasLegacyQuoteAmounts = input => ['tax', 'delivery', 'otherCharges', 'discount'].some(key => Number(input[key] || 0) !== 0)
+export const quoteAdjustmentRows = record => {
+  if (Array.isArray(record?.adjustments) && (record.adjustments.length > 0 || !hasLegacyQuoteAmounts(record || {}))) return record.adjustments.filter(row => Number(row?.amount || 0) > 0).map(row => ({
+    type: String(row.type || ''), label: String(row.label || ''), amount: Number(row.amount || 0),
+  }))
+  return legacyQuoteAdjustments(record || {}).map(row => ({ ...row, amount: Number(row.amount || 0) })).filter(row => row.amount > 0)
+}
+const normalizeQuoteAdjustments = input => {
+  const suppliedRows = Array.isArray(input.adjustments) && (input.adjustments.length > 0 || !hasLegacyQuoteAmounts(input))
+  if (suppliedRows && input.adjustments.length && hasLegacyQuoteAmounts(input)) {
+    demand(false, 'Enter either itemized adjustments or the older summary amounts, not both.', 400)
+  }
+  const rawRows = suppliedRows ? input.adjustments : legacyQuoteAdjustments(input)
+  demand(rawRows.length <= 30, 'A quotation can have at most 30 tax, fee, or discount rows.', 400)
+  const adjustments = rawRows.map(row => {
+    const amount = money(row?.amount || 0)
+    if (!amount) return null
+    const type = String(row.type || '')
+    demand(['tax', 'fee', 'discount'].includes(type), 'Choose whether each adjustment is tax, a fee, or a discount.', 400)
+    const label = String(row.label || '').trim()
+    demand(label && label.length <= 120, 'Each adjustment needs a description of up to 120 characters.', 400)
+    return { type, label, amount }
+  }).filter(Boolean)
+  const hasTax = adjustments.some(row => row.type === 'tax')
+  const taxTreatment = String(input.taxTreatment || (hasTax ? 'separate' : 'not-applicable'))
+  demand(['included', 'separate', 'not-applicable'].includes(taxTreatment), 'Choose how the supplier quote handles tax.', 400)
+  demand(taxTreatment === 'separate' || !hasTax, taxTreatment === 'included'
+    ? 'Remove the separate tax amount because tax is already included in the item prices.'
+    : 'Remove the tax amount because tax is marked not applicable.', 400)
+  return { adjustments, taxTreatment }
+}
+export const quoteTotals = (input, { requireStatedTotal = false } = {}) => {
   demand(Array.isArray(input.lines) && input.lines.length > 0 && input.lines.length <= 50, 'Provide 1–50 quotation lines.', 400)
   const seen = new Set()
   const lines = input.lines.map(line => {
@@ -36,10 +73,21 @@ export const quoteTotals = input => {
     return { itemId, name: String(line.name || ''), unit: String(line.unit || 'units'), quantity: count, unitPrice, total: count * unitPrice }
   })
   const subtotal = lines.reduce((sum, line) => sum + line.total, 0)
-  const charges = Object.fromEntries(['tax', 'delivery', 'otherCharges', 'discount'].map(key => [key, money(input[key] || 0)]))
-  const total = subtotal + charges.tax + charges.delivery + charges.otherCharges - charges.discount
+  const { adjustments, taxTreatment } = normalizeQuoteAdjustments(input)
+  const sumType = type => adjustments.filter(row => row.type === type).reduce((sum, row) => sum + row.amount, 0)
+  const tax = sumType('tax'), discount = sumType('discount')
+  const delivery = adjustments.filter(row => row.type === 'fee' && /delivery|shipping|freight/i.test(row.label)).reduce((sum, row) => sum + row.amount, 0)
+  const otherCharges = adjustments.filter(row => row.type === 'fee' && !/delivery|shipping|freight/i.test(row.label)).reduce((sum, row) => sum + row.amount, 0)
+  const charges = { tax, delivery, otherCharges, discount }
+  const fees = sumType('fee')
+  const total = subtotal + tax + fees - discount
   demand(Number.isSafeInteger(total) && total > 0, 'Quotation total must be positive.', 400)
-  return { lines, subtotal, ...charges, total }
+  const hasStatedTotal = input.statedTotal !== undefined && input.statedTotal !== null && String(input.statedTotal).trim() !== ''
+  const usesItemizedPricing = Array.isArray(input.adjustments) || input.taxTreatment !== undefined
+  demand(!requireStatedTotal || !usesItemizedPricing || hasStatedTotal, 'Enter the supplier-stated grand total.', 400)
+  const statedTotal = hasStatedTotal ? money(input.statedTotal) : undefined
+  demand(statedTotal === undefined || statedTotal === total, 'The supplier-stated total does not match the calculated total. Check item prices, tax, fees, and discount.', 400)
+  return { lines, subtotal, ...charges, adjustments, taxTreatment, ...(statedTotal === undefined ? {} : { statedTotal }), total }
 }
 export const PURCHASE_ORDER_STATUSES = ['Draft', 'For Review', 'Approved', 'Rejected', 'Receiving', 'Completed']
 export const invoiceMatch = (po, invoice, otherInvoices) => {
@@ -52,9 +100,24 @@ export const invoiceMatch = (po, invoice, otherInvoices) => {
   }
   const billedTotal = otherInvoices.filter(r => ['Matched', 'Approved for Payment', 'Paid'].includes(r.status)).reduce((sum, r) => sum + r.total, 0)
   if (billedTotal + invoice.total > po.total) issues.push('Cumulative invoices exceed the purchase order total')
-  for (const key of ['tax', 'delivery', 'otherCharges']) {
-    const used = otherInvoices.filter(r => ['Matched', 'Approved for Payment', 'Paid'].includes(r.status)).reduce((sum, r) => sum + Number(r[key] || 0), 0)
-    if (used + Number(invoice[key] || 0) > Number(po[key] || 0)) issues.push(`${key}: charges exceed the PO allowance`)
+  if (po.taxTreatment && invoice.taxTreatment && po.taxTreatment !== invoice.taxTreatment) issues.push('Supplier invoice tax treatment differs from the purchase order')
+  const allowanceByRow = new Map()
+  for (const row of quoteAdjustmentRows(po)) {
+    const key = `${row.type}:${row.label.trim().toLowerCase()}`
+    allowanceByRow.set(key, (allowanceByRow.get(key) || 0) + row.amount)
+  }
+  const usedByRow = new Map()
+  for (const prior of otherInvoices.filter(r => ['Matched', 'Approved for Payment', 'Paid'].includes(r.status))) {
+    for (const row of quoteAdjustmentRows(prior)) {
+      const key = `${row.type}:${row.label.trim().toLowerCase()}`
+      usedByRow.set(key, (usedByRow.get(key) || 0) + row.amount)
+    }
+  }
+  for (const row of quoteAdjustmentRows(invoice)) {
+    const key = `${row.type}:${row.label.trim().toLowerCase()}`
+    const allowance = allowanceByRow.get(key) || 0
+    const used = usedByRow.get(key) || 0
+    if (used + row.amount > allowance) issues.push(`${row.label}: adjustment exceeds the PO allowance`)
   }
   return issues
 }
@@ -68,21 +131,13 @@ export const permissionsByKind = {
   budgetAllocation: ['procurement:view', 'finance:payables:view', 'finance:payables:approve'],
   budget: ['finance:payables:view', 'finance:payables:approve', 'finance:payables:settle'],
   budgetRequest: ['procurement:view', 'procurement:review', 'finance:payables:view', 'finance:payables:approve'],
-  po: ['procurement:view', 'procurement:review', 'orders:view', 'orders:update', 'finance:payables:view', 'finance:payables:settle'],
-  supplierConfirmation: ['procurement:view', 'procurement:review', 'orders:view'],
-  receiving: ['orders:view', 'orders:update', 'inventory:view', 'finance:payables:view', 'procurement:view'],
-  inspection: ['orders:view', 'orders:update', 'inventory:view', 'finance:payables:view', 'procurement:view'],
-  discrepancy: ['orders:view', 'orders:update', 'procurement:view'],
+  po: ['procurement:view', 'procurement:review', 'inventory:view', 'finance:payables:view', 'finance:payables:settle'],
+  supplierConfirmation: ['procurement:view', 'procurement:review', 'inventory:view'],
+  receiving: ['inventory:view', 'procurement:view', 'finance:payables:view'],
+  inspection: ['inventory:view', 'procurement:view', 'finance:payables:view'],
+  discrepancy: ['inventory:view', 'procurement:view'],
   invoice: ['finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'procurement:view'],
   threeWayMatch: ['finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'procurement:view'],
   payment: ['finance:payables:view', 'finance:payables:settle', 'procurement:view'],
 }
 export const hasPermission = (context, permission) => context.permissions.has(permission) || context.permissions.has('administrator:full_access')
-export const supplierCanRead = (record, supplierIds) => record.mode === 'Online' && (
-  (record.kind === 'rfq' && record.status !== 'Draft' && record.supplierIds?.some(id => supplierIds.includes(id)))
-  || (['quotation', 'po', 'invoice', 'payment'].includes(record.kind) && supplierIds.includes(record.supplierId) && !(record.kind === 'po' && record.status === 'Draft'))
-)
-export const supplierProjection = record => {
-  const allowed = ['id', 'kind', 'number', 'status', 'branchId', 'mode', 'supplierId', 'rfqId', 'poId', 'invoiceId', 'lines', 'subtotal', 'total', 'tax', 'discount', 'delivery', 'otherCharges', 'deadline', 'deliveryDate', 'deliveryLocation', 'terms', 'conditions', 'contact', 'validUntil', 'leadDays', 'paymentTerms', 'warranty', 'notes', 'invoiceNumber', 'invoiceDate', 'dueDate', 'accepted', 'paidAmount', 'createdAt', 'updatedAt', 'confirmationReason']
-  return Object.fromEntries(allowed.filter(key => record[key] !== undefined).map(key => [key, record[key]]))
-}

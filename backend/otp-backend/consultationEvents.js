@@ -54,7 +54,7 @@ export const registerConsultationEvents = (app, { admin, requireAuth, authorizeC
             check(!['cancelled', 'rejected'].includes(normalized(appointment.status)), 'This appointment is closed.')
             check(note.length >= 10, 'Explain the problem (at least 10 characters).', 400)
             check(appointment.consultationDispute?.status !== 'Open', 'Your report is already awaiting review.')
-            const closed = appointment.workerCompletedAt || appointment.completedAt
+            const closed = appointment.workerCompletedAt || appointment.consultationEndedAt || appointment.completedAt
             check(!closed || now - timestampDate(closed) <= window.policy.confirmationHours * 3600000, 'The reporting window has ended. Contact the clinic directly.')
             check(appointment.staffEarningsStatus !== 'Approved', 'Contact the clinic about this already settled appointment.')
             update.consultationDispute = { status: 'Open', note, reportedBy: req.user.uid, reportedAt: now.toISOString() }

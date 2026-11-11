@@ -53,13 +53,9 @@ The customer may record the end of their participation. The practitioner ends th
 
 **Vercel Hobby scheduling:** `vercel.json` schedules reminders and consultation cleanup once daily so deployment meets Hobby cron limits. Daily consultation cleanup is a fallback, not timely session closure. For minute-by-minute timeout processing, an external scheduler must call `/api/cron/online-consultation-timeouts` with `Authorization: Bearer <CRON_SECRET>`, or the backend must run continuously outside Vercel with its existing interval. Vercel serverless execution cannot guarantee that interval runs between requests. An external scheduler is not configured by this repository change.
 
-## Supplier verification
+## Supplier directory records
 
-Suppliers verify their email, then submit business identity/contact information and registration, permit/tax, and representative authorization documents. An optional distribution document can also be submitted.
-
-System-admin **Supplier Verification** supports approval, revision requests, rejection, and suspension, with reasons and review history. Documents remain private; authorized viewers receive short-lived download links. Status changes synchronize linked clinic supplier records.
-
-Only verified suppliers can use the supply portal, publish catalogues, or receive new procurement requests. Existing suppliers must submit documents and be reviewed; they are not automatically considered verified. Review is performed by authorized admins, not an automatic claim that a business is legitimate.
+Clinic staff create and manage supplier business contacts for Procurement. Any registration, permit, tax, or FDA LTO fields are clinic-maintained supplier records and do not create a supplier account or portal login. Supplier-role accounts are not supported by the clinic platform.
 
 ## Verification and release
 

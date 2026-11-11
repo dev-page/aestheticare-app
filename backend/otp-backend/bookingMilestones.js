@@ -3,6 +3,8 @@ import { onlineWindow, onlineAccessOpen, timestampDate } from '../../shared/onli
 import crypto from 'node:crypto'
 import { prepareTeamStart } from './practitionerTeams.js'
 import { normalized, initialPaymentReceived, balanceSettled, afterPaymentStatus, assertWorkflow as check } from './bookingWorkflow.js'
+import { planLotConsumption } from './inventoryLots.js'
+import { day as inventoryDay } from './supplyModel.js'
 
 const getServiceKeyWindow = (appointment) => {
   const date = String(appointment.date || '').trim()
@@ -205,11 +207,40 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             const stocks = []
             for (const resource of resourceRefs) stocks.push({ resource, snapshot: await tx.get(resource.ref) })
             for (const { resource, snapshot: stock } of stocks) check(stock.exists && Number(stock.data().currentStock) >= resource.quantity, 'A required material is no longer available. Contact the clinic.')
+            const lotPlans = []
+            for (const { resource, snapshot: stock } of stocks) {
+              const lotSnapshot = await tx.get(db.collection('supplyLots').where('itemId', '==', resource.id))
+              lotPlans.push({
+                resource,
+                plan: planLotConsumption({
+                  branchId: appointment.branchId,
+                  itemId: resource.id,
+                  item: stock.data(),
+                  lotRecords: lotSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+                  quantity: resource.quantity,
+                  today: inventoryDay(),
+                }),
+              })
+            }
             if (onlineConsultation) tx.set(db.collection('bookingResourceLocks').doc(appointment.branchId), { updatedAt: timestamp })
             tx.set(teamStart.termsRef, { ...teamStart.terms, capturedAt: timestamp })
             update.treatmentTeam = teamStart.members
             for (const { resource, snapshot: stock } of stocks) tx.update(resource.ref, { currentStock: Number(stock.data().currentStock) - resource.quantity, updatedAt: timestamp })
-            tx.set(db.collection('inventoryMovements').doc('service-' + ref.id), { branchId: appointment.branchId, appointmentId: ref.id, type: 'service_consumption', items: (appointment.resources || []).filter((r) => r.kind === 'material'), createdBy: req.user.uid, createdAt: timestamp })
+            for (const { plan } of lotPlans) for (const write of plan.lotWrites) tx.set(db.collection('supplyLots').doc(write.id), {
+              ...write.data,
+              ...(write.created ? { receivedAt: timestamp, createdAt: timestamp } : {}),
+              updatedAt: timestamp,
+            }, { merge: true })
+            tx.set(db.collection('inventoryMovements').doc('service-' + ref.id), {
+              branchId: appointment.branchId,
+              appointmentId: ref.id,
+              type: 'service_consumption',
+              items: (appointment.resources || []).filter((r) => r.kind === 'material'),
+              lotAllocations: lotPlans.flatMap(({ resource, plan }) => plan.allocations.map(allocation => ({ inventoryItemId: resource.id, ...allocation }))),
+              lotAdjustments: lotPlans.flatMap(({ resource, plan }) => plan.adjustments.map(adjustment => ({ inventoryItemId: resource.id, ...adjustment }))),
+              createdBy: req.user.uid,
+              createdAt: timestamp,
+            })
             update.materialsConsumed = true
             update.status = 'Ongoing'; update.startedAt = timestamp; update.startedById = req.user.uid
           } else if (transition === 'worker_complete') {
@@ -221,7 +252,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
               const window = getOnlineConsultationWindow(appointment)
               check(window, 'This consultation needs a valid scheduled window.')
               check(String(req.body?.treatmentNotes || '').trim().length >= 10, 'Save consultation notes and recommendations (at least 10 characters).', 400)
-              const end = new Date()
+              const end = new Date(Math.min(Date.now(), window.end.getTime()))
               update.consultationEndedAt = end.toISOString()
               update.consultationEndedById = appointment.consultationEndedById || req.user.uid
               update.consultationActualDurationSeconds = Math.max(0, Math.floor((end - timestampDate(appointment.startedAt)) / 1000))
@@ -238,8 +269,10 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
                 const name = field(item.name || item.medication || item.productName, 160)
                 check(name, `Prescription item ${index + 1} needs a name.`, 400)
                 const dosage = field(item.dosage || item.strength), frequency = field(item.frequency), duration = field(item.duration), instructions = field(item.instructions || item.notes)
+                const prescribedQuantity = Number(item.quantity)
+                check(Number.isSafeInteger(prescribedQuantity) && prescribedQuantity > 0, `Prescription item ${index + 1} needs a whole number quantity greater than zero.`, 400)
                 check(name.length <= 160 && dosage.length <= 160 && frequency.length <= 160 && duration.length <= 160 && instructions.length <= 500, `Prescription item ${index + 1} is too long.`, 400)
-                return { name, dosage, frequency, duration, instructions }
+                return { name, dosage, frequency, duration, instructions, quantity: prescribedQuantity }
               })
               update.prescriptionStatus = update.prescriptions.length ? 'pending' : 'none'
             }
@@ -247,7 +280,8 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             update.status = walkIn ? 'Completed' : 'Awaiting Customer Confirmation'
           } else if (transition === 'customer_complete') {
             check(customer, 'Only the customer can confirm completion.', 403)
-            check(appointment.workerCompleted && !appointment.customerCompleted && ['awaiting customer confirmation', 'balance due'].includes(status), 'The worker must finish the service first, and completion can only be confirmed once.')
+            const timerClosedOnlineConsultation = online && appointment.startedAt && appointment.consultationEndedByTimer
+            check((appointment.workerCompleted || timerClosedOnlineConsultation) && !appointment.customerCompleted && ['awaiting customer confirmation', 'balance due'].includes(status), 'The worker must finish the service first, and completion can only be confirmed once.')
             check(!online || appointment.consultationDispute?.status !== 'Open', 'The clinic must review your reported problem before completion.')
             if (online) {
               check(String(appointment.treatmentNotes || '').trim().length >= 10, 'The practitioner must save consultation notes before completion can be confirmed.')

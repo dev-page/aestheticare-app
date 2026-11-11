@@ -2,29 +2,21 @@
   <div class="flex min-h-screen module-theme inbox-page">
     <OwnerSidebar />
     <main v-page-loading="{ active: pageLoading, variant: 'chat', rows: 5 }" class="inbox-main min-w-0 flex-1 p-4 md:p-8">
-      <header class="inbox-heading"><p class="inbox-eyebrow">CRM & Clinic</p><h1>Inbox</h1><p>Keep customer and supplier conversations in one place.</p></header>
+      <header class="inbox-heading"><p class="inbox-eyebrow">CRM & Clinic</p><h1>Inbox</h1><p>Manage customer conversations and replies.</p></header>
       <section class="messenger-workspace" :class="{ 'has-conversation': !!activeChat }" aria-label="Clinic messaging">
         <aside class="messenger-sidebar" aria-label="Conversation list">
-          <div class="messenger-list-header"><h2>Chats</h2><span>{{ activeTab === 'customers' ? customerMessages.length : supplierChats.length }}</span></div>
-          <nav class="inbox-tabs" aria-label="Inbox categories"><button type="button" class="inbox-tab" :class="{ 'is-active': activeTab === 'customers' }" :aria-current="activeTab === 'customers' ? 'page' : undefined" @click="switchTab('customers')">Customers</button><button type="button" class="inbox-tab" :class="{ 'is-active': activeTab === 'suppliers' }" :aria-current="activeTab === 'suppliers' ? 'page' : undefined" @click="switchTab('suppliers')">Suppliers</button></nav>
-          <div class="messenger-list-tools"><label class="inbox-search" for="inbox-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg><input id="inbox-search" v-model.trim="search" type="search" placeholder="Search conversations" aria-label="Search conversations" /></label><label v-if="activeTab === 'customers'" class="inbox-unread-filter"><input v-model="unreadOnly" type="checkbox" /> Unread only <span>{{ unreadCount }}</span></label></div>
+          <div class="messenger-list-header"><h2>Customer chats</h2><span>{{ customerMessages.length }}</span></div>
+          <div class="messenger-list-tools"><label class="inbox-search" for="inbox-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg><input id="inbox-search" v-model.trim="search" type="search" placeholder="Search conversations" aria-label="Search conversations" /></label><label class="inbox-unread-filter"><input v-model="unreadOnly" type="checkbox" /> Unread only <span>{{ unreadCount }}</span></label></div>
           <div class="messenger-thread-list">
-            <template v-if="activeTab === 'customers'">
               <button v-for="message in filteredCustomers" :key="message.threadId || message.id" type="button" class="messenger-thread" :class="{ 'is-selected': activeChat?.kind === 'customer' && (activeChat.threadId ? activeChat.threadId === message.threadId : activeChat.id === message.id), 'is-unread': !message.isRead }" @click="openCustomerChat(message)">
                 <span class="inbox-avatar" aria-hidden="true">{{ initials(message.senderName || message.customerName || message.senderEmail) }}</span><span class="messenger-thread-copy"><span class="messenger-thread-top"><strong>{{ message.customerName || message.senderName || message.senderEmail || 'Customer' }}</strong><span v-if="!message.isRead" class="unread-dot" aria-label="Unread conversation" /></span><span class="messenger-thread-topic">{{ message.subject || 'Customer conversation' }}</span><span class="messenger-thread-preview">{{ message.body || message.lastMessage || 'No message yet' }}</span><time>{{ formatDate(message.createdAt) }}</time></span>
               </button>
               <div v-if="!filteredCustomers.length" class="inbox-list-empty"><strong>{{ customerMessages.length ? 'No matching chats' : 'No customer messages yet' }}</strong><p>{{ customerMessages.length ? 'Try another search or turn off the unread filter.' : 'Customer conversations will appear here.' }}</p></div>
-            </template>
-            <template v-else>
-              <p v-if="supplierError" class="inbox-error" role="alert">{{ supplierError }}</p>
-              <button v-for="chat in filteredSuppliers" :key="chat.supplierId" type="button" class="messenger-thread" :class="{ 'is-selected': activeChat?.kind === 'supplier' && activeChat.supplierId === chat.supplierId }" @click="openSupplierChat(chat)"><span class="inbox-avatar supplier-avatar" aria-hidden="true">{{ initials(chat.supplierName) }}</span><span class="messenger-thread-copy"><span class="messenger-thread-top"><strong>{{ chat.supplierName }}</strong></span><span class="messenger-thread-preview">{{ chat.lastMessage || 'Start a conversation' }}</span><time v-if="chat.updatedAt">{{ formatDate(chat.updatedAt) }}</time></span></button>
-              <div v-if="supplierLoading && !supplierChats.length" class="inbox-list-empty" role="status">Loading conversations...</div><div v-else-if="!supplierError && !filteredSuppliers.length" class="inbox-list-empty"><strong>{{ supplierChats.length ? 'No matching chats' : 'No suppliers linked yet' }}</strong><p>{{ supplierChats.length ? 'Try another search.' : 'Linked suppliers will appear here.' }}</p></div>
-            </template>
           </div>
         </aside>
         <section class="messenger-chat" aria-label="Selected conversation">
           <template v-if="activeChat">
-            <header class="messenger-chat-header"><button type="button" class="messenger-back" aria-label="Back to conversations" @click="closeChat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 6-6 6 6 6" stroke-linecap="round" stroke-linejoin="round" /></svg></button><span class="inbox-avatar" aria-hidden="true">{{ initials(activeChatLabel) }}</span><div class="messenger-chat-person"><h2>{{ activeChatLabel }}</h2><p>{{ isSupplierChat ? 'Supplier conversation' : activeChat.threadId ? 'Customer conversation' : 'Customer message' }}</p></div><span v-if="isSupplierChat && activeChat.supplierStatus" class="inbox-status">{{ activeChat.supplierStatus }}</span></header>
+            <header class="messenger-chat-header"><button type="button" class="messenger-back" aria-label="Back to conversations" @click="closeChat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 6-6 6 6 6" stroke-linecap="round" stroke-linejoin="round" /></svg></button><span class="inbox-avatar" aria-hidden="true">{{ initials(activeChatLabel) }}</span><div class="messenger-chat-person"><h2>{{ activeChatLabel }}</h2><p>{{ activeChat.threadId ? 'Customer conversation' : 'Customer message' }}</p></div></header>
             <div ref="chatScrollRef" class="messenger-message-list">
               <p v-if="chatError" class="inbox-error" role="alert">{{ chatError }}</p>
               <div v-if="chatLoading" class="chat-loading" role="status" aria-label="Loading conversation"><span /><span /><span /></div>
@@ -35,7 +27,7 @@
             <form v-if="canReply" class="messenger-compose" @submit.prevent="sendChatReply"><div class="messenger-compose-row"><textarea id="inbox-reply" v-model="chatInput" rows="1" maxlength="4000" aria-label="Reply to conversation" placeholder="Write a message..." :disabled="sending" @keydown="handleReplyKey" /><button type="submit" class="messenger-send" :disabled="sending || chatLoading || !!chatError || !chatInput.trim()" :aria-label="sending ? 'Sending message' : 'Send message'"><svg v-if="!sending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m21 3-7 18-4-7-7-4 18-7Z" stroke-linejoin="round" /><path d="m10 14 11-11" stroke-linecap="round" /></svg><span v-else class="send-spinner" /></button></div><p>Enter to send · Shift + Enter for a new line</p></form>
             <div v-else class="messenger-notice-footer">This message has no chat thread available for replies.</div>
           </template>
-          <div v-else class="messenger-welcome"><div class="messenger-welcome-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z" stroke-linejoin="round" /><path d="M8 12h8" stroke-linecap="round" /></svg></div><h2>Your conversations</h2><p>Select a customer or supplier to view messages and reply.</p></div>
+          <div v-else class="messenger-welcome"><div class="messenger-welcome-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z" stroke-linejoin="round" /><path d="M8 12h8" stroke-linecap="round" /></svg></div><h2>Your conversations</h2><p>Select a customer to view messages and reply.</p></div>
         </section>
       </section>
     </main>
@@ -45,40 +37,30 @@
 <script>
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { addDoc, collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, setDoc, updateDoc, where, serverTimestamp } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
-import { useRoute } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
-import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { toast } from 'vue3-toastify'
 
 export default { name: 'ReceptionistInbox', components: { OwnerSidebar }, setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
   const db = getFirestore(getApp()), auth = getAuth(getApp())
-  const route = useRoute()
-  const activeTab = ref(route.query.tab === 'suppliers' ? 'suppliers' : 'customers'), currentBranchId = ref(''), customerMessages = ref([]), supplierChats = ref([]), supplierLoading = ref(false), supplierError = ref(''), currentUserId = ref('')
+  const currentBranchId = ref(''), customerMessages = ref([]), currentUserId = ref('')
   const search = ref(''), unreadOnly = ref(false)
   const unreadCount = computed(() => customerMessages.value.filter(message => !message.isRead).length)
   const filteredCustomers = computed(() => customerMessages.value.filter(message => (!unreadOnly.value || !message.isRead) && [message.senderName, message.senderEmail, message.subject, message.body, message.lastMessage].some(value => String(value || '').toLowerCase().includes(search.value.toLowerCase()))))
-  const filteredSuppliers = computed(() => supplierChats.value.filter(chat => [chat.supplierName, chat.supplierEmail, chat.lastMessage].some(value => String(value || '').toLowerCase().includes(search.value.toLowerCase()))))
   const activeChat = ref(null), chatMessages = ref([]), chatLoading = ref(false), chatError = ref(''), chatInput = ref(''), sending = ref(false), chatScrollRef = ref(null)
   let chatSession = 0
-  let customerMessagesUnsubscribe = null, customerChatUnsubscribe = null, supplierChatPoll = null, authUnsubscribe = null
-  const isSupplierChat = computed(() => activeChat.value?.kind === 'supplier')
-  const canReply = computed(() => !!activeChat.value && (isSupplierChat.value || !!activeChat.value.threadId))
+  let customerMessagesUnsubscribe = null, customerChatUnsubscribe = null, authUnsubscribe = null
+  const canReply = computed(() => !!activeChat.value?.threadId)
   const initials = value => String(value || 'C').trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join('').toUpperCase()
-  const activeChatLabel = computed(() => isSupplierChat.value ? activeChat.value?.supplierName || 'Supplier' : activeChat.value?.customerName || activeChat.value?.senderName || activeChat.value?.senderEmail || 'Customer')
+  const activeChatLabel = computed(() => activeChat.value?.customerName || activeChat.value?.senderName || activeChat.value?.senderEmail || 'Customer')
   const formatDate = value => { const date = value?.toDate?.() || (value?._seconds || value?.seconds ? new Date((value._seconds || value.seconds) * 1000) : value ? new Date(value) : null); return date && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date) : 'Just now' }
-  const api = async (path, body = null) => { const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''; if (!token) throw new Error('Sign in to continue.'); let lastError; for (const base of OTP_BACKEND_CANDIDATES) { try { const response = await fetch(`${base}/supply${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }); const payload = await response.json(); if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to complete the request.'); return payload.data } catch (error) { lastError = error } } throw lastError || new Error('Supplier chat is unavailable.') }
   const scrollChatToBottom = async () => { await nextTick(); if (chatScrollRef.value) chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight }
   const startCustomerMessagesListener = () => { if (!currentBranchId.value) return; if (customerMessagesUnsubscribe) customerMessagesUnsubscribe(); customerMessagesUnsubscribe = pageListener(onSnapshot, query(collection(db, 'messages'), where('branchId', '==', currentBranchId.value)), snapshot => { const grouped = new Map(); snapshot.docs.map(snap => ({ id: snap.id, ...snap.data() })).forEach(message => { if (message.type !== 'chat' || !message.threadId) return grouped.set(message.id, message); const previous = grouped.get(message.threadId); const latest = (message.createdAt?.seconds || 0) >= (previous?.createdAt?.seconds || 0) ? message : previous; grouped.set(message.threadId, { ...latest, unreadCount: Number(previous?.unreadCount || 0) + (message.isRead ? 0 : 1), isRead: previous ? Boolean(previous.isRead) && Boolean(message.isRead) : Boolean(message.isRead) }) }); customerMessages.value = [...grouped.values()].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)) }, () => toast.error('Customer messages are unavailable for your current access.', { toastId: 'customer-inbox-access' })) }
-  const loadSupplierChats = async ({ background = false } = {}) => {
-    const load = async () => { if (!currentBranchId.value) return; supplierLoading.value = true; supplierError.value = ''; try { const result = await api(`/chats?branchId=${encodeURIComponent(currentBranchId.value)}`); supplierChats.value = Array.isArray(result?.chats) ? result.chats : [] } catch (error) { supplierChats.value = []; supplierError.value = error.message || 'Supplier conversations are unavailable for your current access.' } finally { supplierLoading.value = false } }
-    return background ? load() : trackPageLoad(load)()
-  }
   const startCustomerChatListener = threadId => {
     const session = chatSession
     chatLoading.value = true
@@ -94,59 +76,31 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       chatError.value = 'This customer conversation is unavailable for your current access.'
     })
   }
-  const loadSupplierChatMessages = async ({ silent = false } = {}) => {
-    const supplierId = activeChat.value?.supplierId, session = chatSession
-    if (!supplierId || !isSupplierChat.value) return
-    if (!silent) chatLoading.value = true
-    try {
-      const result = await api(`/chat?supplierId=${encodeURIComponent(supplierId)}`)
-      if (session !== chatSession) return
-      chatMessages.value = (result?.messages || []).map(message => ({ id: message.id, text: message.message || '', senderId: message.actorId || '', senderLabel: message.from || 'Supplier', createdAt: message.createdAt }))
-      chatError.value = ''
-      await scrollChatToBottom()
-    } catch (error) { if (session === chatSession) chatError.value = error.message || 'This supplier conversation is unavailable.' }
-    finally { if (session === chatSession && !silent) chatLoading.value = false }
-  }
-  const stopChatListeners = () => { chatSession++; if (customerChatUnsubscribe) { customerChatUnsubscribe(); customerChatUnsubscribe = null } if (supplierChatPoll) { clearInterval(supplierChatPoll); supplierChatPoll = null } }
+  const stopChatListeners = () => { chatSession++; if (customerChatUnsubscribe) { customerChatUnsubscribe(); customerChatUnsubscribe = null } }
   const markThreadAsRead = async threadId => { try { const snapshot = await getDocs(query(collection(db, 'messages'), where('branchId', '==', currentBranchId.value), where('threadId', '==', threadId))); await Promise.all(snapshot.docs.map(item => updateDoc(doc(db, 'messages', item.id), { isRead: true, updatedAt: serverTimestamp() }))) } catch (_) {} }
   const openCustomerChat = async message => {
     if (activeChat.value?.kind === 'customer' && (message.threadId ? activeChat.value.threadId === message.threadId : activeChat.value.id === message.id)) return
     stopChatListeners(); activeChat.value = { ...message, kind: 'customer' }; chatMessages.value = []; chatInput.value = ''; chatError.value = ''; chatLoading.value = false
     if (message.threadId) { startCustomerChatListener(message.threadId); if (!message.isRead) await markThreadAsRead(message.threadId) }
   }
-  const openSupplierChat = async chat => {
-    if (isSupplierChat.value && activeChat.value.supplierId === chat.supplierId) return
-    stopChatListeners(); activeChat.value = { ...chat, kind: 'supplier' }; chatMessages.value = []; chatInput.value = ''; chatError.value = ''
-    const session = chatSession
-    await loadSupplierChatMessages()
-    if (session === chatSession) supplierChatPoll = setInterval(() => loadSupplierChatMessages({ silent: true }), 15000)
-  }
   const closeChat = () => { stopChatListeners(); activeChat.value = null; chatMessages.value = []; chatInput.value = ''; chatError.value = ''; chatLoading.value = false }
-  const switchTab = tab => { if (activeTab.value === tab) return; closeChat(); activeTab.value = tab; search.value = '' }
-  watch(() => route.query.tab, tab => switchTab(tab === 'suppliers' ? 'suppliers' : 'customers'))
   const handleReplyKey = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendChatReply() } }
   const sendChatReply = async () => {
     const text = chatInput.value.trim(), target = activeChat.value, session = chatSession
     if (!text || sending.value || chatLoading.value || chatError.value || !canReply.value) return
     sending.value = true
     try {
-      if (target.kind === 'supplier') {
-        await api(`/chat/${target.supplierId}/messages`, { message: text })
-        if (session === chatSession) { chatInput.value = ''; await loadSupplierChatMessages({ silent: true }) }
-        await loadSupplierChats({ background: true })
-      } else {
-        await addDoc(collection(db, 'chatThreads', target.threadId, 'messages'), { text, senderId: currentUserId.value, senderName: 'Clinic', senderRole: 'clinic', createdAt: serverTimestamp() })
-        await setDoc(doc(db, 'chatThreads', target.threadId), { lastMessage: text, lastMessageAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true })
-        if (session === chatSession) chatInput.value = ''
-      }
+      await addDoc(collection(db, 'chatThreads', target.threadId, 'messages'), { text, senderId: currentUserId.value, senderName: 'Clinic', senderRole: 'clinic', createdAt: serverTimestamp() })
+      await setDoc(doc(db, 'chatThreads', target.threadId), { lastMessage: text, lastMessageAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true })
+      if (session === chatSession) chatInput.value = ''
     } catch (error) { toast.error(error.message || 'Failed to send message.') }
     finally { sending.value = false }
   }
   const markAsRead = async message => { try { if (message.threadId) await markThreadAsRead(message.threadId); else await updateDoc(doc(db, 'messages', message.id), { isRead: true, updatedAt: serverTimestamp() }); if (activeChat.value?.id === message.id) activeChat.value.isRead = true } catch (_) { toast.error('Failed to update the message.') } }
-  onMounted(trackPageLoad(() => { authUnsubscribe = pageListener(onAuthStateChanged, auth, async user => { if (!user) return; currentUserId.value = user.uid; const userSnap = await getDoc(doc(db, 'users', user.uid)); currentBranchId.value = userSnap.exists() ? String(userSnap.data()?.branchId || '') : ''; if (!currentBranchId.value) return toast.error('Your account has no branch assignment.', { toastId: 'inbox-branch-assignment' }); startCustomerMessagesListener(); await loadSupplierChats() }) }))
+  onMounted(trackPageLoad(() => { authUnsubscribe = pageListener(onAuthStateChanged, auth, async user => { if (!user) return; currentUserId.value = user.uid; const userSnap = await getDoc(doc(db, 'users', user.uid)); currentBranchId.value = userSnap.exists() ? String(userSnap.data()?.branchId || '') : ''; if (!currentBranchId.value) return toast.error('Your account has no branch assignment.', { toastId: 'inbox-branch-assignment' }); startCustomerMessagesListener() }) }))
   onUnmounted(() => { if (authUnsubscribe) authUnsubscribe(); if (customerMessagesUnsubscribe) customerMessagesUnsubscribe(); stopChatListeners() })
   return {
-      pageLoading, search, unreadOnly, unreadCount, filteredCustomers, filteredSuppliers, activeTab, activeChat, canReply, chatError, initials, switchTab, handleReplyKey, customerMessages, supplierChats, supplierLoading, supplierError, currentUserId, activeChatLabel, isSupplierChat, chatMessages, chatLoading, chatInput, sending, chatScrollRef, formatDate, markAsRead, openCustomerChat, openSupplierChat, closeChat, sendChatReply }
+      pageLoading, search, unreadOnly, unreadCount, filteredCustomers, activeChat, canReply, chatError, initials, handleReplyKey, customerMessages, currentUserId, activeChatLabel, chatMessages, chatLoading, chatInput, sending, chatScrollRef, formatDate, markAsRead, openCustomerChat, closeChat, sendChatReply }
 } }
 </script>
 

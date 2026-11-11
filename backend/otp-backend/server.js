@@ -1757,33 +1757,16 @@ app.post('/auth/activate-account', async (req, res) => {
     if (['inactive', 'disabled', 'closed', 'deactivated', 'rejected'].includes(status) || userData.archived === true) {
       return res.status(409).json({ success: false, error: 'This account is no longer available.' })
     }
+    const accountRoles = [userData.role, userData.userType].map(value => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, ''))
+    if (accountRoles.some(role => role.startsWith('supplier'))) {
+      return res.status(410).json({ success: false, error: 'Supplier accounts are no longer supported. Suppliers are managed as clinic business contacts.' })
+    }
     await firestore.runTransaction(async (transaction) => {
       const [freshToken, freshUser] = await Promise.all([transaction.get(tokenRef), transaction.get(userRef)])
       if (!freshToken.exists || freshToken.data()?.used === true || freshUser.data()?.activationTokenHash !== tokenRef.id) throw new Error('Activation link already used.')
       transaction.update(tokenRef, { used: true, usedAt: admin.firestore.FieldValue.serverTimestamp() })
       transaction.set(userRef, { status: 'Active', accountActivated: true, accountActivatedAt: admin.firestore.FieldValue.serverTimestamp(), emailVerified: true }, { merge: true })
     })
-
-    const userRole = String(userData.role || userData.userType || '').trim().toLowerCase()
-    if (userRole === 'supplier') {
-      const supplierSnapshots = await Promise.all([
-        firestore.collection('suppliers').where('supplierUserId', '==', userRef.id).get(),
-        firestore.collection('suppliers').where('ownerId', '==', userRef.id).get(),
-      ])
-      const supplierRefs = new Map()
-      supplierSnapshots.forEach((snapshot) => snapshot.docs.forEach((supplierDoc) => supplierRefs.set(supplierDoc.id, supplierDoc.ref)))
-      if (supplierRefs.size) {
-        const supplierBatch = firestore.batch()
-        supplierRefs.forEach((supplierRef) => supplierBatch.set(supplierRef, {
-          status: 'Active',
-          accreditationStatus: 'Active',
-          accountActivated: true,
-          accountActivatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true }))
-        await supplierBatch.commit()
-      }
-    }
 
     return res.json({ success: true, data: { uid: userRef.id } })
   } catch (error) {
@@ -1846,12 +1829,15 @@ const normalizeRoleKey = (value) => {
   return raw.charAt(0).toUpperCase() + raw.slice(1)
 }
 
+const isSupplierAccount = (userData = {}) => [userData.role, userData.userType]
+  .some((value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '').startsWith('supplier'))
+
 const requiresOperationalLoginOtp = (userData = {}) => {
   const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
   const accountKinds = new Set([
     'superadmin', 'systemadmin', 'sysadmin',
     'owner', 'clinicowner', 'clinicadmin', 'clinicadministrator',
-    'supplier', 'staff', 'employee',
+    'staff', 'employee',
   ])
   // Customer accounts are intentionally excluded from login OTP.
   return accountKinds.has(normalize(userData.role)) || accountKinds.has(normalize(userData.userType))
@@ -5367,6 +5353,7 @@ app.post(REQUEST_LOGIN_OTP_PATH, requireAuth, async (req, res) => {
     failureStage = 'firestore_account_lookup'
     const userSnap = await admin.firestore().collection('users').doc(requestedUid).get()
     const userData = userSnap.exists ? userSnap.data() || {} : {}
+    if (isSupplierAccount(userData)) return res.status(410).json({ success: false, error: 'Supplier accounts are no longer supported. Suppliers are managed as clinic business contacts.' })
     if (!requiresOperationalLoginOtp(userData)) {
       return res.status(403).json({ success: false, error: 'Login OTP is not required for this account.' })
     }
@@ -5422,6 +5409,7 @@ app.post(VERIFY_LOGIN_OTP_PATH, async (req, res) => {
     }
     const userSnap = await firestore.collection('users').doc(normalizedUid).get()
     const userData = userSnap.exists ? userSnap.data() || {} : {}
+    if (isSupplierAccount(userData)) return res.status(410).json({ success: false, error: 'Supplier accounts are no longer supported. Suppliers are managed as clinic business contacts.' })
     if (!requiresOperationalLoginOtp(userData)) {
       return res.status(403).json({ success: false, error: 'Login OTP is not required for this account.' })
     }

@@ -1,5 +1,5 @@
 <template>
-  <div :class="embedded ? 'directory' : 'directory flex min-h-screen'"><OwnerSidebar v-if="!embedded" /><main class="content" :class="{ 'flex-1': !embedded }">
+  <div :class="embedded ? 'directory module-theme supplier-theme' : 'directory module-theme supplier-theme flex min-h-screen'"><OwnerSidebar v-if="!embedded" /><main class="content" :class="{ 'flex-1': !embedded }">
     <header><div><small>PROCUREMENT</small><h1>Supplier Directory</h1><p>Clinic-managed business contacts. Suppliers do not sign in or receive orders in AesthetiCare.</p></div><button v-if="canCreate" @click="openCreate">Add supplier</button></header>
     <p v-if="error" class="error">{{ error }}</p><p v-if="notice" class="success">{{ notice }}</p><section class="summary"><article><b>{{ associations.length }}</b>My clinic suppliers</article><article><b>{{ activeCount }}</b>Active for procurement</article><article><b>{{ reviewCount }}</b>FDA checks to review</article></section>
     <section class="toolbar"><input v-model="search" placeholder="Search business, contact, or category" /><select v-model="status"><option value="">All statuses</option><option>Active</option><option>Inactive</option><option>For review</option></select><label><input v-model="showDirectory" type="checkbox" @change="loadDirectory" /> Include shared directory</label></section>

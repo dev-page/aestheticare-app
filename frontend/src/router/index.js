@@ -35,9 +35,10 @@ const routes = [
   { path: '/inventory/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
   { path: '/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
   { path: '/finance/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
-  { path: '/logistics/discrepancies', redirect: '/logistics/items' },
+  { path: '/inventory/onboarding', redirect: '/inventory/receiving' },
+  { path: '/logistics/:page?', redirect: '/inventory/receiving' },
   { path: '/procurement/suppliers/directory', name: 'procurement-supplier-directory', component: () => import('@/views/admin/owner/operations/SupplySuppliers.vue'), meta: { requiresAuth: true, requiresPermission: 'procurement:view', requiresFeature: 'inventory' } },
-  { path: '/:department(inventory|procurement|logistics)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
+  { path: '/:department(inventory|procurement)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
   { path: '/finance/procurement/:page?', name: 'procurement-finance-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/management/supply/:page?', name: 'supply-management-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'management' } },
 
@@ -213,7 +214,7 @@ const routes = [
   { path: "/manager/suppliers", redirect: "/procurement/suppliers/directory" },
   { path: "/manager/purchase-requests", redirect: "/inventory/requests" },
   { path: "/manager/procurement", redirect: "/procurement/dashboard" },
-  { path: "/manager/logistics", redirect: "/logistics/dashboard" },
+  { path: "/manager/logistics", redirect: "/inventory/receiving" },
   { path: "/manager/product-service-listing", redirect: "/catalog/products-services" },
   { path: "/manager/orders", redirect: "/operations/orders" },
   { path: "/manager/purchase-history", redirect: "/procurement/reports" },
@@ -228,14 +229,14 @@ const routes = [
   { path: "/receptionist/transactions/history", redirect: "/crm/transactions" },
   { path: "/receptionist/inbox", redirect: "/crm/inbox" },
   { path: "/receptionist/activity-logs", redirect: "/crm/activity-logs" },
-  { path: "/supply-management/:department(inventory|procurement|logistics)/:page?", redirect: to => `/${to.params.department}/${to.params.page || 'dashboard'}` },
+  { path: "/supply-management/:department(inventory|procurement|logistics)/:page?", redirect: to => to.params.department === 'logistics' ? '/inventory/receiving' : `/${to.params.department}/${to.params.page || 'dashboard'}` },
   { path: "/supply-management/finance/:page?", redirect: to => `/finance/procurement/${to.params.page || 'dashboard'}` },
   { path: "/supply-management/management/:page?", redirect: to => `/management/supply/${to.params.page || 'dashboard'}` },
   { path: "/supply/dashboard", redirect: "/inventory/dashboard" },
   { path: "/supply/suppliers", redirect: "/procurement/suppliers/directory" },
   { path: "/supply/catalog", redirect: "/inventory/items" },
   { path: "/supply/purchase-requests", redirect: "/inventory/requests" },
-  { path: "/supply/logistics", redirect: "/logistics/dashboard" },
+  { path: "/supply/logistics", redirect: "/inventory/receiving" },
   // Customer routes
   { path: "/customer/home", name: "customer-home", component: () => import("@/views/customer/CustomerHome.vue"), meta: { requiresAuth: true } },
   { path: "/customer/center/:id", name: "customer-center", component: () => import("@/views/customer/CenterPage.vue"), meta: { requiresAuth: true } },
@@ -378,7 +379,6 @@ const safeUnauthorizedRedirect = (user, userData = {}) => {
 }
 
 const permissionAlternates = {
-  'inventory:create': ['inventory:review'],
   'inventory:review': ['inventory:create'],
   'orders:view': ['inventory:view'],
   'orders:update': ['inventory:update', 'inventory:review'],
@@ -389,10 +389,9 @@ const supplyRoutePermissions = (to) => {
   const department = String(to.params.department || '').toLowerCase()
   const page = String(to.params.page || 'dashboard').toLowerCase()
   if (department === 'inventory' && page === 'requests') return { any: ['inventory:create', 'inventory:review'], one: '' }
-  if (department === 'inventory' && page === 'onboarding') return { any: [], one: 'inventory:create' }
+  if (department === 'inventory' && ['onboarding', 'receiving'].includes(page)) return { any: [], one: 'inventory:create' }
   if (department === 'inventory') return { any: [], one: 'inventory:view' }
   if (department === 'procurement') return { any: [], one: 'procurement:view' }
-  if (department === 'logistics') return { any: [], one: 'orders:view' }
   if (to.path === '/inventory/requests') return { any: ['inventory:create', 'inventory:review'], one: '' }
   if (to.path === '/procurement/requests') return { any: [], one: 'procurement:view' }
   return { any: [], one: '' }
@@ -562,7 +561,7 @@ router.beforeEach(async (to, from, next) => {
   }
   if (
     currentUser &&
-    ['/clinic', '/workspace', '/clinical', '/crm', '/operations', '/catalog', '/inventory', '/procurement', '/logistics', '/management', '/account', '/hr', '/finance', '/activities']
+    ['/clinic', '/workspace', '/clinical', '/crm', '/operations', '/catalog', '/inventory', '/procurement', '/management', '/account', '/hr', '/finance', '/activities']
       .some((prefix) => routePath === prefix || routePath.startsWith(`${prefix}/`)) &&
     !isClinicAccount(currentUserData)
   ) {

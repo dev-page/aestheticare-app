@@ -126,6 +126,24 @@ test('Completion requires notes; closed appointments cannot rejoin', async () =>
   assert.equal((await h.call('customer', 'join_consultation', {}, true)).code, 409)
 })
 
+test('Clinical prescriptions require explicit whole-unit quantities before completion', async () => {
+  const invalid = harness(base({ status: 'Ongoing', startedAt: new Date(Date.now() - 120000) }))
+  const rejected = await invalid.call('worker', 'worker_complete', {
+    treatmentNotes: 'Documented consultation advice.',
+    prescriptions: [{ name: 'Rx Serum' }],
+  }, true)
+  assert.equal(rejected.code, 400)
+  assert.equal(invalid.current().workerCompleted, undefined)
+
+  const valid = harness(base({ status: 'Ongoing', startedAt: new Date(Date.now() - 120000) }))
+  const completed = await valid.call('worker', 'worker_complete', {
+    treatmentNotes: 'Documented consultation advice.',
+    prescriptions: [{ name: 'Rx Serum', quantity: 3 }],
+  }, true)
+  assert.equal(completed.code, 200)
+  assert.equal(valid.current().prescriptions[0].quantity, 3)
+})
+
 test('Timer expiry cannot bypass clinical documentation or individual team confirmations', async () => {
   const h = harness(base({ status: 'Ongoing', startedAt: new Date(Date.now() - 31 * 60000), consultationWindowEndAt: new Date(Date.now() - 60000).toISOString(), treatmentTeam: [{ employeeId: 'worker', participationConfirmed: false }] }))
   await closeExpiredConsultations(h.admin)

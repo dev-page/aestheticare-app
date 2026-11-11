@@ -282,8 +282,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         loadDashboardCollection('transactions', 'payments:view', 'pos_payments', branchId),
         loadDashboardCollection('users', 'staff:view', 'staff_management', branchId, [where('userType', '==', 'Staff')]),
         loadDashboardCollection('attendance', 'attendance:view', 'hr', branchId),
-        (hasPermission('inventory:view') || hasPermission('pharmacy:view') || hasPermission('finance:purchases:view')) && hasFeature('inventory')
-          ? loadDashboardCollection('inventoryItems', hasPermission('inventory:view') ? 'inventory:view' : hasPermission('pharmacy:view') ? 'pharmacy:view' : 'finance:purchases:view', 'inventory', branchId)
+        (hasPermission('inventory:view') || hasPermission('finance:purchases:view')) && hasFeature('inventory')
+          ? loadDashboardCollection('inventoryItems', hasPermission('inventory:view') ? 'inventory:view' : 'finance:purchases:view', 'inventory', branchId)
           : Promise.resolve([]),
         loadDashboardCollection('purchaseOrders', 'procurement:view', 'inventory', branchId),
       ])

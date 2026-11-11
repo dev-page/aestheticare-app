@@ -49,24 +49,14 @@ service firebase.storage {
         && firestore.get(/databases/(default)/documents/customerOrders/$(orderId)).data.customerId == request.auth.uid;
     }
     
-    function isSupplierCatalogUpload(document) {
-      return request.resource != null
-        && request.resource.size > 0
-        && request.resource.size < 25 * 1024 * 1024
-        && (request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-          || (document && request.resource.contentType == 'application/pdf'));
-    }
-
     match /supplier-item-images/{userId}/{itemId}/{fileName} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId && isSupplierCatalogUpload(false);
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /supplier-fda-documents/{userId}/{itemId}/document {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId && isSupplierCatalogUpload(true);
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /supplier-fda-documents/{userId}/{fileName} {
@@ -98,8 +88,7 @@ service firebase.storage {
     // Supplier profile photos use their own immutable, user-scoped path.
     match /supplier-profile-images/{userId}/{fileName} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSuperadmin());
-      allow create: if isSignedIn() && request.auth.uid == userId && isImageUpload();
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /product-service-posts/{branchId}/{fileName} {

@@ -24,7 +24,7 @@
                 <h2>{{ record.customerName || record.clientName || 'Customer' }}</h2>
                 <p class="visit-meta">{{ record.serviceName || record.service || 'Consultation' }} · {{ formatDate(record.date) }}<span v-if="record.time"> · {{ formatClockTime(record.time) }}</span><span v-if="record.consultationMode"> · {{ record.consultationMode }}</span></p>
               </div>
-              <span class="record-badge">{{ record.prescriptionStatus === 'dispensed' ? 'Dispensed' : 'Pending pickup' }}</span>
+              <span class="record-badge">{{ record.prescriptionStatus === 'dispensed' ? 'Dispensed' : record.prescriptionStatus === 'partially_dispensed' ? 'Partially dispensed' : 'Pending pickup' }}</span>
             </header>
 
             <section class="detail-section">
@@ -32,6 +32,7 @@
               <div v-for="(item, index) in record.prescriptions" :key="index" class="medicine-row">
                 <strong>{{ item.name || item.medication || item.productName || 'Medication' }}</strong>
                 <p v-if="item.dosage || item.strength">{{ item.dosage || item.strength }}</p>
+                <p>Quantity: {{ item.quantity || 'Needs quantity update' }}</p>
                 <p v-if="item.frequency">{{ item.frequency }}</p>
                 <p v-if="item.duration">{{ item.duration }}</p>
                 <p v-if="item.instructions || item.notes">{{ item.instructions || item.notes }}</p>
@@ -41,6 +42,7 @@
             </section>
             <footer class="card-footer">
               <p v-if="record.prescriptionStatus === 'dispensed'">Marked dispensed {{ record.prescriptionDispensedAt ? `· ${formatDate(record.prescriptionDispensedAt)}` : '' }}</p>
+              <p v-else-if="record.prescriptionStatus === 'partially_dispensed'">Partially dispensed. Continue the sale in Pharmacy to provide the remaining prescribed quantity.</p>
               <p v-else>Confirm the prescribed items are available and provided at the pharmacy.</p>
               <router-link v-if="record.prescriptionStatus !== 'dispensed'" class="pos-link" :to="{ path: '/pharmacy/pos', query: { branchId: record.branchId, appointmentId: record.id } }">Process at pharmacy POS</router-link>
             </footer>

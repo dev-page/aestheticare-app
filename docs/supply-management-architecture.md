@@ -13,26 +13,24 @@ Every workflow record has `id`, `kind`, `number`, `branchId`, `status`, `created
 | Kind | Fields and relationships |
 |---|---|
 | request | itemId, item snapshot, department, quantity, unit, currentStock, minStock, reason, priority, requiredDate, estimatedCost; becomes linked procurement |
-| procurement | requestId, inherited lines/department/reason/date, officer, mode (Manual/Online), method, strategy, documents |
-| rfq | procurementId, supplierIds, lines/specifications, deadline, deliveryDate/location, terms, contact; supplier-facing projection |
-| quotation | rfqId, supplierId, lines(quantity/unitPrice), discount/tax/delivery/otherCharges, total, validUntil, leadDays, paymentTerms, warranty, notes; edits audited |
-| evaluation | procurementId, rfqId, quotationId, supplierId, justification, evaluator; never visible to suppliers |
-| budgetRequest | evaluationId, quotationId, procurementId, budgetId, department, category, requested/approved amount, decision/remarks/decider/time |
+| procurement | requestId, inherited clinic need lines/department/reason/date, officer, selected supplier, external quotation reference/date, supporting documents |
+| rfq / quotation / evaluation | Legacy records retained for historical review; new supplier quotes are recorded by clinic Procurement and do not use supplier accounts |
+| budgetRequest | Legacy funding request records; new purchase orders go directly to Finance for approval against an allocated budget |
 | budget | department, category, total, committed, spent; available = total - committed - spent |
 | financeApproval | budgetRequestId, budgetId, approvedAmount, decision, remarks, financeOfficerId, decidedAt |
 | budgetAllocation | budgetRequestId, financeApprovalId, budgetId, amount, spentAmount, releasedAmount, status |
-| po | budgetRequestId, budgetId, quotationId, supplierId, lines, total, deliveryDate/location, terms, confirmation, accepted quantities, invoiced quantities, paid amount |
-| supplierConfirmation | poId, supplierId, response, reason, confirmedDeliveryDate, respondedBy/respondedAt |
+| po | procurementId, budgetId, supplierId, quoted lines and totals, taxTreatment, itemized tax/fee/discount adjustments, supplier-stated total, quote reference/date, deliveryDate/location, terms, confirmation, accepted quantities, invoiced quantities, paid amount |
+| supplierConfirmation | Clinic-entered record of an external supplier response: poId, supplierId, response, reason, confirmedDeliveryDate, recordedBy/recordedAt |
 | receiving | poId, supplierId, reference, date, lines(ordered/delivered/accepted/rejected, condition, lot, expiry, serial/model/warranty), inspection, notes, onboarded |
 | inspection | receivingId, poId, quantityResult, qualityResult, inspected lines, inspector and timestamp |
 | discrepancy | receivingId, poId, supplierId, lines, reason, resolution, responsible user |
-| invoice | poId, supplierId, receivingIds, invoiceNumber, invoiceDate/dueDate, lines, charges, total, match result, approvedBy |
+| invoice | poId, supplierId, receivingIds, invoiceNumber, invoiceDate/dueDate, lines, tax treatment, itemized tax/fee/discount adjustments, supplier-stated total, total, match result, approvedBy |
 | threeWayMatch | invoiceId, poId, receivingIds, status, discrepancy issues, checker and timestamp |
 | payment | invoiceId, poId, budgetId, supplierId, amount, method(Manual/External or Electronic), reference, paymentDate, proof document; recorded payment, not money transfer |
 
 `supplyAudit`: recordId, branchId, actor UID/name/role, action, previous/new status, input snapshot, timestamp. Immutable server-written history.
 
-`supplyDocuments`: recordId, branchId, uploader UID, filename, contentType, size, private Storage path, visibility (internal/supplier), intended supplier IDs, createdAt. Downloads require record access; supplier access additionally requires explicit document visibility and ownership.
+`supplyDocuments`: recordId, branchId, uploader UID, filename, contentType, size, private Storage path, internal visibility, createdAt. Downloads require clinic staff record access. Historical supplier-owned assets remain readable to signed-in users, but new supplier uploads are disabled.
 
 Inventory fields: existing `name`, `brand`, `description`, `imageUrl`, `category`, `itemType` (Material/Equipment), `consumability`, `unit`, `currentStock`, `reservedStock`, `minStock`, `targetStock`, `maxStock`, `location`, `supplierId`, `createdAt`, `receivedAt`, `expiryDate`, `condition`, `serialNumber`, `modelNumber`, `warranty`, `costPrice`. Receiving updates quantities through linked movement records only. Adjustments have reasons and audit records. Expiration and condition stay available per receipt/lot, not just the current item summary.
 
@@ -40,11 +38,11 @@ Inventory fields: existing `name`, `brand`, `description`, `imageUrl`, `category
 
 ```mermaid
 flowchart LR
-  Item --> Request --> Procurement --> RFQ --> Quote --> Evaluation
-  Supplier --> RFQ
-  Supplier --> Quote
-  Evaluation --> BudgetRequest --> FinanceApproval --> BudgetAllocation --> Budget
-  BudgetAllocation --> PO --> SupplierConfirmation --> Receiving --> Inspection --> Movement --> Item
+  Item --> Request --> Procurement --> PO
+  Supplier[Clinic supplier contact] --> Quote[External quotation recorded by Procurement]
+  Quote --> PO
+  PO --> FinanceApproval --> BudgetAllocation --> Budget
+  PO --> SupplierConfirmation --> Receiving --> Inspection --> Movement --> Item
   Receiving --> Discrepancy
   PO --> Invoice --> ThreeWayMatch --> Payment
   Receiving --> Invoice
@@ -54,18 +52,17 @@ flowchart LR
 
 ## State machines and approval workflow
 
-- Request: Draft -> Submitted -> Under Review -> Approved / Rejected / Returned. Approval creates Procurement automatically, with a deterministic ID and Sent to Procurement status. Returned requests can be revised and resubmitted. Request creators cannot approve their own requests.
-- Procurement: Received -> Under Review -> Quotation Recorded -> For Review -> Approved/Rejected -> Ordered -> Completed.
-- Quotation: Procurement records an external supplier quotation or other price communication, including taxes, discounts, delivery fees and other charges. The quotation is supporting evidence for the PO and is not a supplier account workflow.
-- Budget request: Submitted -> Finance Review -> Approved/Rejected/Returned. Approved funding creates explicit Finance Approval and Budget Allocation records and commits funds atomically. A retry cannot reserve twice.
-- PO: Draft -> For Review -> Approved -> Receiving -> Completed, with For Review -> Rejected -> Draft for revisions. Procurement sends the approved PDF externally and records supplier confirmation, delivery, invoice and payment evidence. Official issue requires committed funding; only accepted quantities enter inventory and payment completion closes the PO.
-- Receiving: Inspected -> Onboarded. A separate Inspection record captures quantity and quality results. Accepted + rejected equals delivered; cumulative accepted cannot exceed ordered. Onboarding is idempotent and rejected stock never enters inventory.
+- Request: Draft -> Sent to Procurement -> Returned / Completed. Inventory records the need without choosing a supplier or price. Returned requests can be revised by their original requester.
+- Procurement: Received -> For Review -> Ordered -> Completed, or Returned to Inventory / Rejected. Procurement selects an active clinic supplier, attaches the externally received quotation, and enters the quoted totals and terms.
+- Finance approval: Finance approves the prepared PO against an allocated budget. Approval, Finance Approval, and Budget Allocation writes are transactional; a retry cannot reserve twice.
+- PO: For Review -> Approved -> Receiving -> Completed, with For Review -> Rejected -> Draft for revisions. Procurement uploads the approved PO, issues it externally, then records the supplier response and expected date. Only confirmed POs are available to Inventory for receiving.
+- Receiving: Inspected -> Onboarded. Inventory records delivered, accepted, and rejected quantities. Accepted + rejected equals delivered; cumulative accepted cannot exceed ordered. Onboarding is idempotent and rejected stock never enters inventory.
 - Invoice: Submitted -> Under Verification -> Matched/Disputed -> Approved for Payment -> Paid. A separate Three-Way Match record compares PO, onboarded receiving, prior invoices, prices, and charges. Mismatches block payment.
 - Payment: Pending -> Under Verification -> Approved/Rejected -> Processing -> Paid. Preparation, approval by another Finance user, processing, and settlement are separate actions. Settlement records a real external transaction; it never pretends to transfer money.
 
 ## Clinic-only supplier workflow
 
-Suppliers are clinic-managed business contacts and do not log in. Procurement records supplier-provided quotations, taxes, delivery fees, discounts and other charges from external documents or communication, then generates the approved PO PDF for external delivery. Staff record supplier confirmation, receiving, invoices and payment references with supporting documents. Finance/Owner review is separate from Procurement preparation and sending.
+Suppliers are clinic-managed business contacts and do not log in. Procurement records supplier-provided quotations, taxes, delivery fees, discounts and other charges from external documents or communication, then generates the approved PO PDF for external delivery. Staff record supplier confirmation, receiving, invoices and payment references with supporting documents. Finance/Owner review is separate from Procurement preparation and sending. Historical Online-mode records remain readable and read-only; they do not enable new supplier access.
 
 ## Roles, scope, separation of duties
 
@@ -73,58 +70,57 @@ All staff requests resolve role/custom-role permissions and branch ownership thr
 
 | Responsibility | Existing permissions |
 |---|---|
-| Inventory view/manage/request | inventory:view, inventory:update, inventory:create |
+| Inventory view/manage/request/receive | inventory:view, inventory:update, inventory:create |
 | Inventory approval | inventory:review, different user from requester |
 | Procurement read/source/evaluate/PO | procurement:view, procurement:create, procurement:review |
 | Supplier directory | procurement:view, suppliers:create, suppliers:update |
-| Procurement receive/onboard/resolve | procurement:review, inventory:create |
+| Procurement view/source/PO | procurement:view, procurement:create, procurement:review |
+| Inventory receive/inspect/onboard/resolve | inventory:create |
 | Finance view/budgets/verify | finance:payables:view, finance:payables:approve |
 | Finance record settlement | finance:payables:settle |
 | Branch administration | explicit permissions or administrator:full_access; duty separation still applies |
 
 ## API architecture
 
-- `GET /supply/workspace?branchId=`: accessible branches, role capabilities, entity records, item records, suppliers/catalog; supplier-specific projection.
+- `GET /supply/workspace?branchId=`: clinic staff accessible branches, role capabilities, entity records, item records, clinic supplier contacts/catalog; supplier roles are rejected.
 - `POST /supply/items`: validated create/update and explicit opening quantity/adjustment with reason.
-- `POST /supply/records`: type-specific creation from linked authorized records, derived totals and inherited snapshots.
+- `POST /supply/records`: type-specific clinic creation; Inventory requests are supplier-neutral, and new RFQ/quotation account flows are disabled.
 - `POST /supply/records/:id/actions`: named state transitions, transactional invariants, audit and notifications.
 - `GET /supply/records/:id/history`: authorized timeline and documents.
-- `POST /supply/records/:id/documents`: private file upload, metadata validation, bounded file sizes.
+- `POST /supply/records/:id/documents`: private, internal-only document upload with metadata validation and bounded file sizes.
 - `GET /supply/documents/:id`: authorized short-lived download.
 - `POST /supply/reminders`: authorized, idempotent daily low-stock/deadline/delivery notifications; also invoked when the workspace is refreshed.
 
 ## Notification, audit, documents, and reporting architecture
 
-Transitions create existing `notifications` records addressed to staff with the next department's permissions. Alert IDs combine record/day/event to avoid repeated reminders. Browser workspaces refresh to update DSS and deadlines; reminders do not place orders. Unattended scheduled execution requires a deployment scheduler to invoke the same service.
+Transitions create existing `notifications` records addressed to staff with the next department's permissions. Procurement handoffs go to Procurement or Finance; delivery receiving, inspection, and discrepancies go to Inventory. Alert IDs combine record/day/event to avoid repeated reminders. Browser workspaces refresh to update DSS and deadlines; reminders do not place orders. Unattended scheduled execution requires a deployment scheduler to invoke the same service.
 
 Every mutation records an audit entry in the same database transaction. Document metadata is separate from Storage; failed metadata writes clean up the uploaded object. Allowed uploads: PDF, JPEG, PNG, up to 5 MB. No executable files or public buckets. Procurement documents are internal unless explicitly shared with the target supplier.
 
-Department dashboards derive counters and chart series from the same authorized records. Reports provide search, type/status/department/supplier/category/date filters, sorting, pagination and CSV export. Detail views show related records, current owner, responsible department, next action, attachments and history. Finance displays total, committed, available and spent separately. Stock movement and receiving reports retain the IDs needed for backwards tracing.
+Inventory, Procurement, and Finance dashboards derive counters and chart series from the same authorized records. Reports provide search, type/status/department/supplier/category/date filters, sorting, pagination and CSV export. Detail views show related records, current owner, responsible department, next action, attachments and history. Finance displays total, committed, available and spent separately. Stock movement and receiving reports retain the IDs needed for backwards tracing.
 
 ## Validation plan
 
-Pure model tests cover money, DSS thresholds, quotation arithmetic, invoice matching and transitions. Transactional workflow tests cover both sourcing modes, self-approval rejection, cross-branch and supplier privacy, budget contention/idempotency, repeated/partial/rejected receiving, invoice mismatch, payment retries and budget release. Vue compilation and production build check routes/templates/imports. No live supplier communications, payments, database migration or production deployment are required for local implementation checks.
+Static review checks clinic-only authorization, Inventory receiving permissions, accepted-quantity and idempotency invariants, historical Online-mode read-only handling, and legacy-route redirects. The frontend production build checks routes, templates, and imports. No live supplier communications, payments, database migration, or production deployment is part of the local implementation.
 
 ## Canonical workflow and compatibility routes
 
-`SupplyWorkspace.vue` is the sole Inventory, Procurement, Logistics, and procurement-Finance transaction interface. Older URLs redirect to the matching workspace page so saved bookmarks keep working, but the duplicate components and write endpoints have been removed. Historical `purchaseRequests`, `supplierQuotes`, `purchaseOrders`, `manualPurchases`, and `purchasePayments` records remain read-only for prior reports; all new transactions use `supplyRecords`.
+`SupplyWorkspace.vue` is the Inventory, Procurement, and procurement-Finance transaction interface. Inventory receiving and inspection are at `/inventory/receiving`. Older `/logistics/*`, `/manager/logistics`, and `/supply-management/logistics/*` URLs redirect to that page. Historical `purchaseRequests`, `supplierQuotes`, `purchaseOrders`, `manualPurchases`, and `purchasePayments` records remain readable for audit; historical Online-mode supply records are read-only and are not converted. New transactions use the clinic-entered manual path in `supplyRecords`.
 
-Clinic users enter through module-owned namespaces: `/inventory`, `/procurement`, `/logistics`, `/finance/procurement`, and `/management/supply`. Suppliers are represented as clinic-managed business contacts. Router guards, backend projections, and record permissions protect internal requests, evaluations, budgets, approvals, and competing quotations.
+Clinic users enter through module-owned namespaces: `/inventory`, `/procurement`, `/finance/procurement`, and `/management/supply`. Suppliers are represented as clinic-managed business contacts. Router guards, backend permissions, branch checks, and record access protect internal requests, budgets, approvals, quotations, and receiving.
 
 ```mermaid
 flowchart TD
   DSS[Inventory DSS recommendation] --> IR[Inventory Request]
-  IR -->|different reviewer approves| PR[Procurement Request]
-  PR --> Mode{Manual or Online}
-  Mode --> RFQ[RFQ]
-  RFQ --> Quotes[Supplier Quotations]
-  Quotes --> Eval[Evaluation and justified selection]
-  Eval --> BR[Budget Request]
-  BR -->|Finance approves| FA[Finance Approval]
+  IR --> PR[Procurement Request]
+  Supplier[Clinic supplier contact] --> Quote[External quotation]
+  PR --> Quote
+  Quote --> PO[Purchase Order for Review]
+  PO -->|Finance approves against budget| FA[Finance Approval]
   FA --> BA[Atomic Budget Allocation]
-  BA --> PO[Purchase Order]
-  PO --> PC[Supplier Confirmation]
-  PC --> RC[Receiving]
+  BA --> ApprovedPO[Approved PO]
+  ApprovedPO --> PC[Procurement records supplier confirmation]
+  PC --> RC[Inventory Receiving]
   RC --> INSP[Inspection]
   INSP -->|accepted only| Stock[Inventory Movement and Lot]
   INSP -->|rejected| DISC[Discrepancy Resolution]
@@ -170,7 +166,6 @@ stateDiagram-v2
 ```mermaid
 flowchart LR
   Staff[Staff browser] --> API[Authenticated Express API]
-  SupplierPortal[Supplier portal] --> API
   API --> Auth[Firebase Authentication]
   API --> DB[(Firestore)]
   API --> Storage[(Private Cloud Storage)]
@@ -179,7 +174,7 @@ flowchart LR
   DB --> Reports[Authorized dashboards and CSV reports]
 ```
 
-The API is the only workflow writer. Transactions enforce state preconditions, branch ownership, supplier identity, idempotency, budget availability, accepted quantities, invoice matching, and settlement. Suppliers receive a strict projection and explicitly shared documents only.
+The API is the only workflow writer. Transactions enforce state preconditions, branch ownership, clinic supplier association, idempotency, budget availability, accepted quantities, invoice matching, and settlement. Supplier accounts receive no projection or supply notifications; documents remain internal clinic records.
 
 ## Completion design
 

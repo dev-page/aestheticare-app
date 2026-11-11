@@ -27,7 +27,7 @@ Run this checklist against staging, not the production database. Use separate te
 
 ## RBAC and Data Isolation
 
-- [ ] Test Owner, Finance, HR, Procurement, Logistics, and read-only custom roles.
+- [ ] Test Owner, Finance, HR, Inventory, Procurement, and read-only custom roles.
 - [ ] Confirm a user without a Finance permission cannot open that route directly.
 - [ ] Confirm Finance view permissions cannot approve budgets or issue refunds.
 - [ ] Confirm a Finance user can only read records for assigned branches.
@@ -45,24 +45,25 @@ Run this checklist against staging, not the production database. Use separate te
 - [ ] Confirm approved payroll cannot be edited by HR.
 - [ ] Confirm Financial Reports include approved payroll only.
 
-## Integrated Inventory, Procurement, Finance, and Logistics
+## Inventory, Procurement, and Finance
 
-- [ ] Complete both Manual and Online lifecycles with separate Inventory, Procurement, Finance, Logistics, and Supplier accounts.
-- [ ] Confirm an approved Inventory Request creates its Procurement Request without re-entry.
-- [ ] Exercise RFQ Draft, Sent, Open, Quotation Received, Closed, Under Evaluation, and Awarded states.
-- [ ] Confirm suppliers see only addressed RFQs, their own quotation, their own PO, explicitly shared documents, invoice status, and payment status.
-- [ ] Confirm Manual procurement requires RFQ, quotation, and PO evidence.
-- [ ] Finance reviews the linked chain and atomically creates Finance Approval and Budget Allocation records.
-- [ ] Confirm duplicate budget approvals cannot reserve funds twice.
-- [ ] Exercise PO approval, issue, rejection/clarification, supplier confirmation, and ongoing states.
+- [ ] Complete a clinic-entered purchase lifecycle with separate Inventory, Procurement, and Finance accounts.
+- [ ] Confirm an Inventory request records item need without requiring a supplier or catalog product.
+- [ ] Confirm Procurement selects a clinic-managed supplier, records an external quotation, and attaches internal quotation evidence.
+- [ ] Confirm a PO requires Finance approval against an available budget before Procurement can issue it externally.
+- [ ] Confirm Inventory and Procurement can view their records while supplier-role accounts cannot sign in or access supply APIs.
+- [ ] Confirm historical Online-mode records remain readable and cannot be modified.
+- [ ] Exercise PO approval, external issue, clinic-recorded supplier confirmation, and expected delivery date.
+- [ ] Confirm only a confirmed PO appears in Inventory receiving and Procurement-only users cannot record a receipt.
 - [ ] Record partial, accepted, rejected, damaged, expired, serialized, and batch-tracked deliveries.
 - [ ] Confirm only accepted quantities enter inventory and retrying onboarding is idempotent.
 - [ ] Resolve rejected-goods discrepancies and verify their photos/documents remain linked.
 - [ ] Submit an invoice, run three-way matching, correct a disputed invoice, and approve it for payment.
 - [ ] Prepare, review, approve with another Finance account, process, and record an external payment with evidence.
 - [ ] Confirm payment does not call a fake gateway, actual spending remains separate, and unused commitment is released.
+- [ ] Confirm `/logistics/*`, `/manager/logistics`, and `/supply-management/logistics/*` redirect to `/inventory/receiving`.
 - [ ] Trace the completed transaction in both directions and export every departmental report.
-- [ ] Test cancellation, deadlines, insufficient budget, expired quotation, cross-branch access, retries, and concurrent submissions.
+- [ ] Test cancellation, deadlines, insufficient budget, cross-branch access, retries, and concurrent submissions.
 
 ## Sales, Refunds, and Payments
 

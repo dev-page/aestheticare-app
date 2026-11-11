@@ -792,6 +792,50 @@ html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) {
     linear-gradient(145deg, var(--ac-bg-deep), var(--ac-bg) 58%, var(--ac-bg-soft));
 }
 
+html[data-ac-theme="dark"] .aestheticare-app :is(.module-theme, .owner-theme, .customer-theme, .supplier-theme, .directory) {
+  background-color: var(--ac-bg) !important;
+  background-image: none !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.module-theme, .owner-theme, .customer-theme, .supplier-theme, .directory) :is(
+  .card, .panel, .surface, .toolbar, .empty, .modal, .summary article,
+  section, article, form, header, footer
+) {
+  background-color: var(--ac-surface) !important;
+  background-image: none !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.module-theme, .owner-theme, .customer-theme, .supplier-theme, .directory) :is(
+  p, label, dt, dd, li, th, td, h1, h2, h3, h4, h5, h6, a
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.module-theme, .owner-theme, .customer-theme, .supplier-theme, .directory) :is(
+  input, select, textarea
+) {
+  background-color: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .directory :is(.top p, dt, .empty p, header p) {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .directory :is(.top b, .success) {
+  background-color: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .directory .error {
+  background-color: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
 html[data-ac-theme="dark"] .aestheticare-app :is(.bg-white, .bg-gray-50, .bg-gray-100, .bg-slate-50, .bg-slate-100, .bg-cream-50, .bg-cream-100) {
   background-color: var(--ac-surface) !important;
   color: var(--ac-text) !important;

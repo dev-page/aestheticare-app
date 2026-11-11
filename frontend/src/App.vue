@@ -254,7 +254,6 @@ const showEmployeeTopbar = computed(() => {
     path.startsWith('/appointments') ||
     path.startsWith('/inventory') ||
     path.startsWith('/procurement') ||
-    path.startsWith('/logistics') ||
     path.startsWith('/customer')
   )
 })
@@ -269,7 +268,7 @@ const topbarTitle = computed(() => {
   if (path.startsWith('/crm')) return 'Client Management'
   if (path.startsWith('/finance')) return 'Finance'
   if (path.startsWith('/management')) return 'Management'
-  if (path.startsWith('/inventory') || path.startsWith('/procurement') || path.startsWith('/logistics') || path.startsWith('/supply')) return 'Supply Management'
+  if (path.startsWith('/inventory') || path.startsWith('/procurement') || path.startsWith('/supply')) return 'Supply Management'
   if (path.startsWith('/account')) return 'Account'
   if (path.startsWith('/owner')) return 'Clinic Administration'
   if (path.startsWith('/customer')) return ''

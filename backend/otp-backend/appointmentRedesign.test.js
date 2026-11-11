@@ -53,6 +53,40 @@ test('Service bookings require the actual linked online or on-site consultation'
   h.seed('appointments', 'right', { customerId: 'customer', branchId: 'clinic', type: 'Consultation', consultationMode: 'on-site', status: 'Completed', selectedServiceIds: ['assessment'] })
   for (const source of ['customer_booking_request', 'walk_in']) assert.equal((await prepare(source)).data.service, 'Facial')
 })
+
+test('Service bookings reject expired materials before reserving an appointment', async () => {
+  const h = fixture()
+  h.seed('productServicePosts', 'facial', {
+    branchId: 'clinic', postType: 'Service', title: 'Facial', price: 500, durationMinutes: 30,
+    isPublished: true, financeStatus: 'approved', termsAndConditions: 'Treatment terms',
+    requiredSupplyIds: ['cream'],
+  })
+  h.seed('inventoryItems', 'cream', { branchId: 'clinic', name: 'Cream', currentStock: 2 })
+  h.seed('supplyLots', 'expired-cream', { branchId: 'clinic', itemId: 'cream', expiryDate: '2020-01-01', remainingQuantity: 2 })
+
+  await assert.rejects(
+    h.db.runTransaction(tx => prepareBooking({ tx, db: h.db, reservation: reservation(), getBookingRange: range, rangesOverlap: overlap })),
+    /unexpired|usable|available/i,
+  )
+  assert.equal([...h.records.keys()].filter(key => key.startsWith('appointments/')).length, 0)
+})
+
+test('Service bookings reject lots that expire before the scheduled treatment date', async () => {
+  const h = fixture(), appointmentDate = future(10), expiryDate = future(5)
+  h.seed('productServicePosts', 'facial', {
+    branchId: 'clinic', postType: 'Service', title: 'Facial', price: 500, durationMinutes: 30,
+    isPublished: true, financeStatus: 'approved', termsAndConditions: 'Treatment terms',
+    requiredSupplyIds: ['cream'],
+  })
+  h.seed('inventoryItems', 'cream', { branchId: 'clinic', name: 'Cream', currentStock: 2 })
+  h.seed('supplyLots', 'expiring-cream', { branchId: 'clinic', itemId: 'cream', expiryDate, remainingQuantity: 2 })
+
+  await assert.rejects(
+    h.db.runTransaction(tx => prepareBooking({ tx, db: h.db, reservation: reservation('facial', appointmentDate), getBookingRange: range, rangesOverlap: overlap })),
+    /unexpired|usable|available/i,
+  )
+})
+
 test('New appointments snapshot the saved clinic contract and its applicable policies', async () => {
   const h = fixture()
   h.seed('clinicPolicies', 'owner', { paymentPolicyEnabled: true, paymentPolicy: 'Pay the required deposit.', cancellationPolicyEnabled: false, cancellationPolicy: 'Disabled terms.', clientContract: { configured: true, additionalTerms: 'Disclose allergies before treatment.', appearance: { header: 'My Clinic', font: 'serif', fontSize: 16 } } })
@@ -176,6 +210,10 @@ test('Elapsed consultations require customer confirmation; absence is never comp
   assert.equal(h.records.get('appointments/active').status, 'Awaiting Customer Confirmation')
   assert.equal(h.records.get('appointments/absent').status, 'Consultation Review')
   assert.equal(h.records.get('appointments/absent').workerCompleted, undefined)
+  // This fixture is years beyond the confirmation window. The next sweep
+  // moves the just-closed consultation into review, then becomes idempotent.
+  assert.equal((await closeExpiredConsultations(h.admin)).closed, 1)
+  assert.equal(h.records.get('appointments/active').status, 'Consultation Review')
   assert.equal((await closeExpiredConsultations(h.admin)).closed, 0)
 })
 
