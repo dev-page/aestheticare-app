@@ -121,7 +121,7 @@ export default {
 .skeleton-check,
 .skeleton-panel,
 .skeleton-detail-card {
-  background: linear-gradient(90deg, #ead9c3, #f8eedf, #ead9c3);
+  background: linear-gradient(90deg, var(--ac-surface-muted), var(--ac-border), var(--ac-surface-muted));
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.5s ease-in-out infinite;
 }
@@ -158,7 +158,7 @@ export default {
 
 .skeleton-table-row {
   padding: 1rem 0;
-  border-top: 1px solid #ead2b2;
+  border-top: 1px solid var(--ac-border);
 }
 
 .skeleton-list-row {
@@ -167,7 +167,7 @@ export default {
   align-items: start;
   gap: 0.85rem;
   padding: 1rem 0;
-  border-top: 1px solid #ead2b2;
+  border-top: 1px solid var(--ac-border);
 }
 
 .skeleton-list-copy {

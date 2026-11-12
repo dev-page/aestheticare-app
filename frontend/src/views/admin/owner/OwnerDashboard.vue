@@ -1,7 +1,7 @@
 <script>
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, nextTick, computed, watch } from 'vue'
 import { auth } from '@/config/firebaseConfig'
 import { getFirestore, collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -12,6 +12,7 @@ import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { revenueByBranch, revenueTransactionAmount, sumNetRevenue } from '@/utils/revenue'
 import { useSubscriptionStore } from '@/stores/subscription'
+import { useThemeStore } from '@/stores/theme'
 
 export default {
   name: 'OwnerDashboard',
@@ -21,6 +22,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp())
     const subscriptionStore = useSubscriptionStore()
+    const themeStore = useThemeStore()
+    const isDarkTheme = () => themeStore.resolvedTheme === 'dark'
+    const chartTextColors = () => isDarkTheme()
+      ? { title: '#fff8eb', label: '#f0ddc8', grid: 'rgba(217, 154, 108, .24)' }
+      : { title: '#342419', label: '#624733', grid: 'rgba(207, 159, 120, .22)' }
     const formatClockTime = (value) => {
       const raw = String(value || '').trim()
       const match = raw.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i)
@@ -52,12 +58,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const todaysRevenue = ref(0)
     const pendingRequests = ref(0)
     const lowStockCount = ref(0)
-    const operationsSummary = computed(() => [
-      { label: "Today's appointments", count: todayAppointments.value, color: '#bd875e' },
-      { label: 'Unread messages', count: unreadMessages.value, color: '#d2a675' },
-      { label: 'Pending purchase requests', count: pendingRequests.value, color: '#977352' },
-      { label: 'Low-stock items', count: lowStockCount.value, color: '#b45e49' },
-    ])
+    const operationsSummary = computed(() => {
+      const colors = isDarkTheme()
+        ? ['#d99a6c', '#e0b27e', '#c9ab8e', '#d88770']
+        : ['#bd875e', '#d2a675', '#977352', '#b45e49']
+      return [
+        { label: "Today's appointments", count: todayAppointments.value, color: colors[0] },
+        { label: 'Unread messages', count: unreadMessages.value, color: colors[1] },
+        { label: 'Pending purchase requests', count: pendingRequests.value, color: colors[2] },
+        { label: 'Low-stock items', count: lowStockCount.value, color: colors[3] },
+      ]
+    })
     const operationsMaximum = computed(() => Math.max(1, ...operationsSummary.value.map(item => item.count)))
 
     const branches = ref([])
@@ -310,6 +321,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const renderRevenueChart = () => {
       if(!revenueChartRef.value) return
 
+      const colors = chartTextColors()
       const labels = branches.value.map(b => `${b.clinicBranch} (${b.clinicLocation || 'Unknown'})`)
       const revenues = branches.value.map(b => b.revenue || 0)
 
@@ -339,13 +351,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             title: {
               display: true,
               text: 'Branch Performance',
-              color: '#342419',
+              color: colors.title,
               font: { size: 16, weight: '700' },
               padding: { bottom: 16 }
             },
             legend: {
               labels: {
-                color: '#624733',
+                color: colors.label,
                 boxWidth: 14,
                 boxHeight: 14
               }
@@ -353,13 +365,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           },
           scales: {
             x: {
-              ticks: { color: '#624733' },
+              ticks: { color: colors.label },
               grid: { display: false }
             },
             y: {
               beginAtZero: true,
-              ticks: { color: '#624733' },
-              grid: { color: 'rgba(207,159,120,.22)' }
+              ticks: { color: colors.label },
+              grid: { color: colors.grid }
             }
           }
         }
@@ -383,16 +395,10 @@ const renderEmployeeChart = () => {
 
   const labels = Object.keys(roleCounts)
   const data = Object.values(roleCounts)
-  const palette = [
-    '#ffd3ac',
-    '#ccbeb1',
-    '#664c36',
-    '#331c08',
-    '#c98700',
-    '#e0a010',
-    '#ffc62e',
-    '#ffd866'
-  ]
+  const colors = chartTextColors()
+  const palette = isDarkTheme()
+    ? ['#d99a6c', '#e0b27e', '#9ed5a7', '#b6c0ed', '#f2c879', '#e8b7a0', '#c9ab8e', '#bb8970']
+    : ['#ffd3ac', '#ccbeb1', '#664c36', '#331c08', '#c98700', '#e0a010', '#ffc62e', '#ffd866']
   const chartColors = labels.map((_label, index) => palette[index % palette.length])
   const borderColors = labels.map((_label, index) => palette[index % palette.length])
 
@@ -420,14 +426,14 @@ const renderEmployeeChart = () => {
         title: {
           display: true,
           text: 'Employees Distribution by Role',
-          color: '#342419',
+          color: colors.title,
           font: { size: 16, weight: '700' },
           padding: { bottom: 16 }
         },
         legend: {
           position: 'top',
           labels: {
-            color: '#624733',
+            color: colors.label,
             boxWidth: 14,
             boxHeight: 14
           }
@@ -447,6 +453,13 @@ const renderEmployeeChart = () => {
 })
 
 }
+
+    watch(() => themeStore.resolvedTheme, async () => {
+      if (!chartModule) return
+      await nextTick()
+      renderRevenueChart()
+      renderEmployeeChart()
+    })
 
     onMounted(trackPageLoad(() => {
       pageListener(onAuthStateChanged, auth, async (user) => {
@@ -1034,11 +1047,11 @@ const renderEmployeeChart = () => {
 
 <style scoped>
 .operations-bars { display: grid; align-content: center; gap: 20px; height: 100%; padding: 18px 16px; }
-.operations-bar-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 12px; line-height: 1.4; color: #624733; }
-.operations-bar-label strong { flex-shrink: 0; font-size: 15px; font-variant-numeric: tabular-nums; color: #342419; }
-.operations-bar-track { height: 9px; background: #f0e1ce; border-radius: 999px; overflow: hidden; }
+.operations-bar-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 12px; line-height: 1.4; color: var(--ac-text-secondary); }
+.operations-bar-label strong { flex-shrink: 0; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--ac-text); }
+.operations-bar-track { height: 9px; background: var(--ac-surface-muted); border-radius: 999px; overflow: hidden; }
 .operations-bar-fill { height: 100%; border-radius: inherit; }
-.operations-chart-note { margin-top: 12px; color: #786354; font-size: 11px; line-height: 1.6; }
+.operations-chart-note { margin-top: 12px; color: var(--ac-text-muted); font-size: 11px; line-height: 1.6; }
 .owner-dashboard-shell {
   display: grid;
   gap: 1.35rem;
@@ -1409,12 +1422,28 @@ const renderEmployeeChart = () => {
 .card-info-trigger { border-color: #e6c196; background: #fff8eb; color: #956344; }
 .card-info:hover .card-info-trigger, .card-info:focus-within .card-info-trigger { border-color: #cf9f78; background: #f8e5bd; color: #7b4f37; }
 .card-tooltip { border-color: #e6c196; background: linear-gradient(145deg, #fffdf9, #fdf3e2); box-shadow: 0 16px 34px rgba(72, 42, 23, .16); color: #473223; }
-.chart-frame { border-color: #ead2b2; background: #fffaf4; }
+.chart-frame { border-color: var(--ac-border); background: var(--ac-surface); }
 .dashboard-list-row { border-color: #ead2b2; background: #fffaf4; }
 .insight-value-warn, .dashboard-list-value-alert { color: #8a5b18; }
 .insight-value-alert { color: #a13f38; }
 .dashboard-list-value-positive { color: #39734a; }
 .dashboard-status-neutral { border-color: #ead2b2; background: #fff7ec; color: #624733; }
+
+:global(html[data-ac-theme="dark"]) .dashboard-card,
+:global(html[data-ac-theme="dark"]) .metric-card,
+:global(html[data-ac-theme="dark"]) .insight-card {
+  border-color: var(--ac-border);
+  background: linear-gradient(180deg, var(--ac-surface-soft), var(--ac-surface));
+  box-shadow: var(--ac-shadow-md);
+}
+
+:global(html[data-ac-theme="dark"]) .chart-frame {
+  border-color: var(--ac-border);
+  background: var(--ac-bg);
+}
+
+:global(html[data-ac-theme="dark"]) .dashboard-card-kicker { color: var(--ac-accent); }
+:global(html[data-ac-theme="dark"]) .dashboard-card-title { color: var(--ac-text); }
 
 /* Dashboards are visual summaries. The detailed source data remains available
    in its dedicated modules and exports, while this page focuses on charts. */

@@ -378,7 +378,7 @@ onUnmounted(() => {
 .history-empty p { margin: 0; font-size: 12px; }
 .error-notice { color: #a04434 !important; font-size: 13px; padding: 12px 15px; border-radius: 9px; background: #fff0e9; margin-bottom: 16px; }
 .history-loading { display: grid; gap: 10px; }
-.history-skeleton { height: 48px; border-radius: 8px; background: #f4eadc; animation: history-pulse 1.5s ease-in-out infinite; }
+.history-skeleton { height: 48px; border-radius: 8px; background: linear-gradient(90deg, var(--ac-surface-muted), var(--ac-border), var(--ac-surface-muted)); background-size: 200% 100%; animation: history-pulse 1.5s ease-in-out infinite; }
 @keyframes history-pulse { 50% { opacity: .5; } }
 @media (prefers-reduced-motion: reduce) { .history-skeleton { animation: none; } }
 @media (max-width: 1050px) { .plan-layout { grid-template-columns: minmax(0, 1fr); } }

@@ -299,8 +299,8 @@ onBeforeUnmount(() => {
 }
 
 .skeleton-card {
-  border: 1px solid rgba(198, 148, 108, 0.25);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(248, 234, 206, 0.55));
+  border: 1px solid var(--ac-border);
+  background: linear-gradient(145deg, var(--ac-surface), var(--ac-surface-soft));
 }
 
 .skeleton-line,
@@ -308,9 +308,9 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: linear-gradient(
     90deg,
-    rgba(224, 197, 168, 0.55) 0%,
-    rgba(244, 228, 206, 0.9) 45%,
-    rgba(224, 197, 168, 0.55) 100%
+    var(--ac-border) 0%,
+    var(--ac-surface-muted) 45%,
+    var(--ac-border) 100%
   );
   background-size: 200% 100%;
   animation: skeleton-shine 1.4s ease-in-out infinite;
