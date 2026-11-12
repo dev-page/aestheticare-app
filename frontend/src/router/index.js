@@ -146,11 +146,11 @@ const routes = [
   // CRM module routes
   { path: "/crm/dashboard", name: "crm-dashboard", component: () => import("@/views/admin/owner/crm/ReceptionistDashboard.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/crm/clients", name: "crm-clients", component: () => import("@/views/admin/owner/crm/ReceptionistClientList.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
-  { path: "/crm/clients/new", name: "crm-walk-in-client", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermission: "clients:create" } },
+  { path: "/crm/clients/new", name: "crm-walk-in-client", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermissionsAll: ["clients:view", "appointments:view", "appointments:create", "appointments:update", "payments:create"] } },
   { path: "/crm/appointments", name: "crm-appointments", component: () => import("@/views/admin/owner/crm/AppointmentManagement.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["appointments:view", "appointments:update", "appointments:review", "consultations:view"], requiresFeature: "appointments" } },
   { path: "/crm/appointments/requests", name: "crm-appointment-requests", redirect: { path: "/crm/appointments", query: { tab: "requests" } } },
-  { path: "/crm/appointments/new", name: "crm-walk-in-appointment", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:create" } },
-  { path: "/crm/pos", name: "crm-walk-in-pos", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermission: "payments:create" } },
+  { path: "/crm/appointments/new", name: "crm-walk-in-appointment", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermissionsAll: ["clients:view", "appointments:view", "appointments:create", "appointments:update", "payments:create"] } },
+  { path: "/crm/pos", name: "crm-walk-in-pos", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermissionsAll: ["appointments:view", "payments:create"] } },
   { path: "/crm/transactions", name: "crm-transactions", component: () => import("@/views/admin/owner/crm/ReceptionistTransactionHistory.vue"), meta: { requiresAuth: true, requiresPermission: "payments:view" } },
   { path: "/crm/inbox", name: "crm-inbox", component: () => import("@/views/admin/owner/crm/ReceptionistInbox.vue"), meta: { requiresAuth: true, requiresPermission: "inbox:view" } },
   { path: "/crm/activity-logs", name: "crm-activity-logs", component: () => import("@/views/admin/owner/crm/ReceptionistActivityLogs.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
@@ -593,13 +593,19 @@ router.beforeEach(async (to, from, next) => {
   const supplyAccess = supplyRoutePermissions(to)
   const requiredPermission = to.meta.requiresPermission || supplyAccess.one
   const requiredPermissionsAny = to.meta.requiresPermissionsAny || supplyAccess.any
-  if ((requiredPermission && !(to.path === '/account/change-password' && forcedEmployeePasswordChange) && !hasPermission(requiredPermission)) || (requiredPermissionsAny.length && !requiredPermissionsAny.some(permission => hasPermission(permission)))) {
+  const requiredPermissionsAll = to.meta.requiresPermissionsAll || []
+  const singlePermissionExempt = to.path === '/account/change-password' && forcedEmployeePasswordChange
+  const hasRequiredSinglePermission = !requiredPermission || singlePermissionExempt || hasPermission(requiredPermission)
+  const hasRequiredAnyPermission = !requiredPermissionsAny.length || requiredPermissionsAny.some(permission => hasPermission(permission))
+  const hasRequiredAllPermissions = requiredPermissionsAll.every(permission => hasPermission(permission))
+  if (!hasRequiredSinglePermission || !hasRequiredAnyPermission || !hasRequiredAllPermissions) {
     if (currentUser?.uid) {
       try {
         const userSnap = await getDoc(doc(db, "users", currentUser.uid));
         const userData = userSnap.exists() ? userSnap.data() || {} : {};
         const alternates = permissionAlternates[requiredPermission] || [];
-        if (alternates.some((permission) => hasPermission(permission)) || requiredPermissionsAny.some((permission) => hasPermission(permission))) {
+        const singlePermissionSatisfied = hasRequiredSinglePermission || alternates.some(permission => hasPermission(permission))
+        if (singlePermissionSatisfied && hasRequiredAnyPermission && hasRequiredAllPermissions) {
           return next();
         }
         if (isOwnerLikeRole(userData, currentUser?.uid)) {

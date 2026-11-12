@@ -182,6 +182,14 @@
                 <span>Commission Excluded</span>
                 <span class="font-semibold text-rose-300">{{ formatCurrency(selectedRequest.refundCommissionAmount || 0) }}</span>
               </div>
+              <div v-if="selectedRequest.requestType === 'cancel' && selectedRequest.cancellationRefundPolicySnapshot?.version === 1" class="flex items-center justify-between gap-4">
+                <span>Applied Refund Rule</span>
+                <span class="font-semibold text-white">{{ selectedRequest.cancellationRefundPolicySnapshot.tier }} window · {{ selectedRequest.cancellationRefundPolicySnapshot.refundPercentage }}%</span>
+              </div>
+              <div v-if="selectedRequest.requestType === 'cancel' && selectedRequest.cancellationRefundPolicySnapshot?.version === 1" class="flex items-center justify-between gap-4">
+                <span>Eligible Paid Amount</span>
+                <span class="font-semibold text-white">{{ formatCurrency(selectedRequest.cancellationRefundPolicySnapshot.eligibleAmount || 0) }}</span>
+              </div>
             </div>
 
             <div class="mt-6 rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm text-slate-300">

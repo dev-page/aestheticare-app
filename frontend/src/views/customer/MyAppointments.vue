@@ -36,8 +36,9 @@
             </div>
             <p class="mt-2">{{ order.appointmentIds?.length || 0 }} separately scheduled services · Total ₱{{ Number(order.totalAmount || order.amount || 0).toFixed(2) }}</p>
             <p v-if="order.approvalStatus !== 'Approved'" class="mt-2 text-sm">The clinic will review this booking before payment is available.</p>
-            <button v-else-if="paymentDue(order) > 0" type="button" class="appointment-button appointment-button-primary mt-3" @click="payAppointment(order)">Pay order {{ formatBookingDue(order) }}</button>
             <p v-else-if="paymentDue(order) <= 0" class="mt-2 text-sm">This order is fully paid.</p>
+            <button v-else-if="bookingOrderReady(order) && paymentDue(order) > 0" type="button" class="appointment-button appointment-button-primary mt-3" @click="payAppointment(order)">Pay order {{ formatBookingDue(order) }}</button>
+            <p v-else class="mt-2 text-sm">Sign the agreement for each appointment before paying for this order.</p>
           </article>
         </section>
 
@@ -86,7 +87,7 @@
               <div class="unpaid-appointment-actions">
                 <button type="button" class="appointment-button appointment-button-primary" @click="payAppointment(appt)">Pay {{ formatBookingDue(appt) }}</button>
                 <button v-if="canModifyUnpaidAppointment(appt) && canRequestReschedule(appt)" type="button" class="appointment-button appointment-button-secondary" :disabled="isRequestPending(appt, 'reschedule')" @click="openRequestModal('reschedule', appt)">{{ isRequestPending(appt, 'reschedule') ? 'Pending Approval' : 'Reschedule' }}</button>
-                <button v-if="canModifyUnpaidAppointment(appt)" type="button" class="appointment-button appointment-button-danger" :disabled="isRequestPending(appt, 'cancel')" @click="openRequestModal('cancel', appt)">{{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}</button>
+                <button v-if="canModifyUnpaidAppointment(appt) && canRequestCancellation(appt)" type="button" class="appointment-button appointment-button-danger" :disabled="isRequestPending(appt, 'cancel')" @click="openRequestModal('cancel', appt)">{{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}</button>
               </div>
             </article>
           </div>
@@ -148,18 +149,35 @@
                   <td data-label="Meeting Link">
                     <span class="table-secondary">{{ appt.meetLink ? 'Meet invitation ready' : appt.consultationCustomerReadyAt ? 'You are in the virtual waiting room' : 'Waiting for check-in' }}</span>
                     <span v-if="appt.consultationCustomerReadyAt && !appt.consultationInviteAt" class="table-secondary">Your practitioner will invite you to Meet when ready.</span>
+                    <span v-if="appt.serviceKey && normalizeAppointmentStatus(appt.contract?.status) === 'signed' && initialPaymentReceived(appt) && !appt.consultationCustomerReadyAt" class="appointment-menu-key">In-app check-in code: <strong class="font-mono text-base">{{ appt.serviceKey }}</strong></span>
                   </td>
                   <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
+                    <p v-if="['awaiting customer confirmation', 'balance due'].includes(normalizeAppointmentStatus(appt.status)) && canConfirmCompletion(appt)" class="table-secondary">The clinic marked this consultation complete. Confirm receipt when you are ready.</p>
+                    <p v-else-if="normalizeAppointmentStatus(appt.status) === 'awaiting customer confirmation' && !appt.customerCompleted" class="table-secondary">The consultation is waiting for required notes or clinic review. You can report a problem in Consultation controls.</p>
                   </td>
                   <td data-label="Actions">
-                    <div class="appointment-menu">
-                      <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id, $event)"><span aria-hidden="true">&#8943;</span></button>
-                      <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" :style="actionMenuStyle" role="menu" aria-label="Appointment actions">
+                    <div class="table-actions">
+                      <button v-if="canConfirmCompletion(appt)" type="button" class="appointment-button appointment-button-primary" @click="confirmCompletion(appt)">Confirm I received this consultation</button>
+                      <div class="appointment-menu">
+                        <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id, $event)"><span aria-hidden="true">&#8943;</span></button>
+                        <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" :style="actionMenuStyle" role="menu" aria-label="Appointment actions">
                       <p class="appointment-menu-label">Appointment actions</p>
                       <button type="button" class="appointment-menu-item" @click="runAction(() => selectedOnlineConsultation = appt)">Consultation controls / Report a problem</button>
+                      <button
+                        v-if="appt.contract && appt.approvalStatus === 'Approved' && appt.sameDayTreatmentStatus !== 'pending_clinical_clearance'"
+                        type="button"
+                        class="appointment-menu-item"
+                        @click="runAction(() => openContract(appt))"
+                      >{{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View contract' : 'Review and sign contract' }}</button>
+                      <button
+                        v-if="canPayAppointment(appt)"
+                        type="button"
+                        class="appointment-menu-item appointment-menu-item-primary"
+                        @click="runAction(() => payAppointment(appt))"
+                      >Pay {{ formatBookingDue(appt) }}</button>
                       <p v-if="appt.consultationCustomerReadyAt && !appt.consultationInviteAt" class="appointment-menu-label">You are checked in. Wait here for your practitioner's Meet invitation.</p>
-                      <button v-if="!appt.meetLink && !appt.consultationCustomerReadyAt" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt) || appt.approvalStatus !== 'Approved' || appt.contract?.status !== 'signed' || !initialPaymentReceived(appt)" @click="runAction(() => verifyServiceKey(appt))">Check in to virtual waiting room</button>
+                      <button v-if="!appt.meetLink && !appt.consultationCustomerReadyAt" type="button" class="appointment-menu-item" :disabled="serviceKeyVerifying || isCancelledAppointment(appt) || appt.approvalStatus !== 'Approved' || appt.contract?.status !== 'signed' || !initialPaymentReceived(appt)" @click="runAction(() => appt.serviceKey ? submitServiceKey(appt.serviceKey, appt) : verifyServiceKey(appt))">{{ serviceKeyVerifying ? 'Checking code…' : appt.serviceKey ? 'Check in with saved code' : 'Enter check-in code' }}</button>
                       <button v-if="appt.meetLink && onlineAccessOpen(appt)" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => openMeetLink(appt))">Join Google Meet</button>
                       <button v-if="appt.status === 'Ongoing' && !appt.consultationClientEndedAt" type="button" class="appointment-menu-item" @click="runAction(() => endConsultationParticipation(appt))">End my consultation participation</button>
                       <button v-if="appt.meetLink && onlineAccessOpen(appt)" type="button" class="appointment-menu-item" @click="runAction(() => copyMeetLink(appt))">Copy Link</button>
@@ -172,15 +190,9 @@
                       >
                         {{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}
                       </button>
-                      <button
-                        v-if="appt.contract && appt.approvalStatus === 'Approved'"
-                        type="button"
-                        class="appointment-menu-item"
-                        @click="runAction(() => openContract(appt))"
-                      >
-                        {{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View Contract' : 'Sign Contract' }}
-                      </button>
-                      <span v-if="!appt.meetLink && !appt.consultationCustomerReadyAt && !canRequestCancellation(appt) && !(appt.contract && appt.approvalStatus === 'Approved')" class="appointment-menu-empty">No actions available</span>
+                      <span v-if="appt.approvalStatus !== 'Approved' && !appt.meetLink && !appt.consultationCustomerReadyAt" class="appointment-menu-empty">Waiting for clinic approval.</span>
+                      <span v-else-if="!appt.meetLink && !appt.consultationCustomerReadyAt && !canRequestCancellation(appt) && !(appt.contract && appt.approvalStatus === 'Approved') && !canPayAppointment(appt) && !canConfirmCompletion(appt)" class="appointment-menu-empty">No actions available</span>
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -231,31 +243,29 @@
                   <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
                   <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
+                    <p v-if="appt.sameDayTreatmentAppointmentId" class="table-secondary">Same-day request: consultation first, then {{ appt.sameDayTreatmentName || 'your provisional treatment' }}. The treatment slot is provisional until practitioner clearance.</p>
+                    <p v-if="appt.sameDayTreatmentStatus === 'pending_clinical_clearance'" class="table-secondary">The consultation must be completed first. The treatment slot is provisional; signing and payment unlock only after the practitioner clears it.</p>
+                    <p v-else-if="appt.sameDayTreatmentStatus === 'cleared'" class="table-secondary">The practitioner cleared today’s treatment. Review and sign its agreement, then pay before check-in.</p>
+                    <p v-if="['awaiting customer confirmation', 'balance due'].includes(normalizeAppointmentStatus(appt.status)) && canConfirmCompletion(appt)" class="table-secondary">The practitioner marked this service complete. Confirm receipt when you are ready.</p>
                   </td>
                   <td data-label="Actions">
                     <div class="table-actions">
+                      <button v-if="canConfirmCompletion(appt)" type="button" class="appointment-button appointment-button-primary" @click="confirmCompletion(appt)">Confirm I received this service</button>
                       <div class="appointment-menu">
                         <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id, $event)"><span aria-hidden="true">&#8943;</span></button>
                         <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" :style="actionMenuStyle" role="menu" aria-label="Appointment actions">
                       <p class="appointment-menu-label">Appointment actions</p>
                       <button
-                        v-if="appt.contract && appt.approvalStatus === 'Approved'"
+                        v-if="appt.contract && appt.approvalStatus === 'Approved' && appt.sameDayTreatmentStatus !== 'pending_clinical_clearance'"
                         type="button"
                         class="appointment-menu-item"
                         @click="runAction(() => openContract(appt))"
                       >
                         {{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View Contract' : 'Sign Contract' }}
                       </button>
-                      <button
-                        v-if="canConfirmCompletion(appt)"
-                        type="button"
-                        class="appointment-menu-item appointment-menu-item-primary"
-                        @click="runAction(() => confirmCompletion(appt))"
-                      >
-                        Confirm Done
-                      </button>
                       <p v-if="appt.serviceKey && initialPaymentReceived(appt)" class="appointment-menu-key">Check-in code: {{ appt.serviceKey }} — show this to reception on your appointment day.</p>
                       <p v-if="appt.treatmentNotes" class="appointment-menu-key">Treatment notes: {{ appt.treatmentNotes }}</p>
+                      <p v-if="appt.sameDayTreatmentStatus === 'pending_clinical_clearance'" class="appointment-menu-label">Treatment consent and payment unlock after practitioner clearance.</p>
                       <p v-if="appt.aftercareInstructions" class="appointment-menu-key">Aftercare: {{ appt.aftercareInstructions }}</p>
                       <button
                         v-if="canRequestReschedule(appt)"
@@ -345,9 +355,9 @@
                         v-if="normalizeAppointmentStatus(appt.status) === 'completed'"
                         type="button"
                         class="appointment-button appointment-button-secondary"
-                        @click="submitFeedback(appt)"
+                        @click="openFeedback(appt)"
                       >
-                        Leave Feedback
+                        Leave optional feedback
                       </button>
                       <span v-if="hasOpenFollowUp(appt)" class="table-secondary">
                         {{ followUpBookingStatus(appt) }}
@@ -393,9 +403,10 @@
               <p class="mt-2 whitespace-pre-wrap">{{ requestPolicyText }}</p>
               <p class="mt-3">
                 {{ requestModal.type === 'cancel'
-                  ? `If approved, the refundable amount will exclude the system commission and the request will be reviewed by clinic staff first.`
-                  : `Your preferred time is sent to the clinic for approval. The schedule changes only after the clinic confirms it.` }}
+                  ? cancellationRefundSummary
+                  : `The clinic reviews your request. The preferred slot is checked again on approval and is not held while you wait.` }}
               </p>
+              <p v-if="requestModal.type === 'reschedule' || requestModal.type === 'session'" class="mt-2">{{ requestRescheduleAllowanceText }}</p>
             </div>
 
             <div>
@@ -459,16 +470,18 @@
               <div class="request-card">
                 <div class="request-card-head request-card-head-stack">
                   <div>
-                    <p class="request-card-kicker">Available Schedules</p>
-                    <h4 class="request-card-title">Choose a new time slot</h4>
+                    <p class="request-card-kicker">Preferred Schedule</p>
+                    <h4 class="request-card-title">Choose a time to request</h4>
                   </div>
                   <span class="request-duration-pill">
                     {{ requestBookingDurationMinutes }} mins
                   </span>
                 </div>
 
+                <p class="mb-3 text-xs leading-5 text-[#7f6654]">Times follow the practitioner’s published hours. The clinic checks private leave and other bookings when you submit, then checks availability again before approval.</p>
+
                 <div v-if="requestModal.loadingAvailability" class="request-info-card">
-                  Loading available schedules...
+                  Loading published hours...
                 </div>
                 <div v-else-if="requestModal.availabilityError" class="request-info-card request-info-card-warn">
                   {{ requestModal.availabilityError }}
@@ -487,7 +500,7 @@
                   </button>
                 </div>
                 <div v-else class="request-info-card request-info-card-muted">
-                  {{ requestModal.requestedDate ? 'No available time slots on this date.' : 'Choose a date from the calendar to view available time slots.' }}
+                  {{ requestModal.requestedDate ? 'No published working hours are available on this date.' : 'Choose a date from the calendar to view requestable times.' }}
                 </div>
 
                 <div class="request-detail-list">
@@ -522,6 +535,7 @@
                 <button
                   type="button"
                   class="request-button request-button-primary"
+                  :disabled="!String(requestModal.reason || '').trim() || (['reschedule', 'session'].includes(requestModal.type) && (requestModal.loadingAvailability || !requestModal.requestedSlotKey))"
                   @click="submitRequest"
                 >
                   {{ requestModal.type === 'cancel' ? 'Submit Cancellation' : requestModal.type === 'session' ? 'Submit Schedule Request' : 'Submit Reschedule' }}
@@ -546,6 +560,39 @@
       @close="closeServiceKeyModal"
       @submit="submitServiceKey"
     />
+    <div v-if="feedbackModal.open" class="request-modal-overlay">
+      <section class="request-modal-shell" role="dialog" aria-modal="true" aria-labelledby="feedback-modal-title">
+        <header class="request-modal-head">
+          <div>
+            <p class="request-modal-kicker">Optional feedback</p>
+            <h2 id="feedback-modal-title" class="request-modal-title">How was your service?</h2>
+            <p class="request-modal-summary">{{ feedbackModal.appointment ? `${formatAppointmentServices(feedbackModal.appointment)} · ${feedbackModal.appointment.clinic}` : '' }}</p>
+          </div>
+          <button type="button" class="request-close-button" aria-label="Close feedback form" :disabled="feedbackModal.saving" @click="closeFeedbackModal"><span class="text-xl leading-none">&times;</span></button>
+        </header>
+        <form class="request-modal-body" @submit.prevent="submitFeedback">
+          <fieldset>
+            <legend class="request-field-label">Your rating <span aria-hidden="true">*</span></legend>
+            <div class="flex gap-2" role="group" aria-label="Choose a rating from 1 to 5">
+              <button v-for="rating in [1, 2, 3, 4, 5]" :key="rating" type="button" class="rounded-lg border px-3 py-2 text-lg" :class="feedbackModal.rating >= rating ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-400'" :aria-label="`${rating} out of 5`" :aria-pressed="feedbackModal.rating === rating" @click="feedbackModal.rating = rating">{{ feedbackModal.rating >= rating ? '★' : '☆' }}</button>
+            </div>
+            <p class="mt-1 text-xs text-slate-500">A rating is needed only if you choose to submit feedback.</p>
+          </fieldset>
+          <div>
+            <label for="appointment-feedback-comment" class="request-field-label">Comment <span class="font-normal">(optional)</span></label>
+            <textarea id="appointment-feedback-comment" v-model.trim="feedbackModal.comment" rows="4" maxlength="2000" class="request-textarea" placeholder="Share anything that would help us improve."></textarea>
+          </div>
+          <p class="text-sm text-slate-600">Your feedback is separate from confirming that you received the service. If submitted, your rating and comment appear on the clinic profile with your name. Avoid including sensitive health details.</p>
+          <p v-if="feedbackModal.error" role="alert" class="text-sm text-rose-700">{{ feedbackModal.error }}</p>
+          <footer class="request-modal-actions">
+            <div class="request-action-buttons">
+              <button type="button" class="request-button request-button-secondary" :disabled="feedbackModal.saving" @click="closeFeedbackModal">Maybe later</button>
+              <button type="submit" class="request-button request-button-primary" :disabled="feedbackModal.rating < 1 || feedbackModal.saving">{{ feedbackModal.saving ? 'Submitting…' : 'Submit feedback' }}</button>
+            </div>
+          </footer>
+        </form>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -553,13 +600,14 @@
 import OnlineConsultationClock from '@/components/common/OnlineConsultationClock.vue'
 import OnlineConsultationControls from '@/components/common/OnlineConsultationControls.vue'
 import { onlineAccessOpen } from '../../../../shared/onlineConsultation.js'
+import { canRequestAppointmentReschedule, cancellationRefundEstimate, isCancellationPolicyEnabled, rescheduleAllowanceForPolicy } from '../../../../shared/appointmentChangePolicy.js'
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { paymentDue, initialPaymentReceived } from '../../../../backend/otp-backend/bookingWorkflow.js'
+import { paymentDue, initialPaymentReceived, bookingOrderReadyForPayment } from '../../../../backend/otp-backend/bookingWorkflow.js'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 const selectedOnlineConsultation = ref(null)
 import { auth, db } from '@/config/firebaseConfig'
-import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
@@ -591,6 +639,7 @@ const selectedContractAppointment = ref(null)
 const showServiceKeyModal = ref(false)
 const selectedServiceKeyAppointment = ref(null)
 const serviceKeyVerifying = ref(false)
+const feedbackModal = ref({ open: false, appointment: null, rating: 0, comment: '', saving: false, error: '' })
 const paymentAgreementAcknowledged = reactive({})
 const paymentAgreementViewed = reactive({})
 const requestModal = ref({
@@ -1297,7 +1346,7 @@ const getClinicPolicy = (appointment, kind) => {
     return (
       (clinic.cancellationPolicyEnabled !== false && clinic.cancellationPolicy) ||
       (clinic.refundPolicyEnabled !== false && clinic.refundPolicy) ||
-      ''
+      'Cancellations are reviewed by clinic staff. The estimated refund below uses the clinic’s saved cancellation terms.'
     )
   }
 
@@ -1318,9 +1367,13 @@ const statusToneClass = (status) => {
 const upcomingOnlineConsultations = computed(() => {
   return onlineConsultations.value.filter((appt) =>
     !['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status))
-    && !canPayAppointment(appt)
   )
 })
+
+const customerLifecycleAppointments = computed(() => [
+  ...upcomingAppointments.value,
+  ...upcomingOnlineConsultations.value,
+])
 
 const pastOnlineConsultations = computed(() => {
   const now = new Date()
@@ -1335,7 +1388,7 @@ const pastRecords = computed(() =>
 )
 
 const unpaidAppointments = computed(() =>
-  upcomingAppointments.value.filter((appointment) => canPayAppointment(appointment))
+  customerLifecycleAppointments.value.filter((appointment) => canPayAppointment(appointment))
 )
 
 const bookingOrders = computed(() => upcomingAppointments.value.filter(appointment => appointment.isBookingOrderParent))
@@ -1346,7 +1399,27 @@ const activeUpcomingAppointments = computed(() =>
 
 const requestPolicyText = computed(() => {
   if (!requestModal.value.appointment) return ''
+  if (requestModal.value.type === 'session' && normalizeAppointmentStatus(requestModal.value.appointment.status) === 'unscheduled') {
+    return 'This is your first schedule request for this treatment session. The clinic will confirm the final time.'
+  }
   return getClinicPolicy(requestModal.value.appointment, requestModal.value.type)
+})
+const cancellationRefundSummary = computed(() => {
+  const appointment = requestModal.value.appointment
+  const clinic = clinicsById.value[appointment?.branchId] || {}
+  const estimate = cancellationRefundEstimate({ policy: clinic, appointment })
+  const currency = amount => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(amount || 0))
+  if (estimate.eligibleAmount <= 0) return 'No paid amount is currently eligible for a refund. Clinic staff will review and finalize this request.'
+  if (estimate.refundPercentage <= 0) return `Estimated refund: ${currency(0)} under the ${estimate.tier} cancellation window. Clinic staff will review and finalize this request.`
+  return `Estimated refund if approved: ${currency(estimate.refundAmount)} (${estimate.refundPercentage}% of ${currency(estimate.eligibleAmount)} after platform commission, using the ${estimate.tier} window). Clinic staff will review and finalize this request.`
+})
+const requestRescheduleAllowanceText = computed(() => {
+  const appointment = requestModal.value.appointment
+  if (requestModal.value.type === 'session' && normalizeAppointmentStatus(appointment?.status) === 'unscheduled') return 'This is the first schedule for this treatment session; the reschedule allowance applies after a schedule is set.'
+  const clinic = clinicsById.value[appointment?.branchId] || {}
+  const maximum = rescheduleAllowanceForPolicy(clinic)
+  const used = Math.max(0, Number(appointment?.rescheduleCount || 0))
+  return `Reschedules used: ${used} of ${maximum}. This request does not change your appointment unless the clinic approves it.`
 })
 
 const isRequestPending = (appt, kind) => {
@@ -1360,22 +1433,30 @@ const isRequestPending = (appt, kind) => {
 
 const canRequestCancellation = (appointment) => {
   if (appointment.isGroupParent || appointment.isBookingOrderParent) return false
+  if (appointment.startedAt || appointment.checkedInAt) return false
   const clinic = clinicsById.value[appointment?.branchId] || {}
   const status = normalizeAppointmentStatus(appointment?.status)
+  if (!['paid', 'scheduled', 'awaiting payment', 'contract pending', 'ready to start'].includes(status)) return false
+  if (appointment.sameDayBookingId
+    && normalizeAppointmentStatus(appointment.type) === 'consultation'
+    && normalizeAppointmentStatus(appointment.sameDayTreatmentStatus) === 'cleared') return false
   return Boolean(appointment?.id)
-    && clinic.cancellationPolicyEnabled === true
-    && Boolean(String(clinic.cancellationPolicy || '').trim())
+    && isCancellationPolicyEnabled(clinic)
     && !['cancelled', 'completed'].includes(status)
     && toDateTime(appointment?.date, appointment?.time) >= new Date()
 }
 
 const canRequestReschedule = (appointment) => {
   if (appointment.isGroupParent || appointment.isBookingOrderParent || appointment.treatmentPlanAppointmentId) return false
+  if (appointment.startedAt || appointment.checkedInAt) return false
   const clinic = clinicsById.value[appointment?.branchId] || {}
   const status = normalizeAppointmentStatus(appointment?.status)
+  if (!['paid', 'scheduled', 'awaiting payment', 'contract pending', 'ready to start'].includes(status)) return false
+  if (appointment.sameDayBookingId
+    && (normalizeAppointmentStatus(appointment.type) !== 'service'
+      || normalizeAppointmentStatus(appointment.sameDayTreatmentStatus) !== 'cleared')) return false
   return Boolean(appointment?.id)
-    && clinic.reschedulePolicyEnabled !== false
-    && Boolean(String(clinic.reschedulePolicy || '').trim())
+    && canRequestAppointmentReschedule(clinic, appointment)
     && !['cancelled', 'completed', 'no-show'].includes(status)
     && toDateTime(appointment?.date, appointment?.time) >= new Date()
 }
@@ -1391,7 +1472,10 @@ const canRequestSessionSchedule = (session) => {
     )
     if (!previous || !['completed', 'forfeited'].includes(String(previous.status || '').trim().toLowerCase())) return false
   }
-  return ['unscheduled', 'scheduled', 'schedule proposed', 'reschedule eligible'].includes(status)
+  if (status === 'unscheduled') return true
+  const clinic = clinicsById.value[session?.branchId] || {}
+  return ['scheduled', 'schedule proposed', 'reschedule eligible'].includes(status)
+    && canRequestAppointmentReschedule(clinic, { rescheduleCount: session?.rescheduleCount })
 }
 const confirmSessionSchedule = async session => {
   try { await postAppointmentAction(session.id, `/treatment-sessions/${session.id}/confirm`, {}); toast.success('Schedule confirmed. Your appointment code will be emailed to you.') }
@@ -1508,14 +1592,28 @@ const startClinicsListener = () => {
     (snapshot) => {
       const clinicMap = new Map()
       sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))).forEach((data) => {
+        const enforcedPolicyKeys = Array.isArray(data.enforcedPolicyKeys) ? new Set(data.enforcedPolicyKeys.map(key => String(key || '').trim())) : null
+        const cancellationLinked = !enforcedPolicyKeys || enforcedPolicyKeys.has('cancellationPolicy')
+        const rescheduleLinked = !enforcedPolicyKeys || enforcedPolicyKeys.has('reschedulePolicy')
         clinicMap.set(data.id, {
           name: data.clinicName || data.clinicBranch || 'Clinic',
           cancellationPolicy: String(data.cancellationPolicy || '').trim(),
-          cancellationPolicyEnabled: data.cancellationPolicyEnabled !== false,
+          cancellationPolicyEnabled: cancellationLinked && (data.cancellationPolicyEnabled === true || data.serviceCancellationPolicyEnabled === true || data.refundPolicyEnabled === true),
           reschedulePolicy: String(data.reschedulePolicy || '').trim(),
-          reschedulePolicyEnabled: data.reschedulePolicyEnabled !== false,
+          reschedulePolicyEnabled: rescheduleLinked && (data.reschedulePolicyEnabled === true || data.serviceReschedulingPolicyEnabled === true),
+          maximumRescheduleAllowance: data.maximumRescheduleAllowance,
+          earlyMinimumHours: data.earlyMinimumHours,
+          earlyNonRefundable: data.earlyNonRefundable,
+          earlyRefundPercentage: data.earlyRefundPercentage,
+          midMinimumHours: data.midMinimumHours,
+          midMaximumHours: data.midMaximumHours,
+          midNonRefundable: data.midNonRefundable,
+          midRefundPercentage: data.midRefundPercentage,
+          lateMaximumHours: data.lateMaximumHours,
+          lateNonRefundable: data.lateNonRefundable,
+          lateRefundPercentage: data.lateRefundPercentage,
           refundPolicy: String(data.refundPolicy || '').trim(),
-          refundPolicyEnabled: data.refundPolicyEnabled !== false,
+          refundPolicyEnabled: cancellationLinked && data.refundPolicyEnabled === true,
         })
       })
       clinicsById.value = Object.fromEntries(clinicMap.entries())
@@ -1570,6 +1668,11 @@ const submitRequest = async () => {
     return
   }
 
+  if (requestModal.value.type === 'session' ? !canRequestSessionSchedule(appt) : !canRequestReschedule(appt)) {
+    toast.error('This clinic policy or appointment status no longer allows this reschedule request.')
+    return
+  }
+
   try {
     await loadRescheduleAvailability(appt, { autoSelect: false })
     const selectedSlot = requestAvailableSlots.value.find(
@@ -1595,21 +1698,19 @@ const submitRequest = async () => {
       return
     }
 
-    await updateDoc(doc(db, 'appointments', appt.id), {
-      status: 'Reschedule Requested',
-      requestedDate: requestModal.value.requestedDate,
-      requestedTime: requestModal.value.requestedTime,
-      requestedPractitionerId: requestAssignedPractitionerId.value,
-      requestedSlotKey: requestModal.value.requestedSlotKey,
-      rescheduleReason: reason,
-      rescheduleRequestedAt: new Date().toISOString(),
-      reschedulePolicySnapshot: getClinicPolicy(appt, 'reschedule'),
+    await postAppointmentAction(appt.id, `/appointments/${appt.id}/request-change`, {
+      type: 'reschedule',
+      reason,
+      date: requestModal.value.requestedDate,
+      time: requestModal.value.requestedTime,
+      practitionerId: requestAssignedPractitionerId.value,
+      slotKey: requestModal.value.requestedSlotKey,
     })
     toast.success('Reschedule request submitted for review.')
     closeRequestModal()
   } catch (error) {
     console.error(error)
-    toast.error('Failed to submit reschedule request.')
+    toast.error(error?.message || 'Failed to submit reschedule request.')
   }
 }
 
@@ -1633,14 +1734,18 @@ const reschedule = async (appt) => {
 
 const formatBookingDue = (appointment) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(paymentDue(appointment) / 100)
 
-const contractsToSign = computed(() => upcomingAppointments.value.filter(appointment =>
+const contractsToSign = computed(() => customerLifecycleAppointments.value.filter(appointment =>
   appointment.approvalStatus === 'Approved'
+  && appointment.sameDayTreatmentStatus !== 'pending_clinical_clearance'
   && normalizeAppointmentStatus(appointment.contract?.status) !== 'signed'
   && ['approved', 'awaiting payment', 'payment pending', 'contract pending', 'paid', 'scheduled', 'ready to start'].includes(normalizeAppointmentStatus(appointment.status))
 ))
 
+const bookingOrderReady = (order) => bookingOrderReadyForPayment(order, customerLifecycleAppointments.value)
+
 const canPayAppointment = (appointment) => {
-  if (appointment.isBookingOrderParent) return appointment.approvalStatus === 'Approved' && paymentDue(appointment) > 0
+  if (appointment.isBookingOrderParent) return bookingOrderReady(appointment) && paymentDue(appointment) > 0
+  if (appointment.sameDayTreatmentStatus === 'pending_clinical_clearance') return false
   if (appointment.paymentManagedByOrganizer && !appointment.isBookingOrderParent && !appointment.isGroupParent) return false
   const status = normalizeAppointmentStatus(appointment?.status)
   if (normalizeAppointmentStatus(appointment?.contract?.status) !== 'signed') return false
@@ -1650,7 +1755,6 @@ const canPayAppointment = (appointment) => {
 const canModifyUnpaidAppointment = (appointment) => {
   const status = normalizeAppointmentStatus(appointment?.status)
   return ['awaiting payment', 'payment pending', 'approved'].includes(status)
-    && canRequestCancellation(appointment)
 }
 
 const getAppointmentPolicyEntries = (appointment) => {
@@ -1678,7 +1782,14 @@ const createShortAppointmentReference = () => {
 
 const canConfirmCompletion = (appointment) => {
   const status = normalizeAppointmentStatus(appointment?.status)
-  return Boolean(appointment?.workerCompleted) && ['ongoing', 'awaiting customer confirmation', 'balance due'].includes(status)
+  const online = isOnlineConsultationAppointment(appointment)
+  const workerFinished = Boolean(appointment?.workerCompleted)
+    || (online && Boolean(appointment?.startedAt) && appointment?.consultationEndedByTimer === true)
+  if (!workerFinished || appointment?.customerCompleted || !['awaiting customer confirmation', 'balance due'].includes(status)) return false
+  if (!online) return true
+  return appointment?.consultationDispute?.status !== 'Open'
+    && String(appointment?.treatmentNotes || '').trim().length >= 10
+    && !(appointment?.treatmentTeam || []).some(member => !member.participationConfirmed)
 }
 
 const verifyServiceKey = (appointment) => {
@@ -1691,8 +1802,8 @@ const closeServiceKeyModal = () => {
   selectedServiceKeyAppointment.value = null
 }
 
-const submitServiceKey = async (serviceKey) => {
-  const appointment = selectedServiceKeyAppointment.value
+const submitServiceKey = async (serviceKey, appointmentOverride = null) => {
+  const appointment = appointmentOverride || selectedServiceKeyAppointment.value
   if (!appointment?.id) return
   serviceKeyVerifying.value = true
   try {
@@ -1730,7 +1841,10 @@ const postAppointmentAction = async (appointmentId, path, body) => {
 
 const confirmCompletion = async (appointment) => {
   try {
-    await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/transition`, { action: 'customer_complete' })
+    const data = await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/transition`, { action: 'customer_complete' })
+    appointment.customerCompleted = true
+    appointment.customerCompletedAt = new Date().toISOString()
+    appointment.status = data?.status || (paymentDue(appointment) > 0 ? 'Balance Due' : 'Completed')
     toast.success('Your completion confirmation was submitted.')
   } catch (error) {
     console.error(error)
@@ -1738,19 +1852,31 @@ const confirmCompletion = async (appointment) => {
   }
 }
 
-const submitFeedback = async (appointment) => {
-  const rating = Number(window.prompt('Rate this service from 1 to 5:', '5'))
-  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-    toast.error('Please enter a whole-number rating from 1 to 5.')
-    return
-  }
-  const comment = String(window.prompt('Tell us about your experience:', '') || '').trim()
+const openFeedback = appointment => {
+  feedbackModal.value = { open: true, appointment, rating: 0, comment: '', saving: false, error: '' }
+}
+
+const closeFeedbackModal = () => {
+  if (feedbackModal.value.saving) return
+  feedbackModal.value.open = false
+}
+
+const submitFeedback = async () => {
+  const form = feedbackModal.value
+  const appointment = form.appointment
+  if (!appointment?.id || !Number.isInteger(form.rating) || form.rating < 1 || form.rating > 5) return
+  form.saving = true
+  form.error = ''
   try {
-    await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/feedback`, { rating, comment })
+    await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/feedback`, { rating: form.rating, comment: form.comment.trim() })
     toast.success('Thank you. Your feedback was submitted.')
+    form.open = false
   } catch (error) {
     console.error(error)
+    form.error = error?.message || 'Unable to submit feedback.'
     toast.error(error?.message || 'Unable to submit feedback.')
+  } finally {
+    form.saving = false
   }
 }
 

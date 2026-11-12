@@ -36,6 +36,37 @@ test('Publishing a consultation-required service needs a published consultation 
   assert.equal((await call()).code, 200)
   assert.equal(h.records.get('productServicePosts/service').isPublished, true)
 })
+
+test('Same-day treatment requests require an on-site linked consultation and a valid buffer', async () => {
+  const h = transactionDb()
+  h.seed('clinics', 'clinic', { ownerId: 'owner', subscriptionPlan: 'basic' })
+  h.seed('productServicePosts', 'service', {
+    ...listing(), postType: 'Service', branchId: 'clinic', financeStatus: 'approved',
+    requiresConsultationFirst: true, linkedConsultationId: 'assessment',
+    sameDayConsultationAllowed: true, sameDayConsultationBufferMinutes: 15,
+  })
+  h.seed('productServicePosts', 'assessment', {
+    branchId: 'clinic', postType: 'Consultation', isPublished: true, financeStatus: 'approved',
+    consultationModes: ['online'],
+  })
+  let handler
+  registerListingApproval({ post: (path, auth, callback) => { handler = callback } }, { admin: h.admin, requireAuth() {}, loadUserContext: async () => ({ roleKey: 'Owner', userData: {} }) })
+  const call = async () => {
+    const result = { code: 200 }
+    await handler({ params: { id: 'service' }, body: { action: 'publish' }, user: { uid: 'owner' } }, { status(code) { result.code = code; return this }, json(body) { result.body = body } })
+    return result
+  }
+
+  assert.equal((await call()).code, 409)
+  h.seed('productServicePosts', 'assessment', {
+    branchId: 'clinic', postType: 'Consultation', isPublished: true, financeStatus: 'approved',
+    consultationModes: ['on-site'],
+  })
+  h.seed('productServicePosts', 'service', { ...h.records.get('productServicePosts/service'), sameDayConsultationBufferMinutes: 61 })
+  assert.equal((await call()).code, 409)
+  h.seed('productServicePosts', 'service', { ...h.records.get('productServicePosts/service'), sameDayConsultationBufferMinutes: 15 })
+  assert.equal((await call()).code, 200)
+})
 test('Draft requires Finance or clinic-owner approval before publication', () => {
   let post = listing()
   assert.throws(() => listingTransition(post, 'publish', 'Owner', 'owner'), /Finance must approve/)

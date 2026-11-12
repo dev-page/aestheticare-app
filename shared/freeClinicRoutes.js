@@ -2,7 +2,7 @@
 // restrictions (for example additional branches) still apply to these routes.
 export const FREE_CLINIC_ROUTES = Object.freeze([
   '/clinic/dashboard', '/clinic/branches', '/clinic/profile', '/clinic/page', '/clinic/policies',
-  '/catalog/products-services', '/catalog/archived', '/crm/clients', '/crm/appointments',
+  '/catalog/products-services', '/catalog/archived', '/crm/clients', '/crm/appointments', '/crm/pos',
   '/crm/transactions', '/crm/inbox', '/account/profile', '/account/change-password',
   '/account/subscription', '/account/plans', '/account/closure', '/notifications',
   '/support/report', '/subscription-features', '/subscription/checkout',

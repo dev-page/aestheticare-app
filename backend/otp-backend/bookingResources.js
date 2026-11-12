@@ -3,7 +3,7 @@ import { assertWorkflow as check, normalized, resourceConflict } from './booking
 import crypto from 'node:crypto'
 import { normalizeStaffing, appointmentStaffIds } from '../../shared/practitionerTeam.js'
 import { buildClientContract, buildClientContractDocument } from '../../shared/clientContract.js'
-import { hasCompletedLinkedConsultation } from '../../shared/consultationRequirements.js'
+import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
 import { lotAvailableQuantity } from './inventoryLots.js'
 import { day as inventoryDay } from './supplyModel.js'
 
@@ -25,7 +25,7 @@ const bookingInventoryRow = async ({ tx, db, branchId, resource, scheduledDate }
   }
 }
 
-export const prepareBooking = async ({ tx, db, reservation, getBookingRange, rangesOverlap, appointmentId = null }) => {
+export const prepareBooking = async ({ tx, db, reservation, getBookingRange, rangesOverlap, appointmentId = null, allowSameDayConsultationRequest = false }) => {
   const branchId = reservation.branchId
   const ids = [...new Set(reservation.selectedServiceIds || reservation.serviceIds || [])]
   check(ids.length > 0, 'Select a published service.', 400)
@@ -68,7 +68,11 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   if (consultationRequiredService?.requiresConsultationFirst === true && normalized(consultationRequiredService.postType) !== 'consultation' && !packageIncludesConsultation) {
     const customerId = reservation.customerId
     const consultations = await tx.get(db.collection('appointments').where('customerId', '==', customerId))
-    check(hasCompletedLinkedConsultation(consultationRequiredService, consultations.docs.map(doc => doc.data()), branchId), 'Complete the linked consultation before booking this service. Packages that include a consultation are exempt.', 422)
+    const clearances = await tx.get(db.collection('consultationClearances').where('customerId', '==', customerId))
+    const linkedPairValidated = allowSameDayConsultationRequest === true
+      && consultationRequiredService.sameDayConsultationAllowed === true
+      && Boolean(String(consultationRequiredService.linkedConsultationId || '').trim())
+    check(linkedPairValidated || hasConsultationRequirement(consultationRequiredService, consultations.docs.map(doc => doc.data()), clearances.docs.map(doc => doc.data()), branchId), 'Complete the linked consultation or receive clinic approval of a prior consultation before booking this service. Packages that include a consultation are exempt.', 422)
   }
   const requirements = new Map()
   for (const service of services) {
@@ -233,6 +237,7 @@ const prepareGroupBooking = async ({ tx, db, reservation, getBookingRange, range
     const serviceId = person.serviceId || reservation.selectedServiceIds?.[0] || reservation.serviceIds?.[0]
     const offer = (await tx.get(db.collection('productServicePosts').doc(serviceId))).data()
     check(normalized(offer?.postType) === 'service', 'Group attendees need individual appointments for consultations and packages.', 400)
+    check(offer?.requiresConsultationFirst !== true, 'Group booking cannot verify consultation requirements for each attendee. Book each attendee separately so the clinic can confirm their consultation before treatment.', 422)
     const time = `${String(Math.floor(start / 60)).padStart(2, '0')}:${String(start % 60).padStart(2, '0')}`
     const visit = await prepareBooking({ tx, db, reservation: { ...reservation, groupBooking: null, selectedServiceIds: [serviceId], serviceIds: [serviceId], customerId: person.organizer ? reservation.customerId : `guest:${normalized(person.email)}`, customerName: person.name, customerEmail: normalized(person.email), time, endTime: '' }, getBookingRange, rangesOverlap, appointmentId })
     visits.push({ ...person, email: normalized(person.email), serviceId, time, data: visit.data, lock: visit.lock, customerLocks: visit.customerLocks })

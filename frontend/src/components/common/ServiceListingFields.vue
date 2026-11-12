@@ -228,6 +228,19 @@
             <ContractAppearanceSelect :id="editing ? 'edit-linked-consultation' : 'linked-consultation'" v-model="form.linkedConsultationId" label="Linked consultation (required)" :disabled="disabled || !consultationOptions.length" :options="consultationOptions" />
             <p class="mt-2 text-xs text-slate-400">{{ consultationOptions.length ? 'Clients must complete this linked consultation before booking this service.' : 'No published consultations are available. Create and publish an online or on-site consultation first.' }}</p>
           </div>
+          <div v-if="form.postType === 'Service' && form.requiresConsultationFirst" class="md:col-span-2 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+            <label class="flex items-start gap-3">
+              <input v-model="form.sameDayConsultationAllowed" type="checkbox" class="mt-1 h-4 w-4 accent-emerald-500" />
+              <span>
+                <span class="block font-medium text-white">Allow a same-day treatment request after an on-site consultation</span>
+                <span class="block text-xs leading-5 text-slate-400">The treatment time stays provisional until the assigned practitioner clears it. The customer pays for the consultation first; treatment consent and payment follow only if approved.</span>
+              </span>
+            </label>
+            <label v-if="form.sameDayConsultationAllowed" class="mt-3 block text-slate-400">Time between consultation and treatment (minutes)
+              <input v-model.number="form.sameDayConsultationBufferMinutes" type="number" min="0" max="60" step="1" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
+            </label>
+            <p v-if="form.sameDayConsultationAllowed" class="mt-2 text-xs text-slate-400">This option is available only when the linked consultation supports on-site appointments. It is a request, not a treatment guarantee.</p>
+          </div>
         </div>
         <div class="mb-4">
           <label class="block text-slate-400 mb-1">{{ editing ? 'Replace image (optional)' : 'Image (1 file only)' }}</label>

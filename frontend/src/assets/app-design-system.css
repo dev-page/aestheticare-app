@@ -710,10 +710,12 @@ html[data-ac-theme="dark"] {
   --ac-text: #fff8eb;
   --ac-text-secondary: #f0ddc8;
   --ac-text-muted: #c9ab8e;
-  --ac-primary: #f0c39b;
-  --ac-primary-hover: #ffd5ae;
-  --ac-primary-active: #d7a578;
-  --ac-on-primary: #24180f;
+  /* Keep primary actions in the mocha palette and pair them with a light
+     foreground. A pale primary with cream text was nearly unreadable. */
+  --ac-primary: #8f5e3d;
+  --ac-primary-hover: #a87550;
+  --ac-primary-active: #70472d;
+  --ac-on-primary: #fff8eb;
   --ac-accent: #d99a6c;
   --ac-accent-soft: #65432d;
   --ac-success: #9ed5a7;
@@ -842,9 +844,12 @@ html[data-ac-theme="dark"] .aestheticare-app :is(.bg-white, .bg-gray-50, .bg-gra
 }
 
 html[data-ac-theme="dark"] .aestheticare-app :is(
-  [class*="bg-white"], [class*="bg-cream-"], [class*="bg-gold-"],
-  [class*="bg-rose-"], [class*="bg-lavender-"],
-  [class*="bg-[#f"], [class*="bg-[#e"], [class*="bg-[#d"]
+  [class*="bg-white"],
+  [class*="bg-cream-50"], [class*="bg-cream-100"], [class*="bg-cream-200"],
+  [class*="bg-gold-50"], [class*="bg-gold-100"], [class*="bg-gold-200"],
+  [class*="bg-rose-50"], [class*="bg-rose-100"], [class*="bg-rose-200"],
+  [class*="bg-lavender-50"], [class*="bg-lavender-100"], [class*="bg-lavender-200"],
+  [class*="bg-[#f"], [class*="bg-[#e"]
 ) {
   background-color: var(--ac-surface) !important;
   color: var(--ac-text) !important;
@@ -855,6 +860,239 @@ html[data-ac-theme="dark"] .aestheticare-app :is(
   [class*="text-rose-"], [class*="text-lavender-"]
 ) {
   color: var(--ac-text-secondary) !important;
+}
+
+/* Dark operational workspaces use warm mocha surfaces and readable cream
+   text. Cover common neutral utilities left by older authenticated pages. */
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  [class*="text-black"], [class*="text-slate-900"], [class*="text-slate-800"],
+  [class*="text-stone-"],
+  [class*="text-neutral-"], [class*="text-zinc-"]
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  [class*="bg-slate-900"], [class*="bg-slate-950"],
+  [class*="bg-gray-900"], [class*="bg-zinc-900"], [class*="bg-neutral-900"]
+) {
+  background-color: var(--ac-bg-deep) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  [class*="bg-slate-800"], [class*="bg-slate-700"],
+  [class*="bg-gray-800"], [class*="bg-zinc-800"], [class*="bg-neutral-800"]
+) {
+  background-color: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text) !important;
+}
+
+/* Primary action utilities are normalized to brown with a cream foreground.
+   Explicit descendant color prevents an icon's utility class from lowering
+   contrast against the action background. */
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  button, a[role="button"]
+):is(
+  [class*="bg-blue-"], [class*="bg-sky-"], [class*="bg-cyan-"],
+  [class*="bg-indigo-"], [class*="bg-purple-"], [class*="bg-gold-500"],
+  [class*="bg-gold-600"], [class*="bg-gold-700"], [class*="bg-gold-800"],
+  [class*="bg-gold-900"], [class*="bg-[#6f"], [class*="bg-[#7b"],
+  [class*="bg-[#8d"], [class*="bg-[#95"]
+) {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  button, a[role="button"]
+):is(
+  [class*="bg-blue-"], [class*="bg-sky-"], [class*="bg-cyan-"],
+  [class*="bg-indigo-"], [class*="bg-purple-"], [class*="bg-gold-500"],
+  [class*="bg-gold-600"], [class*="bg-gold-700"], [class*="bg-gold-800"],
+  [class*="bg-gold-900"], [class*="bg-[#6f"], [class*="bg-[#7b"],
+  [class*="bg-[#8d"], [class*="bg-[#95"]
+) * {
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  button, a[role="button"]
+):is(
+  [class*="bg-blue-"], [class*="bg-sky-"], [class*="bg-cyan-"],
+  [class*="bg-indigo-"], [class*="bg-purple-"], [class*="bg-gold-500"],
+  [class*="bg-gold-600"], [class*="bg-gold-700"], [class*="bg-gold-800"],
+  [class*="bg-gold-900"], [class*="bg-[#6f"], [class*="bg-[#7b"],
+  [class*="bg-[#8d"], [class*="bg-[#95"]
+):hover:not(:disabled) {
+  background: var(--ac-primary-hover) !important;
+  border-color: var(--ac-primary-hover) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page)
+) main {
+  background: var(--ac-bg) !important;
+  color: var(--ac-text) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page)
+) main :is(
+  section, article, form, header, footer, table,
+  [class*="bg-slate-"], [class*="bg-white"],
+  [class*="bg-cream-50"], [class*="bg-cream-100"], [class*="bg-cream-200"]
+) {
+  background-color: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .finance-filters, .purchase-orders-filters, .inventory-receiving-filters,
+  .listing-review-filters, .listing-review-records, .listing-review-records-heading,
+  .listing-review-modal-overview, .budget-records, .purchase-order-info,
+  .purchase-order-table-wrap, .purchase-order-pricing, .purchase-order-total,
+  .purchase-order-dialog .purchase-order-body, .finance-dialog
+) {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page)
+) main :is(h1, h2, h3, h4, p, label, dt, dd, small) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page)
+) main :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page)
+) main table :is(thead, th) {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page)
+) main button:not([class*="bg-red-"]):not([class*="bg-rose-"]):not([class*="bg-blue-"]):not([class*="bg-amber-"]):not([class*="bg-emerald-"]):not(.budget-create) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page)
+) main table tbody tr:hover {
+  background: var(--ac-surface-soft) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .listing-review-error, .purchase-orders-status.is-negative,
+  .inventory-receiving-status.is-negative, .purchase-order-status.is-negative,
+  .finance-status-danger, .budget-status-cancelled
+) {
+  background: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .module-theme, .owner-theme, .customer-theme, .supplier-theme
+) main :is(div, span, p)[class*="bg-red-"],
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .module-theme, .owner-theme, .customer-theme, .supplier-theme
+) main :is(div, span, p)[class*="bg-rose-"] {
+  background: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .listing-review-status.is-approved, .purchase-orders-status.is-positive,
+  .inventory-receiving-status.is-positive, .purchase-order-status.is-positive,
+  .finance-status-success, .budget-status-active
+) {
+  background: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  .listing-review-status.is-pending, .purchase-orders-status.is-pending,
+  .inventory-receiving-status.is-pending, .purchase-order-status.is-pending,
+  .finance-status-pending
+) {
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+/* Sidebar hover styles are warm in both themes and do not flash to a light
+   tan panel while the rest of the logged-in workspace is dark. */
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar :is(a, button):hover:not(:disabled) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .employee-topbar :is(.employee-topbar-btn, .notifications-view, .notifications-more) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .employee-topbar :is(.employee-topbar-btn, .notifications-view, .notifications-more):hover {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .employee-topbar .notifications-menu {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .employee-topbar :is(
+  .notifications-header, .notifications-empty, .notifications-item,
+  .notifications-item-title, .notifications-item-body, .notifications-item-date
+) {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .employee-topbar .notifications-item:hover {
+  background: var(--ac-surface-soft) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .employee-topbar .notifications-badge {
+  border-color: var(--ac-surface) !important;
+  color: #fff !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.swal2-popup, .swal2-modal) :is(
+  .swal2-title, .swal2-html-container, .swal2-content, label, p
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.swal2-popup, .swal2-modal) :is(
+  input, select, textarea
+) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
 }
 
 html[data-ac-theme="dark"] .aestheticare-app :is(

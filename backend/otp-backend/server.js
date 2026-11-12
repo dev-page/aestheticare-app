@@ -6,6 +6,7 @@ import { subscriptionLifecycle, hasActivePaidCycle } from '../../shared/subscrip
 import { registerSubscriptionTrial } from './subscriptionTrial.js'
 import { registerSubscriptionReminders, sendSubscriptionReminders } from './subscriptionReminders.js'
 import { serviceOnlyClinicPolicies } from '../../shared/clinicPolicyContent.js'
+import { cancellationRefundEstimate, isCancellationPolicyEnabled, isReschedulePolicyEnabled, rescheduleAllowanceForPolicy } from '../../shared/appointmentChangePolicy.js'
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { registerPractitionerTeams } from './practitionerTeams.js'
@@ -16,14 +17,18 @@ import { registerFinanceWorkflow } from './financeWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import { registerBookingBatch } from './bookingBatch.js'
+import { registerSameDayBookings } from './sameDayBookings.js'
+import { registerSameDayTreatmentClearance } from './sameDayTreatmentClearance.js'
+import { cancelPendingSameDayTreatment, sameDayChangeError } from './sameDayBookingChanges.js'
 import { prepareClinicBookingRecipients, writeClinicBookingNotifications } from './clinicBookingNotifications.js'
 import { registerConsultationWindows, closeExpiredConsultations } from './consultationWindows.js'
-import { registerWalkInPayments } from './walkInWorkflow.js'
+import { remindPendingAppointmentConfirmations } from './appointmentConfirmationReminders.js'
+import { registerWalkInPayments, assertWalkInPaymentAgreements } from './walkInWorkflow.js'
 import { registerWalkInBookings } from './walkInBookings.js'
 import { registerGoogleConsultations } from './googleConsultations.js'
 import { prepareBooking } from './bookingResources.js'
-import { hasCompletedLinkedConsultation } from '../../shared/consultationRequirements.js'
-import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow, resetAppointmentAccess } from './bookingWorkflow.js'
+import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
+import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow, resetAppointmentAccess, bookingOrderReadyForPayment } from './bookingWorkflow.js'
 import express from 'express'
 import { registerPublicContact } from './publicContact.js'
 import cors from 'cors'
@@ -2133,6 +2138,30 @@ const getClinicPoliciesForBranch = async (firestore, branchId, knownBranch = nul
   return { policy: legacySnap.exists ? applyBranchLinks(legacySnap.data()) : {}, ownerId, branch }
 }
 
+const cancellationTermsSnapshot = (policy, appointment) => {
+  const estimate = cancellationRefundEstimate({ policy, appointment })
+  return {
+    version: 1,
+    cancellationPolicy: String(policy.cancellationPolicy || '').trim(),
+    tier: estimate.tier,
+    hoursUntil: estimate.hoursUntil,
+    refundPercentage: estimate.refundPercentage,
+    eligibleAmount: estimate.eligibleAmount,
+    commissionAmount: estimate.commissionAmount,
+    refundAmount: estimate.refundAmount,
+    earlyMinimumHours: Number(policy.earlyMinimumHours ?? 48),
+    earlyNonRefundable: policy.earlyNonRefundable === true,
+    earlyRefundPercentage: Number(policy.earlyRefundPercentage ?? 100),
+    midMinimumHours: Number(policy.midMinimumHours ?? 24),
+    midMaximumHours: Number(policy.midMaximumHours ?? 48),
+    midNonRefundable: policy.midNonRefundable === true,
+    midRefundPercentage: Number(policy.midRefundPercentage ?? 50),
+    lateMaximumHours: Number(policy.lateMaximumHours ?? 24),
+    lateNonRefundable: policy.lateNonRefundable === true,
+    lateRefundPercentage: Number(policy.lateRefundPercentage ?? 0),
+  }
+}
+
 const getApprovedLeaveForDate = async (employeeId, dateKey) => {
   const normalizedEmployeeId = String(employeeId || '').trim()
   const normalizedDate = String(dateKey || '').trim()
@@ -3838,10 +3867,12 @@ const sendServiceCode = async ({ email, serviceKey, date, time }) => {
   await sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time} (Philippine time). Your private service code is ${serviceKey}. For an on-site appointment, show this code to reception for check-in. For an online consultation, enter it in My Appointments within 30 minutes before the scheduled start and before the arrival grace period ends; the system will create your Google Meet link. The consultation timer starts when the practitioner verifies your presence and starts the consultation. This code applies only to your appointment. Keep it private.` })
 }
 registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction, sendServiceCode })
+registerSameDayTreatmentClearance(app, { admin, requireAuth })
 registerConsultationEvents(app, { admin, requireAuth, authorizeClinicAction })
 registerPractitionerTeams(app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap, createVisionClient, getVisionResponseError, getVisionWordConfidence })
 registerConsultationWindows(app, { admin, ready: () => adminReady })
 registerBookingBatch(app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan, loadUserContext })
+registerSameDayBookings(app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan, loadUserContext })
 
 // Each treatment visit has its own lifecycle. The original appointment is the
 // treatment-plan parent; later visits are scheduled explicitly so a missed
@@ -3891,6 +3922,11 @@ app.post('/treatment-sessions/:id/schedule', requireAuth, async (req, res) => {
         assertWorkflow(previous.exists && ['completed', 'forfeited'].includes(normalizeBookingStatus(previous.data()?.status)), 'Complete or resolve the previous treatment session before scheduling this visit.')
       }
       assertWorkflow(!session.earliestScheduleDate || date >= String(session.earliestScheduleDate), `This session is eligible to be scheduled on or after ${session.earliestScheduleDate}.`)
+      if (currentStatus === 'reschedule requested') {
+        const allowance = Number(session.rescheduleAllowanceSnapshot ?? 1)
+        assertWorkflow(Number(session.rescheduleCount || 0) < allowance, 'This treatment session has reached the reschedule limit.', 409)
+        if (session.rescheduleCountAtRequest !== undefined) assertWorkflow(Number(session.rescheduleCountAtRequest) === Number(session.rescheduleCount || 0), 'The reschedule allowance changed while this request was pending.', 409)
+      }
       const parentData = parent.data() || {}, definition = parentData.treatmentPlan?.sessions?.[sessionNumber - 1]
       const requestedRange = getBookingRange({ time, totalServiceDurationMinutes: definition?.durationMinutes || parentData.totalServiceDurationMinutes || 60 })
       const [otherAppointments, otherSessions] = await Promise.all([
@@ -3981,15 +4017,14 @@ const requestTreatmentSessionSchedule = async (req, res) => {
         assertWorkflow(previous.exists && ['completed', 'forfeited'].includes(normalizeBookingStatus(previous.data()?.status)), 'The previous treatment session must be completed or resolved first.')
       }
       assertWorkflow(!session.earliestScheduleDate || date >= String(session.earliestScheduleDate), `This session is eligible to be scheduled on or after ${session.earliestScheduleDate}.`, 400)
+      let policy = {}
       if (currentStatus !== 'unscheduled') {
-        const { policy } = await getClinicPoliciesForBranch(firestore, session.branchId)
-        const enabled = policy.serviceReschedulingPolicyEnabled === true || policy.reschedulePolicyEnabled === true
-        assertWorkflow(enabled, 'This clinic does not currently allow treatment-session reschedule requests.', 403)
-        const allowance = Math.max(0, Number(policy.maximumRescheduleAllowance ?? 1))
-        assertWorkflow(Number(session.rescheduleCount || 0) < allowance, 'You have reached this clinic\'s reschedule limit for this treatment session.', 403)
+        policy = (await getClinicPoliciesForBranch(firestore, session.branchId)).policy
+        assertWorkflow(isReschedulePolicyEnabled(policy), 'This clinic does not currently allow treatment-session reschedule requests.', 403)
+        assertWorkflow(Number(session.rescheduleCount || 0) < rescheduleAllowanceForPolicy(policy), 'You have reached this clinic\'s reschedule limit for this treatment session.', 403)
       }
       const nextStatus = currentStatus === 'unscheduled' ? 'Schedule Requested' : 'Reschedule Requested'
-      tx.update(ref, { status: nextStatus, requestedDate: date, requestedTime: time, scheduleRequestReason: reason, scheduleRequestedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+      tx.update(ref, { status: nextStatus, requestedDate: date, requestedTime: time, scheduleRequestReason: reason, scheduleRequestedAt: admin.firestore.FieldValue.serverTimestamp(), ...(currentStatus === 'unscheduled' ? {} : { rescheduleAllowanceSnapshot: rescheduleAllowanceForPolicy(policy), rescheduleCountAtRequest: Number(session.rescheduleCount || 0) }), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.set(firestore.collection('treatmentSessionAudit').doc(), { sessionId: ref.id, treatmentPlanAppointmentId: session.treatmentPlanAppointmentId, branchId: session.branchId, action: currentStatus === 'unscheduled' ? 'schedule_requested' : 'reschedule_requested', previousStatus: session.status || '', nextStatus, date, time, actorId: req.user.uid, actorName: req.user.email || '', createdAt: admin.firestore.FieldValue.serverTimestamp() })
       tx.set(firestore.collection('notifications').doc(), { recipientUserId: session.practitionerId, branchId: session.branchId, title: `Treatment session ${session.sessionNumber} needs scheduling`, message: `The customer requested ${date} at ${time}. Review and confirm an available time.`, link: '/clinical/treatment-sessions', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
       return { id: ref.id, status: nextStatus }
@@ -4093,6 +4128,12 @@ app.all('/cron/appointment-reminders', async (req, res) => {
   try {
     // Run these independently of appointment email failures or an empty list.
     const subscriptions = await sendSubscriptionReminders(subscriptionReminderDependencies)
+    let completionReminders = 0
+    try {
+      completionReminders = await remindPendingAppointmentConfirmations(admin)
+    } catch (error) {
+      console.warn('Failed to send service completion reminders:', error?.message || error)
+    }
     const firestore = admin.firestore(), tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const rows = (await firestore.collection('appointments').where('date', '==', tomorrow).get()).docs.map(snap => ({ id: snap.id, ...(snap.data() || {}) }))
       .filter(row => ['scheduled', 'ready to start', 'paid'].includes(normalizeBookingStatus(row.status)))
@@ -4142,7 +4183,7 @@ app.all('/cron/appointment-reminders', async (req, res) => {
         }
       }
     }))
-    return res.status(subscriptions.failures ? 503 : 200).json({ success: !subscriptions.failures, reminders: rows.length, subscriptions })
+    return res.status(subscriptions.failures ? 503 : 200).json({ success: !subscriptions.failures, reminders: rows.length, completionReminders, subscriptions })
   } catch (error) { return res.status(500).json({ success: false, error: 'Unable to send appointment reminders.' }) }
 })
 
@@ -4165,7 +4206,7 @@ registerWalkInBookings(app, {
     await sendPostmarkMessage({
       to: appointment.customerEmail,
       subject: 'Your AesthetiCare walk-in appointment is booked',
-      text: `Hi ${appointment.customerName},\n\nYour walk-in appointment is confirmed.${appointment.bookingForSomeoneElse ? `\nArranged for you by: ${appointment.bookedByName}. They accepted the booking and payment terms; you must still review and sign your own treatment agreement before check-in.` : ''}\nService: ${appointment.service}\nWhen: ${appointment.date} at ${appointment.time}\nPractitioner: ${appointment.practitionerName}\n\nThe clinic will collect payment separately for this appointment and send your own service key to this email. Review and sign your individual clinic agreement before check-in.`,
+      text: `Hi ${appointment.customerName},\n\nYour walk-in appointment is confirmed.${appointment.bookingForSomeoneElse ? `\nArranged for you by: ${appointment.bookedByName}. They accepted the booking and payment terms; you must still review and sign your own treatment agreement before payment.` : ''}\nService: ${appointment.service}\nWhen: ${appointment.date} at ${appointment.time}\nPractitioner: ${appointment.practitionerName}\n\nThe clinic will ask you to review and sign your individual treatment agreement before collecting payment. After payment, your service code will be sent to this email. Bring the code on your appointment day.`,
     })
   },
 })
@@ -4203,6 +4244,7 @@ app.post('/appointments/:id/contract', requireAuth, async (req, res) => {
     const apptSnap = await apptRef.get()
     if (!apptSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
     const appointment = apptSnap.data() || {}
+    if (appointment.sameDayTreatmentStatus === 'pending_clinical_clearance') return res.status(409).json({ success: false, error: 'The assigned practitioner must clear same-day treatment before its agreement can be prepared.' })
     if (appointment.contract?.status === 'signed' || appointment.startedAt) return res.status(409).json({ success: false, error: 'A signed or started booking contract cannot be replaced.' })
     req.userContext = req.userContext || await loadUserContext(req.user.uid)
     const roleKey = String(req.userContext.roleKey || '').trim()
@@ -5693,7 +5735,70 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
       schedules[practitionerId] = practitionerSchedules
       leaves[practitionerId] = practitionerLeaves
     })
-    return res.json({ success: true, practitioners, schedules, leaves })
+
+    // Customers need to see occupied times in the slot picker, but must not
+    // receive appointment records or client details. Return only the fields
+    // needed to draw blocked windows. The transactional booking check remains
+    // authoritative if availability changes after this response.
+    const startDate = String(req.query?.startDate || '').trim()
+    const endDate = String(req.query?.endDate || '').trim()
+    let busyWindows = [], customerBusyDates = []
+    if (startDate || endDate) {
+      const validDate = value => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+        const parsed = Date.parse(`${value}T00:00:00.000Z`)
+        return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value
+      }
+      if (!validDate(startDate) || !validDate(endDate)) {
+        return res.status(400).json({ success: false, error: 'A valid availability date range is required.' })
+      }
+      const dayCount = (Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) / 86400000
+      if (dayCount < 0 || dayCount > 365) {
+        return res.status(400).json({ success: false, error: 'Availability can be requested for up to 366 days.' })
+      }
+
+      const releasedAvailabilityStatuses = new Set(['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'])
+      const releasedCustomerDateStatuses = new Set(['cancelled', 'rejected', 'expired'])
+      const appointmentQuery = collection => collection
+        .where('date', '>=', startDate)
+        .where('date', '<=', endDate)
+      const [branchAppointments, customerAppointments] = await Promise.all([
+        appointmentQuery(firestore.collection('appointments').where('branchId', '==', branchId)).get(),
+        requesterRole === 'customer'
+          ? appointmentQuery(firestore.collection('appointments').where('customerId', '==', req.user.uid)).get()
+          : Promise.resolve(null),
+      ])
+
+      busyWindows = branchAppointments.docs.flatMap(snapshot => {
+        const appointment = snapshot.data() || {}
+        if (appointment.isGroupParent || appointment.isBookingOrderParent || releasedAvailabilityStatuses.has(String(appointment.status || '').trim().toLowerCase())) return []
+        const practitionerId = String(appointment.assignedPractitionerId || appointment.practitionerId || '').trim()
+        if (!practitionerId || !appointment.date || !appointment.time) return []
+        const durationMinutes = Number(appointment.totalServiceDurationMinutes || appointment.consultationDurationMinutes || appointment.durationMinutes || 60)
+        return [{
+          status: 'busy',
+          date: String(appointment.date),
+          time: String(appointment.time),
+          endTime: String(appointment.endTime || ''),
+          durationMinutes: Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 60,
+          practitionerId,
+          treatmentTeam: (Array.isArray(appointment.treatmentTeam) ? appointment.treatmentTeam : [])
+            .map(member => ({ employeeId: String(member?.employeeId || '').trim() }))
+            .filter(member => member.employeeId),
+        }]
+      })
+
+      if (customerAppointments) {
+        customerBusyDates = [...new Set(customerAppointments.docs
+          .map(snapshot => snapshot.data() || {})
+          .filter(appointment => !appointment.isGroupParent && !appointment.isBookingOrderParent
+            && !releasedCustomerDateStatuses.has(String(appointment.status || '').trim().toLowerCase()))
+          .map(appointment => String(appointment.date || '').trim())
+          .filter(Boolean))]
+      }
+    }
+
+    return res.json({ success: true, practitioners, schedules, leaves, busyWindows, customerBusyDates })
   } catch (error) {
     return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Unable to load practitioner availability.' })
   }
@@ -5959,18 +6064,18 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         error: 'Please review and acknowledge the clinic policies before submitting the booking request.',
       })
     }
-    const consultationRequiredIds = selectedServices
+    const consultationRequiredIds = (reservation.groupBooking ? [] : selectedServices)
       .filter((service) => service?.requiresConsultationFirst === true && !service.packageComponents?.some(component => component.type === 'Consultation'))
       .map((service) => String(service.id || '').trim())
       .filter(Boolean)
 
     if (consultationRequiredIds.length) {
-      const consultationSnap = await firestore.collection('appointments')
-        .where('customerId', '==', customerId)
-        .where('type', '==', 'Consultation')
-        .get()
+      const [consultationSnap, clearanceSnap] = await Promise.all([
+        firestore.collection('appointments').where('customerId', '==', customerId).where('type', '==', 'Consultation').get(),
+        firestore.collection('consultationClearances').where('customerId', '==', customerId).get(),
+      ])
       const requiredServices = await Promise.all(consultationRequiredIds.map(async id => ({ ...(await firestore.collection('productServicePosts').doc(id).get()).data(), id })))
-      const hasCompletedConsultation = requiredServices.every(service => hasCompletedLinkedConsultation(service, consultationSnap.docs.map(snapshot => snapshot.data()), branchId))
+      const hasCompletedConsultation = requiredServices.every(service => hasConsultationRequirement(service, consultationSnap.docs.map(snapshot => snapshot.data()), clearanceSnap.docs.map(snapshot => snapshot.data()), branchId))
       if (!hasCompletedConsultation) {
         return res.status(422).json({
           success: false,
@@ -6130,7 +6235,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
           await sendPostmarkMessage({
             to: email,
             subject: 'You were added to an AesthetiCare group booking',
-            text: `Hi ${String(invite.name || 'Guest').trim()},\n\n${reservation.customerName || 'The organizer'} added you to a group booking at ${branch.clinicName || branch.clinicBranch || 'the clinic'} on ${[reservation.date, reservation.time].filter(Boolean).join(' at ')}. The organizer will receive the payment confirmation. Complete your individual consent here: ${EMAIL_WEBSITE_URL}/group-consent?token=${invite.token}`,
+            text: `Hi ${String(invite.name || 'Guest').trim()},\n\n${reservation.customerName || 'The organizer'} added you to a group booking at ${branch.clinicName || branch.clinicBranch || 'the clinic'} on ${[reservation.date, reservation.time].filter(Boolean).join(' at ')}. The organizer pays for the group. You can complete consent before or after payment, but both must be complete before check-in. You do not need a platform account. Complete your individual consent using this private link: ${EMAIL_WEBSITE_URL}/group-consent?token=${invite.token}`,
           })
         } catch (error) { console.warn('Group booking guest email failed:', error?.message || error) }
       }))
@@ -6163,20 +6268,50 @@ app.post('/group-consents/:token/request', async (req, res) => {
   try {
     const { invite, appointment, appointmentId } = await resolveGroupAttendee(req.params.token, String(req.body?.appointmentId || ''))
     assertWorkflow(invite.status === 'Completed', 'Complete your individual consent first.', 403)
-    const type = String(req.body?.type || ''), reason = String(req.body?.reason || '').trim()
+    const type = String(req.body?.type || '').trim().toLowerCase(), reason = String(req.body?.reason || '').trim()
     assertWorkflow(['cancel', 'reschedule'].includes(type) && reason.length >= 5 && reason.length <= 1000, 'Choose a request type and provide a reason.', 400)
     const firestore = admin.firestore(), ref = firestore.collection('appointments').doc(appointmentId)
-    const { policy } = await getClinicPoliciesForBranch(firestore, appointment.branchId)
-    assertWorkflow(type === 'cancel' ? policy.cancellationPolicyEnabled === true : policy.reschedulePolicyEnabled !== false && policy.reschedulePolicy, 'This clinic does not allow this change.', 403)
-    const date = String(req.body?.date || ''), time = String(req.body?.time || '')
-    if (type === 'reschedule') assertWorkflow(/^\d{4}-\d{2}-\d{2}$/.test(date) && parseClockToMinutes(time) !== null && new Date(`${date}T${time}+08:00`) > new Date(), 'Choose a future date and time.', 400)
+    const { policy, branch } = await getClinicPoliciesForBranch(firestore, appointment.branchId)
+    if (type === 'cancel') assertWorkflow(isCancellationPolicyEnabled(policy), 'This clinic does not allow cancellation requests.', 403)
+    if (type === 'reschedule') {
+      assertWorkflow(isReschedulePolicyEnabled(policy), 'This clinic does not allow reschedule requests.', 403)
+      assertWorkflow(Number(appointment.rescheduleCount || 0) < rescheduleAllowanceForPolicy(policy), 'You have reached this clinic’s reschedule limit.', 403)
+    }
+    assertWorkflow(!sameDayChangeError(appointment, type), sameDayChangeError(appointment, type), 409)
+    const date = String(req.body?.date || '').trim(), time = String(req.body?.time || '').trim()
+    const practitionerId = String(appointment.assignedPractitionerId || appointment.practitionerId || '').trim()
+    if (type === 'reschedule') {
+      assertWorkflow(/^\d{4}-\d{2}-\d{2}$/.test(date) && parseClockToMinutes(time) !== null && new Date(`${date}T${time}+08:00`) > new Date(), 'Choose a future date and time.', 400)
+      assertWorkflow(practitionerId, 'The appointment has no assigned practitioner to reschedule with.', 409)
+      assertWorkflow(!await getApprovedLeaveForDate(practitionerId, date), 'The practitioner is on approved leave for that date.', 409)
+    }
     await firestore.runTransaction(async tx => {
-      const current = (await tx.get(ref)).data()
-      assertWorkflow(current && !current.startedAt && !current.checkedInAt && ['paid', 'scheduled', 'contract pending', 'awaiting payment'].includes(normalized(current.status)) && new Date(`${current.date}T${current.time}+08:00`) > new Date(), 'Only an upcoming attendee appointment can be changed.')
+      const snap = await tx.get(ref), current = snap.exists ? snap.data() || {} : null
+      assertWorkflow(current && current.isGroupRecipient === true && String(current.customerEmail || '').toLowerCase() === String(invite.recipientEmail || '').toLowerCase(), 'This invitation does not match its attendee.', 403)
+      assertWorkflow(!current.startedAt && !current.checkedInAt && ['paid', 'scheduled', 'contract pending', 'awaiting payment'].includes(normalized(current.status)) && new Date(`${current.date}T${current.time}+08:00`) > new Date(), 'Only an upcoming attendee appointment can be changed.')
+      assertWorkflow(!sameDayChangeError(current, type), sameDayChangeError(current, type), 409)
       const timestamp = admin.firestore.FieldValue.serverTimestamp()
-      tx.update(ref, type === 'cancel' ? { status: 'Cancellation Requested', cancellationReason: reason, cancellationRequestedAt: timestamp, cancellationPolicySnapshot: policy.cancellationPolicy || '', refundRequestedAmount: Math.max(0, Number(current.amountPaid || 0) - Number(current.commissionAmount || 0)), refundStatus: 'Pending Approval', updatedAt: timestamp } : { status: 'Reschedule Requested', requestedDate: date, requestedTime: time, requestedPractitionerId: current.practitionerId, rescheduleReason: reason, rescheduleRequestedAt: timestamp, reschedulePolicySnapshot: policy.reschedulePolicy || '', updatedAt: timestamp })
-      tx.set(firestore.collection('appointmentAudit').doc(), { appointmentId: ref.id, branchId: current.branchId, actorId: current.customerId, action: `guest_${type}_requested`, previousStatus: current.status, nextStatus: type === 'cancel' ? 'Cancellation Requested' : 'Reschedule Requested', createdAt: timestamp })
+      if (type === 'cancel') {
+        const refundTerms = cancellationTermsSnapshot(policy, current)
+        tx.update(ref, { status: 'Cancellation Requested', cancellationReason: reason, cancellationRequestedAt: timestamp, cancellationPolicySnapshot: String(policy.cancellationPolicy || '').trim(), cancellationRefundPolicySnapshot: refundTerms, refundRequestedAmount: refundTerms.refundAmount, refundCommissionAmount: refundTerms.commissionAmount, refundStatus: 'Pending Approval', updatedAt: timestamp })
+      } else {
+        assertWorkflow(Number(current.rescheduleCount || 0) < rescheduleAllowanceForPolicy(policy), 'You have reached this clinic’s reschedule limit.', 403)
+        const prepared = await prepareBooking({ tx, db: firestore, reservation: { ...current, date, time, endTime: '', practitionerId, assignedPractitionerId: practitionerId, groupBooking: null }, getBookingRange, rangesOverlap, appointmentId })
+        tx.update(ref, { status: 'Reschedule Requested', requestedDate: date, requestedTime: time, requestedPractitionerId: practitionerId, rescheduleReason: reason, rescheduleRequestedAt: timestamp, reschedulePolicySnapshot: String(policy.reschedulePolicy || '').trim(), rescheduleAllowanceSnapshot: rescheduleAllowanceForPolicy(policy), rescheduleCountAtRequest: Number(current.rescheduleCount || 0), requestedEndTime: prepared.data.endTime, updatedAt: timestamp })
+      }
+      tx.set(firestore.collection('appointmentAudit').doc(), { appointmentId: ref.id, branchId: current.branchId, actorId: current.customerId, action: `guest_${type}_requested`, previousStatus: current.status, nextStatus: type === 'cancel' ? 'Cancellation Requested' : 'Reschedule Requested', ...(type === 'reschedule' ? { date, time, practitionerId } : {}), createdAt: timestamp })
     })
+    const clinicRecipients = [...new Set([branch.ownerId, branch.organizationOwnerId, branch.branchAdminId].map(uid => String(uid || '').trim()).filter(Boolean))]
+    const requestMessage = type === 'cancel'
+      ? `${appointment.customerName || 'A group attendee'} requested to cancel ${appointment.service || 'an appointment'} scheduled for ${appointment.date || ''} ${appointment.time || ''}.`
+      : `${appointment.customerName || 'A group attendee'} requested to move ${appointment.service || 'an appointment'} to ${date} ${time}.`
+    await Promise.all(clinicRecipients.map(async recipientUserId => {
+      try {
+        await firestore.collection('notifications').add({ recipientUserId, branchId: appointment.branchId || '', title: type === 'cancel' ? 'Group attendee cancellation requested' : 'Group attendee reschedule requested', message: requestMessage, link: '/crm/appointments', read: false, deleted: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+      } catch (notificationError) { console.warn('Failed to notify clinic about group attendee change:', notificationError?.message || notificationError) }
+    }))
+    const organizerId = String(appointment.groupOrganizerId || '').trim()
+    if (organizerId) await createAppointmentNotification({ firestore, customerId: organizerId, title: type === 'cancel' ? 'Group attendee requested cancellation' : 'Group attendee requested a new time', message: requestMessage, link: '/customer/appointments' }).catch(error => console.warn('Failed to notify group organizer about attendee change:', error?.message || error))
     res.json({ success: true, data: { requested: true } })
   } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
 })
@@ -6187,11 +6322,26 @@ app.get('/group-consents/:token', async (req, res) => {
     assertWorkflow(invite, 'Invitation not found.', 404)
     const appointment = (await firestore.collection('appointments').doc(invite.appointmentId).get()).data()
     assertWorkflow(appointment?.isGroupRecipient && normalized(appointment.customerEmail) === normalized(invite.recipientEmail), 'Invalid recipient invitation.', 403)
+    const { policy } = await getClinicPoliciesForBranch(firestore, appointment.branchId)
+    const canChangeStatus = !appointment.startedAt && !appointment.checkedInAt && ['paid', 'scheduled', 'contract pending', 'awaiting payment'].includes(normalized(appointment.status)) && new Date(`${appointment.date}T${appointment.time}+08:00`) > new Date()
+    const canRequestCancellation = invite.status === 'Completed' && canChangeStatus && isCancellationPolicyEnabled(policy) && !sameDayChangeError(appointment, 'cancel')
+    const canRequestReschedule = invite.status === 'Completed' && canChangeStatus && isReschedulePolicyEnabled(policy) && Number(appointment.rescheduleCount || 0) < rescheduleAllowanceForPolicy(policy) && !sameDayChangeError(appointment, 'reschedule')
     const sessions = await Promise.all((await firestore.collection('treatmentSessions').where('treatmentPlanAppointmentId', '==', invite.appointmentId).get()).docs.map(async doc => {
       const session = doc.data(), visit = session.appointmentId ? (await firestore.collection('appointments').doc(session.appointmentId).get()).data() || {} : {}
-      return { id: doc.id, appointmentId: session.appointmentId || '', sessionNumber: session.sessionNumber, totalSessions: session.totalSessions, status: session.status, appointmentStatus: visit.status || '', serviceKey: invite.status === 'Completed' ? visit.serviceKey || '' : '', date: session.date || '', time: session.time || '' }
+      const sessionStatus = normalized(session.status)
+      const hasNextSession = sessionStatus === 'unscheduled'
+        || (isReschedulePolicyEnabled(policy) && Number(session.rescheduleCount || 0) < rescheduleAllowanceForPolicy(policy))
+      return { id: doc.id, appointmentId: session.appointmentId || '', sessionNumber: session.sessionNumber, totalSessions: session.totalSessions, status: session.status, rescheduleCount: Number(session.rescheduleCount || 0), earliestScheduleDate: session.earliestScheduleDate || '', canRequestSchedule: invite.status === 'Completed' && hasNextSession && ['unscheduled', 'scheduled', 'schedule proposed', 'reschedule eligible'].includes(sessionStatus), appointmentStatus: visit.status || '', serviceKey: invite.status === 'Completed' ? visit.serviceKey || '' : '', date: session.date || '', time: session.time || '' }
     }))
-    res.json({ success: true, data: { name: appointment.customerName, service: appointment.service, date: appointment.date, time: appointment.time, status: appointment.status, terms: appointment.contract?.terms || '', contractDocument: appointment.contract?.document || null, consentCompleted: invite.status === 'Completed', serviceKey: invite.status === 'Completed' ? appointment.serviceKey : null, sessions } })
+    sessions.sort((left, right) => Number(left.sessionNumber || 0) - Number(right.sessionNumber || 0))
+    sessions.forEach(session => {
+      if (Number(session.sessionNumber || 1) <= 1) return
+      const previous = sessions.find(item => Number(item.sessionNumber || 0) === Number(session.sessionNumber || 1) - 1)
+      session.canRequestSchedule = session.canRequestSchedule && Boolean(previous && ['completed', 'forfeited'].includes(normalized(previous.status)))
+    })
+    const policyFields = ['earlyMinimumHours', 'earlyNonRefundable', 'earlyRefundPercentage', 'midMinimumHours', 'midMaximumHours', 'midNonRefundable', 'midRefundPercentage', 'lateMaximumHours', 'lateNonRefundable', 'lateRefundPercentage']
+    const cancellationTerms = Object.fromEntries(policyFields.map(key => [key, policy[key]]))
+    res.json({ success: true, data: { name: appointment.customerName, service: appointment.service, date: appointment.date, time: appointment.time, status: appointment.status, amount: Number(appointment.amount || 0), totalAmount: Number(appointment.totalAmount || appointment.amount || 0), amountPaid: Number(appointment.amountPaid || 0), commissionAmount: Number(appointment.commissionAmount || appointment.refundCommissionAmount || 0), terms: appointment.contract?.terms || '', contractDocument: appointment.contract?.document || null, consentCompleted: invite.status === 'Completed', serviceKey: invite.status === 'Completed' ? appointment.serviceKey : null, sessions, canRequestCancellation, canRequestReschedule, rescheduleCount: Number(appointment.rescheduleCount || 0), cancellationPolicy: String(policy.cancellationPolicy || ''), reschedulePolicy: String(policy.reschedulePolicy || ''), maximumRescheduleAllowance: rescheduleAllowanceForPolicy(policy), cancellationTerms } })
   } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
 })
 app.post('/group-consents/:token/accept', async (req, res) => {
@@ -8221,12 +8371,12 @@ app.post('/appointments/reservations', requireAuth, async (req, res) => {
     .filter(Boolean)
 
   if (consultationRequiredIds.length) {
-    const consultationSnap = await firestore.collection('appointments')
-      .where('customerId', '==', customerId)
-      .where('type', '==', 'Consultation')
-      .get()
+    const [consultationSnap, clearanceSnap] = await Promise.all([
+      firestore.collection('appointments').where('customerId', '==', customerId).where('type', '==', 'Consultation').get(),
+      firestore.collection('consultationClearances').where('customerId', '==', customerId).get(),
+    ])
     const requiredServices = await Promise.all(consultationRequiredIds.map(async id => ({ ...(await firestore.collection('productServicePosts').doc(id).get()).data(), id })))
-      const hasCompletedConsultation = requiredServices.every(service => hasCompletedLinkedConsultation(service, consultationSnap.docs.map(snapshot => snapshot.data()), branchId))
+      const hasCompletedConsultation = requiredServices.every(service => hasConsultationRequirement(service, consultationSnap.docs.map(snapshot => snapshot.data()), clearanceSnap.docs.map(snapshot => snapshot.data()), branchId))
     if (!hasCompletedConsultation) {
       return res.status(422).json({
         success: false,
@@ -8399,7 +8549,7 @@ app.post('/appointments/:id/request-change', requireAuth, async (req, res) => {
   const type = String(req.body?.type || '').trim().toLowerCase()
   const reason = String(req.body?.reason || '').trim()
   if (!appointmentId) return res.status(400).json({ success: false, error: 'appointment id is required' })
-  if (type !== 'cancel') return res.status(400).json({ success: false, error: 'Unsupported appointment change request.' })
+  if (!['cancel', 'reschedule'].includes(type)) return res.status(400).json({ success: false, error: 'Unsupported appointment change request.' })
   if (!reason || reason.length > 1000) return res.status(400).json({ success: false, error: 'Provide a reason of up to 1,000 characters.' })
 
   try {
@@ -8409,46 +8559,89 @@ app.post('/appointments/:id/request-change', requireAuth, async (req, res) => {
     if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
     const appointment = appointmentSnap.data() || {}
     assertWorkflow(String(appointment.customerId || '') === req.user.uid, 'You can only request changes to your own appointment.', 403)
-    assertWorkflow(!appointment.isGroupParent && !appointment.isBookingOrderParent, 'This booking cannot be cancelled from this appointment record.', 400)
+    assertWorkflow(!appointment.isGroupParent && !appointment.isBookingOrderParent, 'This booking cannot be changed from this appointment record.', 400)
+    assertWorkflow(!sameDayChangeError(appointment, type), sameDayChangeError(appointment, type), 409)
 
     const branchId = String(appointment.branchId || '').trim()
     const { policy, branch } = await getClinicPoliciesForBranch(firestore, branchId)
-    assertWorkflow(policy.cancellationPolicyEnabled === true && String(policy.cancellationPolicy || '').trim(), 'This clinic does not allow cancellation requests.', 403)
+    if (type === 'cancel') assertWorkflow(isCancellationPolicyEnabled(policy), 'This clinic does not allow cancellation requests.', 403)
+    if (type === 'reschedule') {
+      assertWorkflow(isReschedulePolicyEnabled(policy), 'This clinic does not allow reschedule requests.', 403)
+      assertWorkflow(Number(appointment.rescheduleCount || 0) < rescheduleAllowanceForPolicy(policy), 'You have reached this clinic’s reschedule limit.', 403)
+    }
     const scheduledStart = new Date(`${appointment.date}T${appointment.time}+08:00`)
     assertWorkflow(Number.isFinite(scheduledStart.getTime()) && scheduledStart.getTime() > Date.now(), 'This appointment has already started or passed. Contact the clinic to resolve it.', 409)
     const allowedStatuses = ['paid', 'scheduled', 'awaiting payment', 'contract pending', 'ready to start']
-    assertWorkflow(allowedStatuses.includes(normalizeBookingStatus(appointment.status)) && !appointment.startedAt && !appointment.checkedInAt, 'This appointment can no longer be cancelled.', 409)
+    assertWorkflow(allowedStatuses.includes(normalizeBookingStatus(appointment.status)) && !appointment.startedAt && !appointment.checkedInAt, 'This appointment can no longer be changed.', 409)
+
+    const requestedDate = String(req.body?.date || '').trim()
+    const requestedTime = String(req.body?.time || '').trim()
+    const requestedPractitionerId = String(req.body?.practitionerId || appointment.assignedPractitionerId || appointment.practitionerId || '').trim()
+    if (type === 'reschedule') {
+      assertWorkflow(/^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && parseClockToMinutes(requestedTime) !== null, 'Choose a valid preferred date and time.', 400)
+      assertWorkflow(new Date(`${requestedDate}T${requestedTime}+08:00`) > new Date(), 'Choose a future date and time.', 400)
+      assertWorkflow(requestedPractitionerId, 'The appointment has no assigned practitioner to reschedule with.', 409)
+      assertWorkflow(!await getApprovedLeaveForDate(requestedPractitionerId, requestedDate), 'The practitioner is on approved leave for that date.', 409)
+    }
 
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
-    await firestore.runTransaction(async tx => {
+    const result = await firestore.runTransaction(async tx => {
       const freshSnap = await tx.get(appointmentRef)
       const fresh = freshSnap.exists ? freshSnap.data() || {} : null
       assertWorkflow(fresh && String(fresh.customerId || '') === req.user.uid, 'Appointment not found.', 404)
-      assertWorkflow(['paid', 'scheduled', 'awaiting payment', 'contract pending', 'ready to start'].includes(normalizeBookingStatus(fresh.status)) && !fresh.startedAt && !fresh.checkedInAt, 'This appointment can no longer be cancelled.', 409)
+      assertWorkflow(['paid', 'scheduled', 'awaiting payment', 'contract pending', 'ready to start'].includes(normalizeBookingStatus(fresh.status)) && !fresh.startedAt && !fresh.checkedInAt, 'This appointment can no longer be changed.', 409)
+      assertWorkflow(!sameDayChangeError(fresh, type), sameDayChangeError(fresh, type), 409)
       const freshStart = new Date(`${fresh.date}T${fresh.time}+08:00`)
       assertWorkflow(Number.isFinite(freshStart.getTime()) && freshStart.getTime() > Date.now(), 'This appointment has already started or passed. Contact the clinic to resolve it.', 409)
-      const commissionAmount = Math.max(0, Number(fresh.commissionAmount || 0))
-      const paidAmount = Math.max(0, Number(fresh.amountPaid || 0))
-      const refundableAmount = Math.max(0, paidAmount - commissionAmount)
-      tx.update(appointmentRef, {
-        status: 'Cancellation Requested',
-        cancellationReason: reason,
-        cancellationRequestedAt: timestamp,
-        cancellationPolicySnapshot: String(policy.cancellationPolicy || '').trim(),
-        refundRequestedAmount: refundableAmount,
-        refundCommissionAmount: commissionAmount,
-        refundStatus: 'Pending Approval',
-        updatedAt: timestamp,
-      })
+      if (type === 'cancel') {
+        const refundTerms = cancellationTermsSnapshot(policy, fresh)
+        tx.update(appointmentRef, {
+          status: 'Cancellation Requested',
+          cancellationReason: reason,
+          cancellationRequestedAt: timestamp,
+          cancellationPolicySnapshot: String(policy.cancellationPolicy || '').trim(),
+          cancellationRefundPolicySnapshot: refundTerms,
+          refundRequestedAmount: refundTerms.refundAmount,
+          refundCommissionAmount: refundTerms.commissionAmount,
+          refundStatus: 'Pending Approval',
+          updatedAt: timestamp,
+        })
+      } else {
+        assertWorkflow(Number(fresh.rescheduleCount || 0) < rescheduleAllowanceForPolicy(policy), 'You have reached this clinic’s reschedule limit.', 403)
+        const prepared = await prepareBooking({
+          tx,
+          db: firestore,
+          reservation: { ...fresh, date: requestedDate, time: requestedTime, endTime: '', practitionerId: requestedPractitionerId, assignedPractitionerId: requestedPractitionerId, groupBooking: null },
+          getBookingRange,
+          rangesOverlap,
+          appointmentId,
+        })
+        tx.update(appointmentRef, {
+          status: 'Reschedule Requested',
+          requestedDate,
+          requestedTime,
+          requestedPractitionerId,
+          requestedSlotKey: String(req.body?.slotKey || '').trim(),
+          rescheduleReason: reason,
+          rescheduleRequestedAt: timestamp,
+          reschedulePolicySnapshot: String(policy.reschedulePolicy || '').trim(),
+          rescheduleAllowanceSnapshot: rescheduleAllowanceForPolicy(policy),
+          rescheduleCountAtRequest: Number(fresh.rescheduleCount || 0),
+          requestedEndTime: prepared.data.endTime,
+          updatedAt: timestamp,
+        })
+      }
       tx.set(firestore.collection('appointmentAudit').doc(), {
         appointmentId,
         branchId,
-        action: 'cancellation_requested',
+        action: type === 'cancel' ? 'cancellation_requested' : 'reschedule_requested',
         actorId: req.user.uid,
         previousStatus: fresh.status || '',
-        nextStatus: 'Cancellation Requested',
+        nextStatus: type === 'cancel' ? 'Cancellation Requested' : 'Reschedule Requested',
+        ...(type === 'reschedule' ? { date: requestedDate, time: requestedTime, practitionerId: requestedPractitionerId } : {}),
         createdAt: timestamp,
       })
+      return { status: type === 'cancel' ? 'Cancellation Requested' : 'Reschedule Requested' }
     })
 
     const clinicRecipients = [...new Set([
@@ -8460,8 +8653,10 @@ app.post('/appointments/:id/request-change', requireAuth, async (req, res) => {
         await firestore.collection('notifications').add({
           recipientUserId,
           branchId,
-          title: 'Appointment cancellation requested',
-          message: `${appointment.customerName || 'A customer'} requested to cancel ${appointment.service || 'an appointment'} scheduled for ${appointment.date || ''} ${appointment.time || ''}.`,
+          title: type === 'cancel' ? 'Appointment cancellation requested' : 'Appointment reschedule requested',
+          message: type === 'cancel'
+            ? `${appointment.customerName || 'A customer'} requested to cancel ${appointment.service || 'an appointment'} scheduled for ${appointment.date || ''} ${appointment.time || ''}.`
+            : `${appointment.customerName || 'A customer'} requested to move ${appointment.service || 'an appointment'} to ${requestedDate} ${requestedTime}.`,
           link: '/crm/appointments',
           read: false,
           deleted: false,
@@ -8474,24 +8669,28 @@ app.post('/appointments/:id/request-change', requireAuth, async (req, res) => {
     await createAppointmentNotification({
       firestore,
       customerId: req.user.uid,
-      title: 'Cancellation request submitted',
-      message: 'Your cancellation request was sent to the clinic for review. You will be notified when it is decided.',
-    }).catch(error => console.warn('Failed to create cancellation request notification:', error?.message || error))
+      title: type === 'cancel' ? 'Cancellation request submitted' : 'Reschedule request submitted',
+      message: type === 'cancel'
+        ? 'Your cancellation request was sent to the clinic for review. You will be notified when it is decided.'
+        : `Your preferred new schedule, ${requestedDate} at ${requestedTime}, was sent to the clinic. The current appointment remains in place until the clinic approves it.`,
+    }).catch(error => console.warn(`Failed to create ${type} request notification:`, error?.message || error))
     const customerEmail = String(appointment.customerEmail || '').trim().toLowerCase()
     if (customerEmail && postmarkClient && senderEmail) {
       try {
         await sendPostmarkMessage({
           to: customerEmail,
-          subject: 'Your appointment cancellation request was received',
-          text: `We sent your cancellation request for ${appointment.service || 'your appointment'} on ${[appointment.date, appointment.time].filter(Boolean).join(' at ')} to the clinic for review. The appointment is not cancelled until the clinic makes a decision.`,
+          subject: type === 'cancel' ? 'Your appointment cancellation request was received' : 'Your appointment reschedule request was received',
+          text: type === 'cancel'
+            ? `We sent your cancellation request for ${appointment.service || 'your appointment'} on ${[appointment.date, appointment.time].filter(Boolean).join(' at ')} to the clinic for review. The appointment is not cancelled until the clinic makes a decision.`
+            : `We sent your preferred new schedule for ${appointment.service || 'your appointment'} to the clinic for review. Your current schedule remains active until the clinic makes a decision.`,
         })
       } catch (emailError) {
-        console.warn('Failed to email cancellation request confirmation:', emailError?.message || emailError)
+        console.warn(`Failed to email ${type} request confirmation:`, emailError?.message || emailError)
       }
     }
-    return res.json({ success: true, data: { appointmentId, status: 'Cancellation Requested' } })
+    return res.json({ success: true, data: { appointmentId, status: result.status } })
   } catch (error) {
-    return res.status(error.status || 500).json({ success: false, error: error?.message || 'Unable to submit the cancellation request.' })
+    return res.status(error.status || 500).json({ success: false, error: error?.message || 'Unable to submit the appointment change request.' })
   }
 })
 
@@ -8641,8 +8840,9 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       refundId = refundData?.data?.id || null
       refundStatus = refundData?.data?.attributes?.status || 'pending'
     }
-    const nextStatus = approved ? afterPaymentStatus(appointment) : 'Rejected'
-    const nextPaymentStatus = isPaid ? 'Paid' : approved ? 'Pending' : 'Not Applicable'
+    const awaitsSameDayClearance = appointment.sameDayTreatmentStatus === 'pending_clinical_clearance'
+    const nextStatus = approved ? (awaitsSameDayClearance ? 'Awaiting Clinical Clearance' : afterPaymentStatus(appointment)) : 'Rejected'
+    const nextPaymentStatus = isPaid ? 'Paid' : approved ? (awaitsSameDayClearance ? 'Not Applicable' : 'Pending') : 'Not Applicable'
     const update = {
       status: nextStatus,
       approvalStatus: approved ? 'Approved' : 'Rejected',
@@ -8665,6 +8865,32 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
     await firestore.runTransaction(async (tx) => {
       const latest = (await tx.get(appointmentRef)).data()
       assertWorkflow(latest && latest.status === appointment.status, 'This booking was already updated. Refresh and try again.')
+      if (latest.sameDayBookingId) {
+        const linkedId = String(latest.sameDayTreatmentAppointmentId || latest.sameDayConsultationAppointmentId || '').trim()
+        assertWorkflow(linkedId && linkedId !== appointmentId, 'The linked same-day appointment is missing.', 409)
+        const linkedRef = firestore.collection('appointments').doc(linkedId)
+        const linkedSnap = await tx.get(linkedRef)
+        assertWorkflow(linkedSnap.exists, 'The linked same-day appointment is missing.', 409)
+        const linked = linkedSnap.data() || {}
+        assertWorkflow(linked.sameDayBookingId === latest.sameDayBookingId
+          && (latest.sameDayTreatmentAppointmentId ? linked.sameDayConsultationAppointmentId === appointmentId : linked.sameDayTreatmentAppointmentId === appointmentId),
+        'The consultation and treatment links do not match.', 409)
+        const timestamp = admin.firestore.FieldValue.serverTimestamp()
+        const makePairUpdate = (record) => {
+          const treatmentPending = record.sameDayTreatmentStatus === 'pending_clinical_clearance'
+          return {
+            approvalStatus: approved ? 'Approved' : 'Rejected',
+            status: approved ? (treatmentPending ? 'Awaiting Clinical Clearance' : afterPaymentStatus(record)) : 'Rejected',
+            paymentStatus: approved ? (treatmentPending ? 'Not Applicable' : 'Pending') : 'Not Applicable',
+            approvalNote: decisionNote, approvedAt: approved ? timestamp : null, approvedById: approved ? req.user.uid : null,
+            rejectedAt: approved ? null : timestamp, rejectedById: approved ? null : req.user.uid,
+            ...(treatmentPending && !approved ? { sameDayTreatmentStatus: 'booking_rejected' } : {}), updatedAt: timestamp,
+          }
+        }
+        tx.update(appointmentRef, makePairUpdate(latest))
+        tx.update(linkedRef, makePairUpdate(linked))
+        return
+      }
       let prepared
       let groupRef = null
       let children = []
@@ -8835,6 +9061,9 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       })
     }
 
+    const sameDayRestriction = sameDayChangeError(appointmentData, requestType)
+    if (sameDayRestriction) return res.status(409).json({ success: false, error: sameDayRestriction })
+
     req.userContext = req.userContext || await loadUserContext(req.user.uid)
     const userSnap = await firestore.collection('users').doc(req.user.uid).get()
     const userData = userSnap.exists ? userSnap.data() || {} : {}
@@ -8871,8 +9100,13 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
 
     if (requestType === 'cancel') {
       const totalAmount = Number(appointmentData.totalAmount || appointmentData.amountPaid || appointmentData.amount || 0)
-      commissionAmount = Number(appointmentData.commissionAmount || appointmentData.refundCommissionAmount || 0)
-      refundAmount = Math.max(0, Math.min(totalAmount, Number(appointmentData.amountPaid || 0)) - commissionAmount)
+      const refundSnapshot = appointmentData.cancellationRefundPolicySnapshot
+      const paidAmount = Math.max(0, Number(appointmentData.amountPaid || 0))
+      commissionAmount = Math.min(paidAmount, Math.max(0, Number(refundSnapshot?.commissionAmount ?? appointmentData.commissionAmount ?? appointmentData.refundCommissionAmount ?? 0)))
+      const eligibleRefundBase = Math.max(0, Math.min(totalAmount, paidAmount) - commissionAmount)
+      refundAmount = refundSnapshot?.version === 1
+        ? Math.min(eligibleRefundBase, Math.max(0, Number(refundSnapshot.refundAmount || 0)))
+        : eligibleRefundBase
 
       const isPayMongoPaid = isPayMongoPaidAppointment(appointmentData)
       const paymentId = String(appointmentData.paymongoPaymentId || '').trim()
@@ -8923,7 +9157,14 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
         await appointmentRef.update({ paymongoRefundId, paymongoRefundStatus })
       }
 
-      await appointmentRef.update({
+      await firestore.runTransaction(async tx => {
+        const freshSnap = await tx.get(appointmentRef)
+        const fresh = freshSnap.exists ? freshSnap.data() || {} : null
+        assertWorkflow(fresh && normalized(fresh.status) === 'cancellation requested', 'This cancellation request is no longer awaiting approval.', 409)
+        assertWorkflow(!sameDayChangeError(fresh, 'cancel'), sameDayChangeError(fresh, 'cancel'), 409)
+        const timestamp = admin.firestore.FieldValue.serverTimestamp()
+        const releasedTreatmentId = await cancelPendingSameDayTreatment({ tx, db: firestore, appointmentId, consultation: fresh, timestamp })
+        tx.update(appointmentRef, {
         status: 'Cancelled',
         refundProcessing: false,
         requestDecisionStatus: 'Approved',
@@ -8945,7 +9186,9 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
         paymongoRefundStatus: paymongoRefundStatus || appointmentData.paymongoRefundStatus || null,
         paymentStatus: isPayMongoPaid && refundAmount > 0 ? 'Refunded' : String(appointmentData.paymentStatus || ''),
         refundedAt: isPayMongoPaid && refundAmount > 0 ? admin.firestore.FieldValue.serverTimestamp() : appointmentData.refundedAt || null,
+        ...(releasedTreatmentId ? { sameDayTreatmentStatus: 'booking_cancelled' } : {}),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
       })
 
       if (isPayMongoPaid && refundAmount > 0) {
@@ -9059,6 +9302,10 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
     const codeDelivery = await firestore.runTransaction(async tx => {
       const fresh = (await tx.get(appointmentRef)).data()
       assertWorkflow(fresh && normalized(fresh.status) === 'reschedule requested' && !fresh.startedAt && !fresh.checkedInAt, 'This appointment can no longer be rescheduled.')
+      assertWorkflow(!sameDayChangeError(fresh, 'reschedule'), sameDayChangeError(fresh, 'reschedule'), 409)
+      const allowance = Number(fresh.rescheduleAllowanceSnapshot ?? 1)
+      assertWorkflow(Number(fresh.rescheduleCount || 0) < allowance, 'This appointment has reached the reschedule limit.', 409)
+      if (fresh.rescheduleCountAtRequest !== undefined) assertWorkflow(Number(fresh.rescheduleCountAtRequest) === Number(fresh.rescheduleCount || 0), 'The reschedule allowance changed while this request was pending.', 409)
       const prepared = await prepareBooking({ tx, db: firestore, reservation: { ...fresh, date: requestedDate, time: requestedTime, endTime: '', practitionerId: requestedPractitionerId, assignedPractitionerId: requestedPractitionerId, groupBooking: null }, getBookingRange, rangesOverlap, appointmentId })
       const serviceKey = fresh.serviceKey ? String(crypto.randomInt(100000, 1000000)) : null
       const status = afterPaymentStatus({ ...fresh, startedAt: null, checkedInAt: null, workerKeyVerified: false })
@@ -9172,6 +9419,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
       assertWorkflow(appointment?.source === 'walk_in', 'Select a walk-in appointment.')
       await authorizeClinicAction(req.user.uid, appointment.branchId, 'payments:create')
       assertWorkflow(appointment.branchId === metadata.branchId && appointment.status === 'Unpaid', 'This appointment is not ready for payment.')
+      assertWalkInPaymentAgreements(appointment)
       assertWorkflow(Math.round(Number(appointment.totalAmount ?? appointment.amount) * 100) === Number(amount), 'Payment amount does not match the appointment.')
     } catch (error) { return res.status(error.status || 400).json({ success: false, error: error.message }) }
   }
@@ -9212,6 +9460,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
           const appointmentSnap = await firestore.collection('appointments').doc(appointmentId).get()
           if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
           const appointmentData = appointmentSnap.data() || {}
+          if (appointmentData.sameDayTreatmentStatus === 'pending_clinical_clearance') return res.status(409).json({ success: false, error: 'The practitioner must clear same-day treatment after the consultation before payment is available.' })
           if (appointmentData.paymentManagedByOrganizer && !appointmentData.isBookingOrderParent && !appointmentData.isGroupParent) return res.status(409).json({ success: false, error: 'Pay through the shared booking checkout.' })
           if (String(appointmentData.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
           if (!['approved', 'awaiting payment', 'payment pending', 'balance due'].includes(normalizeBookingStatus(appointmentData.status))) {
@@ -9223,7 +9472,8 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
             const childIds = Array.isArray(appointmentData.appointmentIds) ? appointmentData.appointmentIds : []
             if (!childIds.length) return res.status(409).json({ success: false, error: 'This booking order has no appointments to pay for.' })
             const children = await Promise.all(childIds.map(id => firestore.collection('appointments').doc(String(id)).get()))
-            if (children.some(child => !child.exists || child.data()?.approvalStatus !== 'Approved')) return res.status(409).json({ success: false, error: 'Every appointment in this order must be approved before payment.' })
+            const childAppointments = children.filter(child => child.exists).map(child => ({ id: child.id, ...child.data() }))
+            if (!bookingOrderReadyForPayment(appointmentData, childAppointments)) return res.status(409).json({ success: false, error: 'Every appointment in this order must be approved and have a signed agreement before payment.' })
           }
           const remainingAmount = paymentDue(appointmentData) / 100
           if (remainingAmount <= 0) return res.status(409).json({ success: false, error: 'This appointment has no remaining balance.' })
@@ -9421,11 +9671,19 @@ const recordAppointmentPayment = async (req, res) => {
     if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found' })
     const appointment = appointmentSnap.data() || {}
     if (String(appointment.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
+    if (appointment.sameDayTreatmentStatus === 'pending_clinical_clearance') return res.status(409).json({ success: false, error: 'The practitioner must clear same-day treatment after the consultation before payment is available.' })
     if (appointment.paymentManagedByOrganizer && !appointment.isBookingOrderParent && !appointment.isGroupParent) return res.status(409).json({ success: false, error: 'Pay through the shared booking checkout.' })
     if (!(appointment.recordedPaymentSessions || []).includes(checkoutSessionId) && !['approved', 'awaiting payment', 'payment pending', 'contract pending', 'balance due', 'paid', 'partially paid'].includes(normalizeBookingStatus(appointment.status))) {
       return res.status(409).json({ success: false, error: 'Payment is not available for this appointment yet.' })
     }
     if (appointment.approvalStatus !== 'Approved') return res.status(409).json({ success: false, error: 'The clinic must approve this booking before payment.' })
+
+    if (appointment.isBookingOrderParent) {
+      const childIds = Array.isArray(appointment.appointmentIds) ? appointment.appointmentIds : []
+      const children = await Promise.all(childIds.map(id => firestore.collection('appointments').doc(String(id)).get()))
+      const childAppointments = children.filter(child => child.exists).map(child => ({ id: child.id, ...child.data() }))
+      if (!bookingOrderReadyForPayment(appointment, childAppointments)) return res.status(409).json({ success: false, error: 'Every appointment in this order must be approved and have a signed agreement before payment.' })
+    }
 
     if ((appointment.recordedPaymentSessions || []).includes(checkoutSessionId) || String(appointment.paymongoCheckoutSessionId || '').trim() === checkoutSessionId) {
       return res.json({
@@ -9463,6 +9721,7 @@ const recordAppointmentPayment = async (req, res) => {
       const fresh = (await tx.get(appointmentRef)).data()
       const sessions = fresh.recordedPaymentSessions || []
       if (sessions.includes(checkoutSessionId) || fresh.paymongoCheckoutSessionId === checkoutSessionId) return { status: fresh.status, amountPaid: fresh.amountPaid, alreadyRecorded: true }
+      assertWorkflow(fresh.sameDayTreatmentStatus !== 'pending_clinical_clearance', 'The practitioner must clear same-day treatment after the consultation before payment is available.', 409)
       assertWorkflow(fresh.approvalStatus === 'Approved' && ['awaiting payment', 'approved', 'payment pending', 'balance due'].includes(normalized(fresh.status)), 'This booking cannot receive payment at this stage.')
       assertWorkflow(Math.round(paymentAmount * 100) === paymentDue(fresh), 'Verified payment does not match the amount due.')
       const amountPaid = Math.round((Number(fresh.amountPaid || 0) + paymentAmount) * 100) / 100
@@ -9482,6 +9741,9 @@ const recordAppointmentPayment = async (req, res) => {
         const ref = firestore.collection('appointments').doc(String(id)), snap = await tx.get(ref)
         assertWorkflow(snap.exists, 'An individual appointment is missing.')
         paidChildren.push({ ref, data: snap.data() })
+      }
+      if (fresh.isBookingOrderParent) {
+        assertWorkflow(bookingOrderReadyForPayment(fresh, paidChildren.map(({ ref, data }) => ({ id: ref.id, ...data }))), 'Every appointment in this order must be approved and have a signed agreement before payment.')
       }
       tx.set(firestore.collection('transactions').doc('booking-' + checkoutSessionId), { branchId: fresh.branchId, customerId: fresh.customerId, appointmentId, checkoutSessionId, type: 'service_payment', service: fresh.service || 'Service booking', amount: paymentAmount, total: paymentAmount, method: payment.attributes?.source?.type || payment.attributes?.payment_method?.type || 'Online', status: 'Paid', createdAt: timestamp })
       tx.update(appointmentRef, {

@@ -54,6 +54,17 @@ test('Service bookings require the actual linked online or on-site consultation'
   for (const source of ['customer_booking_request', 'walk_in']) assert.equal((await prepare(source)).data.service, 'Facial')
 })
 
+test('A same-day service may bypass prior clearance only when its saved configuration is enabled', async () => {
+  const h = fixture()
+  h.seed('productServicePosts', 'assessment', { branchId: 'clinic', postType: 'Consultation', title: 'Assessment', price: 200, durationMinutes: 30, isPublished: true, financeStatus: 'approved', consultationModes: ['on-site'], termsAndConditions: 'Consultation terms' })
+  h.seed('productServicePosts', 'facial', { branchId: 'clinic', postType: 'Service', title: 'Facial', price: 500, durationMinutes: 30, isPublished: true, financeStatus: 'approved', termsAndConditions: 'Treatment terms', requiresConsultationFirst: true, linkedConsultationId: 'assessment', sameDayConsultationAllowed: true })
+  const prepare = allowSameDayConsultationRequest => h.db.runTransaction(tx => prepareBooking({ tx, db: h.db, reservation: reservation(), getBookingRange: range, rangesOverlap: overlap, allowSameDayConsultationRequest }))
+  await assert.rejects(prepare(false), /linked consultation/)
+  assert.equal((await prepare(true)).data.service, 'Facial')
+  h.seed('productServicePosts', 'facial', { ...h.records.get('productServicePosts/facial'), sameDayConsultationAllowed: false })
+  await assert.rejects(prepare(true), /linked consultation/)
+})
+
 test('Service bookings reject expired materials before reserving an appointment', async () => {
   const h = fixture()
   h.seed('productServicePosts', 'facial', {
@@ -190,6 +201,23 @@ test('Session completion advances the original plan once even when a balance is 
   assert.equal(h.records.get('treatmentSessions/plan-2').status, 'Completed')
   assert.equal(h.records.get('treatmentSessions/plan-3').earliestScheduleDate, '2030-01-08')
   assert.equal((await confirm()).code, 409)
+})
+
+test('Same-day treatment cannot be signed or checked in before practitioner clearance', async () => {
+  const h = transactionDb(), routes = new Map()
+  h.seed('appointments', 'same-day-treatment', {
+    branchId: 'clinic', customerId: 'customer', practitionerId: 'worker', assignedPractitionerId: 'worker',
+    type: 'Service', source: 'customer_booking_request', status: 'Awaiting Clinical Clearance', approvalStatus: 'Approved',
+    sameDayBookingId: 'pair', sameDayConsultationAppointmentId: 'same-day-consult', sameDayTreatmentStatus: 'pending_clinical_clearance',
+    contract: { status: 'pending', terms: 'Treatment terms' }, totalAmount: 500, paymentStatus: 'Not Applicable',
+  })
+  registerBookingMilestones({ post: (path, auth, handler) => routes.set(path, handler) }, { admin: h.admin, requireAuth() {}, authorizeClinicAction: async () => {} })
+  const sign = await callRoute(routes.get('/appointments/:id/contract/sign'), 'customer', { accepted: true, signatureImage: 'invalid' }, { id: 'same-day-treatment' })
+  assert.equal(sign.code, 409)
+  assert.match(sign.body.error, /clear this treatment/)
+  const checkIn = await callRoute(routes.get('/appointments/:id/verify-service-key'), 'reception', { serviceKey: '123456' }, { id: 'same-day-treatment' })
+  assert.equal(checkIn.code, 409)
+  assert.match(checkIn.body.error, /clear same-day treatment/)
 })
 
 test('Free-plan batch bookings become payable without a clinic approval queue', async () => {

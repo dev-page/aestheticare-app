@@ -106,18 +106,18 @@
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs hover:bg-violet-500 disabled:opacity-60"
                       :disabled="startingId === appointment.id"
-                      @click="startConsultation(appointment)"
+                      @click="openStartChecklist(appointment)"
                     >
-                      {{ startingId === appointment.id ? 'Starting...' : 'Start Consultation' }}
+                      {{ startingId === appointment.id ? 'Starting...' : 'Confirm and Start' }}
                     </button>
                     <button
                       v-if="appointment.status === 'Ongoing'"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-500 disabled:opacity-60"
                       :disabled="finishingId === appointment.id"
-                      @click="completeConsultation(appointment)"
+                      @click="openCompletionForm(appointment)"
                     >
-                      {{ finishingId === appointment.id ? 'Completing...' : 'Mark Consultation Done' }}
+                      {{ finishingId === appointment.id ? 'Completing...' : 'Add notes and finish' }}
                     </button>
                     <p v-if="appointment.status === 'Ongoing'" class="w-full text-xs font-medium" :class="hasConsultationWindowEnded(appointment) ? 'text-amber-300' : 'text-emerald-300'">{{ consultationTimerLabel(appointment) }}</p>
                     <p v-if="meetLinkGateReason(appointment)" class="w-full text-xs text-amber-300">
@@ -137,6 +137,51 @@
         </div>
       </div>
     </component>
+
+    <Modal
+      :is-open="Boolean(startChecklistAppointment)"
+      title="Confirm before starting"
+      :close-on-backdrop="false"
+      @close="startChecklistAppointment = null"
+    >
+      <p class="mb-4 text-sm text-slate-600">Check the customer in Google Meet and verify their identity before starting the consultation timer.</p>
+      <label class="mb-3 flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+        <input v-model="startIdentityVerified" type="checkbox" class="mt-1" />
+        <span>I verified that the person in Meet is the booked customer.</span>
+      </label>
+      <label class="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+        <input v-model="startReadyToBegin" type="checkbox" class="mt-1" />
+        <span>Both participants are present and ready to begin.</span>
+      </label>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="rounded-lg border px-4 py-2 text-sm" @click="startChecklistAppointment = null">Cancel</button>
+          <button type="button" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="!startIdentityVerified || !startReadyToBegin || startingId === startChecklistAppointment?.id" @click="startConsultation(startChecklistAppointment)">{{ startingId === startChecklistAppointment?.id ? 'Starting…' : 'Start consultation' }}</button>
+        </div>
+      </template>
+    </Modal>
+
+    <Modal
+      :is-open="Boolean(completionAppointment)"
+      title="Finish online consultation"
+      :close-on-backdrop="false"
+      @close="closeCompletionForm"
+    >
+      <p class="mb-4 text-sm text-slate-600">Save the consultation notes before marking the visit complete. The customer can then confirm completion or report a problem. When the call is over, also choose <strong>End meeting for all</strong> in Google Meet; this action only closes the visit in the app.</p>
+      <label for="consultation-completion-notes" class="mb-2 block text-sm font-semibold text-slate-700">Consultation notes and recommendations</label>
+      <textarea id="consultation-completion-notes" v-model="completionNotes" rows="5" maxlength="5000" class="mb-1 w-full rounded-lg border border-slate-300 p-3 text-sm text-slate-800" placeholder="Record the assessment, recommendations, and follow-up guidance." />
+      <p class="mb-4 text-xs text-slate-500">Enter at least 10 characters. You can save a draft in Consultation controls.</p>
+      <label for="consultation-prescriptions" class="mb-2 block text-sm font-semibold text-slate-700">Prescriptions (optional)</label>
+      <textarea id="consultation-prescriptions" v-model="completionPrescriptionsText" rows="4" class="w-full rounded-lg border border-slate-300 p-3 font-mono text-xs text-slate-800" placeholder="One item per line: name | dosage | frequency | duration | instructions | quantity" />
+      <p class="mt-1 text-xs text-slate-500">Leave blank if none. Separate fields with | and enter a whole-number quantity.</p>
+      <p v-if="completionError" role="alert" class="mt-3 text-sm text-rose-600">{{ completionError }}</p>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="rounded-lg border px-4 py-2 text-sm" :disabled="finishingId === completionAppointment?.id" @click="closeCompletionForm">Cancel</button>
+          <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="completionNotes.trim().length < 10 || finishingId === completionAppointment?.id" @click="completeConsultation(completionAppointment)">{{ finishingId === completionAppointment?.id ? 'Saving…' : 'Save notes and finish' }}</button>
+        </div>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -151,6 +196,7 @@ import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OnlineConsultationControls from '@/components/common/OnlineConsultationControls.vue'
+import Modal from '@/components/common/Modal.vue'
 import { onlineWindow, onlineAccessOpen } from '../../../../../../shared/onlineConsultation.js'
 import GoogleHostingAccount from '@/components/common/GoogleHostingAccount.vue'
 import { Icon } from '@iconify/vue'
@@ -158,12 +204,12 @@ import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { formatClockTime } from '@/utils/appointmentDss'
 import { initialPaymentReceived, normalized } from '../../../../../../backend/otp-backend/bookingWorkflow.js'
-import { promptForPrescriptions } from '@/utils/prescriptions'
+import { parsePrescriptionText } from '@/utils/prescriptions'
 
 export default {
   name: 'PractitionerOnlineConsultation',
   props: { embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' }, existingOnly: { type: Boolean, default: false } },
-  components: { OwnerSidebar, Icon, GoogleHostingAccount, OnlineConsultationControls },
+  components: { OwnerSidebar, Icon, GoogleHostingAccount, OnlineConsultationControls, Modal },
   setup(props) {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -180,6 +226,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const startingId = ref('')
     const finishingId = ref('')
     const invitingId = ref('')
+    const startChecklistAppointment = ref(null)
+    const startIdentityVerified = ref(false)
+    const startReadyToBegin = ref(false)
+    const completionAppointment = ref(null)
+    const completionNotes = ref('')
+    const completionPrescriptionsText = ref('')
+    const completionError = ref('')
     const clockNow = ref(Date.now())
     const isSeedingDemo = ref(false)
     const lastDemoAppointmentId = ref('')
@@ -383,9 +436,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }))
     }
 
-    const startConsultation = async (appointment) => {
+    const openStartChecklist = appointment => {
       if (!canStartConsultation(appointment)) return
-      if (!window.confirm('Is the customer present in Google Meet, has their identity been verified, and are both of you ready to begin?')) return
+      startIdentityVerified.value = false
+      startReadyToBegin.value = false
+      startChecklistAppointment.value = appointment
+    }
+
+    const startConsultation = async (appointment) => {
+      if (!canStartConsultation(appointment) || !startIdentityVerified.value || !startReadyToBegin.value) return
       startingId.value = appointment.id
       try {
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
@@ -400,6 +459,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         Object.assign(appointment, payload.data || {})
         appointment.status = payload?.data?.status || 'Ongoing'
         appointment.startedAt = new Date().toISOString()
+        startChecklistAppointment.value = null
         toast.success('Online consultation started.')
         // The practitioner enters the waiting room using Join Call before starting.
       } catch (error) {
@@ -410,15 +470,32 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
 
+    const prescriptionsToText = prescriptions => (Array.isArray(prescriptions) ? prescriptions : [])
+      .map(item => [item.name || item.medication || item.productName, item.dosage || item.strength, item.frequency, item.duration, item.instructions || item.notes, item.quantity]
+        .map(value => String(value ?? '')).join(' | '))
+      .join('\n')
+
+    const openCompletionForm = appointment => {
+      if (!appointment?.id || String(appointment.status || '').trim() !== 'Ongoing') return
+      completionAppointment.value = appointment
+      completionNotes.value = String(appointment.treatmentNotes || '')
+      completionPrescriptionsText.value = prescriptionsToText(appointment.prescriptions)
+      completionError.value = ''
+    }
+
+    const closeCompletionForm = () => {
+      if (finishingId.value) return
+      completionAppointment.value = null
+      completionError.value = ''
+    }
+
     const completeConsultation = async (appointment) => {
       if (!appointment?.id || String(appointment.status || '').trim() !== 'Ongoing') return
       finishingId.value = appointment.id
       try {
-        const treatmentNotes = window.prompt('Consultation notes and recommendations (at least 10 characters):', appointment.treatmentNotes || '')
-        if (treatmentNotes === null) return
-        if (treatmentNotes.trim().length < 10) throw Error('Enter consultation notes of at least 10 characters.')
-        const prescriptions = promptForPrescriptions(appointment.prescriptions)
-        if (prescriptions === null) return
+        const treatmentNotes = String(completionNotes.value || '').trim()
+        if (treatmentNotes.length < 10) throw Error('Enter consultation notes of at least 10 characters.')
+        const prescriptions = parsePrescriptionText(completionPrescriptionsText.value)
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -429,8 +506,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           throw new Error(payload?.error || 'Failed to complete the online consultation.')
         }
         appointment.status = payload?.data?.status || 'Awaiting Customer Confirmation'
+        appointment.treatmentNotes = treatmentNotes
+        appointment.prescriptions = prescriptions
+        appointment.workerCompleted = true
+        appointment.workerCompletedAt = new Date().toISOString()
+        completionAppointment.value = null
         toast.success('Consultation marked done. End meeting for all in Google Meet; the customer can confirm receipt or report a problem.')
       } catch (error) {
+        completionError.value = error.message || 'Failed to save consultation notes.'
         console.error('Failed to complete online consultation:', error)
         toast.error(error?.message || 'Failed to complete the online consultation.')
       } finally {
@@ -527,6 +610,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       startingId,
       finishingId,
+      startChecklistAppointment,
+      startIdentityVerified,
+      startReadyToBegin,
+      completionAppointment,
+      completionNotes,
+      completionPrescriptionsText,
+      completionError,
       currentBranchId,
       currentUserId,
       isSeedingDemo,
@@ -538,7 +628,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       joinCall,
       inviteCustomer,
       canStartConsultation,
+      openStartChecklist,
       startConsultation,
+      openCompletionForm,
+      closeCompletionForm,
       completeConsultation,
       copyMeetLink,
       canJoinConsultation,

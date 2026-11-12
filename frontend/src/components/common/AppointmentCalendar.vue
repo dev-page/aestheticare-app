@@ -9,16 +9,16 @@
       <span v-for="day in weekdays" :key="day" class="calendar-weekday">{{ day }}</span>
       <template v-for="(day, index) in calendarDays" :key="day?.date || `blank-${index}`">
         <span v-if="!day" aria-hidden="true" />
-        <button v-else type="button" :disabled="disabled || !day.available" :class="{ 'is-selected': modelValue === day.date, 'is-today': day.date === minDate }" :aria-label="`${day.label}${day.available ? ', available' : ', unavailable'}`" :aria-pressed="modelValue === day.date" @click="$emit('update:modelValue', day.date)">{{ day.number }}<span v-if="day.available" class="calendar-dot" aria-hidden="true" /></button>
+        <button v-else type="button" :disabled="disabled || !day.selectable" :class="{ 'is-selected': modelValue === day.date, 'is-today': day.date === minDate }" :aria-label="`${day.label}${props.availabilityAware ? (day.available ? ', available' : ', unavailable') : ''}`" :aria-pressed="modelValue === day.date" @click="$emit('update:modelValue', day.date)">{{ day.number }}<span v-if="props.availabilityAware && day.available" class="calendar-dot" aria-hidden="true" /></button>
       </template>
     </div>
-    <p class="calendar-help">{{ disabled ? 'Choose a service and practitioner to see available dates.' : 'Select an available date, then choose a time. One service per person per day.' }}</p>
+    <p class="calendar-help">{{ props.helpText || (disabled ? 'Choose a service and practitioner to see available dates.' : 'Select an available date, then choose a time. One service per person per day.') }}</p>
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-const props = defineProps({ modelValue: { type: String, default: '' }, minDate: { type: String, required: true }, disabled: Boolean, isAvailable: { type: Function, default: () => true } })
+const props = defineProps({ modelValue: { type: String, default: '' }, minDate: { type: String, required: true }, disabled: Boolean, isAvailable: { type: Function, default: () => true }, availabilityAware: { type: Boolean, default: true }, helpText: { type: String, default: '' } })
 defineEmits(['update:modelValue'])
 const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const monthKey = ref((props.modelValue || props.minDate).slice(0, 7))
@@ -34,7 +34,8 @@ const calendarDays = computed(() => {
   const count = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
   return [...Array((first.getUTCDay() + 6) % 7).fill(null), ...Array.from({ length: count }, (_, index) => {
     const number = index + 1, date = `${monthKey.value}-${String(number).padStart(2, '0')}`
-    return { number, date, available: date >= props.minDate && !props.disabled && props.isAvailable(date), label: new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`)) }
+    const available = date >= props.minDate && !props.disabled && (!props.availabilityAware || props.isAvailable(date))
+    return { number, date, available, selectable: available, label: new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`)) }
   })]
 })
 watch(() => props.modelValue, date => { if (date) monthKey.value = date.slice(0, 7) })

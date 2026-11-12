@@ -613,7 +613,7 @@ const ownerOnlyPermissionKeys = new Set(
 const permissionSuggestionRules = [
   {
     match: ['reception', 'front desk', 'frontdesk', 'receptionist', 'desk'],
-    permissions: ['clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:review', 'payments:view', 'payments:create', 'inbox:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
+    permissions: ['clients:view', 'clients:create', 'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'payments:view', 'payments:create', 'inbox:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['practitioner', 'doctor', 'dentist', 'nurse', 'therapist', 'clinician'],

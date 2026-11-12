@@ -266,6 +266,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       discountPercent: 0,
       requiresConsultationFirst: false,
         linkedConsultationId: '',
+      sameDayConsultationAllowed: false,
+      sameDayConsultationBufferMinutes: 15,
       consultationFee: 0,
       consultationModes: ['on-site'], consultationGraceMinutes: 10, consultationBufferMinutes: 15,
       followUpAllowed: false,
@@ -300,6 +302,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       discountPercent: 0,
       requiresConsultationFirst: false,
         linkedConsultationId: '',
+      sameDayConsultationAllowed: false,
+      sameDayConsultationBufferMinutes: 15,
       consultationFee: 0,
       consultationModes: ['on-site'],
       followUpAllowed: false,
@@ -336,6 +340,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         ? [...new Set(modes.map(normalizeConsultationMode).filter(mode => ['online', 'on-site'].includes(mode)))]
         : []
       return normalized.length ? normalized : [normalizeConsultationMode(legacyMode)]
+    }
+    const sameDayConfigurationError = values => {
+      if (values.sameDayConsultationAllowed !== true) return ''
+      const buffer = Number(values.sameDayConsultationBufferMinutes ?? 15)
+      if (!Number.isInteger(buffer) || buffer < 0 || buffer > 60) return 'Set the same-day buffer to a whole number from 0 to 60 minutes.'
+      if (values.postType !== 'Service' || values.requiresConsultationFirst !== true) return 'Same-day requests require a service with a required consultation.'
+      const linked = posts.value.find(post => post.id === values.linkedConsultationId)
+      if (!linked || linked.postType !== 'Consultation' || linked.isPublished !== true || linked.financeStatus !== 'approved' || linked.archived || !normalizeConsultationModes(linked.consultationModes, linked.consultationMode).includes('on-site')) {
+        return 'Choose a published linked consultation that supports on-site appointments.'
+      }
+      return ''
     }
 
     const handleImageUpload = (event) => {
@@ -391,6 +406,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         discountPercent: 0,
         requiresConsultationFirst: false,
         linkedConsultationId: '',
+        sameDayConsultationAllowed: false,
+        sameDayConsultationBufferMinutes: 15,
         consultationFee: 0,
         consultationModes: ['on-site'],
         followUpAllowed: false,
@@ -423,6 +440,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         discountPercent: 0,
         requiresConsultationFirst: false,
         linkedConsultationId: '',
+        sameDayConsultationAllowed: false,
+        sameDayConsultationBufferMinutes: 15,
         consultationFee: 0,
         consultationModes: ['on-site'],
         followUpAllowed: false,
@@ -529,7 +548,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     watch(
       () => [form.value.postType, form.value.requiresConsultationFirst],
       () => {
-        if (form.value.postType !== 'Service' || form.value.requiresConsultationFirst) return
+        if (form.value.postType === 'Service' && form.value.requiresConsultationFirst) return
+        form.value.sameDayConsultationAllowed = false
         form.value.consultationFee = 0
       }
     )
@@ -545,7 +565,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     watch(
       () => [editForm.value.postType, editForm.value.requiresConsultationFirst],
       () => {
-        if (editForm.value.postType !== 'Service' || editForm.value.requiresConsultationFirst) return
+        if (editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst) return
+        editForm.value.sameDayConsultationAllowed = false
         editForm.value.consultationFee = 0
       }
     )
@@ -561,6 +582,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     watch(isFreePlan, (free) => {
       if (free && form.value.postType !== 'Service') resetForm()
       if (free) form.value.requiresConsultationFirst = false
+      if (free) form.value.sameDayConsultationAllowed = false
     }, { immediate: true })
 
     const createPost = async () => {
@@ -641,6 +663,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('Link an existing published online or on-site consultation before saving this service.');
         return
       }
+      const sameDayError = sameDayConfigurationError(form.value)
+      if (sameDayError) { toast.error(sameDayError); return }
       if (postType === 'Consultation' && Number(form.value.consultationFee) <= 0) {
         toast.error('Please enter a valid consultation fee.')
         return
@@ -685,6 +709,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           discountAmount: postType === 'Package' ? Math.round((packageSubtotal - packageSubtotal * (1 - packageDiscountPercent / 100)) * 100) / 100 : 0,
           requiresConsultationFirst: postType === 'Service' ? Boolean(form.value.requiresConsultationFirst) : false,
           linkedConsultationId: postType === 'Service' && form.value.requiresConsultationFirst ? form.value.linkedConsultationId : null,
+          sameDayConsultationAllowed: postType === 'Service' && !isFreePlan.value ? Boolean(form.value.sameDayConsultationAllowed) : false,
+          sameDayConsultationBufferMinutes: postType === 'Service' && form.value.sameDayConsultationAllowed ? Number(form.value.sameDayConsultationBufferMinutes ?? 15) : 15,
           consultationFee: postType === 'Consultation' ? Number(form.value.consultationFee || 0) : null,
           followUpAllowed: postType === 'Service'
             ? Boolean(form.value.followUpAllowed)
@@ -752,6 +778,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         discountPercent: Number(post.discountPercent || 0),
         requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
         linkedConsultationId: String(post.linkedConsultationId || ''),
+        sameDayConsultationAllowed: post.sameDayConsultationAllowed === true,
+        sameDayConsultationBufferMinutes: Number.isInteger(Number(post.sameDayConsultationBufferMinutes)) ? Number(post.sameDayConsultationBufferMinutes) : 15,
         consultationFee: Number(post.consultationFee || post.price || 0),
         consultationModes: normalizeConsultationModes(post.consultationModes, post.consultationMode), consultationGraceMinutes: post.consultationPolicy?.graceMinutes ?? 10, consultationBufferMinutes: post.consultationPolicy?.bufferMinutes ?? 15,
         followUpAllowed: Boolean(post.followUpAllowed),
@@ -804,6 +832,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return
       }
       if (isFreePlan.value) editForm.value.requiresConsultationFirst = false
+      if (isFreePlan.value) editForm.value.sameDayConsultationAllowed = false
       if (!editForm.value.description?.trim() || !editForm.value.name?.trim()) {
         toast.error('Please complete all required fields.')
         return
@@ -835,6 +864,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('Link an existing published online or on-site consultation before saving this service.');
         return
       }
+      const sameDayError = sameDayConfigurationError(editForm.value)
+      if (sameDayError) { toast.error(sameDayError); return }
       if (editForm.value.postType === 'Consultation' && Number(editForm.value.consultationFee) <= 0) {
         toast.error('Please enter a valid consultation fee.')
         return
@@ -889,6 +920,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           discountAmount: editForm.value.postType === 'Package' ? Math.round((editPackageComponents.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(editForm.value.sessionCount || 1)) * Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) / 100) * 100) / 100 : 0,
           requiresConsultationFirst: editForm.value.postType === 'Service' && !isFreePlan.value ? Boolean(editForm.value.requiresConsultationFirst) : false,
           linkedConsultationId: editForm.value.postType === 'Service' && !isFreePlan.value && editForm.value.requiresConsultationFirst ? editForm.value.linkedConsultationId : null,
+          sameDayConsultationAllowed: editForm.value.postType === 'Service' && !isFreePlan.value ? Boolean(editForm.value.sameDayConsultationAllowed) : false,
+          sameDayConsultationBufferMinutes: editForm.value.postType === 'Service' && editForm.value.sameDayConsultationAllowed ? Number(editForm.value.sameDayConsultationBufferMinutes ?? 15) : 15,
           consultationFee: editForm.value.postType === 'Consultation' ? Number(editForm.value.consultationFee || 0) : null,
           followUpAllowed: editForm.value.postType === 'Service'
             ? Boolean(editForm.value.followUpAllowed)

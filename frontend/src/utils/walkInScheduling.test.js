@@ -23,3 +23,15 @@ test('calendar excludes past times and allows only slots long enough for the ser
   const slots = walkInSlots({ ...args(), now: new Date(`${date}T10:15:00+08:00`).getTime() })
   assert.deepEqual(slots.map(slot => slot.value), ['10:30', '11:00'])
 })
+test('same-day consultation choice reserves consultation duration, configured buffer, and treatment together', () => {
+  const services = [
+    { id: 'facial', postType: 'Service', durationMinutes: 30, requiresConsultationFirst: true, linkedConsultationId: 'assessment', sameDayConsultationAllowed: true, sameDayConsultationBufferMinutes: 15 },
+    { id: 'assessment', postType: 'Consultation', durationMinutes: 30 },
+  ]
+  const appointments = [{ practitionerId: 'worker', date, time: '10:30', endTime: '10:45', status: 'Paid' }]
+  const normal = walkInSlots({ ...args(), services, appointments })
+  const sameDay = walkInSlots({ ...args(), row: { ...args().row, sameDayConsultationRequested: true }, services, appointments })
+  assert.ok(normal.some(slot => slot.value === '09:30'))
+  assert.equal(sameDay.some(slot => slot.value === '09:30'), false)
+  assert.ok(sameDay.some(slot => slot.value === '08:00'))
+})

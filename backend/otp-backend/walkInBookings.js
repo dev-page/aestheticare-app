@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { prepareBooking } from './bookingResources.js'
 import { assertWorkflow as check, cents, normalized } from './bookingWorkflow.js'
 import { buildBookingTermsDocument } from '../../shared/clientContract.js'
+import { prepareSameDayPair, sameDayAppointment } from './sameDayBookings.js'
 
 export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClinicAction,
   assertClinicPlanFeature, getBookingRange, rangesOverlap, getApprovedLeaveForDate, getClinicPoliciesForBranch, sendBooking }) => {
@@ -59,7 +60,10 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
       }
       const cleanRows = rows.map(row => {
         check(row && ['clientId', 'serviceId', 'practitionerId', 'date', 'time'].every(key => typeof row[key] === 'string' && row[key].trim()), 'Each appointment needs a client, service, practitioner, date, and time.', 400)
-        return Object.fromEntries(['clientId', 'serviceId', 'practitionerId', 'date', 'time', 'notes'].map(key => [key, String(row[key] || '').trim().slice(0, key === 'notes' ? 2000 : 200)]))
+        return {
+          ...Object.fromEntries(['clientId', 'serviceId', 'practitionerId', 'date', 'time', 'notes'].map(key => [key, String(row[key] || '').trim().slice(0, key === 'notes' ? 2000 : 200)])),
+          sameDayConsultationRequested: row.sameDayConsultationRequested === true,
+        }
       })
       check(rows.every(row => !row.groupBooking) && cleanRows.every(row => row.clientId === clientId), 'Walk-in bookings support one client only. Create a separate booking for each person.', 400)
       const db = admin.firestore()
@@ -67,7 +71,7 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
       const requestKey = crypto.createHash('sha256').update(`${req.user.uid}:${branchId}:${submissionId}`).digest('hex')
       const bookingRef = db.collection('bookings').doc(`walk-in-${requestKey}`)
       const parentRef = db.collection('appointments').doc()
-      const childRefs = cleanRows.map(() => db.collection('appointments').doc())
+      const childRefs = Array.from({ length: cleanRows.reduce((count, row) => count + (row.sameDayConsultationRequested ? 2 : 1), 0) }, () => db.collection('appointments').doc())
       const result = await db.runTransaction(async tx => {
         const previous = await tx.get(bookingRef)
         if (previous.exists) {
@@ -99,17 +103,47 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
           }
           check(!await getApprovedLeaveForDate(row.practitionerId, row.date), 'A selected practitioner is on approved leave.', 409)
           const reservation = { ...row, ...client, branchId, selectedServiceIds: [row.serviceId], source: 'walk_in', policyAcknowledged: true, groupBooking: null }
-          const visit = await prepareBooking({ tx, db, reservation, getBookingRange, rangesOverlap })
-          check(!(String(visit.data.type).toLowerCase() === 'consultation' && String(visit.data.consultationMode).toLowerCase() === 'online'), 'Online consultations must be booked through the customer account so the recipient can verify their code and join the call.', 409)
-          const worker = (await tx.get(db.collection('users').doc(row.practitionerId))).data() || {}
-          const range = getBookingRange({ ...reservation, ...visit.data })
-          for (const other of prepared) {
-            if (other.reservation.date !== row.date) continue
-            const otherRange = getBookingRange({ ...other.reservation, ...other.visit.data })
-            const overlaps = rangesOverlap(range.start, range.end, otherRange.start, otherRange.end)
-            check(!overlaps || other.reservation.practitionerId !== row.practitionerId, 'Two appointments in this booking overlap for the same practitioner.', 409)
+          const candidates = []
+          if (row.sameDayConsultationRequested) {
+            const pair = await prepareSameDayPair({ tx, db, reservation, getBookingRange, rangesOverlap })
+            const worker = (await tx.get(db.collection('users').doc(row.practitionerId))).data() || {}
+            const consultationRef = childRefs[prepared.length]
+            const treatmentRef = childRefs[prepared.length + 1]
+            const consultation = sameDayAppointment(pair.consultationVisit.data, {
+              reservation: pair.consultationReservation, bookingId: bookingRef.id, treatmentAppointmentId: treatmentRef.id, directBooking: true,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            })
+            const treatment = sameDayAppointment(pair.treatmentVisit.data, {
+              reservation: pair.treatmentReservation, bookingId: bookingRef.id, consultationAppointmentId: consultationRef.id, directBooking: true,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            })
+            consultation.status = 'Unpaid'
+            treatment.status = 'Awaiting Clinical Clearance'
+            consultation.endTime = pair.treatmentTime
+            consultation.sameDayConsultationEndTime = pair.consultationVisit.data.endTime
+            consultation.sameDayTreatmentName = pair.treatmentVisit.data.service
+            treatment.sameDayConsultationBufferMinutes = pair.bufferMinutes
+            treatment.paymentStatus = 'Not Applicable'
+            candidates.push(
+              { reservation: pair.consultationReservation, visit: pair.consultationVisit, worker, data: consultation, kind: 'consultation' },
+              { reservation: pair.treatmentReservation, visit: pair.treatmentVisit, worker, data: treatment, kind: 'treatment' },
+            )
+          } else {
+            const visit = await prepareBooking({ tx, db, reservation, getBookingRange, rangesOverlap })
+            check(!(String(visit.data.type).toLowerCase() === 'consultation' && String(visit.data.consultationMode).toLowerCase() === 'online'), 'Online consultations must be booked through the customer account so the recipient can verify their code and join the call.', 409)
+            const worker = (await tx.get(db.collection('users').doc(row.practitionerId))).data() || {}
+            candidates.push({ reservation, visit, worker, data: visit.data, kind: 'standard' })
           }
-          prepared.push({ reservation, visit, worker })
+          for (const candidate of candidates) {
+            const range = getBookingRange({ ...candidate.reservation, ...candidate.data })
+            for (const other of prepared) {
+              if (other.reservation.date !== row.date) continue
+              const otherRange = getBookingRange({ ...other.reservation, ...other.data })
+              const overlaps = range && otherRange && rangesOverlap(range.start, range.end, otherRange.start, otherRange.end)
+              check(!overlaps || other.reservation.practitionerId !== row.practitionerId, 'Two appointments in this booking overlap for the same practitioner.', 409)
+            }
+            prepared.push(candidate)
+          }
         }
         // Each preparation checks existing bookings. Check the unwritten batch's
         // combined materials and simultaneous equipment demands as well.
@@ -135,25 +169,27 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
           }
         }
         const now = admin.firestore.FieldValue.serverTimestamp()
-        bookingAgreement.appointments = prepared.map(({ reservation, visit }) => ({ serviceId: reservation.serviceId, service: visit.data.service || reservation.serviceId, date: reservation.date, time: reservation.time, amount: visit.data.totalAmount ?? visit.data.amount }))
-        const appointments = prepared.map(({ reservation, visit, worker }, index) => ({
-          ...reservation, ...visit.data, bookingId: bookingRef.id,
+        bookingAgreement.appointments = prepared.map(({ reservation, data }) => ({ serviceId: reservation.serviceId, service: data.service || reservation.serviceId, date: reservation.date, time: reservation.time, amount: data.totalAmount ?? data.amount }))
+        const appointments = prepared.map(({ reservation, visit, worker, data }, index) => ({
+          ...reservation, ...data, bookingId: bookingRef.id,
           clientName: reservation.customerName, practitionerName: worker.fullName || `${worker.firstName || ''} ${worker.lastName || ''}`.trim() || worker.email || '',
           assignedPractitionerId: reservation.practitionerId,
           bookingForSomeoneElse, bookedByName: arranger.name, bookedByEmail: arranger.email, bookedByPhone: arranger.phone,
           bookingAgreement, bookingAgreementRequired: true,
-          approvalStatus: 'Approved', status: 'Unpaid', paymentStatus: 'Pending', amountPaid: 0,
+          approvalStatus: 'Approved',
+          status: data.sameDayTreatmentStatus === 'pending_clinical_clearance' ? 'Awaiting Clinical Clearance' : 'Unpaid',
+          paymentStatus: data.sameDayTreatmentStatus === 'pending_clinical_clearance' ? 'Not Applicable' : 'Pending', amountPaid: 0,
           installmentsAllowed: false, depositPercent: 100, serviceKey: null,
           workerKeyVerified: false, customerKeyVerified: false, workerCompleted: false, customerCompleted: false,
           paymentManagedByOrganizer: false, approvedBy: req.user.uid, approvedAt: now,
           createdBy: req.user.uid, createdAt: now, updatedAt: now, policyAcknowledgedAt: now,
-          ...(cleanRows.length > 1 ? { parentAppointmentId: parentRef.id, bookingOrderId: bookingRef.id } : {}),
+          ...(childRefs.length > 1 ? { parentAppointmentId: parentRef.id, bookingOrderId: bookingRef.id } : {}),
         }))
         const total = appointments.reduce((sum, row) => sum + cents(row.totalAmount), 0) / 100
         appointments.forEach((appointment, index) => {
           tx.set(childRefs[index], appointment)
           const count = appointment.treatmentPlan.totalSessions
-          if (count > 1) for (let number = 1; number <= count; number++) tx.set(db.collection('treatmentSessions').doc(`${childRefs[index].id}-${number}`), {
+          if (count > 1 && appointment.sameDayTreatmentStatus !== 'pending_clinical_clearance') for (let number = 1; number <= count; number++) tx.set(db.collection('treatmentSessions').doc(`${childRefs[index].id}-${number}`), {
             branchId, treatmentPlanAppointmentId: childRefs[index].id, customerId: appointment.customerId, customerName: appointment.customerName,
             practitionerId: number === 1 ? appointment.practitionerId : '', sessionNumber: number, totalSessions: count,
             status: number === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: number === 1 ? childRefs[index].id : '',

@@ -7,8 +7,23 @@ import vm from 'node:vm'
 import crypto from 'node:crypto'
 import { registerAppointmentPaymentWebhook } from './appointmentPaymentWebhook.js'
 import { normalized, assertWorkflow, initialPaymentReceived } from './bookingWorkflow.js'
+import * as bookingWorkflowRules from './bookingWorkflow.js'
 
 const fixture = (installmentsAllowed) => ({ customerId: 'customer', practitionerId: 'worker', branchId: 'clinic', service: 'Treatment', status: 'Awaiting Payment', approvalStatus: 'Approved', totalAmount: 1000, amountPaid: 0, installmentsAllowed, depositPercent: 30, contract: { terms: 'Clinic terms', status: 'pending' }, resources: [{ id: 'material', kind: 'material', quantity: 1 }], bookingId: 'booking' })
+
+test('booking order payment waits until every appointment is approved and signed', () => {
+  assert.equal(typeof bookingWorkflowRules.bookingOrderReadyForPayment, 'function')
+  const order = { isBookingOrderParent: true, approvalStatus: 'Approved', appointmentIds: ['first', 'second'] }
+  const appointments = [
+    { id: 'first', approvalStatus: 'Approved', contract: { status: 'signed' } },
+    { id: 'second', approvalStatus: 'Approved', contract: { status: 'signed' } },
+  ]
+
+  assert.equal(bookingWorkflowRules.bookingOrderReadyForPayment(order, appointments), true)
+  assert.equal(bookingWorkflowRules.bookingOrderReadyForPayment(order, [appointments[0], { ...appointments[1], contract: { status: 'pending' } }]), false)
+  assert.equal(bookingWorkflowRules.bookingOrderReadyForPayment(order, [appointments[0]]), false)
+  assert.equal(bookingWorkflowRules.bookingOrderReadyForPayment({ ...order, approvalStatus: 'Pending' }, appointments), false)
+})
 
 const harness = (appointment) => {
   const records = new Map([['appointments/a', appointment], ['inventoryItems/material', { currentStock: 5 }]])

@@ -1,4 +1,16 @@
 export const normalized = (value) => String(value || '').trim().toLowerCase()
+export const bookingOrderReadyForPayment = (order, appointments = []) => {
+  if (!order?.isBookingOrderParent || normalized(order.approvalStatus) !== 'approved') return false
+  const appointmentIds = Array.isArray(order.appointmentIds) ? order.appointmentIds.map(String).filter(Boolean) : []
+  if (!appointmentIds.length) return false
+  const appointmentsById = new Map(appointments.map(appointment => [String(appointment?.id || ''), appointment]))
+  return appointmentIds.every(id => {
+    const appointment = appointmentsById.get(id)
+    return appointment
+      && normalized(appointment.approvalStatus) === 'approved'
+      && normalized(appointment.contract?.status) === 'signed'
+  })
+}
 const releasedMaterialStatuses = new Set(['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'])
 export const reservedMaterialQuantity = (appointments = [], itemId) => appointments.reduce((sum, appointment) => {
   if (!appointment || appointment.isGroupParent || appointment.isBookingOrderParent || appointment.materialsConsumed || releasedMaterialStatuses.has(normalized(appointment.status))) return sum

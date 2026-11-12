@@ -1,7 +1,7 @@
 import { prepareBooking } from './bookingResources.js'
 import { assertWorkflow as check, normalized } from './bookingWorkflow.js'
 import { prepareClinicBookingRecipients, writeClinicBookingNotifications } from './clinicBookingNotifications.js'
-import { hasCompletedLinkedConsultation } from '../../shared/consultationRequirements.js'
+import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
 
 export const validateSchedules = rows => {
   check(Array.isArray(rows) && rows.length >= 1 && rows.length <= 10, 'Schedule between one and ten services.', 400)
@@ -48,6 +48,7 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
           const service = visit.data.selectedServices[0]
           if (service.requiresConsultationFirst === true) {
             const consultations = await tx.get(db.collection('appointments').where('customerId', '==', uid))
+            const clearances = await tx.get(db.collection('consultationClearances').where('customerId', '==', uid))
             const packageId = visit.data.treatmentPlan?.packageId
             const packagePost = packageId ? (await tx.get(db.collection('productServicePosts').doc(packageId))).data() : null
             let packageHasConsultation = false
@@ -55,7 +56,7 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
               const component = (await tx.get(db.collection('productServicePosts').doc(String(componentId)))).data()
               if (normalized(component?.postType) === 'consultation') packageHasConsultation = true
             }
-            check(packageHasConsultation || hasCompletedLinkedConsultation(service, consultations.docs.map(doc => doc.data()), branchId), 'Complete the linked consultation before booking this service. Packages that include a consultation are exempt.', 422)
+            check(packageHasConsultation || hasConsultationRequirement(service, consultations.docs.map(doc => doc.data()), clearances.docs.map(doc => doc.data()), branchId), 'Complete the linked consultation or receive clinic approval of a prior consultation before booking this service. Packages that include a consultation are exempt.', 422)
           }
           prepared.push({ reservation, visit, worker, service })
         }

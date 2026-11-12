@@ -318,6 +318,7 @@
                       </button>
                     </div>
                     <p class="mt-4 text-xs text-[#8b6a4d]">{{ selectedBookingDateLabel }}</p>
+                    <p class="mt-2 text-xs leading-5 text-[#8b6a4d]">One service appointment is allowed per customer per date, including across clinics. Dates with an existing booking are unavailable.</p>
                   </div>
                 </div>
                 <div class="space-y-4">
@@ -351,8 +352,11 @@
                       <template v-if="groupBookingEnabled">
                         <div class="group-booking-instructions">
                           <strong>How group booking works</strong>
-                          <p>Each person gets one service in a consecutive time slot. Each attendee receives their own service code and consent link. One payment covers the whole group.</p>
+                          <p>If clinic approval is required, wait for it before the organizer pays once for the group. Every attendee gets a private consent link and must complete their own treatment consent before check-in. Guests do not need a platform account; if you are attending too, complete your own link.</p>
                         </div>
+                        <p v-if="groupHasConsultationPrerequisite" class="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900" role="status">
+                          Group booking cannot verify consultation requirements for each guest yet. Book each attendee separately so the clinic can confirm their consultation before treatment.
+                        </p>
 
                         <label class="group-field-label" for="group-guest-count">Number of guests <span>(not including you)</span></label>
                         <input id="group-guest-count" v-model.number="groupGuestCount" type="number" min="1" max="10" class="group-input" />
@@ -381,19 +385,25 @@
                         </div>
                       </template>
                     </section>
-                    <label v-if="selectedServicesRequireConsultation" class="mt-3 flex items-start gap-2 text-xs text-[#8b6a4d]"><input v-model="priorConsultationConfirmed" type="checkbox" class="mt-0.5" /> I already completed a consultation for this service and want the clinic to verify it.</label>
+                    <label v-if="selectedServicesRequireConsultation && !sameDayConsultationRequested" class="mt-3 flex items-start gap-2 text-xs text-[#8b6a4d]"><input v-model="priorConsultationConfirmed" type="checkbox" class="mt-0.5" /> I already completed a consultation for this service and want the clinic to verify it.</label>
+                    <label v-if="sameDayRequestAvailable" class="mt-3 flex items-start gap-2 rounded-xl border border-[#e6cfb0] bg-[#fff7ec] p-3 text-xs leading-5 text-[#6f4a2d]">
+                      <input v-model="sameDayConsultationRequested" type="checkbox" class="mt-1 h-4 w-4 accent-[#8d5a3b]" @change="priorConsultationConfirmed = false" />
+                      <span><strong class="block text-[#3d281d]">Request consultation and treatment on the same day</strong>We’ll reserve an on-site consultation first, then a provisional treatment slot after the clinic’s {{ sameDayBufferMinutes }}-minute buffer. The practitioner must clear the treatment after the consultation. Only the consultation fee is due first; treatment payment and consent stay locked until clearance.</span>
+                    </label>
                   </div>
                   <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Selected Schedule</p>
                     <p class="mt-3 text-sm font-semibold text-[#3d281d]">{{ bookingScheduleSummary }}</p>
+                    <p v-if="sameDayConsultationRequested && bookingForm.time" class="mt-1 text-xs leading-5 text-[#6f4a2d]">Consultation starts at {{ minutesToTime12(parseClockToMinutes(bookingForm.time)) }}. Provisional treatment starts at {{ sameDayTreatmentStartLabel }}. Both times are reserved with the same practitioner.</p>
                     <p class="mt-2 text-sm text-[#8b6a4d]">
                       Assigned Practitioner:
                       <span class="ml-1 font-semibold text-[#3d281d]">{{ assignedPractitioner?.fullName || '-' }}</span>
                     </p>
                     <p class="mt-3 text-xs text-[#8b6a4d]">
-                      Full payment due after approval:
+                      {{ sameDayConsultationRequested ? 'Consultation fee due after any required clinic approval:' : 'Full payment due after approval:' }}
                       <span class="ml-1 font-semibold text-[#3d281d]">₱{{ bookingDueAmount.toFixed(2) }}</span>
                     </p>
+                    <p v-if="sameDayConsultationRequested" class="mt-1 text-xs leading-5 text-[#8b6a4d]">Treatment fee: ₱{{ Number(selectedServices[0]?.price || 0).toFixed(2) }}. It is not charged unless the practitioner clears the treatment after the consultation.</p>
                     <p class="mt-1 text-xs text-[#8b6a4d]">
                       System commission ({{ serviceCommissionPercent }}%):
                       <span class="ml-1 font-semibold text-[#3d281d]">₱{{ bookingCommissionAmount.toFixed(2) }}</span>
@@ -404,7 +414,7 @@
                     </p>
                     <p v-if="selectedServiceDurationMinutes" class="mt-1 text-xs text-[#8b6a4d]">
                       Total duration:
-                      <span class="ml-1 font-semibold text-[#3d281d]">{{ selectedServiceDurationMinutes }} mins</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">{{ sameDayConsultationRequested ? bookingDurationMinutes : selectedServiceDurationMinutes }} mins{{ sameDayConsultationRequested ? ' including consultation and buffer' : '' }}</span>
                     </p>
                     <p v-if="selectedTreatmentSessionCount > 1" class="mt-1 text-xs text-[#8b6a4d]">
                       Treatment plan:
@@ -440,46 +450,10 @@
                       </div>
                     </div>
                     <div class="mt-4 border-t border-[#e6cfb0] pt-4">
-                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">Payment Method</p>
-                      <div class="mt-2 grid grid-cols-1 gap-2">
-                        <button
-                          type="button"
-                          class="rounded-xl border px-3 py-3 text-left text-sm transition"
-                          :class="bookingPaymentMethod === 'E-Wallet'
-                            ? 'border-[#c99563] bg-[#fff1df] text-[#3d281d]'
-                            : 'border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]'"
-                          @click="bookingPaymentMethod = 'E-Wallet'"
-                        >
-                          <span class="block font-semibold">E-Wallet</span>
-                          <span class="mt-1 block text-xs opacity-80">GCash only.</span>
-                        </button>
-                        <button
-                          type="button"
-                          class="rounded-xl border px-3 py-3 text-left text-sm transition"
-                          :class="bookingPaymentMethod === 'Card'
-                            ? 'border-[#c99563] bg-[#fff1df] text-[#3d281d]'
-                            : 'border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]'"
-                          @click="bookingPaymentMethod = 'Card'"
-                        >
-                          <span class="block font-semibold">Card</span>
-                          <span class="mt-1 block text-xs opacity-80">Use credit or debit card.</span>
-                        </button>
-                        <button
-                          type="button"
-                          class="rounded-xl border px-3 py-3 text-left text-sm transition"
-                          :class="bookingPaymentMethod === 'Bank Transfer'
-                            ? 'border-[#c99563] bg-[#fff1df] text-[#3d281d]'
-                            : 'border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]'"
-                          @click="bookingPaymentMethod = 'Bank Transfer'"
-                        >
-                          <span class="block font-semibold">Bank Transfer</span>
-                          <span class="mt-1 block text-xs opacity-80">Uses the bank options from subscription checkout.</span>
-                        </button>
-                      </div>
+                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">No payment is collected at booking</p>
+                      <p class="mt-2 text-xs leading-5 text-[#6f4a2d]">Submitting this request does not charge you. After any required clinic approval, review and sign the consultation agreement in My Appointments. Checkout then shows the available payment methods. For a same-day request, treatment consent and payment appear only after the practitioner clears the treatment.</p>
                       <div class="mt-3">
-                        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">
-                          Mobile Number <span v-if="bookingPaymentMethod === 'E-Wallet'">*</span>
-                        </label>
+                        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">Mobile Number <span class="font-normal normal-case">(optional contact number)</span></label>
                         <div class="mt-1 flex items-stretch overflow-hidden rounded-xl border bg-[#fffaf3]" :class="bookingPhoneError ? 'border-rose-400' : 'border-[#e0c09a]'">
                           <span class="inline-flex items-center border-r border-[#e0c09a] px-3 text-sm font-semibold text-[#6f4a2d]">+63</span>
                           <input
@@ -491,16 +465,12 @@
                             pattern="[0-9]{10}"
                             placeholder="9123456789"
                             class="w-full bg-transparent px-3 py-3 text-sm text-[#3d281d] placeholder:text-[#a78a6e] focus:outline-none"
-                            :required="bookingPaymentMethod === 'E-Wallet'"
                             :aria-invalid="Boolean(bookingPhoneError)"
                             :aria-describedby="bookingPhoneError ? 'booking-phone-error' : undefined"
                             @input="handleBookingPhoneInput"
                             @blur="validateBookingPhoneNumber"
                           />
                         </div>
-                        <p class="mt-1 text-xs text-[#8b6a4d]">
-                          {{ bookingPaymentMethod === 'E-Wallet' ? 'Required for GCash checkout.' : 'Optional unless you want to prefill your contact number.' }}
-                        </p>
                         <p v-if="bookingPhoneError" id="booking-phone-error" class="mt-1 text-xs text-rose-600">{{ bookingPhoneError }}</p>
                       </div>
                     </div>
@@ -523,13 +493,13 @@
               <p v-if="availabilityMessage" class="booking-notice mt-2 text-xs">{{ availabilityMessage }}</p>
               <textarea v-model="bookingForm.notes" rows="3" class="mt-4 w-full px-3 py-3 rounded-2xl bg-[#fffaf3] text-[#3d281d] border border-[#e0c09a] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20" placeholder="Notes (optional)"></textarea>
               <div class="mt-4 flex gap-3">
-                <button v-if="!groupBookingEnabled" type="button" :disabled="bookingPaymentSaving" class="rounded-2xl border border-[#e0c09a] px-4 py-2 text-[#6f4a2d]" @click="saveScheduledService">Save schedule &amp; add another service</button>
+                <button v-if="!groupBookingEnabled && !sameDayConsultationRequested" type="button" :disabled="bookingPaymentSaving" class="rounded-2xl border border-[#e0c09a] px-4 py-2 text-[#6f4a2d]" @click="saveScheduledService">Save schedule &amp; add another service</button>
                 <button
                   @click="submitBooking"
                   :disabled="bookingPaymentSaving"
                   class="px-4 py-2 rounded-2xl bg-[#8d5a3b] hover:bg-[#6f4329] text-white shadow-md shadow-amber-950/20 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {{ bookingPaymentSaving ? 'Processing...' : 'Confirm Booking' }}
+                  {{ bookingPaymentSaving ? 'Submitting...' : 'Submit Booking Request' }}
                 </button>
                 <button @click="clearBookingSelection" class="px-4 py-2 rounded-2xl border border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]">Cancel</button>
               </div>
@@ -563,6 +533,7 @@
       :policies="activeClinicPolicies"
       :selected="isServiceSelected(selectedServiceDetails)"
       :needs-consultation="needsLinkedConsultation(selectedServiceDetails)"
+      :same-day-request-available="sameDayRequestCanBeShown(selectedServiceDetails)"
       :busy="serviceDetailsBooking"
       @close="selectedServiceDetails = null"
       @book="bookServiceDetails"
@@ -663,7 +634,7 @@ import { usePageLoading } from '@/composables/usePageLoading'
 import { formatClockTime } from '@/utils/appointmentDss'
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { hasCompletedLinkedConsultation } from '../../../../shared/consultationRequirements.js'
+import { hasConsultationRequirement } from '../../../../shared/consultationRequirements.js'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
@@ -790,6 +761,7 @@ const practitioners = ref([])
 const practitionerSchedules = ref({})
 const practitionerLeaves = ref({})
 const appointments = ref([])
+const customerBusyDates = ref([])
 const customerConsultations = ref([])
 const customerClearances = ref([])
 const loadConsultationEligibility = async (branchId = activeBranchId.value) => {
@@ -804,7 +776,7 @@ const loadConsultationEligibility = async (branchId = activeBranchId.value) => {
   customerConsultations.value = visits.docs.map(snapshot => snapshot.data())
   customerClearances.value = clearances.docs.map(snapshot => snapshot.data())
 }
-const needsLinkedConsultation = item => Boolean(item.requiresConsultationFirst) && !hasCompletedLinkedConsultation(item, customerConsultations.value, activeBranchId.value)
+const needsLinkedConsultation = item => Boolean(item.requiresConsultationFirst) && !hasConsultationRequirement(item, customerConsultations.value, customerClearances.value, activeBranchId.value)
 const bookingReservations = ref([])
 const assignedPractitioner = ref(null)
 const availabilityMessage = ref('')
@@ -827,11 +799,48 @@ const selectedServiceDurationMinutes = computed(() =>
 )
 const selectedTreatmentSessionCount = computed(() => Math.max(1, ...selectedServices.value.map(service => service.type === 'Package' ? Number(service.sessionCount || 1) * (service.packageComponents || []).reduce((sum, component) => sum + Number(component.sessionCount || 1), 0) : Number(service.sessionCount || 1))))
 const groupAttendeeServices = computed(() => [...(groupIncludeOrganizer.value ? selectedServices.value : []), ...groupGuests.value.map(guest => items.value.find(item => item.id === guest.serviceId) || selectedServices.value[0]).filter(Boolean)])
-const bookingDurationMinutes = computed(() => selectedServices.value.reduce((sum, service) => sum + (service.consultationMode === 'online' ? onlinePolicy(service.consultationPolicy).bufferMinutes : 0), 0) + Math.max(groupBookingEnabled.value ? groupAttendeeServices.value.reduce((sum, service) => sum + Number(service.durationMinutes || 60), 0) : Number(selectedServiceDurationMinutes.value || 0), 30))
+const groupHasConsultationPrerequisite = computed(() => groupBookingEnabled.value && groupAttendeeServices.value.some(service => service.requiresConsultationFirst === true))
+const sameDayConsultationRequested = ref(false)
+watch(groupBookingEnabled, enabled => { if (enabled) sameDayConsultationRequested.value = false })
+const sameDayTreatmentService = computed(() => selectedServices.value.length === 1 && selectedServices.value[0]?.type === 'Service' ? selectedServices.value[0] : null)
+const sameDayLinkedConsultation = computed(() => items.value.find(item => item.id === sameDayTreatmentService.value?.linkedConsultationId && item.type === 'Consultation') || null)
+const supportsOnSiteConsultation = consultation => {
+  const modes = consultation?.consultationModes || [consultation?.consultationMode]
+  return Boolean(modes.some(mode => ['on-site', 'onsite'].includes(String(mode || '').trim().toLowerCase().replace(/[\s_]+/g, '-'))))
+}
+const sameDayRequestCanBeShown = service => {
+  const consultation = items.value.find(item => item.id === service?.linkedConsultationId && item.type === 'Consultation')
+  return Boolean(!groupBookingEnabled.value && service?.type === 'Service' && service.requiresConsultationFirst === true
+    && service.sameDayConsultationAllowed === true && supportsOnSiteConsultation(consultation))
+}
+const sameDayConsultationAvailable = computed(() => {
+  return supportsOnSiteConsultation(sameDayLinkedConsultation.value)
+})
+const sameDayRequestAvailable = computed(() => {
+  const service = sameDayTreatmentService.value
+  return Boolean(!groupBookingEnabled.value && !isFollowUpBookingFlow.value && selectedServicesRequireConsultation.value
+    && service?.sameDayConsultationAllowed === true && sameDayConsultationAvailable.value
+    && needsLinkedConsultation(service))
+})
+const sameDayBufferMinutes = computed(() => Math.max(0, Number(sameDayTreatmentService.value?.sameDayConsultationBufferMinutes ?? 15)))
+const sameDayConsultationDuration = computed(() => Math.max(1, Number(sameDayLinkedConsultation.value?.durationMinutes || 60)))
+const sameDayTreatmentStartLabel = computed(() => {
+  const start = parseClockToMinutes(bookingForm.value.time)
+  return Number.isFinite(start) ? minutesToTime12(start + sameDayConsultationDuration.value + sameDayBufferMinutes.value) : '-'
+})
+const bookingDurationMinutes = computed(() => {
+  const serviceDuration = sameDayConsultationRequested.value
+    ? Math.max(1, Number(selectedServiceDurationMinutes.value || 0))
+    : Math.max(groupBookingEnabled.value ? groupAttendeeServices.value.reduce((sum, service) => sum + Number(service.durationMinutes || 60), 0) : Number(selectedServiceDurationMinutes.value || 0), 30)
+  const consultationDuration = sameDayConsultationRequested.value ? sameDayConsultationDuration.value + sameDayBufferMinutes.value : 0
+  return selectedServices.value.reduce((sum, service) => sum + (service.consultationMode === 'online' ? onlinePolicy(service.consultationPolicy).bufferMinutes : 0), 0) + serviceDuration + consultationDuration
+})
 const selectedServiceCommission = computed(() =>
   calculateCommissionAmount(selectedServiceTotal.value, serviceCommissionPercent)
 )
-const bookingDueAmount = computed(() => groupBookingEnabled.value ? groupAttendeeServices.value.reduce((sum, service) => sum + Number(service.price || 0), 0) : selectedServiceTotal.value)
+const bookingDueAmount = computed(() => sameDayConsultationRequested.value
+  ? Number(sameDayLinkedConsultation.value?.price || 0)
+  : groupBookingEnabled.value ? groupAttendeeServices.value.reduce((sum, service) => sum + Number(service.price || 0), 0) : selectedServiceTotal.value)
 const bookingCommissionAmount = computed(() => calculateCommissionAmount(bookingDueAmount.value, serviceCommissionPercent))
 const bookingNetAmount = computed(() => calculateNetAmount(bookingDueAmount.value, bookingCommissionAmount.value))
 const selectedServiceNetAmount = computed(() =>
@@ -886,7 +895,7 @@ const getAppointmentDurationMinutes = (appointment) => {
 
 const buildBlockedRanges = (appointmentList = []) => {
   const blocked = new Map()
-  const blockingStatuses = new Set(['pending approval', 'payment pending', 'awaiting payment', 'contract pending', 'checked in', 'ready to start', 'awaiting customer confirmation', 'balance due', 'scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
+  const blockingStatuses = new Set(['busy', 'pending approval', 'payment pending', 'awaiting payment', 'contract pending', 'checked in', 'ready to start', 'awaiting customer confirmation', 'balance due', 'scheduled', 'approved', 'paid', 'cancellation requested', 'reschedule requested', 'completed', 'in progress', 'ongoing', 'held'])
 
   appointmentList.forEach((appointment) => {
     const date = String(appointment?.date || '').trim()
@@ -1231,6 +1240,7 @@ const stopBranchSensitiveListeners = () => {
   if (bookingReservations.value.length) {
     bookingReservations.value = []
   }
+  customerBusyDates.value = []
   stopReviewsListener()
   chatThreadId.value = ''
   chatMessages.value = []
@@ -1383,9 +1393,10 @@ const startAppointmentsListener = async (branchId) => {
     appointmentsUnsubscribe = null
   }
 
-  // Appointment details belong to individual customers and clinic staff.
-  // The booking API checks conflicts transactionally before accepting a slot.
+  // Appointment details stay private. The availability endpoint returns only
+  // schedule-blocking windows for the customer-facing slot picker.
   appointments.value = []
+  customerBusyDates.value = []
 }
 
 const startBookingReservationsListener = async (branchId) => {
@@ -1403,6 +1414,8 @@ const loadPractitioners = trackPageLoad(async (branchId = activeBranchId.value) 
   practitioners.value = []
   practitionerSchedules.value = {}
   practitionerLeaves.value = {}
+  appointments.value = []
+  customerBusyDates.value = []
   if (!branchId) return
   const currentUser = auth.currentUser || await new Promise((resolve) => {
     const unsubscribe = pageListener(onAuthStateChanged, auth, (user) => { unsubscribe(); resolve(user) })
@@ -1411,7 +1424,11 @@ const loadPractitioners = trackPageLoad(async (branchId = activeBranchId.value) 
   try { await loadConsultationEligibility(branchId) } catch (error) { console.warn('Unable to load consultation eligibility:', error) }
   try {
     const token = await currentUser.getIdToken()
-    const response = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/practitioners`, {
+    const startDate = new Date()
+    const endDate = new Date(startDate)
+    endDate.setDate(endDate.getDate() + SLOT_DAYS_LOOKAHEAD - 1)
+    const availabilityQuery = new URLSearchParams({ startDate: toDateInput(startDate), endDate: toDateInput(endDate) })
+    const response = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/practitioners?${availabilityQuery}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     const payload = await response.json().catch(() => ({}))
@@ -1419,6 +1436,8 @@ const loadPractitioners = trackPageLoad(async (branchId = activeBranchId.value) 
     practitioners.value = Array.isArray(payload.practitioners) ? payload.practitioners : []
     practitionerSchedules.value = Object.fromEntries(Object.entries(payload.schedules || {}).map(([practitionerId, schedules]) => [practitionerId, buildWeekScheduleMap(Array.isArray(schedules) ? schedules : [])]))
     practitionerLeaves.value = payload.leaves && typeof payload.leaves === 'object' ? payload.leaves : {}
+    appointments.value = Array.isArray(payload.busyWindows) ? payload.busyWindows : []
+    customerBusyDates.value = Array.isArray(payload.customerBusyDates) ? payload.customerBusyDates : []
   } catch (error) {
     console.error('Unable to load practitioner availability:', error)
     toast.error(error?.message || 'Unable to load booking availability.')
@@ -1470,6 +1489,8 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       consultationName: post.consultationName || '',
       requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
       linkedConsultationId: String(post.linkedConsultationId || ''),
+      sameDayConsultationAllowed: post.sameDayConsultationAllowed === true,
+      sameDayConsultationBufferMinutes: Number.isInteger(Number(post.sameDayConsultationBufferMinutes)) ? Number(post.sameDayConsultationBufferMinutes) : 15,
       consultationFee: post.consultationFee != null ? Number(post.consultationFee) : null,
       followUpAllowed: Boolean(post.followUpAllowed),
       followUpWindowDays: post.followUpWindowDays != null ? Number(post.followUpWindowDays) : null,
@@ -1533,6 +1554,7 @@ const bookingSlots = computed(() => {
     const date = new Date(today)
     date.setDate(today.getDate() + offset)
     const dateKey = toDateInput(date)
+    if (customerBusyDates.value.includes(dateKey)) continue
     const weekKey = getWeekStartKey(date)
       const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
 
@@ -1609,7 +1631,8 @@ const bookingScheduleSummary = computed(() => {
   if (!bookingForm.value.time) {
     return 'Choose one available schedule from the list.'
   }
-  return minutesToTime12(parseClockToMinutes(bookingForm.value.time))
+  const start = minutesToTime12(parseClockToMinutes(bookingForm.value.time))
+  return sameDayConsultationRequested.value ? `On-site consultation starts at ${start}` : start
 })
 
 const bookingCalendarDays = computed(() => {
@@ -1718,6 +1741,7 @@ const buildBookingSlotsForPractitioners = (practitionerList = []) => {
     const date = new Date(today)
     date.setDate(today.getDate() + offset)
     const dateKey = toDateInput(date)
+    if (customerBusyDates.value.includes(dateKey)) continue
     const weekKey = getWeekStartKey(date)
     const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
 
@@ -2216,13 +2240,19 @@ const toggleServiceForBooking = async (item, requestVerification = false) => {
     try { await loadConsultationEligibility() } catch { toast.error('Could not verify your consultation history. Please try again.'); return }
     if (needsLinkedConsultation(item)) {
       const consultation = items.value.find(candidate => candidate.id === item.linkedConsultationId && candidate.type === 'Consultation')
-      if (!consultation) { toast.info('Contact the clinic to arrange the required consultation or verify your previous consultation.'); return }
-      toggleConsultationForBooking(consultation)
-      toast.info(`Book ${consultation.title || consultation.name} first. Treatment booking becomes available after completion or clinic-approved clearance.`)
-      return
+      const modes = consultation?.consultationModes || [consultation?.consultationMode]
+      const canRequestSameDay = item.type === 'Service' && item.sameDayConsultationAllowed === true
+        && modes.some(mode => ['on-site', 'onsite'].includes(String(mode || '').trim().toLowerCase().replace(/[\s_]+/g, '-')))
+      if (!canRequestSameDay) {
+        if (!consultation) { toast.info('Contact the clinic to arrange the required consultation or verify your previous consultation.'); return }
+        toggleConsultationForBooking(consultation)
+        toast.info(`Book ${consultation.title || consultation.name} first. Treatment booking becomes available after completion or clinic-approved clearance.`)
+        return
+      }
     }
   }
   priorConsultationConfirmed.value = requestVerification === true
+  sameDayConsultationRequested.value = false
 
   if (item.type === 'Package') {
     const components = item.packageServiceIds
@@ -2267,6 +2297,8 @@ const removeSelectedService = (serviceId) => {
 
 const clearBookingSelection = () => {
   selectedServices.value = []
+  sameDayConsultationRequested.value = false
+  priorConsultationConfirmed.value = false
   assignedPractitioner.value = null
   availabilityMessage.value = ''
   bookingPhoneError.value = ''
@@ -2342,18 +2374,13 @@ const handleBookingPhoneInput = () => {
 }
 
 const validateBookingPhoneNumber = () => {
-  if (bookingPaymentMethod.value !== 'E-Wallet') {
+  const phone = String(bookingForm.value.contactNumber || '').trim()
+  if (!phone) {
     bookingPhoneError.value = ''
     return true
   }
-
-  const phone = String(bookingForm.value.contactNumber || '').trim()
-  if (!phone) {
-    bookingPhoneError.value = 'Mobile number is required for GCash payments.'
-    return false
-  }
   if (!/^[9]\d{9}$/.test(phone)) {
-    bookingPhoneError.value = 'Enter exactly 10 digits after +63, starting with 9.'
+    bookingPhoneError.value = 'Enter 10 digits after +63, starting with 9.'
     return false
   }
 
@@ -2762,6 +2789,7 @@ const handleBookingPayMongoReturn = async () => {
 }
 
 const saveScheduledService = () => {
+  if (sameDayConsultationRequested.value) { toast.error('Submit a same-day consultation and treatment request on its own.'); return false }
   if (groupBookingEnabled.value) { toast.error('Submit group bookings separately.'); return false }
   const slot = bookingSlots.value.find(entry => entry.key === bookingForm.value.slotKey)
   if (selectedServices.value.length !== 1 || !slot?.isAvailable || !assignedPractitioner.value) { toast.error('Select an available date, time, and practitioner for this service.'); return false }
@@ -2848,6 +2876,10 @@ const submitDemoServiceBooking = async () => {
 }
 
 const submitBooking = async () => {
+  if (sameDayConsultationRequested.value && scheduledBookings.value.length) {
+    toast.error('Submit the same-day consultation and treatment request separately from other saved services.')
+    return
+  }
   if (scheduledBookings.value.length) {
     if (selectedServices.value.length && !saveScheduledService()) return
     return submitScheduledBookings()
@@ -2879,6 +2911,21 @@ const submitBooking = async () => {
     toast.error('Please review and acknowledge the active clinic policies before submitting.')
     return
   }
+  if (groupHasConsultationPrerequisite.value) {
+    toast.error('Group booking cannot verify consultation requirements for each attendee yet. Book each attendee separately so the clinic can confirm their consultation before treatment.')
+    return
+  }
+  if (selectedServicesRequireConsultation.value && !priorConsultationConfirmed.value && !sameDayConsultationRequested.value
+    && selectedServices.value.some(service => needsLinkedConsultation(service))) {
+    toast.error(sameDayRequestAvailable.value
+      ? 'Choose the same-day consultation option or request verification of a previous consultation before continuing.'
+      : 'Complete the required consultation or request clinic verification before booking this treatment.')
+    return
+  }
+  if (sameDayConsultationRequested.value && !sameDayRequestAvailable.value) {
+    toast.error('This service is not currently available for a same-day consultation request. Refresh the listing or book the consultation first.')
+    return
+  }
   if (selectedServicesRequireConsultation.value && priorConsultationConfirmed.value) {
     await addDoc(collection(db, 'consultationClearances'), { branchId: activeBranchId.value, customerId: user.uid, customerEmail: user.email || '', serviceIds: selectedServices.value.filter(service => service.requiresConsultationFirst).map(service => service.id).filter(Boolean), serviceNames: selectedServices.value.filter(service => service.requiresConsultationFirst).map(service => service.title || service.name || '').filter(Boolean), status: 'Pending', requestedAt: serverTimestamp() })
     toast.success('Consultation verification was sent to the clinic. You can book after it is approved.')
@@ -2900,6 +2947,32 @@ const submitBooking = async () => {
     const amountPeso = Number(bookingDueAmount.value || 0)
     const profile = await resolveCustomerProfile()
     const token = await user.getIdToken()
+    if (sameDayConsultationRequested.value) {
+      const response = await fetch(`${OTP_API_BASE}/bookings/same-day`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          branchId: activeBranchId.value,
+          serviceId: sameDayTreatmentService.value.id,
+          practitionerId: assignedPractitioner.value.id,
+          date: bookingForm.value.date,
+          time: bookingForm.value.time,
+          customerPhone: bookingForm.value.contactNumber || profile?.contactNumber || user.phoneNumber || '',
+          notes: bookingForm.value.notes || '',
+          policyAcknowledged: bookingPolicyAcknowledged.value === true,
+        }),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) throw new Error(result?.error || 'Failed to submit the same-day booking request.')
+      await Swal.fire({
+        title: 'Same-day request submitted',
+        text: 'If clinic approval is required, the clinic will review both appointments first. Sign and pay for the consultation when it is ready. The treatment time is provisional; your practitioner must clear it after the consultation before you can sign or pay for treatment.',
+        icon: 'success', confirmButtonText: 'View Appointments', confirmButtonColor: '#8d5a3b',
+      })
+      clearBookingSelection()
+      await router.replace({ name: 'customer-appointments' })
+      return
+    }
     const response = await fetch(`${OTP_API_BASE}/bookings/create`, {
       method: 'POST',
       headers: {
@@ -2951,7 +3024,9 @@ const submitBooking = async () => {
     }
     await Swal.fire({
       title: 'Booking request created',
-      text: 'Your request was submitted for clinic approval. Once approved, open My Appointments to review and e-sign the contract, then pay the required amount and receive your service key.',
+      text: groupBookingEnabled.value
+        ? 'Open My Appointments to follow your group booking. If clinic approval is required, wait for it; then the organizer pays once for everyone. Each attendee receives a private email link to complete their own treatment consent before check-in. Guests do not need a platform account. If you are attending, complete your own link too.'
+        : 'Open My Appointments to follow your booking. If clinic approval is required, wait for the clinic to approve it. Then review and sign the agreement and pay the required amount; your service code is emailed after signing and appears in the app after the initial payment.',
       icon: 'success',
       confirmButtonText: 'View Appointments',
       confirmButtonColor: '#8d5a3b',

@@ -12,6 +12,7 @@ const props = defineProps({
   policies: { type: Array, default: () => [] },
   selected: Boolean,
   needsConsultation: Boolean,
+  sameDayRequestAvailable: Boolean,
   busy: Boolean,
 })
 const emit = defineEmits(['close', 'book'])
@@ -81,7 +82,7 @@ onUnmounted(() => {
               <h3>Before you book</h3>
               <div v-if="service.requiresConsultationFirst" class="service-details-notice">
                 <Icon icon="lucide:stethoscope" width="20" />
-                <div><strong>Consultation required first</strong><p>{{ consultation ? `Complete ${consultation.title || consultation.name} before booking this treatment.` : 'Complete the required consultation or ask the clinic to verify your previous consultation.' }}</p><p v-if="consultation">Consultation price: {{ price(consultation.price) }}</p></div>
+                <div><strong>Consultation required first</strong><p>{{ consultation ? `Complete ${consultation.title || consultation.name} before treatment.` : 'Complete the required consultation or ask the clinic to verify your previous consultation.' }}</p><p v-if="consultation">Consultation price: {{ price(consultation.price) }}</p><p v-if="sameDayRequestAvailable">This clinic accepts an optional same-day request for an on-site consultation followed by a provisional treatment slot. Practitioner clearance is required before treatment consent or payment.</p></div>
               </div>
               <p v-else>A prior consultation is not required for booking this service.</p>
               <p class="service-details-follow-up">{{ service.followUpAllowed ? `Follow-ups are available${service.followUpWindowDays ? ` within ${service.followUpWindowDays} days` : ''}.` : 'Follow-up bookings are not enabled for this listing.' }}</p>
@@ -101,7 +102,7 @@ onUnmounted(() => {
               <details v-for="item in policies" :key="item.key" class="service-details-policy"><summary>{{ item.label }}<Icon icon="lucide:chevron-down" width="16" /></summary><p class="service-details-prose">{{ item.text }}</p></details>
             </section>
             <footer class="service-details-actions">
-              <button type="button" class="service-details-book" :disabled="busy" @click="emit('book', false)">{{ busy ? 'Please wait…' : selected ? 'Remove from booking' : needsConsultation ? 'Book consultation first' : 'Add to Booking' }}<Icon icon="lucide:arrow-right" width="17" /></button>
+              <button type="button" class="service-details-book" :disabled="busy" @click="emit('book', false)">{{ busy ? 'Please wait…' : selected ? 'Remove from booking' : needsConsultation && !sameDayRequestAvailable ? 'Book consultation first' : 'Continue to booking options' }}<Icon icon="lucide:arrow-right" width="17" /></button>
               <button v-if="needsConsultation && !selected" type="button" class="service-details-verification" :disabled="busy" @click="emit('book', true)">Already consulted? Request verification</button>
             </footer>
           </div>

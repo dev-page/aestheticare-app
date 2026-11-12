@@ -10,6 +10,22 @@ export const validateListingNumbers = (post) => {
   if (post.postType === 'Package' && (!Number.isFinite(Number(post.discountPercent || 0)) || Number(post.discountPercent || 0) < 0 || Number(post.discountPercent || 0) > 90)) return 'Package discount must be between 0% and 90%.'
   return ''
 }
+export const sameDayServiceConfigurationError = (service, consultation) => {
+  if (service?.sameDayConsultationAllowed !== true) return ''
+  const buffer = Number(service.sameDayConsultationBufferMinutes ?? 15)
+  if (!Number.isInteger(buffer) || buffer < 0 || buffer > 60) return 'Same-day consultation buffer must be a whole number from 0 to 60 minutes.'
+  if (service.postType !== 'Service' || service.requiresConsultationFirst !== true) return 'Same-day treatment requests require a service with a required consultation.'
+  const linkedId = String(service.linkedConsultationId || '').trim()
+  if (!linkedId || !consultation || consultation.id !== linkedId || consultation.branchId !== service.branchId || consultation.postType !== 'Consultation' || consultation.isPublished !== true || consultation.financeStatus !== 'approved' || consultation.archived === true) {
+    return 'Same-day treatment requests need a published linked consultation from the same branch.'
+  }
+  const modes = Array.isArray(consultation.consultationModes) && consultation.consultationModes.length
+    ? consultation.consultationModes
+    : [consultation.consultationMode || 'online']
+  const hasOnSiteMode = modes.some(mode => ['on-site', 'onsite'].includes(String(mode || '').trim().toLowerCase().replace(/[\s_]+/g, '-')))
+  if (!hasOnSiteMode) return 'Same-day treatment requests need a linked consultation that supports on-site appointments.'
+  return ''
+}
 export const draftListing = () => ({ financeStatus: 'draft', isPublished: false, financeReview: null, publishedBy: null, publishedAt: null })
 export const financialTermsChanged = (before, after) => financialFields.some((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
 export const approvedOrderLines = (items, listings, amount) => {
@@ -91,6 +107,12 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
           const linkedId = String(post.linkedConsultationId || '').trim()
           const linked = linkedId ? (await tx.get(db.collection('productServicePosts').doc(linkedId))).data() : null
           if (!linked || linked.branchId !== post.branchId || linked.postType !== 'Consultation' || linked.isPublished !== true || linked.financeStatus !== 'approved' || linked.archived) throw Object.assign(new Error('Link a published online or on-site consultation from this branch before submitting or publishing this service.'), { status: 409 })
+        }
+        if (['submit', 'publish'].includes(action) && post.sameDayConsultationAllowed === true) {
+          const linkedId = String(post.linkedConsultationId || '').trim()
+          const linked = linkedId ? { ...(await tx.get(db.collection('productServicePosts').doc(linkedId))).data(), id: linkedId } : null
+          const error = sameDayServiceConfigurationError(post, linked)
+          if (error) throw Object.assign(new Error(error), { status: 409 })
         }
         const update = listingTransition(
           post,

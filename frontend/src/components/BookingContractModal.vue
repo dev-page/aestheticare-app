@@ -5,7 +5,7 @@
         <div>
           <p class="contract-kicker">Secure agreement</p>
           <h3 id="booking-contract-title">{{ title || 'Booking Contract' }}</h3>
-          <p v-if="canSign" class="contract-intro">Review the agreement, draw your signature, and confirm. {{ isWalkIn ? 'The client must sign before treatment can start.' : 'Payment becomes available after signing.' }}</p>
+          <p v-if="canSign" class="contract-intro">Review the agreement, draw your signature, and confirm. {{ isWalkIn ? 'The treatment recipient must sign before payment; the booking arranger cannot sign this agreement for them.' : 'Payment becomes available after signing.' }}</p>
         </div>
         <div class="contract-header-actions">
           <span class="contract-status" :class="{ 'contract-status-signed': contract?.status === 'signed' }">{{ contract?.status === 'signed' ? 'Signed' : 'Awaiting signature' }}</span>
@@ -26,7 +26,8 @@
             <p class="contract-record-line">{{ appointment.bookingAgreement.signer?.signedAt }}</p>
           </details>
         </section>
-        <p v-if="isWalkIn && appointment.paymentStatus !== 'Paid'" class="contract-warning">Collect payment at POS first. The client can then sign here before treatment.</p>
+        <p v-if="isWalkIn && contract?.status !== 'signed'" class="contract-warning">Ask the treatment recipient to review and sign this agreement before taking payment at POS.</p>
+        <p v-else-if="isWalkIn && appointment.paymentStatus !== 'Paid'" class="contract-warning">Agreement signed. Record full payment at POS to issue the service code.</p>
         <section v-if="contract?.terms" class="contract-document">
           <div class="contract-step"><span>1</span><div><h4>Review agreement</h4><p>Please read the terms before signing.</p></div></div>
           <ClientContractDocument v-if="contract.document" class="contract-terms styled-contract" :document="contract.document" />
@@ -163,7 +164,7 @@ export default {
     const isCustomer = computed(() => props.appointment?.customerId === auth.currentUser?.uid)
     const canSign = computed(() => {
       if (props.readOnly) return false
-      if (isWalkIn.value) return Boolean(auth.currentUser && contract.value && contract.value.status !== 'signed' && props.appointment.paymentStatus === 'Paid')
+      if (isWalkIn.value) return Boolean(auth.currentUser && contract.value && contract.value.status !== 'signed')
       if (!isCustomer.value || contract.value?.status === 'signed') return false
       if (!auth.currentUser || !contract.value) return false
       // allow signing if current user's email is among requiredSigners or no requiredSigners defined

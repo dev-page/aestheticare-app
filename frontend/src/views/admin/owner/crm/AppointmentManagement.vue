@@ -37,7 +37,7 @@ const onlineMode = computed(() => route.query.mode === 'online' || (!canView.val
 const activeTab = computed(() => route.query.tab === 'requests' ? 'requests' : route.query.tab === 'queue' ? 'queue' : canView.value ? 'all' : canReview.value ? 'requests' : 'queue')
 const tabs = computed(() => [
   { key: 'all', label: 'All Appointments', allowed: canView.value },
-  { key: 'requests', label: 'Online Booking Requests', allowed: canReview.value },
+  { key: 'requests', label: 'Customer Booking Requests', allowed: canReview.value },
   { key: 'queue', label: 'Service Queue', allowed: canQueue.value },
 ])
 </script>
@@ -46,7 +46,7 @@ const tabs = computed(() => [
     <OwnerSidebar />
     <main class="flex-1 min-w-0 p-4 md:p-8">
       <h1 class="text-2xl md:text-3xl font-bold text-white">Appointment Management</h1>
-      <p class="mt-2 text-sm text-slate-400">Manage walk-ins, online bookings, requests, and your service queue.</p>
+      <p class="mt-2 text-sm text-slate-400">Manage walk-ins, customer booking requests, appointment records, and the service queue.</p>
       <nav class="appointment-tabs" aria-label="Appointment management tabs">
         <template v-for="tab in tabs" :key="tab.key">
           <router-link v-if="tab.allowed" :to="{ path: '/crm/appointments', query: { ...route.query, tab: tab.key } }" class="appointment-tab" :class="{ 'is-active': activeTab === tab.key }" :aria-current="activeTab === tab.key ? 'page' : undefined">{{ tab.label }}</router-link>

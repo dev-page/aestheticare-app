@@ -10,6 +10,14 @@ required payment precede access. The assigned practitioner must connect their
 Google hosting account before accepting new online consultation bookings.
 Google connection setup is documented in `google-meet-setup.md`.
 
+Customers submit the booking request without paying at booking time. After any
+required clinic approval, they review and sign the agreement, then complete the required
+payment in **My Appointments**. Signing generates and emails the consultation
+code. After the initial payment is received, the appointment menu also shows
+the saved code and allows direct in-app check-in; entering the emailed code
+remains available as a fallback. Unpaid appointments remain visible in the
+payment list, and the contract remains accessible from the online appointment.
+
 Service Listings contains arrival grace and buffer fields for online consultation
 posts. Defaults are ten minutes and fifteen minutes. Grace is constrained to
 0-30 minutes; the buffer is at least grace plus five minutes. Booking preparation
@@ -17,8 +25,8 @@ reserves duration plus buffer, validates availability/resources, and snapshots
 the timing policy and contract terms. Service cards disclose the timing rules
 before booking; the actual agreement includes a timing section before payment.
 
-The customer submits their emailed code beginning thirty minutes before the
-schedule and before arrival grace expires. Code submission creates an appointment
+The customer submits their saved in-app or emailed code beginning thirty minutes
+before the schedule and before arrival grace expires. Code submission creates an appointment
 meeting through the connected practitioner's Google Calendar. The waiting room
 opens five minutes before the schedule. Customer arrival first does not assign
 Google organizer ownership to them.

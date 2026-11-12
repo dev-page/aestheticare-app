@@ -87,7 +87,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
         }
         if (action === 'sign') {
           check(customer || assistedSigning, 'Only the customer or authorized walk-in assistant can submit the signature.', 403)
-          if (walkIn) check(balanceSettled(appointment), 'Collect payment at POS before signing.')
+          check(appointment.sameDayTreatmentStatus !== 'pending_clinical_clearance', 'The assigned practitioner must clear this treatment after the consultation before it can be signed.', 409)
           check(appointment.approvalStatus === 'Approved', 'The clinic must approve this booking before signing.')
           check(normalized(appointment.contract?.status) !== 'signed', 'This contract has already been signed.')
           const signatureImage = String(req.body?.signatureImage || '')
@@ -96,12 +96,13 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
           const signatureBytes = Buffer.from(signatureImage.split(',')[1], 'base64')
           check(signatureBytes.length > 32 && signatureBytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])), 'Invalid signature image.', 400)
           check(appointment.contract?.terms || appointment.contract?.templateUrl, 'The clinic must provide a contract first.')
-          check(['contract pending', 'awaiting payment', 'payment pending', 'approved', 'paid', 'ready to start', 'scheduled'].includes(status), 'The contract cannot be signed at this stage.')
+          check(['contract pending', 'awaiting payment', 'payment pending', 'approved', 'unpaid', 'paid', 'ready to start', 'scheduled'].includes(status), 'The contract cannot be signed at this stage.')
           update.contract = { ...appointment.contract, status: 'signed', signatures: { ...(appointment.contract.signatures || {}), [walkIn ? appointment.clientId : req.user.uid]: { uid: walkIn ? null : req.user.uid, clientId: walkIn ? appointment.clientId : null, witnessedBy: walkIn ? req.user.uid : null, signatureImage, method: 'drawn-signature', accepted: true, name: String(walkIn ? appointment.clientName || appointment.customerName || 'Walk-in client' : req.body?.name || req.user.name || req.user.email || 'Customer'), email: walkIn ? appointment.customerEmail || '' : req.user.email || '', signedAt: new Date().toISOString() } } }
           update.contractSignedAt = timestamp
-          update.serviceKey = appointment.serviceKey || String(crypto.randomInt(100000, 1000000))
+          if (!walkIn) update.serviceKey = appointment.serviceKey || String(crypto.randomInt(100000, 1000000))
           update.status = afterPaymentStatus({ ...appointment, ...update })
         } else if (action === 'key' || req.body?.action === 'manual_check_in') {
+          check(appointment.sameDayTreatmentStatus !== 'pending_clinical_clearance', 'The assigned practitioner must clear same-day treatment before check-in.', 409)
           check(checkInStaff && !online, 'Reception check-in is available for on-site appointments only.', 403)
           check(appointment.approvalStatus === 'Approved' && initialPaymentReceived(appointment) && normalized(appointment.contract?.status) === 'signed', 'Approval, initial payment, and a signed contract are required.')
           check(['paid', 'ready to start', 'scheduled'].includes(status) && !appointment.checkedInAt && !appointment.workerKeyVerified, 'This appointment is already checked in or cannot be checked in at this stage.')
@@ -147,6 +148,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             update.status = appointment.status
           } else if (transition === 'start') {
             check(worker, 'Only the assigned worker can start the service.', 403)
+            check(appointment.sameDayTreatmentStatus !== 'pending_clinical_clearance', 'The assigned practitioner must clear same-day treatment before it can start.', 409)
             const teamStart = await prepareTeamStart(tx, db, appointment, ref.id)
             const onlineConsultation = normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online'
             const serviceIsReady = onlineConsultation
@@ -325,7 +327,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
         if (appointment.bookingId && !appointment.isGroupRecipient && !appointment.bookingOrderId && !appointment.treatmentPlanAppointmentId) tx.set(db.collection('bookings').doc(appointment.bookingId), { status: update.status, updatedAt: timestamp }, { merge: true })
         const recipientUserId = customer ? appointment.practitionerId || appointment.assignedPractitionerId : appointment.customerId
         if (recipientUserId && !walkIn) tx.set(db.collection('notifications').doc(), { recipientUserId, title: 'Booking updated', message: `${appointment.service || 'Your booking'}: ${update.status}.`, link: customer ? '/clinical/appointments' : '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
-        return { appointmentId: ref.id, ...(update.consultationWindowEndAt ? { consultationWindowEndAt: update.consultationWindowEndAt, consultationWindowStartAt: update.consultationWindowStartAt } : {}), status: update.status, contract: update.contract || appointment.contract, ...(action === 'sign' ? { codeDelivery: { email: appointment.customerEmail, serviceKey: update.serviceKey, date: appointment.date, time: appointment.time } } : {}) }
+        return { appointmentId: ref.id, ...(update.consultationWindowEndAt ? { consultationWindowEndAt: update.consultationWindowEndAt, consultationWindowStartAt: update.consultationWindowStartAt } : {}), status: update.status, contract: update.contract || appointment.contract, ...(action === 'sign' && !walkIn ? { codeDelivery: { email: appointment.customerEmail, serviceKey: update.serviceKey, date: appointment.date, time: appointment.time } } : {}) }
       })
       if (result.codeDelivery) {
         await sendServiceCode(result.codeDelivery).catch(error => console.warn('Service code email failed:', error.message))

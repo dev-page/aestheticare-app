@@ -85,6 +85,11 @@
                     <button v-if="canMarkNoShow(appointment)" :disabled="actionBusy" @click="markNoShow(appointment)" class="rounded bg-rose-700 px-3 py-2 text-white">Mark No-show</button>
                     <router-link v-if="appointment.type === 'Consultation' &amp;&amp; appointment.consultationMode === 'online'" :to="{ path: '/crm/appointments', query: { tab: 'queue', mode: 'online' } }" class="rounded border border-amber-300 px-3 py-2">Open Online Consultation</router-link>
                     <button v-if="appointment.status === 'Ongoing' && appointment.consultationMode !== 'online'" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can complete their work." @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white disabled:opacity-50">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
+                    <template v-if="appointment.sameDayTreatmentAppointmentId && appointment.workerCompleted && !['cleared', 'not_cleared', 'booking_rejected'].includes(appointment.sameDayTreatmentStatus) && !['cancelled', 'cancellation requested'].includes(String(appointment.status || '').trim().toLowerCase())">
+                      <p class="w-full text-xs text-amber-200">Consultation complete. Decide whether {{ appointment.sameDayTreatmentName || 'the linked treatment' }} may proceed today.</p>
+                      <button type="button" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can clear same-day treatment." @click="decideSameDayTreatment(appointment, 'clear')" class="rounded bg-emerald-700 px-3 py-2 text-white disabled:opacity-50">Clear treatment for today</button>
+                      <button type="button" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can make this decision." @click="decideSameDayTreatment(appointment, 'do_not_clear')" class="rounded border border-rose-400 px-3 py-2 text-rose-200 disabled:opacity-50">Do not clear today</button>
+                    </template>
                     <button
                       v-if="canRecommendFollowUp(appointment)"
                       type="button"
@@ -187,6 +192,28 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.error || 'Unable to update booking.')
         toast.success('Booking updated: ' + payload.data.status)
+        await loadAppointments()
+        return true
+      } catch (error) { toast.error(error.message); return false } finally { actionBusy.value = false }
+    }
+
+    const decideSameDayTreatment = async (appointment, decision) => {
+      if (!appointment?.id || actionBusy.value || !isAssignedToPractitioner(appointment)) return false
+      let note = ''
+      if (decision === 'do_not_clear') {
+        note = String(window.prompt('Briefly explain why treatment should not proceed today (at least 10 characters).') || '').trim()
+        if (note.length < 10) { if (note) toast.error('Enter a reason of at least 10 characters.'); return false }
+      } else if (!window.confirm('Confirm that this treatment is appropriate to proceed today after the completed on-site consultation?')) return false
+      actionBusy.value = true
+      try {
+        const token = await auth.currentUser.getIdToken()
+        const response = await fetch(`${OTP_API_BASE}/appointments/${appointment.id}/same-day-treatment-clearance`, {
+          method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ decision, note }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to update same-day treatment clearance.')
+        toast.success(decision === 'clear' ? 'Treatment cleared. The recipient can now review consent and payment.' : 'Treatment declined for today. The provisional slot was released.')
         await loadAppointments()
         return true
       } catch (error) { toast.error(error.message); return false } finally { actionBusy.value = false }
@@ -458,6 +485,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       isAssignedToPractitioner,
       contractAppointment, contractSaved,
       actionBusy, bookingAction, showServiceKeyModal, openServiceKeyModal, closeServiceKeyModal, submitServiceKey,
+      decideSameDayTreatment,
       canMarkNoShow, markNoShow,
       manualCheckIn,
       searchQuery,
