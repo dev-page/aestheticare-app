@@ -1,5 +1,5 @@
 <template>
-  <section class="role-section">
+  <section class="role-section finance-dashboard-section">
     <header><p class="eyebrow">Finance</p><h2>Payments and revenue</h2><p>A branch-level view of recorded transactions and recent activity.</p></header>
     <div class="metric-grid"><article v-for="metric in metrics" :key="metric.label" class="metric"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong><small>{{ metric.note }}</small></article></div>
     <div class="panel-grid"><article class="panel"><h3>Revenue · last 7 days</h3><div class="bars"><div v-for="day in dailyTotals" :key="day.label"><span>{{ day.label }}</span><i><b :style="{ height: `${day.height}%` }" /></i><strong>{{ compactCurrency(day.total) }}</strong></div></div></article><article class="panel"><h3>Recent transactions</h3><div v-if="recentTransactions.length" class="table-wrap"><table><thead><tr><th>Date</th><th>Reference</th><th>Amount</th><th>Status</th></tr></thead><tbody><tr v-for="item in recentTransactions" :key="item.id"><td>{{ dateLabel(item) }}</td><td>{{ item.reference || item.id }}</td><td>{{ currency(item.amount) }}</td><td>{{ item.status || item.paymentStatus || 'Recorded' }}</td></tr></tbody></table></div><p v-else class="empty">No transactions to display.</p></article></div>

@@ -171,7 +171,7 @@ main.owner-theme.onboarding-page {
 
 /* ---------- Navigation sidebar ---------- */
 
-aside.app-sidebar {
+html:not([data-ac-theme="dark"]) aside.app-sidebar {
   background: linear-gradient(180deg, #fffaf1 0%, #f8ead4 100%) !important;
   border-color: var(--ac-border) !important;
   color: var(--ac-text-secondary) !important;
@@ -179,50 +179,50 @@ aside.app-sidebar {
   font-family: var(--ac-font-ui) !important;
 }
 
-aside.app-sidebar [class*="border-[#3a"],
-aside.app-sidebar [class*="border-[#4b"],
-aside.app-sidebar [class*="border-[#5a"] { border-color: var(--ac-border) !important; }
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="border-[#3a"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="border-[#4b"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="border-[#5a"] { border-color: var(--ac-border) !important; }
 
-aside.app-sidebar [class*="text-[#e8"],
-aside.app-sidebar [class*="text-[#f"],
-aside.app-sidebar .text-white { color: var(--ac-text-secondary) !important; }
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="text-[#e8"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="text-[#f"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar .text-white { color: var(--ac-text-secondary) !important; }
 
-aside.app-sidebar [class*="text-[#c9"],
-aside.app-sidebar [class*="text-[#b9"],
-aside.app-sidebar [class*="text-[#9f"] { color: var(--ac-text-muted) !important; }
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="text-[#c9"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="text-[#b9"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="text-[#9f"] { color: var(--ac-text-muted) !important; }
 
-aside.app-sidebar [class*="bg-[#150"],
-aside.app-sidebar [class*="bg-[#1f"],
-aside.app-sidebar [class*="bg-[#241"],
-aside.app-sidebar [class*="bg-[#2a"],
-aside.app-sidebar [class*="bg-[#2f"],
-aside.app-sidebar [class*="bg-[#3a"] {
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="bg-[#150"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="bg-[#1f"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="bg-[#241"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="bg-[#2a"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="bg-[#2f"],
+html:not([data-ac-theme="dark"]) aside.app-sidebar [class*="bg-[#3a"] {
   background: rgba(255, 253, 249, .72) !important;
   border-color: var(--ac-border) !important;
 }
 
-aside.app-sidebar :is([class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"], [class*="bg-[#9a6848"]) {
+html:not([data-ac-theme="dark"]) aside.app-sidebar :is([class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"], [class*="bg-[#9a6848"]) {
   background: var(--ac-primary) !important;
   border-color: var(--ac-primary) !important;
   color: var(--ac-on-primary) !important;
   box-shadow: 0 6px 16px rgba(45, 27, 19, .14);
 }
 
-aside.app-sidebar :is([class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"], [class*="bg-[#9a6848"]) * {
+html:not([data-ac-theme="dark"]) aside.app-sidebar :is([class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"], [class*="bg-[#9a6848"]) * {
   color: var(--ac-on-primary) !important;
 }
 
-aside.app-sidebar :is(a, button):hover:not(:disabled) {
+html:not([data-ac-theme="dark"]) aside.app-sidebar :is(a, button):hover:not(:disabled) {
   background: #f1ddc1 !important;
   color: var(--ac-text) !important;
 }
 
-aside.app-sidebar :is(a, button):is([class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"]):hover {
+html:not([data-ac-theme="dark"]) aside.app-sidebar :is(a, button):is([class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"]):hover {
   background: var(--ac-primary-hover) !important;
   color: var(--ac-on-primary) !important;
 }
 
-aside.app-sidebar :is(a, button)[aria-current="page"] {
+html:not([data-ac-theme="dark"]) aside.app-sidebar :is(a, button)[aria-current="page"] {
   background: var(--ac-primary) !important;
   color: var(--ac-on-primary) !important;
 }
@@ -1398,4 +1398,665 @@ html[data-ac-theme="dark"] .aestheticare-app .login-visual :is(
 
 @media (max-width: 767px) {
   .global-theme-selector { top: .65rem; right: .65rem; }
+}
+
+/* HR and Finance authenticated screens: cover components that still use
+   fixed light-theme colors inside otherwise dark workspaces. */
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) :is(
+  [class*="text-[#3"], [class*="text-[#4"], [class*="text-[#5"],
+  [class*="text-[#6"], [class*="text-[#7"], [class*="text-[#8"],
+  [class*="text-[#9"]
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) main :is(
+  button, a[role="button"]
+):is([class*="bg-amber-"], [class*="bg-yellow-"]) {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) main :is(
+  button, a[role="button"]
+):is([class*="bg-amber-"], [class*="bg-yellow-"]) * {
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) main :is(
+  button, a[role="button"]
+):is([class*="bg-emerald-"], [class*="bg-green-"]) {
+  background: var(--ac-success-bg) !important;
+  border-color: var(--ac-success) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) main :is(
+  button, a[role="button"]
+):is([class*="bg-emerald-"], [class*="bg-green-"]) * {
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select :is(
+  .appearance-select-trigger, .appearance-select-menu
+) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select svg {
+  color: var(--ac-accent) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li,
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li :is(span, svg) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li:is(
+  .is-highlighted, .is-selected
+) {
+  background: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li:is(
+  .is-highlighted, .is-selected
+) :is(span, svg) {
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .appearance-select :is(
+  .appearance-select-trigger, .appearance-select-menu
+) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .appearance-select svg {
+  color: var(--ac-accent) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .appearance-select-menu li:is(
+  .is-highlighted, .is-selected
+) {
+  background: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .appearance-select-menu li:is(
+  .is-highlighted, .is-selected
+) :is(span, svg) {
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .employee-tabs .employee-tab, .shift-tabs .shift-tab,
+  .compensation-tabs .compensation-tab
+) {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .employee-tabs .employee-tab.is-active, .shift-tabs .shift-tab.is-active,
+  .compensation-tabs .compensation-tab.is-active
+) {
+  color: var(--ac-text-secondary) !important;
+  border-bottom-color: var(--ac-accent) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .employee-tabs .employee-tab.is-disabled, .shift-tabs .shift-tab.is-disabled,
+  .compensation-tabs .compensation-tab.is-disabled
+) {
+  color: var(--ac-text-muted) !important;
+  opacity: .8 !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .schedule-assignment :is(
+  .assignment-button-secondary, .appearance-select-trigger,
+  .appearance-select-menu
+) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .schedule-assignment .assignment-button-secondary:hover:not(:disabled) {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-accent) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .schedule-assignment input[type="date"] {
+  color-scheme: dark !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .add-staff-select,
+html[data-ac-theme="dark"] .aestheticare-app .add-staff-select option,
+html[data-ac-theme="dark"] .aestheticare-app .assignment-options {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+  color-scheme: dark !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .assignment-option:hover,
+html[data-ac-theme="dark"] .aestheticare-app .assignment-option.is-selected {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .assignment-location,
+html[data-ac-theme="dark"] .aestheticare-app .assignment-empty {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .finance-page .finance-summary :is(span, strong) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .finance-page .finance-summary span {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .finance-page select option,
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog select option {
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .finance-page .budget-summary span {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .finance-page .budget-empty-state {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .finance-page .budget-empty-state :is(h4, p, svg) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.hr-dashboard-section, .finance-dashboard-section) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.hr-dashboard-section, .finance-dashboard-section) :is(
+  .metric, .panel, header, .day, .appointment-list article
+) {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.hr-dashboard-section, .finance-dashboard-section) :is(
+  h2, h3, .metric strong, .day b, .appointment-list b, .bars strong
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.hr-dashboard-section, .finance-dashboard-section) :is(
+  .eyebrow, header p:last-child, .metric span, .metric small, .weekday,
+  .day small, .bars > div, th, .empty, .appointment-list span,
+  .appointment-list small
+) {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.hr-dashboard-section, .finance-dashboard-section) :is(
+  .day.recorded, .day.marked, .day.booked
+) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .finance-dashboard-section .bars i {
+  background: var(--ac-surface-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .finance-dashboard-section .bars b {
+  background: var(--ac-accent) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance {
+  background: var(--ac-bg) !important;
+  color: var(--ac-text-secondary) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance :is(
+  h1, h2, h3, p, label, dt, dd, li, summary, a, th, td,
+  .attendance-eyebrow, .summary small, .summary strong
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance :is(
+  .summary > div, .shell > .filters, .attendance-records-panel,
+  .table-wrap, .panel, .station, .dialog, dl
+) {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance :is(
+  input:not([type="checkbox"]), select, textarea
+) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
+  color-scheme: dark !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance select option {
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance :is(th, .attendance-tabs) {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-border) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .attendance-tabs button {
+  background: transparent !important;
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .attendance-tabs button:is(.active, :hover) {
+  border-bottom-color: var(--ac-accent) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance :is(button, .steps span) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance :is(button, .steps span) * {
+  color: inherit !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .steps .active,
+html[data-ac-theme="dark"] .aestheticare-app .attendance .attendance-dialog-close:hover:not(:disabled) {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance :is(.error, .error *) {
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .error {
+  background: var(--ac-danger-bg) !important;
+  border-color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .error * {
+  background: transparent !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .import-account-note {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .import-account-note :is(strong, p) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .badge {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .good {
+  background: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .review {
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme .role-list-item-active {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme .role-badge {
+  background: var(--ac-surface-muted) !important;
+  border: 1px solid var(--ac-border-strong) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme .role-badge :is(svg, span, i) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme .permission-icon {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme .discord-switch:not(.discord-switch-on) {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-border-strong) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme .discord-switch-thumb {
+  background: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme .ghost-action {
+  color: var(--ac-accent) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme .ghost-action:hover:not(:disabled) {
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.employee-edit-modal {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.employee-edit-modal > :is(div:first-child, div:last-child) {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.employee-edit-modal :is(
+  .employee-edit-title, .employee-edit-eyebrow, .employee-edit-caption,
+  .employee-edit-form, .employee-edit-form label, .employee-professional-fields legend,
+  .employee-edit-choices label, .employee-license-link
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.employee-edit-modal :is(
+  input:not([type="checkbox"]), select, textarea, pre
+) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
+  color-scheme: dark !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.employee-edit-modal :is(
+  .employee-edit-choices, .employee-edit-choices label, .employee-professional-fields,
+  .employee-license-ocr
+) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.employee-edit-modal .employee-edit-cancel {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.employee-edit-modal .employee-edit-save {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.employee-edit-modal .employee-edit-error {
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.employee-edit-modal .employee-license-ocr :is(strong, p, summary) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel :is(.earnings-review, .earnings-review p, .earnings-review label) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .earnings-review :is(input, textarea) {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
+  color-scheme: dark !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .earnings-review :is(th, td) {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .earnings-review button {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .earnings-action {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .row-action-options {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .row-action-options :is(button, a, [role="menuitem"]) {
+  background: transparent !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .row-action-options :is(button, a, [role="menuitem"]):hover {
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog :is(
+  div, section, header, footer, p, h1, h2, h3, label, dt, dd,
+  th, td, span, strong, small, button
+) {
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog :is(
+  .purchase-order-body, .procurement-modal-body, .purchase-order-info,
+  .purchase-order-pricing, .purchase-order-table-wrap, .purchase-order-total,
+  .listing-review-modal-overview, .listing-review-records, .listing-review-records-heading
+) {
+  background: var(--ac-surface-soft) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog :is(
+  .purchase-order-section,
+  .purchase-order-table-wrap table, .purchase-order-table-wrap th,
+  .purchase-order-table-wrap td
+) {
+  background: var(--ac-surface) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.purchase-order-dialog > div:first-child {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog .purchase-order-total {
+  background: var(--ac-surface-muted) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog :is(
+  .purchase-order-status.is-negative, .finance-status-danger,
+  .listing-review-status.is-rejected
+) {
+  background: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog :is(
+  .purchase-order-status.is-positive, .finance-status-success,
+  .listing-review-status.is-approved
+) {
+  background: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog :is(
+  .purchase-order-status.is-pending, .finance-status-pending,
+  .listing-review-status.is-pending
+) {
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .review-dot.is-pending {
+  background: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .review-dot.is-approved {
+  background: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .review-dot.is-rejected {
+  background: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .attendance .buttons > button:last-child {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+/* The light sidebar palette must not leak onto utility classes such as
+   hover:bg-[#3a2417] while the dark theme is active. */
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar {
+  background: linear-gradient(180deg, var(--ac-surface) 0%, var(--ac-bg-deep) 100%) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+  box-shadow: 10px 0 34px rgba(0, 0, 0, .28) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar [class*="bg-[#150"],
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar [class*="bg-[#1f"],
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar [class*="bg-[#241"],
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar [class*="bg-[#2a"],
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar [class*="bg-[#2f"],
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar [class*="bg-[#3a"] {
+  background-color: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar :is(
+  [class*="text-[#e8"], [class*="text-[#f"], [class*="text-[#c9"],
+  [class*="text-[#b9"], [class*="text-[#9f"], .text-white
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar :is(a, button):hover:not(:disabled):is(
+  [class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"], [class*="bg-[#9a6848"]
+) {
+  background: var(--ac-primary-hover) !important;
+  border-color: var(--ac-primary-hover) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app aside.app-sidebar :is(a, button):hover:not(:disabled):is(
+  [class*="bg-[#6b3f27"], [class*="bg-[#8b5a3c"], [class*="bg-[#9a6848"]
+) * {
+  color: var(--ac-on-primary) !important;
+}
+
+/* Owner dashboard checklist rows have component-local light colors, so give
+   their panels and completion state explicit dark surfaces and readable text. */
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .setup-checklist {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+  box-shadow: var(--ac-shadow-md) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .setup-checklist :is(
+  .setup-checklist-heading h2, .setup-checklist-heading p,
+  .setup-task-copy h3, .setup-task-copy p
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .setup-progress {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .setup-task-list > li {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .setup-task-list > li.is-complete {
+  background: var(--ac-success-bg) !important;
+  border-color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .setup-task-number {
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-accent) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .setup-task-list > li.is-complete .setup-task-number {
+  border-color: var(--ac-success) !important;
+  background: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .setup-task-status {
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .dashboard-action-btn {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .dashboard-action-btn:hover {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-accent) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .dashboard-action-btn-primary {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
 }
