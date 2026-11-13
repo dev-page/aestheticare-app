@@ -482,6 +482,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     return {
       pageLoading,
+      formatClockTime,
       isAssignedToPractitioner,
       contractAppointment, contractSaved,
       actionBusy, bookingAction, showServiceKeyModal, openServiceKeyModal, closeServiceKeyModal, submitServiceKey,

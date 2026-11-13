@@ -602,6 +602,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     return {
       pageLoading,
+      formatClockTime,
       searchQuery,
       statusFilter,
       dateFilter,
