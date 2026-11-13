@@ -605,4 +605,119 @@ onBeforeUnmount(() => {
     justify-content: space-between;
   }
 }
+
+:global(html[data-ac-theme="dark"]) .subscription-shell {
+  color-scheme: dark;
+  color: var(--ac-text-secondary);
+  background:
+    radial-gradient(circle at 12% 8%, rgba(109, 74, 50, .32), transparent 30%),
+    radial-gradient(circle at 86% 82%, rgba(73, 50, 36, .38), transparent 28%),
+    linear-gradient(180deg, #1b100a 0%, #24180f 56%, #2f1e14 100%) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell :is(
+  .subscription-glow-left, .subscription-glow-right
+) {
+  background: rgba(109, 74, 50, .44) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell :is(
+  .popup-eyebrow, .popup-title, .popup-subtitle, .aside-copy,
+  .plan-name, .plan-price, .plan-desc, .plan-caption, .plan-features,
+  .plan-cycle, .plan-kicker, .plan-select-indicator
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .popup-title,
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-price {
+  color: var(--ac-text) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell :is(
+  .popup-aside, .pricing-reassurance
+) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text-secondary) !important;
+  box-shadow: var(--ac-shadow-sm);
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell :is(
+  .aside-pill, .recommended-badge, .trial-badge, .plan-selected-badge
+) {
+  border-color: var(--ac-border-strong) !important;
+  background: #6d4a32 !important;
+  color: #fff1d9 !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-card {
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-card-free {
+  background: linear-gradient(145deg, #2b1b12 0%, #342419 55%, #3d2a1d 100%) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-card-basic {
+  background: linear-gradient(145deg, #342419 0%, #3d2a1d 52%, #493224 100%) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-card-premium {
+  background: linear-gradient(145deg, #3d2a1d 0%, #493224 52%, #5a3d29 100%) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-card :is(
+  .plan-name, .plan-price, .plan-desc, .plan-caption, .plan-features,
+  .plan-cycle, .plan-kicker, .plan-select-indicator
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-card :is(
+  .plan-name, .plan-price
+) {
+  color: var(--ac-text) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-features {
+  border-top-color: var(--ac-border) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-features li::before {
+  color: var(--ac-accent) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-card-active {
+  border-color: var(--ac-accent) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .plan-orb {
+  background: radial-gradient(circle, rgba(217, 154, 108, .2), transparent 66%) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .card-shine {
+  background: linear-gradient(110deg, transparent 28%, rgba(217, 154, 108, .13) 52%, transparent 76%) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .btn-secondary {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .btn-secondary:hover {
+  background: var(--ac-surface-muted) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .btn-primary {
+  border-color: var(--ac-border-strong) !important;
+  background: linear-gradient(120deg, #8f5e3d 0%, #6d4a32 100%) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .subscription-shell .popup-error {
+  color: var(--ac-danger) !important;
+}
 </style>

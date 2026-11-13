@@ -144,7 +144,7 @@
       </section>
 
       <section class="mt-8">
-        <div class="flex flex-col gap-4 rounded-[1.5rem] border border-gold-200/70 bg-white/70 px-5 py-4 shadow-[0_18px_44px_rgba(87,56,35,0.08)] backdrop-blur md:flex-row md:items-center md:justify-between">
+        <div class="results-summary flex flex-col gap-4 rounded-[1.5rem] border border-gold-200/70 bg-white/70 px-5 py-4 shadow-[0_18px_44px_rgba(87,56,35,0.08)] backdrop-blur md:flex-row md:items-center md:justify-between">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.24em] text-charcoal-500">Results</p>
             <h2 class="mt-1 text-2xl font-semibold text-charcoal-800">
@@ -158,14 +158,14 @@
         <transition name="fade">
           <div
             v-if="locationMessage"
-            class="mt-3 inline-flex max-w-full rounded-2xl border border-gold-200/80 bg-gold-50 px-4 py-3 text-sm leading-6 text-gold-900 shadow-[0_10px_24px_rgba(126,87,57,0.08)]"
+            class="location-message mt-3 inline-flex max-w-full rounded-2xl border border-gold-200/80 bg-gold-50 px-4 py-3 text-sm leading-6 text-gold-900 shadow-[0_10px_24px_rgba(126,87,57,0.08)]"
           >
             {{ locationMessage }}
           </div>
         </transition>
       </section>
 
-      <section v-if="recommendedCenters.length" class="mt-8 rounded-[1.75rem] border border-gold-200/70 bg-white/70 p-5 shadow-[0_16px_40px_rgba(87,56,35,0.08)] backdrop-blur">
+      <section v-if="recommendedCenters.length" class="recommended-section mt-8 rounded-[1.75rem] border border-gold-200/70 bg-white/70 p-5 shadow-[0_16px_40px_rgba(87,56,35,0.08)] backdrop-blur">
         <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.24em] text-gold-700">Recommended for you</p>
@@ -180,7 +180,7 @@
           <article
             v-for="center in recommendedCenters"
             :key="`recommended-${center.id}`"
-            class="rounded-[1.4rem] border border-gold-200/70 bg-[linear-gradient(135deg,_rgba(255,248,236,0.96),_rgba(255,255,255,0.92))] p-4 shadow-[0_10px_24px_rgba(94,61,33,0.06)]"
+            class="recommended-center-card rounded-[1.4rem] border border-gold-200/70 bg-[linear-gradient(135deg,_rgba(255,248,236,0.96),_rgba(255,255,255,0.92))] p-4 shadow-[0_10px_24px_rgba(94,61,33,0.06)]"
           >
             <div class="flex items-center justify-between gap-3">
               <div>
@@ -229,7 +229,7 @@
           >
             <div class="center-card-media">
               <img v-if="center.bannerPicture" :src="center.bannerPicture" alt="Center banner" class="h-full w-full object-cover transition duration-700 group-hover:scale-105" />
-              <div v-else class="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(249,213,175,0.95),_rgba(200,147,108,0.82)_45%,_rgba(117,75,51,0.94)_100%)]"></div>
+              <div v-else class="center-card-placeholder absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(249,213,175,0.95),_rgba(200,147,108,0.82)_45%,_rgba(117,75,51,0.94)_100%)]"></div>
               <div class="absolute inset-0 bg-gradient-to-t from-[rgba(39,23,14,0.8)] via-[rgba(39,23,14,0.18)] to-transparent"></div>
 
               <div class="absolute left-5 top-5 flex items-center gap-2">
@@ -342,10 +342,10 @@
 
   <transition name="fade">
     <div v-if="showRedirectPopup" class="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(28,15,7,0.62)] px-4 backdrop-blur-md">
-      <div class="w-full max-w-md rounded-[1.75rem] border border-gold-200/80 bg-[#fff7ec] shadow-[0_28px_80px_rgba(48,26,12,0.34)] p-6">
+      <div class="center-redirect-card w-full max-w-md rounded-[1.75rem] border border-gold-200/80 bg-[#fff7ec] shadow-[0_28px_80px_rgba(48,26,12,0.34)] p-6">
         <h3 class="text-lg font-semibold text-charcoal-800">Redirecting to sign in</h3>
         <p class="mt-1 text-sm text-charcoal-600">Please wait while we prepare your center view and login path.</p>
-        <div class="mt-5 h-2.5 w-full overflow-hidden rounded-full bg-gold-100">
+        <div class="redirect-progress-track mt-5 h-2.5 w-full overflow-hidden rounded-full bg-gold-100">
           <div class="redirect-bar h-full rounded-full bg-gradient-to-r from-gold-600 via-gold-500 to-cream-300"></div>
         </div>
       </div>
@@ -1058,5 +1058,211 @@ watch(radiusKm, () => {
   .filter-secondary-group { align-items: flex-start; flex-direction: column; gap: 0.65rem; }
   .compact-filter-shell { width: 100%; justify-content: space-between; }
   .compact-filter-input { min-width: 9rem; }
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery {
+  color-scheme: dark;
+  color: var(--ac-text-secondary);
+  background:
+    radial-gradient(circle at 14% 8%, rgba(109, 74, 50, .3), transparent 30%),
+    radial-gradient(circle at 88% 12%, rgba(73, 50, 36, .38), transparent 26%),
+    linear-gradient(180deg, #1b100a 0%, #24180f 56%, #2f1e14 100%) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+  .discovery-filter-bar, .results-summary, .recommended-section,
+  .recommended-center-card, .center-card, .state-panel
+) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text-secondary) !important;
+  box-shadow: var(--ac-shadow-sm);
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .discovery-filter-secondary {
+  border-top-color: var(--ac-border) !important;
+  background: #2b1a11 !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-page-nav {
+  background: rgba(36, 24, 15, .96) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-page-nav :is(
+  .centers-home-icon, .centers-login-button
+) {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-page-nav :is(
+  .centers-home-icon:hover, .centers-login-button:hover
+) {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+  .centers-hero-title, .centers-resource-title, .filter-label,
+  .state-title, .state-copy, .center-card .text-right p
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery [class*="text-charcoal-"] {
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery [class*="text-gold-"] {
+  color: var(--ac-accent) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .filter-label svg,
+:global(html[data-ac-theme="dark"]) .centers-discovery .filter-search-icon {
+  color: var(--ac-accent) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+  .filter-input, .compact-filter-input
+) {
+  border-color: var(--ac-border-strong) !important;
+  background: #342419 !important;
+  color: var(--ac-text) !important;
+  color-scheme: dark !important;
+  box-shadow: none !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .filter-input::placeholder {
+  color: var(--ac-text-muted) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+  .filter-input, .compact-filter-input
+) option {
+  background: #342419 !important;
+  color: var(--ac-text) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .filter-input:disabled {
+  background: #2b1a11 !important;
+  color: var(--ac-text-muted) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .nearby-location-button {
+  border-color: var(--ac-border-strong) !important;
+  background: #6d4a32 !important;
+  color: var(--ac-on-primary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+  button[class*="bg-charcoal-"], button[class*="bg-gold-"]
+) {
+  border-color: var(--ac-border-strong) !important;
+  background: #6d4a32 !important;
+  color: var(--ac-on-primary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+  button[class*="bg-charcoal-"], button[class*="bg-gold-"]
+):hover:not(:disabled) {
+  background: #81583b !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .favorites-filter {
+  border-color: var(--ac-border-strong) !important;
+  background: #342419 !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .favorites-filter[aria-pressed="true"] {
+  background: #6d4a32 !important;
+  color: var(--ac-on-primary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .favorites-filter span {
+  border: 1px solid var(--ac-border-strong);
+  background: #493224 !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .favorites-filter svg {
+  color: var(--ac-accent) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .clear-filters-button {
+  color: var(--ac-accent) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery [class*="bg-white"] {
+  background-color: #342419 !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+  [class*="bg-gold-50"], [class*="bg-gold-100"], [class*="bg-charcoal-50"]
+) {
+  background-color: #493224 !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery [class*="border-gold-"],
+:global(html[data-ac-theme="dark"]) .centers-discovery [class*="border-charcoal-"] {
+  border-color: var(--ac-border-strong) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .center-card > .p-5 {
+  background: var(--ac-surface) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .center-card-media {
+  background: linear-gradient(135deg, #3d2a1d 0%, #6d4a32 100%) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .center-card-placeholder {
+  background: radial-gradient(circle at top left, #6d4a32, #493224 48%, #2b1a11 100%) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .center-avatar {
+  border-color: var(--ac-border-strong) !important;
+  background: #493224 !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .center-card .border-t {
+  border-color: var(--ac-border) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .loading-card {
+  border-color: var(--ac-border) !important;
+  background: linear-gradient(135deg, #2b1a11, #3d2a1d) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery .location-message {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .center-redirect-card {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .center-redirect-card .redirect-progress-track {
+  background: var(--ac-surface-muted) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .center-redirect-card .redirect-bar {
+  background: linear-gradient(90deg, #8f5e3d, #6d4a32) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .center-redirect-card :is(h3, p) {
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .centers-discovery [class*="text-rose-700"] {
+  color: var(--ac-danger) !important;
 }
 </style>

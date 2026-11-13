@@ -1389,6 +1389,134 @@ html[data-ac-theme="dark"] .aestheticare-app .login-visual :is(
   border-color: #9a6b46 !important;
 }
 
+/* Clinic registration follows the same dark palette as the login screen. */
+html[data-ac-theme="dark"] .aestheticare-app :has(> .register-form-panel) {
+  background: var(--ac-bg-deep) !important;
+  border-color: var(--ac-border) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .register-form-panel, .register-visual-pane
+) {
+  background: var(--ac-bg-soft) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-visual-pane.register-visual {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(154, 107, 70, .28), transparent 42%),
+    linear-gradient(145deg, #3d2a1d, #24180f 76%) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel {
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel :is(
+  .register-title, h1, h2, h3, label, .stepper-label,
+  .text-charcoal-600, .text-charcoal-700, .text-charcoal-800
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel .register-title {
+  background: none !important;
+  color: var(--ac-text) !important;
+  -webkit-text-fill-color: var(--ac-text) !important;
+  text-shadow: none !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel :is(
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea,
+  .calendar-select, .calendar-nav-btn
+) {
+  background-color: #342419 !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel .calendar-select {
+  background-image:
+    linear-gradient(45deg, transparent 50%, #f0ddc8 50%),
+    linear-gradient(135deg, #f0ddc8 50%, transparent 50%) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel select option {
+  background: #342419;
+  color: var(--ac-text);
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel :is(
+  input:not([type="checkbox"]):not([type="radio"]), textarea
+)::placeholder {
+  color: var(--ac-text-muted) !important;
+  opacity: 1;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel :is(
+  input[type="checkbox"], input[type="radio"]
+) {
+  accent-color: var(--ac-primary);
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel :is(
+  .stepper-dot, .calendar-popover, .calendar-menu
+) {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel :is(
+  .stepper-item-active .stepper-dot, .stepper-item-done .stepper-dot,
+  .calendar-menu-item-active, .calendar-day-selected
+) {
+  background: #6d4a32 !important;
+  border-color: #9a6b46 !important;
+  color: #fff1d9 !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel :is(
+  .stepper-item-active .stepper-label, .stepper-item-done .stepper-label,
+  .calendar-month-title, .calendar-menu-item, .calendar-weekdays span,
+  .calendar-day, .calendar-nav-btn, .floating-label, .birth-floating-label
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel :is(
+  .calendar-menu-item:hover, .calendar-day:hover, .calendar-nav-btn:hover
+) {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .register-form-panel .form-side-bubble,
+  .register-visual-pane .visual-orb,
+  .register-visual-pane .side-bubble,
+  .register-visual-pane .space-dot
+) {
+  background: #6d4a32 !important;
+  border-color: #9a6b46 !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-visual-pane :is(
+  .device-layer, .device-top
+) {
+  background: linear-gradient(145deg, #493224, #6d4a32) !important;
+  border-color: #9a6b46 !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-visual-pane .device-chip {
+  background: #8f5e3d !important;
+  border-color: #b17c53 !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-visual-pane .space-comet {
+  background: linear-gradient(90deg, rgba(240, 221, 200, 0), rgba(240, 221, 200, .78)) !important;
+}
+
 .global-theme-selector {
   position: fixed !important;
   top: .85rem;

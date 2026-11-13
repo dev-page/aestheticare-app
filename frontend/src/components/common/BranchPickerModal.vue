@@ -51,5 +51,25 @@ const titleId = 'branch-picker-title'
 .branch-picker-option strong { color: #342419; font-size: .95rem; }
 .branch-picker-option small { margin-top: .3rem; color: #72573f; font-size: .8rem; }
 .branch-picker-arrow { color: #956344; font-size: 1.75rem; line-height: 1; }
+:global(html[data-ac-theme="dark"]) .branch-picker {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text-secondary) !important;
+}
+:global(html[data-ac-theme="dark"]) .branch-picker :is(h2, p, strong, small) {
+  color: var(--ac-text-secondary) !important;
+}
+:global(html[data-ac-theme="dark"]) .branch-picker :is(.branch-picker-kicker, .branch-picker-arrow) {
+  color: var(--ac-accent) !important;
+}
+:global(html[data-ac-theme="dark"]) .branch-picker :is(.branch-picker-close, .branch-picker-option) {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+}
+:global(html[data-ac-theme="dark"]) .branch-picker .branch-picker-option:hover {
+  border-color: var(--ac-accent) !important;
+  background: var(--ac-surface-muted) !important;
+}
 @media (max-width: 480px) { .branch-picker { padding: 1.1rem; border-radius: 1.15rem; }.branch-picker h2 { font-size: 1.25rem; }.branch-picker-option { padding: .85rem; } }
 </style>
