@@ -1,114 +1,117 @@
 <template>
-  <div :class="['space-y-4', { 'location-picker--dark': theme === 'dark' }]">
+  <div :class="['location-picker', { 'location-picker--dark': theme === 'dark' }]">
     <div :class="['rounded-2xl border px-4 py-3 text-sm', theme === 'dark' ? 'border-amber-700/50 bg-[#2d1a10] text-[#f3e7e0]' : 'border-amber-200 bg-amber-50 text-amber-900']" v-if="instructionText">
       <p class="font-semibold">{{ instructionTitle }}</p>
       <p class="mt-1 leading-relaxed">{{ instructionText }}</p>
     </div>
 
-    <div v-if="!readonly" :class="['rounded-2xl border p-4 space-y-3', theme === 'dark' ? 'border-[#6c432c] bg-[#2d1a10]' : 'border-gold-200/80 bg-cream-100']">
-      <label :class="['block text-xs font-semibold uppercase tracking-[0.14em]', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700']">Search location</label>
-      <div class="flex flex-col gap-3 sm:flex-row">
-        <input
-          v-model="searchQuery"
-          type="text"
-          :class="['w-full rounded-xl border px-4 py-3 outline-none focus:ring-4', theme === 'dark' ? 'border-[#6c432c] bg-[#1d100a] text-[#f7ede7] placeholder:text-[#a88470] focus:border-[#b9784f] focus:ring-[#b9784f]/20' : 'border-gold-200/80 bg-white text-charcoal-700 placeholder:text-charcoal-400 focus:border-gold-400 focus:ring-gold-200/30']"
-          :placeholder="searchPlaceholder"
-          @keyup.enter.prevent="searchLocation"
-        />
-        <button
-          type="button"
-          class="rounded-xl bg-gold-700 px-5 py-3 font-semibold text-white transition hover:bg-gold-800"
-          @click="searchLocation"
+    <div :class="['location-picker__layout', { 'location-picker__layout--readonly': readonly }]">
+      <div class="location-picker__map-column relative">
+        <div
+          ref="mapCanvas"
+          :class="[
+            'relative overflow-hidden rounded-2xl border',
+            theme === 'dark' ? 'border-[#6c432c] bg-[#1d100a]' : 'border-gold-200/80 bg-cream-100',
+            mapClass,
+            { 'location-picker__cavite-map--fallback': !hasOfficialCaviteBoundary },
+          ]"
+          :style="{ height: mapHeight }"
+        ></div>
+        <div class="pointer-events-none absolute inset-x-4 top-4 z-[4] flex items-start justify-between gap-3">
+          <div :class="['rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] shadow-sm backdrop-blur-sm', theme === 'dark' ? 'border-[#8d5a3b] bg-[rgba(45,26,16,0.92)] text-[#f3d1b7]' : 'border-amber-200/80 bg-[rgba(255,248,240,0.92)] text-gold-800']">
+            {{ hasOfficialCaviteBoundary ? 'Cavite boundary' : 'Cavite only' }}
+          </div>
+          <div :class="['hidden rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.14em] shadow-sm backdrop-blur-sm sm:block', theme === 'dark' ? 'border-[#6c432c] bg-[rgba(29,16,10,0.86)] text-[#d6a77d]' : 'border-gold-200/70 bg-[rgba(255,248,240,0.82)] text-charcoal-500']">
+            {{ hasOfficialCaviteBoundary ? 'OpenStreetMap geometry' : 'Outside Cavite is blocked' }}
+          </div>
+        </div>
+        <div
+          v-if="caviteBoundaryNotice"
+          class="absolute inset-x-4 bottom-4 z-[4] rounded-full border border-amber-200 bg-[rgba(255,248,240,0.92)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800 shadow-sm backdrop-blur-sm"
         >
-          Search
-        </button>
+          {{ caviteBoundaryNotice }}
+        </div>
+        <div
+          v-if="loading"
+          :class="['absolute inset-0 z-[5] flex items-center justify-center rounded-2xl text-sm font-semibold backdrop-blur-[2px]', theme === 'dark' ? 'bg-[rgba(29,16,10,0.78)] text-[#f3d1b7]' : 'bg-[rgba(255,248,240,0.72)] text-gold-800']"
+        >
+          Loading map...
+        </div>
       </div>
-      <p :class="['text-xs', theme === 'dark' ? 'text-[#c5a18b]' : 'text-charcoal-500']">
-        {{ searchHint }}
-      </p>
-    </div>
 
-    <div class="relative">
-      <div
-        ref="mapCanvas"
-        :class="[
-          'relative overflow-hidden rounded-2xl border',
-          theme === 'dark' ? 'border-[#6c432c] bg-[#1d100a]' : 'border-gold-200/80 bg-cream-100',
-          mapClass,
-          { 'location-picker__cavite-map--fallback': !hasOfficialCaviteBoundary },
-        ]"
-        :style="{ height: mapHeight }"
-      ></div>
-      <div
-        class="pointer-events-none absolute inset-x-4 top-4 z-[4] flex items-start justify-between gap-3"
-      >
-        <div :class="['rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] shadow-sm backdrop-blur-sm', theme === 'dark' ? 'border-[#8d5a3b] bg-[rgba(45,26,16,0.92)] text-[#f3d1b7]' : 'border-amber-200/80 bg-[rgba(255,248,240,0.92)] text-gold-800']">
-          {{ hasOfficialCaviteBoundary ? 'Cavite boundary' : 'Cavite only' }}
+      <aside class="location-picker__controls">
+        <div v-if="!readonly" :class="['rounded-2xl border p-4 space-y-3', theme === 'dark' ? 'border-[#6c432c] bg-[#2d1a10]' : 'border-gold-200/80 bg-cream-100']">
+          <label :class="['block text-xs font-semibold uppercase tracking-[0.14em]', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700']">Search location</label>
+          <div class="flex flex-col gap-3 sm:flex-row">
+            <input
+              v-model="searchQuery"
+              type="text"
+              :class="['w-full min-w-0 rounded-xl border px-4 py-3 outline-none focus:ring-4', theme === 'dark' ? 'border-[#6c432c] bg-[#1d100a] text-[#f7ede7] placeholder:text-[#a88470] focus:border-[#b9784f] focus:ring-[#b9784f]/20' : 'border-gold-200/80 bg-white text-charcoal-700 placeholder:text-charcoal-400 focus:border-gold-400 focus:ring-gold-200/30']"
+              :placeholder="searchPlaceholder"
+              @keyup.enter.prevent="searchLocation"
+            />
+            <button
+              type="button"
+              class="shrink-0 rounded-xl bg-gold-700 px-5 py-3 font-semibold text-white transition hover:bg-gold-800"
+              @click="searchLocation"
+            >
+              Search
+            </button>
+          </div>
+          <p :class="['text-xs leading-5', theme === 'dark' ? 'text-[#c5a18b]' : 'text-charcoal-500']">
+            {{ searchHint }}
+          </p>
         </div>
-        <div class="hidden rounded-full border border-gold-200/70 bg-[rgba(255,248,240,0.82)] px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-charcoal-500 shadow-sm backdrop-blur-sm sm:block">
-          {{ hasOfficialCaviteBoundary ? 'OpenStreetMap geometry' : 'Outside Cavite is blocked' }}
-        </div>
-      </div>
-      <div
-        v-if="caviteBoundaryNotice"
-        class="absolute inset-x-4 bottom-4 z-[4] rounded-full border border-amber-200 bg-[rgba(255,248,240,0.92)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800 shadow-sm backdrop-blur-sm"
-      >
-        {{ caviteBoundaryNotice }}
-      </div>
-      <div
-        v-if="loading"
-        :class="['absolute inset-0 z-[5] flex items-center justify-center rounded-2xl text-sm font-semibold backdrop-blur-[2px]', theme === 'dark' ? 'bg-[rgba(29,16,10,0.78)] text-[#f3d1b7]' : 'bg-[rgba(255,248,240,0.72)] text-gold-800']"
-      >
-        Loading map...
-      </div>
-    </div>
 
-    <div
-      v-if="error"
-      class="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm"
-    >
-      {{ error }}
-    </div>
+        <div
+          v-if="error"
+          class="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm"
+          role="alert"
+        >
+          {{ error }}
+        </div>
 
-    <div :class="['rounded-2xl border p-4 space-y-3 shadow-[0_10px_24px_rgba(54,34,22,0.06)]', theme === 'dark' ? 'border-[#6c432c] bg-[#2d1a10]' : 'border-gold-200/80 bg-gradient-to-br from-cream-100 to-gold-100']">
-      <div>
-        <p :class="['text-xs font-semibold uppercase tracking-[0.14em]', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700']">{{ pinnedAddressLabel }}</p>
-        <p :class="['mt-1 text-sm', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ displayAddress }}</p>
-      </div>
-      <div v-if="!readonly" class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-        <div>
-          <p class="text-xs uppercase tracking-wide text-gold-700/80">Latitude</p>
-          <p :class="['mt-1', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ lat || '-' }}</p>
+        <div :class="['rounded-2xl border p-4 space-y-3 shadow-[0_10px_24px_rgba(54,34,22,0.06)]', theme === 'dark' ? 'border-[#6c432c] bg-[#2d1a10]' : 'border-gold-200/80 bg-gradient-to-br from-cream-100 to-gold-100']">
+          <div>
+            <p :class="['text-xs font-semibold uppercase tracking-[0.14em]', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700']">{{ pinnedAddressLabel }}</p>
+            <p :class="['mt-1 break-words text-sm leading-5', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ displayAddress || 'No location pinned yet.' }}</p>
+          </div>
+          <div v-if="!readonly" class="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p :class="['text-xs uppercase tracking-wide', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700/80']">Latitude</p>
+              <p :class="['mt-1 break-all', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ lat || '-' }}</p>
+            </div>
+            <div>
+              <p :class="['text-xs uppercase tracking-wide', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700/80']">Longitude</p>
+              <p :class="['mt-1 break-all', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ lng || '-' }}</p>
+            </div>
+            <div class="col-span-2">
+              <p :class="['text-xs uppercase tracking-wide', theme === 'dark' ? 'text-[#d6a77d]' : 'text-gold-700/80']">Allowed area</p>
+              <p :class="['mt-1', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ allowedAreaLabel }}</p>
+            </div>
+          </div>
         </div>
-        <div>
-          <p class="text-xs uppercase tracking-wide text-gold-700/80">Longitude</p>
-          <p :class="['mt-1', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ lng || '-' }}</p>
-        </div>
-        <div>
-          <p class="text-xs uppercase tracking-wide text-gold-700/80">Allowed area</p>
-          <p :class="['mt-1', theme === 'dark' ? 'text-[#f3e7e0]' : 'text-charcoal-700']">{{ allowedAreaLabel }}</p>
-        </div>
-      </div>
-    </div>
 
-    <div v-if="showActions" class="flex justify-end gap-2">
-      <button
-        v-if="showClose"
-        type="button"
-        class="rounded-lg border border-gold-300 bg-cream-100 px-4 py-2 text-charcoal-700"
-        @click="$emit('close')"
-      >
-        {{ closeLabel }}
-      </button>
-      <button
-        v-if="showConfirm"
-        type="button"
-        class="rounded-lg bg-gold-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"
-        :disabled="loading || !hasPin"
-        @click="confirmPin"
-      >
-        {{ confirmLabel }}
-      </button>
+        <div v-if="showActions" class="flex flex-wrap justify-end gap-2">
+          <button
+            v-if="showClose"
+            type="button"
+            class="rounded-xl border border-gold-300 bg-cream-100 px-4 py-2.5 font-medium text-charcoal-700 transition hover:bg-gold-100"
+            @click="$emit('close')"
+          >
+            {{ closeLabel }}
+          </button>
+          <button
+            v-if="showConfirm"
+            type="button"
+            class="rounded-xl bg-gold-700 px-4 py-2.5 font-semibold text-white transition hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="loading || !hasPin"
+            @click="confirmPin"
+          >
+            {{ confirmLabel }}
+          </button>
+        </div>
+      </aside>
     </div>
   </div>
 </template>
@@ -970,6 +973,49 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.location-picker {
+  display: grid;
+  gap: 1rem;
+  container-type: inline-size;
+}
+
+.location-picker__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'controls'
+    'map';
+  align-items: start;
+  gap: 1rem;
+}
+
+.location-picker__layout--readonly {
+  grid-template-areas:
+    'map'
+    'controls';
+}
+
+.location-picker__map-column {
+  grid-area: map;
+  min-width: 0;
+}
+
+.location-picker__controls {
+  grid-area: controls;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+@container (min-width: 48rem) {
+  .location-picker__layout,
+  .location-picker__layout--readonly {
+    grid-template-columns: minmax(0, 1.8fr) minmax(16rem, 1fr);
+    grid-template-areas: 'map controls';
+  }
+}
+
 .location-picker__cavite-map--fallback {
   clip-path: polygon(
     8% 10%,
