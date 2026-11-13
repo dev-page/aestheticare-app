@@ -129,7 +129,7 @@ const submitCode = async serviceKey => {
     <section class="records-panel filters">
       <label>Search<input v-model="search" placeholder="Client, recipient, or service" type="search" /></label>
       <label>Appointment Type<select v-model="source"><option value="">All types</option><option>Walk-in</option><option>Online booking</option></select></label>
-      <label class="review-filter"><input v-model="needsReview" type="checkbox" /><span>Consultations needing review</span></label>
+      <label class="review-filter"><input v-model="needsReview" type="checkbox" /><span>Consultation verification pending</span></label>
       <label>Status<select v-model="status"><option value="">All statuses</option><option v-for="value in statuses" :key="value">{{ value }}</option></select></label>
       <label>Date<input v-model="date" type="date" /></label>
     </section>

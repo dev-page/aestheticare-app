@@ -17,11 +17,7 @@
         </button>
       </div>
 
-      <div class="mb-6 grid gap-4 md:grid-cols-3">
-        <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
-          <p class="text-sm text-slate-400">Pending Requests</p>
-          <p class="mt-2 text-2xl font-bold text-white">{{ pendingRequests.length }}</p>
-        </div>
+      <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
           <p class="text-sm text-slate-400">Cancellation Requests</p>
           <p class="mt-2 text-2xl font-bold text-rose-300">{{ cancellationRequests.length }}</p>
@@ -254,6 +250,7 @@ import { usePageLoading } from '@/composables/usePageLoading'
 import { formatClockTime } from '@/utils/appointmentDss'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 const props = defineProps({ embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' } })
+const emit = defineEmits(['pending-count'])
 
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -281,7 +278,7 @@ const requests = ref([])
 const selectedRequestId = ref('')
 const searchQuery = ref('')
 const typeFilter = ref('')
-const statusFilter = ref('')
+const statusFilter = ref('pending')
 const decisionNote = ref('')
 let unsubscribeAuth = null
 
@@ -476,6 +473,7 @@ const loadRequests = trackPageLoad(async () => {
     toast.error('Failed to load appointment requests.')
   } finally {
     loading.value = false
+    emit('pending-count', pendingRequests.value.length)
   }
 })
 
