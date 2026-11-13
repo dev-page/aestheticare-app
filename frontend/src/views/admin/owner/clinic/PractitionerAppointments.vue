@@ -7,12 +7,12 @@
         <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Service Queue</h1>
         <p class="text-slate-400">Checked-in customers appear first. Start your assigned service, record notes, and finish when care is complete.</p>
         <div class="mt-4 flex flex-wrap gap-2" role="group" aria-label="Service queue views">
-          <button type="button" :aria-pressed="!historyMode" :class="!historyMode ? 'bg-amber-700 text-white' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'" class="rounded-lg px-4 py-2 text-sm font-medium" @click="historyMode = false">Live queue</button>
-          <button type="button" :aria-pressed="historyMode" :class="historyMode ? 'bg-amber-700 text-white' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'" class="rounded-lg px-4 py-2 text-sm font-medium" @click="historyMode = true">History &amp; other appointments</button>
+          <button type="button" :aria-pressed="!historyMode" :class="{ 'is-selected': !historyMode }" class="queue-mode-button" @click="setHistoryMode(false)">Live queue</button>
+          <button type="button" :aria-pressed="historyMode" :class="{ 'is-selected': historyMode }" class="queue-mode-button" @click="setHistoryMode(true)">History &amp; other appointments</button>
         </div>
       </div>
 
-      <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+      <div class="queue-filters bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
         <div class="grid grid-cols-1 gap-4" :class="historyMode ? 'md:grid-cols-3' : 'md:grid-cols-2'">
           <div>
             <label for="practitioner-appointments-search" class="block text-slate-400 text-sm mb-2">Search</label>
@@ -26,20 +26,19 @@
           </div>
           <div v-if="historyMode">
             <label for="practitioner-appointments-status" class="block text-slate-400 text-sm mb-2">Status</label>
-            <select id="practitioner-appointments-status" v-model="statusFilter" class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none">
-              <option value="">All</option>
-              <option v-for="status in ['Unpaid', 'Pending', 'Pending Approval', 'Awaiting Payment', 'Contract Pending', 'Paid', 'Checked in', 'Ready to Start', 'Ongoing', 'Awaiting Customer Confirmation', 'Balance Due', 'Scheduled', 'No-show', 'Incomplete', 'Rejected']" :key="status" :value="status">{{ status }}</option>
-              <option value="Completed">Completed</option>
-              <option value="Cancelled">Cancelled</option>
+            <select id="practitioner-appointments-status" v-model="statusFilter" class="w-full">
+              <option v-for="filter in appointmentStatusFilters" :key="filter.value || 'all'" :value="filter.value">{{ filter.label }}</option>
             </select>
+            <p class="mt-1 text-xs text-slate-400">Needs attention groups payment, approval, and customer follow-up states.</p>
           </div>
           <div>
-            <label for="practitioner-appointments-date" class="block text-slate-400 text-sm mb-2">Date</label>
-            <div class="flex gap-2">
-              <input id="practitioner-appointments-date" v-model="dateFilter" type="date" class="min-w-0 flex-1 bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none" />
-              <button type="button" class="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-700" @click="setToday">Today</button>
-              <button v-if="historyMode && dateFilter" type="button" class="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-700" @click="dateFilter = ''">All dates</button>
-            </div>
+            <label for="practitioner-appointments-date-mode" class="block text-slate-400 text-sm mb-2">Date</label>
+            <select id="practitioner-appointments-date-mode" v-model="dateMode" class="w-full" @change="setDateMode(dateMode)">
+              <option value="today">Today</option>
+              <option value="all">All dates</option>
+              <option value="custom">Choose a date…</option>
+            </select>
+            <input v-if="dateMode === 'custom'" id="practitioner-appointments-date" v-model="dateFilter" aria-label="Choose appointment date" type="date" class="mt-2 w-full" />
           </div>
         </div>
       </div>
@@ -208,6 +207,7 @@ import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModa
 import { usePermissions } from '@/composables/usePermissions'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { promptForPrescriptions } from '@/utils/prescriptions'
+import { APPOINTMENT_STATUS_FILTERS, appointmentStatusGroup } from '@/utils/appointmentStatusFilter'
 
 const localDateKey = (date = new Date()) => {
   const year = date.getFullYear()
@@ -241,6 +241,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const searchQuery = ref('')
     const statusFilter = ref('')
     const dateFilter = ref(localDateKey())
+    const dateMode = ref('today')
     const historyMode = ref(false)
     const appointments = ref([])
     const consultationClearances = ref([])
@@ -360,7 +361,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const clientName = (item.clientName || item.customerName || item.patientName || '').toLowerCase()
         const service = (item.service || item.type || '').toLowerCase()
         const matchesSearch = !queryText || clientName.includes(queryText) || service.includes(queryText)
-        const matchesDate = !dateFilter.value || item.date === dateFilter.value
+        const matchesDate = dateMode.value === 'all' || (dateMode.value === 'today'
+          ? item.date === dateFilter.value
+          : !dateFilter.value || item.date === dateFilter.value)
         return matchesSearch && matchesDate
     }
 
@@ -386,10 +389,18 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const filteredAppointments = computed(() => assignedAppointments.value.filter((item) => {
       if (!matchesQueueSearchAndDate(item)) return false
-      return !statusFilter.value || queueStatus(item) === statusFilter.value.trim().toLowerCase()
+      return !statusFilter.value || appointmentStatusGroup(item.status) === statusFilter.value
     }).sort((a, b) => String(a.date + a.time).localeCompare(String(b.date + b.time))))
 
-    const setToday = () => { dateFilter.value = localDateKey() }
+    const setDateMode = (mode) => {
+      dateMode.value = mode
+      dateFilter.value = mode === 'today' ? localDateKey() : ''
+    }
+    const setHistoryMode = (enabled) => {
+      historyMode.value = enabled
+      statusFilter.value = ''
+      setDateMode(enabled ? 'all' : 'today')
+    }
 
     const pendingConsultationClearances = computed(() =>
       consultationClearances.value.filter((clearance) => clearance.status === 'Pending')
@@ -592,9 +603,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       manualCheckIn,
       searchQuery,
       statusFilter,
+      appointmentStatusFilters: APPOINTMENT_STATUS_FILTERS,
       dateFilter,
+      dateMode,
       historyMode,
-      setToday,
+      setDateMode,
+      setHistoryMode,
       assignedAppointments,
       queueStatus,
       waitingAppointments,
@@ -611,3 +625,44 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   }
 }
 </script>
+
+<style scoped>
+.queue-mode-button {
+  min-height: 40px;
+  padding: .55rem 1rem;
+  border: 1px solid var(--ac-border);
+  border-radius: 999px;
+  background: var(--ac-surface);
+  color: var(--ac-text-secondary);
+  font-size: .875rem;
+  font-weight: 600;
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease;
+}
+
+.queue-mode-button:hover:not(:disabled) {
+  border-color: var(--ac-accent);
+  background: var(--ac-surface-muted);
+  color: var(--ac-text);
+}
+
+.queue-mode-button.is-selected,
+.queue-mode-button.is-selected:hover:not(:disabled) {
+  border-color: var(--ac-primary);
+  background: var(--ac-primary);
+  color: var(--ac-on-primary);
+}
+
+.queue-filters label {
+  color: var(--ac-text-secondary);
+}
+
+.queue-filters select,
+.queue-filters input[type="date"] {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: .625rem .875rem;
+  border-radius: var(--ac-radius-sm);
+  font: inherit;
+}
+</style>

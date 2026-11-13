@@ -88,8 +88,9 @@
 :is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main > header, :is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main > div > header { padding-bottom: 22px; border-bottom: 1px solid #ead2b2; margin-bottom: 24px; }
 .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main :is(section, article, div, a)[class*="bg-slate-"] { background: #fffdf9 !important; border-color: #ead2b2 !important; }
 .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main :is(.rounded-xl, .rounded-2xl)[class*="bg-slate-"] { box-shadow: 0 3px 14px #6e482b08; border-radius: 14px; }
-.module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main :is(input:not([type=checkbox]):not([type=radio]), select, textarea) { min-height: 42px; border: 1px solid #dec19e !important; border-radius: 9px; background: #fffdf9 !important; color: #3d281d !important; padding: 10px 12px; font-size: 14px; color-scheme: light; }
-:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) select option, .finance-dialog select option { background: #fffdf9; color: #3d281d; }
+.module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main :is(input:not([type=checkbox]):not([type=radio]), select, textarea) { min-height: 44px; border: 1px solid var(--ac-border-strong) !important; border-radius: var(--ac-radius-sm); background: var(--ac-surface) !important; color: var(--ac-text) !important; padding: 10px 12px; font-size: 14px; color-scheme: light; }
+:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) select option, .finance-dialog select option { background: var(--ac-surface); color: var(--ac-text); }
+:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) select option:checked, .finance-dialog select option:checked { background: var(--ac-primary); color: var(--ac-on-primary); }
 :is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main :is(input, select, textarea):focus-visible { outline: 2px solid #b78055; outline-offset: 2px; }
 .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main button { min-height: 38px; padding: 8px 13px; border: 1px solid #dec19e; border-radius: 9px; background: #fffdf9; color: #735039 !important; font-size: 13px; font-weight: 600; transition: background .15s, border-color .15s; }
 .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main button:hover:not(:disabled) { background: #f4e7d5; border-color: #b78055; }
@@ -199,4 +200,9 @@
   :is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main .budget-records { padding: 16px; }
   :is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main table :is(th, td) { padding: 12px; }
   :is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main header > div:last-child { flex-wrap: wrap; }
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main select:not([multiple]):not([size]),
+html[data-ac-theme="dark"] .aestheticare-app .app-modal-panel.finance-dialog select:not([multiple]):not([size]) {
+  color-scheme: dark;
 }

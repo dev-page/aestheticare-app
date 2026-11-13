@@ -12,6 +12,7 @@ import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { formatClockTime } from '@/utils/appointmentDss'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { appointmentClientName, appointmentSource, appointmentServiceType, appointmentServiceName, appointmentSessions, appointmentRecipients, appointmentBookingRows, appointmentCheckInAllowed } from '@/utils/appointmentManagement'
+import { APPOINTMENT_STATUS_FILTERS, appointmentStatusGroup } from '@/utils/appointmentStatusFilter'
 import OnlineConsultationControls from '@/components/common/OnlineConsultationControls.vue'
 import Modal from '@/components/common/Modal.vue'
 import AppointmentTeam from '@/components/common/AppointmentTeam.vue'
@@ -23,7 +24,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 const { hasPermission } = usePermissions()
 const route = useRoute()
 const appointments = ref([]), staff = ref([]), clients = ref([])
-const search = ref(''), status = ref(''), date = ref(''), source = ref(''), error = ref(''), needsReview = ref(false)
+const search = ref(''), status = ref(''), date = ref(''), dateMode = ref('all'), source = ref(''), error = ref(''), needsReview = ref(false)
 const page = ref(1), pageSize = ref(10), selectedId = ref('')
 const contractTarget = ref(null), checkInTarget = ref(null), verifying = ref(false), menu = ref(null)
 const canCheckIn = computed(() => hasPermission('appointments:update'))
@@ -46,19 +47,23 @@ const organizer = computed(() => {
   return item
 })
 const rows = computed(() => sortRecordsNewestFirst(appointmentBookingRows(appointments.value)))
-const statuses = computed(() => [...new Set(rows.value.map(item => item.status || 'Scheduled'))].sort())
+const todayDate = () => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
 const filtered = computed(() => rows.value.filter(item => {
   if (route.query.branchId && item.branchId !== String(route.query.branchId)) return false
   const children = appointmentRecipients(item, appointments.value)
   if (needsReview.value && !children.some(child => child.consultationNeedsReview || child.consultationDispute?.status === 'Open')) return false
   const haystack = [nameFor(item), appointmentServiceName(item), ...children.flatMap(child => [nameFor(child), appointmentServiceName(child), emailFor(child)])].join(' ').toLowerCase()
+  const selectedDate = dateMode.value === 'today' ? todayDate() : dateMode.value === 'custom' ? date.value : ''
   return (!search.value.trim() || haystack.includes(search.value.trim().toLowerCase()))
-    && (!status.value || (item.status || 'Scheduled') === status.value)
-    && (!date.value || item.date === date.value || children.some(child => child.date === date.value))
+    && (!status.value || appointmentStatusGroup(item.status || 'Scheduled') === status.value)
+    && (!selectedDate || item.date === selectedDate || children.some(child => child.date === selectedDate))
     && (!source.value || appointmentSource(item) === source.value)
 }))
 const paged = computed(() => filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
-watch([search, status, date, source, pageSize, needsReview], () => { page.value = 1 })
+watch([search, status, date, dateMode, source, pageSize, needsReview], () => { page.value = 1 })
 watch(() => filtered.value.length, total => { page.value = Math.min(page.value, Math.max(1, Math.ceil(total / pageSize.value))) })
 watch(selectedId, () => { menu.value = null })
 
@@ -130,8 +135,14 @@ const submitCode = async serviceKey => {
       <label>Search<input v-model="search" placeholder="Client, recipient, or service" type="search" /></label>
       <label>Appointment Type<select v-model="source"><option value="">All types</option><option>Walk-in</option><option>Online booking</option></select></label>
       <label class="review-filter"><input v-model="needsReview" type="checkbox" /><span>Consultation verification pending</span></label>
-      <label>Status<select v-model="status"><option value="">All statuses</option><option v-for="value in statuses" :key="value">{{ value }}</option></select></label>
-      <label>Date<input v-model="date" type="date" /></label>
+      <label>Status
+        <select v-model="status"><option v-for="filter in APPOINTMENT_STATUS_FILTERS" :key="filter.value || 'all'" :value="filter.value">{{ filter.label }}</option></select>
+        <small class="filter-help">Needs attention groups payment, approval, and customer follow-up states.</small>
+      </label>
+      <label>Date
+        <select v-model="dateMode"><option value="all">All dates</option><option value="today">Today</option><option value="custom">Choose a date…</option></select>
+        <input v-if="dateMode === 'custom'" v-model="date" aria-label="Choose appointment date" type="date" />
+      </label>
     </section>
     <section class="records-panel table-panel">
       <div class="table-scroll"><table><thead><tr><th>Client Name</th><th>Service Type</th><th>Service Name</th><th>Schedule</th><th>Status</th><th>Action</th></tr></thead>
@@ -140,7 +151,7 @@ const submitCode = async serviceKey => {
         </tbody></table></div>
       <TablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="filtered.length" />
     </section>
-    <Modal :is-open="Boolean(selected) && !contractTarget && !checkInTarget" title="Appointment Details" panel-class="appointment-details-panel" :panel-style="{ maxWidth: '86rem', background: '#fffaf4', color: '#3d281d' }" @close="selectedId = ''">
+    <Modal :is-open="Boolean(selected) && !contractTarget && !checkInTarget" title="Appointment Details" panel-class="appointment-details-panel" :panel-style="{ maxWidth: '86rem' }" @close="selectedId = ''">
       <template #body><div v-if="selected" class="details-body">
         <p v-if="selected.demoMode" class="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-[#6d4b30]">Demo record: no payment, customer notification, treatment, or schedule reservation was created.</p>
         <section class="booking-summary"><div><span class="summary-label">Booked by</span><strong>{{ organizer ? nameFor(organizer) : 'Not provided' }}</strong><p>{{ organizer ? emailFor(organizer) : 'Not provided' }}</p><p>{{ organizer ? phoneFor(organizer) : 'Not provided' }}</p></div><div><span class="summary-label">Booking</span><strong>{{ bookingKind(selected) }}</strong><p>{{ appointmentSource(selected) }} · {{ selected.status }}</p><p>{{ recipientRows.length }} service recipient{{ recipientRows.length === 1 ? '' : 's' }}</p></div></section>
@@ -165,34 +176,35 @@ const submitCode = async serviceKey => {
 </template>
 
 <style scoped>
-.appointment-records { color: #3d281d; }
-.records-panel { background: #fffdf9; border: 1px solid #ebd0ad; border-radius: 16px; margin-bottom: 20px; }
+.appointment-records { color: var(--ac-text); }
+.records-panel { background: var(--ac-surface); border: 1px solid var(--ac-border); border-radius: 16px; margin-bottom: 20px; box-shadow: var(--ac-shadow-sm); }
 .filters { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 16px; padding: 20px; }
-label { display: grid; gap: 7px; font-size: 13px; color: #786354; }
-input, select { width: 100%; padding: 10px 12px; border: 1px solid #dfc2a1; border-radius: 8px; background: #fff; color: #3d281d; }
+label { display: grid; gap: 7px; font-size: 13px; color: var(--ac-text-secondary); }
+input, select { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--ac-border-strong); border-radius: var(--ac-radius-sm); background: var(--ac-surface); color: var(--ac-text); }
+.filter-help { color: var(--ac-text-muted); font-size: 11px; line-height: 1.35; }
 .filters .review-filter { display: flex; align-items: center; align-self: start; gap: 10px; min-height: 42px; padding-top: 25px; cursor: pointer; }
 .filters .review-filter input[type="checkbox"] { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; padding: 0; accent-color: #805337; cursor: pointer; }
 .filters .review-filter span { line-height: 1.35; }
 .table-panel { padding: 16px; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; min-width: 850px; border-collapse: collapse; text-align: left; font-size: 13px; }
-th { background: #f7ead5; color: #755338; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
-th, td { padding: 14px 12px; border-bottom: 1px solid #efdfcc; vertical-align: top; }
-.subline { margin-top: 5px; font-size: 12px; color: #907965; }
-.status-badge { display: inline-block; border-radius: 20px; padding: 5px 10px; background: #f5e8d5; color: #785232; white-space: nowrap; }
-.outline-button, .menu-trigger { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border: 1px solid #e5c5a1; border-radius: 8px; background: #fffaf4; color: #795235; font-size: 12px; white-space: nowrap; }
-.outline-button:hover, .menu-trigger:hover { background: #f6e8d3; }
+th { background: var(--ac-surface-muted); color: var(--ac-text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+th, td { padding: 14px 12px; border-bottom: 1px solid var(--ac-border); vertical-align: top; }
+.subline { margin-top: 5px; font-size: 12px; color: var(--ac-text-muted); }
+.status-badge { display: inline-block; border-radius: 20px; padding: 5px 10px; background: var(--ac-surface-muted); color: var(--ac-text-secondary); white-space: nowrap; }
+.outline-button, .menu-trigger { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border: 1px solid var(--ac-border-strong); border-radius: 8px; background: var(--ac-surface); color: var(--ac-text-secondary); font-size: 12px; white-space: nowrap; }
+.outline-button:hover, .menu-trigger:hover { background: var(--ac-surface-muted); color: var(--ac-text); }
 .menu-trigger { font-size: 23px; line-height: 1; padding: 3px 10px; }
-.recipient-menu { position: fixed; z-index: 110; width: 180px; padding: 5px; border: 1px solid #e5c5a1; border-radius: 10px; background: #fffdf9; color: #3d281d; box-shadow: 0 10px 25px #3d281d22; }
+.recipient-menu { position: fixed; z-index: 110; width: 180px; padding: 5px; border: 1px solid var(--ac-border-strong); border-radius: 10px; background: var(--ac-surface); color: var(--ac-text); box-shadow: var(--ac-shadow-md); }
 .recipient-menu button { display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 6px; font-size: 13px; }
-.recipient-menu button:hover:enabled { background: #f6e8d3; }
+.recipient-menu button:hover:enabled { background: var(--ac-surface-muted); }
 .recipient-menu button:disabled { opacity: .45; cursor: not-allowed; }
-.booking-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 20px; border: 1px solid #ecd6b8; border-radius: 12px; background: #fffdf9; }
-.booking-summary strong { display: block; margin-bottom: 5px; }.booking-summary p { font-size: 13px; color: #786354; margin-top: 3px; }
-.summary-label { display: block; color: #987452; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+.booking-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 20px; border: 1px solid var(--ac-border); border-radius: 12px; background: var(--ac-surface); }
+.booking-summary strong { display: block; margin-bottom: 5px; }.booking-summary p { font-size: 13px; color: var(--ac-text-secondary); margin-top: 3px; }
+.summary-label { display: block; color: var(--ac-accent); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
 .details-heading { margin-top: 24px; font-size: 18px; font-weight: 700; }.recipient-table { margin-top: 16px; }.recipient-table table { min-width: 1250px; }
 .related-tools { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }.modal-footer { display: flex; justify-content: flex-end; }
-.empty { text-align: center; padding: 32px; color: #907965; }.error-message { padding: 14px; background: #fbe9e6; color: #9d392d; border-radius: 10px; margin-bottom: 18px; }
-button:focus-visible, a:focus-visible { outline: 2px solid #b78055; outline-offset: 3px; }
+.empty { text-align: center; padding: 32px; color: var(--ac-text-muted); }.error-message { padding: 14px; background: var(--ac-danger-bg); color: var(--ac-danger); border-radius: 10px; margin-bottom: 18px; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--ac-accent); outline-offset: 3px; }
 @media(max-width: 767px) { .filters, .booking-summary { grid-template-columns: 1fr; }.filters .review-filter { padding-top: 0; min-height: auto; }.table-panel { padding: 8px; } }
 </style>

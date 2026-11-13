@@ -1441,7 +1441,7 @@ html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) main :is(
 html[data-ac-theme="dark"] .aestheticare-app .appearance-select :is(
   .appearance-select-trigger, .appearance-select-menu
 ) {
-  background: var(--ac-surface-soft) !important;
+  background: var(--ac-surface) !important;
   border-color: var(--ac-border-strong) !important;
   color: var(--ac-text-secondary) !important;
   color-scheme: dark;
@@ -1472,7 +1472,7 @@ html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li:is(
 html[data-ac-theme="dark"] .app-modal-panel .appearance-select :is(
   .appearance-select-trigger, .appearance-select-menu
 ) {
-  background: var(--ac-surface-soft) !important;
+  background: var(--ac-surface) !important;
   border-color: var(--ac-border-strong) !important;
   color: var(--ac-text-secondary) !important;
   color-scheme: dark;
@@ -1541,7 +1541,7 @@ html[data-ac-theme="dark"] .aestheticare-app .schedule-assignment input[type="da
 html[data-ac-theme="dark"] .aestheticare-app .add-staff-select,
 html[data-ac-theme="dark"] .aestheticare-app .add-staff-select option,
 html[data-ac-theme="dark"] .aestheticare-app .assignment-options {
-  background: var(--ac-surface-soft) !important;
+  background: var(--ac-surface) !important;
   border-color: var(--ac-border-strong) !important;
   color: var(--ac-text-secondary) !important;
   color-scheme: dark !important;
@@ -1569,7 +1569,7 @@ html[data-ac-theme="dark"] .aestheticare-app .finance-page .finance-summary span
 
 html[data-ac-theme="dark"] .aestheticare-app .finance-page select option,
 html[data-ac-theme="dark"] .app-modal-panel.finance-dialog select option {
-  background: var(--ac-surface-soft) !important;
+  background: var(--ac-surface) !important;
   color: var(--ac-text) !important;
 }
 
@@ -1660,7 +1660,7 @@ html[data-ac-theme="dark"] .aestheticare-app .attendance :is(
 }
 
 html[data-ac-theme="dark"] .aestheticare-app .attendance select option {
-  background: var(--ac-surface-soft) !important;
+  background: var(--ac-surface) !important;
   color: var(--ac-text) !important;
 }
 
@@ -2058,5 +2058,42 @@ html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .dashboard-action
 html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .dashboard-action-btn-primary {
   background: var(--ac-primary) !important;
   border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+/* Keep native dropdowns consistent with the active app theme, including the
+   browser-rendered option list. */
+.aestheticare-app select:not([multiple]):not([size]),
+.aestheticare-app .app-modal-panel select:not([multiple]):not([size]) {
+  color-scheme: light;
+  min-height: 2.75rem !important;
+  padding: .625rem .875rem !important;
+  border: 1px solid var(--ac-border-strong) !important;
+  border-radius: var(--ac-radius-sm) !important;
+  font: inherit !important;
+  background-color: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+}
+
+.aestheticare-app select option,
+.aestheticare-app .app-modal-panel select option {
+  background-color: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+}
+
+.aestheticare-app select option:checked,
+.aestheticare-app .app-modal-panel select option:checked {
+  background-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app select:not([multiple]):not([size]),
+html[data-ac-theme="dark"] .aestheticare-app .app-modal-panel select:not([multiple]):not([size]) {
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.add-staff-select, .finance-page select, .attendance select) option:checked,
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog select option:checked {
+  background: var(--ac-primary) !important;
   color: var(--ac-on-primary) !important;
 }
