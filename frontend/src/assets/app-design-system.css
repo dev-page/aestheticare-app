@@ -409,6 +409,77 @@ html:not([data-ac-theme="dark"]) aside.app-sidebar :is(a, button)[aria-current="
 
 .app-modal-panel > :is(div:first-child, div:last-child) { border-color: var(--ac-border) !important; }
 
+html[data-ac-theme="dark"] .app-modal-panel.register-modal {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text-secondary) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal > :is(div:first-child, div:last-child) {
+  border-color: var(--ac-border) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal :is(h1, h2, h3, h4, p, li, label, strong, summary) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal :is(
+  [class*="text-charcoal-"], .text-gray-400, .text-gray-500, .text-gray-600
+) {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal [class*="text-gold-"] {
+  color: var(--ac-accent) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal :is(
+  [class~="bg-white"], [class*="bg-cream-50"], [class*="bg-cream-100"],
+  [class*="bg-gold-50"], [class*="bg-gold-100"]
+) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal button[class*="bg-gold-"] {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal > div:first-child button {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal > div:first-child button:hover {
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal .policy-item {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-soft) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal :is(.policy-summary, .policy-body) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal .clinic-agreement {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal .clinic-agreement :is(h2, h3) {
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.register-modal .clinic-agreement-hint {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
 .swal2-popup:not(.swal-logout-popup) :is(.swal2-title, .swal2-html-container) { color: var(--ac-text) !important; }
 .swal2-popup:not(.swal-logout-popup) .swal2-html-container { color: var(--ac-text-secondary) !important; }
 .swal2-popup:not(.swal-logout-popup) :is(.swal2-input, .swal2-file, .swal2-textarea, .swal2-select, .swal2-radio, .swal2-checkbox) {

@@ -1658,7 +1658,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <Modal panelClass="bg-white border border-gold-200/80 w-[92vw] max-w-[34rem]" :isOpen="otpSent" :title="'Verify OTP'" @close="closeOtpModal" :showConfirm="false">
+      <Modal panelClass="register-modal bg-white border border-gold-200/80 w-[92vw] max-w-[34rem]" :isOpen="otpSent" :title="'Verify OTP'" @close="closeOtpModal" :showConfirm="false">
         <div class="space-y-5 p-1">
           <p class="text-sm text-charcoal-600">
             We've sent a One-Time Password (OTP) to your email. Please enter it below to verify your account.
@@ -1706,7 +1706,7 @@ onBeforeUnmount(() => {
       </Modal>
 
 <Modal
-        panelClass="bg-cream-50 border border-gold-200/80 w-[92vw] max-w-5xl shadow-2xl shadow-gold-900/15"
+        panelClass="register-modal bg-cream-50 border border-gold-200/80 w-[92vw] max-w-5xl shadow-2xl shadow-gold-900/15"
         :isOpen="false"
         :title="'Select Address in Cavite'"
         @close="closeLocationModal"
@@ -1736,10 +1736,10 @@ onBeforeUnmount(() => {
         </div>
       </Modal>
 
-      <Modal panelClass="bg-white" :isOpen="showTerms" :title="'Terms and Conditions'" @close="showTerms = false" :showConfirm="false">
+      <Modal panelClass="register-modal bg-white" :isOpen="showTerms" :title="'Terms and Conditions'" @close="showTerms = false" :showConfirm="false">
         <Terms />
       </Modal>
-      <Modal panelClass="bg-white" :isOpen="showPrivacy" :title="'Privacy Policy'" @close="showPrivacy = false" :showConfirm="false">
+      <Modal panelClass="register-modal bg-white" :isOpen="showPrivacy" :title="'Privacy Policy'" @close="showPrivacy = false" :showConfirm="false">
         <PrivacyPolicy />
       </Modal>
     </div>

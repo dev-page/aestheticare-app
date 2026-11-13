@@ -3593,14 +3593,14 @@ const handleRegistrationSubmit = () => {
         </div>
       </div>
 
-      <Modal panelClass="bg-white" :isOpen="showTerms" :title="'Terms and Conditions'" @close="showTerms = false" :showConfirm="false">
+      <Modal panelClass="register-modal bg-white" :isOpen="showTerms" :title="'Terms and Conditions'" @close="showTerms = false" :showConfirm="false">
         <Terms />
       </Modal>
-      <Modal panelClass="bg-white" :isOpen="showPrivacy" :title="'Privacy Policy'" @close="showPrivacy = false" :showConfirm="false">
+      <Modal panelClass="register-modal bg-white" :isOpen="showPrivacy" :title="'Privacy Policy'" @close="showPrivacy = false" :showConfirm="false">
         <PrivacyPolicy />
       </Modal>
       <Modal
-        panelClass="bg-white w-full max-w-4xl"
+        panelClass="register-modal bg-white w-full max-w-4xl"
         :isOpen="showClinicAgreement"
         :title="'Clinic Platform Agreement'"
         @close="showClinicAgreement = false"
@@ -3613,7 +3613,7 @@ const handleRegistrationSubmit = () => {
       </Modal>
 
       <Modal
-        panelClass="bg-cream-50 border border-gold-200/80 w-full max-w-4xl shadow-2xl shadow-gold-900/15"
+        panelClass="register-modal bg-cream-50 border border-gold-200/80 w-full max-w-4xl shadow-2xl shadow-gold-900/15"
         bodyClass="location-modal-body"
         :isOpen="showLocationModal"
         :title="'Select Clinic Location'"
@@ -3646,7 +3646,7 @@ const handleRegistrationSubmit = () => {
     </div>
   </div>
 
-  <div v-else class="min-h-[100dvh] bg-gradient-to-br from-cream-50 via-cream-100 to-gold-100 overflow-hidden relative">
+  <div v-else class="register-choice-page min-h-[100dvh] bg-gradient-to-br from-cream-50 via-cream-100 to-gold-100 overflow-hidden relative">
     <div class="pointer-events-none absolute inset-0">
       <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-gold-200/40 blur-3xl"></div>
       <div class="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-cream-300/40 blur-3xl"></div>
@@ -3673,7 +3673,7 @@ const handleRegistrationSubmit = () => {
     </nav>
 
     <main class="relative z-10 min-h-[100dvh] px-4 pt-24 pb-10 flex items-center justify-center">
-      <section class="w-full max-w-5xl rounded-[2rem] border border-amber-100 bg-[rgba(255,255,255,0.88)] shadow-xl shadow-amber-900/10 overflow-hidden">
+      <section class="register-choice-panel w-full max-w-5xl rounded-[2rem] border border-amber-100 bg-[rgba(255,255,255,0.88)] shadow-xl shadow-amber-900/10 overflow-hidden">
         <div class="p-8 sm:p-10 lg:p-12">
             <p class="text-xs uppercase tracking-[0.28em] text-[#a56b44] font-semibold">Create Your Account</p>
             <h1 class="register-title mt-3 text-4xl sm:text-5xl leading-tight text-[#4a2c1e]">Choose how you want to register.</h1>
@@ -3875,6 +3875,91 @@ const handleRegistrationSubmit = () => {
   font-size: 0.88rem;
   font-weight: 700;
   margin-top: 0.15rem;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-page {
+  background: linear-gradient(135deg, #1b100b 0%, #24150e 54%, #2d1b11 100%) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-page > div:first-child > div {
+  background: rgba(135, 83, 48, 0.2) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-page nav {
+  border-color: var(--ac-border) !important;
+  background: rgba(36, 21, 14, 0.96) !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-page nav button {
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-page nav button:hover {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-page .nav-brand {
+  background: none !important;
+  color: var(--ac-text) !important;
+  -webkit-text-fill-color: var(--ac-text) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-page .register-choice-panel {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface) !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel :is(.register-title, p) {
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel .register-title {
+  color: var(--ac-text) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel > div > p:first-child {
+  color: var(--ac-accent) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel .choice-card {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-soft) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel .choice-card:hover {
+  border-color: var(--ac-accent) !important;
+  background: var(--ac-surface-muted) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel :is(.choice-kicker, .choice-title, .choice-copy) {
+  color: var(--ac-text-secondary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel .choice-kicker {
+  color: var(--ac-accent) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel .choice-title {
+  color: var(--ac-text) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel .choice-cta {
+  background: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel .choice-illustration {
+  filter: brightness(0.78) saturate(0.82);
+}
+
+:global(html[data-ac-theme="dark"]) .register-choice-panel a {
+  color: var(--ac-accent) !important;
 }
 
 .business-type-card {

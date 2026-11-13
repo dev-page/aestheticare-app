@@ -1,4 +1,5 @@
 <template>
+  <div class="centers-page" :class="{ 'theme-dark': theme.resolvedTheme === 'dark' }">
   <nav class="public-glass-nav centers-page-nav sticky top-0 inset-x-0 z-50">
     <div class="max-w-7xl mx-auto grid h-16 grid-cols-[auto_1fr_auto] items-center gap-3 px-4 sm:px-6 md:px-8">
       <router-link
@@ -351,6 +352,7 @@
       </div>
     </div>
   </transition>
+  </div>
 </template>
 
 <script setup>
@@ -362,12 +364,14 @@ import { Icon } from '@iconify/vue'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
+import { useThemeStore } from '@/stores/theme'
 import { fetchCustomerCenters } from '@/utils/customerCenters'
 import BranchPickerModal from '@/components/common/BranchPickerModal.vue'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
 const router = useRouter()
+const theme = useThemeStore()
 const loading = ref(false)
 const errorMessage = ref('')
 const centers = ref([])
@@ -1060,7 +1064,7 @@ watch(radiusKm, () => {
   .compact-filter-input { min-width: 9rem; }
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery {
+.theme-dark .centers-discovery {
   color-scheme: dark;
   color: var(--ac-text-secondary);
   background:
@@ -1069,7 +1073,7 @@ watch(radiusKm, () => {
     linear-gradient(180deg, #1b100a 0%, #24180f 56%, #2f1e14 100%) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+.theme-dark .centers-discovery :is(
   .discovery-filter-bar, .results-summary, .recommended-section,
   .recommended-center-card, .center-card, .state-panel
 ) {
@@ -1079,18 +1083,24 @@ watch(radiusKm, () => {
   box-shadow: var(--ac-shadow-sm);
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .discovery-filter-secondary {
+.theme-dark .centers-discovery .discovery-filter-secondary {
   border-top-color: var(--ac-border) !important;
   background: #2b1a11 !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-page-nav {
+.theme-dark .centers-page-nav {
   background: rgba(36, 24, 15, .96) !important;
   border-color: var(--ac-border) !important;
   color: var(--ac-text) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-page-nav :is(
+.theme-dark .centers-page-nav .public-nav-brand {
+  background: none !important;
+  color: var(--ac-text) !important;
+  -webkit-text-fill-color: var(--ac-text) !important;
+}
+
+.theme-dark .centers-page-nav :is(
   .centers-home-icon, .centers-login-button
 ) {
   border-color: var(--ac-border-strong) !important;
@@ -1099,34 +1109,34 @@ watch(radiusKm, () => {
   box-shadow: none !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-page-nav :is(
+.theme-dark .centers-page-nav :is(
   .centers-home-icon:hover, .centers-login-button:hover
 ) {
   background: var(--ac-surface-muted) !important;
   color: var(--ac-text) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+.theme-dark .centers-discovery :is(
   .centers-hero-title, .centers-resource-title, .filter-label,
   .state-title, .state-copy, .center-card .text-right p
 ) {
   color: var(--ac-text-secondary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery [class*="text-charcoal-"] {
+.theme-dark .centers-discovery [class*="text-charcoal-"] {
   color: var(--ac-text-secondary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery [class*="text-gold-"] {
+.theme-dark .centers-discovery [class*="text-gold-"] {
   color: var(--ac-accent) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .filter-label svg,
-:global(html[data-ac-theme="dark"]) .centers-discovery .filter-search-icon {
+.theme-dark .centers-discovery .filter-label svg,
+.theme-dark .centers-discovery .filter-search-icon {
   color: var(--ac-accent) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+.theme-dark .centers-discovery :is(
   .filter-input, .compact-filter-input
 ) {
   border-color: var(--ac-border-strong) !important;
@@ -1136,29 +1146,29 @@ watch(radiusKm, () => {
   box-shadow: none !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .filter-input::placeholder {
+.theme-dark .centers-discovery .filter-input::placeholder {
   color: var(--ac-text-muted) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+.theme-dark .centers-discovery :is(
   .filter-input, .compact-filter-input
 ) option {
   background: #342419 !important;
   color: var(--ac-text) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .filter-input:disabled {
+.theme-dark .centers-discovery .filter-input:disabled {
   background: #2b1a11 !important;
   color: var(--ac-text-muted) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .nearby-location-button {
+.theme-dark .centers-discovery .nearby-location-button {
   border-color: var(--ac-border-strong) !important;
   background: #6d4a32 !important;
   color: var(--ac-on-primary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+.theme-dark .centers-discovery :is(
   button[class*="bg-charcoal-"], button[class*="bg-gold-"]
 ) {
   border-color: var(--ac-border-strong) !important;
@@ -1166,103 +1176,103 @@ watch(radiusKm, () => {
   color: var(--ac-on-primary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+.theme-dark .centers-discovery :is(
   button[class*="bg-charcoal-"], button[class*="bg-gold-"]
 ):hover:not(:disabled) {
   background: #81583b !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .favorites-filter {
+.theme-dark .centers-discovery .favorites-filter {
   border-color: var(--ac-border-strong) !important;
   background: #342419 !important;
   color: var(--ac-text-secondary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .favorites-filter[aria-pressed="true"] {
+.theme-dark .centers-discovery .favorites-filter[aria-pressed="true"] {
   background: #6d4a32 !important;
   color: var(--ac-on-primary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .favorites-filter span {
+.theme-dark .centers-discovery .favorites-filter span {
   border: 1px solid var(--ac-border-strong);
   background: #493224 !important;
   color: var(--ac-text-secondary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .favorites-filter svg {
+.theme-dark .centers-discovery .favorites-filter svg {
   color: var(--ac-accent) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .clear-filters-button {
+.theme-dark .centers-discovery .clear-filters-button {
   color: var(--ac-accent) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery [class*="bg-white"] {
+.theme-dark .centers-discovery [class*="bg-white"] {
   background-color: #342419 !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery :is(
+.theme-dark .centers-discovery :is(
   [class*="bg-gold-50"], [class*="bg-gold-100"], [class*="bg-charcoal-50"]
 ) {
   background-color: #493224 !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery [class*="border-gold-"],
-:global(html[data-ac-theme="dark"]) .centers-discovery [class*="border-charcoal-"] {
+.theme-dark .centers-discovery [class*="border-gold-"],
+.theme-dark .centers-discovery [class*="border-charcoal-"] {
   border-color: var(--ac-border-strong) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .center-card > .p-5 {
+.theme-dark .centers-discovery .center-card > .p-5 {
   background: var(--ac-surface) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .center-card-media {
+.theme-dark .centers-discovery .center-card-media {
   background: linear-gradient(135deg, #3d2a1d 0%, #6d4a32 100%) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .center-card-placeholder {
+.theme-dark .centers-discovery .center-card-placeholder {
   background: radial-gradient(circle at top left, #6d4a32, #493224 48%, #2b1a11 100%) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .center-avatar {
+.theme-dark .centers-discovery .center-avatar {
   border-color: var(--ac-border-strong) !important;
   background: #493224 !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .center-card .border-t {
+.theme-dark .centers-discovery .center-card .border-t {
   border-color: var(--ac-border) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .loading-card {
+.theme-dark .centers-discovery .loading-card {
   border-color: var(--ac-border) !important;
   background: linear-gradient(135deg, #2b1a11, #3d2a1d) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery .location-message {
+.theme-dark .centers-discovery .location-message {
   border-color: var(--ac-border-strong) !important;
   background: var(--ac-surface-soft) !important;
   color: var(--ac-text-secondary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .center-redirect-card {
+.theme-dark .center-redirect-card {
   border-color: var(--ac-border) !important;
   background: var(--ac-surface) !important;
   color: var(--ac-text-secondary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .center-redirect-card .redirect-progress-track {
+.theme-dark .center-redirect-card .redirect-progress-track {
   background: var(--ac-surface-muted) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .center-redirect-card .redirect-bar {
+.theme-dark .center-redirect-card .redirect-bar {
   background: linear-gradient(90deg, #8f5e3d, #6d4a32) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .center-redirect-card :is(h3, p) {
+.theme-dark .center-redirect-card :is(h3, p) {
   color: var(--ac-text-secondary) !important;
 }
 
-:global(html[data-ac-theme="dark"]) .centers-discovery [class*="text-rose-700"] {
+.theme-dark .centers-discovery [class*="text-rose-700"] {
   color: var(--ac-danger) !important;
 }
 </style>
