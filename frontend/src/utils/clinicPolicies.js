@@ -1,4 +1,5 @@
 import { serviceOnlyClinicPolicies } from '../../../shared/clinicPolicyContent.js'
+import { clinicIsVatRegistered } from '../../../shared/clinicTaxProfile.js'
 export { isProductOrderPolicyKey, walkInServicePolicy, serviceOnlyClinicPolicies } from '../../../shared/clinicPolicyContent.js'
 import { doc, getDoc } from 'firebase/firestore'
 
@@ -15,6 +16,7 @@ export const getClinicPolicyForBranch = async (db, branchId, knownClinic = null)
   const ownerId = String(clinic.ownerId || clinic.organizationOwnerId || '').trim()
   const applyBranchLinks = (sourcePolicy) => {
     const policy = serviceOnlyClinicPolicies(sourcePolicy)
+    policy.vatRegistered = clinicIsVatRegistered(sourcePolicy)
     if (!Array.isArray(clinic?.enforcedPolicyKeys)) return policy
     const linked = new Set(clinic.enforcedPolicyKeys.map((key) => String(key || '').trim()))
     const definitions = [

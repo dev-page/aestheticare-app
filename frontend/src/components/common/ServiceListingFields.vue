@@ -75,7 +75,7 @@
             <input v-model="form.vatApplicable" type="checkbox" class="mt-1 h-4 w-4 accent-emerald-600" :disabled="disabled || !vatRegistered" />
             <span><strong class="block text-sm text-slate-100">This listing is subject to VAT</strong><span class="mt-1 block text-xs leading-5 text-slate-400">The checkout will show the subtotal, VAT amount, and total.</span></span>
           </label>
-          <p v-if="!vatRegistered" class="mt-2 text-xs text-amber-200">Enable “Clinic is VAT-registered” in Policy &amp; Contract Management before marking a listing VAT-applicable.</p>
+          <p v-if="!vatRegistered" class="mt-2 text-xs text-amber-200">{{ taxStatus === 'non_vat' ? 'Your clinic is confirmed Non-VAT, so VAT cannot be applied to this listing.' : taxStatus === 'needs_clarification' ? 'Your BIR tax status needs clarification. Contact AesthetiCare support before changing VAT settings.' : 'VAT listing controls unlock after an administrator reviews your clinic’s BIR certificate.' }}</p>
           <label v-if="form.vatApplicable" class="mt-4 block max-w-sm text-sm font-medium text-slate-200">How is the listed price shown?
             <select v-model="form.vatPriceMode" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :disabled="disabled || !vatRegistered">
               <option value="inclusive">Price already includes 12% VAT</option>
@@ -299,7 +299,7 @@ import { computed, ref, watch } from 'vue'
 import { normalizeServiceCategory, serviceCategoryKey, serviceCategoryOptions } from '../../../../shared/serviceCategories.js'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import ServiceStaffingFields from './ServiceStaffingFields.vue'
-const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, isFreePlan: Boolean, vatRegistered: Boolean, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
+const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, isFreePlan: Boolean, vatRegistered: Boolean, taxStatus: { type: String, default: 'needs_review' }, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
 defineEmits(['image-change'])
 const form = computed(() => props.model)
 const vatRegistered = computed(() => props.vatRegistered === true)

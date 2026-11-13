@@ -33,7 +33,7 @@
       <div v-show="activeListingTab === 'create'" class="listing-create-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <h2 class="text-lg font-semibold mb-2">Create listing</h2><p class="listing-section-description">Add the service details, booking rules, and resources needed for each appointment.</p>
 
-        <ServiceListingFields :model="form" :disabled="loading" :is-free-plan="isFreePlan" :vat-registered="clinicVatRegistered" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
+        <ServiceListingFields :model="form" :disabled="loading" :is-free-plan="isFreePlan" :vat-registered="clinicVatRegistered" :tax-status="clinicTaxStatus" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
 
         <div class="flex gap-2">
           <button
@@ -154,7 +154,7 @@
           </div>
 
           <div class="flex-1 overflow-y-auto px-6 py-5">
-            <ServiceListingFields :model="editForm" editing :disabled="loading" :is-free-plan="isFreePlan" :vat-registered="clinicVatRegistered" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="editImageFileName" @image-change="handleEditImageUpload" />
+            <ServiceListingFields :model="editForm" editing :disabled="loading" :is-free-plan="isFreePlan" :vat-registered="clinicVatRegistered" :tax-status="clinicTaxStatus" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="editImageFileName" @image-change="handleEditImageUpload" />
           </div>
 
           <div class="border-t border-slate-700 px-6 py-4">
@@ -225,7 +225,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const currentUserId = ref('')
     const currentBranchId = ref('')
     const clinicPolicies = ref({})
-    const clinicVatRegistered = computed(() => clinicPolicies.value.vatRegistered === true)
+    const clinicVatRegistered = computed(() => clinicPolicies.value.taxProfile?.reviewSource === 'admin_review'
+      && clinicPolicies.value.taxProfile?.status === 'vat_registered'
+      && Boolean(clinicPolicies.value.taxProfile?.reviewedBy)
+      && Boolean(clinicPolicies.value.taxProfile?.reviewedAt))
+    const clinicTaxStatus = computed(() => {
+      const profile = clinicPolicies.value.taxProfile || {}
+      if (profile.reviewSource !== 'admin_review' || !profile.reviewedBy || !profile.reviewedAt) return 'needs_review'
+      return ['vat_registered', 'non_vat', 'needs_clarification'].includes(profile.status) ? profile.status : 'needs_review'
+    })
     const contractBranch = ref({})
     const hasClientContract = computed(() => clinicPolicies.value.clientContract?.configured === true)
     const listingContractPreview = computed(() => buildClientContractDocument(clinicPolicies.value, { branch: contractBranch.value }))
@@ -1146,6 +1154,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       listingAction,
       canManageListingWorkflow,
       clinicVatRegistered,
+      clinicTaxStatus,
       loading,
       form,
       applicablePolicies,

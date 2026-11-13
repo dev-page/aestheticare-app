@@ -54,7 +54,18 @@ const routes = [
   { path: "/register", name: "register", component: () => import("@/views/public/Register.vue") },
   { path: "/forgot-password", name: "forgot-password", component: () => import("@/views/public/ForgotPassword.vue") },
   { path: "/clinic/register", name: "register-clinic", component: () => import("@/views/public/Register.vue") },
-  { path: "/clinic/register/step-:step", name: "register-clinic-step", component: () => import("@/views/public/Register.vue") },
+  {
+    path: "/clinic/register/step-:step",
+    name: "register-clinic-step",
+    redirect: (to) => ({
+      path: "/clinic/register",
+      query: {
+        account: "clinic",
+        ...(to.query.paymentId ? { paymentId: to.query.paymentId } : {}),
+        ...(to.query.email ? { email: to.query.email } : {}),
+      },
+    }),
+  },
   { path: "/clinical/group-bookings", name: "clinical-group-bookings", component: () => import("@/views/admin/owner/clinic/GroupBookings.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:update" } },
   { path: "/centers", name: "centers", component: () => import("@/views/public/ViewCenters.vue") },
   ...(import.meta.env.DEV

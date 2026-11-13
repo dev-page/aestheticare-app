@@ -288,7 +288,7 @@
             <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 class="text-white font-semibold">Automatic Verification and OCR</h3>
-                <p class="text-xs text-slate-400">Document text extraction and automatic checks ran when the applicant uploaded each file.</p>
+                <p class="text-xs text-slate-400">Image quality is checked before upload. OCR consistency checks run after the applicant submits the documents.</p>
               </div>
               <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-200 capitalize">
                 {{ selectedRecord.verificationStatus || 'Not processed' }}
@@ -338,6 +338,10 @@
                 <div class="mt-4 border-t border-slate-800 pt-3">
                   <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Assessment</p>
                   <p class="mt-1 text-xs leading-relaxed text-slate-300">{{ result.reason }}</p>
+                  <p v-if="result.checks.pageReviewReasons.length" class="mt-2 text-xs leading-relaxed text-amber-200">
+                    Page review: {{ result.checks.pageReviewReasons.join(' ') }}
+                  </p>
+                  <p v-if="result.checks.pageCount" class="mt-2 text-[11px] text-slate-400">Pages checked: {{ result.checks.pageCount }}</p>
                   <p v-if="result.checks.expiryDate" class="mt-2 text-xs" :class="result.checks.expiryWarning || result.checks.expiryAccountHold ? 'text-amber-200' : 'text-slate-400'">
                     Expiry: {{ result.checks.expiryDate }}<span v-if="result.checks.expiryDaysRemaining !== null"> · {{ result.checks.expiryDaysRemaining }} day{{ result.checks.expiryDaysRemaining === 1 ? '' : 's' }} remaining</span>
                   </p>
@@ -371,6 +375,40 @@
 
                 <p v-else class="text-slate-500 text-xs">No file uploaded.</p>
               </article>
+            </div>
+          </section>
+
+          <section class="mb-6 rounded-xl border border-amber-700/50 bg-slate-800 p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 class="font-semibold text-white">BIR tax status review</h3>
+                <p class="mt-1 text-sm text-slate-400">OCR is a clue only. Open the original BIR certificate above and confirm the clinic’s registration type.</p>
+              </div>
+              <span class="rounded-full border px-3 py-1 text-xs font-semibold" :class="selectedRecord.taxReview?.profile?.status === 'vat_registered' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-slate-600 bg-slate-900 text-slate-300'">
+                {{ isTaxProfileReviewed(selectedRecord.taxReview?.profile) ? taxDecisionLabel(selectedRecord.taxReview.profile.status) : 'Needs BIR review' }}
+              </span>
+            </div>
+            <div v-if="taxReviewLoading" class="mt-4 rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-300">Loading BIR OCR summary...</div>
+            <div v-else class="mt-4 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+              <div class="flex flex-wrap items-center gap-2 text-sm">
+                <span class="text-slate-400">OCR suggestion:</span>
+                <strong class="text-white">{{ taxCandidateLabel(selectedRecord.taxReview?.candidate?.status) }}</strong>
+                <span v-if="selectedRecord.taxReview?.quality?.minimumScore !== null && selectedRecord.taxReview?.quality?.minimumScore !== undefined" class="text-xs text-slate-500">Image quality {{ Math.round(selectedRecord.taxReview.quality.minimumScore * 100) }}%</span>
+              </div>
+              <p v-if="selectedRecord.taxReview?.candidate?.evidence" class="mt-2 text-sm text-slate-300">“{{ selectedRecord.taxReview.candidate.evidence }}”</p>
+              <p v-else class="mt-2 text-xs text-amber-200">OCR could not identify a clear tax-type line. Review the original certificate manually.</p>
+              <p v-if="selectedRecord.taxReview?.hasBirDocument === false" class="mt-2 text-xs text-rose-300">A submitted BIR Certificate is required before saving a tax decision.</p>
+            </div>
+            <p v-if="taxReviewError" class="mt-3 text-sm text-rose-300">{{ taxReviewError }}</p>
+            <div class="mt-4 grid gap-2 sm:grid-cols-3" role="group" aria-label="Choose clinic BIR tax status">
+              <button v-for="option in taxDecisionOptions" :key="option.value" type="button" class="rounded-lg border px-3 py-3 text-sm font-semibold transition" :class="taxDecision === option.value ? 'border-amber-400 bg-amber-700 text-white' : 'border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-700'" :aria-pressed="taxDecision === option.value" :disabled="processing || selectedRecord.taxReview?.hasBirDocument === false" @click="taxDecision = option.value">{{ option.label }}</button>
+            </div>
+            <label class="mt-3 block text-xs font-medium text-slate-400">Reviewer note (optional)
+              <textarea v-model="taxReviewNote" rows="2" maxlength="1000" placeholder="Record the reason if the certificate needs clarification..." class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500"></textarea>
+            </label>
+            <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p class="text-xs text-slate-500">Only an administrator’s decision enables VAT. An unclear result keeps VAT disabled.</p>
+              <button type="button" class="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50" :disabled="processing || taxReviewLoading || !taxDecision || selectedRecord.taxReview?.hasBirDocument !== true" @click="saveClinicTaxReview">{{ processing ? 'Saving...' : 'Save tax decision' }}</button>
             </div>
           </section>
 
@@ -543,10 +581,13 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
     expiryDaysRemaining: Number.isFinite(Number(result.checks?.expiryDaysRemaining)) ? Number(result.checks.expiryDaysRemaining) : null,
     expiryAccountHold: result.checks?.expiryAccountHold === true,
     expiryWarning: result.checks?.expiryWarning === true,
+    pageCount: Number.isFinite(Number(result.checks?.pageCount)) ? Number(result.checks.pageCount) : 0,
+    pageReviewReasons: Array.isArray(result.checks?.pageReviewReasons)
+      ? result.checks.pageReviewReasons.map((reason) => String(reason || '').trim()).filter(Boolean)
+      : [],
   },
   scoreBreakdown: result.scoreBreakdown || null,
   reason: String(result.reason || 'No verification explanation was returned.'),
-  extractedText: String(result.extractedText || '').trim(),
   }))
 
 const formatDateValue = (value) => {
@@ -625,6 +666,28 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const showModal = ref(false)
     const selectedRecord = ref(null)
     const rejectionRemark = ref('')
+    const taxReviewLoading = ref(false)
+    const taxDecision = ref('')
+    const taxReviewNote = ref('')
+    const taxReviewError = ref('')
+    const taxDecisionOptions = [
+      { value: 'vat_registered', label: 'VAT-registered' },
+      { value: 'non_vat', label: 'Non-VAT' },
+      { value: 'needs_clarification', label: 'Needs clarification' },
+    ]
+    const taxDecisionLabel = (value) => ({
+      vat_registered: 'VAT-registered · confirmed',
+      non_vat: 'Non-VAT · confirmed',
+      needs_clarification: 'Needs clarification',
+    }[String(value || '')] || 'Needs BIR review')
+    const isTaxProfileReviewed = (profile) => profile?.reviewSource === 'admin_review'
+      && Boolean(profile?.reviewedBy)
+      && Boolean(profile?.reviewedAt)
+    const taxCandidateLabel = (value) => ({
+      vat_candidate: 'Likely VAT-registered',
+      non_vat_candidate: 'Likely Non-VAT',
+      unclear: 'Unclear — manual review',
+    }[String(value || 'unclear')] || 'Unclear — manual review')
     const forcedPlanByEmail = {
       'kenken.leon31@gmail.com': { plan: 'basic', paymentStatus: 'paid' },
     }
@@ -985,16 +1048,83 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       await Promise.all([loadPendingClinics(), loadVerifiedClinics(true), loadRejectedRegistrations()])
     }
 
-    const openDetails = (record) => {
-      selectedRecord.value = record
+    const openDetails = async (record) => {
+      selectedRecord.value = { ...record, taxReview: null }
       rejectionRemark.value = ''
+      taxDecision.value = ''
+      taxReviewNote.value = ''
+      taxReviewError.value = ''
       showModal.value = true
+      taxReviewLoading.value = true
+      const selectedId = record.id
+      try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
+        if (!token) throw new Error('Missing authorization token')
+        const response = await fetchFromBackend(`/admin/clinic-review/${encodeURIComponent(selectedId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Could not load BIR tax review data.')
+        if (selectedRecord.value?.id !== selectedId) return
+        const taxReview = payload.data?.taxReview || null
+        selectedRecord.value = { ...selectedRecord.value, taxReview }
+        taxDecision.value = isTaxProfileReviewed(taxReview?.profile) ? String(taxReview.profile.status || '') : ''
+        taxReviewNote.value = String(taxReview?.profile?.note || '')
+      } catch (loadError) {
+        console.warn('Could not load the clinic BIR tax review summary:', loadError?.message || loadError)
+        taxReviewError.value = loadError?.message || 'Could not load BIR review data. Refresh and try again.'
+      } finally {
+        if (selectedRecord.value?.id === selectedId) taxReviewLoading.value = false
+      }
+    }
+
+    const saveClinicTaxReview = async () => {
+      if (!selectedRecord.value || !taxDecision.value || selectedRecord.value.taxReview?.hasBirDocument !== true) return
+      processing.value = true
+      try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
+        if (!token) throw new Error('Missing authorization token')
+        const response = await fetchFromBackend('/admin/clinic-tax-profile/review', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ uid: selectedRecord.value.id, status: taxDecision.value, note: taxReviewNote.value }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Could not save the clinic tax review.')
+        selectedRecord.value = {
+          ...selectedRecord.value,
+          taxReview: {
+            ...selectedRecord.value.taxReview,
+            profile: {
+              status: payload.data.status,
+              vatRegistered: payload.data.vatRegistered === true,
+              reviewSource: 'admin_review',
+              reviewedBy: auth.currentUser?.uid || '',
+              reviewedAt: new Date().toISOString(),
+            },
+          },
+        }
+        await systemAdminSwal.fire({
+          title: 'Tax status saved',
+          text: payload.data.vatRegistered
+            ? 'VAT is now available for individual taxable listings across this clinic’s branches.'
+            : 'VAT remains disabled for this clinic until a reviewer confirms VAT registration.',
+          icon: 'success',
+        })
+      } catch (saveError) {
+        taxReviewError.value = saveError?.message || 'Could not save the clinic tax review.'
+      } finally {
+        processing.value = false
+      }
     }
 
     const closeModal = () => {
       showModal.value = false
       selectedRecord.value = null
       rejectionRemark.value = ''
+      taxDecision.value = ''
+      taxReviewNote.value = ''
+      taxReviewError.value = ''
     }
 
     const toggleAllOcrVerified = (selected) => {
@@ -1293,10 +1423,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       showModal,
       selectedRecord,
       rejectionRemark,
+      taxReviewLoading,
+      taxDecision,
+      taxReviewNote,
+      taxReviewError,
+      taxDecisionOptions,
+      taxDecisionLabel,
+      isTaxProfileReviewed,
+      taxCandidateLabel,
       loadPendingClinics,
       refreshClinicLists,
       loadVerifiedClinics,
       openDetails,
+      saveClinicTaxReview,
       closeModal,
       approveSelected,
       toggleAllOcrVerified,

@@ -18,16 +18,19 @@
 
         <section class="mt-6 rounded-2xl border border-slate-700 bg-slate-800 p-6">
           <div class="flex flex-wrap items-start justify-between gap-4">
-            <div><h2 class="text-xl font-semibold">Appointment VAT</h2><p class="mt-1 max-w-3xl text-sm text-slate-400">Set this only if your clinic is VAT-registered. The system uses the fixed 12% rate only on services, consultations, or packages you mark as VAT-applicable.</p></div>
-            <span class="rounded-full border px-3 py-1 text-xs font-semibold" :class="form.vatRegistered ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200' : 'border-slate-600 bg-slate-900 text-slate-400'">{{ form.vatRegistered ? '12% available for selected listings' : 'VAT off' }}</span>
+            <div><h2 class="text-xl font-semibold">Clinic tax status</h2><p class="mt-1 max-w-3xl text-sm text-slate-400">An administrator reviews your BIR Certificate of Registration and records the clinic’s tax status. Branches inherit the confirmed organization status.</p></div>
+            <span class="rounded-full border px-3 py-1 text-xs font-semibold" :class="clinicIsVatRegistered(savedPolicy) ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200' : taxProfileReviewed ? 'border-slate-600 bg-slate-900 text-slate-300' : 'border-amber-500/40 bg-amber-500/10 text-amber-200'">{{ clinicTaxStatusLabel }}</span>
           </div>
           <div class="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.75fr)]">
-            <PolicyToggle v-model="form.vatRegistered" :disabled="!canManagePolicies || saving" label="Clinic is VAT-registered" description="Enable 12% VAT controls in appointment listings. This does not apply VAT to every service automatically." />
-            <aside class="rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm leading-6 text-slate-300"><p class="font-semibold text-slate-100">How pricing works</p><p class="mt-1">For each eligible listing, choose whether its displayed price already includes VAT or whether the system should add 12%. The customer sees the subtotal, VAT, and final amount before paying.</p></aside>
-          </div>
-          <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-5">
-            <span class="text-xs text-slate-500">Last saved: {{ savedAt ? formatDate(savedAt) : 'Not saved yet' }}</span>
-            <button type="button" :disabled="saving || !canManagePolicies" @click="savePolicies" class="rounded-xl bg-amber-600 px-5 py-3 font-semibold transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50">{{ saving ? 'Saving...' : canManagePolicies ? 'Save VAT Setting' : 'View-only access' }}</button>
+            <div class="rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm leading-6 text-slate-300">
+              <p class="font-semibold text-slate-100">Appointment pricing</p>
+              <p class="mt-1">Once VAT registration is confirmed, you can mark individual services, consultations, or packages as VAT-applicable. Customers see the subtotal, VAT, and total before payment.</p>
+              <p v-if="savedPolicy.taxProfile?.reviewedAt" class="mt-2 text-xs text-slate-500">Reviewed {{ formatDate(savedPolicy.taxProfile.reviewedAt) }}</p>
+            </div>
+            <aside class="rounded-xl border border-amber-700/40 bg-amber-950/20 p-4 text-sm leading-6 text-amber-100">
+              <p class="font-semibold">{{ taxProfileReviewed ? 'Need to update this status?' : 'BIR review required' }}</p>
+              <p class="mt-1">{{ taxProfileReviewed ? 'Contact AesthetiCare support if your BIR registration changes or this decision needs correction.' : 'VAT controls stay unavailable until a reviewer confirms the tax status from your submitted BIR certificate.' }}</p>
+            </aside>
           </div>
         </section>
 
@@ -164,6 +167,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth, db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { isProductOrderPolicyKey, walkInServicePolicy } from '@/utils/clinicPolicies'
+import { clinicIsVatRegistered, clinicTaxProfileIsReviewed } from '../../../../../shared/clinicTaxProfile.js'
 import { buildClientContractDocument, clientContractPolicies, normalizeContractAppearance } from '../../../../../shared/clientContract.js'
 import { isCancellationWindowConfigurationValid } from '../../../../../shared/appointmentChangePolicy.js'
 import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
@@ -189,10 +193,16 @@ const servicePolicies = [
 ]
 
 
-const form = reactive({ vatRegistered: false, servicePaymentPolicyEnabled: false, fullPayment: false, downpaymentPercentage: 50, serviceCancellationPolicyEnabled: false, earlyMinimumHours: 48, earlyNonRefundable: false, earlyRefundPercentage: 100, midMinimumHours: 24, midMaximumHours: 48, midNonRefundable: false, midRefundPercentage: 50, lateMaximumHours: 24, lateNonRefundable: true, lateRefundPercentage: 0, serviceReschedulingPolicyEnabled: false, maximumRescheduleAllowance: 1, serviceNoShowPolicyEnabled: false, noShowGracePeriodMinutes: 30, noShowNonRefundable: true, noShowRefundPercentage: 0, walkInPolicyEnabled: true, walkInPolicyAcknowledgementRequired: true })
+const form = reactive({ servicePaymentPolicyEnabled: false, fullPayment: false, downpaymentPercentage: 50, serviceCancellationPolicyEnabled: false, earlyMinimumHours: 48, earlyNonRefundable: false, earlyRefundPercentage: 100, midMinimumHours: 24, midMaximumHours: 48, midNonRefundable: false, midRefundPercentage: 50, lateMaximumHours: 24, lateNonRefundable: true, lateRefundPercentage: 0, serviceReschedulingPolicyEnabled: false, maximumRescheduleAllowance: 1, serviceNoShowPolicyEnabled: false, noShowGracePeriodMinutes: 30, noShowNonRefundable: true, noShowRefundPercentage: 0, walkInPolicyEnabled: true, walkInPolicyAcknowledgementRequired: true })
 const retiredPolicyFields = ref([])
 const activeTab = ref('policies')
 const savedPolicy = ref({})
+const taxProfileReviewed = computed(() => clinicTaxProfileIsReviewed(savedPolicy.value.taxProfile))
+const clinicTaxStatusLabel = computed(() => {
+  if (clinicIsVatRegistered(savedPolicy.value)) return 'VAT-registered · confirmed'
+  if (!taxProfileReviewed.value) return 'Needs BIR review'
+  return savedPolicy.value.taxProfile.status === 'non_vat' ? 'Non-VAT · confirmed' : 'Needs clarification'
+})
 const additionalTerms = ref('')
 const termsInput = ref(null)
 const contractAppearance = reactive(normalizeContractAppearance())
@@ -310,18 +320,6 @@ const savePolicies = async () => {
   if (form.serviceReschedulingPolicyEnabled && (!isNonNegative(form.maximumRescheduleAllowance) || !Number.isInteger(Number(form.maximumRescheduleAllowance)))) return toast.error('Maximum Reschedule Allowance must be a whole number of zero or more.')
   saving.value = true
   try {
-    if (savedPolicy.value.vatRegistered === true && form.vatRegistered !== true) {
-      const branchSnapshots = await Promise.all([
-        getDocs(query(collection(db, 'clinics'), where('ownerId', '==', policyOwnerId.value))),
-        getDocs(query(collection(db, 'clinics'), where('organizationOwnerId', '==', policyOwnerId.value))),
-      ])
-      const branchIds = [...new Set([branchId.value, ...branchSnapshots.flatMap(snapshot => snapshot.docs.map(item => item.id))].filter(Boolean))]
-      const listingSnapshots = await Promise.all(branchIds.map(id => getDocs(query(collection(db, 'productServicePosts'), where('branchId', '==', id)))))
-      if (listingSnapshots.some(snapshot => snapshot.docs.some(item => item.data()?.vatApplicable === true))) {
-        saving.value = false
-        return toast.error('Unmark VAT on every service, consultation, and package listing before turning off clinic VAT.')
-      }
-    }
     const payload = { ...form, ...Object.fromEntries(retiredPolicyFields.value.map(key => [key, deleteField()])), ownerId: policyOwnerId.value, policyScope: 'clinic', updatedBy: auth.currentUser.uid, updatedAt: serverTimestamp(), paymentPolicy: form.servicePaymentPolicyEnabled ? paymentSummary() : '', paymentPolicyEnabled: form.servicePaymentPolicyEnabled, cancellationPolicy: form.serviceCancellationPolicyEnabled ? cancellationSummary() : '', cancellationPolicyEnabled: form.serviceCancellationPolicyEnabled, refundPolicy: form.serviceCancellationPolicyEnabled ? cancellationSummary() : '', refundPolicyEnabled: form.serviceCancellationPolicyEnabled, reschedulePolicy: form.serviceReschedulingPolicyEnabled ? rescheduleSummary() : '', reschedulePolicyEnabled: form.serviceReschedulingPolicyEnabled, noShowPolicy: form.serviceNoShowPolicyEnabled ? noShowSummary() : '', noShowPolicyEnabled: form.serviceNoShowPolicyEnabled, walkInPolicy: form.walkInPolicyEnabled ? walkInPolicySummary() : '', walkInPolicyEnabled: form.walkInPolicyEnabled }
     await setDoc(doc(db, 'clinicPolicies', policyOwnerId.value), payload, { merge: true })
     const summaries = { paymentPolicy: payload.paymentPolicy, paymentPolicyEnabled: payload.paymentPolicyEnabled, cancellationPolicy: payload.cancellationPolicy, cancellationPolicyEnabled: payload.cancellationPolicyEnabled, refundPolicy: payload.refundPolicy, refundPolicyEnabled: payload.refundPolicyEnabled, earlyMinimumHours: payload.earlyMinimumHours, earlyNonRefundable: payload.earlyNonRefundable, earlyRefundPercentage: payload.earlyRefundPercentage, midMinimumHours: payload.midMinimumHours, midMaximumHours: payload.midMaximumHours, midNonRefundable: payload.midNonRefundable, midRefundPercentage: payload.midRefundPercentage, lateMaximumHours: payload.lateMaximumHours, lateNonRefundable: payload.lateNonRefundable, lateRefundPercentage: payload.lateRefundPercentage, reschedulePolicy: payload.reschedulePolicy, reschedulePolicyEnabled: payload.reschedulePolicyEnabled, maximumRescheduleAllowance: payload.maximumRescheduleAllowance, noShowPolicy: payload.noShowPolicy, noShowPolicyEnabled: payload.noShowPolicyEnabled, walkInPolicy: payload.walkInPolicy, walkInPolicyEnabled: payload.walkInPolicyEnabled, policiesUpdatedAt: serverTimestamp() }

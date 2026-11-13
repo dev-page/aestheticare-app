@@ -6,6 +6,7 @@ import { subscriptionLifecycle, hasActivePaidCycle } from '../../shared/subscrip
 import { registerSubscriptionTrial } from './subscriptionTrial.js'
 import { registerSubscriptionReminders, sendSubscriptionReminders } from './subscriptionReminders.js'
 import { serviceOnlyClinicPolicies } from '../../shared/clinicPolicyContent.js'
+import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
 import { cancellationRefundEstimate, isCancellationPolicyEnabled, isReschedulePolicyEnabled, rescheduleAllowanceForPolicy } from '../../shared/appointmentChangePolicy.js'
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
@@ -132,6 +133,7 @@ const EMAIL_ADDRESS_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const REGISTRATION_OTP_EXPIRY_MINUTES = 10
 const REGISTRATION_OTP_COOLDOWN_SECONDS = 60
 const REGISTRATION_OTP_MAX_SENDS = 5
+const REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS = 5
 const REGISTRATION_OTP_SEND_WINDOW_SECONDS = 15 * 60
 const REGISTRATION_ATTEMPT_MAX_PER_WINDOW = 5
 const REGISTRATION_ATTEMPT_WINDOW_SECONDS = 15 * 60
@@ -212,7 +214,298 @@ const BUSINESS_NAME_REQUIREMENTS = new Set([
   'dohAccreditation',
 ])
 const GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS = new Set(['governmentIdRepresentativeFront'])
+const GOVERNMENT_ID_DOCUMENT_KEYS = new Set([
+  'governmentIdRepresentativeFront',
+  'governmentIdRepresentativeBack',
+])
+const REGISTRATION_DOCUMENT_MAX_PAGES = 15
+const REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION = 2
+const REGISTRATION_DOCUMENT_PAGE_CUES = Object.freeze({
+  governmentIdRepresentativeFront: /\b(passport|driver'?s?\s+licen[cs]e|national\s+id|philsys|identification|identity\s+card|date\s+of\s+birth|birth\s+date)\b/i,
+  businessPermit: /\b(business|permit|mayor|municipal|municipality|barangay|license|licen[cs]e|registration)\b/i,
+  birRegistration: /\b(bir|2303|bureau\s+of\s+internal\s+revenue|taxpayer|tax\s+type|tin|certificate\s+of\s+registration)\b/i,
+  sanitaryCertificate: /\b(sanitary|health\s+certificate|health\s+permit|public\s+health|sanitation\s+inspection|sanitary\s+inspection)\b/i,
+  dohAccreditation: /\b(doh|department\s+of\s+health|license\s+to\s+operate|licen[cs]e\s+to\s+operate|health\s+facility)\b/i,
+  authorizationLetter: /\b(authori[sz]|authority|appoint|representative|power\s+of\s+attorney|proof\s+of\s+authority)\b/i,
+})
+const getRegistrationDocumentPageLimit = (docKey) =>
+  GOVERNMENT_ID_DOCUMENT_KEYS.has(String(docKey || '').trim()) ? 1 : REGISTRATION_DOCUMENT_MAX_PAGES
+const getRegistrationDocumentMinimumTextLength = (docKey) =>
+  String(docKey || '').trim() === 'governmentIdRepresentativeBack' ? 10 : 30
+const extractDocumentAiPageText = (page, documentText) => {
+  const pageSegments = page?.layout?.textAnchor?.textSegments
+  const segments = Array.isArray(pageSegments) && pageSegments.length
+    ? pageSegments
+    : (Array.isArray(page?.tokens) ? page.tokens.flatMap((token) => token?.layout?.textAnchor?.textSegments || []) : [])
+  return segments.map((segment) => {
+    const start = Math.max(0, Number(segment?.startIndex || 0))
+    const end = Math.max(start, Number(segment?.endIndex || 0))
+    return end > start ? documentText.slice(start, end) : ''
+  }).join(' ').replace(/\s+/g, ' ').trim()
+}
+
+const getRegistrationPageReviewReasons = (docKey, pageTexts = []) => {
+  const key = String(docKey || '').trim()
+  const reasons = []
+  const pageCue = REGISTRATION_DOCUMENT_PAGE_CUES[key]
+  pageTexts.forEach((pageText, index) => {
+    const normalizedText = String(pageText || '').trim()
+    if (normalizedText.length < 12) {
+      reasons.push(`Page ${index + 1} has little readable text and needs visual review.`)
+    } else if (pageCue && !pageCue.test(normalizedText)) {
+      reasons.push(`Page ${index + 1} has no clear text cues for this document and needs visual review.`)
+    }
+  })
+  if (key === 'governmentIdRepresentativeBack') {
+    reasons.push('The ID back needs visual review against the front; OCR cannot confirm that both sides belong to the same ID.')
+  }
+  return [...new Set(reasons)].slice(0, REGISTRATION_DOCUMENT_MAX_PAGES + 1)
+}
 const normalizeOcrComparable = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+const CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR = String(process.env.CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR || '').trim()
+const REGISTRATION_DOCUMENT_QUALITY_FLOOR = 0.5
+let registrationDocumentAiClient = null
+let registrationDocumentAiAuth = null
+
+const getDocumentAiClient = () => {
+  if (!/^projects\/[^/]+\/locations\/[^/]+\/processors\/[^/]+$/.test(CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR)) {
+    const error = new Error('Clinic document quality checking is not configured. Please contact support before submitting registration documents.')
+    error.code = 'DOCUMENT_AI_NOT_CONFIGURED'
+    error.statusCode = 503
+    throw error
+  }
+  if (!googleCloudCredential?.client_email || !googleCloudCredential?.private_key) {
+    const error = new Error('Clinic document quality checking is not available. Please contact support before submitting registration documents.')
+    error.code = 'DOCUMENT_AI_CREDENTIALS_MISSING'
+    error.statusCode = 503
+    throw error
+  }
+  if (!registrationDocumentAiAuth) {
+    registrationDocumentAiAuth = new google.auth.JWT({
+      email: googleCloudCredential.client_email,
+      key: googleCloudCredential.private_key,
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    })
+  }
+  if (!registrationDocumentAiClient) {
+    registrationDocumentAiClient = google.documentai({ version: 'v1', auth: registrationDocumentAiAuth })
+  }
+  return registrationDocumentAiClient
+}
+
+const detectRegistrationDocumentMimeType = (bytes) => {
+  if (bytes?.subarray(0, 5).toString('ascii') === '%PDF-') return 'application/pdf'
+  if (bytes?.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  if (bytes?.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg'
+  return ''
+}
+
+const extractBirTaxTypeCandidate = (text) => {
+  const lines = String(text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const nonVatLine = lines.find((line) => /\bnon\s*[- ]?\s*vat\b|\bnot\s+(?:a\s+)?vat\s+registered\b/i.test(line)) || ''
+  const taxTypeHeadingIndex = lines.findIndex((line) => /\btax\s+types?\b|\btaxes\s+registered\b/i.test(line))
+  const taxTypeLines = taxTypeHeadingIndex >= 0 ? lines.slice(taxTypeHeadingIndex, taxTypeHeadingIndex + 8) : []
+  const vatTypeLine = taxTypeLines.find((line) => /\bVAT\b/i.test(line) && !/\bnon\s*[- ]?\s*vat\b/i.test(line)) || ''
+  const explicitVatLine = lines.find((line) => /\bvat\s+registered\b|\bvalue\s+added\s+tax\s+registered\b|\bvat\s+taxpayer\b/i.test(line)) || ''
+  const taxLine = nonVatLine || explicitVatLine || vatTypeLine || lines.find((line) => /\bpercentage\s+tax\b/i.test(line)) || ''
+  if (!taxLine) return { status: 'unclear', evidence: '' }
+  const isNonVat = Boolean(nonVatLine)
+  const isVat = !isNonVat && Boolean(explicitVatLine || vatTypeLine)
+  const match = taxLine.match(/.{0,48}(?:non\s*[- ]?\s*vat|vat|value\s+added\s+tax|percentage\s+tax|vat\s+taxpayer).{0,48}/i)
+  return {
+    status: isNonVat ? 'non_vat_candidate' : isVat ? 'vat_candidate' : 'unclear',
+    evidence: String(match?.[0] || taxLine).replace(/\s+/g, ' ').slice(0, 140),
+  }
+}
+
+const assessRegistrationDocumentQuality = async ({ bytes, contentType, docKey }) => {
+  const actualType = detectRegistrationDocumentMimeType(bytes)
+  if (!actualType || actualType !== String(contentType || '').toLowerCase()) {
+    const error = new Error('The file content does not match its selected type. Choose a readable PDF, PNG, or JPEG document.')
+    error.statusCode = 400
+    throw error
+  }
+  if (bytes.length <= 0 || bytes.length > 10 * 1024 * 1024) {
+    const error = new Error('Document size is invalid. Upload a file up to 10 MB.')
+    error.statusCode = 400
+    throw error
+  }
+
+  const client = getDocumentAiClient()
+  let response
+  try {
+    const processorLocation = CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR.match(/^projects\/[^/]+\/locations\/([^/]+)\//)?.[1] || 'global'
+    const rootUrl = processorLocation === 'global'
+      ? 'https://documentai.googleapis.com/'
+      : `https://${processorLocation}-documentai.googleapis.com/`
+    response = await client.projects.locations.processors.process({
+      name: CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR,
+      requestBody: {
+        rawDocument: { content: bytes.toString('base64'), mimeType: actualType },
+        processOptions: { ocrConfig: { enableImageQualityScores: true } },
+      },
+    }, { rootUrl })
+  } catch (error) {
+    const providerMessage = String(
+      error?.response?.data?.error?.message
+      || error?.errors?.[0]?.message
+      || error?.message
+      || ''
+    )
+    if (/page(?:s| count)?[^\n]*(?:exceed|limit|maximum|max)/i.test(providerMessage)) {
+      const pageLimitError = new Error(`PDFs may contain up to ${REGISTRATION_DOCUMENT_MAX_PAGES} pages. Split the document and upload only the pages that belong to it.`)
+      pageLimitError.statusCode = 422
+      throw pageLimitError
+    }
+    error.statusCode = 503
+    error.message = 'We could not check this document’s image quality right now. Please try again later. The file has not been accepted.'
+    throw error
+  }
+  const document = response?.data?.document || {}
+  const text = String(document.text || '').trim()
+  const pages = Array.isArray(document.pages) ? document.pages : []
+  const pageLimit = getRegistrationDocumentPageLimit(docKey)
+  const minimumTextLength = getRegistrationDocumentMinimumTextLength(docKey)
+  const pageTexts = pages.map((page) => extractDocumentAiPageText(page, text))
+  const pageReviewReasons = getRegistrationPageReviewReasons(docKey, pageTexts)
+  const pageQuality = pages.map((page, index) => {
+    const scores = page?.imageQualityScores || {}
+    const qualityScore = Number(scores.qualityScore)
+    const defects = (Array.isArray(scores.detectedDefects) ? scores.detectedDefects : []).map((defect) => ({
+      type: String(defect.type || defect.defectType || defect.name || '').trim().slice(0, 80),
+      confidence: Number(defect.confidence),
+    })).filter((defect) => defect.type)
+    return {
+      page: index + 1,
+      score: Number.isFinite(qualityScore) ? qualityScore : null,
+      defects,
+      readableTextLength: pageTexts[index].length,
+    }
+  })
+  const allPagesScored = pageQuality.length > 0 && pageQuality.every((page) => Number.isFinite(page.score))
+  const severeDefects = pageQuality.flatMap((page) => page.defects
+    .filter((defect) => defect.confidence >= 0.5 && /blur|cut.?off|cutoff|text.?too.?small|small.?text|low.?res|unreadable|text.?cutoff|noisy|dark|faint/i.test(defect.type))
+    .map((defect) => ({ page: page.page, type: defect.type })))
+  const score = allPagesScored ? Math.min(...pageQuality.map((page) => page.score)) : null
+  const tokenConfidences = pages.flatMap((page) => (Array.isArray(page.tokens) ? page.tokens : [])
+    .map((token) => Number(token?.layout?.confidence))
+    .filter((confidence) => Number.isFinite(confidence)))
+  const reasons = []
+  if (!pages.length) reasons.push('No pages could be read from this document.')
+  if (pages.length > pageLimit) {
+    reasons.push(GOVERNMENT_ID_DOCUMENT_KEYS.has(String(docKey || '').trim())
+      ? 'Upload only one side of the government ID in this field. Use the separate front and back fields.'
+      : `This document exceeds the ${REGISTRATION_DOCUMENT_MAX_PAGES}-page limit.`)
+  }
+  if (!allPagesScored) reasons.push('The image quality could not be checked for every page.')
+  if (score !== null && score < REGISTRATION_DOCUMENT_QUALITY_FLOOR) reasons.push('One or more pages are too difficult to read. Rescan them in focus with good lighting.')
+  if (severeDefects.length) reasons.push('One or more pages appear blurred, dark, cropped, or too small to read. Show the full page and try again.')
+  if (text.length < minimumTextLength) reasons.push('The document does not contain enough readable text. Make sure the full document is visible and in focus.')
+  const accepted = reasons.length === 0
+  const quality = {
+    pageCount: pageQuality.length,
+    minimumScore: score,
+    qualityFloor: REGISTRATION_DOCUMENT_QUALITY_FLOOR,
+    pages: pageQuality.map((page) => ({ page: page.page, score: page.score, defectTypes: page.defects.map((defect) => defect.type) })),
+    blockingDefects: severeDefects,
+    readableText: text.length >= minimumTextLength,
+    manualReviewRecommended: pageReviewReasons.length > 0,
+    pageReviewReasons,
+    policyVersion: REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION,
+    accepted,
+    reason: reasons.join(' '),
+  }
+  return {
+    accepted,
+    quality,
+    extractedText: text,
+    ocrConfidence: tokenConfidences.length
+      ? tokenConfidences.reduce((sum, confidence) => sum + confidence, 0) / tokenConfidences.length
+      : null,
+    manualReviewRecommended: pageReviewReasons.length > 0,
+    pageReviewReasons,
+    taxTypeCandidate: extractBirTaxTypeCandidate(text),
+  }
+}
+
+const registrationDocumentHash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex')
+
+const persistRegistrationDocumentPreflight = async ({ firestore, uid, docKey, bytes, contentType, fileName, storagePath = '' }) => {
+  const assessment = await assessRegistrationDocumentQuality({ bytes, contentType, docKey })
+  const hash = registrationDocumentHash(bytes)
+  const timestamp = admin.firestore.FieldValue.serverTimestamp()
+  const record = {
+    contentHash: hash,
+    contentType,
+    size: bytes.length,
+    fileName: String(fileName || '').slice(0, 255),
+    storagePath: String(storagePath || '').slice(0, 1024),
+    accepted: assessment.accepted,
+    quality: assessment.quality,
+    policyVersion: REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION,
+    // This subcollection has no client read rule. Reuse OCR at final
+    // verification without exposing the extracted personal document text.
+    extractedText: assessment.extractedText.slice(0, 100000),
+    ocrConfidence: assessment.ocrConfidence,
+    ...(docKey === 'birRegistration' ? { taxTypeCandidate: assessment.taxTypeCandidate } : {}),
+    checkedAt: timestamp,
+    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 30 * DAY_MS),
+  }
+  await firestore.collection('clinics').doc(uid).collection('documentPreflights').doc(docKey).set(record)
+  return { ...record, assessment }
+}
+
+const verifyRegistrationDocumentQualityAtSubmission = async ({ firestore, uid, docKey, document, bucketName }) => {
+  const storagePath = String(document?.path || document?.storagePath || '').trim()
+  const file = admin.storage().bucket(bucketName).file(storagePath)
+  const [bytes] = await file.download()
+  if (!bytes?.length || bytes.length > 10 * 1024 * 1024 || bytes.length !== Number(document.size || 0)) {
+    const error = new Error(`The ${registrationDocumentLabel(docKey)} file is incomplete or its size does not match. Please upload it again.`)
+    error.statusCode = 422
+    throw error
+  }
+  const actualType = detectRegistrationDocumentMimeType(bytes)
+  if (!actualType || actualType !== String(document.type || '').toLowerCase()) {
+    const error = new Error(`The ${registrationDocumentLabel(docKey)} file content does not match its file type. Please upload a valid PDF, PNG, or JPEG.`)
+    error.statusCode = 422
+    throw error
+  }
+
+  const hash = registrationDocumentHash(bytes)
+  const preflightRef = firestore.collection('clinics').doc(uid).collection('documentPreflights').doc(docKey)
+  const preflightSnap = await preflightRef.get()
+  const saved = preflightSnap.exists ? preflightSnap.data() || {} : {}
+  const expiresAt = getTimestampDate(saved.expiresAt)
+  let acceptedRecord = saved
+  if (saved.accepted !== true
+    || saved.contentHash !== hash
+    || Number(saved.policyVersion || saved.quality?.policyVersion || 0) !== REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION
+    || !expiresAt
+    || expiresAt.getTime() <= Date.now()) {
+    acceptedRecord = await persistRegistrationDocumentPreflight({
+      firestore, uid, docKey, bytes, contentType: actualType, fileName: document.name, storagePath,
+    })
+  }
+  if (acceptedRecord.accepted !== true) {
+    const error = new Error(`${registrationDocumentLabel(docKey)} needs to be replaced. ${String(acceptedRecord.quality?.reason || 'Upload a clearer, complete document.')}`)
+    error.statusCode = 422
+    error.docKey = docKey
+    throw error
+  }
+  if (acceptedRecord.storagePath !== storagePath) {
+    await preflightRef.set({ storagePath, checkedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+  }
+  return {
+    checkedAt: acceptedRecord.checkedAt || admin.firestore.FieldValue.serverTimestamp(),
+    pageCount: Number(acceptedRecord.quality?.pageCount || 0),
+    minimumScore: acceptedRecord.quality?.minimumScore ?? null,
+    defectTypes: [...new Set((acceptedRecord.quality?.pages || []).flatMap((page) => page.defectTypes || []))],
+    manualReviewRecommended: acceptedRecord.quality?.manualReviewRecommended === true,
+    pageReviewReasons: Array.isArray(acceptedRecord.quality?.pageReviewReasons) ? acceptedRecord.quality.pageReviewReasons : [],
+    policyVersion: REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION,
+    method: 'document_ai',
+  }
+}
 
 // The registrant's legal name is captured in Step 1. OCR identity checks use
 // that name only; a clinic or business name must never substitute for the
@@ -1258,66 +1551,6 @@ const generateSixDigitOtp = () =>
 const getRegistrationOtpDocRef = (purpose, email) =>
   admin.firestore().collection('registration_otps').doc(`${String(purpose || '').trim()}:${String(email || '').trim().toLowerCase()}`)
 
-const getAuthUserByEmail = async (email) => {
-  try {
-    return await admin.auth().getUserByEmail(email)
-  } catch (error) {
-    if (String(error?.code || '') === 'auth/user-not-found') {
-      return null
-    }
-    throw error
-  }
-}
-
-const getUserDocByEmail = async (firestore, email) => {
-  const snap = await firestore
-    .collection('users')
-    .where('email', '==', email)
-    .limit(1)
-    .get()
-
-  return snap.empty ? null : snap.docs[0]
-}
-
-const getCustomerRegistrationState = async (email) => {
-  const normalizedEmail = String(email || '').trim().toLowerCase()
-  const firestore = admin.firestore()
-  const authUser = await getAuthUserByEmail(normalizedEmail)
-
-  let uid = String(authUser?.uid || '').trim()
-  let userSnap = null
-
-  if (uid) {
-    const directUserSnap = await firestore.collection('users').doc(uid).get()
-    if (directUserSnap.exists) {
-      userSnap = directUserSnap
-    }
-  }
-
-  if (!userSnap) {
-    userSnap = await getUserDocByEmail(firestore, normalizedEmail)
-    if (userSnap?.id && !uid) {
-      uid = userSnap.id
-    }
-  }
-
-  const userData = userSnap?.data?.() || {}
-  const role = String(userData.role || userData.userType || '').trim()
-  const status = String(userData.status || '').trim()
-  const emailVerified = Boolean(userData.emailVerified || authUser?.emailVerified)
-
-  return {
-    exists: Boolean(authUser || userSnap),
-    uid,
-    authUser,
-    userSnap,
-    userData,
-    role,
-    status,
-    emailVerified,
-  }
-}
-
 const hashOtp = (value) => crypto.createHash('sha256').update(String(value || '')).digest('hex')
 
 const otpMatches = (otpData, candidate) => {
@@ -2114,6 +2347,9 @@ const getClinicPoliciesForBranch = async (firestore, branchId, knownBranch = nul
   const ownerId = String(branch.ownerId || branch.organizationOwnerId || '').trim()
   const applyBranchLinks = (sourcePolicy) => {
     const policy = serviceOnlyClinicPolicies(sourcePolicy)
+    // Ignore legacy owner-edited VAT flags. Only a backend-recorded reviewer
+    // decision enables VAT for the clinic organization.
+    policy.vatRegistered = clinicIsVatRegistered(sourcePolicy)
     // Undefined means a legacy branch that predates explicit linking: preserve
     // its existing behaviour by enforcing every enabled clinic policy.
     if (!Array.isArray(branch.enforcedPolicyKeys)) return policy
@@ -2226,7 +2462,6 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     confidence: 0,
     ocrConfidence: null,
     storagePath,
-    extractedText: '',
     detectedDocumentNumber: '',
     detectedDates: [],
     checks: { readableText: false, ocrConfidence: null, nameMatch: null, birthDateMatch: null, documentNumberDetected: null, expiryValid: null },
@@ -2287,7 +2522,8 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     const nameMatch = isAuthorizationDocument
       ? ownerNameMatch === true && permitHolderNameMatch === true
       : requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : permitHolderNameMatch
-    const readableText = extractedText.length >= 30
+    const minimumTextLength = getRegistrationDocumentMinimumTextLength(docKey)
+    const readableText = extractedText.length >= minimumTextLength
     const hasSomeText = extractedText.length > 0
     const ocrConfidence = getVisionWordConfidence(annotation)
     const detectedDates = extractOcrDates(extractedText)
@@ -2312,7 +2548,6 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     ))
     result.confidence = score
     result.ocrConfidence = ocrConfidence
-    result.extractedText = extractedText.slice(0, 2000)
     result.detectedDocumentNumber = detectedDocumentNumber
     result.detectedDates = detectedDates
     result.checks = {
@@ -2438,6 +2673,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     const requiresFreshComplianceCheck = EXPIRY_DATE_REQUIREMENTS.has(docKey)
       || GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS.has(docKey)
     if (uploadedResult
+      && Number(uploadedResult.policyVersion || 0) === REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION
       && !requiresFreshComplianceCheck
       && String(uploadedResult.storagePath || '') === storagePath) {
       results[docKey] = { ...uploadedResult, processedAt: admin.firestore.FieldValue.serverTimestamp() }
@@ -2460,35 +2696,47 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       continue
     }
 
-    if (!visionClient) {
-      result.reason = 'Automatic document processor is not configured.'
-      results[docKey] = result
-      continue
-    }
-
     try {
-      const visionRequest = await createRegistrationVisionRequest({
-        bucketName,
-        storagePath,
-        contentType: document.type,
-      })
-      const [visionResult] = await visionClient.documentTextDetection(visionRequest)
-      const primaryError = getVisionResponseError(visionResult)
-      if (primaryError) throw new Error(primaryError)
-      let annotation = visionResult?.fullTextAnnotation
-      let extractedText = String(annotation?.text || '').trim()
-      if (!extractedText) {
-        try {
-          const [fallbackResult] = await visionClient.textDetection(visionRequest)
-          const fallbackError = getVisionResponseError(fallbackResult)
-          if (fallbackError) throw new Error(fallbackError)
-          const fallbackText = String(fallbackResult?.textAnnotations?.[0]?.description || '').trim()
-          if (fallbackText) {
-            annotation = fallbackResult?.fullTextAnnotation || annotation
-            extractedText = fallbackText
+      const preflightSnap = await applicationRef.collection('documentPreflights').doc(docKey).get()
+      const preflight = preflightSnap.exists ? preflightSnap.data() || {} : {}
+      const preflightExpiresAt = getTimestampDate(preflight.expiresAt)
+      const hasCurrentDocumentPolicy = Number(preflight.policyVersion || preflight.quality?.policyVersion || 0)
+        === REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION
+      const hasReusablePreflight = preflight.accepted === true
+        && hasCurrentDocumentPolicy
+        && preflight.storagePath === storagePath
+        && Boolean(preflightExpiresAt && preflightExpiresAt.getTime() > Date.now())
+        && String(preflight.extractedText || '').trim().length >= getRegistrationDocumentMinimumTextLength(docKey)
+      let annotation = null
+      let extractedText = hasReusablePreflight ? String(preflight.extractedText || '').trim() : ''
+      const pageReviewReasons = hasCurrentDocumentPolicy
+        ? (Array.isArray(preflight.quality?.pageReviewReasons) ? preflight.quality.pageReviewReasons : [])
+        : ['The current page-by-page review record is missing. Inspect the original document pages manually.']
+      if (!hasReusablePreflight) {
+        if (!visionClient) {
+          result.reason = 'Automatic document processor is not configured.'
+          results[docKey] = result
+          continue
+        }
+        const visionRequest = await createRegistrationVisionRequest({ bucketName, storagePath, contentType: document.type })
+        const [visionResult] = await visionClient.documentTextDetection(visionRequest)
+        const primaryError = getVisionResponseError(visionResult)
+        if (primaryError) throw new Error(primaryError)
+        annotation = visionResult?.fullTextAnnotation
+        extractedText = String(annotation?.text || '').trim()
+        if (!extractedText) {
+          try {
+            const [fallbackResult] = await visionClient.textDetection(visionRequest)
+            const fallbackError = getVisionResponseError(fallbackResult)
+            if (fallbackError) throw new Error(fallbackError)
+            const fallbackText = String(fallbackResult?.textAnnotations?.[0]?.description || '').trim()
+            if (fallbackText) {
+              annotation = fallbackResult?.fullTextAnnotation || annotation
+              extractedText = fallbackText
+            }
+          } catch (fallbackError) {
+            console.warn(`Vision text fallback failed for ${docKey}:`, fallbackError?.message || fallbackError)
           }
-        } catch (fallbackError) {
-          console.warn(`Vision text fallback failed for ${docKey}:`, fallbackError?.message || fallbackError)
         }
       }
       const textComparable = normalizeOcrComparable(extractedText)
@@ -2507,9 +2755,13 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       const nameMatch = isAuthorizationDocument
         ? ownerNameMatch === true && permitHolderNameMatch === true
         : requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : permitHolderNameMatch
-      const hasReadableText = extractedText.length >= 30
+      const minimumTextLength = getRegistrationDocumentMinimumTextLength(docKey)
+      const hasReadableText = extractedText.length >= minimumTextLength
       const hasSomeText = extractedText.length > 0
-      const ocrConfidence = getVisionWordConfidence(annotation)
+      const preflightOcrConfidence = Number(preflight.ocrConfidence)
+      const ocrConfidence = hasReusablePreflight
+        ? Number.isFinite(preflightOcrConfidence) ? preflightOcrConfidence : null
+        : getVisionWordConfidence(annotation)
       const expiryApplicable = EXPIRY_DATE_REQUIREMENTS.has(docKey)
       const detectedDates = extractOcrDates(extractedText)
       const requiresBirthDate = GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS.has(docKey)
@@ -2544,6 +2796,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.checks = {
         readableText: hasReadableText,
         ocrConfidence,
+        pageCount: Number(preflight.quality?.pageCount || 0),
+        pageReviewReasons,
         nameMatch,
         ownerNameMatch,
         permitHolderNameMatch,
@@ -2574,7 +2828,6 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         },
       }
       result.confidence = confidence
-      result.extractedText = extractedText.slice(0, 2000)
       const automaticChecksPassed = (!requiresName || nameMatch === true)
         && (!requiresPermitHolderName || permitHolderNameMatch === true)
         && (!requiresBirthDate || birthDateMatch === true)
@@ -2587,6 +2840,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.status = !hasReadableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || invalidValidityRange || confidence < MANUAL_REVIEW_THRESHOLD
         ? 'rejected'
         : expiryAccountHold ? 'held_pending'
+        : pageReviewReasons.length ? 'manual_review'
         : isAuthorizationDocument ? 'manual_review'
         : confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
@@ -2601,6 +2855,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = 'The document has an invalid validity range: its end date is earlier than its start date. Please upload a correct, current document.'
       } else if (expiryAccountHold) {
         result.reason = `This document expires in ${expiryValidation.daysRemaining} day${expiryValidation.daysRemaining === 1 ? '' : 's'}. Your registration requires a replacement document before it can be reviewed.`
+      } else if (pageReviewReasons.length) {
+        result.reason = pageReviewReasons.join(' ')
       } else if (isAuthorizationDocument) {
         result.reason = 'OCR checked the registrant and permit-holder names. An administrator must review the authority granted before approval.'
       } else if (requiresPermitHolderName && permitHolderNameMatch !== true) {
@@ -2629,11 +2885,14 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   const allRequiredDocumentsPresent = requiredKeys.every((key) => Boolean(documents?.[key]?.path || documents?.[key]?.storagePath))
   const allVerified = allRequiredDocumentsPresent && requiredKeys.every((key) => results[key]?.status === 'verified')
   const hasRejectedDocument = requiredKeys.some((key) => results[key]?.status === 'rejected')
+  const rejectedDocumentKeys = requiredKeys.filter((key) => results[key]?.status === 'rejected')
   const expiryHoldDocuments = requiredKeys.filter((key) => results[key]?.checks?.expiryAccountHold)
   const hasExpiryHold = expiryHoldDocuments.length > 0
   const expiryWarningDocuments = requiredKeys.filter((key) => results[key]?.checks?.expiryWarning)
   const hasExpiryWarning = expiryWarningDocuments.length > 0
   const requiresExpiryResubmission = hasExpiryHold && !hasRejectedDocument
+  const requiresDocumentResubmission = hasRejectedDocument || hasExpiryHold
+  const resubmissionDocumentKeys = [...new Set([...rejectedDocumentKeys, ...expiryHoldDocuments])]
   const existingExpiryDeadline = typeof application.expiryResubmissionExpiresAt?.toDate === 'function'
     ? application.expiryResubmissionExpiresAt.toDate()
     : application.expiryResubmissionExpiresAt ? new Date(application.expiryResubmissionExpiresAt) : null
@@ -2644,8 +2903,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       : admin.firestore.Timestamp.fromMillis(Date.now() + REGISTRATION_EXPIRY_RESUBMISSION_DAYS * DAY_MS))
     : null
   const shouldSendExpiryHoldEmail = requiresExpiryResubmission && !canKeepExistingExpiryDeadline
-  const verificationStatus = hasExpiryHold ? 'Pending - Expiry Hold' : allVerified ? 'OCR Verified' : hasRejectedDocument ? 'Rejected' : 'Manual Review Required'
-  const approvalStatus = hasRejectedDocument ? 'Rejected' : requiresExpiryResubmission ? 'Pending Documents' : 'Pending Approval'
+  const verificationStatus = hasExpiryHold ? 'Pending - Expiry Hold' : allVerified ? 'OCR Verified' : hasRejectedDocument ? 'Resubmission Required' : 'Manual Review Required'
+  const approvalStatus = requiresDocumentResubmission ? 'Pending Documents' : 'Pending Approval'
   const verificationPayload = {
     verificationStatus,
     verificationResults: results,
@@ -2664,14 +2923,12 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       : admin.firestore.FieldValue.delete(),
     // OCR verifies document quality and consistency; it never grants account access.
     approvalStatus,
-    registrationStatus: hasRejectedDocument
-      ? CLINIC_REGISTRATION_STATUS.REJECTED
-      : requiresExpiryResubmission
-        ? CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED
-        : CLINIC_REGISTRATION_STATUS.PENDING_REVIEW,
-    resubmissionRequired: requiresExpiryResubmission,
-    resubmissionReason: requiresExpiryResubmission
-      ? `Replace the near-expiry document${expiryHoldDocuments.length === 1 ? '' : 's'}: ${expiryHoldDocuments.map(registrationDocumentLabel).join(', ')}.`
+    registrationStatus: requiresDocumentResubmission
+      ? CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED
+      : CLINIC_REGISTRATION_STATUS.PENDING_REVIEW,
+    resubmissionRequired: requiresDocumentResubmission,
+    resubmissionReason: requiresDocumentResubmission
+      ? `Replace ${resubmissionDocumentKeys.map(registrationDocumentLabel).join(', ')}${requiresExpiryResubmission ? ` before the expiry review deadline (${REGISTRATION_EXPIRY_RESUBMISSION_DAYS} days).` : ' with a clearer or corrected copy.'}`
       : admin.firestore.FieldValue.delete(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }
@@ -2681,16 +2938,14 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   batch.set(userRef, {
     status: approvalStatus,
     approvalStatus,
-    registrationStatus: hasRejectedDocument
-      ? CLINIC_REGISTRATION_STATUS.REJECTED
-      : requiresExpiryResubmission
+    registrationStatus: requiresDocumentResubmission
         ? CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED
         : CLINIC_REGISTRATION_STATUS.PENDING_REVIEW,
     verificationStatus,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true })
   batch.set(applicationRef.collection('verificationHistory').doc(), {
-    action: allVerified ? 'ocr-verified-pending-approval' : hasRejectedDocument ? 'ocr-rejected' : 'manual-review-required',
+    action: allVerified ? 'ocr-verified-pending-approval' : requiresDocumentResubmission ? 'ocr-resubmission-required' : 'manual-review-required',
     applicantType: normalizedType,
     results,
     processedBy: processedBy || 'automatic_processor',
@@ -2704,8 +2959,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     title: `${notificationLabel} Registration Ready for Review`,
     message: `${allVerified
       ? `A ${normalizedType} registration passed OCR verification and is awaiting your approval.`
-      : hasRejectedDocument
-        ? `A ${normalizedType} registration was rejected because one or more documents did not meet the OCR threshold.`
+      : requiresDocumentResubmission
+        ? `A ${normalizedType} registration needs replacement documents before review can continue.`
         : `A ${normalizedType} registration requires manual document review.`}${hasExpiryWarning ? ` Expiry warning: ${expiryWarningDocuments.map(registrationDocumentLabel).join(', ')} expire within ${REGISTRATION_EXPIRY_WARNING_DAYS} days.` : ''}`,
     link: '/superadmin/clinics/verification',
     read: false,
@@ -2857,6 +3112,22 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
         path: storagePath,
         uploadedAt: String(entry.uploadedAt || '').slice(0, 64),
       }
+    }
+
+    // Verify the actual stored bytes before accepting the submission. Existing
+    // registrations without preflight evidence are checked here and get the
+    // same per-document replacement path if a page is unreadable.
+    const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
+    if (!bucketName) {
+      const error = new Error('Secure document storage is not configured. Please contact support before submitting.')
+      error.statusCode = 503
+      throw error
+    }
+    for (const docKey of requiredKeys) {
+      const qualityAssessment = await verifyRegistrationDocumentQualityAtSubmission({
+        firestore, uid, docKey, document: submittedDocuments[docKey], bucketName,
+      })
+      submittedDocuments[docKey].qualityAssessment = qualityAssessment
     }
 
     const policyRef = clinicSubmissionPolicyRef(firestore, email)
@@ -3052,44 +3323,43 @@ app.post('/registration/ocr-document', requireAuth, async (req, res) => {
   }
 })
 
-// Preflight checks an image held in the browser. It deliberately does not
-// write the image or its OCR result to Firebase Storage/Firestore.
+// Preflight checks the original file before the client uploads it to Storage.
+// Only compact, private quality evidence and the BIR tax-type candidate are
+// retained server-side; extracted OCR text is never returned to the browser.
 app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
   const uid = String(req.body?.uid || '').trim()
   const docKey = String(req.body?.docKey || '').trim()
   const file = req.body?.file || {}
-  const contentBase64 = String(file.contentBase64 || '').replace(/^data:[^;]+;base64,/, '')
+  const contentBase64 = String(file.contentBase64 || '').replace(/^data:[^;]+;base64,/, '').replace(/\s+/g, '')
   if (!uid || uid !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
   if (!SUPPORTED_CLINIC_REGISTRATION_DOCUMENTS.has(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
-  if (!['image/jpeg', 'image/png'].includes(String(file.type || '').toLowerCase())) {
-    return res.status(400).json({ success: false, error: 'Image preflight supports PNG and JPEG files. PDFs are checked after final submission.' })
-  }
+  const contentType = String(file.type || '').toLowerCase()
+  if (!['application/pdf', 'image/jpeg', 'image/png'].includes(contentType)) return res.status(400).json({ success: false, error: 'Upload a PDF, PNG, or JPEG document.' })
   const size = Number(file.size || 0)
   if (!contentBase64 || size <= 0 || size > 10 * 1024 * 1024) return res.status(400).json({ success: false, error: 'Document content is invalid or too large.' })
   try {
     const firestore = admin.firestore()
-    const [clinicSnap, userSnap] = await Promise.all([firestore.collection('clinics').doc(uid).get(), firestore.collection('users').doc(uid).get()])
+    const clinicSnap = await firestore.collection('clinics').doc(uid).get()
     if (!clinicSnap.exists) return res.status(404).json({ success: false, error: 'Registration application not found.' })
-    const storedApplication = clinicSnap.data() || {}
-    const suppliedPermitHolder = req.body?.permitHolder || {}
-    const application = {
-      ...storedApplication,
-      ...(typeof suppliedPermitHolder.isRegistrant === 'boolean'
-        ? {
-            permitHolderIsRegistrant: suppliedPermitHolder.isRegistrant,
-            permitHolderName: String(suppliedPermitHolder.name || '').trim(),
-            permitHolderRelationship: String(suppliedPermitHolder.relationship || '').trim(),
-          }
-        : {}),
+    const bytes = Buffer.from(contentBase64, 'base64')
+    if (!bytes.length || bytes.length !== size || bytes.toString('base64').replace(/=+$/, '') !== contentBase64.replace(/=+$/, '')) {
+      return res.status(400).json({ success: false, error: 'The selected file could not be read completely. Please choose it again.' })
     }
-    const result = await processUploadedRegistrationDocument({
-      uid, docKey,
-      document: { name: file.name || '', type: file.type, size, preflight: true, contentBase64 },
-      application, user: userSnap.data() || {},
+    const preflight = await persistRegistrationDocumentPreflight({
+      firestore, uid, docKey, bytes, contentType, fileName: file.name,
     })
-    return res.json({ success: true, data: result })
+    if (!preflight.accepted) {
+      return res.status(422).json({
+        success: false,
+        error: preflight.quality.reason || 'This document is too difficult to read. Upload a clearer, complete copy.',
+        data: { accepted: false, quality: preflight.quality },
+      })
+    }
+    return res.json({ success: true, data: { accepted: true, quality: preflight.quality } })
   } catch (error) {
-    return res.status(500).json({ success: false, error: error?.message || 'OCR preflight failed.' })
+    console.error('Registration document quality preflight failed:', error?.code || error?.message || error)
+    const status = Number(error?.statusCode || 500)
+    return res.status(status).json({ success: false, error: error?.message || 'Document quality check failed. The file has not been uploaded.' })
   }
 })
 
@@ -4949,6 +5219,25 @@ app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','adm
     const userData = userSnap.exists ? userSnap.data() : {}
 
     const submittedDocuments = clinicData.submittedDocuments || {}
+    const organizationOwnerId = String(clinicData.ownerId || clinicData.organizationOwnerId || uid).trim()
+    const [organizationClinicSnap, policySnap, birPreflightSnap] = await Promise.all([
+      firestore.collection('clinics').doc(organizationOwnerId).get(),
+      firestore.collection('clinicPolicies').doc(organizationOwnerId).get(),
+      firestore.collection('clinics').doc(organizationOwnerId).collection('documentPreflights').doc('birRegistration').get(),
+    ])
+    const organizationClinic = organizationClinicSnap.exists ? organizationClinicSnap.data() || {} : clinicData
+    const birPreflight = birPreflightSnap.exists ? birPreflightSnap.data() || {} : {}
+    const policy = policySnap.exists ? policySnap.data() || {} : {}
+    const birDocument = organizationClinic.submittedDocuments?.birRegistration || {}
+    const birPath = String(birDocument.path || birDocument.storagePath || '').trim()
+    const hasMatchingBirPreflight = birPreflight.accepted === true && Boolean(birPath) && birPreflight.storagePath === birPath
+    const taxReview = {
+      organizationOwnerId,
+      profile: policy.taxProfile || null,
+      candidate: hasMatchingBirPreflight ? birPreflight.taxTypeCandidate || { status: 'unclear', evidence: '' } : { status: 'unclear', evidence: '' },
+      quality: hasMatchingBirPreflight ? birPreflight.quality || null : null,
+      hasBirDocument: Boolean(birDocument.path || birDocument.storagePath || birDocument.url),
+    }
     const reviewsSnap = await firestore.collection('clinics').doc(uid).collection('documentReviews').get()
     const documentReviews = {}
     reviewsSnap.forEach((d) => (documentReviews[d.id] = d.data()))
@@ -4957,10 +5246,75 @@ app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','adm
     const reviewHistory = []
     historySnap.forEach((d) => reviewHistory.push({ id: d.id, ...d.data() }))
 
-    return res.json({ success: true, data: { uid, clinic: clinicData, user: userData, submittedDocuments, documentReviews, reviewHistory } })
+    return res.json({ success: true, data: { uid, clinic: clinicData, user: userData, submittedDocuments, documentReviews, reviewHistory, taxReview } })
   } catch (error) {
     console.error('clinic-review error', error)
     return res.status(500).json({ success: false, error: error?.message || 'Failed to load clinic review' })
+  }
+})
+
+app.post('/admin/clinic-tax-profile/review', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
+  const uid = String(req.body?.uid || '').trim()
+  const status = String(req.body?.status || '').trim().toLowerCase()
+  const note = String(req.body?.note || '').trim().slice(0, 1000)
+  if (!uid) return res.status(400).json({ success: false, error: 'Clinic ID is required.' })
+  if (!['vat_registered', 'non_vat', 'needs_clarification'].includes(status)) {
+    return res.status(400).json({ success: false, error: 'Choose VAT-registered, Non-VAT, or needs clarification.' })
+  }
+  try {
+    const firestore = admin.firestore()
+    const requestedClinicSnap = await firestore.collection('clinics').doc(uid).get()
+    if (!requestedClinicSnap.exists) return res.status(404).json({ success: false, error: 'Clinic was not found.' })
+    const requestedClinic = requestedClinicSnap.data() || {}
+    const ownerId = String(requestedClinic.ownerId || requestedClinic.organizationOwnerId || uid).trim()
+    const organizationClinicRef = firestore.collection('clinics').doc(ownerId)
+    const [organizationClinicSnap, policySnap, preflightSnap] = await Promise.all([
+      organizationClinicRef.get(),
+      firestore.collection('clinicPolicies').doc(ownerId).get(),
+      organizationClinicRef.collection('documentPreflights').doc('birRegistration').get(),
+    ])
+    const organizationClinic = organizationClinicSnap.exists ? organizationClinicSnap.data() || {} : {}
+    const birDocument = organizationClinic.submittedDocuments?.birRegistration || {}
+    if (!birDocument.path && !birDocument.storagePath && !birDocument.url) {
+      return res.status(409).json({ success: false, error: 'A submitted BIR Certificate of Registration is required before recording the clinic tax status.' })
+    }
+    const preflight = preflightSnap.exists ? preflightSnap.data() || {} : {}
+    const birPath = String(birDocument.path || birDocument.storagePath || '').trim()
+    const hasMatchingBirPreflight = preflight.accepted === true && Boolean(birPath) && preflight.storagePath === birPath
+    const ocrCandidate = String(hasMatchingBirPreflight ? preflight.taxTypeCandidate?.status || 'unclear' : 'unclear')
+    const taxProfile = {
+      status,
+      vatRegistered: status === 'vat_registered',
+      sourceDocumentKey: 'birRegistration',
+      reviewSource: 'admin_review',
+      reviewedBy: String(req.user?.uid || ''),
+      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+    const policyRef = firestore.collection('clinicPolicies').doc(ownerId)
+    await Promise.all([
+      policyRef.set({ ownerId, policyScope: 'clinic', taxProfile, vatRegistered: status === 'vat_registered', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
+      organizationClinicRef.collection('reviewHistory').add({
+        action: 'clinic-tax-profile-reviewed',
+        status,
+        reviewer: req.user?.uid || null,
+        sourceDocumentKey: 'birRegistration',
+        ocrCandidate,
+        ocrEvidence: String(hasMatchingBirPreflight ? preflight.taxTypeCandidate?.evidence || '' : '').slice(0, 140),
+        note: note || null,
+        ts: admin.firestore.FieldValue.serverTimestamp(),
+      }),
+    ])
+    await writeSystemAdminActivity(req, {
+      action: 'Reviewed clinic tax profile',
+      module: 'Clinic Verification',
+      details: `Recorded ${status.replaceAll('_', ' ')} BIR status for clinic organization ${ownerId}.`,
+      targetId: ownerId,
+      targetName: String(organizationClinic.clinicName || organizationClinic.companyName || organizationClinic.email || ownerId),
+    })
+    return res.json({ success: true, data: { ownerId, status, vatRegistered: status === 'vat_registered' } })
+  } catch (error) {
+    console.error('Clinic tax profile review failed:', error?.message || error)
+    return res.status(500).json({ success: false, error: 'Could not save the clinic tax review. Please try again.' })
   }
 })
 
@@ -5288,8 +5642,299 @@ app.post(CHECK_REGISTRATION_ATTEMPT_PATH, async (req, res) => {
   }
 })
 
+const registrationText = (value, maxLength = 160) => String(value ?? '').trim().slice(0, maxLength)
+const registrationDate = (value) => {
+  const raw = String(value ?? '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null
+  const date = new Date(`${raw}T00:00:00.000Z`)
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== raw ? null : date
+}
+const isCaviteRegistrationLocation = (clinicInput, latitude, longitude) => {
+  const province = registrationText(clinicInput?.clinicProvince, 120).toLowerCase()
+  return /\bcavite\b/.test(province)
+    && latitude >= 13.679 && latitude <= 14.518
+    && longitude >= 120.559 && longitude <= 121.255
+}
+const isAdultRegistrationDate = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime()) || date.getTime() > Date.now()) return false
+  const today = new Date()
+  let age = today.getUTCFullYear() - date.getUTCFullYear()
+  if (today.getUTCMonth() < date.getUTCMonth()
+    || (today.getUTCMonth() === date.getUTCMonth() && today.getUTCDate() < date.getUTCDate())) age -= 1
+  return age >= 18
+}
+const normalizedRegistrationRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+const trustedRegistrationProfileResponse = async (uid) => {
+  const firestore = admin.firestore()
+  const [userSnap, clinicSnap] = await Promise.all([
+    firestore.collection('users').doc(uid).get(),
+    firestore.collection('clinics').doc(uid).get(),
+  ])
+  if (!userSnap.exists) return { exists: false }
+  const userData = userSnap.data() || {}
+  const clinicData = clinicSnap.exists ? clinicSnap.data() || {} : {}
+  if (!['clinicowner', 'clinicadmin', 'owner'].includes(normalizedRegistrationRole(userData.role || userData.userType))) {
+    const error = new Error('This account has no clinic registration to resume.')
+    error.statusCode = 404
+    throw error
+  }
+  const userStatus = String(userData.status || '').trim().toLowerCase()
+  const clinicStatus = String(clinicData.approvalStatus || '').trim().toLowerCase()
+  const hasSubmittedDocs = Boolean(clinicData.documentsSubmittedAt)
+    || Boolean(clinicData.submittedDocuments && Object.keys(clinicData.submittedDocuments).length)
+  const isActive = userStatus === 'active' || clinicStatus === 'approved' || clinicData.isPublished === true
+  const resumeStep = isActive ? 'active'
+    : !clinicSnap.exists ? 1
+      : hasSubmittedDocs || userStatus.includes('pending approval') || clinicStatus.includes('pending approval') ? 4
+        : userData.emailVerified === true ? 3 : 2
+  const safeDate = (value) => {
+    if (!value) return null
+    const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date.toISOString()
+  }
+  return {
+    exists: true,
+    uid,
+    resumeStep,
+    profile: {
+      firstName: userData.firstName || '',
+      midName: userData.midName || '',
+      lastName: userData.lastName || '',
+      suffix: userData.suffix || '',
+      birthDate: safeDate(userData.birthDate),
+      email: userData.email || '',
+      contactNumber: userData.contactNumber || '',
+      businessType: userData.businessType || clinicData.businessType || '',
+      authorizedRepPosition: userData.authorizedRepPosition || clinicData.authorizedRepPosition || '',
+      companyName: userData.companyName || clinicData.companyName || '',
+      companyType: userData.companyType || clinicData.companyType || '',
+      clinicName: clinicData.clinicName || '',
+      clinicLocation: clinicData.clinicLocation || '',
+      clinicLocationLat: clinicData.clinicLocationLat || '',
+      clinicLocationLng: clinicData.clinicLocationLng || '',
+      clinicLocationAddress: clinicData.clinicLocationAddress || '',
+      clinicBuildingNumber: clinicData.clinicBuildingNumber || '',
+      clinicStreetName: clinicData.clinicStreetName || '',
+      clinicBarangay: clinicData.clinicBarangay || '',
+      clinicProvince: clinicData.clinicProvince || '',
+      clinicPostalCode: clinicData.clinicPostalCode || '',
+      subscriptionPlan: clinicData.subscriptionPlan || userData.subscriptionPlan || '',
+      paymentStatus: clinicData.paymentStatus || userData.paymentStatus || '',
+      paymentId: clinicData.paymentId || userData.paymentId || '',
+      permitHolderIsRegistrant: typeof clinicData.permitHolderIsRegistrant === 'boolean' ? clinicData.permitHolderIsRegistrant : null,
+      permitHolderName: clinicData.permitHolderName || '',
+      permitHolderRelationship: clinicData.permitHolderRelationship || '',
+      submittedDocuments: clinicData.submittedDocuments || {},
+      draftDocuments: clinicData.draftDocuments || {},
+      expiryHoldDocuments: clinicData.expiryHoldDocuments || [],
+      expiryResubmissionExpiresAt: safeDate(clinicData.expiryResubmissionExpiresAt),
+      resubmissionReason: clinicData.resubmissionReason || '',
+      status: userData.status || '',
+      approvalStatus: clinicData.approvalStatus || '',
+    },
+  }
+}
+
+app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
+  try {
+    const uid = String(req.user?.uid || '').trim()
+    const email = String(req.user?.email || '').trim().toLowerCase()
+    const accountType = String(req.body?.accountType || '').trim().toLowerCase()
+    if (!uid || !email || !EMAIL_ADDRESS_REGEX.test(email) || !['clinic', 'customer'].includes(accountType)) {
+      return res.status(400).json({ success: false, error: 'A valid signed-in registration account is required.' })
+    }
+
+    const authUser = await admin.auth().getUser(uid)
+    if (String(authUser.email || '').trim().toLowerCase() !== email) {
+      return res.status(403).json({ success: false, error: 'The signed-in email does not match this account.' })
+    }
+    const profileInput = req.body?.profile && typeof req.body.profile === 'object' ? req.body.profile : {}
+    const birthDate = registrationDate(profileInput.birthDate)
+    if (!registrationText(profileInput.firstName, 80) || !registrationText(profileInput.lastName, 80)
+      || !birthDate || !isAdultRegistrationDate(birthDate)) {
+      return res.status(400).json({ success: false, error: 'Enter your name and a valid birth date. Applicants must be at least 18.' })
+    }
+    const contactNumber = registrationText(profileInput.contactNumber, 32)
+    if (!/^(?:\+?63)?9\d{9}$/.test(contactNumber.replace(/[\s()-]/g, ''))) {
+      return res.status(400).json({ success: false, error: 'Enter a valid Philippine mobile number.' })
+    }
+
+    const profileBase = {
+      firstName: registrationText(profileInput.firstName, 80),
+      midName: registrationText(profileInput.midName, 80),
+      suffix: registrationText(profileInput.suffix, 24),
+      lastName: registrationText(profileInput.lastName, 80),
+      birthDate: admin.firestore.Timestamp.fromDate(birthDate),
+      email,
+      contactNumber,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+    const firestore = admin.firestore()
+    const userRef = firestore.collection('users').doc(uid)
+    const clinicRef = firestore.collection('clinics').doc(uid)
+    const result = await firestore.runTransaction(async (transaction) => {
+      const [userSnap, clinicSnap] = await Promise.all([transaction.get(userRef), transaction.get(clinicRef)])
+      if (userSnap.exists) {
+        const userData = userSnap.data() || {}
+        const role = normalizedRegistrationRole(userData.role || userData.userType)
+        const storedEmail = String(userData.email || '').trim().toLowerCase()
+        if (storedEmail && storedEmail !== email) return { error: 'This account cannot start this registration type.' }
+        if (accountType === 'customer' && role === 'customer') return { created: false }
+        if (accountType === 'clinic' && ['clinicowner', 'clinicadmin', 'owner'].includes(role)) {
+          if (clinicSnap.exists) return { created: false }
+          const clinicInput = req.body?.clinic && typeof req.body.clinic === 'object' ? req.body.clinic : {}
+          const latitude = Number(clinicInput.clinicLocationLat)
+          const longitude = Number(clinicInput.clinicLocationLng)
+          if (!registrationText(clinicInput.clinicName, 160) || !registrationText(clinicInput.clinicLocation, 100)
+            || !Number.isFinite(latitude) || !Number.isFinite(longitude)
+            || !isCaviteRegistrationLocation(clinicInput, latitude, longitude)) {
+            return { error: 'Enter the clinic name and a valid pinned location within Cavite.' }
+          }
+          const emailVerified = userData.emailVerified === true
+          const pendingStatus = emailVerified ? 'Pending Document Submission' : 'Pending OTP Verification'
+          transaction.create(clinicRef, {
+            clinicName: registrationText(clinicInput.clinicName, 160),
+            clinicLocation: registrationText(clinicInput.clinicLocation, 100),
+            clinicLocationLat: String(latitude),
+            clinicLocationLng: String(longitude),
+            clinicLocationAddress: registrationText(clinicInput.clinicLocationAddress, 300),
+            clinicBuildingNumber: registrationText(clinicInput.clinicBuildingNumber, 80),
+            clinicStreetName: registrationText(clinicInput.clinicStreetName, 120),
+            clinicBarangay: registrationText(clinicInput.clinicBarangay, 120),
+            clinicProvince: registrationText(clinicInput.clinicProvince, 120),
+            clinicPostalCode: registrationText(clinicInput.clinicPostalCode, 20),
+            authorizedRepPosition: registrationText(clinicInput.authorizedRepPosition, 100),
+            companyName: registrationText(clinicInput.companyName, 160),
+            companyType: registrationText(clinicInput.companyType, 100),
+            clinicBranch: 'Main Branch',
+            ownerId: uid,
+            isMainBranch: true,
+            branchAdminId: uid,
+            branchAdminName: `${profileBase.firstName} ${profileBase.lastName}`.trim(),
+            approvalStatus: pendingStatus,
+            registrationStatus: pendingStatus,
+            subscriptionPlan: 'free',
+            paymentStatus: 'free',
+            subscriptionExpiresAt: null,
+            isPublished: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+          transaction.update(userRef, {
+            firstName: profileBase.firstName,
+            midName: profileBase.midName,
+            suffix: profileBase.suffix,
+            lastName: profileBase.lastName,
+            birthDate: profileBase.birthDate,
+            email,
+            contactNumber: profileBase.contactNumber,
+            authorizedRepPosition: registrationText(clinicInput.authorizedRepPosition, 100),
+            companyName: registrationText(clinicInput.companyName || clinicInput.clinicName, 160),
+            companyType: registrationText(clinicInput.companyType, 100),
+            branchId: uid,
+            clinicBranch: 'Main Branch',
+            status: pendingStatus,
+            registrationStatus: pendingStatus,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+          return { created: true, repaired: true }
+        }
+        return { error: 'This account cannot start this registration type.' }
+      }
+      if (clinicSnap.exists) return { error: 'This registration could not be started. Please contact support.' }
+
+      if (accountType === 'customer') {
+        const addressInput = req.body?.profile || {}
+        const addressLat = addressInput.addressLat === '' || addressInput.addressLat == null ? null : Number(addressInput.addressLat)
+        const addressLng = addressInput.addressLng === '' || addressInput.addressLng == null ? null : Number(addressInput.addressLng)
+        const hasAddressCoordinates = addressLat !== null || addressLng !== null
+        if (hasAddressCoordinates && (!Number.isFinite(addressLat) || !Number.isFinite(addressLng)
+          || addressLat < 4.5 || addressLat > 21.5 || addressLng < 116 || addressLng > 127)) {
+          return { error: 'Choose a valid address location in the Philippines.' }
+        }
+        transaction.create(userRef, {
+          ...profileBase,
+          contactNumber: `+63${contactNumber.replace(/\D/g, '').replace(/^63/, '').replace(/^0/, '')}`,
+          address: registrationText(addressInput.address, 300),
+          addressBuildingNumber: registrationText(addressInput.addressBuildingNumber, 80),
+          addressStreetName: registrationText(addressInput.addressStreetName, 120),
+          addressStreet: registrationText(addressInput.addressStreet, 200),
+          addressBarangay: registrationText(addressInput.addressBarangay, 120),
+          addressCity: registrationText(addressInput.addressCity, 120),
+          addressProvince: registrationText(addressInput.addressProvince, 120),
+          addressPostalCode: registrationText(addressInput.addressPostalCode, 20),
+          addressLat: hasAddressCoordinates ? addressLat : '',
+          addressLng: hasAddressCoordinates ? addressLng : '',
+          role: 'Customer',
+          status: 'Pending',
+          emailVerified: false,
+        })
+        return { created: true }
+      }
+
+      const clinicInput = req.body?.clinic && typeof req.body.clinic === 'object' ? req.body.clinic : {}
+      const latitude = Number(clinicInput.clinicLocationLat)
+      const longitude = Number(clinicInput.clinicLocationLng)
+      if (!registrationText(clinicInput.clinicName, 160) || !registrationText(clinicInput.clinicLocation, 100)
+        || !Number.isFinite(latitude) || !Number.isFinite(longitude)
+        || !isCaviteRegistrationLocation(clinicInput, latitude, longitude)) {
+        return { error: 'Enter the clinic name and a valid pinned location within Cavite.' }
+      }
+      const companyName = registrationText(clinicInput.companyName || clinicInput.clinicName, 160)
+      transaction.create(userRef, {
+        ...profileBase,
+        authorizedRepPosition: registrationText(clinicInput.authorizedRepPosition, 100),
+        companyName,
+        companyType: registrationText(clinicInput.companyType, 100),
+        branchId: uid,
+        clinicBranch: 'Main Branch',
+        role: 'Clinic Owner',
+        userType: 'Owner',
+        status: 'Pending OTP Verification',
+        registrationStatus: 'Pending OTP Verification',
+        emailVerified: false,
+        subscriptionPlan: 'free',
+        paymentStatus: 'free',
+        subscriptionExpiresAt: null,
+      })
+      transaction.create(clinicRef, {
+        clinicName: registrationText(clinicInput.clinicName, 160),
+        clinicLocation: registrationText(clinicInput.clinicLocation, 100),
+        clinicLocationLat: String(latitude),
+        clinicLocationLng: String(longitude),
+        clinicLocationAddress: registrationText(clinicInput.clinicLocationAddress, 300),
+        clinicBuildingNumber: registrationText(clinicInput.clinicBuildingNumber, 80),
+        clinicStreetName: registrationText(clinicInput.clinicStreetName, 120),
+        clinicBarangay: registrationText(clinicInput.clinicBarangay, 120),
+        clinicProvince: registrationText(clinicInput.clinicProvince, 120),
+        clinicPostalCode: registrationText(clinicInput.clinicPostalCode, 20),
+        authorizedRepPosition: registrationText(clinicInput.authorizedRepPosition, 100),
+        companyName,
+        companyType: registrationText(clinicInput.companyType, 100),
+        clinicBranch: 'Main Branch',
+        ownerId: uid,
+        isMainBranch: true,
+        branchAdminId: uid,
+        branchAdminName: `${profileBase.firstName} ${profileBase.lastName}`.trim(),
+        approvalStatus: 'Pending OTP Verification',
+        registrationStatus: 'Pending OTP Verification',
+        subscriptionPlan: 'free',
+        paymentStatus: 'free',
+        subscriptionExpiresAt: null,
+        isPublished: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+      return { created: true }
+    })
+    if (result.error) return res.status(409).json({ success: false, error: result.error })
+    return res.status(result.created ? 201 : 200).json({ success: true, data: { uid, created: result.created } })
+  } catch (error) {
+    console.error('Trusted registration profile creation failed:', error?.code || error?.message || error)
+    return res.status(Number(error?.statusCode || 500)).json({ success: false, error: error?.message || 'Unable to save registration details.' })
+  }
+})
+
 app.post(REQUEST_REGISTRATION_OTP_PATH, async (req, res) => {
-  const { email, uid } = req.body ?? {}
+  const { email } = req.body ?? {}
 
   if (!adminReady) {
     return res.status(500).json({
@@ -5299,7 +5944,6 @@ app.post(REQUEST_REGISTRATION_OTP_PATH, async (req, res) => {
   }
 
   const normalizedEmail = String(email || '').trim().toLowerCase()
-  const normalizedUid = String(uid || '').trim()
   if (!normalizedEmail) {
     return res.status(400).json({
       success: false,
@@ -5315,51 +5959,41 @@ app.post(REQUEST_REGISTRATION_OTP_PATH, async (req, res) => {
   }
 
   if (!postmarkClient || !senderEmail) {
-    return res.status(500).json({
-      success: false,
-      error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
-    })
+    return res.status(503).json({ success: false, error: 'Registration email verification is temporarily unavailable. Please try again later.' })
   }
 
   try {
-    const otpResult = await sendRegistrationOtpMessage({
-      email: normalizedEmail,
-      uid: normalizedUid,
-      purpose: CLINIC_REGISTRATION_OTP_PURPOSE,
-    })
-
-    console.log('Registration OTP sent', {
-      to: normalizedEmail,
-      maskedTo: maskEmailAddress(normalizedEmail),
-      status: otpResult.delivery.statusCode || 'unknown',
-      messageId: otpResult.delivery.messageId || 'unknown',
-      expiresAt: otpResult.expiresAt.toISOString(),
-    })
-
-    return res.json({
+    if (postmarkClient && senderEmail) {
+      const authUser = await admin.auth().getUserByEmail(normalizedEmail).catch(() => null)
+      if (authUser?.uid) {
+        const firestore = admin.firestore()
+        const [userSnap, clinicSnap] = await Promise.all([
+          firestore.collection('users').doc(authUser.uid).get(),
+          firestore.collection('clinics').doc(authUser.uid).get(),
+        ])
+        const userData = userSnap.exists ? userSnap.data() || {} : {}
+        const clinicData = clinicSnap.exists ? clinicSnap.data() || {} : {}
+        const role = normalizedRegistrationRole(userData.role || userData.userType)
+        const active = String(userData.status || '').toLowerCase() === 'active'
+          || String(clinicData.approvalStatus || '').toLowerCase() === 'approved'
+          || clinicData.isPublished === true
+        if (['clinicowner', 'clinicadmin', 'owner'].includes(role) && !active) {
+          await sendRegistrationOtpMessage({ email: normalizedEmail, uid: authUser.uid, purpose: CLINIC_REGISTRATION_OTP_PURPOSE })
+        }
+      }
+    }
+    // Keep the response identical for unknown, active, and eligible emails.
+    return res.status(202).json({
       success: true,
-      recipient: normalizedEmail,
-      expiresInSeconds: otpResult.expiresInSeconds,
-      retryAfterSeconds: otpResult.retryAfterSeconds,
-      messageId: otpResult.delivery.messageId || null,
+      message: 'If this email belongs to an unfinished clinic registration, a code will be sent to it.',
+      retryAfterSeconds: REGISTRATION_OTP_COOLDOWN_SECONDS,
     })
   } catch (error) {
+    console.error('Clinic registration OTP request failed:', error?.code || error?.message || error)
     if (error?.statusCode === 429) {
-      return res.status(429).json({
-        success: false,
-        error: error.message,
-        retryAfterSeconds: error.retryAfterSeconds,
-      })
+      return res.status(202).json({ success: true, message: 'If this email belongs to an unfinished clinic registration, a code will be sent to it.', retryAfterSeconds: REGISTRATION_OTP_COOLDOWN_SECONDS })
     }
-    const providerMessage = extractProviderError(error)
-    console.error('Registration OTP request error:', {
-      email: normalizedEmail,
-      error: providerMessage,
-    })
-    return res.status(500).json({
-      success: false,
-      error: providerMessage,
-    })
+    return res.status(503).json({ success: false, error: 'Registration email verification is temporarily unavailable. Please try again later.' })
   }
 })
 
@@ -5513,7 +6147,7 @@ app.post(VERIFY_LOGIN_OTP_PATH, async (req, res) => {
 })
 
 app.post(REQUEST_CUSTOMER_OTP_PATH, async (req, res) => {
-  const { email, uid } = req.body ?? {}
+  const { email } = req.body ?? {}
 
   if (!adminReady) {
     return res.status(500).json({
@@ -5523,7 +6157,6 @@ app.post(REQUEST_CUSTOMER_OTP_PATH, async (req, res) => {
   }
 
   const normalizedEmail = String(email || '').trim().toLowerCase()
-  const normalizedUid = String(uid || '').trim()
   if (!normalizedEmail) {
     return res.status(400).json({
       success: false,
@@ -5539,80 +6172,33 @@ app.post(REQUEST_CUSTOMER_OTP_PATH, async (req, res) => {
   }
 
   if (!postmarkClient || !senderEmail) {
-    return res.status(500).json({
-      success: false,
-      error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
-    })
+    return res.status(503).json({ success: false, error: 'Registration email verification is temporarily unavailable. Please try again later.' })
   }
 
   try {
-    const customerState = await getCustomerRegistrationState(normalizedEmail)
-    const role = String(customerState.role || '').trim().toLowerCase()
-    const status = String(customerState.status || '').trim().toLowerCase()
-    const resolvedUid = normalizedUid || customerState.uid
-
-    if (customerState.exists && role && role !== 'customer') {
-      return res.status(409).json({
-        success: false,
-        error: 'This email is already used by another account type.',
-      })
+    if (postmarkClient && senderEmail) {
+      const authUser = await admin.auth().getUserByEmail(normalizedEmail).catch(() => null)
+      if (authUser?.uid) {
+        const userSnap = await admin.firestore().collection('users').doc(authUser.uid).get()
+        const userData = userSnap.exists ? userSnap.data() || {} : {}
+        const role = normalizedRegistrationRole(userData.role || userData.userType)
+        const status = String(userData.status || '').trim().toLowerCase()
+        if (role === 'customer' && userData.emailVerified !== true && status !== 'active') {
+          await sendRegistrationOtpMessage({ email: normalizedEmail, uid: authUser.uid, purpose: CUSTOMER_REGISTRATION_OTP_PURPOSE })
+        }
+      }
     }
-
-    if (customerState.emailVerified || status === 'active') {
-      return res.status(409).json({
-        success: false,
-        error: 'This customer account is already verified. Please sign in.',
-      })
-    }
-
-    if (!resolvedUid) {
-      return res.status(400).json({
-        success: false,
-        error: 'No customer registration was found for this email.',
-      })
-    }
-
-    const otpResult = await sendRegistrationOtpMessage({
-      email: normalizedEmail,
-      uid: resolvedUid,
-      purpose: CUSTOMER_REGISTRATION_OTP_PURPOSE,
-    })
-
-    console.log('Customer registration OTP sent', {
-      uid: resolvedUid,
-      to: normalizedEmail,
-      maskedTo: maskEmailAddress(normalizedEmail),
-      status: otpResult.delivery.statusCode || 'unknown',
-      messageId: otpResult.delivery.messageId || 'unknown',
-      expiresAt: otpResult.expiresAt.toISOString(),
-    })
-
-    return res.json({
+    return res.status(202).json({
       success: true,
-      recipient: normalizedEmail,
-      uid: resolvedUid,
-      expiresInSeconds: otpResult.expiresInSeconds,
-      retryAfterSeconds: otpResult.retryAfterSeconds,
-      messageId: otpResult.delivery.messageId || null,
+      message: 'If this email belongs to an unfinished customer registration, a code will be sent to it.',
+      retryAfterSeconds: REGISTRATION_OTP_COOLDOWN_SECONDS,
     })
   } catch (error) {
+    console.error('Customer registration OTP request failed:', error?.code || error?.message || error)
     if (error?.statusCode === 429) {
-      return res.status(429).json({
-        success: false,
-        error: error.message,
-        retryAfterSeconds: error.retryAfterSeconds,
-      })
+      return res.status(202).json({ success: true, message: 'If this email belongs to an unfinished customer registration, a code will be sent to it.', retryAfterSeconds: REGISTRATION_OTP_COOLDOWN_SECONDS })
     }
-
-    const providerMessage = extractProviderError(error)
-    console.error('Customer registration OTP request error:', {
-      email: normalizedEmail,
-      error: providerMessage,
-    })
-    return res.status(500).json({
-      success: false,
-      error: providerMessage,
-    })
+    return res.status(503).json({ success: false, error: 'Registration email verification is temporarily unavailable. Please try again later.' })
   }
 })
 
@@ -5837,11 +6423,15 @@ app.get('/public/clinics/:branchId/catalog', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Center unavailable.' })
     }
     const isFreePlan = getEffectiveClinicPlan(clinic) === 'free'
+    const { policy: clinicPolicy } = await getClinicPoliciesForBranch(firestore, branchId, clinic)
     const postsSnap = await firestore.collection('productServicePosts').where('branchId', '==', branchId).get()
     const posts = postsSnap.docs
       .map((postSnap) => ({ id: postSnap.id, ...postSnap.data() }))
       .filter(isCustomerCareListing)
       .filter((post) => !isFreePlan || post.postType === 'Service')
+      // Do not advertise legacy VAT prices that cannot be booked until an
+      // administrator has confirmed the clinic's BIR tax profile.
+      .filter((post) => clinicPolicy.vatRegistered === true || post.vatApplicable !== true)
     return res.json({ success: true, posts })
   } catch (error) {
     console.error('Public clinic catalog load failed:', error?.message || error)
@@ -6437,20 +7027,10 @@ app.post(CHECK_USER_PATH, async (req, res) => {
     })
   }
 
-  try {
-    const userRecord = await admin.auth().getUserByEmail(normalizedEmail)
-    return res.json({ success: true, exists: true, uid: userRecord.uid })
-  } catch (error) {
-    const code = error?.code || ''
-    if (code === 'auth/user-not-found') {
-      return res.json({ success: true, exists: false })
-    }
-    return res.status(400).json({
-      success: false,
-      error: error?.message || 'Failed to check user.',
-      code,
-    })
-  }
+  return res.json({
+    success: true,
+    message: 'For account safety, registration details are confirmed only after email verification.',
+  })
 })
 
 app.post(CHECK_CUSTOMER_REGISTRATION_STATUS_PATH, async (req, res) => {
@@ -6471,48 +7051,10 @@ app.post(CHECK_CUSTOMER_REGISTRATION_STATUS_PATH, async (req, res) => {
     })
   }
 
-  try {
-    const customerState = await getCustomerRegistrationState(normalizedEmail)
-    if (!customerState.exists) {
-      return res.json({ success: true, exists: false })
-    }
-
-    const role = String(customerState.role || '').trim()
-    const status = String(customerState.status || '').trim()
-    const normalizedRole = role.toLowerCase()
-    const normalizedStatus = status.toLowerCase()
-    const canResumeOtp =
-      normalizedRole === 'customer' &&
-      !customerState.emailVerified &&
-      normalizedStatus !== 'active'
-    const recoveryEndsAt = getTimestampDate(customerState.userData?.accountRecoveryEndsAt)
-    const deletionEndsAt = getTimestampDate(customerState.userData?.accountDeletionScheduledFor)
-    const accountRecoveryEligible = normalizedRole === 'customer'
-      && normalizedStatus === 'inactive'
-      && customerState.userData?.accountDeactivationRequested === true
-      && recoveryEndsAt && recoveryEndsAt.getTime() > Date.now()
-    const deletionRecoveryEligible = normalizedRole === 'customer'
-      && customerState.userData?.accountDeletionRequested === true
-      && deletionEndsAt && deletionEndsAt.getTime() > Date.now()
-
-    return res.json({
-      success: true,
-      exists: true,
-      uid: customerState.uid,
-      role,
-      status,
-      emailVerified: customerState.emailVerified,
-      canResumeOtp,
-      accountRecoveryEligible,
-      deletionRecoveryEligible,
-    })
-  } catch (error) {
-    return res.status(400).json({
-      success: false,
-      error: error?.message || 'Failed to check customer registration status.',
-      code: error?.code || '',
-    })
-  }
+  return res.json({
+    success: true,
+    message: 'If this account needs verification, instructions will be sent to its registered email.',
+  })
 })
 
 app.post('/auth/check-registration-status', async (req, res) => {
@@ -6533,76 +7075,10 @@ app.post('/auth/check-registration-status', async (req, res) => {
     })
   }
 
-  try {
-    const userRecord = await admin.auth().getUserByEmail(normalizedEmail)
-    const uid = userRecord.uid
-    const firestore = admin.firestore()
-    const [userSnap, clinicSnap] = await Promise.all([
-      firestore.collection('users').doc(uid).get(),
-      firestore.collection('clinics').doc(uid).get(),
-    ])
-
-    const userData = userSnap.data() || {}
-    const clinicData = clinicSnap.data() || {}
-    const userStatus = String(userData.status || '').toLowerCase()
-    const clinicStatus = String(clinicData.approvalStatus || '').toLowerCase()
-    const businessType =
-      String(userData.businessType || clinicData.businessType || '').trim()
-    const normalizedRole = String(userData.role || userData.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
-    const recoveryEndsAt = getTimestampDate(userData.accountRecoveryEndsAt)
-    const ownerRecoveryEligible = ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(normalizedRole)
-      && userStatus === 'inactive'
-      && userData.archived === true
-      && userData.accountClosed === true
-      && String(userData.accountClosureAction || '').trim().toLowerCase() === 'deactivate'
-      && recoveryEndsAt && recoveryEndsAt.getTime() > Date.now()
-
-    const hasSubmittedDocs =
-      Boolean(clinicData.documentsSubmittedAt) ||
-      (clinicData.submittedDocuments && Object.keys(clinicData.submittedDocuments || {}).length > 0)
-
-    const pendingApprovalSignals =
-      userStatus.includes('pending approval') ||
-      clinicStatus.includes('pending approval') ||
-      clinicStatus.includes('waiting') ||
-      clinicStatus.includes('for approval') ||
-      clinicStatus.includes('submitted') ||
-      hasSubmittedDocs
-
-    let resumeStep = 1
-    if (userStatus === 'active') {
-      resumeStep = 'active'
-    } else if (pendingApprovalSignals) {
-      resumeStep = 4
-    } else if (userStatus.includes('pending document') || clinicStatus.includes('pending document')) {
-      resumeStep = 3
-    } else if (userStatus.includes('pending otp') || clinicStatus.includes('pending otp')) {
-      resumeStep = 2
-    }
-
-    return res.json({
-      success: true,
-      exists: true,
-      uid,
-      role: userData.role || userData.userType || '',
-      resumeStep,
-      userStatus,
-      clinicStatus,
-      hasSubmittedDocs,
-      businessType,
-      ownerRecoveryEligible,
-    })
-  } catch (error) {
-    const code = error?.code || ''
-    if (code === 'auth/user-not-found') {
-      return res.json({ success: true, exists: false })
-    }
-    return res.status(400).json({
-      success: false,
-      error: error?.message || 'Failed to check registration status.',
-      code,
-    })
-  }
+  return res.json({
+    success: true,
+    message: 'If this account needs verification, instructions will be sent to its registered email.',
+  })
 })
 
 app.post('/auth/cleanup-partial-registration', async (req, res) => {
@@ -6672,171 +7148,94 @@ app.post('/auth/cleanup-partial-registration', async (req, res) => {
   }
 })
 
+const recordRegistrationOtpFailure = (transaction, otpRef, otpData, message = 'Invalid OTP. Please try again.') => {
+  const attempts = Math.max(0, Number(otpData.attempts || 0)) + 1
+  transaction.update(otpRef, {
+    attempts,
+    used: attempts >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS,
+    lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  })
+  return { error: attempts >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS
+    ? 'Too many incorrect codes. Request a new code to continue.'
+    : message }
+}
+
 app.post(VERIFY_REGISTRATION_OTP_PATH, async (req, res) => {
-  const { uid, email, otp } = req.body ?? {}
-
-  if (!adminReady) {
-    return res.status(500).json({
-      success: false,
-      error: adminInitError || 'firebase-admin is not ready',
-    })
-  }
-
-  const normalizedEmail = String(email || '').trim().toLowerCase()
-  const normalizedUid = String(uid || '').trim()
-  const normalizedOtp = String(otp || '').trim()
-  if (!normalizedEmail || !normalizedOtp) {
-    return res.status(400).json({
-      success: false,
-      error: 'email and otp are required',
-    })
-  }
-
-  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail)) {
-    return res.status(400).json({
-      success: false,
-      error: 'email must be a valid email address',
-    })
+  const normalizedEmail = String(req.body?.email || '').trim().toLowerCase()
+  const normalizedOtp = String(req.body?.otp || '').trim()
+  if (!normalizedEmail || !EMAIL_ADDRESS_REGEX.test(normalizedEmail) || !/^\d{6}$/.test(normalizedOtp)) {
+    return res.status(400).json({ success: false, error: 'Enter the email address and complete 6-digit code.' })
   }
 
   try {
-    let resolvedUid = normalizedUid
-    let userRecord = null
     const firestore = admin.firestore()
     const otpRef = getRegistrationOtpDocRef(CLINIC_REGISTRATION_OTP_PURPOSE, normalizedEmail)
-    const otpSnap = await otpRef.get()
-
-    if (!otpSnap.exists) {
-      return res.json({
-        success: false,
-        error: 'No active OTP found. Please request a new OTP.',
-      })
+    const initialOtp = await otpRef.get()
+    if (!initialOtp.exists) return res.status(400).json({ success: false, error: 'No active code was found. Request a new code.' })
+    const expectedUid = String(initialOtp.data()?.uid || '').trim()
+    if (!expectedUid) return res.status(400).json({ success: false, error: 'No active code was found. Request a new code.' })
+    const authUser = await admin.auth().getUser(expectedUid)
+    if (String(authUser.email || '').trim().toLowerCase() !== normalizedEmail) {
+      return res.status(400).json({ success: false, error: 'This code does not match the registration email.' })
     }
 
-    const otpData = otpSnap.data() || {}
-    if (!resolvedUid) {
-      resolvedUid = String(otpData.uid || '').trim()
-    }
-    const expiresAt = getTimestampDate(otpData.expiresAt)
-    if (otpData.used) {
-      return res.json({
-        success: false,
-        error: 'This OTP was already used. Please request a new OTP.',
-      })
-    }
-
-    if (expiresAt && expiresAt.getTime() < Date.now()) {
-      await otpRef.set({
-        used: true,
-        expiredAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true })
-      return res.json({
-        success: false,
-        error: 'OTP expired. Please request a new OTP.',
-      })
-    }
-
-    if (!otpMatches(otpData, normalizedOtp)) {
-      await otpRef.set({
-        attempts: admin.firestore.FieldValue.increment(1),
-        lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true })
-      return res.json({
-        success: false,
-        error: 'Invalid OTP. Please try again.',
-      })
-    }
-
-    if (resolvedUid) {
-      try {
-        userRecord = await admin.auth().getUser(resolvedUid)
-      } catch (error) {
-        const code = String(error?.code || '')
-        if (code !== 'auth/user-not-found') {
-          throw error
-        }
+    const userRef = firestore.collection('users').doc(expectedUid)
+    const clinicRef = firestore.collection('clinics').doc(expectedUid)
+    const outcome = await firestore.runTransaction(async (transaction) => {
+      const [otpSnap, userSnap, clinicSnap] = await Promise.all([
+        transaction.get(otpRef), transaction.get(userRef), transaction.get(clinicRef),
+      ])
+      if (!otpSnap.exists) return { error: 'No active code was found. Request a new code.' }
+      const otpData = otpSnap.data() || {}
+      if (otpData.used) return { error: 'This code has already been used. Request a new code.' }
+      const expiresAt = getTimestampDate(otpData.expiresAt)
+      if (expiresAt && expiresAt.getTime() <= Date.now()) {
+        transaction.update(otpRef, { used: true, expiredAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+        return { error: 'This code has expired. Request a new code.' }
       }
-    }
-
-    const emailUserRecord = await admin.auth().getUserByEmail(normalizedEmail).catch(() => null)
-    if (emailUserRecord?.uid) {
-      resolvedUid = emailUserRecord.uid
-      userRecord = emailUserRecord
-    }
-
-    let recordEmail = String(userRecord?.email || '').trim().toLowerCase()
-    if (!emailUserRecord?.uid && (!resolvedUid || !recordEmail || recordEmail !== normalizedEmail)) {
-      const matchingUsersSnap = await firestore
-        .collection('users')
-        .where('email', '==', normalizedEmail)
-        .limit(1)
-        .get()
-
-      if (!matchingUsersSnap.empty) {
-        resolvedUid = matchingUsersSnap.docs[0].id
-        if (!recordEmail) {
-          recordEmail = normalizedEmail
-        }
+      if (Number(otpData.attempts || 0) >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS) {
+        transaction.update(otpRef, { used: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+        return { error: 'Too many incorrect codes. Request a new code to continue.' }
       }
-    }
-
-    if (recordEmail && recordEmail !== normalizedEmail) {
-      return res.status(403).json({
-        success: false,
-        error: 'Email does not match user record',
-      })
-    }
-
-    if (!resolvedUid) {
-      return res.status(400).json({
-        success: false,
-        error: 'Unable to resolve the registration account for this OTP.',
-      })
-    }
-
-    await Promise.all([
-      firestore.collection('users').doc(resolvedUid).set({
-        status: 'Pending Document Submission',
-        registrationStatus: CLINIC_REGISTRATION_STATUS.PENDING_DOCUMENTS,
-        emailVerified: true,
-        emailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true }),
-      firestore.collection('clinics').doc(resolvedUid).set({
-        approvalStatus: 'Pending Document Submission',
-        registrationStatus: CLINIC_REGISTRATION_STATUS.PENDING_DOCUMENTS,
-      }, { merge: true }),
-      otpRef.set({
-        uid: resolvedUid,
-        used: true,
-        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true }),
-    ])
-
-    console.log('Registration OTP verified', {
-      uid: resolvedUid,
-      email: normalizedEmail,
-      maskedTo: maskEmailAddress(normalizedEmail),
+      if (String(otpData.uid || '').trim() !== expectedUid || !otpMatches(otpData, normalizedOtp)) {
+        return recordRegistrationOtpFailure(transaction, otpRef, otpData)
+      }
+      if (!userSnap.exists) return { error: 'The registration could not be found. Start again or contact support.' }
+      const userData = userSnap.data() || {}
+      const clinicData = clinicSnap.data() || {}
+      if (!['clinicowner', 'clinicadmin', 'owner'].includes(normalizedRegistrationRole(userData.role || userData.userType))
+        || String(userData.email || '').trim().toLowerCase() !== normalizedEmail
+        || (clinicSnap.exists && String(clinicData.ownerId || '').trim() !== expectedUid)) {
+        return { error: 'This code does not match the registration account.' }
+      }
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      const userUpdate = { emailVerified: true, emailVerifiedAt: timestamp, updatedAt: timestamp }
+      const clinicUpdate = { updatedAt: timestamp }
+      if (String(userData.status || '').toLowerCase().includes('pending otp')) {
+        userUpdate.status = 'Pending Document Submission'
+        userUpdate.registrationStatus = CLINIC_REGISTRATION_STATUS.PENDING_DOCUMENTS
+      }
+      if (String(clinicData.approvalStatus || '').toLowerCase().includes('pending otp')) {
+        clinicUpdate.approvalStatus = 'Pending Document Submission'
+        clinicUpdate.registrationStatus = CLINIC_REGISTRATION_STATUS.PENDING_DOCUMENTS
+      }
+      transaction.update(userRef, userUpdate)
+      if (clinicSnap.exists) transaction.update(clinicRef, clinicUpdate)
+      transaction.update(otpRef, { used: true, verifiedAt: timestamp, updatedAt: timestamp })
+      return { uid: expectedUid }
     })
-
-    // OTP is the authentication factor for a resumed registration. Mint a
-    // short-lived Firebase custom-token exchange so the browser receives a
-    // real Auth session before it accesses protected uploads.
-    const customToken = await admin.auth().createCustomToken(resolvedUid)
-    return res.json({ success: true, data: { uid: resolvedUid, customToken } })
+    if (outcome.error) return res.status(400).json({ success: false, error: outcome.error })
+    const customToken = await admin.auth().createCustomToken(outcome.uid)
+    return res.json({ success: true, data: { uid: outcome.uid, customToken } })
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      error: error?.message || 'Failed to verify OTP.',
-      code: error?.code || '',
-    })
+    console.error('Clinic registration OTP verification failed:', error?.code || error?.message || error)
+    return res.status(400).json({ success: false, error: 'Unable to verify this code. Request a new one and try again.' })
   }
 })
 
 app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
-  const { uid, email, otp } = req.body ?? {}
+  const { email, otp } = req.body ?? {}
 
   if (!adminReady) {
     return res.status(500).json({
@@ -6846,7 +7245,6 @@ app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
   }
 
   const normalizedEmail = String(email || '').trim().toLowerCase()
-  const normalizedUid = String(uid || '').trim()
   const normalizedOtp = String(otp || '').trim()
   if (!normalizedEmail || !normalizedOtp) {
     return res.status(400).json({
@@ -6863,96 +7261,59 @@ app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
   }
 
   try {
-    let resolvedUid = normalizedUid
     const firestore = admin.firestore()
     const otpRef = getRegistrationOtpDocRef(CUSTOMER_REGISTRATION_OTP_PURPOSE, normalizedEmail)
-    const otpSnap = await otpRef.get()
-
-    if (!otpSnap.exists) {
-      return res.status(400).json({
-        success: false,
-        error: 'No active OTP found. Please request a new OTP.',
-      })
+    const initialOtp = await otpRef.get()
+    const expectedUid = String(initialOtp.data()?.uid || '').trim()
+    if (!initialOtp.exists || !expectedUid) {
+      return res.status(400).json({ success: false, error: 'No active code was found. Request a new code.' })
     }
-
-    const otpData = otpSnap.data() || {}
-    if (!resolvedUid) {
-      resolvedUid = String(otpData.uid || '').trim()
+    const authUser = await admin.auth().getUser(expectedUid)
+    if (String(authUser.email || '').trim().toLowerCase() !== normalizedEmail) {
+      return res.status(400).json({ success: false, error: 'Unable to verify this code. Request a new one and try again.' })
     }
-    const expiresAt = getTimestampDate(otpData.expiresAt)
-    if (otpData.used) {
-      return res.status(400).json({
-        success: false,
-        error: 'This OTP was already used. Please request a new OTP.',
-      })
-    }
-
-    if (expiresAt && expiresAt.getTime() < Date.now()) {
-      await otpRef.set({
-        used: true,
-        expiredAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true })
-      return res.status(400).json({
-        success: false,
-        error: 'OTP expired. Please request a new OTP.',
-      })
-    }
-
-    if (!otpMatches(otpData, normalizedOtp)) {
-      await otpRef.set({
-        attempts: admin.firestore.FieldValue.increment(1),
-        lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true })
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid OTP. Please try again.',
-      })
-    }
-
-    const customerState = await getCustomerRegistrationState(normalizedEmail)
-    const role = String(customerState.role || '').trim().toLowerCase()
-    const status = String(customerState.status || '').trim().toLowerCase()
-
-    if (customerState.exists && role && role !== 'customer') {
-      return res.status(403).json({
-        success: false,
-        error: 'This email is already used by another account type.',
-      })
-    }
-
-    if (!resolvedUid) {
-      resolvedUid = customerState.uid
-    }
-
-    if (!resolvedUid) {
-      return res.status(400).json({
-        success: false,
-        error: 'Unable to resolve the customer account for this OTP.',
-      })
-    }
-
-    await Promise.all([
-      firestore.collection('users').doc(resolvedUid).set({
-        role: 'Customer',
+    const userRef = firestore.collection('users').doc(expectedUid)
+    const otpOutcome = await firestore.runTransaction(async (transaction) => {
+      const [otpSnap, userSnap] = await Promise.all([transaction.get(otpRef), transaction.get(userRef)])
+      if (!otpSnap.exists || !userSnap.exists) return { error: 'No active code was found. Request a new code.' }
+      const otpData = otpSnap.data() || {}
+      const userData = userSnap.data() || {}
+      if (otpData.used) return { error: 'This code has already been used. Request a new code.' }
+      const expiresAt = getTimestampDate(otpData.expiresAt)
+      if (expiresAt && expiresAt.getTime() <= Date.now()) {
+        transaction.update(otpRef, { used: true, expiredAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+        return { error: 'This code has expired. Request a new code.' }
+      }
+      const attempts = Math.max(0, Number(otpData.attempts || 0))
+      if (attempts >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS) {
+        transaction.update(otpRef, { used: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+        return { error: 'Too many incorrect codes. Request a new code to continue.' }
+      }
+      const otpUid = String(otpData.uid || '').trim()
+      const role = normalizedRegistrationRole(userData.role || userData.userType)
+      const storedEmail = String(userData.email || '').trim().toLowerCase()
+      if (otpUid !== expectedUid || storedEmail !== normalizedEmail || role !== 'customer'
+        || !otpMatches(otpData, normalizedOtp)) {
+        return recordRegistrationOtpFailure(transaction, otpRef, otpData)
+      }
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      transaction.update(userRef, {
         status: 'Pending Activation',
         emailVerified: true,
-        emailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true }),
-      otpRef.set({
-        uid: resolvedUid,
-        used: true,
-        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true }),
-    ])
+        emailVerifiedAt: timestamp,
+        updatedAt: timestamp,
+      })
+      transaction.update(otpRef, { used: true, verifiedAt: timestamp, updatedAt: timestamp })
+      return { uid: expectedUid, fullName: `${userData.firstName || ''} ${userData.lastName || ''}`.trim() }
+    })
+    if (otpOutcome.error) return res.status(400).json({ success: false, error: otpOutcome.error })
+    const resolvedUid = otpOutcome.uid
 
     console.log('Customer registration OTP verified', {
       uid: resolvedUid,
       email: normalizedEmail,
       maskedTo: maskEmailAddress(normalizedEmail),
-      previousStatus: status || 'unknown',
+      previousStatus: 'pending',
     })
 
     // Send welcome email to customer (transactional)
@@ -6980,7 +7341,7 @@ app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
         firestore,
         uid: resolvedUid,
         email: normalizedEmail,
-        name: customerState.fullName || customerState.firstName || 'Customer',
+        name: otpOutcome.fullName || 'Customer',
         req,
       })
     } catch (emailErr) {
@@ -6997,93 +7358,14 @@ app.post(VERIFY_CUSTOMER_OTP_PATH, async (req, res) => {
   }
 })
 
-app.post('/auth/registration-profile', async (req, res) => {
-  const { email } = req.body ?? {}
-
-  if (!adminReady) {
-    return res.status(500).json({
-      success: false,
-      error: adminInitError || 'firebase-admin is not ready',
-    })
-  }
-
-  const normalizedEmail = String(email || '').trim().toLowerCase()
-  if (!normalizedEmail) {
-    return res.status(400).json({
-      success: false,
-      error: 'email is required',
-    })
-  }
-
+app.post('/auth/registration-profile', requireAuth, async (req, res) => {
   try {
-    const userRecord = await admin.auth().getUserByEmail(normalizedEmail)
-    const uid = userRecord.uid
-    const firestore = admin.firestore()
-    const [userSnap, clinicSnap] = await Promise.all([
-      firestore.collection('users').doc(uid).get(),
-      firestore.collection('clinics').doc(uid).get(),
-    ])
-
-    const userData = userSnap.exists ? userSnap.data() || {} : {}
-    const clinicData = clinicSnap.exists ? clinicSnap.data() || {} : {}
-
-    const safeDate = (value) => {
-      if (!value) return null
-      if (typeof value?.toDate === 'function') {
-        const d = value.toDate()
-        return Number.isNaN(d.getTime()) ? null : d.toISOString()
-      }
-      if (value instanceof Date) return value.toISOString()
-      if (typeof value === 'string' || typeof value === 'number') {
-        const d = new Date(value)
-        return Number.isNaN(d.getTime()) ? null : d.toISOString()
-      }
-      return null
-    }
-
-    return res.json({
-      success: true,
-      exists: true,
-      uid,
-      profile: {
-        firstName: userData.firstName || '',
-        lastName: userData.lastName || '',
-        birthDate: safeDate(userData.birthDate),
-        email: userData.email || normalizedEmail,
-        contactNumber: userData.contactNumber || '',
-        businessType: userData.businessType || clinicData.businessType || '',
-        authorizedRepPosition: userData.authorizedRepPosition || clinicData.authorizedRepPosition || '',
-        companyName: userData.companyName || clinicData.companyName || '',
-        companyType: userData.companyType || clinicData.companyType || '',
-        clinicName: clinicData.clinicName || '',
-        clinicLocation: clinicData.clinicLocation || '',
-        clinicLocationLat: clinicData.clinicLocationLat || '',
-        clinicLocationLng: clinicData.clinicLocationLng || '',
-        clinicLocationAddress: clinicData.clinicLocationAddress || '',
-        subscriptionPlan: clinicData.subscriptionPlan || userData.subscriptionPlan || '',
-        paymentStatus: clinicData.paymentStatus || userData.paymentStatus || '',
-        paymentId: clinicData.paymentId || userData.paymentId || '',
-        permitHolderIsRegistrant: typeof clinicData.permitHolderIsRegistrant === 'boolean' ? clinicData.permitHolderIsRegistrant : null,
-        permitHolderName: clinicData.permitHolderName || '',
-        permitHolderRelationship: clinicData.permitHolderRelationship || '',
-        submittedDocuments: clinicData.submittedDocuments || {},
-        draftDocuments: clinicData.draftDocuments || {},
-        expiryHoldDocuments: clinicData.expiryHoldDocuments || [],
-        expiryResubmissionExpiresAt: safeDate(clinicData.expiryResubmissionExpiresAt),
-        resubmissionReason: clinicData.resubmissionReason || '',
-        status: userData.status || '',
-        approvalStatus: clinicData.approvalStatus || '',
-      },
-    })
+    const data = await trustedRegistrationProfileResponse(String(req.user?.uid || '').trim())
+    return res.json({ success: true, data })
   } catch (error) {
-    const code = error?.code || ''
-    if (code === 'auth/user-not-found') {
-      return res.json({ success: true, exists: false })
-    }
-    return res.status(400).json({
+    return res.status(Number(error?.statusCode || 500)).json({
       success: false,
-      error: error?.message || 'Failed to load registration profile.',
-      code,
+      error: error?.message || 'Failed to load registration progress.',
     })
   }
 })

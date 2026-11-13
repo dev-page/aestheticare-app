@@ -2,9 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import { auth, db } from '@/config/firebaseConfig'
-import { createUserWithEmailAndPassword, deleteUser, signOut } from 'firebase/auth'
-import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
+import { auth } from '@/config/firebaseConfig'
+import { createUserWithEmailAndPassword, signOut } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
 import Terms from '@/components/common/Terms.vue'
@@ -146,6 +145,7 @@ const otpSent = ref(false)
 const otpDigits = ref(Array(6).fill(''))
 const userUid = ref('')
 const otpRecipientEmail = ref('')
+const isVerifyingOtp = ref(false)
 const otpInputRefs = ref([])
 const otpResendCountdown = ref(0)
 const OTP_LENGTH = 6
@@ -911,30 +911,16 @@ const closeOtpModal = () => {
   clearOtpInputs()
 }
 
-const checkCustomerRegistrationStatus = async (emailValue) => {
-  try {
-    const res = await axios.post(`${OTP_API_BASE}/auth/check-customer-registration-status`, {
-      email: String(emailValue || '').trim().toLowerCase(),
-    })
-    return res?.data || null
-  } catch (error) {
-    console.error('Failed to check customer registration status:', error)
-    return null
-  }
-}
-
-const requestCustomerOtp = async (emailValue, uidValue = '') => {
+const requestCustomerOtp = async (emailValue) => {
   try {
     const res = await axios.post(`${OTP_API_BASE}/auth/request-customer-otp`, {
       email: String(emailValue || '').trim().toLowerCase(),
-      uid: String(uidValue || '').trim(),
     })
 
     return {
       success: Boolean(res?.data?.success),
       error: '',
       retryAfterSeconds: Number(res?.data?.retryAfterSeconds || OTP_COOLDOWN_SECONDS),
-      uid: String(res?.data?.uid || '').trim(),
     }
   } catch (error) {
     const responseData = error?.response?.data || {}
@@ -942,7 +928,6 @@ const requestCustomerOtp = async (emailValue, uidValue = '') => {
       success: false,
       error: responseData?.error || error?.message || 'Failed to send OTP.',
       retryAfterSeconds: Number(responseData?.retryAfterSeconds || 0),
-      uid: '',
     }
   }
 }
@@ -955,10 +940,6 @@ const showOtpModalForVerification = () => {
 
 const applyOtpRequestResult = (otpResult, successMessage, fallbackMessage) => {
   showOtpModalForVerification()
-
-  if (otpResult?.uid) {
-    userUid.value = String(otpResult.uid).trim()
-  }
 
   if (otpResult?.success) {
     startOtpCountdown(otpResult.retryAfterSeconds || OTP_COOLDOWN_SECONDS)
@@ -1051,36 +1032,12 @@ const resendOtp = async () => {
     return
   }
 
-  const otpResult = await requestCustomerOtp(otpRecipientEmail.value, userUid.value)
+  const otpResult = await requestCustomerOtp(otpRecipientEmail.value)
   applyOtpRequestResult(
     otpResult,
     'OTP resent. Please check your email.',
     'Unable to resend OTP right now. Please try again shortly.'
   )
-}
-
-const cleanupFailedCustomerRegistration = async (uid) => {
-  if (!uid) return
-  try {
-    await Promise.allSettled([
-      deleteDoc(doc(db, 'users', uid)),
-    ])
-  } catch (e) {
-    console.error('Failed to cleanup customer firestore docs', e)
-  }
-
-  try {
-    if (auth?.currentUser && auth.currentUser.uid === uid) {
-      await deleteUser(auth.currentUser)
-    } else {
-      try { await signOut(auth) } catch (e) { /* ignore */ }
-    }
-  } catch (e) {
-    console.error('Failed to delete auth user during customer cleanup', e)
-  }
-
-  try { await signOut(auth) } catch (e) { /* ignore */ }
-  userUid.value = ''
 }
 
 const checkRegistrationAttempt = async (emailValue) => {
@@ -1108,68 +1065,9 @@ const checkCustomerEmailAvailability = async (emailValue) => {
     return
   }
 
-  isCheckingEmail.value = true
-  emailAvailability.value = 'checking'
-  emailAvailabilityMessage.value = ''
-
-  try {
-    const statusResult = await checkCustomerRegistrationStatus(normalizedEmail)
-    if (lookupSequence !== emailLookupSequence || normalizedEmail !== String(email.value || '').trim().toLowerCase()) return
-
-    if (!statusResult) {
-      emailAvailability.value = 'error'
-      emailAvailabilityMessage.value = 'Unable to check this email right now.'
-      return
-    }
-
-    if (!statusResult.exists) {
-      emailAvailability.value = 'available'
-      emailAvailabilityMessage.value = 'Email is available for registration.'
-      return
-    }
-
-    const role = String(statusResult.role || '').trim().toLowerCase()
-    if (role !== 'customer') {
-      emailAvailability.value = 'used'
-      emailAvailabilityMessage.value = 'This email is already used by another account.'
-      return
-    }
-
-    if (statusResult.accountRecoveryEligible || statusResult.deletionRecoveryEligible) {
-      emailAvailability.value = 'recovery'
-      recoveryLoginAvailable.value = true
-      emailAvailabilityMessage.value = statusResult.deletionRecoveryEligible
-        ? 'This account is pending deletion. Sign in to cancel it during the recovery period.'
-        : 'This account is temporarily deactivated. Sign in to reactivate it during the recovery period.'
-      return
-    }
-
-    if (statusResult.emailVerified || String(statusResult.status || '').trim().toLowerCase() === 'active') {
-      emailAvailability.value = 'used'
-      emailAvailabilityMessage.value = 'This customer account is already verified. Please sign in.'
-      return
-    }
-
-    if (statusResult.canResumeOtp) {
-      emailAvailability.value = 'resume'
-      emailAvailabilityMessage.value = 'Registration found. Continuing with email verification.'
-      userUid.value = String(statusResult.uid || '').trim()
-      otpRecipientEmail.value = normalizedEmail
-      const otpResult = await requestCustomerOtp(normalizedEmail, userUid.value)
-      applyOtpRequestResult(
-        otpResult,
-        'Registration found. A new OTP was sent to your email.',
-        'Unable to send OTP right now. Please try again shortly.'
-      )
-    }
-  } catch (error) {
-    if (lookupSequence !== emailLookupSequence) return
-    console.error('Failed to check customer registration email:', error)
-    emailAvailability.value = 'error'
-    emailAvailabilityMessage.value = 'Unable to check this email right now.'
-  } finally {
-    if (lookupSequence === emailLookupSequence) isCheckingEmail.value = false
-  }
+  if (lookupSequence !== emailLookupSequence || normalizedEmail !== String(email.value || '').trim().toLowerCase()) return
+  emailAvailability.value = 'available'
+  emailAvailabilityMessage.value = 'Email format looks good. Account availability is confirmed securely when you continue.'
 }
 
 const register = async () => {
@@ -1210,7 +1108,6 @@ const register = async () => {
   }
 
   isSubmitting.value = true
-  let newUserCreated = false
 
   try {
     const normalizedEmail = email.value.trim().toLowerCase()
@@ -1219,36 +1116,42 @@ const register = async () => {
       toast.error(attemptResult.error || 'Too many registration attempts. Please try again later.')
       return
     }
-    const userCredentials = await createUserWithEmailAndPassword(auth, normalizedEmail, password.value)
-    newUserCreated = true
-    const uid = userCredentials.user.uid
-    userUid.value = uid
-
-    await setDoc(doc(db, 'users', uid), {
-      firstName: firstName.value.trim(),
-      midName: middleNameEnabled.value ? midName.value.trim() : '',
-      lastName: lastName.value.trim(),
-      suffix: suffixEnabled.value ? suffix.value.trim() : '',
-      email: normalizedEmail,
-      birthDate: birthDate.value ? new Date(birthDate.value) : null,
-      contactNumber: `+63${String(contactNumber.value || '').trim()}`,
-      role: 'Customer',
-      status: 'Pending',
-      createdAt: serverTimestamp(),
-    })
-
-    otpRecipientEmail.value = normalizedEmail
-    const otpResult = await requestCustomerOtp(otpRecipientEmail.value, uid)
-
-    // If OTP sending failed permanently, rollback created resources
-    if (!otpResult || !otpResult.success) {
-      const noRetry = !otpResult || !otpResult.retryAfterSeconds || otpResult.retryAfterSeconds <= 0
-      if (noRetry) {
-        await cleanupFailedCustomerRegistration(uid)
-        toast.error('Failed to send OTP. Registration was rolled back. Please try again.')
-        return
-      }
+    let registrationUser = auth.currentUser
+    if (registrationUser && String(registrationUser.email || '').trim().toLowerCase() !== normalizedEmail) {
+      await signOut(auth)
+      registrationUser = null
     }
+    if (!registrationUser) {
+      const userCredentials = await createUserWithEmailAndPassword(auth, normalizedEmail, password.value)
+      registrationUser = userCredentials.user
+    }
+    userUid.value = registrationUser.uid
+    otpRecipientEmail.value = normalizedEmail
+
+    const token = await registrationUser.getIdToken()
+    await axios.post(`${OTP_API_BASE}/auth/create-registration-profile`, {
+      accountType: 'customer',
+      profile: {
+        firstName: firstName.value.trim(),
+        midName: middleNameEnabled.value ? midName.value.trim() : '',
+        lastName: lastName.value.trim(),
+        suffix: suffixEnabled.value ? suffix.value.trim() : '',
+        birthDate: birthDate.value,
+        contactNumber: `+63${String(contactNumber.value || '').trim()}`,
+        address: address.value,
+        addressBuildingNumber: addressBuildingNumberEnabled.value ? addressBuildingNumber.value : '',
+        addressStreetName: addressStreetNameEnabled.value ? addressStreetName.value : '',
+        addressStreet: addressStreet.value,
+        addressBarangay: addressBarangay.value,
+        addressCity: addressCity.value,
+        addressProvince: addressProvince.value,
+        addressPostalCode: addressPostalCode.value,
+        addressLat: addressLat.value,
+        addressLng: addressLng.value,
+      },
+    }, { headers: { Authorization: `Bearer ${token}` } })
+
+    const otpResult = await requestCustomerOtp(normalizedEmail)
 
     applyOtpRequestResult(
       otpResult,
@@ -1261,64 +1164,36 @@ const register = async () => {
     console.error(err)
     const errorCode = String(err?.code || '')
     const friendlyMessages = {
-      'auth/email-already-in-use': 'An account with this email already exists.',
       'auth/invalid-email': 'Invalid email format.',
       'auth/weak-password': 'Password is too weak.',
     }
 
-    if (newUserCreated && userUid.value) {
-      try {
-        await cleanupFailedCustomerRegistration(userUid.value)
-      } catch (cleanupErr) {
-        console.error('Cleanup after failed customer registration also failed', cleanupErr)
-      }
-    }
-
     if (errorCode === 'auth/email-already-in-use') {
       const normalizedEmail = email.value.trim().toLowerCase()
-      const statusResult = await checkCustomerRegistrationStatus(normalizedEmail)
-
-      if (statusResult?.exists) {
-        const role = String(statusResult.role || '').trim().toLowerCase()
-        const status = String(statusResult.status || '').trim().toLowerCase()
-        const isActiveCustomer = role === 'customer' && (Boolean(statusResult.emailVerified) || status === 'active')
-
-        if (role && role !== 'customer') {
-          toast.error('This email is already used by another account type.')
-          return
-        }
-
-        if (isActiveCustomer) {
-          toast.info('This customer account is already verified. Please sign in instead.')
-          return
-        }
-
-        if (role === 'customer' || statusResult.canResumeOtp) {
-          userUid.value = String(statusResult.uid || '').trim()
-          otpRecipientEmail.value = normalizedEmail
-          const otpResult = await requestCustomerOtp(otpRecipientEmail.value, userUid.value)
-          applyOtpRequestResult(
-            otpResult,
-            'We found your customer account. Please verify the OTP to continue.',
-            'Unable to send OTP right now. Please try again shortly.'
-          )
-          return
-        }
-      }
+      otpRecipientEmail.value = normalizedEmail
+      const otpResult = await requestCustomerOtp(normalizedEmail)
+      applyOtpRequestResult(
+        otpResult,
+        'If this account needs email verification, a code has been sent. Otherwise, please sign in.',
+        'If this account is eligible, a verification code will be sent. Please sign in if you already have an account.'
+      )
+      return
     }
 
-    toast.error(friendlyMessages[errorCode] || 'Failed to register, please try again')
+    toast.error(err?.response?.data?.error || friendlyMessages[errorCode] || 'Failed to register, please try again')
   } finally {
     isSubmitting.value = false
   }
 }
 
 const verifyOtp = async () => {
+  if (isVerifyingOtp.value) return
   if (otpCode.value.length !== OTP_LENGTH) {
     toast.error('Please enter the complete 6-digit OTP')
     return
   }
 
+  isVerifyingOtp.value = true
   try {
     const lookupEmail = String(otpRecipientEmail.value || email.value || '').trim().toLowerCase()
     if (!lookupEmail) {
@@ -1327,7 +1202,6 @@ const verifyOtp = async () => {
     }
 
     const verifyRes = await axios.post(`${OTP_API_BASE}/auth/verify-customer-otp`, {
-      uid: userUid.value,
       email: lookupEmail,
       otp: otpCode.value,
     })
@@ -1357,6 +1231,8 @@ const verifyOtp = async () => {
       err?.message ||
       'Failed to verify OTP, please try again'
     toast.error(verifyError)
+  } finally {
+    isVerifyingOtp.value = false
   }
 }
 
@@ -1823,8 +1699,8 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <button type="button" @click="verifyOtp" class="w-full py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition">
-            Verify OTP
+          <button type="button" :disabled="isVerifyingOtp" @click="verifyOtp" class="w-full py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed">
+            {{ isVerifyingOtp ? 'Verifying...' : 'Verify OTP' }}
           </button>
         </div>
       </Modal>

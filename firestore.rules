@@ -209,17 +209,10 @@ service cloud.firestore {
           || ((resource.data.branchId != null && canAccessBranch(resource.data.branchId))
             || (resource.data.branchIds != null && userData().branchIds != null
               && userData().branchIds.hasAny(resource.data.branchIds))));
-      allow create: if isSignedIn()
-        && ((request.auth.uid == userId
-            && request.resource.data.get('role', '') in ['Customer', 'Supplier', 'Clinic Admin', 'Clinic Owner', 'Owner']
-            && request.resource.data.get('branchId', userId) in [userId, '', null]
-            && request.resource.data.get('permissions', []) == [] && request.resource.data.get('effectivePermissions', []) == []
-            && request.resource.data.get('customRoleIds', []) == [] && request.resource.data.get('customRoleId', null) == null
-            && request.resource.data.get('adminRole', null) == null)
-          || isSuperadmin()
-          // Employee profiles are created through the trusted backend. This
-          // prevents a browser from choosing another organization's branch.
-          );
+      // Registration profiles and employee profiles are created through the
+      // trusted backend. Browser clients cannot choose an initial role,
+      // verification state, branch, or permission set.
+      allow create: if isSignedIn() && isSuperadmin();
       allow update: if isSignedIn()
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['practitionerType'])
         && ((request.auth.uid == userId
@@ -348,16 +341,20 @@ service cloud.firestore {
     }
 
     match /clinics/{clinicId} {
+      match /documentPreflights/{preflightId} {
+        // Content hashes, OCR quality results, and BIR tax candidates are
+        // written and consumed by the trusted registration/admin backend only.
+        allow read, write: if false;
+      }
+
       allow read: if (resource.data.isPublished == true)
         || (isSignedIn()
           && (request.auth.uid == clinicId
             || isSuperadmin() || resource.data.ownerId == request.auth.uid || isStaffOfBranch(clinicId)));
-      allow create: if isSignedIn()
-        // The browser may create only its initial owner clinic (whose ID is
-        // the owner's UID during registration). Additional branches are
-        // created by the trusted subscription-aware backend.
-        && clinicId == request.auth.uid
-        && request.resource.data.ownerId == request.auth.uid;
+      // Initial clinics and additional branches are created by trusted
+      // registration/branch services so applicants cannot set approval or
+      // publication fields in the initial document.
+      allow create: if isSignedIn() && isSuperadmin();
       allow update: if isSignedIn()
         && (isSuperadmin()
           || (isOwnerOfBranch(clinicId)
@@ -796,9 +793,15 @@ service cloud.firestore {
       allow read: if isSignedIn() && (isSuperadmin()
         || request.auth.uid == clinicOwnerId
         || isStaffOfOwner(clinicOwnerId));
-      allow create, update: if isSignedIn() && (isSuperadmin()
-        || request.auth.uid == clinicOwnerId
-        || (isStaffOfOwner(clinicOwnerId) && hasPermission('policies:update')))
+      allow create: if isSignedIn() && (isSuperadmin()
+        || ((request.auth.uid == clinicOwnerId
+          || (isStaffOfOwner(clinicOwnerId) && hasPermission('policies:update')))
+          && !request.resource.data.keys().hasAny(['vatRegistered', 'taxProfile'])))
+        && request.resource.data.ownerId == clinicOwnerId;
+      allow update: if isSignedIn() && (isSuperadmin()
+        || ((request.auth.uid == clinicOwnerId
+          || (isStaffOfOwner(clinicOwnerId) && hasPermission('policies:update')))
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['vatRegistered', 'taxProfile'])))
         && request.resource.data.ownerId == clinicOwnerId;
       allow delete: if false;
     }

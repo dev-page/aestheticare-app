@@ -74,11 +74,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import { buildSubscriptionPlanCatalog, filterActiveSubscriptionPlans } from '@/utils/subscriptionPlans'
-import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const emit = defineEmits(['close'])
 const router = useRouter()
@@ -190,18 +188,6 @@ const toggleResume = () => {
   resumeError.value = ''
 }
 
-const checkRegistrationStatus = async (emailValue) => {
-  try {
-    const res = await axios.post(`${OTP_API_BASE}/auth/check-registration-status`, {
-      email: String(emailValue || '').trim().toLowerCase()
-    })
-    return res?.data || null
-  } catch (error) {
-    console.error('Failed to check user email:', error)
-    return null
-  }
-}
-
 const resumeRegistration = async () => {
   const normalizedEmail = String(resumeEmail.value || '').trim().toLowerCase()
   resumeError.value = ''
@@ -213,26 +199,15 @@ const resumeRegistration = async () => {
 
   resumeLoading.value = true
   try {
-    const status = await checkRegistrationStatus(normalizedEmail)
-    if (!status) {
-      resumeError.value = 'Unable to verify email right now.'
-      return
-    }
-    if (status.exists === true) {
-      if (status.resumeStep === 'active') {
-        resumeError.value = 'Account already registered.'
-        return
-      }
-      sessionStorage.setItem('resume_email', normalizedEmail)
-      await router.push({
-        name: 'register',
-        query: { account: 'clinic', resume: '1' },
-      })
-      emit('close')
-      return
-    }
-
-    resumeError.value = 'No in-progress registration was found. Please sign in to manage a clinic subscription.'
+    // Public status lookups no longer reveal whether an email has an account.
+    // Resume through the normal OTP flow; the backend decides what progress
+    // belongs to the verified identity.
+    sessionStorage.setItem('resume_email', normalizedEmail)
+    await router.push({
+      path: '/clinic/register',
+      query: { account: 'clinic', email: normalizedEmail },
+    })
+    emit('close')
   } catch (err) {
     console.error('Failed to resume registration:', err)
     resumeError.value = 'Unable to resume right now. Please try again.'

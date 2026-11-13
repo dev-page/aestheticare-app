@@ -1,5 +1,6 @@
 import { normalizeStaffing } from '../../shared/practitionerTeam.js'
 import { validateTreatmentCourseComposition, validateTreatmentCourseSteps } from '../../shared/treatmentCourse.js'
+import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
 export const financialFields = ['price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount', 'vatApplicable', 'vatPriceMode']
 export const validateListingNumbers = (post) => {
   try { normalizeStaffing(post.staffingRequirements) } catch (error) { return error.message }
@@ -118,7 +119,7 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
           const taxPolicy = policyOwnerId
             ? (await tx.get(db.collection('clinicPolicies').doc(policyOwnerId))).data()
             : (await tx.get(db.collection('clinicPolicies').doc(post.branchId))).data()
-          if (taxPolicy?.vatRegistered !== true) throw Object.assign(new Error('Enable the clinic VAT setting before submitting or publishing a VAT-applicable listing.'), { status: 409 })
+          if (!clinicIsVatRegistered(taxPolicy)) throw Object.assign(new Error('A VAT-applicable listing can be submitted after a reviewer confirms the clinic tax status from its BIR certificate.'), { status: 409 })
         }
         if (['submit', 'publish'].includes(action) && post.postType === 'Service' && post.requiresConsultationFirst) {
           const linkedId = String(post.linkedConsultationId || '').trim()

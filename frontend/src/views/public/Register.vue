@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
-import { createUserWithEmailAndPassword, deleteUser, signInWithCustomToken, signOut } from 'firebase/auth'
-import { collection, deleteField, doc, deleteDoc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { createUserWithEmailAndPassword, signInWithCustomToken, signOut } from 'firebase/auth'
+import { doc, onSnapshot } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import Modal from '@/components/common/Modal.vue'
@@ -149,7 +149,7 @@ const authorizedRepPositionOptions = [
 const caviteLocations = [
   'Bacoor',
   'Cavite City',
-  'Dasmariñas City',
+  'DasmariÃ±as City',
   'General Trias',
   'Imus',
   'Tagaytay',
@@ -263,7 +263,6 @@ const otpResendCountdown = ref(0)
 const OTP_LENGTH = 6
 
 const REGISTRATION_OTP_EMAIL_KEY = 'registration_otp_email'
-const REGISTRATION_UID_KEY = 'registration_uid'
 const OTP_SENT_AT_KEY = 'registration_otp_sent_at'
 const OTP_COOLDOWN_SECONDS = 60 // 1 minute resend cooldown
 let otpResendInterval = null
@@ -368,6 +367,18 @@ const documentInputKeys = ref({
 // File upload rules
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
+const getDocumentUploadGuidance = (docKey) => {
+  if (docKey === 'governmentIdRepresentativeFront') {
+    return 'Upload only the front of your ID. Use one clear image or a single-page PDF (max 10 MB).'
+  }
+  if (docKey === 'governmentIdRepresentativeBack') {
+    return 'Upload only the back of the same ID. Use one clear image or a single-page PDF (max 10 MB).'
+  }
+  if (docKey === 'authorizationLetter') {
+    return 'Keep the signed letter and related proof of authority together in one PDF of up to 15 pages, or upload one image. Max 10 MB.'
+  }
+  return 'Upload the complete document as one PDF of up to 15 pages, or one image. Every page must belong to this document. Max 10 MB.'
+}
 
 const approvalRedirecting = ref(false)
 const approvalRedirectSeconds = ref(5)
@@ -883,112 +894,42 @@ const onWindowClick = (event) => {
 }
 
 onMounted(async () => {
-    if (!isClinicRegistrationActive.value) return
-    const immediateStep = parseStepParam(route.params?.step)
-    if (immediateStep && immediateStep > 1) {
-      currentStep.value = immediateStep
-      syncStepRoute(immediateStep)
-    }
-    const qFirstName = String(route.query.firstName || '').trim()
-    const qLastName = String(route.query.lastName || '').trim()
-    const qEmail = String(route.query.email || '').trim()
-    const qResume = String(route.query.resume || '').trim()
-    const stepParam = parseStepParam(route.params?.step)
+  if (!isClinicRegistrationActive.value) return
+  const emailHint = String(route.query.email || '').trim().toLowerCase()
+  if (emailHint && !email.value) email.value = emailHint
+  syncManualBirthDate()
+  window.addEventListener('click', onWindowClick)
 
-    if (stepParam) {
-      currentStep.value = stepParam
-    }
-
-  if (qFirstName && !firstName.value) firstName.value = qFirstName
-  if (qLastName && !lastName.value) lastName.value = qLastName
-  const resumeEmail = (qResume || stepParam)
-    ? (qEmail || sessionStorage.getItem('resume_email') || auth.currentUser?.email || '')
-    : (qEmail || '')
-  if (resumeEmail && !email.value) email.value = String(resumeEmail).toLowerCase()
-
-    syncManualBirthDate()
-    window.addEventListener('click', onWindowClick)
-
-    if (stepParam) {
-      if (resumeEmail) {
-        const profileResult = await fetchRegistrationProfile(resumeEmail)
-        if (profileResult?.profile) {
-          applyProfileData(profileResult.profile)
+  // The path parameter is only a legacy URL. Never use it as registration
+  // state; resume only from this user's authenticated server-side record.
+  if (typeof auth.authStateReady === 'function') await auth.authStateReady()
+  if (auth.currentUser) {
+    try {
+      const registration = await fetchRegistrationProfile()
+      if (registration?.exists && registration.profile) {
+        applyProfileData(registration.profile)
+        userUid.value = registration.uid
+        email.value = String(registration.profile.email || auth.currentUser.email || '').trim().toLowerCase()
+        otpRecipientEmail.value = email.value
+        setStoredOtpRecipientEmail(email.value)
+        const resumeStep = registration.resumeStep
+        if (resumeStep === 'active') {
+          toast.info('This clinic account is active. Please sign in.')
+          setTimeout(() => router.push('/login'), 800)
+          return
         }
-        otpRecipientEmail.value = String(resumeEmail || '').trim().toLowerCase()
-        setStoredOtpRecipientEmail(otpRecipientEmail.value)
-        email.value = otpRecipientEmail.value || email.value
+        currentStep.value = Number(resumeStep) >= 2 && Number(resumeStep) <= 4 ? Number(resumeStep) : 1
+        otpVerifiedForRegistration.value = currentStep.value >= 3
+        pendingApprovalMode.value = currentStep.value === 4
+        emailChecked.value = true
+        if (currentStep.value === 2) restoreOtpCountdown()
       }
-      const storedUid = getStoredRegistrationUid()
-      if (storedUid && !userUid.value) {
-        userUid.value = storedUid
-      }
-      syncStepRoute(currentStep.value)
-      return
+    } catch (error) {
+      console.warn('Could not restore clinic registration progress:', error?.message || error)
     }
-
-    if (qResume && resumeEmail) {
-    const nextQuery = { ...route.query }
-    delete nextQuery.email
-    if (route.query.email) {
-      await router.replace({ name: 'register-clinic', query: nextQuery })
-    }
-      const statusResult = await checkRegistrationStatus(resumeEmail)
-      if (!statusResult || statusResult.exists !== true) {
-        toast.error('Unable to resume. Please verify your email again.')
-        return
-      }
-
-      userUid.value = String(statusResult.uid || '').trim()
-      if (userUid.value) {
-        setStoredRegistrationUid(userUid.value)
-      }
-      email.value = String(resumeEmail).toLowerCase()
-      emailChecked.value = true
-    otpRecipientEmail.value = String(resumeEmail).toLowerCase()
-    setStoredOtpRecipientEmail(otpRecipientEmail.value)
-
-      const profileResult = await fetchRegistrationProfile(resumeEmail)
-      if (profileResult?.profile) {
-        applyProfileData(profileResult.profile)
-      }
-      const resolvedStep = inferResumeStep(statusResult, profileResult?.profile)
-
-      if (resolvedStep === 'active') {
-        toast.info('This account is already active. Please log in.')
-        setTimeout(() => router.push('/login'), 800)
-        return
-      }
-
-            if (resolvedStep === 4 || statusResult.hasSubmittedDocs) {
-              otpVerifiedForRegistration.value = true
-              pendingApprovalMode.value = true
-              currentStep.value = 4
-            } else if (resolvedStep === 3) {
-              otpVerifiedForRegistration.value = false
-              pendingApprovalMode.value = false
-              currentStep.value = 2
-              const otpResult = await sendOtpEmail(email.value)
-              clearOtpInputs()
-              focusOtpInput(0)
-              handleClinicOtpResult(otpResult, 'We found an unfinished registration. A new OTP was sent to continue securely.')
-              syncStepRoute(2)
-            } else if (resolvedStep === 2) {
-              otpVerifiedForRegistration.value = false
-              pendingApprovalMode.value = false
-              currentStep.value = 2
-              syncStepRoute(2)
-            } else {
-              otpVerifiedForRegistration.value = false
-              pendingApprovalMode.value = false
-              currentStep.value = 1
-          }
-
-    } else if (qResume && !resumeEmail) {
-      toast.error('Unable to resume. Please enter your email again.')
-    }
-    syncStepRoute(currentStep.value)
-  })
+  }
+  syncStepRoute(currentStep.value)
+})
 
 onBeforeUnmount(() => {
   window.removeEventListener('click', onWindowClick)
@@ -1040,7 +981,6 @@ const sendOtpEmail = async (toEmail) => {
       `${OTP_API_BASE}/auth/request-registration-otp`,
       {
         email: String(toEmail || '').trim().toLowerCase(),
-        uid: String(userUid.value || '').trim(),
       },
       { timeout: 20000 }
     )
@@ -1076,6 +1016,18 @@ const sendOtpEmail = async (toEmail) => {
       retryAfterSeconds: Number(err?.response?.data?.retryAfterSeconds || 0),
     }
   }
+}
+
+const saveRegistrationProfile = async (user, accountType, profile, clinic = null) => {
+  if (!user) throw new Error('Your registration session expired. Please sign in again.')
+  const token = await user.getIdToken()
+  const response = await axios.post(`${OTP_API_BASE}/auth/create-registration-profile`, {
+    accountType,
+    profile,
+    ...(clinic ? { clinic } : {}),
+  }, { headers: { Authorization: `Bearer ${token}` } })
+  if (!response?.data?.success) throw new Error(response?.data?.error || 'Unable to save registration details.')
+  return response.data.data || {}
 }
 
 const handleClinicOtpResult = (otpResult, successMessage, failureMessage = 'Unable to send OTP') => {
@@ -1237,77 +1189,54 @@ const handleDocumentFileChange = async (key, event) => {
     return
   }
   const selectedFile = selectedFiles[0] || null
-
-  if (documentFileMap[key]) {
-    documentFileMap[key].value = selectedFile
-  }
-
-  // If user replaces an already-submitted document we clear the existing record
-  if (selectedFile) {
-    if (existingSubmittedDocuments.value[key]) {
-      existingSubmittedDocuments.value[key] = null
-    }
-    // Registration documents are immutable in Storage. Leave the previous
-    // object in place and upload the replacement under its unique filename.
-    clinicDocumentUploadControllers.delete(key)
-    clinicDocumentUploadPromises.delete(key)
-  }
-
-  // revoke previous preview URL
-  const previewKey = key
-  const currentPreview = documentPreviewUrls.value[previewKey]
-  if (currentPreview?.startsWith('blob:')) URL.revokeObjectURL(currentPreview)
-
-  // client-side validations: type and size
-  if (selectedFile) {
-    if (!ALLOWED_FILE_TYPES.includes(selectedFile.type)) {
-      toast.error('Unsupported file type. Please upload PDF, PNG or JPEG files only.')
-      // reset the input so user can reselect
-      documentInputKeys.value[key] = (documentInputKeys.value[key] || 0) + 1
-      documentFileMap[key].value = null
-      documentPreviewUrls.value[previewKey] = ''
-      return
-    }
-
-    if (selectedFile.size > MAX_UPLOAD_SIZE_BYTES) {
-      toast.error('File too large. Maximum allowed size is 10 MB.')
-      documentInputKeys.value[key] = (documentInputKeys.value[key] || 0) + 1
-      documentFileMap[key].value = null
-      documentPreviewUrls.value[previewKey] = ''
-      return
-    }
-
-    documentPreviewUrls.value[previewKey] = selectedFile.type?.startsWith('image/')
-      ? URL.createObjectURL(selectedFile)
-      : ''
-  } else {
-    documentPreviewUrls.value[previewKey] = ''
-  }
-
   if (!selectedFile) return
+  const resetInput = () => { documentInputKeys.value[key] = (documentInputKeys.value[key] || 0) + 1 }
+  if (!ALLOWED_FILE_TYPES.includes(selectedFile.type)) {
+    toast.error('Unsupported file type. Please upload PDF, PNG or JPEG files only.')
+    resetInput()
+    return
+  }
+  if (selectedFile.size <= 0 || selectedFile.size > MAX_UPLOAD_SIZE_BYTES) {
+    toast.error('File size must be greater than zero and no more than 10 MB.')
+    resetInput()
+    return
+  }
   if (!userUid.value) {
     toast.error('User ID not found. Please verify your email again.')
     return
   }
 
-  const docKey = previewKey
-  documentUploadState.value[docKey] = { uploading: true, progress: 0, error: '' }
+  const docKey = key
+  documentUploadState.value[docKey] = { uploading: true, phase: 'quality', progress: 0, error: '' }
   try {
+    await validateImageDimensions(selectedFile, docKey)
+    const qualityAssessment = await preflightRegistrationDocument(userUid.value, selectedFile, docKey)
+    documentUploadState.value[docKey] = { uploading: true, phase: 'upload', progress: 0, error: '' }
     const uploadPromise = uploadDocumentForClinic(userUid.value, selectedFile, docKey, (progress) => {
-      documentUploadState.value[docKey] = { uploading: progress < 100, progress, error: '' }
+      documentUploadState.value[docKey] = { uploading: progress < 100, phase: 'upload', progress, error: '' }
     })
     clinicDocumentUploadPromises.set(docKey, uploadPromise)
     const uploadedDocument = await uploadPromise
+    const currentPreview = documentPreviewUrls.value[docKey]
+    if (currentPreview?.startsWith('blob:')) URL.revokeObjectURL(currentPreview)
+    documentFileMap[key].value = selectedFile
+    existingSubmittedDocuments.value[key] = null
+    clinicDocumentUploadPromises.delete(docKey)
+    clinicDocumentUploadControllers.delete(docKey)
     clinicDocumentUploadControllers.set(docKey, uploadedDocument)
-    documentUploadState.value[docKey] = { uploading: false, progress: 100, error: '' }
-    toast.success('Document uploaded. Verification will run after you submit registration.')
+    documentPreviewUrls.value[docKey] = selectedFile.type.startsWith('image/') ? URL.createObjectURL(selectedFile) : ''
+    documentUploadState.value[docKey] = { uploading: false, phase: 'complete', progress: 100, error: '' }
+    toast.success(qualityAssessment?.manualReviewRecommended
+      ? 'Document uploaded. Some pages need an administrator to review their content.'
+      : 'Document passed the quality check and uploaded successfully.')
   } catch (err) {
     console.error(err)
     clinicDocumentUploadPromises.delete(docKey)
-    clinicDocumentUploadControllers.delete(docKey)
     const errorMessage = err?.message || 'Failed to upload document. Please try again.'
-    documentUploadState.value[docKey] = { uploading: false, progress: 0, error: errorMessage }
+    documentUploadState.value[docKey] = { uploading: false, phase: 'error', progress: 0, error: errorMessage }
     toast.error(errorMessage)
+  } finally {
+    if (event?.target) event.target.value = ''
   }
 }
 
@@ -1325,71 +1254,30 @@ const syncExistingDocumentPreviews = () => {
   })
 }
 
-const isFullyApprovedFromStatus = (userStatus, clinicStatus) => {
-  const normalizedUserStatus = String(userStatus || '').toLowerCase()
-  const normalizedClinicStatus = String(clinicStatus || '').toLowerCase()
-  return normalizedUserStatus === 'active' && normalizedClinicStatus.includes('approved')
-}
-
-const mapRegistrationStepFromStatus = (userStatus, clinicStatus) => {
-  const normalizedUserStatus = String(userStatus || '').toLowerCase()
-  const normalizedClinicStatus = String(clinicStatus || '').toLowerCase()
-
-  if (isFullyApprovedFromStatus(normalizedUserStatus, normalizedClinicStatus)) return 'active'
-  if (normalizedUserStatus.includes('pending approval') || normalizedClinicStatus.includes('pending approval')) return 4
-  if (normalizedUserStatus.includes('pending document') || normalizedClinicStatus.includes('pending document')) return 3
-  if (normalizedUserStatus.includes('pending otp') || normalizedClinicStatus.includes('pending otp')) return 2
-  return 1
-}
-
-const parseStepParam = (value) => {
-  const raw = String(value || '').trim().replace(/^step-/, '')
-  const parsed = Number(raw)
-  if (!Number.isFinite(parsed)) return null
-  if (parsed < 1 || parsed > 4) return null
-  return Math.floor(parsed)
-}
-
-const syncStepRoute = (step) => {
-  const safeStep = parseStepParam(step) || currentStep.value || 1
-  const desiredPath = `/clinic/register/step-${safeStep}`
-  if (route.path === desiredPath) return
-  router.replace({ path: desiredPath, query: route.query })
-}
-
-const checkUserByEmail = async (emailValue) => {
-  try {
-    const res = await axios.post(`${OTP_API_BASE}/auth/check-user`, {
-      email: String(emailValue || '').trim().toLowerCase()
-    })
-    return {
-      exists: Boolean(res?.data?.exists),
-      uid: String(res?.data?.uid || '').trim()
-    }
-  } catch (error) {
-    console.error('Failed to check user email:', error)
-    return null
-  }
-}
-
-const checkRegistrationStatus = async (emailValue) => {
-  try {
-    const res = await axios.post(`${OTP_API_BASE}/auth/check-registration-status`, {
-      email: String(emailValue || '').trim().toLowerCase()
-    })
-    return res?.data || null
-  } catch (error) {
-    console.error('Failed to check registration status:', error)
-    return null
-  }
+const syncStepRoute = () => {
+  if (route.path === '/clinic/register') return
+  const query = { account: 'clinic' }
+  const paymentId = String(route.query.paymentId || '').trim()
+  if (paymentId) query.paymentId = paymentId
+  router.replace({ path: '/clinic/register', query })
 }
 
 const fetchRegistrationProfile = async (emailValue) => {
   try {
-    const res = await axios.post(`${OTP_API_BASE}/auth/registration-profile`, {
-      email: String(emailValue || '').trim().toLowerCase()
+    const sessionUser = auth.currentUser
+    if (!sessionUser) return null
+    const token = await sessionUser.getIdToken()
+    const res = await axios.post(`${OTP_API_BASE}/auth/registration-profile`, {}, {
+      headers: { Authorization: `Bearer ${token}` },
     })
-    return res?.data || null
+    const data = res?.data?.data || {}
+    return {
+      success: Boolean(res?.data?.success),
+      exists: Boolean(data.exists),
+      uid: String(data.uid || '').trim(),
+      resumeStep: data.resumeStep,
+      profile: data.profile || null,
+    }
   } catch (error) {
     console.error('Failed to load registration profile:', error)
     return null
@@ -1406,98 +1294,10 @@ const checkEmailAvailability = async (emailValue) => {
     return
   }
 
-  isCheckingEmail.value = true
-  emailAvailability.value = 'checking'
-  emailAvailabilityMessage.value = ''
-
-  try {
-    const statusResult = await checkRegistrationStatus(normalizedEmail)
-    if (lookupSequence !== emailLookupSequence || normalizedEmail !== String(email.value || '').trim().toLowerCase()) return
-
-    if (!statusResult) {
-      emailAvailability.value = 'error'
-      emailAvailabilityMessage.value = 'Unable to check this email right now.'
-      return
-    }
-
-    if (!statusResult.exists) {
-      emailChecked.value = false
-      emailAvailability.value = 'available'
-      emailAvailabilityMessage.value = 'Email is available for registration.'
-      return
-    }
-
-    const profileResult = await fetchRegistrationProfile(normalizedEmail)
-    if (lookupSequence !== emailLookupSequence || normalizedEmail !== String(email.value || '').trim().toLowerCase()) return
-
-    const profile = profileResult?.profile || {}
-    const role = String(statusResult.role || profile.role || '').trim().toLowerCase()
-    const isClinicRegistration = ['clinic admin', 'clinicadmin', 'owner', 'clinic owner'].includes(role)
-
-    if (!isClinicRegistration) {
-      emailChecked.value = false
-      emailAvailability.value = 'used'
-      emailAvailabilityMessage.value = 'This email is already used by another account.'
-      return
-    }
-
-    if (statusResult.ownerRecoveryEligible) {
-      emailChecked.value = false
-      emailAvailability.value = 'recovery'
-      recoveryLoginAvailable.value = true
-      emailAvailabilityMessage.value = 'This clinic-owner account is temporarily closed. Sign in to restore it during the recovery period.'
-      return
-    }
-
-    applyProfileData(profile)
-    userUid.value = String(statusResult.uid || profileResult.uid || '').trim()
-    setStoredRegistrationUid(userUid.value)
-    emailChecked.value = true
-    otpRecipientEmail.value = normalizedEmail
-    setStoredOtpRecipientEmail(normalizedEmail)
-
-    const resolvedStep = inferResumeStep(statusResult, profile)
-    if (resolvedStep === 'active') {
-      emailAvailability.value = 'used'
-      emailAvailabilityMessage.value = 'This registration is already approved. Please log in.'
-      return
-    }
-
-    emailAvailability.value = 'resume'
-    const requiresResumeOtp = resolvedStep === 3
-    emailAvailabilityMessage.value = requiresResumeOtp
-      ? 'Registration found. Verify a new OTP to continue securely.'
-      : `Registration found. Continuing from Step ${resolvedStep}.`
-    otpVerifiedForRegistration.value = resolvedStep === 4
-    pendingApprovalMode.value = resolvedStep === 4
-    currentStep.value = requiresResumeOtp ? 2 : resolvedStep
-    syncStepRoute(currentStep.value)
-
-    if (currentStep.value === 2) {
-      const lastSentAt = getLastOtpSentAt()
-      const canSend = !lastSentAt || (Date.now() - lastSentAt) > (OTP_COOLDOWN_SECONDS * 1000)
-      if (canSend) {
-        const otpResult = await sendOtpEmail(normalizedEmail)
-        clearOtpInputs()
-        if (otpResult.success) {
-          beginOtpCooldown()
-          toast.info('Registration found. A new OTP was sent to your email.')
-        }
-      } else {
-        restoreOtpCountdown()
-      }
-    } else {
-      if (currentStep.value === 3) await refreshClinicSubmissionStatus()
-      toast.info(emailAvailabilityMessage.value)
-    }
-  } catch (error) {
-    if (lookupSequence !== emailLookupSequence) return
-    console.error('Failed to check registration email:', error)
-    emailAvailability.value = 'error'
-    emailAvailabilityMessage.value = 'Unable to check this email right now.'
-  } finally {
-    if (lookupSequence === emailLookupSequence) isCheckingEmail.value = false
-  }
+  if (lookupSequence !== emailLookupSequence || normalizedEmail !== String(email.value || '').trim().toLowerCase()) return
+  emailChecked.value = true
+  emailAvailability.value = 'available'
+  emailAvailabilityMessage.value = 'Email format looks good. Account availability is confirmed securely when you continue.'
 }
 
 const applyProfileData = (profile) => {
@@ -1567,37 +1367,7 @@ const applyProfileData = (profile) => {
   syncExistingDocumentPreviews()
 }
 
-const inferResumeStep = (statusResult, profile) => {
-  const resumeStep = statusResult?.resumeStep
-  if (resumeStep === 'active' && isFullyApprovedFromStatus(profile?.status, profile?.approvalStatus)) return 'active'
-  if (resumeStep === 2 || resumeStep === 3 || resumeStep === 4) return resumeStep
-
-  const statusText = String(profile?.status || '').toLowerCase()
-  const approvalText = String(profile?.approvalStatus || '').toLowerCase()
-  if (isFullyApprovedFromStatus(statusText, approvalText)) return 'active'
-  if (statusText.includes('pending approval') || approvalText.includes('pending approval')) return 4
-  if (statusText.includes('pending document') || approvalText.includes('pending document')) return 3
-  if (statusText.includes('pending otp') || approvalText.includes('pending otp')) return 2
-
-  const docs =
-    profile?.submittedDocuments ||
-    profile?.draftDocuments ||
-    null
-  if (docs && Object.keys(docs || {}).length > 0) return 3
-
-  const hasStep1Data =
-    Boolean(profile?.firstName) &&
-    Boolean(profile?.lastName) &&
-    Boolean(profile?.email) &&
-    Boolean(profile?.clinicName) &&
-    Boolean(profile?.clinicLocation) &&
-    Boolean(profile?.contactNumber)
-  if (hasStep1Data) return 2
-
-  return 1
-}
-
-// Draft save removed — no longer needed
+// Draft save removed â€” no longer needed
 
 const hasAnyDocumentUploadInProgress = computed(() =>
   Object.values(documentUploadState.value).some((item) => Boolean(item?.uploading))
@@ -1656,23 +1426,12 @@ const updateApprovalReviewState = () => {
   clearApprovalRedirect()
 }
 
-// Draft save functions removed — no longer needed
+// Draft save functions removed â€” no longer needed
 
 const getLastOtpSentAt = () => {
   const raw = sessionStorage.getItem(OTP_SENT_AT_KEY)
   const parsed = Number(raw || 0)
   return Number.isFinite(parsed) ? parsed : 0
-}
-
-const getStoredRegistrationUid = () => String(sessionStorage.getItem(REGISTRATION_UID_KEY) || '').trim()
-
-const setStoredRegistrationUid = (value) => {
-  const normalized = String(value || '').trim()
-  if (!normalized) {
-    sessionStorage.removeItem(REGISTRATION_UID_KEY)
-    return
-  }
-  sessionStorage.setItem(REGISTRATION_UID_KEY, normalized)
 }
 
 const getStoredOtpRecipientEmail = () => String(sessionStorage.getItem(REGISTRATION_OTP_EMAIL_KEY) || '').trim().toLowerCase()
@@ -1743,301 +1502,53 @@ watch(authorizedRepPositionOption, (value) => {
   }
 })
 
-// Draft save watch removed — no longer needed
+// Draft save watch removed â€” no longer needed
 
-const verifyRegistrationEmail = async (options = {}) => {
-  const isAutoResume = Boolean(options?.isAutoResume)
+const verifyRegistrationEmail = async () => {
   const normalizedEmail = String(email.value || '').trim().toLowerCase()
   if (!normalizedEmail) {
     toast.error('Please enter your email first.')
-    return
+    return false
   }
-
-  sessionStorage.setItem('resume_email', normalizedEmail)
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(normalizedEmail)) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
     toast.error('Please enter a valid email address.')
-    return
+    return false
   }
 
-  isCheckingEmail.value = true
+  email.value = normalizedEmail
+  otpRecipientEmail.value = normalizedEmail
+  emailChecked.value = true
+  emailAvailability.value = 'available'
+  emailAvailabilityMessage.value = 'Email format looks good. Account availability is confirmed securely when you continue.'
 
-  try {
-    userUid.value = ''
-    permitHolderIsRegistrant.value = null
-    permitHolderName.value = ''
-    permitHolderRelationship.value = ''
-    setStoredRegistrationUid('')
-    clearOtpInputs()
-    stopOtpCountdown()
-    secCertificateFile.value = null
-    articlesOfIncorporationFile.value = null
-    businessPermitFile.value = null
-    birRegistrationFile.value = null
-    sanitaryCertificateFile.value = null
-    governmentIdRepresentativeFrontFile.value = null
-    governmentIdRepresentativeBackFile.value = null
-    dohAccreditationFile.value = null
-    fdaApprovalFile.value = null
-    authorizationLetterFile.value = null
-    existingSubmittedDocuments.value = {
-      secCertificate: null,
-      articlesOfIncorporation: null,
-      businessPermit: null,
-      birRegistration: null,
-      sanitaryCertificate: null,
-      governmentIdRepresentativeFront: null,
-      governmentIdRepresentativeBack: null,
-      dohAccreditation: null,
-      fdaApproval: null,
-      authorizationLetter: null,
-    }
-    syncExistingDocumentPreviews()
-    pendingApprovalMode.value = false
-
-    const statusResult = await checkRegistrationStatus(normalizedEmail)
-      if (statusResult?.exists) {
-        const profileResult = await fetchRegistrationProfile(normalizedEmail)
-        if (profileResult?.profile) {
-          applyProfileData(profileResult.profile)
-        }
-        userUid.value = String(statusResult.uid || '').trim()
-        if (userUid.value) {
-          setStoredRegistrationUid(userUid.value)
-        }
-      emailChecked.value = true
-      otpRecipientEmail.value = normalizedEmail
-      setStoredOtpRecipientEmail(otpRecipientEmail.value)
-
-      const resolvedStep = inferResumeStep(statusResult, profileResult?.profile)
-      if (resolvedStep === 'active') {
-        toast.info('This account is already active. Please log in.')
+  const sessionUser = auth.currentUser
+  if (sessionUser && String(sessionUser.email || '').trim().toLowerCase() === normalizedEmail) {
+    const registration = await fetchRegistrationProfile()
+    if (registration?.exists && registration.profile) {
+      applyProfileData(registration.profile)
+      userUid.value = registration.uid
+      const resumeStep = registration.resumeStep
+      if (resumeStep === 'active') {
+        toast.info('This clinic account is active. Please sign in.')
         setTimeout(() => router.push('/login'), 800)
-        return
+        return false
       }
-
-      if (resolvedStep === 4) {
-        otpVerifiedForRegistration.value = true
-        pendingApprovalMode.value = true
-        currentStep.value = 4
-        toast.info('Welcome back. You are already waiting for approval.')
-        return
-      }
-
-      if (resolvedStep === 3) {
-        otpVerifiedForRegistration.value = false
-        pendingApprovalMode.value = false
-        currentStep.value = 2
+      currentStep.value = Number(resumeStep) >= 2 && Number(resumeStep) <= 4 ? Number(resumeStep) : 1
+      otpVerifiedForRegistration.value = currentStep.value >= 3
+      pendingApprovalMode.value = currentStep.value === 4
+      if (currentStep.value === 2) {
         const otpResult = await sendOtpEmail(normalizedEmail)
         clearOtpInputs()
         focusOtpInput(0)
-        handleClinicOtpResult(otpResult, 'We found an unfinished registration. A new OTP was sent to continue securely.')
-        syncStepRoute(2)
-        return
+        handleClinicOtpResult(otpResult, 'If this account needs verification, a code has been sent to its email.')
       }
-
-      if (resolvedStep === 2) {
-        otpVerifiedForRegistration.value = false
-        pendingApprovalMode.value = false
-        currentStep.value = 2
-        const lastSentAt = getLastOtpSentAt()
-        const now = Date.now()
-        const canSend = !lastSentAt || (now - lastSentAt) > (OTP_COOLDOWN_SECONDS * 1000)
-        if (canSend) {
-          const otpResult = await sendOtpEmail(normalizedEmail)
-          clearOtpInputs()
-          focusOtpInput(0)
-          handleClinicOtpResult(otpResult, 'We found an account. Please verify the OTP to continue.')
-        } else {
-          clearOtpInputs()
-          focusOtpInput(0)
-          restoreOtpCountdown()
-        }
-        syncStepRoute(2)
-        return
-      }
+      syncStepRoute()
+      return true
     }
-
-    let snapshot = null
-    try {
-      const usersRef = collection(db, 'users')
-      const emailQuery = query(usersRef, where('email', '==', normalizedEmail))
-      snapshot = await getDocs(emailQuery)
-    } catch (readError) {
-      const errorCode = String(readError?.code || '').toLowerCase()
-      if (errorCode.includes('permission-denied')) {
-        const statusResult = await checkRegistrationStatus(normalizedEmail)
-        if (statusResult && statusResult.exists === false) {
-          emailChecked.value = true
-          otpVerifiedForRegistration.value = false
-          currentStep.value = 1
-          toast.success('Email verified. Continue with your registration details.')
-          return
-        }
-
-        if (statusResult && statusResult.exists === true) {
-          const profileResult = await fetchRegistrationProfile(normalizedEmail)
-          if (profileResult?.profile) {
-            applyProfileData(profileResult.profile)
-          }
-          userUid.value = String(statusResult.uid || '').trim()
-          setStoredRegistrationUid(userUid.value)
-          emailChecked.value = true
-          otpRecipientEmail.value = normalizedEmail
-          setStoredOtpRecipientEmail(otpRecipientEmail.value)
-
-          if (statusResult.resumeStep === 'active') {
-            const isApproved = isFullyApprovedFromStatus(statusResult?.status, statusResult?.approvalStatus)
-            if (isApproved) {
-              toast.info('This account is already active. Please log in.')
-              setTimeout(() => router.push('/login'), 800)
-              return
-            }
-            pendingApprovalMode.value = true
-            currentStep.value = 4
-            toast.info('Your registration is still pending approval. Continue here.')
-            return
-          }
-
-if (statusResult.resumeStep === 4) {
-            otpVerifiedForRegistration.value = true
-            pendingApprovalMode.value = true
-            currentStep.value = 4
-            toast.info('Welcome back. You are already waiting for approval.')
-            return
-          }
-
-          if (statusResult.resumeStep === 3) {
-            otpVerifiedForRegistration.value = false
-            pendingApprovalMode.value = false
-            currentStep.value = 2
-            const otpResult = await sendOtpEmail(normalizedEmail)
-            clearOtpInputs()
-            focusOtpInput(0)
-            handleClinicOtpResult(otpResult, 'We found an unfinished registration. A new OTP was sent to continue securely.')
-            syncStepRoute(2)
-            return
-          }
-
-          if (statusResult.resumeStep === 1) {
-            otpVerifiedForRegistration.value = false
-            pendingApprovalMode.value = false
-            currentStep.value = 1
-            toast.info('Welcome back. Continue your registration details.')
-            return
-          }
-
-          otpVerifiedForRegistration.value = false
-          pendingApprovalMode.value = false
-          currentStep.value = 2
-          const otpResult = await sendOtpEmail(normalizedEmail)
-          clearOtpInputs()
-          focusOtpInput(0)
-          handleClinicOtpResult(otpResult, 'We found an account. Please verify the OTP to continue.')
-          return
-        }
-      }
-      throw readError
-    }
-
-    email.value = normalizedEmail
-    otpRecipientEmail.value = normalizedEmail
-    setStoredOtpRecipientEmail(otpRecipientEmail.value)
-
-    if (snapshot.empty) {
-      emailChecked.value = true
-      otpVerifiedForRegistration.value = false
-      currentStep.value = 1
-      toast.success('Email verified. Continue with your registration details.')
-      return
-    }
-
-    const existingUserDoc = snapshot.docs[0]
-    const existingUser = existingUserDoc.data() || {}
-    userUid.value = existingUserDoc.id
-    setStoredRegistrationUid(userUid.value)
-
-    firstName.value = existingUser.firstName || firstName.value
-    lastName.value = existingUser.lastName || lastName.value
-    contactNumber.value = existingUser.contactNumber || contactNumber.value
-
-    if (existingUser.birthDate?.toDate) {
-      const birth = existingUser.birthDate.toDate()
-      birthDate.value = `${birth.getFullYear()}-${pad(birth.getMonth() + 1)}-${pad(birth.getDate())}`
-      syncManualBirthDate()
-      syncCalendarToBirthDate()
-    }
-
-    const clinicDoc = await getDoc(doc(db, 'clinics', userUid.value))
-    const clinicData = clinicDoc.exists() ? clinicDoc.data() : {}
-    clinicSubmissionAttemptCount.value = Number(clinicData.submissionAttemptCount || 0)
-    clinicRegistrationLockedUntil.value = clinicData.registrationLockedUntil?.toDate
-      ? clinicData.registrationLockedUntil.toDate().toISOString()
-      : clinicData.registrationLockedUntil || null
-    applyProfileData({
-      firstName: existingUser.firstName,
-      lastName: existingUser.lastName,
-      birthDate: existingUser.birthDate?.toDate ? existingUser.birthDate.toDate().toISOString() : existingUser.birthDate,
-      email: existingUser.email,
-      contactNumber: existingUser.contactNumber,
-      authorizedRepPosition: existingUser.authorizedRepPosition || clinicData.authorizedRepPosition,
-      companyName: clinicData.companyName || clinicData.clinicName || '',
-      companyType: clinicData.companyType,
-      clinicName: clinicData.clinicName,
-      clinicLocation: clinicData.clinicLocation,
-      clinicLocationLat: clinicData.clinicLocationLat,
-      clinicLocationLng: clinicData.clinicLocationLng,
-      clinicLocationAddress: clinicData.clinicLocationAddress,
-      clinicBuildingNumber: clinicData.clinicBuildingNumber,
-      clinicStreetName: clinicData.clinicStreetName,
-      clinicBarangay: clinicData.clinicBarangay,
-      clinicProvince: clinicData.clinicProvince,
-      clinicPostalCode: clinicData.clinicPostalCode,
-      submittedDocuments: clinicData.submittedDocuments,
-      expiryHoldDocuments: clinicData.expiryHoldDocuments,
-      expiryResubmissionExpiresAt: clinicData.expiryResubmissionExpiresAt,
-      draftDocuments: clinicData.draftDocuments,
-      resubmissionReason: clinicData.resubmissionReason,
-    })
-
-    const resumeStep = mapRegistrationStepFromStatus(existingUser.status, clinicData.approvalStatus)
-    if (resumeStep === 'active') {
-      toast.info('This account is already active. Please log in.')
-      setTimeout(() => router.push('/login'), 800)
-      return
-    }
-
-    emailChecked.value = true
-    const requiresResumeOtp = resumeStep === 3
-    otpVerifiedForRegistration.value = resumeStep === 4
-    pendingApprovalMode.value = resumeStep === 4
-    currentStep.value = requiresResumeOtp ? 2 : resumeStep
-
-    if (currentStep.value === 2) {
-      const otpResult = await sendOtpEmail(normalizedEmail)
-      clearOtpInputs()
-      focusOtpInput(0)
-      if (otpResult.success) {
-        beginOtpCooldown()
-        toast.info('Welcome back. A new OTP was sent to your email.')
-      } else {
-        stopOtpCountdown()
-        toast.warning(`Unable to send OTP: ${otpResult.error}`)
-      }
-    } else {
-      if (currentStep.value === 3) await refreshClinicSubmissionStatus()
-      stopOtpCountdown()
-      toast.info(`Welcome back. Continuing from Step ${resumeStep}.`)
-    }
-  } catch (err) {
-    console.error(err)
-    toast.error('Unable to verify email right now. Please try again.')
-  } finally {
-    isCheckingEmail.value = false
   }
-}
 
+  return true
+}
 const validateEmailFormat = (value) => {
   const trimmed = String(value || '').trim()
   if (!trimmed) {
@@ -2069,7 +1580,6 @@ const handleEmailDraftInput = () => {
     currentStep.value = 1
     otpVerifiedForRegistration.value = false
     userUid.value = ''
-    setStoredRegistrationUid('')
     otpRecipientEmail.value = ''
     setStoredOtpRecipientEmail('')
     clearOtpInputs()
@@ -2158,7 +1668,6 @@ const resetClinicRegistrationFlow = () => {
   emailChecked.value = false
   currentStep.value = 1
   userUid.value = ''
-  setStoredRegistrationUid('')
   setStoredOtpRecipientEmail('')
   otpRecipientEmail.value = ''
   middleNameEnabled.value = false
@@ -2681,35 +2190,6 @@ const resendOtp = async () => {
   }
 }
 
-const cleanupFailedRegistration = async (uid) => {
-  if (!uid) return
-  try {
-    // Best-effort delete Firestore documents created during registration
-    await Promise.allSettled([
-      deleteDoc(doc(db, 'users', uid)),
-      deleteDoc(doc(db, 'clinics', uid)),
-    ])
-  } catch (e) {
-    console.error('Failed to delete firestore docs during cleanup', e)
-  }
-
-  try {
-    // If the newly-created user is still the signed-in user, delete it from Auth
-    if (auth?.currentUser && auth.currentUser.uid === uid) {
-      await deleteUser(auth.currentUser)
-    } else {
-      // ensure local state is signed out
-      try { await signOut(auth) } catch (e) { /* ignore */ }
-    }
-  } catch (e) {
-    console.error('Failed to delete auth user during cleanup', e)
-  }
-
-  try { await signOut(auth) } catch (e) { /* ignore */ }
-  setStoredRegistrationUid('')
-  userUid.value = ''
-}
-
 const checkRegistrationAttempt = async (emailValue) => {
   try {
     const res = await axios.post(`${OTP_API_BASE}/auth/check-registration-attempt`, {
@@ -2801,113 +2281,38 @@ const registerClinic = async () => {
   sessionStorage.setItem('resume_email', String(email.value || '').trim().toLowerCase())
 
   isSubmitting.value = true
-  let createdRegistrationUid = ''
+  let registrationUser = auth.currentUser
 
   try {
-    if (!userUid.value) {
-      const attemptResult = await checkRegistrationAttempt(email.value)
+    const normalizedEmail = email.value.trim().toLowerCase()
+    if (registrationUser && String(registrationUser.email || '').trim().toLowerCase() !== normalizedEmail) {
+      await signOut(auth)
+      registrationUser = null
+    }
+
+    if (!registrationUser) {
+      const attemptResult = await checkRegistrationAttempt(normalizedEmail)
       if (!attemptResult.success) {
         showRegistrationAttemptBlock(attemptResult)
         return
       }
+      const credentials = await createUserWithEmailAndPassword(auth, normalizedEmail, password.value)
+      registrationUser = credentials.user
     }
 
-    // 🔹 Create Firebase Auth user
-    if (userUid.value) {
-      if (!otpVerifiedForRegistration.value) {
-        const otpResult = await sendOtpEmail(email.value.trim())
-        currentStep.value = 2
-        syncStepRoute(2)
-        clearOtpInputs()
-        focusOtpInput(0)
-        if (otpResult.success) {
-          beginOtpCooldown()
-          toast.info('Account is already in progress. A new OTP was sent.')
-        } else {
-          stopOtpCountdown()
-          toast.warning(`Unable to send OTP: ${otpResult.error}`)
-        }
-        return
-      }
+    userUid.value = registrationUser.uid
+    otpRecipientEmail.value = normalizedEmail
+    setStoredOtpRecipientEmail(normalizedEmail)
 
-      await Promise.all([
-        updateDoc(doc(db, 'users', userUid.value), {
-          firstName: firstName.value.trim(),
-          midName: middleNameEnabled.value ? midName.value.trim() : '',
-          suffix: suffixEnabled.value ? suffix.value.trim() : '',
-          lastName: lastName.value.trim(),
-          birthDate: birthDate.value ? new Date(birthDate.value) : null,
-          email: email.value.trim(),
-          contactNumber: contactNumber.value.trim(),
-          authorizedRepPosition: companyPayload.authorizedRepPosition,
-          companyName: companyPayload.companyName,
-          companyType: companyPayload.companyType,
-          updatedAt: serverTimestamp(),
-        }),
-        updateDoc(doc(db, 'clinics', userUid.value), {
-          clinicName: clinicName.value.trim(),
-          clinicBranch: 'Main Branch',
-          ownerId: userUid.value,
-          isMainBranch: true,
-          clinicLocation: clinicLocation.value.trim(),
-          clinicLocationLat: clinicLocationLat.value,
-          clinicLocationLng: clinicLocationLng.value,
-          clinicLocationAddress: clinicLocationAddress.value,
-          clinicBuildingNumber: clinicBuildingNumberEnabled.value ? clinicBuildingNumber.value.trim() : '',
-          clinicStreetName: clinicStreetNameEnabled.value ? clinicStreetName.value.trim() : '',
-          clinicBarangay: clinicBarangay.value,
-          clinicProvince: clinicProvince.value,
-          clinicPostalCode: clinicPostalCode.value,
-          authorizedRepPosition: companyPayload.authorizedRepPosition,
-          companyName: companyPayload.companyName,
-          companyType: companyPayload.companyType,
-          updatedAt: serverTimestamp(),
-        }),
-      ])
-
-      currentStep.value = 3
-      toast.info('Information updated. Continue to document upload.')
-      return
-    }
-
-    const userCredentials = await createUserWithEmailAndPassword(
-      auth,
-      email.value,
-      password.value
-    )
-
-    const uid = userCredentials.user.uid
-    userUid.value = uid
-    createdRegistrationUid = uid
-    setStoredRegistrationUid(uid)
-    const ownerFullName = registeredOwnerLegalName.value
-
-    // 🔹 Save user
-    const saveUserPromise = setDoc(doc(db, 'users', uid), {
+    const profile = {
       firstName: firstName.value.trim(),
       midName: middleNameEnabled.value ? midName.value.trim() : '',
       suffix: suffixEnabled.value ? suffix.value.trim() : '',
       lastName: lastName.value.trim(),
-      birthDate: birthDate.value ? new Date(birthDate.value) : null,
-      email: email.value.trim(),
+      birthDate: birthDate.value,
       contactNumber: contactNumber.value.trim(),
-      authorizedRepPosition: companyPayload.authorizedRepPosition,
-      companyName: companyPayload.companyName,
-      companyType: companyPayload.companyType,
-      branchId: uid,
-      clinicBranch: 'Main Branch',
-      role: 'Clinic Owner',
-       userType: 'Owner',
-       status: 'Pending OTP Verification',
-       registrationStatus: 'Pending OTP Verification',
-      subscriptionPlan: 'free',
-      paymentStatus: 'free',
-      subscriptionExpiresAt: null,
-      createdAt: serverTimestamp(),
-    })
-
-    // 🔹 Save clinic
-    const saveClinicPromise = setDoc(doc(db, 'clinics', uid), {
+    }
+    const clinic = {
       clinicName: clinicName.value.trim(),
       clinicLocation: clinicLocation.value.trim(),
       clinicLocationLat: clinicLocationLat.value,
@@ -2921,91 +2326,53 @@ const registerClinic = async () => {
       authorizedRepPosition: companyPayload.authorizedRepPosition,
       companyName: companyPayload.companyName,
       companyType: companyPayload.companyType,
-      clinicBranch: 'Main Branch',
-      ownerId: uid,
-      isMainBranch: true,
-      branchAdminId: uid,
-      branchAdminName: ownerFullName || 'Owner',
-       approvalStatus: 'Pending OTP Verification',
-       registrationStatus: 'Pending OTP Verification',
-      subscriptionPlan: 'free',
-      paymentStatus: 'free',
-      subscriptionExpiresAt: null,
-      createdAt: serverTimestamp(),
-    })
+    }
 
-    // 🔹 Send OTP
-    otpRecipientEmail.value = email.value.trim()
-    setStoredOtpRecipientEmail(otpRecipientEmail.value)
-    const sendOtpPromise = sendOtpEmail(otpRecipientEmail.value)
-
-    const [, , otpResult] = await Promise.all([
-      saveUserPromise,
-      saveClinicPromise,
-      sendOtpPromise,
-    ])
-
+    await saveRegistrationProfile(registrationUser, 'clinic', profile, clinic)
     await claimPrepaidSubscriptionPayment()
 
-    if (!otpResult.success && otpResult.retryAfterSeconds <= 0) {
-      await cleanupFailedRegistration(uid)
-      toast.error('Failed to send OTP. Registration was rolled back. Please try again.')
+    const registration = await fetchRegistrationProfile()
+    if (!registration?.exists || registration.uid !== registrationUser.uid) {
+      throw new Error('We could not confirm your clinic registration. Please try again while signed in.')
+    }
+
+    if (registration.resumeStep === 'active') {
+      toast.info('This clinic account is active. Please sign in.')
+      setTimeout(() => router.push('/login'), 800)
       return
     }
 
-    // 🔹 Open OTP modal
+    if (Number(registration.resumeStep) >= 3) {
+      applyProfileData(registration.profile)
+      otpVerifiedForRegistration.value = true
+      currentStep.value = Number(registration.resumeStep)
+      pendingApprovalMode.value = currentStep.value === 4
+      toast.info(currentStep.value === 4
+        ? 'Your application is already under review.'
+        : 'Your email is verified. Continue with document upload.')
+      return
+    }
+
+    const otpResult = await sendOtpEmail(normalizedEmail)
     currentStep.value = 2
     syncStepRoute(2)
     clearOtpInputs()
     focusOtpInput(0)
-    handleClinicOtpResult(otpResult, 'OTP sent to your email! Please verify to complete registration.')
-
+    handleClinicOtpResult(otpResult, 'If this account is eligible, a verification code has been sent to its email.')
   } catch (err) {
-    console.error(err)
-
-    if (createdRegistrationUid) {
-      await cleanupFailedRegistration(createdRegistrationUid)
-      toast.error('Registration failed. Your submitted information was removed. Please try again.')
-      return
-    }
-
+    console.error('Clinic registration could not be completed:', err?.response?.data || err?.code || err?.message || err)
     const errorCode = String(err?.code || '')
-    const friendlyMessages = {
-      'auth/email-already-in-use': 'An account with this email already exists. Continuing your registration...',
-      'auth/invalid-email': 'Invalid email format.',
-      'auth/weak-password': 'Password is too weak.',
-      'auth/invalid-api-key': 'Firebase Auth API key is invalid or restricted. Please update the Firebase config.',
-      'auth/api-key-not-valid': 'Firebase Auth API key is invalid or restricted. Please update the Firebase config.',
-      'auth/operation-not-allowed': 'Email/password sign-in is disabled in Firebase Auth.',
-    }
-
     if (errorCode === 'auth/email-already-in-use') {
-      const statusResult = await checkRegistrationStatus(email.value.trim())
-      const existingRole = String(statusResult?.role || statusResult?.userRole || '').trim().toLowerCase()
-      const isClinicRegistration = ['clinic admin', 'clinicadmin', 'owner', 'clinic owner'].includes(existingRole)
-      if (statusResult?.exists && isClinicRegistration) {
-        userUid.value = String(statusResult.uid || '').trim()
-        setStoredRegistrationUid(userUid.value)
-        emailChecked.value = true
-        otpRecipientEmail.value = email.value.trim().toLowerCase()
-        setStoredOtpRecipientEmail(otpRecipientEmail.value)
-
-        const otpResult = await sendOtpEmail(otpRecipientEmail.value)
-        currentStep.value = 2
-        syncStepRoute(2)
-        clearOtpInputs()
-        focusOtpInput(0)
-        handleClinicOtpResult(otpResult, 'Account exists. Please verify the latest OTP to continue.')
-        return
-      }
-
-      if (statusResult?.exists && !isClinicRegistration) {
-        toast.error('This email is already used by another account type.')
-        return
-      }
+      otpRecipientEmail.value = email.value.trim().toLowerCase()
+      const otpResult = await sendOtpEmail(otpRecipientEmail.value)
+      currentStep.value = 2
+      syncStepRoute(2)
+      clearOtpInputs()
+      focusOtpInput(0)
+      handleClinicOtpResult(otpResult, 'If this account is eligible, a verification code has been sent to its email.')
+    } else {
+      toast.error(err?.response?.data?.error || err?.message || 'Registration could not be completed. Your details are saved only after secure verification; please retry.')
     }
-
-    toast.error(friendlyMessages[errorCode] || 'Failed to register, please try again')
   } finally {
     isSubmitting.value = false
   }
@@ -3023,32 +2390,7 @@ const verifyOtp = async () => {
   otpError.value = ''
   try {
     const lookupEmail = String(otpRecipientEmail.value || email.value || '').trim().toLowerCase()
-    const currentAuthUid = auth?.currentUser?.uid || ''
-    const currentAuthEmail = String(auth?.currentUser?.email || '').trim().toLowerCase()
-
-    if (currentAuthUid && lookupEmail && currentAuthEmail === lookupEmail) {
-      userUid.value = currentAuthUid
-      setStoredRegistrationUid(userUid.value)
-    }
-
-    if (!userUid.value) {
-      if (lookupEmail) {
-        const statusResult = await checkRegistrationStatus(lookupEmail)
-        if (statusResult?.uid) {
-          userUid.value = String(statusResult.uid).trim()
-          setStoredRegistrationUid(userUid.value)
-        }
-      }
-      if (!userUid.value) {
-        const storedUid = getStoredRegistrationUid()
-        if (storedUid) {
-          userUid.value = storedUid
-        }
-      }
-    }
-
     const verifyRes = await axios.post(`${OTP_API_BASE}/auth/verify-registration-otp`, {
-      uid: userUid.value,
       email: lookupEmail,
       otp: otpCode.value,
     })
@@ -3059,7 +2401,6 @@ const verifyOtp = async () => {
 
     if (verifyRes?.data?.data?.uid) {
       userUid.value = String(verifyRes.data.data.uid).trim()
-      setStoredRegistrationUid(userUid.value)
     }
 
     const customToken = String(verifyRes?.data?.data?.customToken || '')
@@ -3073,10 +2414,24 @@ const verifyOtp = async () => {
       throw new Error('The verified registration does not match this session. Please request a new OTP.')
     }
 
+    const registration = await fetchRegistrationProfile()
+    if (!registration?.exists || registration.uid !== credential.user.uid || !registration.profile) {
+      await signOut(auth)
+      throw new Error('We could not confirm this clinic registration. Please restart email verification.')
+    }
+    applyProfileData(registration.profile)
+    currentStep.value = Number(registration.resumeStep) >= 1 && Number(registration.resumeStep) <= 4
+      ? Number(registration.resumeStep)
+      : 3
+    pendingApprovalMode.value = currentStep.value === 4
+
     otpVerifiedForRegistration.value = true
     setStoredOtpRecipientEmail('')
-    toast.success('Email verified. Continue to document upload.')
-    currentStep.value = 3
+    toast.success(currentStep.value === 4
+      ? 'Email verified. Your clinic application is under review.'
+      : currentStep.value === 1
+        ? 'Email verified. Complete your clinic details to continue.'
+        : 'Email verified. Continue to document upload.')
     syncStepRoute(3)
     clearOtpInputs()
   } catch (err) {
@@ -3130,6 +2485,66 @@ const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () =
     path: filePath,
     uploadedAt: new Date().toISOString(),
   }
+}
+
+const fileToDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = () => resolve(String(reader.result || ''))
+  reader.onerror = () => reject(new Error('The selected file could not be read. Please choose it again.'))
+  reader.readAsDataURL(file)
+})
+
+const validateImageDimensions = async (file, documentKey) => {
+  if (!file.type.startsWith('image/')) return
+  let width = 0
+  let height = 0
+  if (typeof createImageBitmap === 'function') {
+    const bitmap = await createImageBitmap(file)
+    width = bitmap.width
+    height = bitmap.height
+    bitmap.close?.()
+  } else {
+    const previewUrl = URL.createObjectURL(file)
+    try {
+      const image = new Image()
+      await new Promise((resolve, reject) => {
+        image.onload = resolve
+        image.onerror = () => reject(new Error('This image cannot be opened. Save or scan it again as JPEG or PNG.'))
+        image.src = previewUrl
+      })
+      width = image.naturalWidth
+      height = image.naturalHeight
+    } finally {
+      URL.revokeObjectURL(previewUrl)
+    }
+  }
+  const longEdge = Math.max(width, height)
+  const shortEdge = Math.min(width, height)
+  const isGovernmentId = ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack'].includes(documentKey)
+  const minLongEdge = isGovernmentId ? 800 : 1024
+  const minShortEdge = isGovernmentId ? 480 : 768
+  if (!width || !height || longEdge < minLongEdge || shortEdge < minShortEdge) {
+    throw new Error(isGovernmentId
+      ? 'This ID image is too small to read. Upload a clear scan or photo at least 800 Ã— 480 pixels.'
+      : 'This document image is too small to read. Upload a clear scan or photo at least 1024 Ã— 768 pixels.')
+  }
+}
+
+const preflightRegistrationDocument = async (uid, file, documentKey) => {
+  const sessionUser = auth.currentUser
+  if (!sessionUser || sessionUser.uid !== uid) throw new Error('Your registration session expired. Please sign in again.')
+  const contentBase64 = await fileToDataUrl(file)
+  const token = await sessionUser.getIdToken()
+  const response = await fetch(`${OTP_API_BASE}/registration/ocr-preflight`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ uid, docKey: documentKey, file: { name: file.name, type: file.type, size: file.size, contentBase64 } }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload?.success || payload?.data?.accepted !== true) {
+    throw new Error(payload?.error || 'The document did not pass the image-quality check. Please upload a clearer, complete copy.')
+  }
+  return payload.data.quality
 }
 
 const requestAutomaticClinicVerification = async (uid) => {
@@ -3236,9 +2651,13 @@ const submitDocuments = async () => {
       const file = documentFileMap[docKey]?.value
       if (!file) return
       const pending = clinicDocumentUploadPromises.get(docKey)
-      submittedDocumentsPayload[docKey] = pending
-        ? await pending
-        : await uploadDocumentForClinic(userUid.value, file, docKey)
+      if (pending) {
+        submittedDocumentsPayload[docKey] = await pending
+      } else {
+        await validateImageDimensions(file, docKey)
+        await preflightRegistrationDocument(userUid.value, file, docKey)
+        submittedDocumentsPayload[docKey] = await uploadDocumentForClinic(userUid.value, file, docKey)
+      }
       clinicDocumentUploadControllers.set(docKey, submittedDocumentsPayload[docKey])
     }))
     for (const docKey of requiredDocumentKeys.value) {
@@ -3903,7 +3322,8 @@ const handleRegistrationSubmit = () => {
                   <li>The front of your government-issued ID must clearly show the same name and birth date entered in Step 1.</li>
                   <li>Business Permit, BIR Registration, Sanitary Certificate, and DOH License must show the clinic/business name entered in Step 1.</li>
                   <li v-if="permitHolderIsRegistrant === false">The business permit should show the declared permit holder, and the authorization document should clearly identify both the permit holder and registrant.</li>
-                  <li>Upload clear, complete, and unexpired documents. Documents with an expiry date must still be valid.</li>
+                  <li>Upload clear, complete, and unexpired documents. Each file must be 10 MB or smaller. ID front and back must be uploaded separately as one-page files; other PDFs may contain up to 15 relevant pages.</li>
+                  <li>Pages with unclear or unrelated content may be sent for administrator review.</li>
                   <li>We will flag documents expiring within 30 days and email you a reminder. Documents expiring within 7 days require replacement before review; expired documents cannot be accepted.</li>
                 </ul>
               </div>
@@ -3925,6 +3345,7 @@ const handleRegistrationSubmit = () => {
                   </details>
                   <div v-if="documentsToUpload.includes('governmentIdRepresentativeFront')" class="upload-card">
                     <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeFront }}</p>
+                    <p class="mb-2 text-xs leading-relaxed text-charcoal-600">{{ getDocumentUploadGuidance('governmentIdRepresentativeFront') }}</p>
                     <input :key="documentInputKeys.governmentIdRepresentativeFront" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeFront', $event)" class="upload-input" />
                     <img
                       v-if="documentPreviewUrls.governmentIdRepresentativeFront"
@@ -3937,7 +3358,7 @@ const handleRegistrationSubmit = () => {
                     </p>
                     <div v-if="documentUploadState.governmentIdRepresentativeFront.uploading" class="mt-3 space-y-1">
                       <div class="flex items-center justify-between text-[11px] text-charcoal-500">
-                        <span>Uploading...</span>
+                        <span>{{ documentUploadState.governmentIdRepresentativeFront.phase === 'quality' ? 'Checking image quality...' : 'Uploading...' }}</span>
                         <span>{{ documentUploadState.governmentIdRepresentativeFront.progress || 0 }}%</span>
                       </div>
                       <div class="h-2 overflow-hidden rounded-full bg-gold-100">
@@ -3951,6 +3372,7 @@ const handleRegistrationSubmit = () => {
                   <div v-else class="upload-card flex items-center text-xs text-charcoal-600">{{ documentLabelMap.governmentIdRepresentativeFront }} will be kept from your previous submission.</div>
                   <div v-if="documentsToUpload.includes('governmentIdRepresentativeBack')" class="upload-card">
                     <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeBack }}</p>
+                    <p class="mb-2 text-xs leading-relaxed text-charcoal-600">{{ getDocumentUploadGuidance('governmentIdRepresentativeBack') }}</p>
                     <input :key="documentInputKeys.governmentIdRepresentativeBack" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeBack', $event)" class="upload-input" />
                     <img
                       v-if="documentPreviewUrls.governmentIdRepresentativeBack"
@@ -3963,7 +3385,7 @@ const handleRegistrationSubmit = () => {
                     </p>
                     <div v-if="documentUploadState.governmentIdRepresentativeBack.uploading" class="mt-3 space-y-1">
                       <div class="flex items-center justify-between text-[11px] text-charcoal-500">
-                        <span>Uploading...</span>
+                        <span>{{ documentUploadState.governmentIdRepresentativeBack.phase === 'quality' ? 'Checking image quality...' : 'Uploading...' }}</span>
                         <span>{{ documentUploadState.governmentIdRepresentativeBack.progress || 0 }}%</span>
                       </div>
                       <div class="h-2 overflow-hidden rounded-full bg-gold-100">
@@ -3983,6 +3405,7 @@ const handleRegistrationSubmit = () => {
                 >
                   <p class="upload-label">{{ documentLabelMap[docKey] || docKey }}</p>
                   <template v-if="documentsToUpload.includes(docKey)">
+                  <p class="mb-2 text-xs leading-relaxed text-charcoal-600">{{ getDocumentUploadGuidance(docKey) }}</p>
                   <input :key="documentInputKeys[docKey]" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange(docKey, $event)" class="upload-input" />
 
                   <img
@@ -3996,7 +3419,7 @@ const handleRegistrationSubmit = () => {
                   </p>
                   <div v-if="documentUploadState[docKey]?.uploading" class="mt-3 space-y-1">
                     <div class="flex items-center justify-between text-[11px] text-charcoal-500">
-                      <span>Uploading...</span>
+                      <span>{{ documentUploadState[docKey]?.phase === 'quality' ? 'Checking image quality...' : 'Uploading...' }}</span>
                       <span>{{ documentUploadState[docKey]?.progress || 0 }}%</span>
                     </div>
                     <div class="h-2 overflow-hidden rounded-full bg-gold-100">
@@ -4097,7 +3520,7 @@ const handleRegistrationSubmit = () => {
                     <div class="mt-4 h-2.5 overflow-hidden rounded-full bg-gold-200" role="progressbar" aria-label="Time until redirect to login" :aria-valuenow="pendingApprovalRedirectProgress" aria-valuemin="0" aria-valuemax="100">
                       <div class="h-full rounded-full bg-gold-700 transition-[width] duration-1000 ease-linear" :style="{ width: `${pendingApprovalRedirectProgress}%` }"></div>
                     </div>
-                    <p class="mt-3 text-xs text-charcoal-600">Your registration remains pending review. We’ll notify you by email when there’s an update.</p>
+                    <p class="mt-3 text-xs text-charcoal-600">Your registration remains pending review. Weâ€™ll notify you by email when thereâ€™s an update.</p>
                   </div>
                 </template>
                 <template v-else>Your registration is being reviewed. An email will be sent to you regarding your registration.</template>
