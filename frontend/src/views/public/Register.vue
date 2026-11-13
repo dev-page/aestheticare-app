@@ -2756,20 +2756,20 @@ const handleRegistrationSubmit = () => {
 
 <template>
   <RegisterCustomer v-if="selectedAccount === 'customer'" />
-  <div v-else-if="selectedAccount === 'clinic'" class="min-h-[100dvh] lg:h-screen bg-gradient-to-br from-cream-50 via-cream-100 to-gold-100 overflow-x-hidden no-scrollbar relative">
+  <div v-else-if="selectedAccount === 'clinic'" class="min-h-[100dvh] bg-gradient-to-br from-cream-50 via-cream-100 to-gold-100 overflow-x-clip relative">
     <div class="pointer-events-none absolute inset-0">
       <div class="absolute -top-20 -left-20 w-72 h-72 rounded-full bg-gold-200/40 blur-3xl"></div>
       <div class="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-cream-300/40 blur-3xl"></div>
     </div>
 
     <div class="relative z-10 flex items-center justify-center px-4 pt-12 pb-8 lg:pt-10 lg:pb-6 lg:min-h-[100dvh] text-sm">
-      <div class="register-clinic-card relative w-full max-w-6xl rounded-3xl overflow-hidden bg-white/68 backdrop-blur-xl border border-gold-200/60 shadow-2xl shadow-gold-900/15 lg:h-[calc(100dvh-5rem)]">
+      <div class="register-clinic-card relative w-full max-w-6xl rounded-3xl overflow-hidden bg-white/68 backdrop-blur-xl border border-gold-200/60 shadow-2xl shadow-gold-900/15 lg:min-h-[calc(100dvh-4rem)]">
         <div class="compact-desktop register-form-panel relative z-10 flex items-center justify-center h-full px-4 pt-8 pb-8 lg:pt-3 lg:pb-3 sm:px-8">
           <span class="form-side-bubble f-bubble-1 hidden lg:block" aria-hidden="true"></span>
           <span class="form-side-bubble f-bubble-2 hidden lg:block" aria-hidden="true"></span>
           <span class="form-side-bubble f-bubble-3 hidden lg:block" aria-hidden="true"></span>
 
-          <form class="space-y-4 w-full max-w-[560px] pt-3 lg:pt-5" @submit.prevent="handleRegistrationSubmit">
+          <form class="space-y-4 w-full max-w-[680px] pt-3 lg:pt-5" @submit.prevent="handleRegistrationSubmit">
             <div v-if="approvalRedirecting" class="fixed inset-0 z-50 flex items-center justify-center bg-charcoal-900/60 backdrop-blur">
               <div class="w-[90%] max-w-md rounded-2xl border border-gold-200/80 bg-white/90 p-6 text-center shadow-2xl">
                 <div class="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-gold-600 border-t-transparent"></div>
@@ -2812,8 +2812,9 @@ const handleRegistrationSubmit = () => {
               </div>
 
             <transition name="step-slide" mode="out-in" appear>
-            <section v-if="currentStep === 1" key="step-1" class="registration-step-panel space-y-4">
-<div class="space-y-2 rounded-2xl border border-gold-200/80 bg-cream-50/80 p-4">
+            <section v-if="currentStep === 1" key="step-1" class="registration-step-panel registration-step-one space-y-5">
+<div class="space-y-3 rounded-2xl border border-gold-200/80 bg-cream-50/80 p-4 sm:p-5">
+              <h2 class="text-base font-semibold text-charcoal-800">Account</h2>
               <div class="relative flex-1">
                 <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" @input="handleEmailDraftInput" />
                 <label class="floating-label floating-label-raised">Email Address</label>
@@ -2851,9 +2852,8 @@ const handleRegistrationSubmit = () => {
               </div>
             </div>
 
-            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-charcoal-600">
-              Personal Information
-            </p>
+            <section class="registration-owner-section space-y-4 rounded-2xl border border-gold-200/80 bg-white/55 p-4 sm:p-5">
+              <h2 class="text-base font-semibold text-charcoal-800">Owner details</h2>
 
             <div class="registration-name-grid grid grid-cols-1 gap-4">
               <div class="relative">
@@ -3071,8 +3071,10 @@ const handleRegistrationSubmit = () => {
               </transition>
             </div>
 
-            <section class="rounded-2xl border border-gold-200/80 bg-cream-50/45 p-4 sm:p-5">
-              <div class="mb-4 flex items-start gap-3">
+            </section>
+
+            <section class="space-y-4 rounded-2xl border border-gold-200/80 bg-cream-50/45 p-4 sm:p-5">
+              <div class="flex items-start gap-3">
                 <span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold-100 text-gold-800">
                   <Icon icon="mdi:storefront-outline" class="h-4 w-4" />
                 </span>
@@ -3157,8 +3159,6 @@ const handleRegistrationSubmit = () => {
               </div>
             </div>
 
-            </section>
-
             <div class="relative">
               <div class="flex items-center rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/45 focus-within:border-gold-700">
                 <span class="inline-flex items-center px-3 text-charcoal-700 select-none">+63</span>
@@ -3176,6 +3176,8 @@ const handleRegistrationSubmit = () => {
                 <label class="floating-label contact-label">Business Contact Number</label>
               </div>
             </div>
+
+            </section>
 
             <div class="cta-row flex gap-3">
               <button
@@ -3984,14 +3986,8 @@ const handleRegistrationSubmit = () => {
 }
 
 .register-form-panel {
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.register-form-panel::-webkit-scrollbar {
-  display: none;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .location-modal-body {
@@ -4782,7 +4778,7 @@ input:-webkit-autofill::first-line {
 
 @media (min-width: 1024px) {
   .register-clinic-card {
-    grid-template-columns: 60% 40%;
+    grid-template-columns: 65% 35%;
   }
   .register-form-panel {
     align-items: flex-start;
@@ -4811,6 +4807,19 @@ input:-webkit-autofill::first-line {
   }
   .compact-desktop .cta-row {
     margin-top: 1.45rem !important;
+  }
+  .compact-desktop .registration-step-one .space-y-4 > * + * {
+    margin-top: 1rem !important;
+  }
+  .compact-desktop .registration-step-one .gap-4 {
+    gap: 1rem !important;
+  }
+  .compact-desktop .registration-step-one .h-16 {
+    height: 4rem !important;
+  }
+  .compact-desktop .registration-step-one .input {
+    padding-top: 1rem !important;
+    padding-bottom: 0.5rem !important;
   }
 }
 
