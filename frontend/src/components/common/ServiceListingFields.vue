@@ -1,7 +1,7 @@
 <template>
   <fieldset class="listing-fields" :disabled="disabled">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <ContractAppearanceSelect :id="editing ? 'edit-listing-post-type' : 'listing-post-type'" v-model="form.postType" class="listing-post-type" label="Post Type" :disabled="editing || disabled" :options="isFreePlan ? [{ value: 'Service', label: 'Service' }] : [{ value: 'Service', label: 'Service' }, { value: 'Consultation', label: 'Consultation' }, { value: 'Package', label: 'Service Package' }]" />
+          <ContractAppearanceSelect :id="editing ? 'edit-listing-post-type' : 'listing-post-type'" v-model="form.postType" class="listing-post-type" label="Post Type" :disabled="editing || disabled" :options="isFreePlan ? [{ value: 'Service', label: 'Service · Single visit' }] : [{ value: 'Service', label: 'Service · Single visit' }, { value: 'Consultation', label: 'Consultation' }, { value: 'Package', label: 'Service Package · Treatment course' }]" />
 
           <div v-if="form.postType === 'Product'">
             <label class="block text-slate-400 mb-1">Product</label>
@@ -40,8 +40,8 @@
         <div class="mb-4 border-b border-slate-700 pb-3">
           <h3 class="font-semibold text-white">{{ form.postType === 'Consultation' ? 'Consultation Information' : form.postType === 'Package' ? 'Package Information' : 'Service Information' }}</h3>
           <p class="mt-1 text-xs text-slate-400">The service, consultation, or package name becomes the title customers see.</p>
-          <p v-if="form.postType === 'Service'" class="mt-2 text-xs text-slate-500">Recommendation: create a Service for one appointment. For a planned course with multiple visits, create a Service Package and include the individual services.</p>
-          <p v-else-if="form.postType === 'Package'" class="mt-2 text-xs text-slate-500">Use a package for a course of multiple treatment visits. Select the services or consultations included; the package price is calculated from their prices and your discount.</p>
+          <p v-if="form.postType === 'Service'" class="mt-2 text-xs text-slate-500">A Service is one appointment. Use a Service Package for a treatment course with two or more separately scheduled visits.</p>
+          <p v-else-if="form.postType === 'Package'" class="mt-2 text-xs text-slate-500">Build the course in visit order. Customers book the first visit; the clinic arranges each later visit after the previous one is completed or resolved.</p>
           <p v-else-if="form.postType === 'Consultation'" class="mt-2 text-xs text-slate-500">A consultation is a single appointment. Its fee is entered once below.</p>
         </div>
 
@@ -60,30 +60,54 @@
             <label class="block text-slate-400 mb-1">Price (PHP)</label>
             <input :value="form.postType === 'Package' ? packagePrice.toFixed(2) : form.price" :readonly="form.postType === 'Package'" @input="setPositiveNumber('price', $event, 0)" @keydown="blockNegativeKey" type="number" min="0" step="0.01" placeholder="0.00" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 read-only:opacity-80" />
           </div>
-          <div v-if="form.postType === 'Package'">
-            <label class="block text-slate-400 mb-1">Number of Package Visits</label>
-            <input :value="form.sessionCount" @input="setPositiveNumber('sessionCount', $event, 1, 50, true)" @keydown="blockNegativeKey" type="number" min="1" max="50" step="1" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <p class="text-xs text-slate-400 mt-1">Set how many visits the package covers. The clinic schedules each visit.</p>
-          </div>
-          <div v-if="form.postType === 'Package' && Number(form.sessionCount) > 1" class="md:col-span-2">
-            <label class="block text-slate-400 mb-1">Interval before the next session (days)</label>
-            <input v-model.number="form.sessionIntervalDays" type="number" min="0" max="365" step="1" class="w-full px-3 py-2 rounded-lg border border-slate-600 bg-slate-700 text-white" />
-            <p class="mt-1 text-xs text-slate-400">Counted from completion of the prior treatment session.</p>
-          </div>
           <div class="md:col-span-2">
             <label class="block text-slate-400 mb-1">Description</label>
             <textarea v-model="form.description" rows="3" placeholder="Describe this service, consultation, or package" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
           </div>
         </div>
 
+        <section v-if="['Service', 'Consultation', 'Package'].includes(form.postType)" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div><h3 class="font-semibold text-white">Appointment tax</h3><p class="mt-1 text-xs leading-5 text-slate-400">Apply the fixed 12% VAT only if this specific listing is taxable for your clinic.</p></div>
+            <span class="rounded-full border px-3 py-1 text-xs font-semibold" :class="form.vatApplicable ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200' : 'border-slate-600 bg-slate-800 text-slate-400'">{{ form.vatApplicable && vatRegistered ? '12% VAT enabled' : 'No VAT on this listing' }}</span>
+          </div>
+          <label class="mt-4 flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-800/70 p-4" :class="!vatRegistered ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
+            <input v-model="form.vatApplicable" type="checkbox" class="mt-1 h-4 w-4 accent-emerald-600" :disabled="disabled || !vatRegistered" />
+            <span><strong class="block text-sm text-slate-100">This listing is subject to VAT</strong><span class="mt-1 block text-xs leading-5 text-slate-400">The checkout will show the subtotal, VAT amount, and total.</span></span>
+          </label>
+          <p v-if="!vatRegistered" class="mt-2 text-xs text-amber-200">Enable “Clinic is VAT-registered” in Policy &amp; Contract Management before marking a listing VAT-applicable.</p>
+          <label v-if="form.vatApplicable" class="mt-4 block max-w-sm text-sm font-medium text-slate-200">How is the listed price shown?
+            <select v-model="form.vatPriceMode" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :disabled="disabled || !vatRegistered">
+              <option value="inclusive">Price already includes 12% VAT</option>
+              <option value="exclusive">Add 12% VAT to the listed price</option>
+            </select>
+          </label>
+        </section>
+
         <div v-if="form.postType === 'Package'" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
           <label class="block text-slate-400 mb-1">Package Name</label>
           <input v-model="form[nameKey('packageName')]" type="text" placeholder="Consultation + service package" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
-          <label class="block text-slate-400 mt-4 mb-1">Included services and consultations</label>
-          <select v-model="form.packageServiceIds" multiple class="min-h-28 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white">
-            <option v-for="item in posts.filter((post) => ['Service', 'Consultation'].includes(post.postType))" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} ({{ item.durationMinutes || 0 }} mins)</option>
-          </select>
-          <p class="mt-2 text-xs text-slate-400">A package can combine at least two different services, pair a consultation with a service, or repeat one service across multiple package visits. Customers pay for the course once; the clinic schedules its visits.</p>
+          <div class="mt-4 flex items-start justify-between gap-3"><div><h4 class="font-medium text-white">Course steps</h4><p class="mt-1 text-xs text-slate-400">Add the visits in the order they should happen. Each minimum gap applies before the next course visit; clinic availability determines the confirmed date.</p></div><button type="button" class="rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-200 disabled:opacity-50" :disabled="disabled || courseSteps.length >= 50" @click="addCourseStep">Add step</button></div>
+          <div v-if="courseSteps.length" class="mt-3 space-y-3">
+            <article v-for="(step, index) in courseSteps" :key="index" class="grid grid-cols-1 gap-3 rounded-xl border border-slate-700 bg-slate-800/70 p-3 md:grid-cols-[minmax(0,1fr)_120px_150px_auto] md:items-end">
+              <label class="block text-slate-300">{{ index + 1 }}. Visit type
+                <select v-model="step.serviceId" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :aria-label="`Course step ${index + 1} service`">
+                  <option value="">Choose a published service or consultation</option>
+                  <option v-if="step.serviceId && !courseServiceOptions.some(item => item.id === step.serviceId)" :value="step.serviceId">Previously included listing · unavailable</option>
+                  <option v-for="item in courseServiceOptions" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} · {{ item.postType }}</option>
+                </select>
+              </label>
+              <label class="block text-slate-300">Visits
+                <input :value="step.visitCount" @input="setStepNumber(step, 'visitCount', $event, 1, 50)" @keydown="blockNegativeKey" type="number" min="1" max="50" step="1" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :aria-label="`Course step ${index + 1} visit count`" />
+              </label>
+              <label class="block text-slate-300">Minimum gap (days)
+                <input :value="step.minimumGapDays" @input="setStepNumber(step, 'minimumGapDays', $event, 1, 365)" @keydown="blockNegativeKey" type="number" min="1" max="365" step="1" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :aria-label="`Course step ${index + 1} minimum gap in days`" />
+              </label>
+              <button v-if="courseSteps.length > 1" type="button" class="rounded-lg border border-rose-800 px-3 py-2 text-sm text-rose-200" :aria-label="`Remove course step ${index + 1}`" @click="removeCourseStep(index)">Remove</button>
+            </article>
+          </div>
+          <p v-else class="mt-3 rounded-lg border border-dashed border-slate-600 p-4 text-sm text-slate-400">Add the first service or consultation to begin the course.</p>
+          <p v-if="courseVisitCount > 50" class="mt-2 text-sm text-rose-300" role="alert">A treatment course can include up to 50 visits.</p>
           <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label class="block text-slate-400">Package discount (%)
               <input v-model.number="form.discountPercent" type="number" min="0" max="90" step="0.5" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" />
@@ -94,10 +118,10 @@
               <p>Customer saves: ₱{{ packageSavings.toFixed(2) }}</p>
             </div>
           </div>
-          <p class="mt-2 text-xs text-slate-400">The clinic sets the discount. The package price is calculated from the current prices of its included services and consultation.</p>
+          <p class="mt-2 text-xs text-slate-400">The clinic sets the discount. Course price uses each selected listing's price multiplied by its visit count.</p>
         </div>
 
-        <p v-if="editing && form.postType === 'Service' && Number(form.sessionCount || 1) > 1" class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">This existing Service is configured for {{ form.sessionCount }} treatment sessions. New Services cover one appointment; consider creating a Service Package for a multi-visit course. This existing listing will keep its current session setup when edited.</p>
+        <p v-if="editing && form.postType === 'Service' && form.legacyMultiSessionService" class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">This older Service was configured with multiple sessions. Saving it will make future bookings single-visit; appointments already booked keep their existing course. Create a Service Package to offer a new multi-visit course.</p>
 
         <div v-if="form.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="md:col-span-2">
@@ -258,11 +282,11 @@
           <p v-if="form.postType === 'Service'" class="mt-2 text-slate-300">Consultation: {{ form.requiresConsultationFirst ? 'Required before booking' : 'Not required' }}</p>
           <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Follow-up: {{ form.followUpAllowed ? `Available within ${form.followUpWindowDays || 14} days` : 'Not available' }}</p>
           <p v-if="form.postType === 'Consultation'" class="mt-2 text-slate-300">Available modes: {{ consultationModeLabel }}</p>
-          <p v-if="form.postType === 'Package'" class="mt-2 text-slate-300">Included appointments: {{ form.packageServiceIds.length }}</p>
-          <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Appointments per booking: 1</p>
-          <p v-if="form.postType === 'Package'" class="mt-1 text-slate-300">Package visits: {{ Math.max(1, Number(form.sessionCount || 1)) }}</p>
+          <p v-if="form.postType === 'Service'" class="mt-1 text-slate-300">Single visit: 1 appointment</p>
+          <p v-if="form.postType === 'Package'" class="mt-2 text-slate-300">Treatment course: {{ courseVisitCount }} visits across {{ courseSteps.length }} step{{ courseSteps.length === 1 ? '' : 's' }}</p>
+          <ol v-if="form.postType === 'Package' && courseSteps.length" class="mt-2 list-inside list-decimal space-y-1 text-xs text-slate-300"><li v-for="(step, index) in courseSteps" :key="index">{{ courseStepName(step) }} · {{ step.visitCount }} visit{{ Number(step.visitCount) === 1 ? '' : 's' }} · minimum {{ step.minimumGapDays }}-day gap before the next visit</li></ol>
           <p v-if="form.postType === 'Product'" class="mt-2 text-slate-300">Source: selected inventory product</p>
-          <p class="mt-1 text-slate-300">Proposed {{ String(form.postType || 'Service').toLowerCase() }} price: ₱{{ Number(form.price || form.consultationFee || 0).toFixed(2) }}</p>
+          <p class="mt-1 text-slate-300">{{ form.postType === 'Package' ? 'Calculated package' : `Proposed ${String(form.postType || 'Service').toLowerCase()}` }} price: ₱{{ Number(form.postType === 'Package' ? packagePrice : (form.price || form.consultationFee || 0)).toFixed(2) }}</p>
           <p class="mt-1 text-xs text-amber-200">{{ isFreePlan ? 'Free Plan service listings publish directly; Finance approval is not required.' : 'Financial terms, including installment settings, require Finance approval before publication.' }}</p>
         </div>
 
@@ -275,11 +299,18 @@ import { computed, ref, watch } from 'vue'
 import { normalizeServiceCategory, serviceCategoryKey, serviceCategoryOptions } from '../../../../shared/serviceCategories.js'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import ServiceStaffingFields from './ServiceStaffingFields.vue'
-const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, isFreePlan: Boolean, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
+const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, isFreePlan: Boolean, vatRegistered: Boolean, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
 defineEmits(['image-change'])
 const form = computed(() => props.model)
-const packageComponents = computed(() => (form.value.packageServiceIds || []).map(id => props.posts.find(post => post.id === id)).filter(Boolean))
-const packageSubtotal = computed(() => packageComponents.value.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(form.value.sessionCount || 1)))
+const vatRegistered = computed(() => props.vatRegistered === true)
+const courseSteps = computed(() => Array.isArray(form.value.treatmentCourseSteps) ? form.value.treatmentCourseSteps : [])
+const courseServiceOptions = computed(() => props.posts.filter(post => ['Service', 'Consultation'].includes(post.postType) && post.isPublished === true && post.financeStatus === 'approved' && post.archived !== true))
+const packageComponents = computed(() => [...new Set(courseSteps.value.map(step => String(step.serviceId || '')).filter(Boolean))].map(id => props.posts.find(post => post.id === id)).filter(Boolean))
+const courseVisitCount = computed(() => courseSteps.value.reduce((sum, step) => sum + Math.max(0, Number(step.visitCount) || 0), 0))
+const courseStepName = step => { const post = props.posts.find(item => item.id === step.serviceId); return post?.title || post?.serviceName || post?.consultationName || 'Select a visit' }
+const packageSubtotal = computed(() => courseSteps.value.length
+  ? courseSteps.value.reduce((sum, step) => { const post = props.posts.find(item => item.id === step.serviceId); return sum + Number(post?.price || post?.consultationFee || 0) * Math.max(0, Number(step.visitCount) || 0) }, 0)
+  : 0)
 const packageSavings = computed(() => packageSubtotal.value * Math.min(90, Math.max(0, Number(form.value.discountPercent || 0))) / 100)
 const packagePrice = computed(() => Math.max(0, packageSubtotal.value - packageSavings.value))
 const addingCategory = ref(false), newCategory = ref(''), categoryError = ref('')
@@ -295,6 +326,17 @@ const addCategory = () => {
 watch(() => props.model, () => { addingCategory.value = false; newCategory.value = ''; categoryError.value = '' })
 const nameKey = key => props.editing ? 'name' : key
 const blockNegativeKey = event => { if (event.key === '-') event.preventDefault() }
+const addCourseStep = () => { if (!Array.isArray(form.value.treatmentCourseSteps)) form.value.treatmentCourseSteps = []; if (form.value.treatmentCourseSteps.length < 50) form.value.treatmentCourseSteps.push({ serviceId: '', visitCount: 1, minimumGapDays: 7 }) }
+const removeCourseStep = index => { form.value.treatmentCourseSteps.splice(index, 1) }
+const setStepNumber = (step, key, event, min, max) => {
+  const raw = event.target.value
+  if (raw === '') { step[key] = ''; return }
+  const value = Number(raw)
+  if (!Number.isFinite(value)) { step[key] = ''; event.target.value = ''; return }
+  const bounded = Math.max(min, Math.min(max, Math.trunc(value)))
+  step[key] = bounded
+  if (bounded !== value) event.target.value = String(bounded)
+}
 const setPositiveNumber = (key, event, min, max = Infinity, wholeNumber = false) => {
   const raw = event.target.value
   if (raw === '') { form.value[key] = ''; return }
@@ -306,6 +348,11 @@ const setPositiveNumber = (key, event, min, max = Infinity, wholeNumber = false)
 }
 const consultationOptions = computed(() => props.posts.filter(post => post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived).map(post => { const modes = Array.isArray(post.consultationModes) ? post.consultationModes : [post.consultationMode || 'on-site']; return { value: post.id, label: `${post.title || post.consultationName || 'Consultation'} (${modes.map(mode => mode === 'online' ? 'Online' : 'On-site').join(' / ')})` } }))
 const consultationModeLabel = computed(() => (props.model.consultationModes || []).map(mode => mode === 'online' ? 'Online' : 'On-site').join(' and ') || 'Choose at least one')
+watch(courseSteps, steps => {
+  if (form.value.postType !== 'Package') return
+  const ids = [...new Set(steps.map(step => String(step.serviceId || '').trim()).filter(Boolean))]
+  if (JSON.stringify(form.value.packageServiceIds || []) !== JSON.stringify(ids)) form.value.packageServiceIds = ids
+}, { deep: true })
 </script>
 
 <style scoped>

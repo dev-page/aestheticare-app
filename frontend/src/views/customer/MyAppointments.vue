@@ -73,7 +73,14 @@
 
               <div class="payment-agreement">
                 <p v-if="appt.installmentsAllowed && !initialPaymentReceived(appt)">Initial payment: {{ appt.depositPercent }}% of the total. The balance is due after you confirm the service is done.</p>
-                <p v-if="appt.installmentsAllowed">Total: ₱{{ Number(appt.totalAmount || appt.amount || 0).toFixed(2) }} · Paid: ₱{{ Number(appt.amountPaid || 0).toFixed(2) }} · Remaining: ₱{{ Math.max(0, Number(appt.totalAmount || appt.amount || 0) - Number(appt.amountPaid || 0)).toFixed(2) }}</p>
+                <dl v-if="appt.pricingSnapshot" class="payment-price-breakdown">
+                  <div><dt>Subtotal</dt><dd>{{ formatPricingAmount(appt.pricingSnapshot.subtotal) }}</dd></div>
+                  <div><dt>VAT</dt><dd>{{ appt.pricingSnapshot.vatApplicable ? `${formatPricingAmount(appt.pricingSnapshot.vatAmount)} (12%${appt.pricingSnapshot.vatPriceMode === 'inclusive' ? ', included' : ''})` : 'No VAT' }}</dd></div>
+                  <div class="payment-price-total"><dt>Total</dt><dd>{{ formatPricingAmount(appt.pricingSnapshot.total) }}</dd></div>
+                  <div><dt>Paid to date</dt><dd>{{ formatPricingAmount(appt.amountPaid || 0) }}</dd></div>
+                  <div><dt>Remaining balance</dt><dd>{{ formatPricingAmount(Math.max(0, Number(appt.pricingSnapshot.total || appt.totalAmount || appt.amount || 0) - Number(appt.amountPaid || 0))) }}</dd></div>
+                </dl>
+                <p v-else class="payment-agreement-copy">Tax breakdown unavailable for this booking. Amount due: {{ formatBookingDue(appt) }}.</p>
                 <details class="payment-agreement-details" @toggle="markPaymentAgreementViewed(appt.id, $event)">
                   <summary>View clinic policies</summary>
                   <div v-if="getAppointmentPolicyEntries(appt).length" class="payment-agreement-copy">
@@ -104,8 +111,15 @@
         </nav>
 
         <section v-if="activeAppointmentTab === 'sessions'" class="appointments-panel">
-          <div class="panel-head"><div><p class="panel-kicker">Treatment Plan</p><h2 class="panel-title">My Treatment Sessions</h2></div><p class="panel-note">{{ treatmentSessions.length }} session{{ treatmentSessions.length === 1 ? '' : 's' }}</p></div>
-<div v-if="treatmentSessions.length" class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead><tbody><tr v-for="session in treatmentSessions" :key="session.id"><td>Session {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.date ? `${session.date} ${formatClockTime(session.time)}` : session.requestedDate ? `Requested: ${session.requestedDate} ${formatClockTime(session.requestedTime)}` : session.earliestScheduleDate ? `Eligible from ${session.earliestScheduleDate}` : 'Not scheduled yet' }}</td><td>{{ session.status }}</td><td><button v-if="session.status === 'Schedule Proposed'" type="button" class="appointment-button appointment-button-secondary" @click="confirmSessionSchedule(session)">Confirm proposed date</button><button v-if="canRequestSessionSchedule(session)" type="button" class="appointment-button appointment-button-secondary" @click="openRequestModal('session', session)">{{ session.status === 'Scheduled' ? 'Request reschedule' : 'Request schedule' }}</button><span v-else-if="String(session.status || '').toLowerCase().includes('requested')" class="text-sm text-[#7f6654]">Awaiting clinic review</span><span v-else class="text-sm text-[#7f6654]">{{ session.sessionNumber > 1 ? 'Available after the prior visit is resolved' : '' }}</span></td></tr></tbody></table></div>
+          <div class="panel-head"><div><p class="panel-kicker">Treatment Plans</p><h2 class="panel-title">My Treatment Sessions</h2></div><p class="panel-note">{{ treatmentSessions.length }} visit{{ treatmentSessions.length === 1 ? '' : 's' }}</p></div>
+          <div v-if="treatmentPlanGroups.length" class="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <article v-for="plan in treatmentPlanGroups" :key="plan.id" class="rounded-xl border border-[#e6cfb0] bg-[#fffaf3] p-4 text-[#3d281d]">
+              <div class="flex flex-wrap items-start justify-between gap-2"><div><p class="text-xs font-semibold uppercase tracking-[.15em] text-[#8b6a4d]">Treatment course</p><h3 class="mt-1 font-semibold">{{ plan.name }}</h3></div><strong class="rounded-full bg-[#f1e3d0] px-3 py-1 text-sm">{{ plan.completedCount }} of {{ plan.totalSessions }} complete</strong></div>
+              <div v-if="plan.nextSession" class="mt-3 border-t border-[#ead8c0] pt-3 text-sm"><p><strong>Next visit:</strong> {{ plan.nextSession.serviceName }} · Visit {{ plan.nextSession.sessionNumber }}</p><p class="mt-1 text-[#765b45]">{{ plan.nextSessionStatus }}<span v-if="plan.nextSession.earliestScheduleDate"> · Eligible from {{ formatCourseDate(plan.nextSession.earliestScheduleDate) }}</span></p></div>
+              <p v-else class="mt-3 border-t border-[#ead8c0] pt-3 text-sm text-[#765b45]">All visits in this treatment course are resolved.</p>
+            </article>
+          </div>
+          <div v-if="treatmentSessions.length" class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Visit</th><th>Treatment</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead><tbody><tr v-for="session in treatmentSessionsForDisplay" :key="session.id"><td>Visit {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.serviceName }}</td><td>{{ session.date ? `${formatCourseDate(session.date)} ${formatClockTime(session.time)}` : session.requestedDate ? `Requested: ${formatCourseDate(session.requestedDate)} ${formatClockTime(session.requestedTime)}` : session.earliestScheduleDate ? `Eligible from ${formatCourseDate(session.earliestScheduleDate)}` : 'Not scheduled yet' }}</td><td>{{ session.status }}</td><td><button v-if="session.status === 'Schedule Proposed'" type="button" class="appointment-button appointment-button-secondary" @click="confirmSessionSchedule(session)">Confirm proposed date</button><button v-if="canRequestSessionSchedule(session)" type="button" class="appointment-button appointment-button-secondary" @click="openRequestModal('session', session)">{{ session.status === 'Scheduled' ? 'Request reschedule' : 'Request schedule' }}</button><span v-else-if="String(session.status || '').toLowerCase().includes('requested')" class="text-sm text-[#7f6654]">Awaiting clinic review</span><span v-else class="text-sm text-[#7f6654]">{{ session.sessionNumber > 1 ? 'Available after the prior visit is resolved' : '' }}</span></td></tr></tbody></table></div>
           <div v-else class="state-panel">No treatment sessions have been scheduled yet.</div>
         </section>
         <section v-if="activeAppointmentTab === 'online'" class="appointments-panel">
@@ -631,6 +645,33 @@ const upcomingAppointments = ref([])
 const pastAppointments = ref([])
 const onlineConsultations = ref([])
 const treatmentSessions = ref([])
+const treatmentAppointments = computed(() => [...upcomingAppointments.value, ...pastAppointments.value, ...onlineConsultations.value])
+const treatmentSessionsForDisplay = computed(() => treatmentSessions.value.map(session => {
+  const plan = treatmentAppointments.value.find(appointment => appointment.id === session.treatmentPlanAppointmentId)
+  const definition = plan?.treatmentPlan?.sessions?.[Number(session.sessionNumber || 1) - 1]
+  return { ...session, serviceName: definition?.serviceName || plan?.service || 'Treatment visit' }
+}).sort((left, right) => String(left.treatmentPlanAppointmentId).localeCompare(String(right.treatmentPlanAppointmentId)) || Number(left.sessionNumber || 0) - Number(right.sessionNumber || 0)))
+const treatmentPlanGroups = computed(() => {
+  const groups = new Map()
+  for (const session of treatmentSessionsForDisplay.value) {
+    const id = String(session.treatmentPlanAppointmentId || session.id)
+    if (!groups.has(id)) groups.set(id, { id, sessions: [] })
+    groups.get(id).sessions.push(session)
+  }
+  return [...groups.values()].map(group => {
+    const plan = treatmentAppointments.value.find(appointment => appointment.id === group.id)
+    const rows = group.sessions.sort((a, b) => Number(a.sessionNumber || 0) - Number(b.sessionNumber || 0))
+    const totalSessions = Number(plan?.treatmentPlan?.totalSessions || rows[0]?.totalSessions || rows.length)
+    const nextSession = rows.find(session => !['completed', 'forfeited'].includes(normalizeAppointmentStatus(session.status))) || null
+    const status = normalizeAppointmentStatus(nextSession?.status)
+    const nextSessionStatus = !nextSession ? 'Course complete'
+      : status === 'unscheduled' && nextSession.earliestScheduleDate ? 'Clinic can schedule after this date'
+        : status === 'schedule proposed' ? 'Waiting for your confirmation'
+          : status.includes('requested') ? 'Waiting for clinic review'
+            : nextSession.status || 'Not scheduled yet'
+    return { id: group.id, name: plan?.treatmentPlan?.planName || plan?.service || rows[0]?.serviceName || 'Treatment course', totalSessions, completedCount: rows.filter(session => normalizeAppointmentStatus(session.status) === 'completed').length, nextSession, nextSessionStatus }
+  })
+})
 const openActionMenuId = ref(null)
 const actionMenuStyle = ref({})
 const clinicsById = ref({})
@@ -672,6 +713,11 @@ const requestCalendarWeekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'
 const toDateTime = (date, time) => new Date(`${date}T${time || '00:00'}`)
 
 const normalizeAppointmentStatus = (value) => String(value || '').trim().toLowerCase()
+const formatCourseDate = value => {
+  if (!value) return ''
+  const date = new Date(`${String(value).slice(0, 10)}T12:00:00`)
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(date)
+}
 
 const isCancelledAppointment = (appointment) => normalizeAppointmentStatus(appointment?.status) === 'cancelled'
 
@@ -1733,6 +1779,7 @@ const reschedule = async (appt) => {
 }
 
 const formatBookingDue = (appointment) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(paymentDue(appointment) / 100)
+const formatPricingAmount = (amount) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(amount || 0))
 
 const contractsToSign = computed(() => customerLifecycleAppointments.value.filter(appointment =>
   appointment.approvalStatus === 'Approved'
@@ -2428,6 +2475,23 @@ onUnmounted(() => {
   border-radius: 0.85rem;
   background: rgba(255, 248, 238, 0.72);
 }
+
+.payment-price-breakdown {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.65rem 0;
+  color: #5d4536;
+  font-size: 0.82rem;
+}
+
+.payment-price-breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.payment-price-breakdown dd { text-align: right; font-weight: 600; }
+.payment-price-breakdown .payment-price-total { padding-top: 0.35rem; border-top: 1px solid rgba(126, 78, 53, 0.22); color: #3d281d; font-weight: 700; }
 
 .payment-agreement-details summary {
   cursor: pointer;

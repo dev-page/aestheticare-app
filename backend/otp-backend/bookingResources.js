@@ -6,6 +6,8 @@ import { buildClientContract, buildClientContractDocument } from '../../shared/c
 import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
 import { lotAvailableQuantity } from './inventoryLots.js'
 import { day as inventoryDay } from './supplyModel.js'
+import { buildTreatmentCourseSessions, normalizeTreatmentCourseSteps, validateTreatmentCourseComposition } from '../../shared/treatmentCourse.js'
+import { APPOINTMENT_PLATFORM_COMMISSION_PERCENT, appointmentCommissionAmount, buildAppointmentPricing, sumAppointmentPricing } from '../../shared/appointmentPricing.js'
 
 const bookingInventoryRow = async ({ tx, db, branchId, resource, scheduledDate }) => {
   const snapshot = await tx.get(db.collection('inventoryItems').doc(resource.id))
@@ -46,7 +48,12 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   if (normalized(offer.postType) === 'package') {
     check(!reservation.groupBooking, 'Packages are individual treatment plans. Book group services separately.', 400)
     const components = []
-    for (const id of offer.packageServiceIds || []) {
+    const rawCourseSteps = Array.isArray(offer.treatmentCourseSteps) ? offer.treatmentCourseSteps : null
+    const courseSteps = rawCourseSteps ? normalizeTreatmentCourseSteps(rawCourseSteps) : null
+    const componentIds = rawCourseSteps
+      ? [...new Set(rawCourseSteps.map(step => String(step?.serviceId || '').trim()).filter(Boolean))]
+      : offer.packageServiceIds || []
+    for (const id of componentIds) {
       const snapshot = await tx.get(db.collection('productServicePosts').doc(String(id))), component = snapshot.data()
       check(component && component.branchId === branchId && component.isPublished === true && component.financeStatus === 'approved' && component.archived !== true && ['service', 'consultation'].includes(normalized(component.postType)), 'A package component is unavailable.')
       components.push({ ...component, id: snapshot.id })
@@ -54,11 +61,18 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
     check(components.length > 0, 'This package has no services.', 400)
     packageComponents = components
     packageIncludesConsultation = components.some(component => normalized(component.postType) === 'consultation')
-    for (let cycle = 0; cycle < Math.min(50, Math.max(1, Number(offer.sessionCount || 1))); cycle++) for (const component of components) {
-      for (let visit = 0; visit < Math.min(50, Math.max(1, Number(component.sessionCount || 1))); visit++) definitions.push({ serviceId: component.id, serviceName: component.title || component.serviceName || component.consultationName, durationMinutes: Number(component.durationMinutes || 60), sessionIntervalDays: Math.max(1, Number(component.sessionIntervalDays || offer.sessionIntervalDays || 1)) })
+    if (courseSteps) {
+      const servicesById = new Map(components.map(component => [component.id, component]))
+      const courseError = validateTreatmentCourseComposition(rawCourseSteps, servicesById)
+      check(!courseError, courseError || 'This treatment course is invalid.', 400)
+      definitions.push(...buildTreatmentCourseSessions(courseSteps, servicesById))
+    } else {
+      for (let cycle = 0; cycle < Math.min(50, Math.max(1, Number(offer.sessionCount || 1))); cycle++) for (const component of components) {
+        for (let visit = 0; visit < Math.min(50, Math.max(1, Number(component.sessionCount || 1))); visit++) definitions.push({ serviceId: component.id, serviceName: component.title || component.serviceName || component.consultationName, durationMinutes: Number(component.durationMinutes || 60), sessionIntervalDays: Math.max(1, Number(component.sessionIntervalDays || offer.sessionIntervalDays || 1)) })
+      }
     }
     check(definitions.length <= 50, 'Packages support at most 50 individual visits.', 400)
-    services.splice(0, services.length, components[0])
+    services.splice(0, services.length, components.find(component => component.id === definitions[0]?.serviceId) || components[0])
   } else {
     for (let visit = 0; visit < Math.min(50, Math.max(1, Number(offer.sessionCount || 1))); visit++) definitions.push({ serviceId: offer.id, serviceName: offer.title || offer.serviceName || offer.consultationName, durationMinutes: Number(offer.durationMinutes || 60), sessionIntervalDays: Math.max(1, Number(offer.sessionIntervalDays || 1)) })
   }
@@ -102,7 +116,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   // A combined booking observes the longest configured interval, so none of
   // its selected services is scheduled sooner than the clinic intends.
   const sessionIntervalDays = totalSessions > 1
-    ? Math.max(0, ...services.map((service) => Math.min(365, Math.max(0, Number(service.sessionIntervalDays || 0)))))
+    ? Math.max(1, ...definitions.map((session) => Math.min(365, Math.max(1, Number(session.sessionIntervalDays || 1)))))
     : 0
   const isConsultationOffer = normalized(services[0].postType) === 'consultation'
   const consultationMode = value => {
@@ -197,8 +211,8 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   check(!active.some((a) => appointmentStaffIds(a).includes(workerId) && overlaps(a)), 'The worker is already booked at this time.')
   const conflict = resourceConflict({ requirements: resources, inventory, appointments: active, overlaps })
   check(!conflict, conflict)
-  const total = Number(offer.price || 0) * attendeeCount
-  check(Number.isFinite(total) && total > 0, 'The clinic must set a valid price for every booked service.')
+  const listedPrice = Number(offer.price || 0) * attendeeCount
+  check(Number.isFinite(listedPrice) && listedPrice > 0, 'The clinic must set a valid price for every booked service.')
   const installmentsAllowed = !group && offer.allowInstallments === true
   const depositPercent = installmentsAllowed ? Number(offer.depositPercent || 50) : 100
   check(depositPercent >= 1 && depositPercent <= 100, 'The clinic must configure a valid deposit percentage.')
@@ -206,6 +220,11 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const contractOwnerId = String(contractBranch.ownerId || contractBranch.organizationOwnerId || '').trim()
   let contractPolicy = contractOwnerId ? (await tx.get(db.collection('clinicPolicies').doc(contractOwnerId))).data() : null
   if (!contractPolicy) contractPolicy = (await tx.get(db.collection('clinicPolicies').doc(branchId))).data() || {}
+  check(offer.vatApplicable !== true || contractPolicy.vatRegistered === true, 'This VAT-applicable listing is unavailable until the clinic VAT setting is enabled.', 409)
+  const pricingSnapshot = buildAppointmentPricing({ listedPrice, vatApplicable: contractPolicy.vatRegistered === true && offer.vatApplicable === true, vatPriceMode: offer.vatPriceMode })
+  const total = pricingSnapshot.total
+  const commissionAmount = appointmentCommissionAmount(pricingSnapshot.subtotal)
+  const merchantNetAmount = Math.round((pricingSnapshot.subtotal - commissionAmount) * 100) / 100
   const clinicContractConfigured = contractPolicy.clientContract?.configured === true
   const contractDocument = clinicContractConfigured ? buildClientContractDocument(contractPolicy, { branch: contractBranch, source: reservation.source || 'customer_booking_request', serviceName: offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service', serviceTerms: offer.termsAndConditions }) : null
   let terms = clinicContractConfigured
@@ -221,7 +240,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
     if (contractDocument) contractDocument.sections.push({ title: 'Online consultation timing and review', text: notice })
   }
   const endTime = `${String(Math.floor(range.end / 60)).padStart(2, '0')}:${String(range.end % 60).padStart(2, '0')}`
-  return { lock, customerLocks, data: { bookingWorkflowVersion: 2, ...(isOnline ? { consultationPolicy, consultationDurationMinutes: duration } : {}), staffingRequirements, treatmentTeam: [], resources, endTime, selectedServices: services, serviceDetails: services, selectedServiceIds: ids, serviceIds: ids, service: `${offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service'}${normalized(offer.postType) === 'package' ? ` — first visit: ${definitions[0].serviceName}` : ''}`, type: isConsultationOffer ? 'Consultation' : 'Service', consultationMode: isConsultationOffer ? requestedMode : null, ...(isConsultationOffer ? { consultationForServiceIds: definitions.map(visit => visit.serviceId) } : {}), totalServiceDurationMinutes: duration, groupBooking: group ? { organizerId: String(group.organizerId || reservation.customerId || ''), organizerIncluded: group.organizerIncluded === true, participantCount: attendeeCount, guests: guests.map((guest) => ({ name: String(guest.name).trim(), email: String(guest.email).trim().toLowerCase(), phone: String(guest.phone || '').trim().slice(0, 32) })) } : null, sessionNumber: 1, treatmentPlan: { totalSessions, sessionIntervalDays, sessions: definitions, packageId: normalized(offer.postType) === 'package' ? offer.id : null, completedSessions: 0, remainingSessions: totalSessions, schedulingMode: totalSessions > 1 ? 'clinic-scheduled' : 'single-visit' }, amount: total, totalAmount: total, commissionPercent: 10, commissionAmount: Math.round(total * 10) / 100, merchantNetAmount: Math.round(total * 90) / 100, installmentsAllowed, depositPercent, contractRequired: true, contract: { title: 'Service booking agreement', terms, ...(contractDocument ? { document: contractDocument } : {}), status: 'pending', requiredSigners: [], signatures: {} } } }
+  return { lock, customerLocks, data: { bookingWorkflowVersion: 2, ...(isOnline ? { consultationPolicy, consultationDurationMinutes: duration } : {}), staffingRequirements, treatmentTeam: [], resources, endTime, selectedServices: services, serviceDetails: services, selectedServiceIds: ids, serviceIds: ids, service: `${offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service'}${normalized(offer.postType) === 'package' ? ` — first visit: ${definitions[0].serviceName}` : ''}`, type: isConsultationOffer ? 'Consultation' : 'Service', consultationMode: isConsultationOffer ? requestedMode : null, ...(isConsultationOffer ? { consultationForServiceIds: definitions.map(visit => visit.serviceId) } : {}), totalServiceDurationMinutes: duration, groupBooking: group ? { organizerId: String(group.organizerId || reservation.customerId || ''), organizerIncluded: group.organizerIncluded === true, participantCount: attendeeCount, guests: guests.map((guest) => ({ name: String(guest.name).trim(), email: String(guest.email).trim().toLowerCase(), phone: String(guest.phone || '').trim().slice(0, 32) })) } : null, sessionNumber: 1, treatmentPlan: { totalSessions, sessionIntervalDays, sessions: definitions, packageId: normalized(offer.postType) === 'package' ? offer.id : null, planName: offer.packageName || offer.title || 'Treatment course', completedSessions: 0, remainingSessions: totalSessions, schedulingMode: totalSessions > 1 ? 'clinic-scheduled' : 'single-visit' }, pricingSnapshot, amount: total, totalAmount: total, commissionPercent: APPOINTMENT_PLATFORM_COMMISSION_PERCENT, commissionAmount, merchantNetAmount, installmentsAllowed, depositPercent, contractRequired: true, contract: { title: 'Service booking agreement', terms, ...(contractDocument ? { document: contractDocument } : {}), status: 'pending', requiredSigners: [], signatures: {} } } }
 }
 
 const prepareGroupBooking = async ({ tx, db, reservation, getBookingRange, rangesOverlap, appointmentId }) => {
@@ -255,6 +274,9 @@ const prepareGroupBooking = async ({ tx, db, reservation, getBookingRange, range
   const groupRange = getBookingRange({ time: reservation.time, totalServiceDurationMinutes: duration })
   const conflict = resourceConflict({ requirements: [...resources.values()], inventory, appointments, overlaps: row => { const range = getBookingRange(row); return row.date === reservation.date && range && rangesOverlap(groupRange.start, groupRange.end, range.start, range.end) } })
   check(!conflict, conflict)
-  const total = Math.round(visits.reduce((sum, visit) => sum + visit.data.totalAmount, 0) * 100) / 100
-  return { lock: first.lock, customerLocks: [...new Map(visits.flatMap(visit => visit.customerLocks || []).map(lock => [lock.id, lock])).values()], data: { ...first.data, selectedServiceIds: reservation.selectedServiceIds || reservation.serviceIds, serviceIds: reservation.selectedServiceIds || reservation.serviceIds, resources: [...resources.values()], totalServiceDurationMinutes: duration, endTime: visits.at(-1).data.endTime, amount: total, totalAmount: total, commissionPercent: 10, commissionAmount: Math.round(total * 10) / 100, merchantNetAmount: Math.round(total * 90) / 100, installmentsAllowed: false, depositPercent: 100, groupBooking: { organizerId: reservation.customerId, organizerIncluded: group.organizerIncluded === true, participantCount: attendees.length, guests: guests.map(person => ({ name: String(person.name).trim(), email: normalized(person.email), phone: String(person.phone || '').trim().slice(0, 32), serviceId: person.serviceId || reservation.selectedServiceIds?.[0] })), recipientPlans: visits.map(({ data, time, serviceId }) => ({ data, time, serviceId })) } } }
+  const pricingSnapshot = sumAppointmentPricing(visits.map(visit => visit.data.pricingSnapshot))
+  const total = pricingSnapshot.total
+  const commissionAmount = Math.round(visits.reduce((sum, visit) => sum + Math.round(Number(visit.data.commissionAmount || 0) * 100), 0)) / 100
+  const merchantNetAmount = Math.round(visits.reduce((sum, visit) => sum + Math.round(Number(visit.data.merchantNetAmount || 0) * 100), 0)) / 100
+  return { lock: first.lock, customerLocks: [...new Map(visits.flatMap(visit => visit.customerLocks || []).map(lock => [lock.id, lock])).values()], data: { ...first.data, selectedServiceIds: reservation.selectedServiceIds || reservation.serviceIds, serviceIds: reservation.selectedServiceIds || reservation.serviceIds, resources: [...resources.values()], totalServiceDurationMinutes: duration, endTime: visits.at(-1).data.endTime, pricingSnapshot, amount: total, totalAmount: total, commissionPercent: APPOINTMENT_PLATFORM_COMMISSION_PERCENT, commissionAmount, merchantNetAmount, installmentsAllowed: false, depositPercent: 100, groupBooking: { organizerId: reservation.customerId, organizerIncluded: group.organizerIncluded === true, participantCount: attendees.length, guests: guests.map(person => ({ name: String(person.name).trim(), email: normalized(person.email), phone: String(person.phone || '').trim().slice(0, 32), serviceId: person.serviceId || reservation.selectedServiceIds?.[0] })), recipientPlans: visits.map(({ data, time, serviceId }) => ({ data, time, serviceId })) } } }
 }

@@ -33,7 +33,7 @@
       <div v-show="activeListingTab === 'create'" class="listing-create-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <h2 class="text-lg font-semibold mb-2">Create listing</h2><p class="listing-section-description">Add the service details, booking rules, and resources needed for each appointment.</p>
 
-        <ServiceListingFields :model="form" :disabled="loading" :is-free-plan="isFreePlan" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
+        <ServiceListingFields :model="form" :disabled="loading" :is-free-plan="isFreePlan" :vat-registered="clinicVatRegistered" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
 
         <div class="flex gap-2">
           <button
@@ -80,8 +80,9 @@
               </div>
               <p class="text-sm text-slate-300 mb-1">{{ post.productName || post.serviceName || post.consultationName || post.packageName }}</p>
               <p v-if="post.postType === 'Package'" class="mb-2 text-xs text-amber-200">
-                Includes {{ (post.packageServiceIds || []).length }} consultation/service component(s).
+                Treatment course · {{ listingVisitCount(post) }} visits · {{ (post.treatmentCourseSteps || post.packageServiceIds || []).length }} ordered step(s).
               </p>
+              <ol v-if="post.postType === 'Package' && post.treatmentCourseSteps?.length" class="mb-2 list-inside list-decimal space-y-1 text-xs text-slate-400"><li v-for="(step, index) in post.treatmentCourseSteps" :key="`${step.serviceId}-${index}`">{{ posts.find(item => item.id === step.serviceId)?.title || posts.find(item => item.id === step.serviceId)?.serviceName || posts.find(item => item.id === step.serviceId)?.consultationName || 'Unavailable listing' }} · {{ step.visitCount }} visit(s)</li></ol>
               <p class="listing-card-description text-sm text-slate-400 mb-2">{{ post.description }}</p>
               <div v-if="post.postType === 'Service' || post.postType === 'Consultation'" class="mb-2 flex flex-wrap gap-2">
                 <span
@@ -116,6 +117,7 @@
                 Standalone consultation post. Customers book this separately before any follow-up service.
               </p>
               <p class="listing-card-price text-sm font-semibold text-green-400">{{ formatCurrency(post.price) }}</p>
+              <p v-if="post.vatApplicable" class="mt-1 text-xs text-emerald-300">{{ post.vatPriceMode === 'inclusive' ? 'Includes 12% VAT' : '+12% VAT at checkout' }}</p>
               <div class="listing-card-actions mt-3 flex flex-wrap gap-2">
                 <button
                   @click="openEditPost(post)"
@@ -152,7 +154,7 @@
           </div>
 
           <div class="flex-1 overflow-y-auto px-6 py-5">
-            <ServiceListingFields :model="editForm" editing :disabled="loading" :is-free-plan="isFreePlan" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="editImageFileName" @image-change="handleEditImageUpload" />
+            <ServiceListingFields :model="editForm" editing :disabled="loading" :is-free-plan="isFreePlan" :vat-registered="clinicVatRegistered" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="editImageFileName" @image-change="handleEditImageUpload" />
           </div>
 
           <div class="border-t border-slate-700 px-6 py-4">
@@ -198,6 +200,7 @@ import { getClinicPolicyOwnerId } from '@/utils/clinicPolicies'
 import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
 import ServiceListingFields from '@/components/common/ServiceListingFields.vue'
 import { normalizeServiceCategory } from '../../../../../../shared/serviceCategories.js'
+import { normalizeTreatmentCourseSteps, treatmentCourseVisitCount, validateTreatmentCourseComposition } from '../../../../../../shared/treatmentCourse.js'
 import { buildClientContractDocument, clientContractPolicies } from '../../../../../../shared/clientContract.js'
 
 const FREE_PLAN_POST_LIMIT = 5
@@ -222,6 +225,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const currentUserId = ref('')
     const currentBranchId = ref('')
     const clinicPolicies = ref({})
+    const clinicVatRegistered = computed(() => clinicPolicies.value.vatRegistered === true)
     const contractBranch = ref({})
     const hasClientContract = computed(() => clinicPolicies.value.clientContract?.configured === true)
     const listingContractPreview = computed(() => buildClientContractDocument(clinicPolicies.value, { branch: contractBranch.value }))
@@ -263,6 +267,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       title: '',
       description: '',
       price: 0,
+      vatApplicable: false,
+      vatPriceMode: 'exclusive',
       discountPercent: 0,
       requiresConsultationFirst: false,
         linkedConsultationId: '',
@@ -282,6 +288,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       termsAndConditions: '',
       requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50,
       packageServiceIds: []
+      , treatmentCourseSteps: [], legacyMultiSessionService: false
     })
     const editImageFile = ref(null)
     const editImageFileName = ref('')
@@ -296,9 +303,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       consultationName: '',
       packageName: '',
       packageServiceIds: [],
+      treatmentCourseSteps: [],
       title: '',
       description: '',
       price: 0,
+      vatApplicable: false,
+      vatPriceMode: 'exclusive',
       discountPercent: 0,
       requiresConsultationFirst: false,
         linkedConsultationId: '',
@@ -352,6 +362,33 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
       return ''
     }
+    const courseStepsForListing = (listing) => {
+      if (Array.isArray(listing?.treatmentCourseSteps) && listing.treatmentCourseSteps.length) {
+        return normalizeTreatmentCourseSteps(listing.treatmentCourseSteps)
+      }
+      const ids = Array.isArray(listing?.packageServiceIds) ? listing.packageServiceIds : []
+      const cycles = Math.min(50, Math.max(1, Number(listing?.sessionCount || 1)))
+      const steps = []
+      for (let cycle = 0; cycle < cycles; cycle += 1) for (const id of ids) {
+        const component = posts.value.find(post => post.id === id)
+        steps.push({
+          serviceId: id,
+          visitCount: Math.min(50, Math.max(1, Number(component?.sessionCount || 1))),
+          minimumGapDays: Math.min(365, Math.max(1, Number(component?.sessionIntervalDays || listing.sessionIntervalDays || 1))),
+        })
+      }
+      return steps
+    }
+    const courseComponentsForSteps = (steps) => [...new Set((steps || []).map(step => String(step.serviceId || '').trim()).filter(Boolean))]
+      .map(id => posts.value.find(post => post.id === id)).filter(Boolean)
+    const packageSubtotalForSteps = (steps) => (steps || []).reduce((sum, step) => {
+      const component = posts.value.find(post => post.id === step.serviceId)
+      return sum + Number(component?.price || component?.consultationFee || 0) * Math.max(0, Number(step.visitCount) || 0)
+    }, 0)
+    const packageCourseError = (steps) => validateTreatmentCourseComposition(steps, new Map(courseComponentsForSteps(steps).map(component => [component.id, component])))
+    const listingVisitCount = (listing) => Array.isArray(listing?.treatmentCourseSteps) && listing.treatmentCourseSteps.length
+      ? treatmentCourseVisitCount(listing.treatmentCourseSteps)
+      : Math.max(1, Number(listing?.sessionCount || 1)) * (listing?.packageServiceIds || []).reduce((sum, id) => sum + Math.max(1, Number(posts.value.find(post => post.id === id)?.sessionCount || 1)), 0)
 
     const handleImageUpload = (event) => {
       const file = event.target.files?.[0]
@@ -403,6 +440,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         title: '',
         description: '',
         price: 0,
+        vatApplicable: false,
+        vatPriceMode: 'exclusive',
         discountPercent: 0,
         requiresConsultationFirst: false,
         linkedConsultationId: '',
@@ -420,7 +459,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         fdaRegistrationNumber: '',
         termsAndConditions: '',
         requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50,
-        packageServiceIds: []
+        packageServiceIds: [], treatmentCourseSteps: []
       }
       imageFile.value = null
       imageFileName.value = ''
@@ -437,6 +476,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         title: '',
         description: '',
         price: 0,
+        vatApplicable: false,
+        vatPriceMode: 'exclusive',
         discountPercent: 0,
         requiresConsultationFirst: false,
         linkedConsultationId: '',
@@ -452,7 +493,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         fdaRegistrationNumber: '',
         termsAndConditions: '',
         requiredSupplyIds: [], requiredEquipmentIds: [], allowInstallments: false, depositPercent: 50,
-        packageServiceIds: []
+        packageServiceIds: [], treatmentCourseSteps: []
       }
       editImageFile.value = null
       editImageFileName.value = ''
@@ -595,9 +636,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             ? form.value.consultationName
             : form.value.packageName
       const selectedProduct = postType === 'Product' ? findSelectedProduct() : null
+      const courseSteps = postType === 'Package' ? normalizeTreatmentCourseSteps(form.value.treatmentCourseSteps) : []
       const packageComponents = postType === 'Package'
-        ? (form.value.packageServiceIds || []).map((id) => posts.value.find((post) => post.id === id)).filter(Boolean)
+        ? courseComponentsForSteps(courseSteps)
         : []
+      const packageSubtotal = postType === 'Package' ? packageSubtotalForSteps(courseSteps) : 0
+      const packageDiscountPercent = postType === 'Package' ? Math.min(90, Math.max(0, Number(form.value.discountPercent || 0))) : 0
       const packageFollowUpComponents = packageComponents.filter((post) => post.followUpAllowed === true)
 
       if (isFreePlan.value && postType !== 'Service') {
@@ -641,19 +685,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return
       }
       if (postType === 'Package') {
-        const selectedComponents = (form.value.packageServiceIds || [])
-          .map((id) => posts.value.find((post) => post.id === id))
-          .filter(Boolean)
-        const consultationCount = selectedComponents.filter((post) => post.postType === 'Consultation').length
-        const serviceCount = selectedComponents.filter((post) => post.postType === 'Service').length
-        const packageVisits = Math.max(1, Number(form.value.sessionCount || 1))
-        const validPackage = consultationCount <= 1 && ((consultationCount === 1 && serviceCount >= 1) || serviceCount >= 2 || (serviceCount === 1 && packageVisits > 1))
-        if (!validPackage) {
-          toast.error('A package must combine two services, pair a consultation with a service, or repeat one service across at least two package visits.')
+        const courseError = packageCourseError(courseSteps)
+        if (courseError) {
+          toast.error(courseError)
           return
         }
-        const packageSubtotal = packageComponents.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(form.value.sessionCount || 1))
-        const packageDiscountPercent = Math.min(90, Math.max(0, Number(form.value.discountPercent || 0)))
         if (packageSubtotal <= 0 || packageSubtotal * (1 - packageDiscountPercent / 100) <= 0) {
           toast.error('Enter a package price greater than zero.')
           return
@@ -686,7 +722,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           serviceName: postType === 'Service' ? selectedName.trim() : '',
           consultationName: postType === 'Consultation' ? selectedName.trim() : '',
           packageName: postType === 'Package' ? String(form.value.packageName || selectedName || '').trim() : '',
-          packageServiceIds: postType === 'Package' ? [...(form.value.packageServiceIds || [])] : [],
+          packageServiceIds: postType === 'Package' ? [...new Set(courseSteps.map(step => step.serviceId))] : [],
+          treatmentCourseSteps: postType === 'Package' ? courseSteps : [],
           consultationModes: postType === 'Consultation'
             ? normalizeConsultationModes(form.value.consultationModes)
             : postType === 'Package'
@@ -705,6 +742,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             : postType === 'Package'
               ? Math.round(packageSubtotal * (1 - packageDiscountPercent / 100) * 100) / 100
               : Number(form.value.price || form.value.consultationFee || 0),
+          vatApplicable: postType !== 'Product' && clinicVatRegistered.value && form.value.vatApplicable === true,
+          vatPriceMode: form.value.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
           discountPercent: postType === 'Package' ? packageDiscountPercent : 0,
           discountAmount: postType === 'Package' ? Math.round((packageSubtotal - packageSubtotal * (1 - packageDiscountPercent / 100)) * 100) / 100 : 0,
           requiresConsultationFirst: postType === 'Service' ? Boolean(form.value.requiresConsultationFirst) : false,
@@ -724,10 +763,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               : null,
           consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(form.value.consultationGraceMinutes ?? 10))), bufferMinutes: Math.min(45, Math.max(Number(form.value.consultationGraceMinutes ?? 10) + 5, Number(form.value.consultationBufferMinutes ?? 15))) },
           staffingRequirements: JSON.parse(JSON.stringify(form.value.staffingRequirements || [])),
-          sessionCount: postType === 'Package' ? Math.min(50, Math.max(1, Number(form.value.sessionCount || 1))) : 1,
-          sessionIntervalDays: postType === 'Package' && Number(form.value.sessionCount || 1) > 1 ? Math.min(365, Math.max(0, Number(form.value.sessionIntervalDays || 0))) : 0,
+          sessionCount: postType === 'Package' ? treatmentCourseVisitCount(courseSteps) : 1,
+          sessionIntervalDays: postType === 'Package' ? Math.max(1, ...courseSteps.map(step => step.minimumGapDays)) : 0,
           durationMinutes: postType === 'Product' ? null : postType === 'Package'
-            ? Math.max(1, (form.value.packageServiceIds || []).reduce((total, id) => total + Number(posts.value.find((post) => post.id === id)?.durationMinutes || 0), 0))
+            ? Math.max(1, Number(posts.value.find(post => post.id === courseSteps[0]?.serviceId)?.durationMinutes || 60))
             : Math.max(1, Number(form.value.durationMinutes || 60)),
           productVolume: postType === 'Product' ? String(form.value.productVolume || '').trim() : '',
           productUnit: postType === 'Product' ? String(form.value.productUnit || '').trim() : '',
@@ -738,7 +777,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           depositPercent: 100,
           requiredEquipmentIds: [...(form.value.requiredEquipmentIds || [])],
           requiredSupplyIds: postType === 'Service' ? [...(form.value.requiredSupplyIds || [])] : postType === 'Package'
-            ? [...new Set((form.value.packageServiceIds || []).flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
+            ? [...new Set(packageComponents.flatMap(post => post.requiredSupplyIds || []))]
             : [],
           imageUrl,
           branchId: currentBranchId.value,
@@ -775,6 +814,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         title: post.title || '',
         description: post.description || '',
         price: Number(post.price || 0),
+        vatApplicable: post.vatApplicable === true,
+        vatPriceMode: post.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
         discountPercent: Number(post.discountPercent || 0),
         requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
         linkedConsultationId: String(post.linkedConsultationId || ''),
@@ -785,15 +826,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
         staffingRequirements: JSON.parse(JSON.stringify(post.staffingRequirements || [])),
-        sessionCount: Math.min(50, Math.max(1, Number(post.sessionCount || 1))),
-        sessionIntervalDays: Math.min(365, Math.max(0, Number(post.sessionIntervalDays || 0))),
+        sessionCount: post.postType === 'Package' ? treatmentCourseVisitCount(courseStepsForListing(post)) : 1,
+        sessionIntervalDays: post.postType === 'Package' ? Math.max(1, ...courseStepsForListing(post).map(step => step.minimumGapDays)) : 0,
+        legacyMultiSessionService: post.postType === 'Service' && Number(post.sessionCount || 1) > 1,
         durationMinutes: Number(post.durationMinutes || 60)
         , productVolume: String(post.productVolume || '').trim()
         , productUnit: String(post.productUnit || '').trim()
         , fdaRegistrationNumber: String(post.fdaRegistrationNumber || '').trim()
         , termsAndConditions: String(post.termsAndConditions || '').trim()
         , requiredEquipmentIds: post.requiredEquipmentIds || [], allowInstallments: post.allowInstallments === true, depositPercent: Number(post.depositPercent || 50), requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : []
-        , packageServiceIds: Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : []
+        , packageServiceIds: post.postType === 'Package' ? [...new Set(courseStepsForListing(post).map(step => step.serviceId))] : (Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : [])
+        , treatmentCourseSteps: post.postType === 'Package' ? courseStepsForListing(post) : []
       }
       editImageFile.value = null
       editImageFileName.value = ''
@@ -837,28 +880,23 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('Please complete all required fields.')
         return
       }
+      const editCourseSteps = editForm.value.postType === 'Package' ? normalizeTreatmentCourseSteps(editForm.value.treatmentCourseSteps) : []
+      const editPackageComponents = editForm.value.postType === 'Package' ? courseComponentsForSteps(editCourseSteps) : []
+      const editPackageSubtotal = editForm.value.postType === 'Package' ? packageSubtotalForSteps(editCourseSteps) : 0
+      const editPackageDiscountPercent = editForm.value.postType === 'Package' ? Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) : 0
       const numericError = validateListingNumbers(editForm.value)
       if (numericError) { toast.error(numericError); return }
       if (editForm.value.postType === 'Package') {
-        const selectedComponents = (editForm.value.packageServiceIds || [])
-          .map((id) => posts.value.find((post) => post.id === id))
-          .filter(Boolean)
-        const consultationCount = selectedComponents.filter((post) => post.postType === 'Consultation').length
-        const serviceCount = selectedComponents.filter((post) => post.postType === 'Service').length
-        const packageVisits = Math.max(1, Number(editForm.value.sessionCount || 1))
-        const validPackage = consultationCount <= 1 && ((consultationCount === 1 && serviceCount >= 1) || serviceCount >= 2 || (serviceCount === 1 && packageVisits > 1))
-        if (!validPackage) {
-          toast.error('A package must combine two services, pair a consultation with a service, or repeat one service across at least two package visits.')
+        const courseError = validateTreatmentCourseComposition(editCourseSteps, new Map(editPackageComponents.map(component => [component.id, component])))
+        if (courseError) {
+          toast.error(courseError)
           return
         }
-        if (Number(editForm.value.price) <= 0) {
+        if (editPackageSubtotal <= 0 || editPackageSubtotal * (1 - editPackageDiscountPercent / 100) <= 0) {
           toast.error('Enter a package price greater than zero.')
           return
         }
       }
-      const editPackageComponents = editForm.value.postType === 'Package'
-        ? (editForm.value.packageServiceIds || []).map((id) => posts.value.find((post) => post.id === id)).filter(Boolean)
-        : []
       const editPackageFollowUpComponents = editPackageComponents.filter((post) => post.followUpAllowed === true)
       if (editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst && !posts.value.some(post => post.id === editForm.value.linkedConsultationId && post.postType === 'Consultation' && post.isPublished === true && post.financeStatus === 'approved' && !post.archived)) {
         toast.error('Link an existing published online or on-site consultation before saving this service.');
@@ -900,7 +938,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           serviceName: editForm.value.postType === 'Service' ? editForm.value.name.trim() : '',
           consultationName: editForm.value.postType === 'Consultation' ? editForm.value.name.trim() : '',
           packageName: editForm.value.postType === 'Package' ? editForm.value.name.trim() : '',
-          packageServiceIds: editForm.value.postType === 'Package' ? [...(editForm.value.packageServiceIds || [])] : [],
+          packageServiceIds: editForm.value.postType === 'Package' ? [...new Set(editCourseSteps.map(step => step.serviceId))] : [],
+          treatmentCourseSteps: editForm.value.postType === 'Package' ? editCourseSteps : [],
           consultationModes: editForm.value.postType === 'Consultation'
             ? normalizeConsultationModes(editForm.value.consultationModes)
             : editForm.value.postType === 'Package'
@@ -914,10 +953,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           price: editForm.value.postType === 'Product'
             ? Number(selectedProduct?.unitPrice || editForm.value.price || 0)
             : editForm.value.postType === 'Package'
-              ? Math.round(editPackageComponents.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(editForm.value.sessionCount || 1)) * (1 - Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) / 100) * 100) / 100
+              ? Math.round(editPackageSubtotal * (1 - editPackageDiscountPercent / 100) * 100) / 100
               : Number(editForm.value.price || editForm.value.consultationFee || 0),
-          discountPercent: editForm.value.postType === 'Package' ? Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) : 0,
-          discountAmount: editForm.value.postType === 'Package' ? Math.round((editPackageComponents.reduce((sum, post) => sum + Number(post.price || post.consultationFee || 0) * Math.max(1, Number(post.sessionCount || 1)), 0) * Math.max(1, Number(editForm.value.sessionCount || 1)) * Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) / 100) * 100) / 100 : 0,
+          vatApplicable: editForm.value.postType !== 'Product' && clinicVatRegistered.value && editForm.value.vatApplicable === true,
+          vatPriceMode: editForm.value.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
+          discountPercent: editPackageDiscountPercent,
+          discountAmount: editForm.value.postType === 'Package' ? Math.round(editPackageSubtotal * editPackageDiscountPercent / 100 * 100) / 100 : 0,
           requiresConsultationFirst: editForm.value.postType === 'Service' && !isFreePlan.value ? Boolean(editForm.value.requiresConsultationFirst) : false,
           linkedConsultationId: editForm.value.postType === 'Service' && !isFreePlan.value && editForm.value.requiresConsultationFirst ? editForm.value.linkedConsultationId : null,
           sameDayConsultationAllowed: editForm.value.postType === 'Service' && !isFreePlan.value ? Boolean(editForm.value.sameDayConsultationAllowed) : false,
@@ -935,16 +976,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               : null,
           consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(editForm.value.consultationGraceMinutes ?? 10))), bufferMinutes: Math.min(45, Math.max(Number(editForm.value.consultationGraceMinutes ?? 10) + 5, Number(editForm.value.consultationBufferMinutes ?? 15))) },
           staffingRequirements: JSON.parse(JSON.stringify(editForm.value.staffingRequirements || [])),
-          sessionCount: ['Service', 'Package'].includes(editForm.value.postType)
-            ? Math.min(50, Math.max(1, Number(editForm.value.sessionCount || 1)))
-            : 1,
-          sessionIntervalDays: ['Service', 'Package'].includes(editForm.value.postType) && Number(editForm.value.sessionCount || 1) > 1
-            ? Math.min(365, Math.max(0, Number(editForm.value.sessionIntervalDays || 0)))
-            : 0,
+          sessionCount: editForm.value.postType === 'Package' ? treatmentCourseVisitCount(editCourseSteps) : 1,
+          sessionIntervalDays: editForm.value.postType === 'Package' ? Math.max(1, ...editCourseSteps.map(step => step.minimumGapDays)) : 0,
           durationMinutes: editForm.value.postType === 'Product'
             ? null
             : editForm.value.postType === 'Package'
-              ? Math.max(1, editForm.value.packageServiceIds.reduce((total, id) => total + Number(posts.value.find((post) => post.id === id)?.durationMinutes || 0), 0))
+              ? Math.max(1, Number(posts.value.find(post => post.id === editCourseSteps[0]?.serviceId)?.durationMinutes || 60))
               : Math.max(1, Number(editForm.value.durationMinutes || (editForm.value.postType === 'Consultation' ? 30 : 60))),
           productVolume: editForm.value.postType === 'Product' ? String(editForm.value.productVolume || '').trim() : '',
           productUnit: editForm.value.postType === 'Product' ? String(editForm.value.productUnit || '').trim() : '',
@@ -959,7 +996,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           depositPercent: 100,
           requiredEquipmentIds: [...(editForm.value.requiredEquipmentIds || [])],
           requiredSupplyIds: editForm.value.postType === 'Service' ? [...(editForm.value.requiredSupplyIds || [])] : editForm.value.postType === 'Package'
-            ? [...new Set(editForm.value.packageServiceIds.flatMap((id) => posts.value.find((post) => post.id === id)?.requiredSupplyIds || []))]
+            ? [...new Set(editPackageComponents.flatMap(post => post.requiredSupplyIds || []))]
             : [],
           updatedAt: serverTimestamp()
         }
@@ -1108,6 +1145,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       pageLoading,
       listingAction,
       canManageListingWorkflow,
+      clinicVatRegistered,
       loading,
       form,
       applicablePolicies,
@@ -1139,7 +1177,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       deletePost,
       resetForm,
       formatCurrency,
-      formatDate
+      formatDate,
+      listingVisitCount
     }
   }
 }

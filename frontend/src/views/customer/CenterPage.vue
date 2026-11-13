@@ -181,6 +181,7 @@
                       <h3>{{ item.title || item.name }}</h3>
                       <p class="service-preview-duration"><Icon icon="lucide:clock-3" width="16" aria-hidden="true" />{{ item.durationMinutes ? item.durationMinutes + ' minutes' : 'Confirm duration with clinic' }}</p>
                       <p class="service-preview-price">{{ formatServicePrice(item.price) }}</p>
+                      <p v-if="item.vatApplicable" class="service-preview-tax">{{ item.vatPriceMode === 'inclusive' ? '12% VAT included' : '+12% VAT at checkout' }}</p>
                       <button type="button" class="service-preview-details" aria-haspopup="dialog" @click="openServiceDetails(item)">View Details<Icon icon="lucide:arrow-up-right" width="17" aria-hidden="true" /></button>
                     </div>
                   </article>
@@ -206,6 +207,7 @@
                     <div class="p-4">
                       <h3 class="text-xl font-semibold text-[#3d281d]">{{ item.title || item.name }}</h3>
                       <p class="mt-2 text-[#8b6a4d]">₱{{ Number(item.consultationFee || item.price || 0).toFixed(2) }}</p>
+                      <p v-if="item.vatApplicable" class="mt-1 text-xs text-[#8b6a4d]">{{ item.vatPriceMode === 'inclusive' ? '12% VAT included' : '+12% VAT at checkout' }}</p>
                       <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
                       <div class="mt-3 flex flex-wrap gap-2">
                         <span class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium">
@@ -403,22 +405,20 @@
                       {{ sameDayConsultationRequested ? 'Consultation fee due after any required clinic approval:' : 'Full payment due after approval:' }}
                       <span class="ml-1 font-semibold text-[#3d281d]">₱{{ bookingDueAmount.toFixed(2) }}</span>
                     </p>
-                    <p v-if="sameDayConsultationRequested" class="mt-1 text-xs leading-5 text-[#8b6a4d]">Treatment fee: ₱{{ Number(selectedServices[0]?.price || 0).toFixed(2) }}. It is not charged unless the practitioner clears the treatment after the consultation.</p>
-                    <p class="mt-1 text-xs text-[#8b6a4d]">
-                      System commission ({{ serviceCommissionPercent }}%):
-                      <span class="ml-1 font-semibold text-[#3d281d]">₱{{ bookingCommissionAmount.toFixed(2) }}</span>
-                    </p>
-                    <p class="mt-1 text-xs text-[#8b6a4d]">
-                      Clinic share:
-                      <span class="ml-1 font-semibold text-[#3d281d]">₱{{ bookingNetAmount.toFixed(2) }}</span>
-                    </p>
+                    <dl class="mt-3 space-y-1 border-t border-[#e6cfb0] pt-3 text-xs text-[#6f4a2d]">
+                      <div class="flex justify-between gap-3"><dt>Subtotal</dt><dd>₱{{ bookingPricingSnapshot.subtotal.toFixed(2) }}</dd></div>
+                      <div v-if="bookingPricingSnapshot.vatApplicable" class="flex justify-between gap-3"><dt>VAT (12%{{ bookingPricingSnapshot.vatPriceMode === 'inclusive' ? ', included' : '' }})</dt><dd>₱{{ bookingPricingSnapshot.vatAmount.toFixed(2) }}</dd></div>
+                      <div v-else class="flex justify-between gap-3"><dt>VAT</dt><dd>No VAT</dd></div>
+                      <div class="flex justify-between gap-3 border-t border-[#e6cfb0] pt-1 font-semibold text-[#3d281d]"><dt>{{ sameDayConsultationRequested ? 'Consultation total due first' : 'Total' }}</dt><dd>₱{{ bookingPricingSnapshot.total.toFixed(2) }}</dd></div>
+                    </dl>
+                    <p v-if="sameDayConsultationRequested" class="mt-2 text-xs leading-5 text-[#8b6a4d]">Treatment total if cleared: ₱{{ sameDayTreatmentPricing.total.toFixed(2) }}. It is not charged unless the practitioner clears the treatment after the consultation.</p>
                     <p v-if="selectedServiceDurationMinutes" class="mt-1 text-xs text-[#8b6a4d]">
                       Total duration:
                       <span class="ml-1 font-semibold text-[#3d281d]">{{ sameDayConsultationRequested ? bookingDurationMinutes : selectedServiceDurationMinutes }} mins{{ sameDayConsultationRequested ? ' including consultation and buffer' : '' }}</span>
                     </p>
                     <p v-if="selectedTreatmentSessionCount > 1" class="mt-1 text-xs text-[#8b6a4d]">
                       Treatment plan:
-                      <span class="ml-1 font-semibold text-[#3d281d]">{{ selectedTreatmentSessionCount }} sessions; the clinic schedules each visit after approval.</span>
+                      <span class="ml-1 font-semibold text-[#3d281d]">{{ selectedTreatmentSessionCount }} visits. You are booking the first visit; the clinic arranges later visits after each prior visit is completed or resolved.</span>
                     </p>
                     <div class="mt-4 border-t border-[#e6cfb0] pt-4">
                       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Time Slots</p>
@@ -643,7 +643,8 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { buildWeekScheduleMap, getScheduleDayWindow } from '@/utils/employeeSchedules'
-import { calculateCommissionAmount, calculateNetAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
+import { calculateCommissionAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
+import { appointmentCommissionAmount, buildAppointmentPricing, sumAppointmentPricing } from '../../../../shared/appointmentPricing.js'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import ServiceDetailsModal from '@/components/common/ServiceDetailsModal.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
@@ -794,10 +795,21 @@ const bookingAvailabilityHint = computed(() => {
 const selectedServiceTotal = computed(() =>
   selectedServices.value.reduce((sum, service) => sum + Number(service.price || 0), 0)
 )
+const priceSnapshotForService = (service) => buildAppointmentPricing({
+  listedPrice: Number(service?.price || 0),
+  vatApplicable: service?.vatApplicable === true,
+  vatPriceMode: service?.vatPriceMode,
+})
+const selectedServicePricing = computed(() => sumAppointmentPricing(selectedServices.value.map(priceSnapshotForService)))
+const sameDayTreatmentPricing = computed(() => priceSnapshotForService(sameDayTreatmentService.value))
 const selectedServiceDurationMinutes = computed(() =>
   selectedServices.value.reduce((sum, service) => sum + Number(service.type === 'Package' ? service.packageComponents?.[0]?.durationMinutes || 60 : service.durationMinutes || 0), 0)
 )
-const selectedTreatmentSessionCount = computed(() => Math.max(1, ...selectedServices.value.map(service => service.type === 'Package' ? Number(service.sessionCount || 1) * (service.packageComponents || []).reduce((sum, component) => sum + Number(component.sessionCount || 1), 0) : Number(service.sessionCount || 1))))
+const selectedTreatmentSessionCount = computed(() => Math.max(1, ...selectedServices.value.map(service => service.type === 'Package'
+  ? (service.treatmentCourseSteps?.length
+    ? service.treatmentCourseSteps.reduce((sum, step) => sum + Number(step.visitCount || 0), 0)
+    : Number(service.sessionCount || 1) * (service.packageComponents || []).reduce((sum, component) => sum + Number(component.sessionCount || 1), 0))
+  : 1)))
 const groupAttendeeServices = computed(() => [...(groupIncludeOrganizer.value ? selectedServices.value : []), ...groupGuests.value.map(guest => items.value.find(item => item.id === guest.serviceId) || selectedServices.value[0]).filter(Boolean)])
 const groupHasConsultationPrerequisite = computed(() => groupBookingEnabled.value && groupAttendeeServices.value.some(service => service.requiresConsultationFirst === true))
 const sameDayConsultationRequested = ref(false)
@@ -836,15 +848,19 @@ const bookingDurationMinutes = computed(() => {
   return selectedServices.value.reduce((sum, service) => sum + (service.consultationMode === 'online' ? onlinePolicy(service.consultationPolicy).bufferMinutes : 0), 0) + serviceDuration + consultationDuration
 })
 const selectedServiceCommission = computed(() =>
-  calculateCommissionAmount(selectedServiceTotal.value, serviceCommissionPercent)
+  appointmentCommissionAmount(selectedServicePricing.value.subtotal)
 )
-const bookingDueAmount = computed(() => sameDayConsultationRequested.value
-  ? Number(sameDayLinkedConsultation.value?.price || 0)
-  : groupBookingEnabled.value ? groupAttendeeServices.value.reduce((sum, service) => sum + Number(service.price || 0), 0) : selectedServiceTotal.value)
-const bookingCommissionAmount = computed(() => calculateCommissionAmount(bookingDueAmount.value, serviceCommissionPercent))
-const bookingNetAmount = computed(() => calculateNetAmount(bookingDueAmount.value, bookingCommissionAmount.value))
+const bookingPricingSnapshot = computed(() => {
+  const pricedServices = sameDayConsultationRequested.value
+    ? [sameDayLinkedConsultation.value].filter(Boolean)
+    : groupBookingEnabled.value ? groupAttendeeServices.value : selectedServices.value
+  return sumAppointmentPricing(pricedServices.map(priceSnapshotForService))
+})
+const bookingDueAmount = computed(() => bookingPricingSnapshot.value.total)
+const bookingCommissionAmount = computed(() => appointmentCommissionAmount(bookingPricingSnapshot.value.subtotal))
+const bookingNetAmount = computed(() => Math.round((bookingPricingSnapshot.value.subtotal - bookingCommissionAmount.value) * 100) / 100)
 const selectedServiceNetAmount = computed(() =>
-  calculateNetAmount(selectedServiceTotal.value, selectedServiceCommission.value)
+  Math.round((selectedServicePricing.value.subtotal - selectedServiceCommission.value) * 100) / 100
 )
 const selectedServicesRequireConsultation = computed(() =>
   selectedServices.value.some((service) => Boolean(service.requiresConsultationFirst) && service.packageComponents?.[0]?.type !== 'Consultation')
@@ -1486,6 +1502,8 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       title: post.title || '',
       description: post.description || '',
       price: Number(post.price || 0),
+      vatApplicable: post.vatApplicable === true,
+      vatPriceMode: post.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
       consultationName: post.consultationName || '',
       requiresConsultationFirst: Boolean(post.requiresConsultationFirst),
       linkedConsultationId: String(post.linkedConsultationId || ''),
@@ -1497,7 +1515,15 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       consultationPolicy: post.consultationPolicy || null,
       durationMinutes: post.durationMinutes != null ? Number(post.durationMinutes) : null,
       staffingRequirements: post.staffingRequirements || [],
-      sessionCount: Math.max(1, Number(post.sessionCount || 1)),
+      sessionCount: post.postType === 'Package'
+        ? (Array.isArray(post.treatmentCourseSteps) && post.treatmentCourseSteps.length
+          ? post.treatmentCourseSteps.reduce((sum, step) => sum + Number(step.visitCount || 0), 0)
+          : Math.max(1, Number(post.sessionCount || 1)) * packageComponents.reduce((sum, component) => sum + Math.max(1, Number(component.sessionCount || 1)), 0))
+        : 1,
+      treatmentCourseSteps: Array.isArray(post.treatmentCourseSteps) ? post.treatmentCourseSteps.map(step => {
+        const component = catalogPosts.find(candidate => candidate.id === step.serviceId) || {}
+        return { serviceId: String(step.serviceId || ''), serviceName: component.title || component.serviceName || component.consultationName || 'Unavailable service', visitCount: Math.max(1, Number(step.visitCount || 1)), minimumGapDays: Math.max(1, Number(step.minimumGapDays || 1)) }
+      }) : [],
       sessionIntervalDays: post.sessionIntervalDays != null ? Number(post.sessionIntervalDays) : null,
       productVolume: String(post.productVolume || '').trim(),
       productUnit: String(post.productUnit || '').trim(),
@@ -3560,7 +3586,7 @@ const formatChatTime = (timestamp) => {
 .service-preview-content { display: flex; flex: 1; flex-direction: column; align-items: flex-start; padding: 22px; }
 .service-preview-content h3 { margin: 0 0 12px; color: #3d281d; font-size: 19px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .service-preview-duration { display: flex; align-items: center; gap: 7px; margin: 0; color: #87684f; font-size: 13px; }
-.service-preview-price { margin: 18px 0 22px; color: #855335; font-size: 21px; font-weight: 600; }
+.service-preview-price { margin: 18px 0 4px; color: #855335; font-size: 21px; font-weight: 600; }.service-preview-tax { margin: 0 0 18px; color: #87684f; font-size: 12px; }
 .service-preview-details { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-height: 43px; margin-top: auto; padding: 10px 14px; border: 1px solid #d9b68f; border-radius: 11px; background: #f8eddf; color: #704a30; font-size: 13px; font-weight: 600; transition: background .15s, border-color .15s; }
 .service-preview-details:hover { background: #f0ddc5; border-color: #b98a5b; }
 .service-preview-details:focus-visible { outline: 3px solid #b88759; outline-offset: 3px; }

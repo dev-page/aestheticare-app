@@ -3,6 +3,7 @@ import { prepareBooking } from './bookingResources.js'
 import { assertWorkflow as check, cents, normalized } from './bookingWorkflow.js'
 import { buildBookingTermsDocument } from '../../shared/clientContract.js'
 import { prepareSameDayPair, sameDayAppointment } from './sameDayBookings.js'
+import { sumAppointmentPricing } from '../../shared/appointmentPricing.js'
 
 export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClinicAction,
   assertClinicPlanFeature, getBookingRange, rangesOverlap, getApprovedLeaveForDate, getClinicPoliciesForBranch, sendBooking }) => {
@@ -186,6 +187,9 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
           ...(childRefs.length > 1 ? { parentAppointmentId: parentRef.id, bookingOrderId: bookingRef.id } : {}),
         }))
         const total = appointments.reduce((sum, row) => sum + cents(row.totalAmount), 0) / 100
+        const pricingSnapshot = sumAppointmentPricing(appointments.map(row => row.pricingSnapshot))
+        const commissionAmount = appointments.reduce((sum, row) => sum + cents(row.commissionAmount), 0) / 100
+        const merchantNetAmount = appointments.reduce((sum, row) => sum + cents(row.merchantNetAmount), 0) / 100
         appointments.forEach((appointment, index) => {
           tx.set(childRefs[index], appointment)
           const count = appointment.treatmentPlan.totalSessions
@@ -205,7 +209,7 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
           bookedByName: arranger.name, bookedByEmail: arranger.email, bookedByPhone: arranger.phone, bookingAgreement,
           service: `Walk-in services (${ids.length} appointments)`,
           date: cleanRows.map(row => row.date).sort()[0], time: '', practitionerId: '', totalServiceDurationMinutes: 0, resources: [],
-          amount: total, totalAmount: total, amountPaid: 0, status: 'Unpaid', approvalStatus: 'Approved', paymentStatus: 'Pending',
+          pricingSnapshot, amount: total, totalAmount: total, commissionPercent: 10, commissionAmount, merchantNetAmount, amountPaid: 0, status: 'Unpaid', approvalStatus: 'Approved', paymentStatus: 'Pending',
           appointmentIds: ids, paymentManagedByOrganizer: false, createdBy: req.user.uid, createdAt: now, updatedAt: now,
           isBookingOrderParent: true }
         if (ids.length > 1) tx.set(parentRef, summary)

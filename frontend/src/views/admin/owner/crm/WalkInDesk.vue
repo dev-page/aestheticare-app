@@ -10,6 +10,8 @@
           <section class="desk-card">
             <div class="section-heading"><div><p class="eyebrow">POS</p><h2>Walk-in payments</h2><p class="muted small">Unpaid walk-in appointments stay here if you leave the booking screen. Confirm the recipient's signed treatment agreement before taking payment. Provisional same-day treatments appear only after practitioner clearance.</p></div><div class="flex gap-2"><button type="button" class="desk-button secondary" :disabled="busy" @click="refreshPaymentQueue">Refresh</button><RouterLink v-if="canCreateAppointments" to="/crm/appointments/new" class="desk-button primary">Book a walk-in</RouterLink></div></div>
             <article v-for="appointment in posAppointments" :key="appointment.id" class="payment-card">
+              <dl v-if="appointment.pricingSnapshot" class="price-breakdown" aria-label="Appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(appointment.pricingSnapshot.subtotal) }}</dd></div><div><dt>{{ appointment.pricingSnapshot.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ appointment.pricingSnapshot.vatApplicable ? currency(appointment.pricingSnapshot.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(appointment.pricingSnapshot.total) }}</dd></div></dl>
+              <p v-else class="muted small">Tax breakdown unavailable for this older booking. Total due: {{ currency(appointment.totalAmount ?? appointment.amount) }}</p>
               <div class="section-heading"><div><h3>{{ appointment.clientName || appointment.customerName }}</h3><p>{{ appointment.service }}</p><p class="muted small">{{ dateLabel(appointment.date) }} · {{ formatClockTime(appointment.time) }} · {{ appointment.practitionerName }}</p><p class="muted small">{{ appointment.customerEmail }}</p></div><strong>{{ currency(appointment.totalAmount ?? appointment.amount) }}</strong></div>
               <p class="muted small">Arranged by {{ appointment.bookedByName }} · Booking terms: {{ appointment.bookingAgreementStatus === 'signed' ? 'Signed' : 'Legacy booking' }} · Treatment agreement: {{ appointment.contract?.status === 'signed' ? 'Signed by recipient' : 'Awaiting recipient signature' }}.</p>
               <div v-if="appointment.bookingWorkflowVersion === 2 && appointment.contract?.status !== 'signed'" class="desk-alert agreement-required"><p>The treatment recipient must sign before payment can be recorded.</p><button type="button" class="desk-button secondary agreement-button" :disabled="busy" @click="contractTarget = appointment">Review &amp; sign treatment agreement</button></div>
@@ -61,6 +63,7 @@
           </section>
           <section class="desk-card booking-summary">
             <div><p class="eyebrow">Review booking</p><h2>{{ flatVisits.length }} appointment{{ flatVisits.length === 1 ? '' : 's' }}</h2><p class="muted small">One client · Same-day requests collect the consultation fee first; treatment is payable only after practitioner clearance.</p></div><strong class="total-price">{{ estimatedTotal }}</strong>
+            <dl class="price-breakdown booking-price-breakdown" aria-label="Estimated appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(estimatedPricing.subtotal) }}</dd></div><div><dt>{{ estimatedPricing.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ estimatedPricing.vatApplicable ? currency(estimatedPricing.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(estimatedPricing.total) }}</dd></div></dl>
             <details v-if="policy.clientContract?.configured" class="contract-preview"><summary>Review the clinic agreement</summary><ClientContractDocument :document="contractPreview" /></details>
             <ClientContractDocument :document="bookingTermsPreview" />
             <p class="muted small">Booking signer: <strong>{{ bookingForSomeoneElse ? booker.name || 'Enter the arranger name above' : clientFor(selectedClientId)?.fullName || 'Select the client above' }}</strong>. Hand the device to this person to accept booking and payment terms. The treatment recipient signs a separate agreement before payment; the arranger cannot sign it for them.</p>
@@ -72,6 +75,8 @@
         <section v-else class="desk-card">
             <div class="section-heading"><div><p class="eyebrow">Step 3</p><h2>Consent &amp; payment</h2><p class="muted small">For each appointment, have the treatment recipient sign the agreement before full payment. A same-day treatment stays locked until the practitioner clears it after the consultation.</p></div><div class="flex gap-2"><RouterLink to="/crm/pos" class="desk-button secondary">Open POS queue</RouterLink><button type="button" class="desk-button secondary" :disabled="busy" @click="startNewBooking">New booking</button></div></div>
           <article v-for="appointment in createdAppointments" :key="appointment.id" class="payment-card">
+            <dl v-if="appointment.pricingSnapshot" class="price-breakdown" aria-label="Appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(appointment.pricingSnapshot.subtotal) }}</dd></div><div><dt>{{ appointment.pricingSnapshot.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ appointment.pricingSnapshot.vatApplicable ? currency(appointment.pricingSnapshot.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(appointment.pricingSnapshot.total) }}</dd></div></dl>
+            <p v-else class="muted small">Tax breakdown unavailable for this older booking. Total due: {{ currency(appointment.totalAmount ?? appointment.amount) }}</p>
             <div class="section-heading"><div><h3>{{ appointment.clientName || appointment.customerName }}</h3><p>{{ appointment.service }}</p><p class="muted small">{{ dateLabel(appointment.date) }} · {{ formatClockTime(appointment.time) }} · {{ appointment.practitionerName }}</p><p class="muted small">{{ appointment.customerEmail }}</p></div><strong>{{ currency(appointment.totalAmount ?? appointment.amount) }}</strong></div>
             <p class="muted small">Arranged by {{ appointment.bookedByName }} · Booking terms signed. Treatment agreement: {{ appointment.contract?.status === 'signed' ? 'Signed by recipient' : 'Awaiting recipient signature' }}.</p>
             <div v-if="appointment.sameDayTreatmentStatus === 'pending_clinical_clearance'" class="desk-alert agreement-required"><p>This treatment time is provisional. The assigned practitioner must finish the consultation and clear treatment for today before the recipient can sign or pay for it. Only the consultation can be paid now.</p></div>
@@ -121,6 +126,7 @@ import { buildWeekScheduleMap } from '@/utils/employeeSchedules'
 import { manilaDate, walkInSlots } from '@/utils/walkInScheduling'
 import { formatClockTime } from '@/utils/appointmentDss'
 import { buildClientContractDocument, buildBookingTermsDocument } from '../../../../../../shared/clientContract.js'
+import { buildAppointmentPricing, sumAppointmentPricing } from '../../../../../../shared/appointmentPricing.js'
 
 const { pageLoading, trackPageLoad } = usePageLoading()
 const { hasPermission } = usePermissions()
@@ -174,15 +180,24 @@ const sameDayTreatmentTime = visit => {
   return Number.isFinite(start) ? minutesToTime(start + Number(consultation?.durationMinutes || 60) + Math.max(0, Number(service?.sameDayConsultationBufferMinutes ?? 15))) : ''
 }
 const currency = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0))
+const pricingFor = service => buildAppointmentPricing({
+  listedPrice: Number(service?.price || 0),
+  vatApplicable: policy.value.vatRegistered === true && service?.vatApplicable === true,
+  vatPriceMode: service?.vatPriceMode,
+})
+const visitPricing = visit => {
+  const service = serviceFor(visit.serviceId)
+  return pricingFor(visit.sameDayConsultationRequested ? sameDayConsultationFor(service) : service)
+}
 const dateLabel = date => date ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'Asia/Manila' }).format(new Date(`${date}T00:00:00+08:00`)) : 'Date not selected'
 const clientOptions = computed(() => [{ value: '', label: 'Select a registered client' }, ...clients.value.map(client => ({ value: client.id, label: `${client.fullName} · ${client.email || 'No email'}` }))])
 const serviceOptions = computed(() => [{ value: '', label: 'Select an offering' }, ...services.value.map(service => ({ value: service.id, label: `${service.name} · ${currency(service.price)}` }))])
 const practitionerOptions = computed(() => [{ value: '', label: 'Select a practitioner' }, ...practitioners.value.map(person => ({ value: person.id, label: person.fullName }))])
 const flatVisits = computed(() => visits.value.map(visit => ({ ...visit, clientId: selectedClientId.value })))
-const estimatedTotal = computed(() => currency(flatVisits.value.reduce((sum, row) => {
-  const service = serviceFor(row.serviceId)
-  return sum + Number(row.sameDayConsultationRequested ? sameDayConsultationFor(service)?.price || 0 : service?.price || 0)
-}, 0)))
+const estimatedPricing = computed(() => sumAppointmentPricing(flatVisits.value
+  .filter(row => serviceFor(row.serviceId))
+  .map(visitPricing)))
+const estimatedTotal = computed(() => currency(estimatedPricing.value.total))
 const contractPreview = computed(() => buildClientContractDocument(policy.value, { branch: branch.value, source: 'walk_in' }))
 const bookingTermsPreview = computed(() => buildBookingTermsDocument(policy.value, { branch: branch.value, source: 'walk_in' }))
 watch([bookingForSomeoneElse, booker, policy], () => { policyAcknowledged.value = false; bookingSignature.value = '' }, { deep: true })
@@ -330,6 +345,16 @@ async function startOnlineCheckout(appointment, method) {
       paymentMethodTypes: [method.toLowerCase()],
       description: `Walk-in appointment: ${appointment.service || 'Clinic service'}`,
       referenceNumber: `WALKIN-${appointment.id}`,
+      lineItems: appointment.pricingSnapshot && Math.round(Number(appointment.pricingSnapshot.total) * 100) === amount
+        ? [
+            ...(Number(appointment.pricingSnapshot.subtotal) > 0
+              ? [{ amount: Math.round(Number(appointment.pricingSnapshot.subtotal) * 100), currency: 'PHP', name: `${String(appointment.service || 'Appointment').slice(0, 55)} subtotal`, quantity: 1 }]
+              : []),
+            ...(appointment.pricingSnapshot.vatApplicable && Number(appointment.pricingSnapshot.vatAmount) > 0
+              ? [{ amount: Math.round(Number(appointment.pricingSnapshot.vatAmount) * 100), currency: 'PHP', name: 'VAT (12%)', quantity: 1 }]
+              : []),
+          ]
+        : undefined,
       billing: { name: appointment.bookedByName || appointment.clientName || appointment.customerName || 'Clinic customer', email: appointment.customerEmail || '' },
       metadata: { module: 'clinic_walk_in_pos', saleMode: 'appointment', source: 'walk_in_pos', appointmentId: appointment.id, branchId: branchId.value },
       successUrl: `${window.location.origin}/crm/pos?walkin_payment=success`,
@@ -376,7 +401,11 @@ function printReceipt(receipt) {
   const popup = window.open('', '_blank')
   if (!popup) return void (error.value = 'Allow pop-ups to print the receipt.')
   const content = popup.document.createElement('pre')
-  content.textContent = `Walk-in receipt\n${receipt.clientName}\n${receipt.service}\n${receipt.date} at ${formatClockTime(receipt.time)}\nPaid: ${currency(receipt.total)}\nPayment method: ${receipt.method || 'Cash'}${receipt.method === 'Cash' ? `\nCash received: ${currency(receipt.tendered)}\nChange: ${currency(receipt.change)}` : ''}\nService code: ${receipt.serviceKey}`
+  const pricing = receipt.pricingSnapshot
+  const priceDetails = pricing
+    ? `\nSubtotal: ${currency(pricing.subtotal)}\nVAT: ${pricing.vatApplicable ? currency(pricing.vatAmount) : 'Not applied'}\nTotal: ${currency(pricing.total)}`
+    : `\nPaid: ${currency(receipt.total)}`
+  content.textContent = `Walk-in receipt\n${receipt.clientName}\n${receipt.service}\n${receipt.date} at ${formatClockTime(receipt.time)}${priceDetails}\nPayment method: ${receipt.method || 'Cash'}${receipt.method === 'Cash' ? `\nCash received: ${currency(receipt.tendered)}\nChange: ${currency(receipt.change)}` : ''}\nService code: ${receipt.serviceKey}`
   popup.document.body.append(content)
   popup.print()
 }
@@ -416,6 +445,7 @@ button:disabled { cursor: not-allowed; opacity: .5; } button:focus-visible, inpu
 .booking-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }.total-price { font-size: 25px; color: #426e56; }.summary-acknowledgement { width: 100%; margin-top: 0; }
 .contract-preview { width: 100%; padding: 14px; border: 1px solid #ead2b7; border-radius: 10px; font-size: 13px; }.contract-preview summary { cursor: pointer; color: #805638; margin-bottom: 12px; }
 .payment-card { padding: 20px; border: 1px solid #ead2b7; border-radius: 12px; margin: 18px 0; }.payment-card .section-heading { margin-bottom: 12px; }.payment-card .section-heading > strong { color: #426e56; font-size: 21px; }
+.price-breakdown { display: grid; gap: 8px; max-width: 430px; margin: 0 0 16px auto; padding: 14px 16px; border: 1px solid #ead2b7; border-radius: 10px; background: #fffaf3; color: #654733; font-size: 13px; }.price-breakdown > div { display: flex; justify-content: space-between; gap: 20px; }.price-breakdown dt, .price-breakdown dd { margin: 0; }.price-breakdown dd { font-weight: 600; }.price-breakdown-total { border-top: 1px solid #ead2b7; padding-top: 8px; color: #493225; font-size: 15px; font-weight: 700; }.booking-price-breakdown { width: 100%; max-width: none; margin: 0; }
 .payment-form { display: flex; align-items: flex-end; gap: 14px; max-width: 720px; }.payment-form > div { flex: 1; }.online-checkout-pending { display: grid; gap: 12px; width: 100%; }.online-checkout-pending p { margin: 0; }
 .agreement-button { margin-top: 14px; }
 .payment-success { padding: 14px; background: #eef6ef; border: 1px solid #cadccc; border-radius: 10px; color: #426e56; font-size: 13px; }.payment-success p { margin: 0 0 8px; }

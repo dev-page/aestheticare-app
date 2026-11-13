@@ -1,11 +1,21 @@
 import { normalizeStaffing } from '../../shared/practitionerTeam.js'
-export const financialFields = ['price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount']
+import { validateTreatmentCourseComposition, validateTreatmentCourseSteps } from '../../shared/treatmentCourse.js'
+export const financialFields = ['price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount', 'vatApplicable', 'vatPriceMode']
 export const validateListingNumbers = (post) => {
   try { normalizeStaffing(post.staffingRequirements) } catch (error) { return error.message }
   if (post.price === '' || post.price == null || !Number.isFinite(Number(post.price)) || Number(post.price) < 0) return 'Enter a valid price of zero or greater.'
+  if (post.vatApplicable === true) {
+    if (!['service', 'consultation', 'package'].includes(String(post.postType || '').toLowerCase())) return 'VAT can only be configured for services, consultations, or packages.'
+    if (!['inclusive', 'exclusive'].includes(post.vatPriceMode)) return 'Choose whether the listed price includes VAT or has VAT added at checkout.'
+  }
   if (['Service', 'Package'].includes(post.postType)) {
     const count = post.sessionCount === undefined ? 1 : Number(post.sessionCount)
     if (!Number.isInteger(count) || count < 1 || count > 50) return 'Number of treatment sessions must be a whole number from 1 to 50.'
+    if (post.postType === 'Service' && count !== 1) return 'A Service listing is a single visit. Create a Service Package for a multi-visit treatment course.'
+  }
+  if (post.postType === 'Package' && Array.isArray(post.treatmentCourseSteps)) {
+    const courseError = validateTreatmentCourseSteps(post.treatmentCourseSteps)
+    if (courseError) return courseError
   }
   if (post.postType === 'Package' && (!Number.isFinite(Number(post.discountPercent || 0)) || Number(post.discountPercent || 0) < 0 || Number(post.discountPercent || 0) > 90)) return 'Package discount must be between 0% and 90%.'
   return ''
@@ -103,6 +113,13 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         // Legacy clinic records without a plan retain their existing approval
         // workflow until their subscription data is migrated.
         const isFreePlan = String(clinic.subscriptionPlan || clinic.plan || '').trim().toLowerCase() === 'free'
+        if (['submit', 'publish'].includes(action) && post.vatApplicable === true) {
+          const policyOwnerId = String(clinic.ownerId || clinic.organizationOwnerId || '').trim()
+          const taxPolicy = policyOwnerId
+            ? (await tx.get(db.collection('clinicPolicies').doc(policyOwnerId))).data()
+            : (await tx.get(db.collection('clinicPolicies').doc(post.branchId))).data()
+          if (taxPolicy?.vatRegistered !== true) throw Object.assign(new Error('Enable the clinic VAT setting before submitting or publishing a VAT-applicable listing.'), { status: 409 })
+        }
         if (['submit', 'publish'].includes(action) && post.postType === 'Service' && post.requiresConsultationFirst) {
           const linkedId = String(post.linkedConsultationId || '').trim()
           const linked = linkedId ? (await tx.get(db.collection('productServicePosts').doc(linkedId))).data() : null
@@ -123,9 +140,20 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
           { isFreePlan },
         )
         if (action === 'publish' && post.postType === 'Package') {
-          for (const id of post.packageServiceIds || []) {
+          const stepIds = Array.isArray(post.treatmentCourseSteps)
+            ? [...new Set(post.treatmentCourseSteps.map(step => String(step?.serviceId || '').trim()).filter(Boolean))]
+            : []
+          const componentIds = stepIds.length ? stepIds : post.packageServiceIds || []
+          const components = []
+          for (const id of componentIds) {
             const component = (await tx.get(db.collection('productServicePosts').doc(id))).data()
             if (!component || component.branchId !== post.branchId || component.financeStatus !== 'approved' || component.isPublished !== true) throw Object.assign(new Error('Approve and publish the included services and consultations before publishing this package.'), { status: 409 })
+            components.push({ ...component, id })
+          }
+          if (Array.isArray(post.treatmentCourseSteps)) {
+            const courseServices = new Map(components.map(component => [String(component.id || ''), component]))
+            const courseError = validateTreatmentCourseComposition(post.treatmentCourseSteps, courseServices)
+            if (courseError) throw Object.assign(new Error(courseError), { status: 409 })
           }
         }
         const timestamp = admin.firestore.FieldValue.serverTimestamp()

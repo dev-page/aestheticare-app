@@ -22,6 +22,7 @@ const online = computed(() => props.service.type === 'Consultation' && props.ser
 const policy = computed(() => onlinePolicy(props.service.consultationPolicy))
 const staffing = computed(() => Array.isArray(props.service.staffingRequirements) ? props.service.staffingRequirements.filter(member => member?.type && Number(member.count) > 0) : [])
 const price = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value) || 0)
+const vatDescription = offer => offer?.vatApplicable === true ? (offer.vatPriceMode === 'inclusive' ? '12% VAT included' : '12% VAT added at checkout') : 'No VAT'
 const profession = value => ({ doctor: 'Doctor', nurse: 'Registered nurse', aesthetician: 'Aesthetician / facialist', other: 'Practitioner' }[value] || value)
 let previousFocus
 const onKeydown = event => {
@@ -62,31 +63,33 @@ onUnmounted(() => {
               <p class="service-details-eyebrow">Explore your treatment</p>
               <h2 id="service-details-title">{{ title }}</h2>
               <p class="service-details-price">{{ price(service.price) }}</p>
+              <p class="service-details-tax">{{ vatDescription(service) }}</p>
             </header>
             <dl class="service-details-facts">
               <div v-if="service.type !== 'Consultation'"><dt>Category</dt><dd>{{ normalizeServiceCategory(service.serviceCategory) }}</dd></div>
               <div><dt><Icon icon="lucide:clock-3" width="15" /> Duration</dt><dd>{{ service.durationMinutes ? `${service.durationMinutes} minutes` : 'Confirm with the clinic' }}</dd></div>
-              <div><dt><Icon icon="lucide:calendar-days" width="15" /> Treatment sessions</dt><dd>{{ service.sessionCount || 1 }} {{ Number(service.sessionCount || 1) === 1 ? 'session' : 'sessions' }}</dd></div>
+              <div><dt><Icon icon="lucide:calendar-days" width="15" /> {{ service.type === 'Package' ? 'Treatment course' : 'Appointment' }}</dt><dd>{{ service.sessionCount || 1 }} {{ Number(service.sessionCount || 1) === 1 ? 'visit' : 'visits' }}</dd></div>
               <div v-if="service.type === 'Consultation'"><dt>Consultation mode</dt><dd>{{ online ? 'Online via Google Meet' : 'On-site' }}</dd></div>
-              <div v-if="Number(service.sessionIntervalDays) > 0 && Number(service.sessionCount) > 1"><dt>Session interval</dt><dd>{{ service.sessionIntervalDays }} days</dd></div>
+              <div v-if="Number(service.sessionIntervalDays) > 0 && Number(service.sessionCount) > 1 && !service.treatmentCourseSteps?.length"><dt>Session interval</dt><dd>{{ service.sessionIntervalDays }} days</dd></div>
             </dl>
             <section class="service-details-section">
               <h3>About this service</h3>
               <p class="service-details-prose">{{ service.description || 'Contact the clinic for more information about this service.' }}</p>
             </section>
-            <section v-if="service.packageServiceNames?.length" class="service-details-section">
-              <h3>Included in the package</h3>
-              <ul class="service-details-list"><li v-for="(name, index) in service.packageServiceNames" :key="index">{{ name }}</li></ul>
+            <section v-if="service.treatmentCourseSteps?.length || service.packageServiceNames?.length" class="service-details-section">
+              <h3>{{ service.type === 'Package' ? 'Treatment course steps' : 'Included in the package' }}</h3>
+              <ol v-if="service.treatmentCourseSteps?.length" class="service-details-list"><li v-for="(step, index) in service.treatmentCourseSteps" :key="`${step.serviceId}-${index}`">{{ step.serviceName }} · {{ step.visitCount }} visit{{ Number(step.visitCount) === 1 ? '' : 's' }}<span class="block">Minimum {{ step.minimumGapDays }}-day gap before the next course visit</span></li></ol>
+              <ul v-else class="service-details-list"><li v-for="(name, index) in service.packageServiceNames" :key="index">{{ name }}</li></ul>
             </section>
             <section class="service-details-section">
               <h3>Before you book</h3>
               <div v-if="service.requiresConsultationFirst" class="service-details-notice">
                 <Icon icon="lucide:stethoscope" width="20" />
-                <div><strong>Consultation required first</strong><p>{{ consultation ? `Complete ${consultation.title || consultation.name} before treatment.` : 'Complete the required consultation or ask the clinic to verify your previous consultation.' }}</p><p v-if="consultation">Consultation price: {{ price(consultation.price) }}</p><p v-if="sameDayRequestAvailable">This clinic accepts an optional same-day request for an on-site consultation followed by a provisional treatment slot. Practitioner clearance is required before treatment consent or payment.</p></div>
+                <div><strong>Consultation required first</strong><p>{{ consultation ? `Complete ${consultation.title || consultation.name} before treatment.` : 'Complete the required consultation or ask the clinic to verify your previous consultation.' }}</p><p v-if="consultation">Consultation price: {{ price(consultation.price) }} · {{ vatDescription(consultation) }}</p><p v-if="sameDayRequestAvailable">This clinic accepts an optional same-day request for an on-site consultation followed by a provisional treatment slot. Practitioner clearance is required before treatment consent or payment.</p></div>
               </div>
               <p v-else>A prior consultation is not required for booking this service.</p>
               <p class="service-details-follow-up">{{ service.followUpAllowed ? `Follow-ups are available${service.followUpWindowDays ? ` within ${service.followUpWindowDays} days` : ''}.` : 'Follow-up bookings are not enabled for this listing.' }}</p>
-              <p v-if="Number(service.sessionCount) > 1">The clinic schedules subsequent treatment visits with you.</p>
+              <p v-if="service.type === 'Package'">You book the first visit now. The clinic arranges each later visit after the previous visit is completed or resolved. The minimum gaps shown above guide scheduling; available clinic dates determine the confirmed appointments.</p>
             </section>
             <section v-if="staffing.length" class="service-details-section">
               <h3>Treatment team</h3>
@@ -125,7 +128,7 @@ onUnmounted(() => {
 .service-details-content header { padding-right: 22px; }
 .service-details-eyebrow { margin: 0 0 10px; color: #9a6845; font-size: 10px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; }
 .service-details-content h2 { margin: 0; font-family: Georgia, serif; font-size: clamp(25px, 3vw, 34px); line-height: 1.2; overflow-wrap: anywhere; color: #3d281d; }
-.service-details-price { margin: 16px 0 24px; color: #855335; font-size: 24px; font-weight: 600; }
+.service-details-price { margin: 16px 0 4px; color: #855335; font-size: 24px; font-weight: 600; }.service-details-tax { margin: 0 0 24px; color: #87684f; font-size: 12px; }
 .service-details-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 0; padding: 18px; border: 1px solid #edd9c3; border-radius: 14px; background: #f9efdf; }
 .service-details-facts dt { display: flex; align-items: center; gap: 6px; color: #86654d; font-size: 11px; }
 .service-details-facts dd { margin: 7px 0 0; font-size: 14px; font-weight: 600; }

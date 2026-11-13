@@ -3882,8 +3882,23 @@ app.get('/treatment-sessions', requireAuth, async (req, res) => {
     const firestore = admin.firestore(), branchId = String(req.query.branchId || '').trim()
     if (!branchId) return res.status(400).json({ success: false, error: 'branchId is required.' })
     await authorizeClinicAction(req.user.uid, branchId, 'appointments:view')
-    const rows = (await firestore.collection('treatmentSessions').where('branchId', '==', branchId).get()).docs
+    const sessionRows = (await firestore.collection('treatmentSessions').where('branchId', '==', branchId).get()).docs
       .map(snap => ({ id: snap.id, ...(snap.data() || {}) }))
+    const planIds = [...new Set(sessionRows.map(session => session.treatmentPlanAppointmentId).filter(Boolean))]
+    const planEntries = await Promise.all(planIds.map(async id => [id, (await firestore.collection('appointments').doc(id).get()).data() || {}]))
+    const plansById = new Map(planEntries)
+    const rows = sessionRows.map(session => {
+      const parent = plansById.get(session.treatmentPlanAppointmentId) || {}
+      const definition = parent.treatmentPlan?.sessions?.[Number(session.sessionNumber || 1) - 1]
+      return {
+        ...session,
+        planName: parent.treatmentPlan?.planName || parent.service || 'Treatment course',
+        serviceName: definition?.serviceName || parent.service || 'Treatment visit',
+        stageNumber: Number(definition?.stageNumber || 1),
+        stageVisitNumber: Number(definition?.stageVisitNumber || session.sessionNumber || 1),
+        minimumGapDays: Math.max(1, Number(definition?.sessionIntervalDays || parent.treatmentPlan?.sessionIntervalDays || 1)),
+      }
+    })
     return res.json({ success: true, data: rows })
   } catch (error) { return res.status(error.status || 500).json({ success: false, error: error.message || 'Unable to load treatment sessions.' }) }
 })
@@ -4223,11 +4238,15 @@ registerWalkInPayments(app, {
   },
   sendReceipt: async (email, receipt) => {
     if (!postmarkClient || !senderEmail) return false
+    const pricing = receipt.pricingSnapshot
+    const priceLines = pricing
+      ? `\nSubtotal: PHP ${Number(pricing.subtotal || 0).toFixed(2)}\n${pricing.vatApplicable ? `VAT (12%): PHP ${Number(pricing.vatAmount || 0).toFixed(2)}` : 'VAT: PHP 0.00'}\nTotal: PHP ${Number(pricing.total ?? receipt.total).toFixed(2)}`
+      : `\nAmount paid: PHP ${Number(receipt.total || 0).toFixed(2)}`
     await sendPostmarkMessage({
       to: email,
       from: senderEmail,
       subject: 'Your walk-in appointment service key',
-      text: `Hi ${receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}.\nWhen: ${[receipt.date, receipt.time].filter(Boolean).join(' at ')}\nAmount paid: PHP ${receipt.total.toFixed(2)}\n\nYour service key is: ${receipt.serviceKey}\n\nKeep this key private and bring it on the appointment day. The practitioner will ask for it to verify your appointment before starting the service.`,
+      text: `Hi ${receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}.\nWhen: ${[receipt.date, receipt.time].filter(Boolean).join(' at ')}${priceLines}\n\nYour service key is: ${receipt.serviceKey}\n\nKeep this key private and bring it on the appointment day. The practitioner will ask for it to verify your appointment before starting the service.`,
     })
     return true
   },
@@ -9368,6 +9387,18 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
   }
 })
 
+const appointmentCheckoutLineItems = (pricingSnapshot, amountCents, serviceName = 'Appointment') => {
+  const invoiceTotalCents = Math.round(Number(pricingSnapshot?.total || 0) * 100)
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || invoiceTotalCents <= 0 || !pricingSnapshot) return null
+  const invoiceVatCents = pricingSnapshot.vatApplicable === true ? Math.round(Number(pricingSnapshot.vatAmount || 0) * 100) : 0
+  const dueVatCents = Math.min(amountCents, Math.round(invoiceVatCents * amountCents / invoiceTotalCents))
+  const subtotalDueCents = amountCents - dueVatCents
+  const items = []
+  if (subtotalDueCents > 0) items.push({ amount: subtotalDueCents, currency: 'PHP', name: `${String(serviceName).slice(0, 55)} subtotal`, quantity: 1 })
+  if (dueVatCents > 0) items.push({ amount: dueVatCents, currency: 'PHP', name: 'VAT (12%)', quantity: 1 })
+  return items.length ? items : null
+}
+
 app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
   if (!assertPayMongoConfigured(res)) return
 
@@ -9399,6 +9430,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
 
   let orderSnapshot = null
   let approvedProductLines = null
+  let appointmentPaymentLines = null
   if (isCustomerOrderCheckout) {
     try {
       const items = req.body?.items
@@ -9480,6 +9512,11 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
           if (Math.abs(Number(amount || 0) - Math.round(remainingAmount * 100)) > 1) {
             return res.status(409).json({ success: false, error: 'Payment amount does not match the appointment balance.' })
           }
+          appointmentPaymentLines = appointmentCheckoutLineItems(
+            appointmentData.pricingSnapshot,
+            Math.round(Number(amount || 0)),
+            appointmentData.service || 'Appointment',
+          )
         } else {
           return res.status(409).json({ success: false, error: 'Submit the booking for clinic approval first, then pay from My Appointments.' })
         }
@@ -9584,7 +9621,9 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
         show_description: true,
         show_line_items: true,
         description: String(description || 'POS Payment'),
-        line_items: approvedProductLines || (!isCustomerBookingCheckout && Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : fallbackLineItem),
+        line_items: approvedProductLines || (isCustomerBookingCheckout
+          ? appointmentPaymentLines || fallbackLineItem
+          : Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : fallbackLineItem),
         ...(selectedMethods.length > 0 ? { payment_method_types: selectedMethods } : {}),
         reference_number: String(referenceNumber || ''),
         metadata: {
@@ -9745,7 +9784,7 @@ const recordAppointmentPayment = async (req, res) => {
       if (fresh.isBookingOrderParent) {
         assertWorkflow(bookingOrderReadyForPayment(fresh, paidChildren.map(({ ref, data }) => ({ id: ref.id, ...data }))), 'Every appointment in this order must be approved and have a signed agreement before payment.')
       }
-      tx.set(firestore.collection('transactions').doc('booking-' + checkoutSessionId), { branchId: fresh.branchId, customerId: fresh.customerId, appointmentId, checkoutSessionId, type: 'service_payment', service: fresh.service || 'Service booking', amount: paymentAmount, total: paymentAmount, method: payment.attributes?.source?.type || payment.attributes?.payment_method?.type || 'Online', status: 'Paid', createdAt: timestamp })
+      tx.set(firestore.collection('transactions').doc('booking-' + checkoutSessionId), { branchId: fresh.branchId, customerId: fresh.customerId, appointmentId, checkoutSessionId, type: 'service_payment', service: fresh.service || 'Service booking', amount: paymentAmount, total: paymentAmount, invoiceTotal: totalAmount, pricingSnapshot: fresh.pricingSnapshot || null, method: payment.attributes?.source?.type || payment.attributes?.payment_method?.type || 'Online', status: 'Paid', createdAt: timestamp })
       tx.update(appointmentRef, {
         status, amountPaid, balance: Math.max(0, totalAmount - amountPaid),
         paymentStatus: fullyPaid ? 'Paid' : 'Partially Paid', paymentCoverage: fullyPaid ? 'full' : 'installment',
