@@ -87,8 +87,8 @@
                   <tr>
                     <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Request</th>
                     <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Customer</th>
-                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Original</th>
-                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Requested</th>
+                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Current Appointment</th>
+                    <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Requested Appointment</th>
                     <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Status</th>
                     <th class="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Action</th>
                   </tr>
@@ -113,12 +113,16 @@
                       <p class="text-xs text-slate-400">{{ request.serviceLabel }}</p>
                     </td>
                     <td class="px-6 py-4 text-slate-300">
-                      <p>{{ request.date || '-' }} {{ formatClockTime(request.time) }}</p>
-                      <p class="text-xs text-slate-400">{{ request.assignedPractitionerName || 'Assigned Practitioner' }}</p>
+                      <template v-if="request.requestType !== 'booking'">
+                        <p>{{ formatScheduleDateTime(request.date, request.time) }}</p>
+                        <p class="text-xs text-slate-400">{{ request.assignedPractitionerName || 'Assigned Practitioner' }}</p>
+                      </template>
+                      <p v-else>—</p>
                     </td>
                     <td class="px-6 py-4 text-slate-300">
-                      <p>{{ request.requestedDate || '-' }} {{ formatClockTime(request.requestedTime) }}</p>
-                      <p class="text-xs text-slate-400">{{ request.requestedPractitionerName || 'Assigned Practitioner' }}</p>
+                      <p v-if="request.requestType === 'booking' || request.requestType === 'reschedule'">{{ formatScheduleDateTime(request.requestType === 'booking' ? request.date : request.requestedDate, request.requestType === 'booking' ? request.time : request.requestedTime) }}</p>
+                      <p v-else>—</p>
+                      <p class="text-xs text-slate-400">Practitioner: {{ request.requestedPractitionerName || request.assignedPractitionerName || 'Assigned Practitioner' }}</p>
                     </td>
                     <td class="px-6 py-4">
                       <span class="rounded-full px-3 py-1 text-xs font-medium" :class="request.requestBadgeClass">
@@ -162,13 +166,17 @@
                 <span>Service</span>
                 <span class="font-semibold text-white">{{ selectedRequest.serviceLabel }}</span>
               </div>
-              <div class="flex items-center justify-between gap-4">
-                <span>Original Schedule</span>
-                <span class="font-semibold text-white">{{ selectedRequest.date || '-' }} {{ formatClockTime(selectedRequest.time) }}</span>
+              <div v-if="selectedRequest.requestType !== 'booking'" class="flex items-center justify-between gap-4">
+                <span>Current Appointment</span>
+                <span class="font-semibold text-white">{{ formatScheduleDateTime(selectedRequest.date, selectedRequest.time) }}</span>
               </div>
-              <div class="flex items-center justify-between gap-4">
-                <span>Requested Schedule</span>
-                <span class="font-semibold text-cyan-200">{{ selectedRequest.requestedDate || '-' }} {{ formatClockTime(selectedRequest.requestedTime) }}</span>
+              <div v-if="selectedRequest.requestType === 'booking'" class="flex items-center justify-between gap-4">
+                <span>Requested Appointment</span>
+                <span class="font-semibold text-cyan-200">{{ formatScheduleDateTime(selectedRequest.date, selectedRequest.time) }}</span>
+              </div>
+              <div v-if="selectedRequest.requestType === 'reschedule'" class="flex items-center justify-between gap-4">
+                <span>Requested Appointment</span>
+                <span class="font-semibold text-cyan-200">{{ formatScheduleDateTime(selectedRequest.requestedDate, selectedRequest.requestedTime) }}</span>
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span>Practitioner</span>
@@ -280,6 +288,30 @@ let unsubscribeAuth = null
 const formatCurrency = (value) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value || 0))
 
+const formatAppointmentDate = (value) => {
+  if (!value) return '—'
+  const dateOnly = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const date = value?.toDate?.()
+    || (value?._seconds || value?.seconds
+      ? new Date((value._seconds || value.seconds) * 1000)
+      : dateOnly
+        ? new Date(`${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T00:00:00+08:00`)
+        : new Date(value))
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'Asia/Manila',
+  }).format(date)
+}
+
+const formatScheduleDateTime = (date, time) => {
+  if (!date) return '—'
+  const formattedTime = formatClockTime(time)
+  return [formatAppointmentDate(date), formattedTime].filter(Boolean).join(' ')
+}
+
 const fetchFromBackend = trackPageLoad(async (path, options = {}) => {
   const baseUrl = String(OTP_API_BASE || '').trim()
   if (!baseUrl) {
@@ -343,7 +375,7 @@ const filteredRequests = computed(() => {
   return requests.value.filter((request) => {
     const matchesSearch =
       !keyword ||
-      [request.clientName, request.serviceLabel, request.date, request.time, request.requestedDate, request.requestedTime]
+      [request.clientName, request.serviceLabel, request.date, request.time, request.requestedDate, request.requestedTime, formatAppointmentDate(request.date), formatAppointmentDate(request.requestedDate)]
         .map((value) => String(value || '').toLowerCase())
         .join(' ')
         .includes(keyword)
