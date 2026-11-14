@@ -39,12 +39,12 @@
         <span v-if="plan.id !== 'free-trial'" class="card-shine"></span>
         <p class="plan-name">{{ plan.name }}</p>
         <p class="plan-price">
-          <template v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0"><s class="trial-original-price">{{ plan.priceLabel }}</s><strong class="trial-current-price">PHP 0</strong></template>
-          <template v-else>{{ plan.priceLabel }}</template>
-          <span class="plan-cycle">{{ plan.cycleLabel }}</span>
+          {{ plan.priceLabel }}
+          <span class="plan-cycle">{{ plan.id === 'free-trial' ? '14 days' : plan.cycleLabel }}</span>
         </p>
+        <p v-if="plan.id === 'free-trial'" class="trial-badge">14 days of Premium access</p>
         <p class="plan-desc">{{ plan.description }}</p>
-        <p v-if="plan.freeTrialEnabled && plan.trialDays > 0 && plan.price > 0" class="plan-desc">PHP 0 for {{ plan.trialDays }} days after approval, once per clinic. Later purchases use the regular price.</p>
+        <p v-if="plan.id === 'free-trial'" class="plan-desc">No payment during the trial. Available once per clinic after clinic approval.</p>
         <ul class="plan-features">
           <li v-for="item in plan.features" :key="item">{{ item }}</li>
         </ul>
@@ -76,7 +76,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
-import { buildSubscriptionPlanCatalog, filterActiveSubscriptionPlans } from '@/utils/subscriptionPlans'
+import { buildSubscriptionPlanCatalog, createDefaultSubscriptionPlans, filterActiveSubscriptionPlans } from '@/utils/subscriptionPlans'
 
 const emit = defineEmits(['close'])
 const router = useRouter()
@@ -90,30 +90,7 @@ const resumeEmail = ref('')
 const resumeError = ref('')
 const resumeLoading = ref(false)
 let unsubscribePlans = null
-const defaultPlans = () => [
-  {
-    id: 'basic',
-    name: 'Basic',
-    price: 499,
-    billingCycle: 'month',
-    description: 'Essential features for your clinic operations.',
-    features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
-    trialDays: 14,
-    freeTrialEnabled: true,
-    isActive: true,
-  },
-  {
-    id: 'premium',
-    name: 'Premium',
-    price: 999,
-    billingCycle: 'month',
-    description: 'Full features including advanced analytics.',
-    features: ['Everything in Basic', 'Multi-branch operations', 'HR, attendance & payroll', 'Advanced reports & priority support'],
-    trialDays: 14,
-    freeTrialEnabled: true,
-    isActive: true,
-  },
-]
+const defaultPlans = createDefaultSubscriptionPlans
 
 const loadPlans = async () => {
   error.value = ''
@@ -156,7 +133,7 @@ const selectedPlanData = computed(() => plans.value.find((plan) => plan.id === s
 const ctaLabel = computed(() => {
   const current = selectedPlanData.value
   if (!current) return 'Continue'
-  return current.freeTrialEnabled ? `Start ${current.trialDays}-Day Free Trial` : 'Continue with Selected Plan'
+  return current.id === 'free-trial' ? 'Continue to clinic registration' : 'Continue with Selected Plan'
 })
 
 const cardClass = (plan) => {
@@ -174,7 +151,11 @@ const cardClass = (plan) => {
 }
 
 const continueWithPlan = () => {
-  router.push({ path: '/subscription/checkout', query: { plan: selectedPlan.value } })
+  if (selectedPlan.value === 'free-trial') {
+    router.push({ path: '/clinic/register', query: { account: 'clinic', plan: 'free-trial' } })
+  } else {
+    router.push({ path: '/subscription/checkout', query: { plan: selectedPlan.value } })
+  }
   emit('close')
 }
 

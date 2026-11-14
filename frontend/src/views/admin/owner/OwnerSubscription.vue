@@ -134,7 +134,8 @@ const formatCycle = (cycle) => {
 }
 
 const syncPlanData = () => {
-  planData.value = planDocs.value.get(planKey.value) || (isFree.value ? planDocs.value.get('free') || planDocs.value.get('free-trial') : null) || null
+  const entitlementPlanKey = isTrial.value ? 'premium' : planKey.value
+  planData.value = planDocs.value.get(entitlementPlanKey) || (isFree.value ? planDocs.value.get('free') || planDocs.value.get('free-trial') : null) || null
 }
 
 const formatDate = subscriptionDateLabel
@@ -148,12 +149,12 @@ const normalizePlanLabel = (value) => {
   return value
 }
 
-const planLabel = computed(() => `${normalizePlanLabel(planKey.value)}${isTrial.value ? ' trial' : ''}`)
+const planLabel = computed(() => isTrial.value ? 'Free Trial' : normalizePlanLabel(planKey.value))
 const isFree = computed(() => planKey.value.includes('free'))
 const isPaid = computed(() => paymentStatus.value.toLowerCase() === 'paid')
 const planPrice = computed(() => isFree.value || isTrial.value ? formatCurrency(0) : planData.value?.price != null ? formatCurrency(planData.value.price) : 'Price unavailable')
 const planCycle = computed(() => {
-  if (isTrial.value) return `Free for ${Number(planData.value?.trialDays || subscriptionTrialDays.value || 14)} days`
+  if (isTrial.value) return `${Number(subscriptionTrialDays.value || 14)} days · Premium access`
   if (isFree.value) return 'No billing cycle'
   const cycle = formatCycle(planData.value?.billingCycle || planData.value?.cycle || '')
   return cycle === 'Trial' ? 'Billing cycle unavailable' : `per ${{ monthly: 'month', yearly: 'year', annually: 'year', annual: 'year' }[cycle] || cycle}`

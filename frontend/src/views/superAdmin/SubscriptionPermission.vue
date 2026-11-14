@@ -6,7 +6,7 @@
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Subscription Permissions</h1>
-          <p class="text-slate-400">Define the scope of features for each subscription plan.</p>
+          <p class="text-slate-400">Free Trial inherits Premium access. Configure feature permissions for the Basic and Premium tiers here.</p>
         </div>
 
         <button
@@ -160,7 +160,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           onSnapshot, collection(db, 'subscriptionPlans'),
           (snapshot) => {
             const merged = buildSubscriptionPlanCatalog(defaultPlanCatalog, snapshot.docs)
-            planCatalog.value = filterActiveSubscriptionPlans(merged)
+            planCatalog.value = filterActiveSubscriptionPlans(merged).filter((plan) => plan.id !== 'free-trial')
             planCatalogLoaded.value = true
             finishLoading()
           },

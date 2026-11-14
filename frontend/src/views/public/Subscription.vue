@@ -9,12 +9,12 @@
         <div class="popup-copy">
           <p class="popup-eyebrow">AesthetiCare Plans</p>
           <h2 class="popup-title">Choose Your Plan</h2>
-          <p class="popup-subtitle">Choose the operating model that fits today, with a full-featured 14-day trial before billing begins.</p>
+          <p class="popup-subtitle">Choose Free Trial for 14 days of Premium access, or select a paid plan for your clinic.</p>
         </div>
 
         <div class="popup-aside">
-          <div class="aside-pill">No card for trial</div>
-          <p class="aside-copy">Select Basic or Premium, try its real features for 14 days, then renew when you are ready.</p>
+          <div class="aside-pill">14-day Free Trial</div>
+          <p class="aside-copy">Free Trial is a separate option with Premium access. Basic and Premium are paid plans without attached trial offers.</p>
         </div>
       </div>
 
@@ -28,7 +28,7 @@
           :class="planCardClass(plan)"
         >
           <span class="plan-orb"></span>
-          <span class="card-shine"></span>
+          <span v-if="plan.id !== 'free-trial'" class="card-shine"></span>
 
           <div class="plan-card-top">
             <div>
@@ -42,10 +42,10 @@
             <p class="plan-price">
               {{ plan.priceLabel }}
             </p>
-            <span class="plan-cycle">{{ plan.cycleLabel || plan.cycle || '-' }}</span>
+            <span class="plan-cycle">{{ plan.id === 'free-trial' ? '14 days' : plan.cycleLabel || plan.cycle || '-' }}</span>
           </div>
 
-          <p v-if="plan.freeTrialEnabled && plan.trialDays" class="trial-badge">{{ plan.trialDays }} days free • no card required</p>
+          <p v-if="plan.id === 'free-trial'" class="trial-badge">14 days · no payment required</p>
           <p class="plan-desc">{{ plan.description }}</p>
           <p class="plan-caption">{{ planCaption(plan) }}</p>
 
@@ -79,6 +79,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
 import {
   buildSubscriptionPlanCatalog,
+  createDefaultSubscriptionPlans,
   filterActiveSubscriptionPlans,
 } from "@/utils/subscriptionPlans";
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
@@ -91,32 +92,7 @@ const plans = ref([]);
 const error = ref("");
 let unsubscribePlans = null;
 
-const defaultPlans = () => [
-  {
-    id: "basic",
-    name: "Basic",
-    price: 499,
-    cycle: "/month",
-    description: "For single-branch clinics with streamlined daily operations.",
-    features: ["Scheduling, POS & payments", "Inventory, procurement & reports", "Staff account management", "Single-branch operations"],
-    trialDays: 14,
-    freeTrialEnabled: true,
-    isActive: true,
-    recommended: false,
-  },
-  {
-    id: "premium",
-    name: "Premium",
-    price: 999,
-    cycle: "/month",
-    description: "For multi-branch clinics that need complete operational control.",
-    features: ["Everything in Basic", "Multi-branch operations", "HR, attendance & payroll", "Advanced reports & priority support"],
-    trialDays: 14,
-    freeTrialEnabled: true,
-    isActive: true,
-    recommended: true,
-  },
-];
+const defaultPlans = createDefaultSubscriptionPlans;
 
 const loadPlans = trackPageLoad(async () => {
   error.value = "";
@@ -150,19 +126,21 @@ const maybeLater = () => {
 };
 
 const planCardClass = (plan) => {
+  if (plan.id === "free-trial") return "plan-card-free";
   if (plan.id === "basic") return "plan-card-basic";
   if (plan.id === "premium") return "plan-card-premium";
   return "plan-card-premium";
 };
 
 const planKicker = (plan) => {
+  if (plan.id === "free-trial") return "Start here";
   if (plan.id === "basic") return "For growing clinics";
   if (plan.id === "premium") return "For full operations";
   return plan.recommended ? "Featured option" : "Flexible option";
 };
 
 const planCaption = (plan) => {
-  if (plan.freeTrialEnabled && plan.trialDays > 0) return `${plan.trialDays}-day free trial`;
+  if (plan.id === "free-trial") return "One use per clinic after approval. No automatic charge.";
   if (plan.id === "basic") return "Best fit for clinics focusing on daily bookings, staffing, and reporting.";
   if (plan.id === "premium") return "Built for teams that need deeper visibility, support, and multi-branch control.";
   return "A saved custom plan configured in Setup Plans.";

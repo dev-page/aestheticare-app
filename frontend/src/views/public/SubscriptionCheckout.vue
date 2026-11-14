@@ -9,8 +9,6 @@
           <p class="checkout-eyebrow">Subscription Checkout</p>
           <h1 class="checkout-title">Complete Your Plan Payment</h1>
           <p class="checkout-subtitle">Choose a payment method for PayMongo and confirm your clinic plan with confidence.</p>
-          <div v-if="selectedPlan?.freeTrialEnabled" class="checkout-error" role="status">This plan includes a {{ selectedPlan.trialDays }}-day free trial once per clinic. Trial activation is available after clinic approval from Choose Plan. This checkout is for the normal plan price after the trial or for clinics that have already used their trial.</div>
-
           <div v-if="error" class="checkout-error">
             {{ error }}
           </div>
@@ -164,6 +162,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { useSubscriptionStore } from '@/stores/subscription'
 import {
   buildSubscriptionPlanCatalog,
+  createDefaultSubscriptionPlans,
   filterActiveSubscriptionPlans,
   getSubscriptionPlanPriority,
 } from '@/utils/subscriptionPlans'
@@ -245,30 +244,7 @@ const handlePhoneInput = () => {
   validateField('phone')
 }
 
-const defaultPlans = () => [
-  {
-    id: 'basic',
-    name: 'Basic',
-    price: 499,
-    billingCycle: 'month',
-    description: 'Essential tools for daily clinic operations.',
-    features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
-    trialDays: 14,
-    freeTrialEnabled: true,
-    isActive: true,
-  },
-  {
-    id: 'premium',
-    name: 'Premium',
-    price: 999,
-    trialDays: 14,
-    freeTrialEnabled: true,
-    billingCycle: 'month',
-    description: 'Advanced features and priority support.',
-    features: ['Everything in Basic', 'Multi-branch operations', 'HR, attendance & payroll', 'Advanced reports & priority support'],
-    isActive: true,
-  },
-]
+const defaultPlans = createDefaultSubscriptionPlans
 
 const normalizePlanId = (value) => String(value || '').trim().toLowerCase()
 const toCentavos = (pesoAmount) => Math.round(Number(pesoAmount || 0) * 100)

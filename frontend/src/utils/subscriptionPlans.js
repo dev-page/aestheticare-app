@@ -7,9 +7,61 @@ const BASE_PRIORITY = {
 
 const DISPLAY_ORDER = {
   'free-trial': 0,
-  free: 0,
   basic: 1,
   premium: 2,
+}
+
+export const FREE_TRIAL_PLAN_ID = 'free-trial'
+export const FREE_TRIAL_DAYS = 14
+
+const BASIC_FEATURES = [
+  'Scheduling, POS & payments',
+  'Inventory, procurement & reports',
+  'Staff account management',
+  'Single-branch operations',
+]
+
+const PREMIUM_FEATURES = [
+  'Everything in Basic',
+  'Multi-branch operations',
+  'HR, attendance & payroll',
+  'Advanced reports & priority support',
+]
+
+export const createDefaultSubscriptionPlans = () => {
+  const basic = {
+    id: 'basic',
+    label: 'Basic',
+    name: 'Basic',
+    price: 499,
+    billingCycle: 'month',
+    description: 'Essential tools for daily clinic operations.',
+    isActive: true,
+    features: [...BASIC_FEATURES],
+  }
+  const premium = {
+    id: 'premium',
+    label: 'Premium',
+    name: 'Premium',
+    price: 999,
+    billingCycle: 'month',
+    description: 'Advanced features and priority support.',
+    isActive: true,
+    features: [...PREMIUM_FEATURES],
+  }
+  const freeTrial = {
+    id: FREE_TRIAL_PLAN_ID,
+    label: 'Free Trial',
+    name: 'Free Trial',
+    price: 0,
+    billingCycle: 'trial',
+    description: 'Get Premium access for 14 days. No payment is collected during the trial.',
+    trialDays: FREE_TRIAL_DAYS,
+    isActive: true,
+    recommended: false,
+    features: [...BASIC_FEATURES, ...PREMIUM_FEATURES.slice(1)],
+  }
+  return [freeTrial, basic, premium]
 }
 
 export const prettifySubscriptionPlanId = (value) =>
@@ -76,7 +128,7 @@ const normalizeFeatures = (features, fallback = []) => {
 
 export const normalizeSubscriptionPlan = (plan = {}, fallback = {}) => {
   const rawId = String(plan.id || fallback.id || '').trim().toLowerCase()
-  const id = rawId === 'free-trial' ? 'free' : rawId
+  const id = rawId
   const label = String(plan.label || plan.name || fallback.label || fallback.name || '').trim()
   const name = String(plan.name || plan.label || fallback.name || fallback.label || '').trim()
   const billingCycle = String(plan.billingCycle || plan.cycle || fallback.billingCycle || fallback.cycle || '').trim()
@@ -95,8 +147,7 @@ export const normalizeSubscriptionPlan = (plan = {}, fallback = {}) => {
     cycle: billingCycle,
     cycleLabel: plan.cycleLabel || fallback.cycleLabel || formatSubscriptionCycle(billingCycle),
     description: String(plan.description || fallback.description || '').trim(),
-    trialDays: Math.max(0, Math.floor(toNumber(plan.trialDays ?? fallback.trialDays ?? 0))),
-    freeTrialEnabled: Boolean(plan.freeTrialEnabled ?? fallback.freeTrialEnabled ?? false),
+    trialDays: id === FREE_TRIAL_PLAN_ID ? FREE_TRIAL_DAYS : 0,
     features: normalizeFeatures(plan.features, fallback.features),
     recommended: Boolean(plan.recommended ?? fallback.recommended ?? (id === 'premium')),
     isActive: plan.isActive !== false && fallback.isActive !== false && !isDeleted,
@@ -106,8 +157,8 @@ export const normalizeSubscriptionPlan = (plan = {}, fallback = {}) => {
 }
 
 export const buildSubscriptionPlanCatalog = (basePlans = [], snapshotDocs = []) => {
-  // The product has two subscription plans. A trial is an access state on a
-  // selected paid plan, never a third plan or a permanent Free tier.
+  // The trial is its own fixed offer. Its feature list follows Premium, while
+  // the stored access tier remains Premium during the trial for permission gates.
   const supportedPlanIds = new Set(['basic', 'premium'])
   basePlans = basePlans.filter((plan) => supportedPlanIds.has(String(plan?.id || '').trim().toLowerCase()))
   const dbPlans = new Map(snapshotDocs.map((docSnap) => [docSnap.id, docSnap.data() || {}]))
@@ -154,7 +205,21 @@ export const buildSubscriptionPlanCatalog = (basePlans = [], snapshotDocs = []) 
       return String(a.name || a.label || a.id).localeCompare(String(b.name || b.label || b.id))
     })
 
-  return [...orderedBasePlans, ...customPlans]
+  const premiumPlan = normalizedBasePlans.find((plan) => plan.id === 'premium')
+  const trialPlan = normalizeSubscriptionPlan({
+    id: FREE_TRIAL_PLAN_ID,
+    label: 'Free Trial',
+    name: 'Free Trial',
+    price: 0,
+    billingCycle: 'trial',
+    description: `Get Premium access for ${FREE_TRIAL_DAYS} days. No payment is collected during the trial.`,
+    trialDays: FREE_TRIAL_DAYS,
+    isActive: true,
+    recommended: false,
+    features: premiumPlan?.features || [...BASIC_FEATURES, ...PREMIUM_FEATURES.slice(1)],
+  })
+
+  return [trialPlan, ...orderedBasePlans, ...customPlans]
 }
 
 export const filterActiveSubscriptionPlans = (plans = [], { fallbackToAll = true } = {}) => {

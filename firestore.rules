@@ -190,7 +190,8 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/clinics/$(branchId))
         && subscriptionAllowsBusinessWrite(branchId)
         && (clinicDoc(branchId).data.subscriptionPlan == 'basic'
-          || clinicDoc(branchId).data.subscriptionPlan == 'premium');
+          || clinicDoc(branchId).data.subscriptionPlan == 'premium'
+          || clinicDoc(branchId).data.get('paymentStatus', '') == 'trial');
     }
 
     // Attendance, shifts, leave, overtime, base pay, payroll and payslips
@@ -199,7 +200,8 @@ service cloud.firestore {
     function planAllowsWorkforceManagement(branchId) {
       return exists(/databases/$(database)/documents/clinics/$(branchId))
         && subscriptionAllowsBusinessWrite(branchId)
-        && clinicDoc(branchId).data.subscriptionPlan == 'premium';
+        && (clinicDoc(branchId).data.subscriptionPlan == 'premium'
+          || clinicDoc(branchId).data.get('paymentStatus', '') == 'trial');
     }
 
     match /users/{userId} {

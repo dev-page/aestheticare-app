@@ -3634,7 +3634,10 @@ const loadOwnerSubscriptionContext = async (firestore, ownerUid) => {
   })
 
   const clinicData = primaryClinicData || {}
-  const currentPlan = normalizePlanKey(clinicData.subscriptionPlan || userData.subscriptionPlan || userData.plan || 'free')
+  const paymentStatus = String(clinicData.paymentStatus || userData.paymentStatus || '').trim().toLowerCase()
+  const currentPlan = paymentStatus === 'trial'
+    ? 'premium'
+    : normalizePlanKey(clinicData.subscriptionPlan || userData.subscriptionPlan || userData.plan || 'free')
   const currentExpiresAt = toDateValue(clinicData.subscriptionExpiresAt || userData.subscriptionExpiresAt)
   const rawPendingPlan = String(clinicData.pendingSubscriptionPlan || userData.pendingSubscriptionPlan || '').trim()
   const pendingPlan = rawPendingPlan ? normalizePlanKey(rawPendingPlan) : ''

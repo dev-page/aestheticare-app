@@ -1,13 +1,13 @@
 import { subscriptionDate } from './subscriptionDates.js'
 
 export const TRIAL_DAYS = 14
-// Compatibility default for callers that have not yet supplied a selected plan.
-export const TRIAL_PLAN = 'premium'
+export const TRIAL_PLAN = 'free-trial'
 export const GRACE_PERIOD_DAYS = 7
 export const RETENTION_DAYS = 90
 
 export function normalizeSubscriptionPlan(value) {
   const plan = String(value || '').trim().toLowerCase()
+  if (plan.includes('free-trial') || plan === 'trial') return TRIAL_PLAN
   if (plan.includes('premium')) return 'premium'
   if (plan.includes('basic')) return 'basic'
   return ''
@@ -15,10 +15,12 @@ export function normalizeSubscriptionPlan(value) {
 
 // Pure projection only. Trusted backend jobs, never browser time, persist state.
 export function subscriptionLifecycle(record = {}, now = new Date()) {
-  const plan = normalizeSubscriptionPlan(record.subscriptionPlan || record.plan || record.selectedPlan)
   const storedStatus = String(record.subscriptionAccessStatus || record.subscriptionStatus || '').trim().toLowerCase()
   const paymentStatus = String(record.paymentStatus || '').trim().toLowerCase()
   const trial = paymentStatus === 'trial'
+  // A trial is the standalone Free Trial offer, whose entitlement is always Premium.
+  // This also upgrades the effective access of legacy trial records that stored Basic.
+  const plan = trial ? 'premium' : normalizeSubscriptionPlan(record.subscriptionPlan || record.plan || record.selectedPlan)
   const expiresAt = subscriptionDate(trial ? (record.subscriptionTrialEndsAt || record.subscriptionExpiresAt) : record.subscriptionExpiresAt)
   const graceEndsAt = subscriptionDate(record.subscriptionGraceEndsAt || record.gracePeriodEndDate)
   const retentionEndsAt = subscriptionDate(record.subscriptionRetentionEndsAt || record.retentionEndDate)

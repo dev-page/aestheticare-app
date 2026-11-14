@@ -6,7 +6,7 @@
       <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 class="mb-2 text-3xl font-bold text-[#4b3324]">Setup Plans</h1>
-          <p class="text-[#8a725f]">Configure pricing, cycle, and features for each subscription plan.</p>
+          <p class="text-[#8a725f]">Free Trial is fixed at 14 days of Premium access. Configure the Basic and Premium paid plans below.</p>
         </div>
 
         <div class="flex flex-wrap gap-2">
@@ -23,7 +23,19 @@
 
       <p v-if="error" class="mb-4 rounded-lg border border-[#c7a17d] bg-[#f6eadb] px-3 py-2 text-sm text-[#704d37]">{{ error }}</p>
 
-      <section class="grid grid-cols-1 gap-6 2xl:grid-cols-2">
+      <section class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <article class="min-w-0 rounded-xl border border-[#d9bea1] bg-[#fff5e7] p-4 shadow-sm sm:p-6">
+          <div class="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold text-[#4b3324]">Free Trial</h2>
+              <p class="text-xs text-[#8a725f]">Plan ID: free-trial</p>
+            </div>
+            <span class="rounded-full border border-[#d9bea1] bg-[#f6eadb] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#76563d]">Fixed plan</span>
+          </div>
+          <p class="text-2xl font-bold text-[#4b3324]">PHP 0</p>
+          <p class="mt-1 text-sm font-semibold text-[#76563d]">14 days · Premium access</p>
+          <p class="mt-4 text-sm leading-6 text-[#8a725f]">Available once per clinic after approval. No payment is collected and no automatic charge follows the trial.</p>
+        </article>
         <article
           v-for="plan in plans"
           :key="plan.localKey || plan.id"
@@ -51,7 +63,7 @@
                   type="checkbox"
                   class="accent-[#806044]"
                   :disabled="!plan.isDraft && plan.isActive !== false"
-                  :title="!plan.isDraft ? 'Basic and Premium are the two built-in subscription plans.' : undefined"
+                  :title="!plan.isDraft ? 'Basic and Premium are the built-in paid plans.' : undefined"
                   @change="clearPlanFieldError(plan, 'isActive')"
                 />
                 Active
@@ -149,19 +161,6 @@
               </div>
             </div>
 
-            <div v-if="plan.id !== 'free' && Number(plan.price) > 0" class="rounded-lg border border-[#e5d2bb] bg-[#fbf5eb] p-3">
-              <label class="inline-flex items-center gap-2 text-sm font-medium text-[#5c4230]">
-                <input v-model="plan.freeTrialEnabled" type="checkbox" class="accent-[#806044]" />
-                Offer a free trial for this plan
-              </label>
-              <div v-if="plan.freeTrialEnabled" class="mt-3">
-                <label class="mb-1 block text-xs text-[#765f4b]">Trial length (days)</label>
-                <input v-model="plan.trialDays" type="number" min="1" max="365" step="1" class="w-full rounded-lg bg-[#fffdf9] px-3 py-2 text-[#4b3324]" :class="fieldClass(plan, 'trialDays')" @input="clearPlanFieldError(plan, 'trialDays')" />
-                <p v-if="fieldError(plan, 'trialDays')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'trialDays') }}</p>
-              </div>
-              <p class="mt-2 text-xs text-[#8a725f]">Each clinic can use one trial once. No charge is collected during the trial; expiry starts a 7-day grace period and clinic records remain retained if access is later restricted.</p>
-            </div>
-
             <div>
               <label class="mb-1 block text-xs text-[#765f4b]">Description</label>
               <textarea
@@ -238,7 +237,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore'
+import { collection, deleteField, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { systemAdminSwal } from '@/utils/systemAdminAlert'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
@@ -251,8 +250,6 @@ const defaultPlans = () => [
     price: 499,
     billingCycle: 'month',
     description: 'Essential tools for daily clinic operations.',
-    trialDays: 14,
-    freeTrialEnabled: true,
     isActive: true,
     features: ['Scheduling, POS & payments', 'Inventory, procurement & reports', 'Staff account management', 'Single-branch operations'],
   },
@@ -263,8 +260,6 @@ const defaultPlans = () => [
     price: 999,
     billingCycle: 'month',
     description: 'Advanced features and priority support.',
-    trialDays: 14,
-    freeTrialEnabled: true,
     isActive: true,
     features: ['Everything in Basic', 'Multi-branch operations', 'HR, attendance & payroll', 'Advanced reports & priority support'],
   },
@@ -279,7 +274,7 @@ const billingCyclePattern = /^(month|year|one-time)$/i
 const LAST_ACTIVE_PLAN_ERROR = 'LAST_ACTIVE_PLAN'
 const FREE_PLAN_PROTECTED_ERROR = 'FREE_PLAN_PROTECTED'
 const BUILT_IN_PLAN_PROTECTED_ERROR = 'BUILT_IN_PLAN_PROTECTED'
-const BUILT_IN_PLAN_IDS = new Set(['basic', 'premium'])
+const BUILT_IN_PLAN_IDS = new Set(['free-trial', 'basic', 'premium'])
 
 let draftPlanCounter = 0
 
@@ -299,8 +294,6 @@ const createDraftPlan = () => ({
   price: '',
   billingCycle: 'month',
   description: '',
-  trialDays: '',
-  freeTrialEnabled: false,
   isActive: false,
   features: [''],
 })
@@ -315,8 +308,6 @@ const normalizePlan = (plan, fallback = {}) => ({
   price: plan.price ?? fallback.price ?? '',
   billingCycle: String(plan.billingCycle || fallback.billingCycle || '').trim(),
   description: String(plan.description || fallback.description || '').trim(),
-  trialDays: plan.trialDays ?? fallback.trialDays ?? '',
-  freeTrialEnabled: Boolean(plan.freeTrialEnabled ?? fallback.freeTrialEnabled ?? false),
   isActive: plan.isActive ?? fallback.isActive ?? false,
   features: Array.isArray(plan.features)
     ? [...plan.features]
@@ -361,7 +352,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const showProtectedPlanNotice = async () => {
       await systemAdminSwal.fire({
         title: 'Built-in plans are protected',
-        text: 'Basic and Premium are the two supported subscription plans and cannot be deleted.',
+        text: 'Free Trial, Basic, and Premium are the three supported plans and cannot be deleted.',
         icon: 'info',
         confirmButtonText: 'OK',
         confirmButtonColor: '#6b4b34',
@@ -503,11 +494,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         errors.price = 'Price must be zero or higher.'
       }
 
-      if (plan.id !== 'free' && Number(plan.price) > 0 && plan.freeTrialEnabled) {
-        const days = Number(plan.trialDays)
-        if (!Number.isInteger(days) || days < 1 || days > 365) errors.trialDays = 'Enter a whole number from 1 to 365 days.'
-      }
-
       if (!normalizedBillingCycle) {
         errors.billingCycle = 'Billing cycle is required.'
       } else if (!billingCyclePattern.test(normalizedBillingCycle)) {
@@ -547,7 +533,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!plan.isDraft && isBuiltInPlan(plan)) {
         await systemAdminSwal.fire({
           title: 'Built-in plan protected',
-          text: 'Free, Basic, and Premium are built-in plans and cannot be deleted. You can still edit them and deactivate Basic or Premium when another plan is active.',
+          text: 'Free Trial, Basic, and Premium are built-in plans and cannot be deleted. You can edit the paid plan details below.',
           icon: 'info',
           confirmButtonText: 'OK',
           confirmButtonColor: '#6b4b34',
@@ -600,7 +586,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (err.message === BUILT_IN_PLAN_PROTECTED_ERROR) {
           await systemAdminSwal.fire({
             title: 'Built-in plan protected',
-            text: 'Free, Basic, and Premium are built-in plans and cannot be deleted.',
+            text: 'Free Trial, Basic, and Premium are built-in plans and cannot be deleted.',
             icon: 'info',
             confirmButtonText: 'OK',
             confirmButtonColor: '#6b4b34',
@@ -709,8 +695,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           currencyDisplay: 'code',
           billingCycle: normalizedBillingCycle,
           description: normalizedDescription,
-          trialDays: normalizedId !== 'free' && Number(plan.price) > 0 && plan.freeTrialEnabled ? Number(plan.trialDays) : 0,
-          freeTrialEnabled: normalizedId !== 'free' && Number(plan.price) > 0 && Boolean(plan.freeTrialEnabled),
+          trialDays: deleteField(),
+          freeTrialEnabled: deleteField(),
           isActive: Boolean(plan.isActive),
           isDeleted: false,
           features: cleanFeatures,

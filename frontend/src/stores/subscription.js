@@ -82,6 +82,11 @@ const normalizePlanKey = (value) => {
   return raw
 }
 
+const getEntitlementPlanKey = (planValue, paymentStatus) =>
+  String(paymentStatus || '').trim().toLowerCase() === 'trial'
+    ? 'premium'
+    : normalizePlanKey(planValue)
+
 const normalizeRoleKey = (value) =>
   String(value || '')
     .trim()
@@ -150,7 +155,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
 
     const hasDirectPlan = Boolean(userData.subscriptionPlan || userData.plan)
     if (hasDirectPlan) {
-      const directPlan = normalizePlanKey(userData.subscriptionPlan || userData.plan)
+      const directPlan = getEntitlementPlanKey(userData.subscriptionPlan || userData.plan, userPaymentStatus)
       const directExpiresAt = toDate(userData.subscriptionExpiresAt)
       return { planKey: directPlan, expiresAt: directExpiresAt, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus }
     }
@@ -171,7 +176,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         const clinicPlan = clinicData.subscriptionPlan || clinicData.plan
         if (clinicPlan) {
           return {
-            planKey: normalizePlanKey(clinicPlan),
+            planKey: getEntitlementPlanKey(clinicPlan, clinicData.paymentStatus || userPaymentStatus),
             expiresAt: toDate(clinicData.subscriptionExpiresAt),
             role,
             userType: userTypeValue,
@@ -188,7 +193,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
             const ownerPlan = ownerData.subscriptionPlan || ownerData.plan
             if (ownerPlan) {
               return {
-                planKey: normalizePlanKey(ownerPlan),
+                planKey: getEntitlementPlanKey(ownerPlan, ownerData.paymentStatus || userPaymentStatus),
                 expiresAt: toDate(ownerData.subscriptionExpiresAt),
                 role,
                 userType: userTypeValue,
@@ -209,7 +214,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       const clinicPlan = clinicData.subscriptionPlan || clinicData.plan
       if (clinicPlan) {
         return {
-          planKey: normalizePlanKey(clinicPlan),
+          planKey: getEntitlementPlanKey(clinicPlan, clinicData.paymentStatus || userPaymentStatus),
           expiresAt: toDate(clinicData.subscriptionExpiresAt),
           role,
           userType: userTypeValue,
