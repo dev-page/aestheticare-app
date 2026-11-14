@@ -8,7 +8,9 @@ const listing = () => ({ ...draftListing(), title: 'Treatment', price: 1000, all
 test('Prices and treatment session counts reject negative, empty, and invalid values before publication', () => {
   const post = { ...listing(), postType: 'Service', sessionCount: 1, financeStatus: 'approved' }
   assert.equal(validateListingNumbers({ ...post, price: 0 }), '')
-  assert.equal(validateListingNumbers({ ...post, price: 100.25, sessionCount: 50 }), '')
+  assert.equal(validateListingNumbers({ ...post, price: 100.25, sessionCount: 1 }), '')
+  assert.match(validateListingNumbers({ ...post, sessionCount: 2 }), /single visit/)
+  assert.equal(validateListingNumbers({ ...post, postType: 'Package', sessionCount: 2 }), '')
   for (const price of [-1, '', null, NaN, Infinity]) assert.match(validateListingNumbers({ ...post, price }), /valid price/)
   for (const sessionCount of [-1, 0, '', null, 1.5, 51, NaN, Infinity]) {
     assert.match(validateListingNumbers({ ...post, sessionCount }), /whole number/)

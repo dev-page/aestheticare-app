@@ -11,7 +11,7 @@ export const verifyPayMongoSignature = ({ rawBody, signature, secret, mode, now 
   return crypto.timingSafeEqual(expected, Buffer.from(supplied, 'hex'))
 }
 
-export const registerAppointmentPaymentWebhook = (app, { admin, recordPayment, getSecret, getMode }) => {
+export const registerAppointmentPaymentWebhook = (app, { admin, recordPayment, getSecret, getMode, handlePayMongoRefund }) => {
   app.post('/paymongo/webhook', async (req, res) => {
     const secret = getSecret(), mode = getMode()
     if (!secret || !['test', 'live'].includes(mode)) return res.status(503).json({ success: false, error: 'Payment webhook is not configured.' })
@@ -21,6 +21,14 @@ export const registerAppointmentPaymentWebhook = (app, { admin, recordPayment, g
     try {
       const event = JSON.parse(req.rawBody.toString('utf8'))?.data?.attributes
       if (event?.livemode !== (mode === 'live')) return res.status(400).json({ success: false, error: 'Payment webhook mode mismatch.' })
+      if (['payment.refund.updated', 'payment.refunded'].includes(event.type)) {
+        const refund = event.data
+        if (!refund?.id || !refund?.attributes?.payment_id || !refund?.attributes?.status) {
+          return res.status(400).json({ success: false, error: 'Invalid refund event.' })
+        }
+        await handlePayMongoRefund?.(refund)
+        return res.json({ success: true })
+      }
       if (event.type !== 'checkout_session.payment.paid') return res.json({ success: true, ignored: true })
       const session = event.data, metadata = session?.attributes?.metadata || {}
       // Other checkout purposes (such as subscriptions) retain their own flow.

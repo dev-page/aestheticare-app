@@ -62,6 +62,8 @@
                     >
                       {{ order.status || 'Pending' }}
                     </span>
+                    <span v-if="order.cancellationRequestStatus === 'Requested'" class="orders-status-badge orders-status-pending">Cancellation review</span>
+                    <span v-else-if="['Requested', 'Processing', 'Pending', 'Refunded', 'Rejected'].includes(order.refundRequestStatus)" class="orders-status-badge orders-status-pending">Refund: {{ order.refundRequestStatus }}</span>
                   </td>
                   <td data-label="Created">{{ formatDate(order.createdAt) }}</td>
                   <td data-label="Actions">
@@ -173,8 +175,10 @@
         <div v-if="selectedOrder.refundRequestId || selectedOrder.refundVoucherId" class="bg-slate-800 rounded-lg p-4 border border-slate-700 mt-4">
           <p class="text-xs uppercase text-slate-400 mb-3">Refund Status</p>
           <p class="text-sm text-slate-200">
-            {{ selectedOrder.refundRequestStatus || (selectedOrder.refundVoucherId ? 'Approved' : 'Not requested') }}
+            Request: {{ selectedOrder.refundRequestStatus || 'Not requested' }} · Refund: {{ selectedOrder.refundStatus || 'Not started' }}
           </p>
+          <p v-if="selectedOrder.refundAmount" class="mt-2 text-sm text-slate-300">Amount: ₱{{ Number(selectedOrder.refundAmount || 0).toFixed(2) }}</p>
+          <p v-if="selectedOrder.refundFailure" class="mt-2 text-sm text-amber-300">The payment provider could not complete the refund yet. The clinic will review it.</p>
           <p v-if="selectedOrder.refundReason" class="mt-2 text-sm text-slate-300 whitespace-pre-wrap">{{ selectedOrder.refundReason }}</p>
           <a
             v-if="selectedOrder.refundProofUrl"
@@ -191,8 +195,23 @@
           <p class="text-xs uppercase text-slate-400 mb-3">Cancellation</p>
           <p class="text-sm text-slate-200">{{ selectedOrder.cancelReasonType || 'No reason recorded' }}</p>
           <p v-if="selectedOrder.cancelReasonDetails" class="mt-2 text-sm text-slate-300 whitespace-pre-wrap">{{ selectedOrder.cancelReasonDetails }}</p>
-          <p v-if="selectedOrder.paymentStatus === 'Refunded'" class="mt-3 text-xs text-emerald-300">
-            Refund initiated. Depending on your payment method, the amount may reflect within 24 hours or a few business days.
+          <p v-if="selectedOrder.cancellationRequestStatus === 'Requested'" class="mt-3 text-xs text-amber-300">
+            Your cancellation is waiting for clinic review. The order remains active until the clinic approves it.
+          </p>
+          <p v-else-if="selectedOrder.cancellationRequestStatus === 'Rejected'" class="mt-3 text-xs text-rose-300">
+            The clinic declined the cancellation. Your order remains active.
+          </p>
+          <p v-else-if="selectedOrder.cancellationRequestStatus === 'Approved' && selectedOrder.refundStatus === 'Not Applicable'" class="mt-3 text-xs text-slate-300">
+            The clinic approved the cancellation. No refund was due under the recorded payment and cancellation terms.
+          </p>
+          <p v-else-if="selectedOrder.cancellationRequestStatus === 'Approved' && selectedOrder.refundStatus === 'Requested'" class="mt-3 text-xs text-amber-300">
+            The clinic approved the cancellation. Finance is reviewing the refund before it can be sent.
+          </p>
+          <p v-else-if="selectedOrder.refundStatus === 'Processing'" class="mt-3 text-xs text-amber-300">
+            The refund is being processed. The clinic will update you when the payment provider confirms the result.
+          </p>
+          <p v-else-if="selectedOrder.refundStatus === 'Refunded'" class="mt-3 text-xs text-emerald-300">
+            The clinic or payment provider confirmed that the refund was issued.
           </p>
         </div>
       </div>
@@ -329,7 +348,7 @@
             <div>
               <p class="text-sm font-semibold text-[#5d3925]">Before you submit</p>
               <p class="mt-1 text-sm leading-6">
-                Please attach clear proof and describe the issue carefully. Refund requests are reviewed before any voucher or follow-up action is issued.
+                Please attach clear proof and describe the issue. The clinic reviews the request before choosing and recording a refund method.
               </p>
             </div>
           </div>
@@ -405,9 +424,9 @@
 
     <Modal :isOpen="showCancelModal" @close="closeCancelModal" :showConfirm="false" panelClass="bg-slate-900 border border-slate-700">
       <div class="text-slate-200">
-        <h2 class="text-xl font-semibold text-white mb-2">Cancel Order</h2>
+        <h2 class="text-xl font-semibold text-white mb-2">Request Order Cancellation</h2>
         <p class="text-sm text-slate-400 mb-4">
-          Choose a cancellation reason. If this order was already paid online, your refund will be processed after cancellation.
+          Choose a reason. The clinic will review your request before cancelling the order or processing any eligible refund.
         </p>
 
         <div class="space-y-4">
@@ -437,7 +456,7 @@
           </div>
 
           <div class="rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-3 text-xs text-slate-300">
-            Refund notice: if your payment was already processed online, the refund is initiated after cancellation and may reflect within 24 hours or a few business days depending on your payment method.
+            Your cancellation request goes to the clinic for review first. If approved, any eligible refund is processed separately and shown here as Processing until it is confirmed.
           </div>
 
           <div class="flex items-center gap-3">
@@ -447,7 +466,7 @@
               class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-60 text-white"
               @click="confirmCancelOrder"
             >
-              {{ isSubmittingCancel ? 'Cancelling...' : 'Confirm Cancellation' }}
+              {{ isSubmittingCancel ? 'Submitting...' : 'Send Cancellation Request' }}
             </button>
             <button
               type="button"
@@ -583,14 +602,24 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return parsed.getTime()
     }
 
-    const canCancelOrder = () => false
+    const canCancelOrder = (order) => {
+      const status = String(order?.status || '').trim()
+      return ['Pending', 'Confirmed', 'Preparing', 'Packed', 'Awaiting Stock'].includes(status)
+        && !['Requested', 'Processing', 'Pending', 'Approved'].includes(String(order?.cancellationRequestStatus || ''))
+    }
 
     const canMarkReceived = (order) => {
       const status = String(order?.status || '').trim().toLowerCase()
       return ['ready for pickup', 'received'].includes(status)
     }
 
-    const canRequestRefund = () => false
+    const canRequestRefund = (order) => {
+      const paid = ['paid', 'completed', 'partially refunded'].includes(String(order?.paymentStatus || '').trim().toLowerCase())
+      const refundable = Number(order?.amountPaid || order?.totalPaid || order?.total || 0) > Number(order?.refundedAmountTotal || 0)
+      const eligibleStatus = ['Delivered', 'Received', 'Completed', 'Preparing', 'Awaiting Stock'].includes(String(order?.status || ''))
+      const activeRequest = ['Requested', 'Processing', 'Pending'].includes(String(order?.refundRequestStatus || ''))
+      return paid && refundable && eligibleStatus && !activeRequest
+    }
 
 
     const handleProofFileChange = (event) => {
@@ -734,7 +763,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return
       }
       const paymentStatus = String(selectedRefundOrder.value.paymentStatus || '').trim().toLowerCase()
-      if (!['paid', 'completed'].includes(paymentStatus)) {
+      if (!['paid', 'completed', 'partially refunded'].includes(paymentStatus)) {
         toast.error('Only successfully paid orders can be submitted for a refund.')
         return
       }
@@ -764,44 +793,27 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           throw new Error('The paid amount could not be verified for this order.')
         }
 
-        const requestPayload = {
-          orderId: selectedRefundOrder.value.id,
-          customerId: selectedRefundOrder.value.customerId || auth.currentUser?.uid || '',
-          customerName: selectedRefundOrder.value.customerName || selectedRefundOrder.value.delivery?.fullName || 'Customer',
-          branchId: selectedRefundOrder.value.branchId || '',
-          branchName: selectedRefundOrder.value.branchName || '',
-          amount: paidAmount,
-          issueType: String(refundRequestForm.value.issueType || '').trim(),
-          reason: String(refundRequestForm.value.reason || '').trim(),
-          proofUrl,
-          proofPath: filePath,
-          status: 'Pending',
-          orderStatusAtRequest: selectedRefundOrder.value.status || 'Completed',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        }
-
-        const requestRef = await addDoc(collection(db, 'refundRequests'), requestPayload)
-
-        await updateDoc(doc(db, 'customerOrders', selectedRefundOrder.value.id), {
-          status: 'Refund Requested',
-          refundRequestId: requestRef.id,
-          refundRequestStatus: 'Pending',
-          refundIssueType: requestPayload.issueType,
-          refundReason: requestPayload.reason,
-          refundProofUrl: proofUrl,
-          refundProofPath: filePath,
-          refundRequestedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+        const response = await fetchFromBackend(`/customer/orders/${encodeURIComponent(selectedRefundOrder.value.id)}/refund-request`, {
+          method: 'POST',
+          headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
+          body: JSON.stringify({
+            issueType: String(refundRequestForm.value.issueType || '').trim(),
+            reason: String(refundRequestForm.value.reason || '').trim(),
+            proofUrl,
+            proofPath: filePath,
+          }),
         })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to submit refund request.')
+        const requestId = payload.data?.requestId
 
         const targetOrder = orders.value.find((entry) => entry.id === selectedRefundOrder.value.id)
         if (targetOrder) {
-          targetOrder.status = 'Refund Requested'
-          targetOrder.refundRequestId = requestRef.id
-          targetOrder.refundRequestStatus = 'Pending'
-          targetOrder.refundIssueType = requestPayload.issueType
-          targetOrder.refundReason = requestPayload.reason
+          targetOrder.refundRequestId = requestId
+          targetOrder.refundRequestStatus = 'Requested'
+          targetOrder.refundStatus = 'Requested'
+          targetOrder.refundIssueType = String(refundRequestForm.value.issueType || '').trim()
+          targetOrder.refundReason = String(refundRequestForm.value.reason || '').trim()
           targetOrder.refundProofUrl = proofUrl
           targetOrder.refundProofPath = filePath
         }
@@ -809,11 +821,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (selectedOrder.value?.id === selectedRefundOrder.value.id && targetOrder) {
           selectedOrder.value = { ...targetOrder }
         }
-
-        await createCustomerNotification({
-          title: 'Refund Request Submitted',
-          message: `Your refund request for order ${selectedRefundOrder.value.id} has been submitted and is now pending review.`,
-        })
 
         toast.success('Refund request submitted.')
         closeRefundModal()
@@ -829,7 +836,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const order = selectedCancelOrder.value
       if (!order?.id) return
       if (!canCancelOrder(order)) {
-        toast.error('Orders can only be cancelled within 24 hours and before shipment.')
+        toast.error('This order cannot accept a cancellation request in its current status.')
         return
       }
 
@@ -847,11 +854,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       isSubmittingCancel.value = true
       try {
-        const isPayMongoPaid =
-          String(order.source || '').trim().toLowerCase() === 'paymongo_checkout' &&
-          String(order.paymentStatus || '').trim().toLowerCase() === 'paid' &&
-          Boolean(String(order.paymongoPaymentId || '').trim())
-
         {
           const response = await fetchFromBackend(`/customer/orders/${order.id}/cancel`, {
             method: 'POST',
@@ -872,35 +874,22 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             throw new Error(payload?.error || 'Failed to cancel and refund order.')
           }
 
-          order.status = 'Cancelled'
-          order.paymentStatus = payload?.data?.paymentStatus || order.paymentStatus
-          order.refundType = payload?.data?.refundType || 'PayMongo'
-          order.refundAmount = Number(payload?.data?.refundAmount || order.total || 0)
-          order.paymongoRefundId = payload?.data?.paymongoRefundId || null
-          order.paymongoRefundStatus = payload?.data?.paymongoRefundStatus || null
+          order.cancellationRequestStatus = 'Requested'
+          order.refundRequestId = payload?.data?.requestId || ''
+          order.refundRequestStatus = 'Requested'
+          order.refundStatus = 'Requested'
+          order.refundAmount = Number(payload?.data?.estimatedRefundAmount || 0)
           order.cancelReasonType = reasonType
           order.cancelReasonDetails = reasonType === 'Other' ? reasonDetails : ''
-          order.cancelledAt = new Date()
-          order.refundedAt = new Date()
+          order.cancelRequestedAt = new Date()
         }
 
         if (selectedOrder.value?.id === order.id) {
           selectedOrder.value = { ...order }
         }
 
-        await createCustomerNotification({
-          title: 'Order Cancelled',
-          message: isPayMongoPaid
-            ? `Your order ${order.id} was cancelled. Your refund has been initiated and may reflect within 24 hours or a few business days depending on your payment method.`
-            : `Your order ${order.id} was cancelled successfully.`,
-        })
-
         closeCancelModal()
-        toast.success(
-          isPayMongoPaid
-            ? 'Order cancelled. Your refund has been initiated and may reflect within 24 hours or a few business days depending on your payment method.'
-            : 'Order cancelled successfully.'
-        )
+        toast.success('Cancellation request submitted. The clinic will review it before cancelling the order.')
       } catch (error) {
         console.error(error)
         toast.error(error?.message || 'Failed to cancel order.')

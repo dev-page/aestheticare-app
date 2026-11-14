@@ -182,6 +182,10 @@
                 <span>Refund Amount</span>
                 <span class="font-semibold text-emerald-300">{{ formatCurrency(selectedRequest.refundRequestedAmount || 0) }}</span>
               </div>
+            <div v-if="selectedRequest.requestType === 'cancel'" class="flex items-center justify-between gap-4">
+              <span>Payment</span>
+              <span class="font-semibold text-white">{{ selectedRequest.paymentStatus || 'Not paid' }} · {{ isPayMongoPayment(selectedRequest) ? 'PayMongo' : 'Clinic recorded' }}</span>
+            </div>
               <div v-if="selectedRequest.requestType === 'cancel'" class="flex items-center justify-between gap-4">
                 <span>Commission Excluded</span>
                 <span class="font-semibold text-rose-300">{{ formatCurrency(selectedRequest.refundCommissionAmount || 0) }}</span>
@@ -216,11 +220,25 @@
               ></textarea>
             </div>
 
+            <div v-if="requiresFinanceRefundReview(selectedRequest) && !canManageRefunds" class="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+              A staff member with Finance refund permission must approve this paid booking cancellation or rejection.
+            </div>
+            <div v-else-if="requiresOfflineRefund(selectedRequest)" class="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+              <p class="font-semibold">Offline refund confirmation</p>
+              <p class="mt-1 text-amber-100/80">For cancellation approval or a paid booking rejection, record an offline refund only after cash or a bank transfer has actually been returned to the customer.</p>
+              <label class="mt-3 flex items-start gap-2">
+                <input v-model="offlineRefundConfirmed" type="checkbox" class="mt-1 accent-amber-500" />
+                <span>I confirm the refund has been returned to the customer.</span>
+              </label>
+              <label class="mt-3 block text-sm text-amber-100">Receipt or transfer reference</label>
+              <input v-model.trim="offlineRefundReference" type="text" maxlength="160" class="mt-2 w-full rounded-lg border border-amber-500/30 bg-slate-900 px-3 py-2 text-white" placeholder="Enter the cash receipt or bank reference" />
+            </div>
+
             <div class="mt-6 flex flex-wrap gap-3">
               <button
                 type="button"
                 class="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="processing || selectedRequest.requestReviewState !== 'Pending'"
+                :disabled="processing || selectedRequest.requestReviewState !== 'Pending' || !canRejectSelectedRequest(selectedRequest)"
                 @click="rejectSelectedRequest"
               >
                 Reject
@@ -228,7 +246,7 @@
               <button
                 type="button"
                 class="rounded-lg bg-cyan-600 px-4 py-2 text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="processing || selectedRequest.requestReviewState !== 'Pending'"
+                :disabled="processing || selectedRequest.requestReviewState !== 'Pending' || !canApproveSelectedRequest(selectedRequest)"
                 @click="approveSelectedRequest"
               >
                 {{ processing ? 'Processing...' : 'Approve' }}
@@ -255,9 +273,10 @@ const emit = defineEmits(['pending-count'])
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { getFirestore } from 'firebase/firestore'
 import { toast } from 'vue3-toastify'
+import { usePermissions } from '@/composables/usePermissions'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { getClinicPolicyForBranch } from '@/utils/clinicPolicies'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -266,11 +285,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 const db = getFirestore(getApp())
 const auth = getAuth(getApp())
+const { hasPermission } = usePermissions()
 
 const loading = ref(true)
 const processing = ref(false)
-const currentUserId = ref('')
-const currentUserName = ref('')
 const currentBranchId = ref('')
 const currentBranchName = ref('')
 const currentBranchPolicy = ref({ cancellationPolicy: '', reschedulePolicy: '', refundPolicy: '' })
@@ -280,6 +298,9 @@ const searchQuery = ref('')
 const typeFilter = ref('')
 const statusFilter = ref('pending')
 const decisionNote = ref('')
+const offlineRefundReference = ref('')
+const offlineRefundConfirmed = ref(false)
+const canManageRefunds = computed(() => hasPermission('finance:refunds:manage'))
 let unsubscribeAuth = null
 
 const formatCurrency = (value) =>
@@ -394,7 +415,26 @@ const selectedRequest = computed(() => requests.value.find((request) => request.
 
 const selectRequest = (request) => {
   selectedRequestId.value = request?.id || ''
+  offlineRefundReference.value = ''
+  offlineRefundConfirmed.value = false
 }
+
+const isPayMongoPayment = request => Boolean(request?.paymongoPaymentId) || String(request?.source || '').trim().toLowerCase() === 'paymongo_checkout'
+const requiresOfflineRefund = request => {
+  const paid = Number(request?.amountPaid || 0) > 0
+    && ['paid', 'partially paid', 'partially refunded', 'refunded'].includes(normalizeStatus(request?.paymentStatus))
+  if (request?.requestType === 'cancel') return Number(request.refundRequestedAmount || 0) > 0 && paid && !isPayMongoPayment(request)
+  return request?.requestType === 'booking' && paid && !isPayMongoPayment(request)
+}
+
+const requiresFinanceRefundReview = request => {
+  if (request?.requestType === 'cancel') return Number(request.refundRequestedAmount || 0) > 0 && Number(request.amountPaid || 0) > 0
+  return request?.requestType === 'booking'
+    && Number(request.amountPaid || 0) > 0
+    && ['paid', 'partially paid', 'partially refunded', 'refunded'].includes(normalizeStatus(request.paymentStatus))
+}
+const canApproveSelectedRequest = request => !(request?.requestType === 'cancel' && requiresFinanceRefundReview(request) && !canManageRefunds.value)
+const canRejectSelectedRequest = request => !(request?.requestType === 'booking' && requiresFinanceRefundReview(request) && !canManageRefunds.value)
 
 const loadRequests = trackPageLoad(async () => {
   loading.value = true
@@ -483,6 +523,11 @@ const approveSelectedRequest = async () => {
     toast.error('Please select a request first.')
     return
   }
+  if (request.requestType === 'cancel' && requiresOfflineRefund(request)
+    && (!offlineRefundConfirmed.value || offlineRefundReference.value.trim().length < 2)) {
+    toast.error('Confirm the offline refund and enter its receipt or transfer reference first.')
+    return
+  }
 
   processing.value = true
   try {
@@ -492,10 +537,14 @@ const approveSelectedRequest = async () => {
     const response = await fetchFromBackend(endpoint, {
       method: 'POST',
       headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
-      body: JSON.stringify({
-        ...(request.requestType === 'booking' ? { decision: 'approve' } : {}),
-        decisionNote: decisionNote.value.trim(),
-      }),
+    body: JSON.stringify({
+      ...(request.requestType === 'booking' ? { decision: 'approve' } : { decision: 'approve' }),
+      decisionNote: decisionNote.value.trim(),
+      ...(request.requestType === 'cancel' ? {
+        offlineRefundConfirmed: offlineRefundConfirmed.value,
+        offlineRefundReference: offlineRefundReference.value.trim(),
+      } : {}),
+    }),
     })
 
     const raw = await response.text()
@@ -513,7 +562,14 @@ const approveSelectedRequest = async () => {
     if (request.requestType === 'booking') {
       toast.success('Booking request approved. The customer can now complete payment.')
     } else if (request.requestType === 'cancel') {
-      toast.success('Cancellation request approved.')
+      const refundStatus = payload.data?.refundStatus
+      toast.success(refundStatus === 'Processing'
+        ? 'Cancellation approved. The refund is processing.'
+        : refundStatus === 'Refunded'
+          ? 'Cancellation approved and refund confirmed.'
+          : refundStatus === 'Requested'
+            ? 'Cancellation approved. The refund needs clinic review.'
+            : 'Cancellation approved. No refund was due.')
     } else {
       toast.success('Reschedule request approved.')
     }
@@ -536,57 +592,44 @@ const rejectSelectedRequest = async () => {
     toast.error('Please select a request first.')
     return
   }
+  if (request.requestType === 'booking' && requiresOfflineRefund(request)
+    && (!offlineRefundConfirmed.value || offlineRefundReference.value.trim().length < 2)) {
+    toast.error('Return the offline payment, confirm it, and enter its reference before rejecting this paid booking.')
+    return
+  }
 
   processing.value = true
   try {
-    if (request.requestType === 'booking') {
-      const response = await fetchFromBackend(`/appointments/${request.id}/approve-booking`, {
-        method: 'POST',
-        headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
-        body: JSON.stringify({ decision: 'reject', decisionNote: decisionNote.value.trim() }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to reject the booking request.')
-      decisionNote.value = ''
-      toast.success('Booking request rejected.')
-      await loadRequests()
-      selectedRequestId.value = requests.value[0]?.id || ''
-      return
-    }
-
-    const payload = {
-      requestDecisionStatus: 'Rejected',
-      requestDecisionNote: decisionNote.value.trim(),
-      requestDecisionAt: serverTimestamp(),
-      requestDecisionById: currentUserId.value,
-      requestDecisionByName: currentUserName.value || 'Clinic Staff',
-      updatedAt: serverTimestamp(),
-    }
-
-    if (request.requestType === 'cancel') {
-      payload.status = 'Cancellation Rejected'
-      payload.refundStatus = 'Rejected'
-      payload.refundDecisionNote = decisionNote.value.trim()
-      payload.refundDecisionAt = serverTimestamp()
-      payload.refundDecisionById = currentUserId.value
-      payload.refundDecisionByName = currentUserName.value || 'Clinic Staff'
-    } else {
-      payload.status = 'Reschedule Rejected'
-      payload.rescheduleDecisionNote = decisionNote.value.trim()
-      payload.rescheduleDecisionAt = serverTimestamp()
-      payload.rescheduleDecisionById = currentUserId.value
-      payload.rescheduleDecisionByName = currentUserName.value || 'Clinic Staff'
-    }
-
-    await updateDoc(doc(db, 'appointments', request.id), payload)
+    const endpoint = request.requestType === 'booking'
+      ? `/appointments/${request.id}/approve-booking`
+      : `/appointments/${request.id}/approve-request`
+    const response = await fetchFromBackend(endpoint, {
+      method: 'POST',
+      headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        decision: 'reject', decisionNote: decisionNote.value.trim(),
+        ...(request.requestType === 'booking' ? { offlineRefundConfirmed: offlineRefundConfirmed.value, offlineRefundReference: offlineRefundReference.value.trim() } : {}),
+      }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Failed to reject the request.')
     decisionNote.value = ''
-    toast.success('Request rejected.')
+    offlineRefundReference.value = ''
+    offlineRefundConfirmed.value = false
+    const refundStatus = payload.data?.refundStatus
+    toast.success(request.requestType === 'booking' && refundStatus === 'Processing'
+      ? 'Booking rejected. The refund is processing.'
+      : request.requestType === 'booking' && refundStatus === 'Refunded'
+        ? 'Booking rejected and refund confirmed.'
+        : request.requestType === 'booking' && refundStatus === 'Requested'
+          ? 'Booking rejected. Finance needs to review the refund.'
+          : 'Request rejected.')
     await loadRequests()
     const nextSelected = requests.value.find((item) => item.id === request.id) || requests.value[0] || null
     selectedRequestId.value = nextSelected?.id || ''
   } catch (error) {
     console.error(error)
-    toast.error('Failed to reject the request.')
+    toast.error(error?.message || 'Failed to reject the request.')
   } finally {
     processing.value = false
   }
@@ -595,17 +638,8 @@ const rejectSelectedRequest = async () => {
 onMounted(trackPageLoad(() => {
   unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
     if (!user) return
-    currentUserId.value = user.uid
-
-    const userSnap = await getDoc(doc(db, 'users', user.uid))
-    const userData = userSnap.exists() ? userSnap.data() || {} : {}
     const scope = await loadOwnerBranchScope(db, user.uid)
     currentBranchId.value = props.branchId || scope.branchId
-    currentUserName.value =
-      String(userData.fullName || '').trim() ||
-      `${String(userData.firstName || '').trim()} ${String(userData.lastName || '').trim()}`.trim() ||
-      user.email ||
-      'Clinic Staff'
 
     if (!currentBranchId.value) {
       toast.error('Your account has no branch assignment.')

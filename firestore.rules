@@ -110,14 +110,6 @@ service cloud.firestore {
 
 
 
-    function financeCanUpdateRefund() {
-      return hasPermission('finance:refunds:manage')
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'refundType', 'refundReason', 'refundAmount', 'refundVoucherId',
-          'refundVoucherCode', 'refundRequestStatus', 'refundedAt', 'refundedBy', 'updatedAt'
-        ]);
-    }
-
     function clinicDoc(branchId) {
       return get(/databases/$(database)/documents/clinics/$(branchId));
     }
@@ -456,7 +448,7 @@ service cloud.firestore {
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
             && (hasPermission('appointments:view') || hasPermission('appointments:update') || hasPermission('appointments:review')
               || (resource.data.get('type', '') == 'Consultation' && hasPermission('consultations:view'))
-              || hasPermission('finance:refunds:view')))
+              || hasPermission('finance:refunds:view') || hasPermission('finance:refunds:manage')))
           || isSuperadmin());
       // Customer bookings are created by the API after availability and policy checks.
       allow create: if isSignedIn()
@@ -480,7 +472,10 @@ service cloud.firestore {
                 'consultationWindowStartAt', 'consultationWindowEndAt', 'consultationDurationMinutes', 'workerKeyVerifiedAt',
                 'customerId', 'customerEmail', 'branchId', 'date', 'time', 'endTime', 'practitionerId', 'assignedPractitionerId',
                 'parentAppointmentId', 'groupBookingId', 'groupBooking', 'isGroupRecipient', 'paymentManagedByOrganizer',
-                'refundProcessing', 'refundProcessingAt', 'refundProcessingById', 'paymongoRefundId', 'paymongoRefundStatus',
+                'refundProcessing', 'refundProcessingAt', 'refundProcessingById', 'refundRequestId', 'refundRequestStatus',
+                'refundStatus', 'refundType', 'refundMethod', 'refundAmount', 'refundApprovedAmount', 'refundedAmountTotal',
+                'refundOperationId', 'refundReference', 'refundFailure', 'refundRejectionReason', 'refundDecisionNote',
+                'refundDecisionAt', 'refundDecisionById', 'refundDecisionByName', 'refundedAt', 'paymongoRefundId', 'paymongoRefundStatus',
                 'paymongoPaymentId', 'paymongoPaidAt', 'paymongoCheckoutSessionId', 'commissionAmount', 'commissionPercent', 'merchantNetAmount',
                 'sessionNumber', 'treatmentSessionId', 'selectedServiceIds', 'selectedServices', 'serviceIds', 'type',
                 'consultationAccessVersion', 'consultationCodeVerifiedAt', 'consultationCodeVerifiedBy',
@@ -657,12 +652,7 @@ service cloud.firestore {
         && ((resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
           || (canAccessBranch(resource.data.branchId)
             && (hasPermission('payments:view') || hasPermission('finance:sales:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
-      allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)
-          && (hasPermission('payments:create') || hasPermission('finance:refunds:manage')));
-      allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('payments:update'));
-      allow delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /inventoryItems/{itemId} {
@@ -670,14 +660,7 @@ service cloud.firestore {
         && ((resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
           || (canAccessBranch(resource.data.branchId)
           && (hasPermission('inventory:view') || hasPermission('finance:purchases:view') || hasPermission('finance:reports:view'))))) || isSuperadmin());
-      allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('inventory:create'))
-        && !request.resource.data.keys().hasAny(['pharmacyEnabled', 'dispensingClass', 'retailPrice']);
-      allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:update'))
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pharmacyEnabled', 'dispensingClass', 'retailPrice']);
-      allow delete: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('inventory:disable'));
+      allow create, update, delete: if false;
     }
 
     match /suppliers/{supplierId} {
@@ -1021,13 +1004,12 @@ service cloud.firestore {
     }
 
     match /customerOrders/{orderId} {
-      allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid || (canAccessBranch(resource.data.branchId) && (hasPermission('orders:view') || hasPermission('orders:update') || hasPermission('finance:refunds:view') || hasPermission('finance:sales:view'))) || isSuperadmin());
+      allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid || (canAccessBranch(resource.data.branchId) && (hasPermission('orders:view') || hasPermission('orders:update') || hasPermission('finance:refunds:view') || hasPermission('finance:refunds:manage') || hasPermission('finance:sales:view'))) || isSuperadmin());
       allow create: if false;
       allow update: if isSignedIn() && ((resource.data.customerId == request.auth.uid
         && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'receivedAt', 'deliveryProofUrl', 'deliveryProofPath', 'deliveryRating', 'deliveryReview', 'updatedAt']) && resource.data.status in ['Ready for Pickup', 'Picked Up', 'Delivered', 'Received'] && request.resource.data.status == 'Completed')
-          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'refundRequestId', 'refundRequestStatus', 'refundIssueType', 'refundReason', 'refundProofUrl', 'refundProofPath', 'refundRequestedAt', 'updatedAt']) && resource.data.status in ['Delivered', 'Received', 'Completed', 'Preparing', 'Awaiting Stock'] && request.resource.data.status == 'Refund Requested')
           || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orderNumber', 'updatedAt'])))
-        || (canAccessBranch(resource.data.branchId) && ((hasPermission('orders:update') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['riderName', 'riderPhone', 'riderVehicle', 'riderAssignedAt', 'riderAssignedBy', 'updatedAt'])) || financeCanUpdateRefund())));
+        || (canAccessBranch(resource.data.branchId) && hasPermission('orders:update') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['riderName', 'riderPhone', 'riderVehicle', 'riderAssignedAt', 'riderAssignedBy', 'updatedAt'])));
       allow delete: if false;
     }
     match /inventoryMovements/{id} {
@@ -1042,20 +1024,16 @@ service cloud.firestore {
     match /refundRequests/{requestId} {
       allow read: if isSignedIn()
         && (resource.data.customerId == request.auth.uid
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('finance:refunds:view'))
+          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && (hasPermission('finance:refunds:view') || hasPermission('finance:refunds:manage')))
           || isSuperadmin());
-      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
-      allow update: if isSignedIn()
-        && ((request.auth.uid == resource.data.customerId
-          && request.resource.data.status == 'Cancelled'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-            && hasPermission('finance:refunds:manage')
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'status', 'voucherId', 'voucherCode', 'reviewedBy', 'reviewReason', 'reviewedAt', 'updatedAt'
-            ]))
-          || isSuperadmin());
+      // Refund requests and decisions are created and changed only by the trusted API.
+      allow create, update: if false;
       allow delete: if false;
+    }
+
+    match /refundOperations/{operationId} {
+      // Provider submissions and settlement records are managed by the trusted API.
+      allow read, write: if false;
     }
 
     match /refundVouchers/{voucherId} {
@@ -1063,11 +1041,7 @@ service cloud.firestore {
         && (resource.data.customerId == request.auth.uid
           || (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('finance:refunds:view'))
           || isSuperadmin());
-      allow create: if isSignedIn()
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('finance:refunds:manage');
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /supportTickets/{ticketId} {

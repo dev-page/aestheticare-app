@@ -156,6 +156,7 @@ export const registerOrderWorkflow = (app, { admin, requireAuth, loadUserContext
         const assignedBranches = new Set([context.userData?.branchId, ...(Array.isArray(context.userData?.branchIds) ? context.userData.branchIds : [])].filter(Boolean))
         check(order && assignedBranches.has(order.branchId), 'Order belongs to another clinic.', 403)
         check(!order.cancellationInProgress, 'A cancellation is being processed. Wait for its result.')
+        check(!['Requested', 'Processing'].includes(String(order.refundRequestStatus || '')), 'A refund or cancellation request is being reviewed. Wait for the clinic decision.')
         // Customer product orders are collected from the selected clinic branch.
         // Keep fulfillment pickup-only even when a caller invokes this endpoint directly.
         const pickupTransitions = {

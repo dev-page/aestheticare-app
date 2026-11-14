@@ -167,6 +167,11 @@
                   </td>
                   <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
+                    <p v-if="normalizeAppointmentStatus(appt.status) === 'cancellation requested'" class="table-secondary">The clinic is reviewing your request. Your appointment remains scheduled until it is approved.</p>
+                    <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Processing'" class="table-secondary">Cancellation approved. Your refund is processing.</p>
+                    <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Requested'" class="table-secondary">Cancellation approved. The clinic is checking the refund with the payment provider.</p>
+                    <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Refunded'" class="table-secondary">Cancellation approved. The clinic or payment provider confirmed the refund.</p>
+                    <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Not Applicable'" class="table-secondary">Cancellation approved. No refund was due under the recorded payment and policy.</p>
                     <p v-if="['awaiting customer confirmation', 'balance due'].includes(normalizeAppointmentStatus(appt.status)) && canConfirmCompletion(appt)" class="table-secondary">The clinic marked this consultation complete. Confirm receipt when you are ready.</p>
                     <p v-else-if="normalizeAppointmentStatus(appt.status) === 'awaiting customer confirmation' && !appt.customerCompleted" class="table-secondary">The consultation is waiting for required notes or clinic review. You can report a problem in Consultation controls.</p>
                   </td>
@@ -257,6 +262,11 @@
                   <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
                   <td data-label="Status">
                     <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
+                    <p v-if="normalizeAppointmentStatus(appt.status) === 'cancellation requested'" class="table-secondary">The clinic is reviewing your request. Your appointment remains scheduled until it is approved.</p>
+                    <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Processing'" class="table-secondary">Cancellation approved. Your refund is processing.</p>
+                    <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Requested'" class="table-secondary">Cancellation approved. The clinic is checking the refund with the payment provider.</p>
+                    <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Refunded'" class="table-secondary">Cancellation approved. The clinic or payment provider confirmed the refund.</p>
+                    <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Not Applicable'" class="table-secondary">Cancellation approved. No refund was due under the recorded payment and policy.</p>
                     <p v-if="appt.sameDayTreatmentAppointmentId" class="table-secondary">Same-day request: consultation first, then {{ appt.sameDayTreatmentName || 'your provisional treatment' }}. The treatment slot is provisional until practitioner clearance.</p>
                     <p v-if="appt.sameDayTreatmentStatus === 'pending_clinical_clearance'" class="table-secondary">The consultation must be completed first. The treatment slot is provisional; signing and payment unlock only after the practitioner clears it.</p>
                     <p v-else-if="appt.sameDayTreatmentStatus === 'cleared'" class="table-secondary">The practitioner cleared today’s treatment. Review and sign its agreement, then pay before check-in.</p>

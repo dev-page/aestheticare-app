@@ -52,4 +52,9 @@ export const registerFinanceWorkflow = (app, { admin, requireAuth, loadUserConte
       tx.update(ref, { paidAmount: next.paidAmount, outstandingAmount: next.outstandingAmount, status: next.status, paymentMethod: next.paymentMethod, paymentReference: next.paymentReference, paidAt: next.paidAt, updatedAt: next.updatedAt }); tx.set(paymentRef, { branchId: record.branchId, expenseId: ref.id, amount, paymentMethod: next.paymentMethod, paymentReference, recordedBy: context.uid, createdAt: now() }); audit(tx, next, context, 'expense-payment-recorded', paymentReference); return { id: ref.id, status: next.status }
     })
   }))
+
+  // Store credit has no redemption path in this application. Keep the legacy
+  // route closed so old clients cannot issue unusable voucher refunds.
+  app.post('/finance/refunds/orders/:id/issue-voucher', requireAuth, (_req, res) => res.status(410).json({ success: false, error: 'Voucher refunds are unavailable. Use the refund settlement workflow.' }))
+  app.post('/finance/refunds/orders/:id/reject-request', requireAuth, (_req, res) => res.status(410).json({ success: false, error: 'This refund endpoint has been replaced. Refresh the Finance Refunds page.' }))
 }

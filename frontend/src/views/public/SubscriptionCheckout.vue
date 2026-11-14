@@ -586,15 +586,6 @@ const handlePayMongoReturn = async () => {
       throw new Error('Payment is not yet marked as paid in PayMongo.')
     }
 
-    const payments = Array.isArray(payload?.data?.payments) ? payload.data.payments : []
-    const firstPayment = payments[0] || {}
-    const paymentAttrs = firstPayment?.attributes || {}
-    const paymentMethodType =
-      paymentAttrs?.payment_method?.type ||
-      paymentAttrs?.source?.type ||
-      paymentAttrs?.type ||
-      null
-
     const subscriptionAction = payload?.data?.subscriptionAction || null
 
     const paymentDocId = String(payload?.data?.paymentRecordId || '').trim()
@@ -607,13 +598,7 @@ const handlePayMongoReturn = async () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          recipient: pending.payerEmail,
-          payerName: `${pending.payerFirstName || ''} ${pending.payerLastName || ''}`.trim(),
-          planName: pending.planName,
-          amount: Number(pending.amount || 0),
-          currency: 'PHP', currencyDisplay: 'code',
-          referenceNumber: pending.referenceNumber,
-          paymentMethod: paymentMethodType,
+          checkoutSessionId: pending.checkoutSessionId,
         }),
       })
     } catch (emailError) {

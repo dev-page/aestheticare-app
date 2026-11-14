@@ -21,15 +21,16 @@ function fixture(roleKey = 'Owner') {
   return { ...h, call }
 }
 
-test('Premium trial activates atomically, charges nothing and retries retain its original expiry', async () => {
+test('Free Trial activates Premium access, charges nothing and retries retain its original expiry', async () => {
   const h = fixture(), before = Date.now()
   const result = await h.call()
   assert.equal(result.status, 200)
   const user = h.records.get('users/owner'), clinic = h.records.get('clinics/owner')
   assert.equal(user.subscriptionPlan, 'premium')
   assert.equal(clinic.subscriptionPlan, 'premium')
-  assert.equal(user.subscriptionTrialPlan, 'premium')
-  assert.equal(result.data.plan, 'premium')
+  assert.equal(user.subscriptionTrialPlan, 'free-trial')
+  assert.equal(result.data.plan, 'free-trial')
+  assert.equal(result.data.accessPlan, 'premium')
   assert.equal(user.paymentStatus, 'trial')
   assert.equal(user.subscriptionStartedAt, null)
   assert.equal(user.paymentId, null)
@@ -59,7 +60,7 @@ test('expired trial and paid plans retain their selected plan and trial entitlem
   assert.equal((await h.call()).status, 409)
 })
 
-test('Basic trials receive the same default duration', async () => {
+test('a posted paid plan cannot change the separate Free Trial offer', async () => {
   const h = fixture()
   let handler
   registerSubscriptionTrial({ post: (_path, ...handlers) => { handler = handlers.at(-1) } }, {
@@ -67,7 +68,10 @@ test('Basic trials receive the same default duration', async () => {
   })
   let payload
   await handler({ user: { uid: 'owner' }, body: { targetPlan: 'basic' } }, { status: () => ({ json: value => { payload = value } }), json: value => { payload = value } })
-  assert.equal(payload.data.plan, 'basic')
+  assert.equal(payload.data.plan, 'free-trial')
+  assert.equal(payload.data.accessPlan, 'premium')
+  assert.equal(h.records.get('users/owner').subscriptionTrialPlan, 'free-trial')
+  assert.equal(h.records.get('users/owner').subscriptionPlan, 'premium')
   assert.equal(h.records.get('users/owner').subscriptionTrialDays, TRIAL_DAYS)
 })
 

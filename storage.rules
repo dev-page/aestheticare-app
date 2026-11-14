@@ -133,7 +133,7 @@ service firebase.storage {
     }
 
     match /support-tickets/{userId}/{ticketId}/{fileName} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperadmin());
       allow create: if isSignedIn() && request.auth.uid == userId && isImageUpload();
       allow update, delete: if false;
     }

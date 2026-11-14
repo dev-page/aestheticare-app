@@ -8,13 +8,15 @@ import { registerSubscriptionReminders, sendSubscriptionReminders } from './subs
 import { serviceOnlyClinicPolicies } from '../../shared/clinicPolicyContent.js'
 import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
 import { cancellationRefundEstimate, isCancellationPolicyEnabled, isReschedulePolicyEnabled, rescheduleAllowanceForPolicy } from '../../shared/appointmentChangePolicy.js'
-import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder, lockOrderCancellation } from './orderWorkflow.js'
+import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { registerPractitionerTeams } from './practitionerTeams.js'
 import { appointmentStaffIds, practitionerTypes } from '../../shared/practitionerTeam.js'
 import { registerSupplyWorkflow } from './supplyWorkflow.js'
 import { registerPharmacyWorkflow } from './pharmacyWorkflow.js'
 import { registerFinanceWorkflow } from './financeWorkflow.js'
+import { registerRefundWorkflow } from './refundWorkflow.js'
+import { registerPaymentReceiptWorkflow } from './paymentReceiptWorkflow.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import { registerBookingBatch } from './bookingBatch.js'
@@ -3593,6 +3595,10 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
 registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
 registerPharmacyWorkflow(app, { admin, requireAuth, loadUserContext })
 registerFinanceWorkflow(app, { admin, requireAuth, loadUserContext })
+const refundWorkflow = registerRefundWorkflow(app, {
+  admin, requireAuth, loadUserContext, getClinicPoliciesForBranch,
+  buildPayMongoHeaders, finalizeCancelledOrder,
+})
 registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders })
@@ -7124,6 +7130,7 @@ app.post('/group-consents/:token/request', async (req, res) => {
       assertWorkflow(practitionerId, 'The appointment has no assigned practitioner to reschedule with.', 409)
       assertWorkflow(!await getApprovedLeaveForDate(practitionerId, date), 'The practitioner is on approved leave for that date.', 409)
     }
+    const refundRequestId = type === 'cancel' ? crypto.randomUUID() : ''
     await firestore.runTransaction(async tx => {
       const snap = await tx.get(ref), current = snap.exists ? snap.data() || {} : null
       assertWorkflow(current && current.isGroupRecipient === true && String(current.customerEmail || '').toLowerCase() === String(invite.recipientEmail || '').toLowerCase(), 'This invitation does not match its attendee.', 403)
@@ -7132,7 +7139,7 @@ app.post('/group-consents/:token/request', async (req, res) => {
       const timestamp = admin.firestore.FieldValue.serverTimestamp()
       if (type === 'cancel') {
         const refundTerms = cancellationTermsSnapshot(policy, current)
-        tx.update(ref, { status: 'Cancellation Requested', cancellationReason: reason, cancellationRequestedAt: timestamp, cancellationPolicySnapshot: String(policy.cancellationPolicy || '').trim(), cancellationRefundPolicySnapshot: refundTerms, refundRequestedAmount: refundTerms.refundAmount, refundCommissionAmount: refundTerms.commissionAmount, refundStatus: 'Pending Approval', updatedAt: timestamp })
+        tx.update(ref, { status: 'Cancellation Requested', statusBeforeChange: current.status || '', cancellationReason: reason, cancellationRequestedAt: timestamp, cancellationPolicySnapshot: String(policy.cancellationPolicy || '').trim(), cancellationRefundPolicySnapshot: refundTerms, refundRequestedAmount: refundTerms.refundAmount, refundCommissionAmount: refundTerms.commissionAmount, refundRequestId, refundRequestStatus: 'Requested', refundStatus: 'Requested', updatedAt: timestamp })
       } else {
         assertWorkflow(Number(current.rescheduleCount || 0) < rescheduleAllowanceForPolicy(policy), 'You have reached this clinic’s reschedule limit.', 403)
         const prepared = await prepareBooking({ tx, db: firestore, reservation: { ...current, date, time, endTime: '', practitionerId, assignedPractitionerId: practitionerId, groupBooking: null }, getBookingRange, rangesOverlap, appointmentId })
@@ -8743,78 +8750,13 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
 })
 
 
-app.post('/send-payment-receipt', async (req, res) => {
-  const { recipient, payerName, planName, amount, currency, referenceNumber, paymentMethod } = req.body ?? {}
-
-  if (!recipient) {
-    return res.status(400).json({
-      success: false,
-      error: 'recipient is required',
-    })
-  }
-
-  if (!postmarkClient || !senderEmail) {
-    return res.status(500).json({
-      success: false,
-      error: 'POSTMARK_API_TOKEN or POSTMARK_SENDER is missing',
-    })
-  }
-
-  const safeRecipient = String(recipient || '').trim().toLowerCase()
-  const safeName = String(payerName || 'Customer').trim() || 'Customer'
-  const safePlan = String(planName || 'Subscription').trim() || 'Subscription'
-  const safeAmount = Number(amount || 0)
-  const safeCurrency = String(currency || 'PHP').trim() || 'PHP'
-  const safeReference = String(referenceNumber || '').trim()
-  const safeMethod = String(paymentMethod || '').trim()
-
-  const formatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: safeCurrency })
-  const amountLabel = formatter.format(safeAmount)
-
-  const message = {
-    to: safeRecipient,
-    from: senderEmail,
-    subject: 'Subscription Payment सफल',
-    text:
-      `Hi ${safeName},\n\n` +
-      `Your payment was successful.\n` +
-      `Plan: ${safePlan}\n` +
-      `Amount: ${amountLabel}\n` +
-      `${safeMethod ? `Payment Method: ${safeMethod}\n` : ''}` +
-      `${safeReference ? `Reference: ${safeReference}\n` : ''}` +
-      `\nThank you for subscribing to AesthetiCare.`,
-    html: `
-      <div style="font-family:Arial,sans-serif;line-height:1.5;color:#2a1408;">
-        <h2 style="margin:0 0 12px;">Payment Successful</h2>
-        <p>Hi ${safeName},</p>
-        <p>Your subscription payment was successful.</p>
-        <table style="border-collapse:collapse;margin-top:12px;">
-          <tr><td style="padding:4px 12px 4px 0;"><strong>Plan</strong></td><td>${safePlan}</td></tr>
-          <tr><td style="padding:4px 12px 4px 0;"><strong>Amount</strong></td><td>${amountLabel}</td></tr>
-          ${safeMethod ? `<tr><td style="padding:4px 12px 4px 0;"><strong>Payment Method</strong></td><td>${safeMethod}</td></tr>` : ''}
-          ${safeReference ? `<tr><td style="padding:4px 12px 4px 0;"><strong>Reference</strong></td><td>${safeReference}</td></tr>` : ''}
-        </table>
-        <p style="margin-top:16px;">Thank you for subscribing to AesthetiCare.</p>
-      </div>
-    `,
-  }
-
-  try {
-    await postmarkClient.sendEmail({
-      From: senderEmail,
-      To: safeRecipient,
-      Subject: message.subject,
-      TextBody: message.text,
-      HtmlBody: message.html,
-    })
-    return res.json({ success: true })
-  } catch (error) {
-    const providerMessage = error?.Message || error?.message || 'Unknown Postmark error'
-    console.error('Postmark error:', providerMessage)
-    return res.status(500).json({ success: false, error: providerMessage })
-  }
+registerPaymentReceiptWorkflow(app, {
+  admin,
+  sendEmail: async ({ To, Subject, TextBody, HtmlBody }) => {
+    if (!postmarkClient || !senderEmail) throw Object.assign(new Error('Payment receipt email is unavailable.'), { status: 503 })
+    return postmarkClient.sendEmail({ From: senderEmail, To, Subject, TextBody, HtmlBody })
+  },
 })
-
 app.post('/appointments/reservations', requireAuth, async (req, res) => {
   if (!adminReady) {
     return res.status(500).json({
@@ -9116,6 +9058,7 @@ app.post('/appointments/:id/request-change', requireAuth, async (req, res) => {
     }
 
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const refundRequestId = type === 'cancel' ? crypto.randomUUID() : ''
     const result = await firestore.runTransaction(async tx => {
       const freshSnap = await tx.get(appointmentRef)
       const fresh = freshSnap.exists ? freshSnap.data() || {} : null
@@ -9128,13 +9071,16 @@ app.post('/appointments/:id/request-change', requireAuth, async (req, res) => {
         const refundTerms = cancellationTermsSnapshot(policy, fresh)
         tx.update(appointmentRef, {
           status: 'Cancellation Requested',
+          statusBeforeChange: fresh.status || '',
           cancellationReason: reason,
           cancellationRequestedAt: timestamp,
           cancellationPolicySnapshot: String(policy.cancellationPolicy || '').trim(),
           cancellationRefundPolicySnapshot: refundTerms,
           refundRequestedAmount: refundTerms.refundAmount,
           refundCommissionAmount: refundTerms.commissionAmount,
-          refundStatus: 'Pending Approval',
+          refundRequestId,
+          refundRequestStatus: 'Requested',
+          refundStatus: 'Requested',
           updatedAt: timestamp,
         })
       } else {
@@ -9339,7 +9285,8 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       if (clinic.ownerId !== req.user.uid && appointmentBranchId !== req.user.uid) return res.status(403).json({ success: false, error: 'This booking belongs to another clinic.' })
     }
     const approved = decision === 'approve'
-    const isPaid = String(appointment.paymentStatus || '').trim().toLowerCase() === 'paid'
+    const appointmentPaymentStatus = String(appointment.paymentStatus || '').trim().toLowerCase()
+    const isPaid = ['paid', 'partially paid', 'partially refunded', 'refunded'].includes(appointmentPaymentStatus) && Number(appointment.amountPaid || 0) > 0
     if (approved) {
       const leave = await getApprovedLeaveForDate(appointment.practitionerId || appointment.assignedPractitionerId, appointment.date)
       if (leave) return res.status(409).json({ success: false, error: 'The assigned worker is on leave. Choose another booking schedule.' })
@@ -9347,29 +9294,23 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
     }
     let refundId = null
     let refundStatus = null
-    if (!approved && isPaid && String(appointment.paymongoPaymentId || '').trim()) {
-      const refundResponse = await fetch('https://api.paymongo.com/v1/refunds', {
-        method: 'POST',
-        headers: buildPayMongoHeaders(),
-        body: JSON.stringify({
-          data: {
-            attributes: {
-              amount: Math.round(Math.max(0, Number(appointment.amountPaid || appointment.totalAmount || appointment.amount || 0)) * 100),
-              payment_id: String(appointment.paymongoPaymentId).trim(),
-              reason: 'requested_by_customer',
-            },
-          },
-        }),
-      })
-      const refundData = await refundResponse.json().catch(() => null)
-      if (!refundResponse.ok) {
-        return res.status(refundResponse.status).json({
-          success: false,
-          error: refundData?.errors?.[0]?.detail || 'The paid booking could not be refunded, so the rejection was not recorded.',
-        })
+    let refundState = null
+    let refundWarning = ''
+    let pendingRefund = null
+    if (!approved && isPaid) {
+      assertWorkflow(req.userContext.permissions.has('finance:refunds:manage') || roleKey === 'Owner' || roleKey === 'Superadmin', 'Finance refund permission is required to approve a paid booking rejection.', 403)
+      const amount = Number(appointment.amountPaid || 0)
+      const requestId = String(appointment.refundRequestId || `booking-rejected-${appointmentId}`)
+      if (isPayMongoPaidAppointment(appointment)) {
+        assertWorkflow(String(appointment.paymongoPaymentId || '').trim(), 'The verified PayMongo payment reference is missing.', 409)
+        pendingRefund = { kind: 'paymongo', amount, requestId, paymentId: String(appointment.paymongoPaymentId).trim() }
+      } else {
+        assertWorkflow(String(appointment.source || '').trim().toLowerCase() !== 'paymongo_checkout' && !appointment.paymongoPaymentId, 'The verified PayMongo payment reference is missing. Do not record an offline refund for an online payment.', 409)
+        assertWorkflow(req.body?.offlineRefundConfirmed === true, 'Confirm that the offline refund has actually been returned before rejecting this paid booking.', 400)
+        assertWorkflow(String(req.body?.offlineRefundReference || '').trim().length >= 2, 'Enter the cash or bank refund reference.', 400)
+        pendingRefund = { kind: 'offline', amount, requestId, reference: String(req.body.offlineRefundReference).trim() }
       }
-      refundId = refundData?.data?.id || null
-      refundStatus = refundData?.data?.attributes?.status || 'pending'
+      refundState = 'Requested'
     }
     const awaitsSameDayClearance = appointment.sameDayTreatmentStatus === 'pending_clinical_clearance'
     const nextStatus = approved ? (awaitsSameDayClearance ? 'Awaiting Clinical Clearance' : afterPaymentStatus(appointment)) : 'Rejected'
@@ -9383,13 +9324,11 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       rejectedAt: approved ? null : admin.firestore.FieldValue.serverTimestamp(),
       rejectedById: approved ? null : req.user.uid,
       paymentStatus: nextPaymentStatus,
-      ...(refundId ? {
-        paymentStatus: 'Refunded',
-        refundStatus,
-        refundAmount: Number(appointment.amountPaid || appointment.totalAmount || appointment.amount || 0),
-        paymongoRefundId: refundId,
-        paymongoRefundStatus: refundStatus,
-        refundedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(!approved && isPaid ? {
+        refundStatus: 'Requested',
+        refundRequestStatus: 'Requested',
+        refundAmount: Number(appointment.amountPaid || 0),
+        refundRequestId: pendingRefund?.requestId || String(appointment.refundRequestId || `booking-rejected-${appointmentId}`),
       } : {}),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
@@ -9412,7 +9351,13 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
           return {
             approvalStatus: approved ? 'Approved' : 'Rejected',
             status: approved ? (treatmentPending ? 'Awaiting Clinical Clearance' : afterPaymentStatus(record)) : 'Rejected',
-            paymentStatus: approved ? (treatmentPending ? 'Not Applicable' : 'Pending') : 'Not Applicable',
+            paymentStatus: approved
+              ? (treatmentPending ? 'Not Applicable' : 'Pending')
+              : (isPaid && record === latest ? latest.paymentStatus || appointment.paymentStatus || 'Paid' : 'Not Applicable'),
+            ...(!approved && isPaid && record === latest ? {
+              refundStatus: 'Requested', refundRequestStatus: 'Requested', refundAmount: Number(appointment.amountPaid || 0),
+              refundRequestId: pendingRefund?.requestId || String(appointment.refundRequestId || `booking-rejected-${appointmentId}`),
+            } : {}),
             approvalNote: decisionNote, approvedAt: approved ? timestamp : null, approvedById: approved ? req.user.uid : null,
             rejectedAt: approved ? null : timestamp, rejectedById: approved ? null : req.user.uid,
             ...(treatmentPending && !approved ? { sameDayTreatmentStatus: 'booking_rejected' } : {}), updatedAt: timestamp,
@@ -9448,7 +9393,11 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       } else if (approved) prepared = await prepareBooking({ tx, db: firestore, reservation: latest, getBookingRange, rangesOverlap, appointmentId })
       if (prepared) tx.set(prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       for (const lock of prepared?.customerLocks || []) tx.set(lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-      tx.update(appointmentRef, { ...(prepared && !Number(latest.amountPaid) ? prepared.data : {}), ...update })
+      tx.update(appointmentRef, {
+        ...(prepared && !Number(latest.amountPaid) ? prepared.data : {}),
+        ...update,
+        ...(!approved && isPaid ? { paymentStatus: latest.paymentStatus || appointment.paymentStatus || 'Paid' } : {}),
+      })
       if (children.length) {
         for (const child of children) {
           if (child.prepared) tx.set(child.prepared.lock, { updatedAt: admin.firestore.FieldValue.serverTimestamp() })
@@ -9478,6 +9427,27 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
       }
     })
 
+    if (!approved && isPaid && pendingRefund) {
+      try {
+        const refundContext = {
+          entityType: 'appointment', recordId: appointmentId, branchId: appointmentBranchId,
+          customerId: appointment.customerId || '', customerName: appointment.customerName || appointment.clientName || 'Customer',
+          amount: pendingRefund.amount, paidAmount: Number(appointment.amountPaid || 0), requestId: pendingRefund.requestId,
+          actorId: req.user.uid, description: appointment.service || 'Rejected appointment booking', reason: decisionNote || 'Booking rejected by clinic',
+        }
+        const refundResult = pendingRefund.kind === 'paymongo'
+          ? await refundWorkflow.startPayMongoRefund({ ...refundContext, paymentId: pendingRefund.paymentId })
+          : await refundWorkflow.recordOfflineRefund({ ...refundContext, reference: pendingRefund.reference })
+        refundId = refundResult.paymongoRefundId || null
+        refundStatus = refundResult.providerStatus || null
+        refundState = refundResult.status || 'Requested'
+      } catch (refundError) {
+        refundWarning = refundError?.message || 'The refund could not be started automatically. Finance review is required.'
+        refundState = 'Requested'
+        console.error('Could not start booking rejection refund:', refundError)
+      }
+    }
+
     if (appointment.bookingId) {
       await firestore.collection('bookings').doc(String(appointment.bookingId)).set({
         status: approved ? 'approved' : 'rejected',
@@ -9495,14 +9465,14 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
         title: approved ? 'Booking Request Approved' : 'Booking Request Rejected',
         message: approved
           ? `Your request for ${appointment.service || 'the selected service'} was approved.`
-          : `Your request for ${appointment.service || 'the selected service'} was rejected.${refundId ? ' A refund has been initiated.' : ''}${decisionNote ? ` Note: ${decisionNote}` : ''}`,
+          : `Your request for ${appointment.service || 'the selected service'} was rejected.${refundState === 'Processing' ? ' Your refund is processing.' : refundState === 'Refunded' ? ' Your refund has been confirmed.' : refundState === 'Requested' ? ' The refund needs clinic review.' : ''}${decisionNote ? ` Note: ${decisionNote}` : ''}`,
         link: '/customer/appointments',
       })
     } catch (notificationError) {
       console.error('Failed to notify customer about booking decision:', notificationError)
     }
 
-    return res.json({ success: true, data: { appointmentId, status: nextStatus, approvalStatus: update.approvalStatus } })
+    return res.json({ success: true, data: { appointmentId, status: nextStatus, approvalStatus: update.approvalStatus, refundStatus: refundState || null, ...(refundWarning ? { refundWarning } : {}) } })
   } catch (error) {
     console.error('appointments/approve-booking error:', error)
     return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to decide booking request' })
@@ -9551,10 +9521,12 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
   }
 
   const appointmentId = String(req.params.id || '').trim()
+  const decision = String(req.body?.decision || 'approve').trim().toLowerCase()
   const decisionNote = String(req.body?.decisionNote || req.body?.note || '').trim()
   if (!appointmentId) {
     return res.status(400).json({ success: false, error: 'appointment id is required' })
   }
+  if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ success: false, error: 'decision must be approve or reject' })
 
   const firestore = admin.firestore()
   const appointmentRef = firestore.collection('appointments').doc(appointmentId)
@@ -9592,8 +9564,10 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       })
     }
 
-    const sameDayRestriction = sameDayChangeError(appointmentData, requestType)
-    if (sameDayRestriction) return res.status(409).json({ success: false, error: sameDayRestriction })
+    if (decision === 'approve') {
+      const sameDayRestriction = sameDayChangeError(appointmentData, requestType)
+      if (sameDayRestriction) return res.status(409).json({ success: false, error: sameDayRestriction })
+    }
 
     req.userContext = req.userContext || await loadUserContext(req.user.uid)
     const userSnap = await firestore.collection('users').doc(req.user.uid).get()
@@ -9629,6 +9603,38 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
     branchName = await getAppointmentBranchName(firestore, appointmentBranchId, 'Clinic')
     customerProfile = await getAppointmentCustomerProfile(firestore, appointmentData)
 
+    if (decision === 'reject') {
+      const rejectionReason = decisionNote || 'The clinic could not approve this request.'
+      const now = admin.firestore.FieldValue.serverTimestamp()
+      const rejectedStatus = await firestore.runTransaction(async tx => {
+        const freshSnap = await tx.get(appointmentRef)
+        const fresh = freshSnap.exists ? freshSnap.data() || {} : null
+        assertWorkflow(fresh && normalized(fresh.status) === (requestType === 'cancel' ? 'cancellation requested' : 'reschedule requested'), 'This request is no longer awaiting approval.', 409)
+        const restoredStatus = String(fresh.statusBeforeChange || afterPaymentStatus(fresh)).trim() || 'Scheduled'
+        tx.update(appointmentRef, {
+          status: restoredStatus,
+          statusBeforeChange: admin.firestore.FieldValue.delete(),
+          requestDecisionStatus: 'Rejected', requestDecisionNote: rejectionReason,
+          requestDecisionAt: now, requestDecisionById: req.user.uid, requestDecisionByName: staffDisplayName,
+          ...(requestType === 'cancel' ? {
+            refundStatus: 'Rejected', refundRequestStatus: 'Rejected', refundDecisionNote: rejectionReason,
+            refundDecisionAt: now, refundDecisionById: req.user.uid, refundDecisionByName: staffDisplayName,
+            cancellationRequestStatus: 'Rejected', cancellationRejectedAt: now,
+          } : { rescheduleDecisionNote: rejectionReason, rescheduleRejectedAt: now, rescheduleRejectedById: req.user.uid }),
+          updatedAt: now,
+        })
+        tx.set(firestore.collection('appointmentAudit').doc(), { appointmentId, branchId: appointmentBranchId, actorId: req.user.uid, action: `${requestType}_request_rejected`, previousStatus: fresh.status, nextStatus: restoredStatus, remarks: rejectionReason, createdAt: now })
+        return restoredStatus
+      })
+      await createAppointmentNotification({
+        firestore, customerId: customerProfile?.customerId || appointmentData.customerId || '',
+        title: requestType === 'cancel' ? 'Cancellation Request Declined' : 'Reschedule Request Declined',
+        message: `Your ${requestType === 'cancel' ? 'cancellation' : 'reschedule'} request for ${appointmentData.service || 'your appointment'} was declined. The existing appointment remains scheduled. Note: ${rejectionReason}`,
+        link: '/customer/appointments',
+      }).catch(() => {})
+      return res.json({ success: true, data: { appointmentId, requestType, status: rejectedStatus, decision: 'Rejected' } })
+    }
+
     if (requestType === 'cancel') {
       const totalAmount = Number(appointmentData.totalAmount || appointmentData.amountPaid || appointmentData.amount || 0)
       const refundSnapshot = appointmentData.cancellationRefundPolicySnapshot
@@ -9652,42 +9658,22 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
         commissionAmount,
       })
 
-      if (isPayMongoPaid && paymentId && refundAmount > 0) {
-        await firestore.runTransaction(async tx => {
-          const fresh = (await tx.get(appointmentRef)).data()
-          assertWorkflow(fresh && fresh.status === 'Cancellation Requested' && !fresh.refundProcessing && !fresh.paymongoRefundId, 'This refund is already being processed. Refresh the appointment or contact the clinic.')
-          tx.update(appointmentRef, { refundProcessing: true, refundProcessingAt: admin.firestore.FieldValue.serverTimestamp(), refundProcessingById: req.user.uid })
-        })
-        const refundResponse = await fetch('https://api.paymongo.com/v1/refunds', {
-          method: 'POST',
-          headers: buildPayMongoHeaders(),
-          body: JSON.stringify({
-            data: {
-              attributes: {
-                amount: Math.round(refundAmount * 100),
-                payment_id: paymentId,
-                reason: 'requested_by_customer',
-              },
-            },
-          }),
-        })
-
-        const refundData = await refundResponse.json()
-        if (!refundResponse.ok) {
-          await appointmentRef.update({ refundProcessing: false })
-          return res.status(refundResponse.status).json({
-            success: false,
-            error: refundData?.errors?.[0]?.detail || 'Failed to refund appointment payment via PayMongo',
-            provider: refundData,
-          })
+      const paidStatuses = ['paid', 'partially paid', 'partially refunded', 'refunded']
+      const wasPaid = paidStatuses.includes(String(appointmentData.paymentStatus || '').trim().toLowerCase()) && Number(appointmentData.amountPaid || 0) > 0
+      const refundRequestId = String(appointmentData.refundRequestId || `appointment-cancel-${appointmentId}`)
+      let refundResult = null
+      if (refundAmount > 0 && wasPaid) {
+        assertWorkflow(req.userContext.permissions.has('finance:refunds:manage') || roleKey === 'Owner' || roleKey === 'Superadmin', 'Finance refund permission is required to approve a cancellation with a refund.', 403)
+        if (isPayMongoPaid) {
+          assertWorkflow(paymentId, 'The verified PayMongo payment reference is missing.', 409)
+        } else {
+          assertWorkflow(String(appointmentData.source || '').trim().toLowerCase() !== 'paymongo_checkout', 'The verified PayMongo payment reference is missing. Do not record an offline refund for an online payment.', 409)
+          assertWorkflow(req.body?.offlineRefundConfirmed === true, 'Confirm that the offline refund has actually been returned before approving.', 400)
+          assertWorkflow(String(req.body?.offlineRefundReference || '').trim().length >= 2, 'Enter the cash or bank refund reference.', 400)
         }
-
-        paymongoRefundId = refundData?.data?.id || null
-        paymongoRefundStatus = refundData?.data?.attributes?.status || 'pending'
-        assertWorkflow(paymongoRefundId, 'The provider did not return a refund reference. Contact the clinic before retrying.')
-        await appointmentRef.update({ paymongoRefundId, paymongoRefundStatus })
       }
 
+      const initialRefundStatus = refundAmount > 0 && wasPaid ? 'Requested' : 'Not Applicable'
       await firestore.runTransaction(async tx => {
         const freshSnap = await tx.get(appointmentRef)
         const fresh = freshSnap.exists ? freshSnap.data() || {} : null
@@ -9697,13 +9683,17 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
         const releasedTreatmentId = await cancelPendingSameDayTreatment({ tx, db: firestore, appointmentId, consultation: fresh, timestamp })
         tx.update(appointmentRef, {
         status: 'Cancelled',
+        statusBeforeChange: admin.firestore.FieldValue.delete(),
         refundProcessing: false,
         requestDecisionStatus: 'Approved',
         requestDecisionNote: decisionNote,
         requestDecisionAt: admin.firestore.FieldValue.serverTimestamp(),
         requestDecisionById: req.user.uid,
         requestDecisionByName: staffDisplayName,
-        refundStatus: 'Approved',
+        refundStatus: initialRefundStatus,
+        refundRequestStatus: initialRefundStatus,
+        cancellationRequestStatus: 'Approved',
+        refundRequestId,
         refundApprovedAmount: refundAmount,
         refundCommissionAmount: commissionAmount,
         refundDecisionNote: decisionNote,
@@ -9715,34 +9705,46 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
         cancellationApprovedByName: staffDisplayName,
         paymongoRefundId: paymongoRefundId || appointmentData.paymongoRefundId || null,
         paymongoRefundStatus: paymongoRefundStatus || appointmentData.paymongoRefundStatus || null,
-        paymentStatus: isPayMongoPaid && refundAmount > 0 ? 'Refunded' : String(appointmentData.paymentStatus || ''),
-        refundedAt: isPayMongoPaid && refundAmount > 0 ? admin.firestore.FieldValue.serverTimestamp() : appointmentData.refundedAt || null,
         ...(releasedTreatmentId ? { sameDayTreatmentStatus: 'booking_cancelled' } : {}),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         })
       })
 
-      if (isPayMongoPaid && refundAmount > 0) {
-        await firestore.collection('transactions').add({
-          branchId: appointmentBranchId,
-          amount: -Math.abs(refundAmount),
-          method: appointmentData.paymentMethod || 'PayMongo',
-          status: 'Refunded',
-          type: 'appointment_refund',
-          appointmentId,
-          clientName: appointmentData.customerName || customerProfile?.customerName || 'Customer',
-          service: appointmentData.service || 'Appointment Cancellation Refund',
-          paymongoPaymentId: paymentId,
-          paymongoRefundId,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        })
+      if (refundAmount > 0 && wasPaid) {
+        try {
+          if (isPayMongoPaid) {
+            refundResult = await refundWorkflow.startPayMongoRefund({
+              entityType: 'appointment', recordId: appointmentId, branchId: appointmentBranchId,
+              customerId: appointmentData.customerId || '', customerName: appointmentData.customerName || appointmentData.clientName || 'Customer',
+              paymentId, amount: refundAmount, paidAmount: appointmentData.amountPaid, requestId: refundRequestId,
+              actorId: req.user.uid, description: appointmentData.service || 'Appointment cancellation', reason: decisionNote || appointmentData.cancellationReason || 'Cancellation approved',
+            })
+            paymongoRefundId = refundResult.paymongoRefundId || null
+            paymongoRefundStatus = refundResult.providerStatus || null
+          } else {
+            refundResult = await refundWorkflow.recordOfflineRefund({
+              entityType: 'appointment', recordId: appointmentId, branchId: appointmentBranchId,
+              customerId: appointmentData.customerId || '', customerName: appointmentData.customerName || appointmentData.clientName || 'Customer',
+              amount: refundAmount, paidAmount: appointmentData.amountPaid, requestId: refundRequestId,
+              actorId: req.user.uid, description: appointmentData.service || 'Appointment cancellation',
+              reason: decisionNote || appointmentData.cancellationReason || 'Cancellation approved', reference: req.body?.offlineRefundReference,
+            })
+          }
+        } catch (refundError) {
+          warnings.push(refundError?.message || 'Refund needs finance review.')
+          refundResult = { status: 'Requested' }
+        }
       }
+      const finalRefundStatus = refundAmount > 0 && wasPaid ? (refundResult?.status || 'Requested') : 'Not Applicable'
 
       try {
-      const notificationMessage = isPayMongoPaid && refundAmount > 0
-          ? `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved. A refund of ${formatPhilippineCurrency(refundAmount)} has been initiated. The platform commission of ${formatPhilippineCurrency(commissionAmount)} is non-refundable and was retained according to platform policy. The refund may take 3 to 5 business days to reflect, depending on your bank or payment method.`
-          : `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved. The refund may take 3 to 5 business days to reflect, depending on your bank or payment method. If your appointment was not paid online, no refund will be issued.`
+        const notificationMessage = finalRefundStatus === 'Processing'
+          ? `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved. A refund of ${formatPhilippineCurrency(refundAmount)} is processing and will be marked complete after the payment provider confirms it.`
+          : finalRefundStatus === 'Requested'
+            ? `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved, but the refund could not be started automatically. The clinic will review the payment and update you.`
+          : finalRefundStatus === 'Refunded'
+            ? `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved. The clinic confirmed the refund of ${formatPhilippineCurrency(refundAmount)}.`
+            : `Your cancellation request for ${appointmentData.service || 'your appointment'} was approved. No refund is due under the recorded payment and cancellation terms.`
 
         await createAppointmentNotification({
           firestore,
@@ -9762,7 +9764,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
           requestType: 'cancel',
           refundAmount,
           commissionAmount,
-          isPayMongoPaid,
+          isPayMongoPaid: finalRefundStatus === 'Processing' || finalRefundStatus === 'Refunded',
           appointmentDate: appointmentData.date || '',
           appointmentTime: appointmentData.time || '',
           source: String(appointmentData.source || '').trim(),
@@ -9775,7 +9777,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
           requestType: 'cancel',
           refundAmount,
           commissionAmount,
-          isPayMongoPaid,
+          isPayMongoPaid: finalRefundStatus === 'Processing' || finalRefundStatus === 'Refunded',
           appointmentDate: appointmentData.date || '',
           appointmentTime: appointmentData.time || '',
         })
@@ -9796,6 +9798,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
           commissionAmount,
           paymongoRefundId,
           paymongoRefundStatus,
+          refundStatus: finalRefundStatus,
           warnings,
         },
       })
@@ -9892,7 +9895,7 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       },
     })
   } catch (error) {
-    return res.status(500).json({
+    return res.status(error?.status || 500).json({
       success: false,
       error: error?.message || 'Failed to approve appointment request',
     })
@@ -10194,7 +10197,7 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
       },
     })
   } catch (error) {
-    return res.status(500).json({
+    return res.status(error?.status || 500).json({
       success: false,
       error: error?.message || 'Unexpected PayMongo error',
     })
@@ -10325,6 +10328,7 @@ const recordAppointmentPayment = async (req, res) => {
 app.post('/appointments/:id/record-payment', requireAuth, recordAppointmentPayment)
 registerAppointmentPaymentWebhook(app, {
   admin, recordPayment: recordAppointmentPayment,
+  handlePayMongoRefund: refundWorkflow.handlePayMongoRefund,
   getSecret: () => process.env.PAYMONGO_WEBHOOK_SECRET || '',
   getMode: () => payMongoSecretKey.startsWith('sk_live_') ? 'live' : payMongoSecretKey.startsWith('sk_test_') ? 'test' : '',
 })
@@ -10470,6 +10474,7 @@ app.get('/paymongo/checkout-session/:id', optionalAuth, async (req, res) => {
         payerLastName: String(metadata?.payerLastName || '').trim(),
         payerName: `${String(metadata?.payerFirstName || '').trim()} ${String(metadata?.payerLastName || '').trim()}`.trim(),
         payerEmail: String(metadata?.payerEmail || metadata?.email || '').trim().toLowerCase(),
+        paymentMethod: String(attributes?.payments?.[0]?.attributes?.payment_method?.type || attributes?.payments?.[0]?.attributes?.source?.type || '').trim(),
         referenceNumber: String(attributes?.reference_number || metadata?.referenceNumber || '').trim(),
         paymongoCheckoutSessionId: checkoutSessionId,
         paymongoStatus: attributes?.status || null,
@@ -10498,173 +10503,6 @@ app.get('/paymongo/checkout-session/:id', optionalAuth, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error?.message || 'Unexpected PayMongo error',
-    })
-  }
-})
-
-app.post('/customer/orders/:id/cancel', requireAuth, async (req, res) => {
-  if (!assertPayMongoConfigured(res)) return
-
-  const orderId = String(req.params.id || '').trim()
-  const reasonType = String(req.body?.reasonType || '').trim()
-  const reasonDetails = String(req.body?.reasonDetails || '').trim()
-  if (!orderId) {
-    return res.status(400).json({
-      success: false,
-      error: 'order id is required',
-    })
-  }
-  if (!reasonType) {
-    return res.status(400).json({
-      success: false,
-      error: 'reasonType is required',
-    })
-  }
-  if (reasonType === 'Other' && !reasonDetails) {
-    return res.status(400).json({
-      success: false,
-      error: 'reasonDetails is required when reasonType is Other',
-    })
-  }
-
-  let cancellationOrderRef = null
-  try {
-    const firestore = admin.firestore()
-    const orderRef = firestore.collection('customerOrders').doc(orderId)
-    const orderSnap = await orderRef.get()
-
-    if (!orderSnap.exists) {
-      return res.status(404).json({
-        success: false,
-        error: 'Order not found',
-      })
-    }
-
-    const orderData = orderSnap.data() || {}
-    if (String(orderData.customerId || '').trim() !== String(req.user?.uid || '').trim()) {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-      })
-    }
-
-    const branchId = String(orderData.branchId || orderData.items?.[0]?.branchId || '').trim()
-    const { policy } = await getClinicPoliciesForBranch(firestore, branchId)
-    if (policy.productCancellationPolicyEnabled !== true || policy.orderCancellationAllowed !== true) {
-      return res.status(400).json({ success: false, error: 'This clinic does not allow product-order cancellations.' })
-    }
-
-    const status = String(orderData.status || '').trim().toLowerCase()
-    if (['cancelled', 'completed', 'refunded', 'shipped', 'out for delivery', 'delivered', 'ready for pickup', 'picked up'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: 'This order can no longer be cancelled because it has already been shipped or completed.',
-      })
-    }
-
-    const createdAt = orderData.createdAt?.toDate?.() || new Date(orderData.createdAt || 0)
-    if (!(createdAt instanceof Date) || Number.isNaN(createdAt.getTime())) {
-      return res.status(400).json({
-        success: false,
-        error: 'Order creation date is invalid.',
-      })
-    }
-
-    const diffHours = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60)
-    const cancellationWindowHours = Math.max(0, Number(policy.orderCancellationWindowHours || 0))
-    if (diffHours > cancellationWindowHours) {
-      return res.status(400).json({
-        success: false,
-        error: `Orders can only be cancelled within ${cancellationWindowHours} hour${cancellationWindowHours === 1 ? '' : 's'} of placement.`,
-      })
-    }
-
-    const totalAmount = Number(orderData.total || 0)
-    const paymentId = String(orderData.paymongoPaymentId || '').trim()
-    const isPayMongoPaid =
-      String(orderData.source || '').trim().toLowerCase() === 'paymongo_checkout' &&
-      String(orderData.paymentStatus || '').trim().toLowerCase() === 'paid' &&
-      Boolean(paymentId)
-
-    const refundPercentage = policy.orderCancellationNonRefundable === true ? 0 : Math.max(0, Math.min(100, Number(policy.orderCancellationRefundPercentage || 0)))
-    const refundableAmount = Math.round(totalAmount * refundPercentage) / 100
-
-    await lockOrderCancellation(firestore, orderId, req.user.uid)
-    cancellationOrderRef = orderRef
-    let refundId = orderData.pendingCancellationRefund?.id || null
-    let refundStatus = orderData.pendingCancellationRefund?.status || null
-
-    if (isPayMongoPaid && refundableAmount > 0 && !refundId) {
-      const refundResponse = await fetch('https://api.paymongo.com/v1/refunds', {
-        method: 'POST',
-        headers: buildPayMongoHeaders(),
-        body: JSON.stringify({
-          data: {
-            attributes: {
-              amount: Math.round(refundableAmount * 100),
-              payment_id: paymentId,
-              reason: 'requested_by_customer',
-            },
-          },
-        }),
-      })
-
-      const refundData = await refundResponse.json()
-      if (!refundResponse.ok) {
-        await orderRef.update({ cancellationInProgress: false })
-        cancellationOrderRef = null
-        return res.status(refundResponse.status).json({
-          success: false,
-          error: refundData?.errors?.[0]?.detail || 'Failed to refund payment via PayMongo',
-          provider: refundData,
-        })
-      }
-
-      refundId = refundData?.data?.id || null
-      refundStatus = refundData?.data?.attributes?.status || 'pending'
-      await orderRef.update({ pendingCancellationRefund: { id: refundId, status: refundStatus } })
-    }
-
-    const updatePayload = {
-      status: 'Cancelled',
-      cancelReasonType: reasonType,
-      cancelReasonDetails: reasonType === 'Other' ? reasonDetails : '',
-      cancellationPolicySnapshot: String(policy.productOrderCancellationPolicy || '').trim(),
-      cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }
-
-    if (isPayMongoPaid && refundableAmount > 0) {
-      updatePayload.paymentStatus = 'Refunded'
-      updatePayload.refundType = 'PayMongo'
-      updatePayload.refundReason = `Order cancellation refund (${refundPercentage}%)`
-      updatePayload.refundAmount = refundableAmount
-      updatePayload.paymongoRefundId = refundId
-      updatePayload.paymongoRefundStatus = refundStatus
-      updatePayload.refundedAt = admin.firestore.FieldValue.serverTimestamp()
-    }
-
-    await finalizeCancelledOrder({ db: firestore, timestamp: () => admin.firestore.FieldValue.serverTimestamp(), orderId, update: updatePayload })
-
-    return res.json({
-      success: true,
-      data: {
-        orderId,
-        status: 'Cancelled',
-        cancelReasonType: reasonType,
-        cancelReasonDetails: reasonType === 'Other' ? reasonDetails : '',
-        paymentStatus: isPayMongoPaid && refundableAmount > 0 ? 'Refunded' : String(orderData.paymentStatus || ''),
-        refundType: isPayMongoPaid && refundableAmount > 0 ? 'PayMongo' : null,
-        refundAmount: isPayMongoPaid ? refundableAmount : 0,
-        paymongoRefundId: refundId,
-        paymongoRefundStatus: refundStatus,
-      },
-    })
-  } catch (error) {
-    if (cancellationOrderRef) await cancellationOrderRef.update({ cancellationInProgress: false }).catch(() => {})
-    return res.status(error.status || 500).json({
-      success: false,
-      error: error?.message || 'Failed to cancel order',
     })
   }
 })
