@@ -42,11 +42,14 @@
           :key="plan.id"
           type="button"
           class="text-left rounded-2xl border p-6 transition-all"
-          :class="isPlanDisabled(plan.id)
-            ? 'cursor-not-allowed border-slate-700/80 bg-slate-800/70 opacity-75'
-            : selectedPlan === plan.id
-              ? 'border-amber-400 bg-slate-900 shadow-[0_0_0_16px_rgba(251,191,36,0.08)] ring-2 ring-amber-400/30'
-              : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-800/90'"
+          :class="[
+            isPlanDisabled(plan.id)
+              ? 'cursor-not-allowed border-slate-700/80 bg-slate-800/70 opacity-75'
+              : selectedPlan === plan.id
+                ? 'border-amber-400 bg-slate-900 shadow-[0_0_0_16px_rgba(251,191,36,0.08)] ring-2 ring-amber-400/30'
+                : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-800/90',
+            plan.id === FREE_TRIAL_PLAN_ID ? 'trial-plan-card' : '',
+          ]"
           :disabled="isPlanDisabled(plan.id)"
           @click="selectPlan(plan.id)"
         >
@@ -411,6 +414,16 @@ onMounted(loadPlans)
 </script>
 
 <style scoped>
+.trial-plan-card:not(:disabled) {
+  border-color: #8b684d !important;
+  background-color: #34271e !important;
+}
+
+.trial-plan-card:not(:disabled).ring-2 {
+  border-color: #f0b74a !important;
+  background-color: #26190f !important;
+}
+
 .trial-offer { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 24px; padding: 24px; border: 1px solid #e6c29f; border-radius: 16px; background: #fff7eb; color: #493323; }
 .trial-offer h2 { margin: 0 0 8px; font-size: 20px; }
 .trial-offer p { margin: 0; max-width: 640px; font-size: 14px; line-height: 1.6; color: #785d48; }

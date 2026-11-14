@@ -15,6 +15,7 @@ import ClinicPlatformAgreement from '@/components/common/ClinicPlatformAgreement
 import ElectronicSignaturePad from '@/components/common/ElectronicSignaturePad.vue'
 import RegisterCustomer from '@/views/public/RegisterCustomer.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { CLINIC_PLATFORM_AGREEMENT } from '../../../../shared/clinicPlatformAgreement.js'
 import {
   validateCavitePinSelection,
 } from '@/utils/locationValidation'
@@ -210,7 +211,9 @@ const termsAccepted = ref(false)
 const clinicAgreementRead = ref(false)
 const clinicAgreementAccepted = ref(false)
 const clinicAgreementSignatureImage = ref('')
-const CLINIC_PLATFORM_AGREEMENT_VERSION = 'clinic-platform-agreement-v1'
+const CLINIC_PLATFORM_AGREEMENT_VERSION = CLINIC_PLATFORM_AGREEMENT.version
+const signedAgreementPdf = ref(null)
+const signedAgreementDownloadError = ref('')
 const emailChecked = ref(false)
 const isCheckingEmail = ref(false)
 const emailAvailability = ref('idle')
@@ -382,8 +385,6 @@ const getDocumentUploadGuidance = (docKey) => {
 
 const approvalRedirecting = ref(false)
 const approvalRedirectSeconds = ref(5)
-const pendingApprovalRedirecting = ref(false)
-const pendingApprovalRedirectSeconds = ref(5)
 const APPROVAL_REDIRECT_DURATION_SECONDS = 5
 const approvalReviewState = ref('pending')
 const approvalReviewMessage = ref('Your registration is under review. Please allow at least 24 hours for admin review.')
@@ -397,8 +398,6 @@ let unsubscribeApprovalUser = null
 let unsubscribeApprovalClinic = null
 let approvalRedirectTimer = null
 let approvalRedirectInterval = null
-let pendingApprovalRedirectTimer = null
-let pendingApprovalRedirectInterval = null
 
 const clearApprovalRedirect = () => {
   if (approvalRedirectTimer) clearTimeout(approvalRedirectTimer)
@@ -422,27 +421,46 @@ const approvalRedirectProgress = computed(() =>
   ((APPROVAL_REDIRECT_DURATION_SECONDS - approvalRedirectSeconds.value) / APPROVAL_REDIRECT_DURATION_SECONDS) * 100
 )
 
-const clearPendingApprovalRedirect = () => {
-  if (pendingApprovalRedirectTimer) clearTimeout(pendingApprovalRedirectTimer)
-  if (pendingApprovalRedirectInterval) clearInterval(pendingApprovalRedirectInterval)
-  pendingApprovalRedirectTimer = null
-  pendingApprovalRedirectInterval = null
-  pendingApprovalRedirecting.value = false
-  pendingApprovalRedirectSeconds.value = APPROVAL_REDIRECT_DURATION_SECONDS
+const downloadSignedAgreement = () => {
+  if (!signedAgreementPdf.value) return
+  const url = URL.createObjectURL(signedAgreementPdf.value)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'AesthetiCare-Signed-Clinic-Platform-Agreement.pdf'
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-const startPendingApprovalRedirect = () => {
-  clearPendingApprovalRedirect()
-  pendingApprovalRedirecting.value = true
-  pendingApprovalRedirectInterval = setInterval(() => {
-    pendingApprovalRedirectSeconds.value = Math.max(0, pendingApprovalRedirectSeconds.value - 1)
-  }, 1000)
-  pendingApprovalRedirectTimer = setTimeout(() => router.push('/login'), APPROVAL_REDIRECT_DURATION_SECONDS * 1000)
+const loadSignedAgreementPdf = async (uid) => {
+  const currentUser = auth.currentUser
+  if (!currentUser || currentUser.uid !== uid) throw new Error('Sign in with the clinic owner account to download the agreement.')
+  const token = await currentUser.getIdToken()
+  const response = await fetch(`${OTP_API_BASE}/registration/clinic-platform-agreement`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new Error(payload?.error || 'The signed agreement copy could not be loaded right now.')
+  }
+  const pdf = await response.blob()
+  if (pdf.type !== 'application/pdf' || !pdf.size) throw new Error('The signed agreement download was not a valid PDF.')
+  signedAgreementPdf.value = pdf
+  signedAgreementDownloadError.value = ''
+  return pdf
 }
 
-const pendingApprovalRedirectProgress = computed(() =>
-  ((APPROVAL_REDIRECT_DURATION_SECONDS - pendingApprovalRedirectSeconds.value) / APPROVAL_REDIRECT_DURATION_SECONDS) * 100
-)
+watch([currentStep, userUid], ([step, uid]) => {
+  if (step !== 4 || !uid || auth.currentUser?.uid !== uid || signedAgreementPdf.value) return
+  loadSignedAgreementPdf(uid).catch((error) => {
+    signedAgreementDownloadError.value = error?.message || 'The signed agreement copy is not available yet.'
+  })
+})
+
+const continueToLogin = () => {
+  clearApprovalRedirect()
+  approvalRedirecting.value = false
+  router.push('/login')
+}
 
 const togglePassword = () => passwordVisible.value = !passwordVisible.value
 const toggleConfirmPassword = () => confirmPasswordVisible.value = !confirmPasswordVisible.value
@@ -936,7 +954,6 @@ onBeforeUnmount(() => {
   stopOtpCountdown()
   stopApprovalCheck()
   clearApprovalRedirect()
-  clearPendingApprovalRedirect()
   Object.values(documentPreviewUrls.value).forEach((previewUrl) => {
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl)
   })
@@ -1661,6 +1678,8 @@ const resetClinicRegistrationFlow = () => {
   approvalUserStatus.value = ''
   approvalClinicStatus.value = ''
   pendingApprovalMode.value = false
+  signedAgreementPdf.value = null
+  signedAgreementDownloadError.value = ''
   clinicAgreementRead.value = false
   clinicAgreementAccepted.value = false
   clinicAgreementSignatureImage.value = ''
@@ -2668,12 +2687,12 @@ const submitDocuments = async () => {
 
     const platformAgreementAcceptance = isClinicRegistrationActive.value
       ? {
+          accepted: clinicAgreementAccepted.value === true,
           version: CLINIC_PLATFORM_AGREEMENT_VERSION,
           signerName: registeredOwnerLegalName.value,
           signerEmail: email.value.trim().toLowerCase(),
           method: 'drawn-signature',
           signatureImage: clinicAgreementSignatureImage.value,
-          acceptedAt: new Date().toISOString(),
         }
       : null
 
@@ -2709,6 +2728,17 @@ const submitDocuments = async () => {
     expiryHoldDocumentKeys.value = []
     expiryResubmissionExpiresAt.value = null
 
+    signedAgreementPdf.value = null
+    signedAgreementDownloadError.value = ''
+    if (isClinicRegistrationActive.value) {
+      try {
+        await loadSignedAgreementPdf(userUid.value)
+      } catch (agreementError) {
+        console.warn('Could not load the signed clinic agreement PDF:', agreementError?.message || agreementError)
+        signedAgreementDownloadError.value = 'The signed copy could not be downloaded right now. You can download it later from Clinic Profile after approval.'
+      }
+    }
+
     // Verification is a server-side follow-up. Show submission success as soon
     // as the durable Firestore write completes instead of holding the applicant
     // on this screen while OCR processes every document.
@@ -2727,7 +2757,6 @@ const submitDocuments = async () => {
     approvalReviewMessage.value = 'Your registration was submitted and is waiting for document verification and administrator review.'
 
     currentStep.value = 4
-    startPendingApprovalRedirect()
     setStoredOtpRecipientEmail('')
     stopOtpCountdown()
     toast.success('Documents submitted. Please wait for approval.')
@@ -2782,6 +2811,11 @@ const handleRegistrationSubmit = () => {
                 <div class="mt-4 h-2 overflow-hidden rounded-full bg-gold-100" role="progressbar" aria-label="Redirecting to login" :aria-valuenow="approvalRedirectProgress" aria-valuemin="0" aria-valuemax="100">
                   <div class="h-full rounded-full bg-gold-600 transition-all duration-1000" :style="{ width: `${approvalRedirectProgress}%` }"></div>
                 </div>
+                <button
+                  type="button"
+                  class="mt-5 min-h-10 w-full rounded-xl bg-gold-700 px-4 py-2 font-semibold text-white transition hover:bg-gold-800"
+                  @click="continueToLogin"
+                >Go to login now</button>
               </div>
             </div>
               <div class="intro-block mb-6">
@@ -3464,9 +3498,34 @@ const handleRegistrationSubmit = () => {
                     <label class="block text-sm font-medium text-charcoal-700">Electronic signature</label>
                     <ElectronicSignaturePad v-model="clinicAgreementSignatureImage" label="Draw your electronic signature" />
                     <p class="text-xs text-charcoal-600">
-                      Draw your signature below. Your registered legal name will be stored with the signature:
+                      Your signature and registered legal name will be added to the signature block on the last page of your signed agreement:
                       {{ registeredOwnerLegalName || 'your registered name' }}
                     </p>
+
+                    <div class="rounded-xl border border-gold-200 bg-white/75 p-4" aria-label="Preview of the signed agreement signature block">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-sm font-semibold text-charcoal-700">Signature block preview</p>
+                        <span class="rounded-full bg-cream-100 px-2.5 py-1 text-[0.7rem] font-semibold text-charcoal-600">Last page of PDF</span>
+                      </div>
+                      <p class="mt-2 text-xs leading-5 text-charcoal-600">
+                        This is where your signature will appear. The agreement text stays fixed in the signed PDF.
+                      </p>
+                      <div class="mt-3 rounded-lg border border-gold-200 bg-cream-50 p-3">
+                        <p class="text-xs font-semibold text-charcoal-700">Electronic signature</p>
+                        <p class="mt-1 text-[0.7rem] leading-4 text-charcoal-600">Signed electronically during clinic registration.</p>
+                        <div class="mt-2 flex h-14 items-end border-b border-gold-300 pb-1">
+                          <img
+                            v-if="clinicAgreementSignatureImage"
+                            :src="clinicAgreementSignatureImage"
+                            alt="Preview of your electronic signature in the agreement"
+                            class="max-h-full max-w-[190px] object-contain object-left-bottom"
+                          />
+                          <span v-else class="pb-1 text-xs italic text-charcoal-500">Your signature will appear here</span>
+                        </div>
+                        <p class="mt-1 text-xs font-semibold text-charcoal-700">{{ registeredOwnerLegalName || 'Registered owner name' }}</p>
+                      </div>
+                      <p class="mt-2 text-[0.7rem] text-charcoal-500">The signing date and time are recorded when you submit the agreement.</p>
+                    </div>
                   </div>
                 </template>
               </div>
@@ -3510,22 +3569,22 @@ const handleRegistrationSubmit = () => {
               </div>
 
               <div v-if="isApprovalUnderReview" class="rounded-2xl border border-gold-200 bg-white/70 p-4 text-sm text-charcoal-600">
-                <template v-if="pendingApprovalRedirecting">
-                  <div class="rounded-xl border border-gold-300 bg-gold-50 p-4 text-charcoal-700" role="status" aria-live="polite">
-                    <div class="flex items-center justify-between gap-4">
-                      <div>
-                        <strong class="block text-base">Documents submitted successfully</strong>
-                        <span class="mt-1 block text-sm">Taking you to login in {{ pendingApprovalRedirectSeconds }} seconds.</span>
-                      </div>
-                      <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gold-700 text-lg font-bold tabular-nums text-white" aria-hidden="true">{{ pendingApprovalRedirectSeconds }}</span>
-                    </div>
-                    <div class="mt-4 h-2.5 overflow-hidden rounded-full bg-gold-200" role="progressbar" aria-label="Time until redirect to login" :aria-valuenow="pendingApprovalRedirectProgress" aria-valuemin="0" aria-valuemax="100">
-                      <div class="h-full rounded-full bg-gold-700 transition-[width] duration-1000 ease-linear" :style="{ width: `${pendingApprovalRedirectProgress}%` }"></div>
-                    </div>
-                    <p class="mt-3 text-xs text-charcoal-600">Your registration remains pending review. Weâ€™ll notify you by email when thereâ€™s an update.</p>
-                  </div>
-                </template>
-                <template v-else>Your registration is being reviewed. An email will be sent to you regarding your registration.</template>
+                <p>Your registration is being reviewed. We’ll notify you by email when there’s an update.</p>
+                <p v-if="signedAgreementPdf" class="mt-3 font-medium text-charcoal-700">Your signed Clinic Platform Agreement is ready to download.</p>
+                <p v-else-if="signedAgreementDownloadError" class="mt-3">{{ signedAgreementDownloadError }}</p>
+                <div class="mt-4 flex flex-wrap gap-3">
+                  <button
+                    v-if="signedAgreementPdf"
+                    type="button"
+                    class="inline-flex min-h-10 items-center justify-center rounded-xl bg-gold-700 px-4 py-2 font-semibold text-white transition hover:bg-gold-800"
+                    @click="downloadSignedAgreement"
+                  >Download signed agreement</button>
+                  <button
+                    type="button"
+                    class="inline-flex min-h-10 items-center justify-center rounded-xl border border-gold-300 px-4 py-2 font-semibold text-charcoal-700 transition hover:bg-gold-50"
+                    @click="continueToLogin"
+                  >Continue to login</button>
+                </div>
               </div>
 
               <div v-else-if="isApprovalApproved" class="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-800">

@@ -11,6 +11,26 @@
         <span v-if="branchScopeLabel" class="clinic-branch-chip">{{ branchScopeLabel }}</span>
       </div>
 
+      <section v-if="isClinicOwnerAccount && signedAgreementRecords.length" class="clinic-profile-card clinic-agreement-download-card">
+        <div class="clinic-card-heading">
+          <div class="min-w-0">
+            <h2>Signed Clinic Platform Agreement</h2>
+            <p>Download a signed copy. Earlier agreement versions remain available here.</p>
+          </div>
+        </div>
+        <div class="mt-4 space-y-3">
+          <div v-for="agreement in signedAgreementRecords" :key="agreement.acceptanceId || agreement.pdfStoragePath" class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gold-200/80 bg-white/60 p-3">
+            <div class="min-w-0">
+              <p class="font-semibold text-charcoal-700">Version {{ agreement.version || 'Clinic Platform Agreement' }}</p>
+              <p class="clinic-field-note">Signed by {{ agreement.signerName || 'clinic representative' }}</p>
+            </div>
+            <button type="button" class="clinic-upload-button" :disabled="agreementDownloading" @click="downloadSignedAgreement(agreement.acceptanceId)">
+              {{ agreementDownloading ? 'Preparing PDF…' : 'Download signed agreement' }}
+            </button>
+          </div>
+        </div>
+      </section>
+
       <form class="clinic-profile-form" @submit.prevent="saveClinicProfile">
         <section class="clinic-profile-card clinic-branding-card">
           <div class="clinic-card-heading">
@@ -83,6 +103,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { toast } from 'vue3-toastify';
 import LocationPicker from '@/components/common/LocationPicker.vue';
+import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig';
 
 export default {
   name: 'ClinicProfile',
@@ -111,6 +132,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const locationError = ref('');
     const contactNumberError = ref('');
     const saving = ref(false);
+    const agreementDownloading = ref(false);
+    const isClinicOwnerAccount = ref(false);
     const logoInput = ref(null);
     const bannerInput = ref(null);
     const logoFile = ref(null);
@@ -122,6 +145,30 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const normalized = String(role || '').trim().toLowerCase();
       return ['owner', 'clinic owner', 'clinicowner', 'clinic admin', 'clinicadmin', 'clinic administrator', 'clinicadministrator'].includes(normalized);
     };
+
+    const isClinicOwnerRole = (role) => ['owner', 'clinic owner', 'clinicowner']
+      .includes(String(role || '').trim().toLowerCase());
+
+    const signedAgreementRecords = computed(() => {
+      const current = clinic.value.platformAgreementAcceptance;
+      const history = Array.isArray(clinic.value.platformAgreementAcceptances)
+        ? clinic.value.platformAgreementAcceptances
+        : [];
+      const seen = new Set();
+      return [...history, current]
+        .filter((agreement) => {
+          const storagePath = String(agreement?.pdfStoragePath || '').trim();
+          if (!storagePath) return false;
+          const key = String(agreement.acceptanceId || storagePath);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .sort((left, right) => {
+          const toMillis = (value) => value?.toDate?.().getTime() || Date.parse(value || '') || 0;
+          return toMillis(right.signedAt || right.acceptedAt) - toMillis(left.signedAt || left.acceptedAt);
+        });
+    });
 
     const normalizePhilippineMobile = (value) => {
       let digits = String(value || '').replace(/\D/g, '');
@@ -387,6 +434,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (user) {
           const userSnap = await getDoc(doc(db, 'users', user.uid));
           const userData = userSnap.exists() ? userSnap.data() || {} : {};
+          isClinicOwnerAccount.value = isClinicOwnerRole(userData.role || userData.userType || userData.customRoleName);
 
           if (isOwnerLikeRole(userData.role || userData.customRoleName)) {
             const clinicRef = doc(db, 'clinics', user.uid);
@@ -434,6 +482,55 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
       });
     });
+
+    const downloadSignedAgreement = async (acceptanceId = '') => {
+      const user = auth.currentUser;
+      if (!user || !isClinicOwnerAccount.value || agreementDownloading.value) {
+        toast.error('Sign in as the clinic owner to download this agreement.');
+        return;
+      }
+      agreementDownloading.value = true;
+      try {
+        const token = await user.getIdToken();
+        let response = null;
+        let lastError = null;
+        for (const baseUrl of OTP_API_BASE_CANDIDATES) {
+          try {
+            const query = acceptanceId ? `?acceptanceId=${encodeURIComponent(acceptanceId)}` : '';
+            const candidate = await fetch(`${baseUrl}/registration/clinic-platform-agreement${query}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (candidate.status === 404) {
+              lastError = new Error('No signed Clinic Platform Agreement PDF is available for this clinic.');
+              continue;
+            }
+            response = candidate;
+            break;
+          } catch (candidateError) {
+            lastError = candidateError;
+          }
+        }
+        if (!response) throw lastError || new Error('Could not reach the clinic agreement service.');
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error || 'Could not download the signed clinic agreement.');
+        }
+        const pdfBlob = await response.blob();
+        if (pdfBlob.type !== 'application/pdf' || !pdfBlob.size) throw new Error('The signed agreement file was not a valid PDF.');
+        const url = URL.createObjectURL(pdfBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'AesthetiCare-Signed-Clinic-Platform-Agreement.pdf';
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast.success('Signed clinic agreement downloaded.');
+      } catch (error) {
+        console.error('Unable to download the signed clinic agreement:', error);
+        toast.error(error?.message || 'Could not download the signed clinic agreement.');
+      } finally {
+        agreementDownloading.value = false;
+      }
+    };
 
     const loadMapsScript = () => {
       if (window.google?.maps?.Map || window.google?.maps?.importLibrary) return Promise.resolve();
@@ -648,6 +745,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       logoPreview,
       bannerPreview,
       saving,
+      agreementDownloading,
+      isClinicOwnerAccount,
+      signedAgreementRecords,
+      downloadSignedAgreement,
       saveClinicProfile,
       locationError,
       branchScopeLabel,

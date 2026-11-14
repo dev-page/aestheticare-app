@@ -47,6 +47,8 @@ import { EMAIL_WEBSITE_URL } from './emailLinks.js'
 import { demand, punches, clock, verifyLocation, scanAction } from './attendancePolicy.js'
 import { registerAttendanceManagement } from './attendanceManagement.js'
 import { registerAttendanceImports } from './attendanceImports.js'
+import { createClinicAgreementPdf, clinicAgreementTextHash } from './clinicAgreementDocument.js'
+import { CLINIC_PLATFORM_AGREEMENT } from '../../shared/clinicPlatformAgreement.js'
 
 // firebase-admin v13 can hit a Google auth compatibility edge in some Node/runtime combinations.
 // Keep the same fallback used by the backend maintenance scripts so OTP requests do not fail.
@@ -3130,11 +3132,122 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       submittedDocuments[docKey].qualityAssessment = qualityAssessment
     }
 
+    const registrationRequiresAgreement = clinic.isClinicRegistrationActive !== false
+    const priorAgreement = clinic.platformAgreementAcceptance && typeof clinic.platformAgreementAcceptance === 'object'
+      ? clinic.platformAgreementAcceptance
+      : null
+    const isStoredAgreementPdf = (agreement) => {
+      const storagePath = String(agreement?.pdfStoragePath || '').trim()
+      return agreement?.version === CLINIC_PLATFORM_AGREEMENT.version
+        && storagePath.startsWith(`clinic-agreements/${uid}/`)
+        && storagePath.endsWith('.pdf')
+    }
+    let preparedAgreementAcceptance = registrationRequiresAgreement && isStoredAgreementPdf(priorAgreement)
+      ? priorAgreement
+      : null
+    let newAgreementPdfPath = ''
+    let newAgreementSignaturePath = ''
+    if (registrationRequiresAgreement && !preparedAgreementAcceptance) {
+      const acceptance = req.body?.platformAgreementAcceptance
+      const normalizeSignerName = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+      const expectedSignerName = [user.firstName, user.midName, user.lastName, user.suffix]
+        .map((part) => String(part || '').trim())
+        .filter(Boolean)
+        .join(' ')
+      const suppliedSignerName = String(acceptance?.signerName || '').trim().replace(/\s+/g, ' ')
+      const suppliedSignerEmail = String(acceptance?.signerEmail || '').trim().toLowerCase()
+      const signatureDataUrl = String(acceptance?.signatureImage || '')
+      const signatureMatch = signatureDataUrl.match(/^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/)
+      if (acceptance?.accepted !== true
+        || acceptance?.version !== CLINIC_PLATFORM_AGREEMENT.version
+        || acceptance?.method !== 'drawn-signature'
+        || !expectedSignerName
+        || normalizeSignerName(suppliedSignerName) !== normalizeSignerName(expectedSignerName)
+        || suppliedSignerEmail !== email
+        || !signatureMatch) {
+        return res.status(400).json({ success: false, error: 'Review and sign the current Clinic Platform Agreement before submitting.' })
+      }
+      const signatureBytes = Buffer.from(signatureMatch[1], 'base64')
+      const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+      if (!signatureBytes.length || signatureBytes.length > 512 * 1024
+        || !signatureBytes.subarray(0, pngSignature.length).equals(pngSignature)) {
+        return res.status(400).json({ success: false, error: 'The electronic signature image is invalid. Please sign again.' })
+      }
+
+      const signedAt = new Date()
+      const acceptanceId = crypto.randomUUID()
+      const pdfFileName = 'AesthetiCare-Signed-Clinic-Platform-Agreement.pdf'
+      const pdfBytes = createClinicAgreementPdf({
+        clinicName: clinic.clinicName,
+        companyName: clinic.companyName,
+        signerName: suppliedSignerName,
+        signerEmail: email,
+        signerPosition: clinic.authorizedRepPosition || user.authorizedRepPosition,
+        signatureImage: signatureDataUrl,
+        signedAt,
+        acceptanceId,
+      })
+      newAgreementPdfPath = `clinic-agreements/${uid}/${acceptanceId}.pdf`
+      newAgreementSignaturePath = `clinic-agreements/${uid}/${acceptanceId}.png`
+      const pdfSha256 = registrationDocumentHash(pdfBytes)
+      const signatureSha256 = registrationDocumentHash(signatureBytes)
+      try {
+        await admin.storage().bucket(bucketName).file(newAgreementSignaturePath).save(signatureBytes, {
+          resumable: false,
+          metadata: {
+            contentType: 'image/png',
+            cacheControl: 'private, no-store, max-age=0',
+            metadata: { clinicId: uid, acceptanceId, sha256: signatureSha256 },
+          },
+        })
+        await admin.storage().bucket(bucketName).file(newAgreementPdfPath).save(pdfBytes, {
+          resumable: false,
+          metadata: {
+            contentType: 'application/pdf',
+            cacheControl: 'private, no-store, max-age=0',
+            metadata: {
+              clinicId: uid,
+              agreementVersion: CLINIC_PLATFORM_AGREEMENT.version,
+              acceptanceId,
+              sha256: pdfSha256,
+            },
+          },
+        })
+      } catch (uploadError) {
+        await Promise.all([
+          admin.storage().bucket(bucketName).file(newAgreementSignaturePath).delete({ ignoreNotFound: true }).catch(() => {}),
+          admin.storage().bucket(bucketName).file(newAgreementPdfPath).delete({ ignoreNotFound: true }).catch(() => {}),
+        ])
+        throw uploadError
+      }
+      preparedAgreementAcceptance = {
+        version: CLINIC_PLATFORM_AGREEMENT.version,
+        signerName: suppliedSignerName,
+        signerEmail: email,
+        signerPosition: String(clinic.authorizedRepPosition || user.authorizedRepPosition || '').trim().slice(0, 100),
+        method: 'drawn-signature',
+        acceptedAt: admin.firestore.Timestamp.fromDate(signedAt),
+        signedAt: admin.firestore.Timestamp.fromDate(signedAt),
+        acceptanceId,
+        clinicNameSnapshot: String(clinic.clinicName || '').trim().slice(0, 160),
+        companyNameSnapshot: String(clinic.companyName || '').trim().slice(0, 160),
+        agreementTextHash: clinicAgreementTextHash(),
+        pdfStoragePath: newAgreementPdfPath,
+        pdfFileName,
+        pdfSha256,
+        signatureStoragePath: newAgreementSignaturePath,
+        signatureSha256,
+      }
+    }
+
     const policyRef = clinicSubmissionPolicyRef(firestore, email)
     const now = Date.now()
     let submissionAttemptCount = 0
     let lockedUntil = null
-    await firestore.runTransaction(async (transaction) => {
+    let committedAgreementAcceptance = null
+    try {
+      await firestore.runTransaction(async (transaction) => {
+      committedAgreementAcceptance = null
       const [latestClinicSnapshot, policySnapshot] = await Promise.all([
         transaction.get(clinicRef), transaction.get(policyRef),
       ])
@@ -3191,6 +3304,24 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
         return
       }
 
+      if (latestClinic.isClinicRegistrationActive !== false) {
+        const latestAcceptance = latestClinic.platformAgreementAcceptance
+        committedAgreementAcceptance = isStoredAgreementPdf(latestAcceptance)
+          ? latestAcceptance
+          : preparedAgreementAcceptance
+        if (!committedAgreementAcceptance) {
+          throw Object.assign(new Error('The signed Clinic Platform Agreement is required before document submission.'), { statusCode: 400 })
+        }
+      }
+      const agreementHistoryEntries = []
+      if (committedAgreementAcceptance && latestClinic.isClinicRegistrationActive !== false) {
+        const latestAcceptance = latestClinic.platformAgreementAcceptance
+        if (latestAcceptance && latestAcceptance.acceptanceId !== committedAgreementAcceptance.acceptanceId) {
+          agreementHistoryEntries.push(latestAcceptance)
+        }
+        agreementHistoryEntries.push(committedAgreementAcceptance)
+      }
+
       submissionAttemptCount = count + 1
       const timestamp = admin.firestore.FieldValue.serverTimestamp()
       transaction.set(clinicRef, {
@@ -3205,8 +3336,11 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
           : String(req.body?.permitHolderRelationship || '').trim().slice(0, 200),
         authorizationReviewRequired: permitHolderIsRegistrant === false,
         submissionAttemptCount,
-        ...(req.body?.platformAgreementAcceptance && clinic.isClinicRegistrationActive !== false
-          ? { platformAgreementAcceptance: req.body.platformAgreementAcceptance }
+        ...(committedAgreementAcceptance && latestClinic.isClinicRegistrationActive !== false
+          ? {
+              platformAgreementAcceptance: committedAgreementAcceptance,
+              platformAgreementAcceptances: admin.firestore.FieldValue.arrayUnion(...agreementHistoryEntries),
+            }
           : {}),
         draftDocuments: admin.firestore.FieldValue.delete(),
         draftDocumentsUpdatedAt: admin.firestore.FieldValue.delete(),
@@ -3232,8 +3366,23 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
         submissionAttemptCount,
         updatedAt: timestamp,
       }, { merge: true })
-    })
+      })
+    } catch (transactionError) {
+      if (newAgreementPdfPath) {
+        await admin.storage().bucket(bucketName).file(newAgreementPdfPath).delete({ ignoreNotFound: true }).catch(() => {})
+      }
+      if (newAgreementSignaturePath) {
+        await admin.storage().bucket(bucketName).file(newAgreementSignaturePath).delete({ ignoreNotFound: true }).catch(() => {})
+      }
+      throw transactionError
+    }
 
+    if (newAgreementPdfPath && committedAgreementAcceptance?.pdfStoragePath !== newAgreementPdfPath) {
+      await admin.storage().bucket(bucketName).file(newAgreementPdfPath).delete({ ignoreNotFound: true }).catch(() => {})
+    }
+    if (newAgreementSignaturePath && committedAgreementAcceptance?.signatureStoragePath !== newAgreementSignaturePath) {
+      await admin.storage().bucket(bucketName).file(newAgreementSignaturePath).delete({ ignoreNotFound: true }).catch(() => {})
+    }
     if (lockedUntil) return res.status(429).json(clinicSubmissionLockPayload(lockedUntil))
     return res.json({ success: true, data: { submissionAttemptCount } })
   } catch (error) {
@@ -3241,6 +3390,84 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
     if (status >= 400 && status < 500) return res.status(status).json({ success: false, error: error.message })
     console.error('Clinic document submission failed:', error)
     return res.status(500).json({ success: false, error: 'Could not submit clinic documents. Please try again.' })
+  }
+})
+
+const sendClinicAgreementPdf = async (res, uid, requestedAcceptanceId = '') => {
+  const firestore = admin.firestore()
+  const clinicSnapshot = await firestore.collection('clinics').doc(uid).get()
+  if (!clinicSnapshot.exists) return res.status(404).json({ success: false, error: 'Signed clinic agreement was not found.' })
+  const clinic = clinicSnapshot.data() || {}
+  const currentAcceptance = clinic.platformAgreementAcceptance || null
+  const acceptanceId = String(requestedAcceptanceId || '').trim()
+  const acceptances = [
+    ...(Array.isArray(clinic.platformAgreementAcceptances) ? clinic.platformAgreementAcceptances : []),
+    currentAcceptance,
+  ].filter(Boolean)
+  const acceptance = acceptanceId
+    ? acceptances.find((entry) => String(entry.acceptanceId || '') === acceptanceId)
+    : currentAcceptance
+  if (!acceptance) return res.status(404).json({ success: false, error: 'Signed clinic agreement was not found.' })
+  const storagePath = String(acceptance.pdfStoragePath || '').trim()
+  if (!storagePath.startsWith(`clinic-agreements/${uid}/`) || !storagePath.endsWith('.pdf')) {
+    return res.status(404).json({ success: false, error: 'A downloadable signed clinic agreement is not available.' })
+  }
+  const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
+  if (!bucketName) return res.status(503).json({ success: false, error: 'Secure document storage is not configured.' })
+  try {
+    const [bytes] = await admin.storage().bucket(bucketName).file(storagePath).download()
+    if (!bytes?.length || bytes.subarray(0, 5).toString('ascii') !== '%PDF-'
+      || (acceptance.pdfSha256 && registrationDocumentHash(bytes) !== acceptance.pdfSha256)) {
+      return res.status(500).json({ success: false, error: 'The signed agreement file could not be verified.' })
+    }
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(bytes.length),
+      'Content-Disposition': 'attachment; filename="AesthetiCare-Signed-Clinic-Platform-Agreement.pdf"',
+      'Cache-Control': 'private, no-store, max-age=0',
+      'X-Content-Type-Options': 'nosniff',
+    })
+    return res.send(bytes)
+  } catch (error) {
+    if (String(error?.code || '').includes('not-found') || Number(error?.code) === 404) {
+      return res.status(404).json({ success: false, error: 'The signed agreement file is not available.' })
+    }
+    throw error
+  }
+}
+
+app.get('/registration/clinic-platform-agreement', requireAuth, async (req, res) => {
+  const uid = String(req.user?.uid || '').trim()
+  try {
+    const firestore = admin.firestore()
+    const [userSnapshot, clinicSnapshot] = await Promise.all([
+      firestore.collection('users').doc(uid).get(),
+      firestore.collection('clinics').doc(uid).get(),
+    ])
+    if (!userSnapshot.exists || !clinicSnapshot.exists) {
+      return res.status(404).json({ success: false, error: 'Clinic registration account was not found.' })
+    }
+    const role = String(userSnapshot.data()?.role || userSnapshot.data()?.userType || '').trim().toLowerCase()
+    if (!['clinic owner', 'clinicowner', 'owner'].includes(role)) {
+      return res.status(403).json({ success: false, error: 'Only the clinic owner can download this agreement.' })
+    }
+    return await sendClinicAgreementPdf(res, uid, req.query?.acceptanceId)
+  } catch (error) {
+    console.error('Clinic owner agreement download failed:', error)
+    return res.status(500).json({ success: false, error: 'Could not download the signed clinic agreement.' })
+  }
+})
+
+app.get('/admin/clinic-platform-agreement/:uid', requireAuth, requireRole(['superadmin', 'admin', 'reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
+  const uid = String(req.params?.uid || '').trim()
+  if (!uid || uid.length > 128 || uid.includes('/')) {
+    return res.status(400).json({ success: false, error: 'A valid clinic owner ID is required.' })
+  }
+  try {
+    return await sendClinicAgreementPdf(res, uid, req.query?.acceptanceId)
+  } catch (error) {
+    console.error('Admin clinic agreement download failed:', error)
+    return res.status(500).json({ success: false, error: 'Could not download the signed clinic agreement.' })
   }
 })
 

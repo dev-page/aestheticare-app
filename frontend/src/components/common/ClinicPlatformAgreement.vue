@@ -1,55 +1,18 @@
 <template>
   <div ref="agreementElement" class="clinic-agreement" @scroll="handleScroll">
-    <p class="text-xs text-slate-500">Agreement version: {{ version }} | Last updated: September 13, 2026</p>
+    <p class="text-xs text-slate-500">Agreement version: {{ version }} | Last updated: {{ agreement.lastUpdated }}</p>
 
-    <h2>Clinic Platform Agreement</h2>
-    <p>
-      This agreement applies to the clinic owner or authorized representative registering the clinic on AesthetiCare.
-      It supplements the general Terms and Conditions and Privacy Policy.
-    </p>
+    <h2>{{ agreement.title }}</h2>
+    <p>{{ agreement.introduction }}</p>
 
-    <h3>1. Platform services</h3>
-    <p>
-      AesthetiCare provides clinic operations, appointment, customer, payment, reporting, and related marketplace tools.
-      The clinic remains responsible for its services, products, staff, customers, documents, licenses, and legal compliance.
-    </p>
-
-    <h3>2. Platform commissions</h3>
-    <p>
-      The platform charges a commission on eligible transactions processed through AesthetiCare:
-    </p>
-    <ul>
-      <li><strong>Products:</strong> 5% of the product sale amount.</li>
-      <li><strong>Completed services:</strong> 10% of the completed service amount.</li>
-    </ul>
-    <p>
-      The applicable commission is recorded with the transaction and deducted when calculating the clinic's net amount.
-      Refund treatment, including any non-refundable commission, follows the applicable platform and clinic policies.
-    </p>
-
-    <h3>3. Clinic responsibilities</h3>
-    <p>
-      The clinic must provide accurate information, maintain valid documents, protect account credentials, use customer data
-      lawfully, and ensure that its employees use only the permissions assigned to them.
-    </p>
-
-    <h3>4. Payments and records</h3>
-    <p>
-      The clinic authorizes AesthetiCare to record eligible transactions, commissions, refunds, and settlement information
-      needed to operate the platform and provide financial reports.
-    </p>
-
-    <h3>5. Agreement changes</h3>
-    <p>
-      AesthetiCare may publish a new agreement version. Material changes may require the clinic to accept the new version
-      before continued use of affected platform features.
-    </p>
-
-    <h3>6. Acceptance</h3>
-    <p>
-      By signing electronically, the representative confirms that they are authorized to bind the clinic and agrees to this
-      agreement, including the commission schedule above.
-    </p>
+    <template v-for="section in agreement.sections" :key="section.heading">
+      <h3>{{ section.heading }}</h3>
+      <p v-for="paragraph in section.paragraphs" :key="paragraph">{{ paragraph }}</p>
+      <ul v-if="section.bullets?.length">
+        <li v-for="bullet in section.bullets" :key="bullet.label"><strong>{{ bullet.label }}</strong> {{ bullet.text }}</li>
+      </ul>
+      <p v-for="paragraph in section.closingParagraphs || []" :key="paragraph">{{ paragraph }}</p>
+    </template>
 
     <div v-if="!reachedEnd" class="clinic-agreement-hint">
       Scroll to the end of this agreement to enable acceptance.
@@ -62,6 +25,7 @@
 
 <script setup>
 import { nextTick, onMounted, ref } from 'vue'
+import { CLINIC_PLATFORM_AGREEMENT } from '../../../../shared/clinicPlatformAgreement.js'
 
 defineProps({
   version: {
@@ -71,6 +35,7 @@ defineProps({
 })
 
 const emit = defineEmits(['reached-end'])
+const agreement = CLINIC_PLATFORM_AGREEMENT
 const agreementElement = ref(null)
 const reachedEnd = ref(false)
 

@@ -353,7 +353,8 @@ onBeforeUnmount(() => {
 }
 
 .plan-card-free {
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.88), rgba(246, 238, 223, 0.78));
+  background: #f1eadf;
+  box-shadow: none;
 }
 
 .plan-card-free:hover {

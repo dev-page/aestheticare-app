@@ -118,6 +118,12 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // Signed clinic agreements are written by the trusted backend only.
+    match /clinic-agreements/{ownerId}/{fileName} {
+      allow read: if isSignedIn() && (request.auth.uid == ownerId || isSuperadmin());
+      allow create, update, delete: if false;
+    }
+
     // Leave-request attachments are immutable and may only be uploaded by
     // the employee whose UID is encoded in the path.
     match /leave-requests/{userId}/{fileName} {

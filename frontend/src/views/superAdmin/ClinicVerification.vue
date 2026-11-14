@@ -252,7 +252,19 @@
           </section>
 
           <section class="mb-6 bg-slate-800 border border-slate-700 rounded-xl p-4">
-            <h3 class="text-white font-semibold mb-3">Clinic Platform Agreement</h3>
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h3 class="text-white font-semibold">Clinic Platform Agreement</h3>
+            </div>
+            <div v-if="selectedAgreementRecords.length" class="mb-4 flex flex-wrap gap-2">
+              <button
+                v-for="agreement in selectedAgreementRecords"
+                :key="agreement.acceptanceId || agreement.pdfStoragePath"
+                type="button"
+                class="rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="agreementDownloadLoading"
+                @click="downloadClinicAgreement(selectedRecord, agreement.acceptanceId)"
+              >{{ agreementDownloadLoading ? 'Preparing PDF…' : 'Download ' + (agreement.version || 'signed agreement') }}</button>
+            </div>
             <div v-if="selectedRecord.platformAgreementAcceptance" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
               <div>
                 <p class="text-xs text-slate-400">Signed by</p>
@@ -278,6 +290,9 @@
                   alt="Clinic platform agreement electronic signature"
                   class="max-h-28 max-w-full rounded-lg border border-slate-600 bg-white object-contain p-2"
                 />
+                <p v-else-if="selectedRecord.platformAgreementAcceptance.signatureStoragePath && selectedRecord.platformAgreementAcceptance.pdfStoragePath" class="text-slate-300">
+                  The signature is stored privately and embedded in the downloadable signed agreement PDF.
+                </p>
                 <p v-else class="text-slate-400">Signature image unavailable.</p>
               </div>
             </div>
@@ -474,6 +489,7 @@ import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
+import { toast } from 'vue3-toastify'
 
 const normalizePlanLabel = (value) => {
   const raw = String(value || '').trim().toLowerCase()
@@ -632,6 +648,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const auth = getAuth()
     const loading = ref(false)
     const processing = ref(false)
+    const agreementDownloadLoading = ref(false)
     const error = ref('')
     const pendingClinics = ref([])
     const activeTab = ref('ocr')
@@ -665,6 +682,27 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const showModal = ref(false)
     const selectedRecord = ref(null)
+    const selectedAgreementRecords = computed(() => {
+      if (!selectedRecord.value) return []
+      const current = selectedRecord.value.platformAgreementAcceptance
+      const history = Array.isArray(selectedRecord.value.platformAgreementAcceptances)
+        ? selectedRecord.value.platformAgreementAcceptances
+        : []
+      const seen = new Set()
+      return [...history, current]
+        .filter((agreement) => {
+          const storagePath = String(agreement?.pdfStoragePath || '').trim()
+          if (!storagePath) return false
+          const key = String(agreement.acceptanceId || storagePath)
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        .sort((left, right) => {
+          const toMillis = (value) => value?.toDate?.().getTime() || Date.parse(value || '') || 0
+          return toMillis(right.signedAt || right.acceptedAt) - toMillis(left.signedAt || left.acceptedAt)
+        })
+    })
     const rejectionRemark = ref('')
     const taxReviewLoading = ref(false)
     const taxDecision = ref('')
@@ -790,6 +828,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               approvedAtLabel: approvedAt && approvedAt.toDate ? approvedAt.toDate().toLocaleDateString() : '-',
               approvedAt: approvedAt || null,
               platformAgreementAcceptance: clinic.platformAgreementAcceptance || null,
+              platformAgreementAcceptances: Array.isArray(clinic.platformAgreementAcceptances) ? clinic.platformAgreementAcceptances : [],
               permitHolderIsRegistrant: typeof clinic.permitHolderIsRegistrant === 'boolean' ? clinic.permitHolderIsRegistrant : null,
               permitHolderName: clinic.permitHolderName || '',
               permitHolderRelationship: clinic.permitHolderRelationship || '',
@@ -1000,6 +1039,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               planLabel: normalizePlanLabel(resolvedPlan),
               paymentStatus: resolvedPayment,
               platformAgreementAcceptance: clinic.platformAgreementAcceptance || null,
+              platformAgreementAcceptances: Array.isArray(clinic.platformAgreementAcceptances) ? clinic.platformAgreementAcceptances : [],
               permitHolderIsRegistrant: typeof clinic.permitHolderIsRegistrant === 'boolean' ? clinic.permitHolderIsRegistrant : null,
               permitHolderName: clinic.permitHolderName || '',
               permitHolderRelationship: clinic.permitHolderRelationship || '',
@@ -1075,6 +1115,56 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         taxReviewError.value = loadError?.message || 'Could not load BIR review data. Refresh and try again.'
       } finally {
         if (selectedRecord.value?.id === selectedId) taxReviewLoading.value = false
+      }
+    }
+
+    const downloadClinicAgreement = async (record, acceptanceId = '') => {
+      if (!record?.id || agreementDownloadLoading.value) return
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : ''
+      if (!token) {
+        toast.error('Sign in again to download the signed agreement.')
+        return
+      }
+      agreementDownloadLoading.value = true
+      try {
+        let response = null
+        let lastError = null
+        for (const baseUrl of OTP_BACKEND_CANDIDATES) {
+          try {
+            const query = acceptanceId ? `?acceptanceId=${encodeURIComponent(acceptanceId)}` : ''
+            const candidate = await fetch(`${baseUrl}/admin/clinic-platform-agreement/${encodeURIComponent(record.id)}${query}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            if (candidate.status === 404) {
+              lastError = new Error('The signed agreement PDF is not available for this registration.')
+              continue
+            }
+            response = candidate
+            break
+          } catch (candidateError) {
+            lastError = candidateError
+          }
+        }
+        if (!response) throw lastError || new Error('Could not reach the clinic agreement service.')
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null)
+          throw new Error(payload?.error || 'Could not download the signed clinic agreement.')
+        }
+        const pdfBlob = await response.blob()
+        if (pdfBlob.type !== 'application/pdf' || !pdfBlob.size) {
+          throw new Error('The downloaded agreement file was not a valid PDF.')
+        }
+        const url = URL.createObjectURL(pdfBlob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = 'AesthetiCare-Signed-Clinic-Platform-Agreement.pdf'
+        link.click()
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+        toast.success('Signed clinic agreement downloaded.')
+      } catch (downloadError) {
+        toast.error(downloadError?.message || 'Could not download the signed clinic agreement.')
+      } finally {
+        agreementDownloadLoading.value = false
       }
     }
 
@@ -1435,6 +1525,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       refreshClinicLists,
       loadVerifiedClinics,
       openDetails,
+      selectedAgreementRecords,
+      agreementDownloadLoading,
+      downloadClinicAgreement,
       saveClinicTaxReview,
       closeModal,
       approveSelected,

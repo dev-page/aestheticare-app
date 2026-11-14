@@ -322,10 +322,12 @@ onBeforeUnmount(() => {
 }
 
 .plan-card-free {
-  background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 24%),
-    linear-gradient(145deg, #f7f2ea 0%, #ede1cf 52%, #dac4a6 100%);
-  box-shadow: 0 18px 34px rgba(116, 89, 63, 0.12);
+  background: #f1eadf;
+  box-shadow: 0 8px 20px rgba(116, 89, 63, 0.08);
+}
+
+.plan-card-free .plan-orb {
+  display: none;
 }
 
 .plan-card-free .plan-name,
@@ -578,7 +580,7 @@ onBeforeUnmount(() => {
 
 @media (min-width: 1024px) {
   .plan-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .popup-top {
@@ -639,7 +641,8 @@ onBeforeUnmount(() => {
 }
 
 .theme-dark .subscription-shell .plan-card-free {
-  background: linear-gradient(145deg, #2b1b12 0%, #342419 55%, #3d2a1d 100%) !important;
+  background: #302117 !important;
+  box-shadow: none !important;
 }
 
 .theme-dark .subscription-shell .plan-card-basic {
