@@ -53,7 +53,6 @@
         </ul>
 
         <div class="hidden lg:flex items-center gap-2 sm:gap-4">
-          <ThemeSelector />
           <router-link
             to="/login"
             class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border border-gold-700 text-gold-700 text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-700 hover:text-white transition"
@@ -102,7 +101,6 @@
           <div class="h-16 px-4 flex items-center justify-between border-b border-gold-300/40">
             <span class="text-xs tracking-[0.24em] uppercase text-charcoal-700">Menu</span>
             <div class="flex items-center gap-2">
-              <ThemeSelector />
               <button
                 @click="closeMobileMenu"
                 class="inline-flex items-center justify-center h-9 w-9 rounded-md border border-gold-500/50 text-gold-700 hover:bg-gold-100 transition"
@@ -625,11 +623,9 @@ import appointmentLanding from '@/assets/apointment_landing.jpg'
 import inventoryLanding from '@/assets/inventory_landing.jpg'
 import meetingRoomLanding from '@/assets/meetingroom_landing.jpg'
 import staffInsightLanding from '@/assets/staffinsight_landing.jpg'
-import ThemeSelector from '@/components/common/ThemeSelector.vue'
 
 export default {
   name: "HomePage",
-  components: { ThemeSelector },
   setup() {
     const { user, isLoading, initAuth } = useAuth();
     const isMobileMenuOpen = ref(false);

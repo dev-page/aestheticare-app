@@ -1590,13 +1590,14 @@ html[data-ac-theme="dark"] .aestheticare-app .register-visual-pane .space-comet 
 
 .global-theme-selector {
   position: fixed !important;
-  top: .85rem;
+  top: auto !important;
+  bottom: max(1rem, env(safe-area-inset-bottom));
   right: 1rem;
   z-index: 9990;
 }
 
 @media (max-width: 767px) {
-  .global-theme-selector { top: .65rem; right: .65rem; }
+  .global-theme-selector { top: auto !important; bottom: max(.8rem, env(safe-area-inset-bottom)); right: .8rem; }
 }
 
 /* HR and Finance authenticated screens: cover components that still use

@@ -12,10 +12,6 @@
           <p class="popup-subtitle">Choose Free Trial for 14 days of Premium access, or select a paid plan for your clinic.</p>
         </div>
 
-        <div class="popup-aside">
-          <div class="aside-pill">14-day Free Trial</div>
-          <p class="aside-copy">Free Trial is a separate option with Premium access. Basic and Premium are paid plans without attached trial offers.</p>
-        </div>
       </div>
 
       <p v-if="error" class="popup-error">{{ error }}</p>
@@ -63,7 +59,6 @@
         <button type="button" class="btn-secondary" @click="maybeLater">Maybe Later</button>
         <router-link to="/register" class="btn-primary">Register your clinic</router-link>
       </div>
-      <div class="pricing-reassurance" role="note"><span>✓ Real plan features during trial</span><span>✓ Upgrade when your clinic grows</span><span>✓ Records retained if your subscription expires</span></div>
     </div>
   </section>
   </div>
@@ -236,37 +231,6 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
-.popup-aside {
-  align-self: flex-start;
-  width: min(100%, 320px);
-  border: 1px solid rgba(198, 148, 108, 0.22);
-  border-radius: 1.4rem;
-  background: rgba(255, 255, 255, 0.58);
-  backdrop-filter: blur(14px);
-  padding: 0.8rem 0.9rem;
-  box-shadow: 0 10px 24px rgba(104, 67, 42, 0.07);
-}
-
-.aside-pill {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0.38rem 0.72rem;
-  background: rgba(159, 105, 70, 0.08);
-  color: #8f5c3d;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-}
-
-.aside-copy {
-  margin-top: 0.55rem;
-  color: #7a5e4a;
-  font-size: 0.84rem;
-  line-height: 1.45;
-}
-
 .popup-error {
   margin: -0.25rem 0 1rem;
   color: #b91c1c;
@@ -289,7 +253,7 @@ onBeforeUnmount(() => {
   padding: 1.05rem 1rem 0.95rem;
   transition: transform 0.24s ease, border-color 0.24s ease, box-shadow 0.24s ease;
 }
-.recommended-badge,.trial-badge{display:inline-flex;align-items:center;border-radius:999px;font-weight:800}.recommended-badge{padding:.35rem .6rem;background:#5d3422;color:#fff8ed;font-size:.65rem;letter-spacing:.04em}.trial-badge{position:relative;z-index:1;margin:.7rem 0 0;padding:.35rem .6rem;background:rgba(255,255,255,.55);color:#6f3f2a;font-size:.72rem}.pricing-reassurance{display:flex;flex-wrap:wrap;gap:.55rem 1.2rem;margin-top:1.15rem;padding:1rem 1.1rem;border:1px solid rgba(185,112,56,.18);border-radius:1rem;background:rgba(255,255,255,.48);color:#704a34;font-size:.8rem;font-weight:700}
+.recommended-badge,.trial-badge{display:inline-flex;align-items:center;border-radius:999px;font-weight:800}.recommended-badge{padding:.35rem .6rem;background:#5d3422;color:#fff8ed;font-size:.65rem;letter-spacing:.04em}.trial-badge{position:relative;z-index:1;margin:.7rem 0 0;padding:.35rem .6rem;background:rgba(255,255,255,.55);color:#6f3f2a;font-size:.72rem}
 
 .plan-selected-badge {
   position: absolute;
@@ -606,7 +570,7 @@ onBeforeUnmount(() => {
 }
 
 .theme-dark .subscription-shell :is(
-  .popup-eyebrow, .popup-title, .popup-subtitle, .aside-copy,
+  .popup-eyebrow, .popup-title, .popup-subtitle,
   .plan-name, .plan-price, .plan-desc, .plan-caption, .plan-features,
   .plan-cycle, .plan-kicker, .plan-select-indicator
 ) {
@@ -619,16 +583,7 @@ onBeforeUnmount(() => {
 }
 
 .theme-dark .subscription-shell :is(
-  .popup-aside, .pricing-reassurance
-) {
-  border-color: var(--ac-border) !important;
-  background: var(--ac-surface) !important;
-  color: var(--ac-text-secondary) !important;
-  box-shadow: var(--ac-shadow-sm);
-}
-
-.theme-dark .subscription-shell :is(
-  .aside-pill, .recommended-badge, .trial-badge, .plan-selected-badge
+  .recommended-badge, .trial-badge, .plan-selected-badge
 ) {
   border-color: var(--ac-border-strong) !important;
   background: #6d4a32 !important;

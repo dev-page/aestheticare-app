@@ -8,7 +8,7 @@
     }"
   >
     <div>
-      <ThemeSelector v-if="!showEmployeeTopbar && !isLandingRoute" class="global-theme-selector" />
+      <ThemeSelector class="global-theme-selector readonly-exempt" />
       <EmployeeTopbar
         v-if="showEmployeeTopbar && !isClinicOnboardingRoute"
         :title="topbarTitle"
