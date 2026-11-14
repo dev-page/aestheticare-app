@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 4, sections: 2 }" class="flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'detail' }" class="flex-1 p-4 md:p-8">
       <div class="mb-6">
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Payslip Generation</h1>
         <p class="text-slate-400 text-sm md:text-base">View the latest payslip of employees in your branch.</p>

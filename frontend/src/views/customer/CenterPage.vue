@@ -2,7 +2,7 @@
   <div class="customer-center-page flex customer-theme min-h-screen bg-[#efe3d0]">
     <CustomerSidebar class="flex-shrink-0" />
 
-    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'profile', fields: 4, sections: 1 }, { variant: 'cards', cards: 6 }] }" class="center-main flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'center-profile', header: false }" class="center-main flex-1 p-4 md:p-8">
       <button
         type="button"
         class="mb-4 inline-flex items-center gap-2 text-slate-300 hover:text-white transition-colors"

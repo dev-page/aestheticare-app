@@ -2,7 +2,7 @@
   <div class="checkout-page flex customer-theme min-h-screen">
     <CustomerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 2 }" class="checkout-main flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'checkout' }" class="checkout-main flex-1 p-4 md:p-8">
       <button
         type="button"
         class="mb-3 inline-flex items-center gap-2 text-slate-300 hover:text-white transition-colors"

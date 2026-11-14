@@ -128,7 +128,7 @@ const submitCode = async serviceKey => {
 </script>
 
 <template>
-  <div v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 6, header: false }" class="appointment-records">
+  <div v-page-loading="{ active: pageLoading, header: false, blocks: [{ variant: 'form', fields: 5, sections: 1 }, { variant: 'table', columns: 6, rows: 6 }] }" class="appointment-records">
     <p v-if="error" class="error-message" role="alert">{{ error }}</p>
     <p v-if="route.query.branchId" class="subline">Showing this branch's appointments. <router-link :to="{ path: route.path, query: { ...route.query, branchId: undefined } }" class="outline-button">Show all branches</router-link></p>
     <section class="records-panel filters">

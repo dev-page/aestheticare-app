@@ -2,7 +2,7 @@
   <div class="appointments-shell customer-theme">
     <CustomerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="appointments-main">
+    <main v-page-loading="{ active: pageLoading, variant: isUnpaidAppointmentsPage ? 'appointment-cards' : 'appointments', rows: 5 }" class="appointments-main">
       <div class="appointments-content">
         <section class="appointments-header">
           <div>
@@ -52,7 +52,7 @@
           </div>
 
           <div v-if="loading" class="state-panel">
-            <PageSectionSkeleton variant="cards" :rows="3" :columns="1" />
+            <PageSectionSkeleton variant="cards" :rows="3" :columns="2" />
           </div>
 
           <div v-else-if="unpaidAppointments.length" class="unpaid-appointments-grid">

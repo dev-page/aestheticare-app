@@ -38,11 +38,11 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="loading">
-                  <td colspan="7" class="orders-empty-cell">
-                    <PageSectionSkeleton variant="table" :rows="5" :columns="7" />
-                  </td>
-                </tr>
+                <template v-if="loading">
+                  <tr v-for="row in 5" :key="`order-skeleton-${row}`" class="orders-skeleton-row" aria-hidden="true">
+                    <td v-for="column in 7" :key="`order-skeleton-${row}-${column}`" :data-label="['Order ID', 'Items', 'Total', 'Payment', 'Status', 'Created', 'Actions'][column - 1]"><span class="order-cell-skeleton" :class="{ 'order-cell-skeleton-short': column === 3 || column === 5, 'order-cell-skeleton-action': column === 7 }"></span></td>
+                  </tr>
+                </template>
                 <tr v-else-if="filteredOrders.length === 0">
                   <td colspan="7" class="orders-empty-cell">No orders found.</td>
                 </tr>
@@ -473,7 +473,6 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
-import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { storage } from '@/config/firebaseConfig'
@@ -481,7 +480,7 @@ import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 export default {
   name: 'CustomerOrders',
-  components: { CustomerSidebar, Modal, PageSectionSkeleton },
+  components: { CustomerSidebar, Modal },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -1151,6 +1150,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   vertical-align: middle;
 }
 
+.order-cell-skeleton {
+  display: block;
+  width: min(9rem, 100%);
+  height: .9rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f0dfca, #e6ceb1, #f0dfca);
+  background-size: 200% 100%;
+  animation: order-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+.order-cell-skeleton-short { width: 5rem; }
+.order-cell-skeleton-action { width: 4.5rem; height: 2rem; border-radius: .55rem; }
+.orders-skeleton-row:hover { background: transparent !important; }
+@keyframes order-skeleton-shimmer { to { background-position: -200% 0; } }
+
 .orders-table tbody tr:nth-child(even) {
   background: rgba(252, 245, 233, 0.76);
 }
@@ -1331,4 +1344,5 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     justify-content: flex-end;
   }
 }
+@media (prefers-reduced-motion: reduce) { .order-cell-skeleton { animation: none; } }
 </style>

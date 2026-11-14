@@ -2,8 +2,8 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 4, panels: 2 }" class="flex-1 p-8">
-      <DashboardSkeleton v-if="loading" />
+    <main v-page-loading="{ active: pageLoading, variant: 'calendar-dashboard' }" class="flex-1 p-8">
+      <DashboardSkeleton v-if="loading" variant="calendar-dashboard" />
       <div v-else>
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Practitioner Dashboard</h1>

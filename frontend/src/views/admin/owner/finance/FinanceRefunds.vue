@@ -2,7 +2,7 @@
   <div class="flex module-theme finance-page min-h-screen bg-slate-900">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 8, rows: 5 }" class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'refunds' }" class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Refund Management</h1>
         <p class="text-slate-400">Review customer refunds for orders, appointments, and services.</p>

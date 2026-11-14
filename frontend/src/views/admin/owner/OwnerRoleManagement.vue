@@ -2,7 +2,7 @@
   <div class="flex min-h-screen owner-theme bg-[#2a180f] text-[#f3e7e0]">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'split', rows: 5 }" class="flex-1 px-4 py-6 md:px-8 role-page-shell">
+    <main v-page-loading="{ active: pageLoading, variant: 'role-management' }" class="flex-1 px-4 py-6 md:px-8 role-page-shell">
       <div class="mx-auto max-w-7xl space-y-6">
         <section class="rounded-[2rem] border border-[#5a3927] bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.08),_transparent_42%),linear-gradient(180deg,_rgba(58,36,23,0.98),_rgba(42,24,15,0.98))] p-6 shadow-[0_24px_60px_rgba(20,12,8,0.45)]">
           <div class="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">

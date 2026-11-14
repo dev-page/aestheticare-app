@@ -1,7 +1,7 @@
 <template>
   <div :class="['profile-shell customer-theme', { 'profile-shell-embedded': embedded }]">
     <CustomerSidebar v-if="!embedded" />
-    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 6, sections: 2 }" class="profile-main"><div class="profile-content"><section class="profile-panel">
+    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 5, sections: 1 }" class="profile-main"><div class="profile-content"><section class="profile-panel">
       <template v-if="loading"><p class="profile-subtitle">Loading your profile…</p></template>
       <template v-else><header class="profile-header"><h1 class="profile-title">My Profile</h1><p class="profile-subtitle">Keep your contact details updated for appointments and pickup orders.</p></header>
         <div class="profile-avatar-block"><div class="profile-avatar"><img v-if="customer.profilePicture" :src="customer.profilePicture" alt="Customer profile" class="h-full w-full object-cover"><span v-else class="profile-avatar-fallback">{{ fullName ? fullName.charAt(0) : 'U' }}</span></div><label class="profile-upload-label">Upload Profile Picture<input type="file" accept="image/*" class="hidden" @change="handleFileUpload"></label></div>

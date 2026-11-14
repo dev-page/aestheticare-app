@@ -458,7 +458,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   <div class="flex flex-row owner-theme" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
     <OwnerSidebar v-if="!embedded" />
 
-    <component v-page-loading="{ active: pageLoading, variant: 'table', columns: 7, rows: 4, header: false }" :is="embedded ? 'div' : 'main'" class="flex-1 min-w-0" :class="embedded ? '' : 'p-4 md:p-8'">
+    <component v-page-loading="{ active: pageLoading, variant: 'table', columns: 7, rows: 4, header: !embedded }" :is="embedded ? 'div' : 'main'" class="flex-1 min-w-0" :class="embedded ? '' : 'p-4 md:p-8'">
       <div v-if="!embedded" class="mb-6 flex flex-col items-start justify-between space-y-4 md:flex-row md:items-center md:space-y-0">
         <div>
           <h1 class="mb-1 text-2xl font-bold text-white md:text-3xl">Branch Management</h1>

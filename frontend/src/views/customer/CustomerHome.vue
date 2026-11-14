@@ -2,7 +2,7 @@
   <div class="customer-home-shell customer-theme flex min-h-screen bg-gradient-to-br from-[#fbf2e4] via-[#f7ead8] to-[#f1dcc0]">
     <CustomerSidebar class="flex-shrink-0" />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'cards', cards: 6 }" class="customer-home-main flex-1">
+    <main v-page-loading="{ active: pageLoading, variant: 'discovery', cards: 6, header: false }" class="customer-home-main flex-1">
       <div class="customer-home-content">
         <section class="customer-home-hero">
           <div>
@@ -134,7 +134,7 @@
           </div>
 
           <div v-if="loading" class="state-panel">
-            <PageSectionSkeleton variant="split" />
+            <PageSectionSkeleton variant="cards" :rows="6" :columns="3" />
           </div>
 
           <div v-else-if="errorMessage" class="state-panel">

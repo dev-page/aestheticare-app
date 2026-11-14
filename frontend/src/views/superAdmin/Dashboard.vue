@@ -2,8 +2,8 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 6, panels: 2 }" class="flex-1 p-8">
-      <DashboardSkeleton v-if="loading" />
+    <main v-page-loading="{ active: pageLoading, variant: 'superadmin-dashboard' }" class="flex-1 p-8">
+      <DashboardSkeleton v-if="loading" variant="superadmin-dashboard" />
       <div v-else>
       <div class="mb-8 flex items-start justify-between gap-4">
         <div>

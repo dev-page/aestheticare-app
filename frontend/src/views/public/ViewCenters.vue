@@ -23,7 +23,7 @@
     </div>
   </nav>
 
-  <main v-page-loading="{ active: pageLoading, variant: 'cards', cards: 6 }" class="centers-discovery min-h-screen pt-20 pb-14">
+  <main v-page-loading="{ active: pageLoading, variant: 'discovery', cards: 6, header: false }" class="centers-discovery min-h-screen pt-20 pb-14">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <section class="centers-hero relative">
         <div class="relative z-10 py-2 md:py-4">

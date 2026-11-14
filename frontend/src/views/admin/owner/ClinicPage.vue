@@ -2,7 +2,7 @@
   <div class="flex owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 4, sections: 2 }" class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'clinic-branch-profile' }" class="flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-1">Clinic Profile</h1>
@@ -29,7 +29,7 @@
         </div>
       </div>
 
-      <OwnerPageSkeleton v-if="loading" variant="profile" />
+      <OwnerPageSkeleton v-if="loading" variant="clinic-branch-profile" />
 
       <div v-else-if="!selectedBranch" class="bg-slate-800 rounded-xl border border-slate-700 p-8 text-slate-300">
         No branches found for this owner account.

@@ -1,7 +1,7 @@
 <template>
   <div class="flex owner-theme min-h-screen subscription-page">
     <OwnerSidebar />
-    <main v-page-loading="{ active: pageLoading, variant: 'cards', cardStyle: 'plan', cards: 2 }" class="subscription-main">
+    <main v-page-loading="{ active: pageLoading, variant: 'subscription' }" class="subscription-main">
       <header class="page-heading">
         <span class="eyebrow">Account &amp; billing</span>
         <h1>Subscription Plan</h1>
@@ -50,7 +50,7 @@
         <section class="subscription-card payment-history" aria-labelledby="payment-history-title">
           <div class="history-heading"><div><h2 id="payment-history-title">Payment History</h2><p>Previous subscription payments and their references.</p></div><span v-if="historyRows.length" class="history-count">{{ historyRows.length }} {{ historyRows.length === 1 ? 'payment' : 'payments' }}</span></div>
           <p v-if="historyError" class="error-notice" role="alert">{{ historyError }}</p>
-          <div v-if="historyLoading" class="history-loading" role="status" aria-label="Loading payment history"><div v-for="row in 3" :key="row" class="history-skeleton"></div><span class="sr-only">Loading payment history...</span></div>
+          <div v-if="historyLoading" class="history-loading" role="status" aria-label="Loading payment history" aria-busy="true"><div class="history-skeleton-table" aria-hidden="true"><div class="history-skeleton-row history-skeleton-head"><span v-for="cell in 5" :key="cell"></span></div><div v-for="row in 3" :key="row" class="history-skeleton-row"><span v-for="cell in 5" :key="cell"></span></div></div><span class="sr-only">Loading payment history...</span></div>
           <div v-else-if="!historyRows.length && !historyError" class="history-empty"><Icon icon="lucide:receipt-text" width="27" aria-hidden="true" /><h3>No subscription payments yet</h3><p>Your completed payments will appear here when you purchase a plan.</p></div>
           <template v-else-if="historyRows.length">
             <div class="history-table-wrap"><table><caption class="sr-only">Subscription payments. Dates are shown in Philippine time.</caption><thead><tr><th scope="col">Plan</th><th scope="col">Amount</th><th scope="col">Paid on</th><th scope="col">Status</th><th scope="col">Payment reference</th></tr></thead><tbody><tr v-for="payment in paginatedHistory" :key="payment.id"><td class="payment-plan">{{ normalizePlanLabel(payment.planId || payment.planName) }}</td><td>{{ payment.amount == null ? '-' : formatCurrency(payment.amount) }}</td><td>{{ paymentDateLabel(payment) }}</td><td><span class="status-pill" :class="{ 'status-warning': !paymentIsPaid(payment) }">{{ paymentIsPaid(payment) ? 'Paid' : payment.status || 'Pending' }}</span></td><td class="payment-reference">{{ payment.referenceNumber || payment.paymongoPaymentId || payment.id }}</td></tr></tbody></table></div>
@@ -379,9 +379,14 @@ onUnmounted(() => {
 .history-empty p { margin: 0; font-size: 12px; }
 .error-notice { color: #a04434 !important; font-size: 13px; padding: 12px 15px; border-radius: 9px; background: #fff0e9; margin-bottom: 16px; }
 .history-loading { display: grid; gap: 10px; }
-.history-skeleton { height: 48px; border-radius: 8px; background: linear-gradient(90deg, var(--ac-surface-muted), var(--ac-border), var(--ac-surface-muted)); background-size: 200% 100%; animation: history-pulse 1.5s ease-in-out infinite; }
+.history-skeleton-table { overflow-x: auto; border: 1px solid var(--ac-border); border-radius: 10px; }
+.history-skeleton-row { display: grid; grid-template-columns: 1.1fr .8fr 1fr 1fr 1.5fr; gap: 14px; min-width: 620px; padding: 15px 16px; border-top: 1px solid var(--ac-border); }
+.history-skeleton-row:first-child { border-top: 0; }
+.history-skeleton-row span { height: 12px; max-width: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--ac-surface-muted), var(--ac-border), var(--ac-surface-muted)); background-size: 200% 100%; animation: history-pulse 1.5s ease-in-out infinite; }
+.history-skeleton-head { background: var(--ac-surface-muted); }
+.history-skeleton-head span { height: 10px; opacity: .8; }
 @keyframes history-pulse { 50% { opacity: .5; } }
-@media (prefers-reduced-motion: reduce) { .history-skeleton { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .history-skeleton-row span { animation: none; } }
 @media (max-width: 1050px) { .plan-layout { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 640px) {
   .subscription-main { padding: 22px 16px 30px; }

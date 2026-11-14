@@ -2,14 +2,14 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 6, sections: 2 }" class="flex-1 p-6 md:p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'employee-profile', fields: 6, sections: 2 }" class="flex-1 p-6 md:p-8">
       <div class="mx-auto max-w-4xl">
         <div class="mb-8">
           <h1 class="text-3xl font-bold text-white mb-2">Employee Profile</h1>
           <p class="text-slate-400">View and update your personal employee information.</p>
         </div>
 
-        <DashboardSkeleton v-if="loading" variant="profile" />
+        <DashboardSkeleton v-if="loading" variant="employee-profile" :header="false" />
 
         <div v-else class="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
           <section class="rounded-3xl border border-slate-800 bg-slate-800/80 p-6 shadow-lg">

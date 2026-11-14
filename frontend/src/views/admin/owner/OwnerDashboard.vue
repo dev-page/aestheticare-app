@@ -717,8 +717,8 @@ const renderEmployeeChart = () => {
   <div class="flex owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 8, panels: 3 }" class="flex-1 p-8">
-      <DashboardSkeleton v-if="loading" :cards="8" :panels="3" />
+    <main v-page-loading="{ active: pageLoading, variant: 'owner-dashboard', header: false }" class="flex-1 p-8">
+      <DashboardSkeleton v-if="loading" variant="owner-dashboard" :header="false" />
       <div v-else class="owner-dashboard-shell">
         <section class="dashboard-hero">
           <div class="dashboard-hero-copy">

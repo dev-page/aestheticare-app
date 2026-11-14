@@ -2,7 +2,7 @@
   <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar class="w-full md:w-64 flex-shrink-0" />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'report', cards: 4 }" class="flex-1 p-4 md:p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'cards', cardStyle: 'stat', cards: 4 }, { variant: 'table', columns: 4, rows: 6 }] }" class="flex-1 p-4 md:p-8">
       <div class="mb-6 md:mb-8">
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1 md:mb-2">Reports & Analytics</h1>
         <p class="text-slate-400 text-sm md:text-base">View detailed performance metrics for branches, employees, and revenue</p>

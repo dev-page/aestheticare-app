@@ -1,7 +1,7 @@
 <template>
   <div class="prescriptions-shell owner-theme">
     <OwnerSidebar />
-    <main v-page-loading="{ active: pageLoading, variant: 'list', fields: 5 }" class="prescriptions-main">
+    <main v-page-loading="{ active: pageLoading, variant: 'prescriptions', rows: 3 }" class="prescriptions-main">
       <div class="prescriptions-content">
         <header class="page-heading">
           <div>
@@ -15,7 +15,7 @@
         </header>
 
         <p v-if="error" class="state-message error-message" role="alert">{{ error }}</p>
-        <p v-else-if="loading" class="state-message">Loading prescriptions…</p>
+        <div v-else-if="loading" class="state-message"><PageSectionSkeleton variant="cards" :rows="3" :columns="1" /></div>
         <section v-else-if="records.length" class="prescription-list" aria-label="Clinic prescriptions">
           <article v-for="record in records" :key="record.id" class="prescription-card">
             <header class="card-heading">
@@ -68,6 +68,7 @@ import { formatClockTime } from '@/utils/appointmentDss'
 import { usePermissions } from '@/composables/usePermissions'
 import { loadOwnerBranchScope, loadClinicDocsByIds } from '@/utils/ownerBranchScope'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 const { hasPermission } = usePermissions()

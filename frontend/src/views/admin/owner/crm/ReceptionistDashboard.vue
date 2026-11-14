@@ -2,8 +2,8 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 6, panels: 2 }" class="flex-1 p-8">
-      <DashboardSkeleton v-if="loading" />
+    <main v-page-loading="{ active: pageLoading, variant: 'receptionist-dashboard' }" class="flex-1 p-8">
+      <DashboardSkeleton v-if="loading" variant="receptionist-dashboard" />
       <div v-else>
       <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>

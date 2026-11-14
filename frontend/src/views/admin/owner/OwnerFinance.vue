@@ -245,7 +245,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'report', cards: 4 }" class="flex-1 p-4 md:p-8 overflow-x-hidden">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'cards', cardStyle: 'stat', cards: 3 }, { variant: 'table', columns: 6, rows: 5 }, { variant: 'charts', panels: 2 }] }" class="flex-1 p-4 md:p-8 overflow-x-hidden">
       <!-- Page Header -->
       <div class="mb-6 md:mb-8">
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Finance Overview</h1>

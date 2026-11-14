@@ -2,7 +2,7 @@
   <div class="flex module-theme finance-page bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'report', cards: 3 }" class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'cards', cardStyle: 'stat', cards: 3 }, { variant: 'table', columns: 6, rows: 5 }, { variant: 'table', columns: 3, rows: 4 }] }" class="flex-1 p-8">
       <div class="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Payroll Summary</h1>

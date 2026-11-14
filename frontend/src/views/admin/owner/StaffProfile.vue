@@ -470,7 +470,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   <div class="flex flex-row owner-theme w-full" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
     <OwnerSidebar v-if="!embedded" />
 
-    <component v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5, header: false }" :is="embedded ? 'div' : 'main'" class="staff-management-main flex-1 min-w-0" :class="embedded ? '' : 'p-4 sm:p-6 lg:p-8'">
+    <component v-page-loading="{ active: pageLoading, variant: 'table', columns: 8, rows: 5, header: !embedded }" :is="embedded ? 'div' : 'main'" class="staff-management-main flex-1 min-w-0" :class="embedded ? '' : 'p-4 sm:p-6 lg:p-8'">
       <!-- Header -->
       <div v-if="!embedded" class="mb-6 flex flex-col gap-2">
         <div>

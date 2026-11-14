@@ -7,6 +7,7 @@ import { createUserWithEmailAndPassword, signInWithCustomToken, signOut } from '
 import { doc, onSnapshot } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
+import { useThemeStore } from '@/stores/theme'
 import Modal from '@/components/common/Modal.vue'
 import LocationPicker from '@/components/common/LocationPicker.vue'
 import Terms from '@/components/common/Terms.vue'
@@ -23,6 +24,7 @@ import axios from 'axios'
 
 const router = useRouter()
 const route = useRoute()
+const theme = useThemeStore()
 const legacyClinicRoute = computed(() => {
   const name = String(route.name || '')
   const path = String(route.path || '').toLowerCase()
@@ -3705,7 +3707,7 @@ const handleRegistrationSubmit = () => {
     </div>
   </div>
 
-  <div v-else class="register-choice-page min-h-[100dvh] bg-gradient-to-br from-cream-50 via-cream-100 to-gold-100 overflow-hidden relative">
+  <div v-else class="register-choice-page min-h-[100dvh] bg-gradient-to-br from-cream-50 via-cream-100 to-gold-100 overflow-hidden relative" :class="{ 'theme-dark': theme.resolvedTheme === 'dark' }">
     <div class="pointer-events-none absolute inset-0">
       <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-gold-200/40 blur-3xl"></div>
       <div class="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-cream-300/40 blur-3xl"></div>
@@ -4019,6 +4021,61 @@ const handleRegistrationSubmit = () => {
 
 :global(html[data-ac-theme="dark"]) .register-choice-panel a {
   color: var(--ac-accent) !important;
+}
+
+/* Keep this public route's dark appearance tied to the theme store as well as
+   the document attribute; the route can render before global theme CSS settles. */
+.register-choice-page.theme-dark {
+  background: linear-gradient(135deg, #1b100b 0%, #24150e 54%, #2d1b11 100%) !important;
+  color: #f0ddc8;
+}
+
+.register-choice-page.theme-dark .register-choice-panel {
+  border-color: #6d4a32 !important;
+  background: #2b1b12 !important;
+  color: #f0ddc8;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38) !important;
+}
+
+.register-choice-page.theme-dark .register-choice-panel :is(p, .choice-copy) {
+  color: #e4cbb2 !important;
+}
+
+.register-choice-page.theme-dark .register-choice-panel .register-title,
+.register-choice-page.theme-dark .register-choice-panel .choice-title {
+  color: #fff8eb !important;
+}
+
+.register-choice-page.theme-dark .register-choice-panel > div > p:first-child,
+.register-choice-page.theme-dark .register-choice-panel .choice-kicker {
+  color: #d99a6c !important;
+}
+
+.register-choice-page.theme-dark .choice-card {
+  border-color: #6d4a32 !important;
+  background: #342419 !important;
+  color: #f0ddc8 !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24) !important;
+}
+
+.register-choice-page.theme-dark .choice-card:hover,
+.register-choice-page.theme-dark .choice-card:focus-visible {
+  border-color: #d99a6c !important;
+  background: #493224 !important;
+  outline-color: #d99a6c;
+}
+
+.register-choice-page.theme-dark .choice-cta {
+  background: #8f5e3d !important;
+  color: #fff8eb !important;
+}
+
+.register-choice-page.theme-dark .choice-illustration {
+  filter: brightness(0.76) saturate(0.78);
+}
+
+.register-choice-page.theme-dark .register-choice-panel a {
+  color: #d99a6c !important;
 }
 
 .business-type-card {

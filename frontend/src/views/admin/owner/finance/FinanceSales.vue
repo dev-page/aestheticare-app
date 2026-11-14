@@ -2,7 +2,7 @@
   <div class="flex module-theme finance-page bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'cards', cardStyle: 'stat', cards: 4 }, { variant: 'table', columns: 6, rows: 5 }] }" class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'form', fields: 5, sections: 1 }, { variant: 'cards', cardStyle: 'stat', cards: 4 }, { variant: 'table', columns: 6, rows: 5 }] }" class="flex-1 p-8">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Finance Sales</h1>
         <p class="text-slate-400">Track transaction accuracy, refunds, package sales, and daily reconciliation.</p>

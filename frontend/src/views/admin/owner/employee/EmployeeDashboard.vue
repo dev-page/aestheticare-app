@@ -4,8 +4,8 @@
   <div class="flex module-theme min-h-screen bg-[#f8f3ea] text-[#4a3324]">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'dashboard', cards: 4, panels: 2 }" class="flex-1 p-6 md:p-8">
-      <DashboardSkeleton v-if="loading" />
+    <main v-page-loading="{ active: pageLoading, variant: 'employee-dashboard', header: false }" class="flex-1 p-6 md:p-8">
+      <DashboardSkeleton v-if="loading" variant="employee-dashboard" :header="false" />
 
       <div v-else class="space-y-6">
         <section class="rounded-[1.75rem] border border-[#ead8c2] bg-[#fffdf9] p-6 shadow-[0_18px_44px_rgba(75,49,30,0.08)]">

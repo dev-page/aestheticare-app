@@ -1,7 +1,7 @@
 <template>
   <div class="pos-shell owner-theme">
     <OwnerSidebar />
-    <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 5 }" class="pos-main">
+    <main v-page-loading="{ active: pageLoading, variant: 'pharmacy-pos' }" class="pos-main">
       <div class="pos-content">
         <header class="page-heading">
           <div><p class="eyebrow">Clinic pharmacy</p><h1>Pharmacy</h1><p class="subtitle">Sell available pharmacy items, collect in-person payment, and keep inventory and sales records in sync.</p></div>

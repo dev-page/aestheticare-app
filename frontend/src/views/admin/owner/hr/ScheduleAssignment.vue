@@ -2,7 +2,7 @@
   <div class="schedule-assignment flex flex-row owner-theme min-w-0" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
     <OwnerSidebar v-if="!embedded" />
 
-    <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, header: !embedded, blocks: [{ variant: 'form', fields: 4, sections: 1 }, { variant: 'cards', cards: 7, cardStyle: 'summary' }] }" class="flex-1 min-w-0 text-white" :class="embedded ? '' : 'p-6 md:p-8'">
+    <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, header: !embedded, variant: 'shift-assignment' }" class="flex-1 min-w-0 text-white" :class="embedded ? '' : 'p-6 md:p-8'">
       <div class="max-w-6xl mx-auto">
         <div class="mb-8">
           <h1 v-if="!embedded" class="text-3xl font-bold text-white">Shift Assignment</h1>

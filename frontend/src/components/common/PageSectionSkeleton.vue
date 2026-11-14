@@ -49,6 +49,19 @@
       </div>
     </template>
 
+    <template v-else-if="variant === 'cards'">
+      <div class="skeleton-card-grid">
+        <article v-for="item in resolvedCount" :key="`card-${item}`" class="skeleton-card">
+          <div class="skeleton-card-media"></div>
+          <div class="skeleton-card-heading"><div class="skeleton-line medium"></div><div class="skeleton-pill"></div></div>
+          <div class="skeleton-line long"></div>
+          <div class="skeleton-card-details"><div v-for="detail in 3" :key="detail"><div class="skeleton-line short"></div><div class="skeleton-line medium"></div></div></div>
+          <div class="skeleton-line long"></div>
+          <div class="skeleton-card-footer"><div class="skeleton-line short"></div><div class="skeleton-pill"></div></div>
+        </article>
+      </div>
+    </template>
+
     <template v-else>
       <div class="skeleton-table-head">
         <div
@@ -213,6 +226,52 @@ export default {
   gap: 1rem;
 }
 
+.skeleton-card-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.skeleton-card {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--ac-border);
+  border-radius: 1rem;
+  background: var(--ac-surface);
+}
+
+.skeleton-card-media {
+  height: 8rem;
+  border-radius: .75rem;
+  background: linear-gradient(90deg, var(--ac-surface-muted), var(--ac-border), var(--ac-surface-muted));
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-card-heading,
+.skeleton-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.skeleton-card-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .5rem;
+  padding: .75rem 0;
+  border-top: 1px solid var(--ac-border);
+  border-bottom: 1px solid var(--ac-border);
+}
+
+.skeleton-card-details > div {
+  display: grid;
+  gap: .5rem;
+}
+
 .skeleton-panel {
   min-height: 14rem;
   border-radius: 1rem;
@@ -234,7 +293,15 @@ export default {
     background-position: -200% 0;
   }
 }
+
+@media (max-width: 800px) {
+  .skeleton-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .skeleton-card-grid { grid-template-columns: 1fr; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-line, .skeleton-pill, .skeleton-check, .skeleton-panel, .skeleton-detail-card { animation: none; }
+  .skeleton-line, .skeleton-pill, .skeleton-check, .skeleton-panel, .skeleton-detail-card, .skeleton-card-media { animation: none; }
 }
 </style>

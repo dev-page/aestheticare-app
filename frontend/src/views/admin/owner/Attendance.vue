@@ -135,7 +135,7 @@ onBeforeUnmount(() => clearInterval(timer))
 <template>
   <div class="flex min-h-screen owner-theme bg-[#1b0e08]">
     <OwnerSidebar />
-    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'cards', cardStyle: 'stat', cards: 4 }, { variant: tab === 'import' ? 'form' : tab === 'qr' ? 'cards' : 'table', columns: visible.length + 1, rows: 5, cards: 1, fields: 4 }] }" class="attendance flex-1 min-w-0 p-3 md:p-6 text-white">
+    <main v-page-loading="{ active: pageLoading, variant: 'attendance', rows: 5 }" class="attendance flex-1 min-w-0 p-3 md:p-6 text-white">
       <div class="shell">
         <header class="attendance-page-heading"><p class="attendance-eyebrow">Human Resources</p><h1>Attendance Management</h1><p>Review employee attendance, manage the QR station, and import attendance records.</p></header>
         <div class="summary"><div v-for="[label,count] in summary" :key="label"><small>{{ label }}</small><strong>{{ count }}</strong></div></div>

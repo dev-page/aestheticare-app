@@ -1,7 +1,7 @@
 <template>
   <div class="clinic-profile-layout owner-theme">
     <OwnerSidebar />
-    <main v-page-loading="{ active: pageLoading, variant: 'profile', fields: 6, sections: 2 }" class="clinic-profile-main">
+    <main v-page-loading="{ active: pageLoading, variant: 'clinic-profile' }" class="clinic-profile-main">
       <div class="clinic-profile-heading">
         <div>
           <p class="clinic-profile-eyebrow">CLINIC SETUP</p>
