@@ -8,6 +8,7 @@
       <input v-model.trim="search" type="search" placeholder="Filter clinic, owner, plan, or status..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredClinics.length" part="top" item-label="clinics" />
         <table class="w-full text-sm">
           <thead class="border-b border-slate-700">
             <tr>

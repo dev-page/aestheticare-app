@@ -1,8 +1,8 @@
 <script>
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { ref, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, addDoc, getDocs, query, where, doc, getDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { getFirestore, collection, addDoc, getDocs, query, where, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '@/config/firebaseConfig'
@@ -10,6 +10,8 @@ import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
+import { usePermissions } from '@/composables/usePermissions'
+import { recurringScheduleVersions, resolveRecurringScheduleVersion } from '../../../../../../shared/recurringEmployeeSchedules.js'
 
 export default {
   name: 'AddShift',
@@ -17,6 +19,8 @@ export default {
   components: { OwnerSidebar },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+    const { hasPermission } = usePermissions()
+    const canManageShifts = computed(() => hasPermission('hr:update'))
 
     const db = getFirestore(getApp())
     const branches = ref([])
@@ -143,6 +147,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         )
 
         shifts.value = records.sort((a, b) => {
+          if (Boolean(a.isArchived) !== Boolean(b.isArchived)) return Number(Boolean(a.isArchived)) - Number(Boolean(b.isArchived))
           const branchCompare = String(a.branch || '').localeCompare(String(b.branch || ''))
           if (branchCompare !== 0) return branchCompare
           const typeCompare = String(a.shiftType || '').localeCompare(String(b.shiftType || ''))
@@ -197,7 +202,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (parts.length < 2) return null
       const hours = Number(parts[0])
       const minutes = Number(parts[1])
-      if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+      if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null
       return hours * 60 + minutes
     }
 
@@ -216,27 +221,33 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return `${displayHour}:${String(minutes).padStart(2, '0')} ${period}`
     }
 
-    const shiftTimeRules = {
-      Morning: { minStart: 5 * 60, maxStart: 12 * 60, start: '08:00', end: '17:00' },
-      Afternoon: { minStart: 12 * 60, maxStart: 18 * 60, start: '13:00', end: '21:00' },
-      Evening: { minStart: 18 * 60, maxStart: 24 * 60, start: '18:00', end: '23:00' },
+    const shiftTimePresets = {
+      Morning: { start: '08:00', end: '17:00' },
+      Afternoon: { start: '13:00', end: '21:00' },
+      Evening: { start: '18:00', end: '23:00' },
     }
 
-    const applyShiftTypeDefaults = () => {
-      const rule = shiftTimeRules[currentShift.value.shiftType]
+    const applyShiftTypeDefaults = (type) => {
+      const rule = shiftTimePresets[type]
       if (!rule) return
+      currentShift.value.shiftType = type
       currentShift.value.start = rule.start
       currentShift.value.end = rule.end
     }
 
     const validateShiftInput = () => {
+      const shiftName = String(currentShift.value.shiftType || '').trim()
       if (
-        !currentShift.value.shiftType ||
+        !shiftName ||
         !currentShift.value.start ||
         !currentShift.value.end ||
         !currentShift.value.branch
       ) {
-        toast.error('Shift type, start time, end time, and branch are required.')
+        toast.error('Shift name, start time, end time, and branch are required.')
+        return false
+      }
+      if (shiftName.length > 80) {
+        toast.error('Shift names should be 80 characters or fewer.')
         return false
       }
 
@@ -244,11 +255,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const endMinutes = timeToMinutes(currentShift.value.end)
       if (startMinutes === null || endMinutes === null) {
         toast.error('Please provide a valid start and end time.')
-        return false
-      }
-      const timeRule = shiftTimeRules[currentShift.value.shiftType]
-      if (timeRule && (startMinutes < timeRule.minStart || startMinutes >= timeRule.maxStart)) {
-        toast.error(`${currentShift.value.shiftType} shifts must start during the selected period.`)
         return false
       }
       if (endMinutes <= startMinutes) {
@@ -261,12 +267,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         String(shift.branchId || '') === String(
           branches.value.find((branch) => branch.branch === currentShift.value.branch)?.id || ''
         ) &&
-        String(shift.shiftType || '').trim().toLowerCase() === String(currentShift.value.shiftType || '').trim().toLowerCase() &&
+        !shift.isArchived &&
+        String(shift.shiftType || '').trim().toLowerCase() === shiftName.toLowerCase() &&
         String(shift.start || '').trim() === String(currentShift.value.start || '').trim() &&
         String(shift.end || '').trim() === String(currentShift.value.end || '').trim()
       )
       if (duplicateShift) {
-        toast.error('A shift with the same type and time already exists for this branch.')
+        toast.error('A shift with the same name and time already exists for this branch.')
         return false
       }
 
@@ -284,6 +291,34 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return true
     }
 
+    const shiftIsAssigned = async (shift) => {
+      if (!shift?.branchId) return false
+      const people = await getDocs(query(collection(db, 'users'), where('branchId', '==', shift.branchId)))
+      const scheduleGroups = await Promise.all(people.docs.map(person =>
+        getDocs(collection(db, 'users', person.id, 'schedules'))
+      ))
+      const today = new Date()
+      today.setDate(today.getDate() - (today.getDay() + 6) % 7)
+      const currentWeekStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      const previousLabel = `${String(shift.shiftType || 'Shift').trim()} || ${String(shift.start || '').trim()} - ${String(shift.end || '').trim()}`
+      const matches = (schedule = {}) => {
+        const assignments = Object.values(schedule.assignments || {}).map(value => String(value || '').trim())
+        const labels = Object.values(schedule.assignmentLabels || {}).map(value => String(value || '').trim())
+        return [...assignments, ...labels].some(value => value === shift.id || value === previousLabel)
+      }
+      return scheduleGroups.some(group => group.docs.some(scheduleDoc => {
+        const data = scheduleDoc.data() || {}
+        const isRecurring = scheduleDoc.id === 'recurring' || data.recurring === true || String(data.type || '').toLowerCase() === 'recurring'
+        if (isRecurring) {
+          const current = resolveRecurringScheduleVersion(data, currentWeekStart)
+          const future = recurringScheduleVersions(data).filter(version => version.effectiveFrom > currentWeekStart)
+          return matches(current || {}) || future.some(matches)
+        }
+        const effectiveWeek = String(data.weekStart || scheduleDoc.id || '')
+        return effectiveWeek >= currentWeekStart && matches(data)
+      }))
+    }
+
     const normalizeCapacity = () => {
       const numeric = Number(currentShift.value.capacity || 0)
       if (!Number.isFinite(numeric) || numeric < 1) {
@@ -298,11 +333,27 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       try {
         const isEditing = Boolean(editingShiftId.value)
+        const existingShift = isEditing ? shifts.value.find((shift) => shift.id === editingShiftId.value) : null
+        const changesShiftIdentity = Boolean(existingShift && (
+          String(existingShift.shiftType || '').trim() !== String(currentShift.value.shiftType || '').trim() ||
+          String(existingShift.start || '').trim() !== String(currentShift.value.start || '').trim() ||
+          String(existingShift.end || '').trim() !== String(currentShift.value.end || '').trim()
+        ))
+        const reducesStaffCapacity = Boolean(existingShift && Number(currentShift.value.capacity) < Number(existingShift.capacity || 1))
+        const assigned = existingShift && (changesShiftIdentity || reducesStaffCapacity) ? await shiftIsAssigned(existingShift) : false
+        if (existingShift && assigned && changesShiftIdentity) {
+          toast.error('This shift is assigned to employee schedules. Copy it to create a new time pattern, reassign employees, then archive the old template.')
+          return
+        }
+        if (existingShift && assigned && reducesStaffCapacity) {
+          toast.error('Staff capacity cannot be reduced while this template is assigned. Reassign employees first, then update the capacity.')
+          return
+        }
         const result = await Swal.fire({
           title: isEditing ? 'Update Shift' : 'Confirm Shift',
           text: isEditing
-            ? `Save the changes to this ${currentShift.value.shiftType} shift (${currentShift.value.start} - ${currentShift.value.end}) at ${currentShift.value.branch}?`
-            : `Create a ${currentShift.value.shiftType} shift (${currentShift.value.start} - ${currentShift.value.end}) at ${currentShift.value.branch} with capacity ${currentShift.value.capacity}?`,
+            ? `Save these changes to ${currentShift.value.shiftType} (${currentShift.value.start} - ${currentShift.value.end}) at ${currentShift.value.branch}?`
+            : `Create ${currentShift.value.shiftType} (${currentShift.value.start} - ${currentShift.value.end}) at ${currentShift.value.branch} with capacity for ${currentShift.value.capacity} employee(s)?`,
           icon: 'question',
           showCancelButton: true,
           confirmButtonText: isEditing ? 'Save changes' : 'Yes, create',
@@ -323,6 +374,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           branchId: selectedBranch?.id || '',
           notes: currentShift.value.notes,
           capacity: currentShift.value.capacity,
+          isArchived: Boolean(existingShift?.isArchived),
           employees: isEditing
             ? (shifts.value.find((shift) => shift.id === editingShiftId.value)?.employees || [])
             : [],
@@ -353,39 +405,60 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
 
-    const deleteShiftRecord = async (shift) => {
+    const archiveShiftRecord = async (shift) => {
       if (!shift?.id) return
 
       try {
+        const nextArchivedState = !shift.isArchived
         const result = await Swal.fire({
-          title: 'Delete Shift',
-          text: `Delete the ${shift.shiftType || 'shift'} schedule for ${shift.branch || 'this branch'}?`,
-          icon: 'warning',
+          title: nextArchivedState ? 'Archive Shift Template' : 'Restore Shift Template',
+          text: nextArchivedState
+            ? `Hide ${shift.shiftType || 'this shift'} from new assignments? Existing employee schedules will keep using it.`
+            : `Make ${shift.shiftType || 'this shift'} available for new assignments again?`,
+          icon: nextArchivedState ? 'warning' : 'question',
           showCancelButton: true,
-          confirmButtonText: 'Delete',
+          confirmButtonText: nextArchivedState ? 'Archive template' : 'Restore template',
           cancelButtonText: 'Cancel',
-          confirmButtonColor: '#dc2626'
+          confirmButtonColor: nextArchivedState ? '#dc2626' : undefined
         })
 
         if (!result.isConfirmed) return
 
-        await deleteDoc(doc(db, 'shifts', shift.id))
+        await updateDoc(doc(db, 'shifts', shift.id), {
+          isArchived: nextArchivedState,
+          archivedAt: nextArchivedState ? serverTimestamp() : null,
+          updatedAt: serverTimestamp()
+        })
 
         await logActivity(db, {
           module: 'HR',
-          action: 'Deleted shift',
-          details: `Deleted ${shift.shiftType || 'shift'} (${shift.start || ''} - ${shift.end || ''}) for ${shift.branch || 'Unknown Branch'}.`
+          action: nextArchivedState ? 'Archived shift template' : 'Restored shift template',
+          details: `${nextArchivedState ? 'Archived' : 'Restored'} ${shift.shiftType || 'shift'} (${shift.start || ''} - ${shift.end || ''}) for ${shift.branch || 'Unknown Branch'}.`
         })
 
         if (editingShiftId.value === shift.id) {
           resetForm()
         }
 
-        toast.success('Shift deleted successfully!')
+        toast.success(nextArchivedState ? 'Shift template archived. Existing schedules are preserved.' : 'Shift template restored.')
         await loadShifts()
       } catch (err) {
-        console.error('Error deleting shift:', err)
-        toast.error('Failed to delete shift.')
+        console.error('Error archiving shift:', err)
+        toast.error('Failed to update shift template.')
+      }
+    }
+
+    const duplicateShiftRecord = (shift) => {
+      if (!shift || shift.isArchived) return
+      editingShiftId.value = ''
+      currentShift.value = {
+        shiftType: `${String(shift.shiftType || 'Shift').trim()} Copy`.slice(0, 80),
+        start: String(shift.start || '').trim(),
+        end: String(shift.end || '').trim(),
+        branch: String(shift.branch || '').trim(),
+        notes: String(shift.notes || '').trim(),
+        capacity: Number(shift.capacity || 1),
+        employees: []
       }
     }
 
@@ -395,6 +468,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     return {
       pageLoading,
+      canManageShifts,
       currentShift,
       branches,
       shiftTypes,
@@ -407,7 +481,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       resetForm,
       normalizeCapacity,
       startEditingShift,
-      deleteShiftRecord
+      archiveShiftRecord,
+      duplicateShiftRecord
     }
   }
 }
@@ -423,19 +498,31 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       <div class="bg-slate-800 rounded-xl shadow-lg p-6 md:p-8 border border-slate-700 max-w-2xl mx-auto">
         <form class="space-y-4">
           <div v-if="editingShiftId" class="rounded-lg border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            Editing an existing shift. Save your changes below, or press Cancel to stop editing.
+            Editing a reusable template. Assigned templates keep their name and times; use Copy to create a replacement, move employees to it, then archive the old template.
           </div>
 
           <div>
-            <label class="block text-slate-400 mb-1">Shift Type</label>
-            <select
+            <label for="shift-name" class="block text-slate-400 mb-1">Shift Name</label>
+            <input
+              id="shift-name"
               v-model="currentShift.shiftType"
-              @change="applyShiftTypeDefaults"
+              maxlength="80"
+              type="text"
+              placeholder="For example, Opening Shift or Saturday Clinic"
               class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
-            >
-              <option disabled value="">Select Shift Type</option>
-              <option v-for="type in shiftTypes" :key="type" :value="type">{{ type }}</option>
-            </select>
+            />
+            <p class="mt-1 text-xs text-slate-400">Choose a name that makes sense to your team. Start and end times define the shift period.</p>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <button
+                v-for="type in shiftTypes"
+                :key="type"
+                type="button"
+                @click="applyShiftTypeDefaults(type)"
+                class="rounded-full border border-slate-600 px-3 py-1 text-xs text-slate-200 transition hover:bg-slate-700"
+              >
+                Use {{ type }} preset
+              </button>
+            </div>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -456,7 +543,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               />
             </div>
           </div>
-          <p class="text-xs text-slate-400">Morning shifts must start between 5:00 AM and 11:59 AM, afternoon shifts between 12:00 PM and 5:59 PM, and evening shifts from 6:00 PM onward. Selecting a type fills a suggested time.</p>
+          <p class="text-xs text-slate-400">Presets fill suggested times only. You can change either time to match your clinic’s hours. Shifts currently run within one calendar day.</p>
 
           <div>
             <label class="block text-slate-400 mb-1">Branch</label>
@@ -472,7 +559,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           </div>
 
           <div>
-            <label class="block text-slate-400 mb-1">Capacity (Slots)</label>
+            <label class="block text-slate-400 mb-1">Staff Capacity (Employees)</label>
             <input
               type="number"
               min="1"
@@ -480,6 +567,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               @input="normalizeCapacity"
               class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
             />
+            <p class="mt-1 text-xs text-slate-400">Maximum number of employees who can be assigned this template on the same weekday.</p>
           </div>
 
           <div>
@@ -522,17 +610,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           <table class="w-full min-w-[760px] text-left border-collapse">
             <thead>
               <tr class="border-b border-slate-700 text-slate-400 uppercase text-xs">
-                <th class="py-3 px-3">Shift Type</th>
+                <th class="py-3 px-3">Shift Name</th>
                 <th class="py-3 px-3">Time</th>
                 <th class="py-3 px-3">Branch</th>
-                <th class="py-3 px-3">Capacity</th>
+                <th class="py-3 px-3">Staff Capacity</th>
                 <th class="py-3 px-3">Notes</th>
                 <th class="py-3 px-3">Actions</th>
               </tr>
             </thead>
             <tbody class="text-white">
               <tr v-for="shift in shifts" :key="shift.id" class="border-b border-slate-800 hover:bg-slate-700/40">
-                <td class="py-3 px-3 font-medium">{{ shift.shiftType || 'Shift' }}</td>
+                <td class="py-3 px-3 font-medium">
+                  {{ shift.shiftType || 'Shift' }}
+                  <span v-if="shift.isArchived" class="ml-2 rounded-full bg-slate-700 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-300">Archived</span>
+                </td>
                 <td class="py-3 px-3">{{ formatTime(shift.start) }} - {{ formatTime(shift.end) }}</td>
                 <td class="py-3 px-3">{{ shift.branch || 'Unknown Branch' }}</td>
                 <td class="py-3 px-3">{{ shift.capacity || 0 }}</td>
@@ -540,6 +631,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 <td class="py-3 px-3">
                   <div class="flex flex-wrap gap-2">
                     <button
+                      v-if="!shift.isArchived && canManageShifts"
                       type="button"
                       @click="startEditingShift(shift)"
                       class="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
@@ -547,11 +639,21 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                       Edit
                     </button>
                     <button
+                      v-if="!shift.isArchived"
                       type="button"
-                      @click="deleteShiftRecord(shift)"
-                      class="rounded-lg border border-rose-500/40 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10"
+                      @click="duplicateShiftRecord(shift)"
+                      class="rounded-lg border border-sky-500/40 px-3 py-2 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/10"
                     >
-                      Delete
+                      Copy
+                    </button>
+                    <button
+                      v-if="canManageShifts"
+                      type="button"
+                      @click="archiveShiftRecord(shift)"
+                      :class="shift.isArchived ? 'border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/10' : 'border-rose-500/40 text-rose-200 hover:bg-rose-500/10'"
+                      class="rounded-lg border px-3 py-2 text-xs font-semibold transition"
+                    >
+                      {{ shift.isArchived ? 'Restore' : 'Archive' }}
                     </button>
                   </div>
                 </td>

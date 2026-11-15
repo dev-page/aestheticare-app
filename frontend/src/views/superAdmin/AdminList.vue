@@ -41,6 +41,7 @@
           Total Admin Accounts: <span class="font-semibold text-slate-200">{{ filteredAdmins.length }}</span>
         </div>
 
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredAdmins.length" part="top" item-label="administrators" />
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead class="bg-slate-900/70">

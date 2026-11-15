@@ -109,6 +109,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { usePermissions } from '@/composables/usePermissions'
 import { useSubscription } from '@/composables/useSubscription'
 import { formatClockTime } from '@/utils/appointmentDss'
+import { resolveRecurringScheduleVersion } from '@/utils/employeeSchedules'
 import BranchManagerDashboard from './dashboards/BranchManagerDashboard.vue'
 import HumanResourceDashboard from './dashboards/HumanResourceDashboard.vue'
 import FinanceDashboard from './dashboards/FinanceDashboard.vue'
@@ -363,8 +364,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       const schedule = scheduleSnap.data() || {}
       const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'Asia/Manila' }).format(new Date())
-      const assignment = String(schedule.assignments?.[weekday] || '').trim()
-      const assignmentLabel = String(schedule.assignmentLabels?.[weekday] || assignment).trim()
+      const dateParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+      const todayKey = `${dateParts.find(part => part.type === 'year')?.value}-${dateParts.find(part => part.type === 'month')?.value}-${dateParts.find(part => part.type === 'day')?.value}`
+      const effectiveSchedule = resolveRecurringScheduleVersion(schedule, todayKey)
+      const assignment = String(effectiveSchedule?.assignments?.[weekday] || '').trim()
+      const assignmentLabel = String(effectiveSchedule?.assignmentLabels?.[weekday] || assignment).trim()
       if (!assignment || assignment.toLowerCase() === 'off' || assignmentLabel.toLowerCase() === 'off') {
         todayShiftLabel.value = 'Day Off'
         todayShiftTime.value = 'Clock-in is unavailable today.'

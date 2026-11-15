@@ -30,14 +30,16 @@
               </div>
 
               <div>
-                <label for="assignment-start-date" class="assignment-field-label">Starts On</label>
+                <label for="assignment-start-date" class="assignment-field-label">Effective Week (Monday)</label>
                 <input
                   v-model="selectedWeekStart"
                   id="assignment-start-date"
                   :disabled="saving"
+                  :min="currentWeekStart"
                   type="date"
                   class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white"
                 />
+                <p class="mt-1 text-xs text-slate-400">The recurring pattern applies from the Monday of this week. Earlier weekly patterns are kept for history.</p>
               </div>
             </div>
 
@@ -63,9 +65,9 @@
               </div>
 
               <div class="mt-4">
-                <label for="dss-weekly-target" class="assignment-field-label">Weekly hours target (planning only)</label>
+                <label for="dss-weekly-target" class="assignment-field-label">Agreed Weekly Hours Cap (Optional)</label>
                 <input id="dss-weekly-target" v-model.number="weeklyTargetHours" type="number" min="1" max="48" step="0.5" :disabled="saving" class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2" />
-                <p class="mt-2 text-xs text-slate-400">Use the employee's agreed weekly hours. Full-time defaults to the existing 48-hour application limit; enter a target for part-time staff.</p>
+                <p class="mt-2 text-xs text-slate-400">The schedule cannot exceed this cap. The application also keeps every schedule at or below 48 hours per week. Full-time defaults to 48 hours.</p>
               </div>
               <div class="mt-4 grid gap-3 md:grid-cols-2">
                 <div class="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2">
@@ -94,10 +96,11 @@
               <ul class="mt-3 space-y-2 text-sm text-slate-200">
                 <li>Bookings use practitioner schedules stored under each employee.</li>
                 <li>Schedules saved here are recurring by default for future weeks.</li>
-                <li>The start date helps show when you began using this recurring pattern.</li>
-                <li>Suggestions check employment type, weekly target, available slots, and retained off days. Intern schedules are assigned manually.</li>
+                <li>Each saved pattern starts on its selected Monday; earlier patterns remain available for past weeks.</li>
+                <li>Suggestions check employment type, weekly hours cap, available staff capacity, and retained off days. Intern schedules are assigned manually.</li>
                 <li>Choose Off for days when the employee should not accept work or appointments.</li>
-                <li>Each shift's capacity is enforced per day when the schedule is saved.</li>
+                <li>Staff capacity counts employees assigned to the same template on the same weekday.</li>
+                <li>Archived templates stay on existing schedules but are unavailable for new assignments.</li>
               </ul>
             </div>
           </section>
@@ -161,7 +164,7 @@
                   </span>
                 </div>
 
-                <ContractAppearanceSelect :id="`assignment-shift-${day.toLowerCase()}`" v-model="assignments[day]" @update:model-value="markManualDay(day, $event)" label="Shift template" class="assignment-day-select" :disabled="saving || !capacityReady" :options="[{ value: '', label: 'Off — no shift assigned' }, ...displayShiftTemplates.map(shift => ({ value: shift.id, label: `${shift.label} — ${shift.capacity} slot${shift.capacity === 1 ? '' : 's'}${getSuggestedShiftForDay(day)?.id === shift.id ? ' (Suggested)' : ''}` }))]" />
+                <ContractAppearanceSelect :id="`assignment-shift-${day.toLowerCase()}`" v-model="assignments[day]" @update:model-value="markManualDay(day, $event)" label="Shift template" class="assignment-day-select" :disabled="saving || !capacityReady" :options="[{ value: '', label: 'Off — no shift assigned' }, ...displayShiftTemplates.filter(shift => !shift.isArchived || assignments[day] === shift.id).map(shift => ({ value: shift.id, label: `${shift.label} — ${shift.capacity} employee${shift.capacity === 1 ? '' : 's'}${shift.isArchived ? ' (Archived; kept on existing schedule)' : getSuggestedShiftForDay(day)?.id === shift.id ? ' (Suggested)' : ''}` }))]" />
 
                 <div class="mt-3 flex items-center justify-between gap-3">
                   <p class="text-xs text-slate-400">
@@ -220,6 +223,8 @@ import {
   normalizeEmploymentType,
   parseShiftDurationHours,
   normalizeAssignments,
+  resolveRecurringScheduleVersion,
+  withRecurringScheduleVersion,
 } from '@/utils/employeeSchedules'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -237,6 +242,7 @@ const selectedBranchId = ref('')
 const selectedRole = ref('all')
 const selectedEmployeeId = ref('')
 const selectedWeekStart = ref('')
+const currentWeekStart = ref(getMondayDate())
 const saving = ref(false)
 const weeklyTargetHours = ref(48)
 const capacitySchedules = ref([])
@@ -308,21 +314,23 @@ const totalAssignedHours = computed(() =>
   daysOfWeek.reduce((total, day) => total + parseShiftHours(assignments.value[day]), 0)
 )
 
-const isFullTimeEmployee = computed(() =>
-  selectedEmployeeScheduleType.value === 'full-time'
-)
-
 const hoursWarning = computed(() => {
-  if (!selectedEmployee.value || totalAssignedHours.value <= 48) return ''
-  return `${scheduleTypeLabel.value} schedules cannot exceed 48 assigned hours per week.`
+  if (!selectedEmployee.value) return ''
+  if (totalAssignedHours.value > 48) return 'Schedules cannot exceed the 48-hour weekly application limit.'
+  const hasCap = weeklyTargetHours.value !== '' && weeklyTargetHours.value !== null && weeklyTargetHours.value !== undefined
+  const cap = Number(weeklyTargetHours.value)
+  if (hasCap && (!Number.isFinite(cap) || cap < 1 || cap > 48)) return 'Enter an agreed weekly hours cap from 1 to 48, or leave it blank.'
+  if (Number.isFinite(cap) && cap > 0 && totalAssignedHours.value > cap) {
+    return `This schedule exceeds the agreed ${cap}-hour weekly cap.`
+  }
+  return ''
 })
 
 const weeklyHoursSummary = computed(() => {
   if (!selectedEmployee.value) return ''
-  if (isFullTimeEmployee.value) {
-    return `Assigned hours: ${totalAssignedHours.value} / 48 hours for a full-time schedule.`
-  }
-  return `Assigned hours: ${totalAssignedHours.value} hour(s) for this recurring schedule.`
+  const cap = Number(weeklyTargetHours.value)
+  if (Number.isFinite(cap) && cap > 0) return `Assigned hours: ${totalAssignedHours.value} / ${cap} agreed weekly hours.`
+  return `Assigned hours: ${totalAssignedHours.value} / 48 application maximum.`
 })
 
 const scheduleTypeLabel = computed(() =>
@@ -334,7 +342,7 @@ const scheduleTypeLabel = computed(() =>
 )
 
 const recommendationPlan = computed(() => recommendRecurringShifts({
-  days: daysOfWeek, shifts: branchShifts.value, assignments: assignments.value,
+  days: daysOfWeek, shifts: branchShifts.value.filter(shift => !shift.isArchived), assignments: assignments.value,
   employmentType: selectedEmployee.value?.employmentType, targetHours: weeklyTargetHours.value,
   schedules: capacitySchedules.value, employeeId: selectedEmployeeId.value,
   protectedDays: protectedDays.value
@@ -344,10 +352,12 @@ const suggestedShiftTemplates = matchingShiftTemplates
 
 const displayShiftTemplates = computed(() => {
   const scheduleType = selectedEmployeeScheduleType.value
-  return [...branchShifts.value].sort((a, b) => {
+  const assignedIds = new Set(Object.values(assignments.value).map(value => String(value || '')))
+  return branchShifts.value.filter(shift => !shift.isArchived || assignedIds.has(shift.id)).sort((a, b) => {
     const aMatch = a.scheduleType === scheduleType ? 0 : 1
     const bMatch = b.scheduleType === scheduleType ? 0 : 1
     if (aMatch !== bMatch) return aMatch - bMatch
+    if (Boolean(a.isArchived) !== Boolean(b.isArchived)) return Number(Boolean(a.isArchived)) - Number(Boolean(b.isArchived))
     if (a.durationHours !== b.durationHours) {
       return scheduleType === 'part-time'
         ? a.durationHours - b.durationHours
@@ -362,7 +372,7 @@ const recommendedShiftSummary = computed(() => {
   if (!selectedEmployeeScheduleType.value) return 'Set the employee employment type in Employee Management first; no type is guessed from assigned hours.'
   if (selectedEmployeeScheduleType.value === 'intern') return 'Assign intern schedules manually according to their agreed hours.'
   if (!(Number(weeklyTargetHours.value) > 0 && Number(weeklyTargetHours.value) <= 48)) return 'Enter agreed weekly hours between 1 and 48 before requesting suggestions.'
-  return 'Uses saved employment type, remaining shift slots, and your ' + weeklyTargetHours.value + '-hour planning target. Existing assignments and off days are retained. Planned total: ' + recommendationPlan.value.plannedHours + ' hours. Shift duration includes the full start-to-end window.'
+  return 'Uses saved employment type, remaining staff capacity, and your ' + weeklyTargetHours.value + '-hour weekly cap. Existing assignments and off days are retained. Planned total: ' + recommendationPlan.value.plannedHours + ' hours. Shift duration includes the full start-to-end window.'
 })
 const applySuggestedShiftToDay = (day, shiftId) => {
   if (!capacityReady.value || !day || !shiftId) return
@@ -372,7 +382,7 @@ const applySuggestedShifts = () => {
   if (!scheduleDssReady.value) return
   const suggestions = recommendationPlan.value.suggestions
   Object.entries(suggestions).forEach(([day, shift]) => { assignments.value[day] = shift.id })
-  toast.success('Applied suggestions within the weekly planning target. Review before saving.')
+  toast.success('Applied suggestions within the weekly hours cap. Review before saving.')
 }
 const getSuggestedShiftForDay = day => capacityReady.value ? recommendationPlan.value.suggestions[day] || null : null
 const scheduleDssReady = computed(() => Boolean(selectedEmployee.value && capacityReady.value && Object.keys(recommendationPlan.value.suggestions).length))
@@ -543,6 +553,7 @@ const hydrateBranchShifts = async () => {
         start,
         end,
         capacity: Math.max(1, Number(data.capacity) || 1),
+        isArchived: data.isArchived === true,
         durationHours,
         scheduleType: classifyShiftEmploymentType({ start, end })
       }
@@ -563,16 +574,25 @@ const loadAssignments = trackPageLoad(async () => {
     const staff = [...employees.value]
     const snapshots = await Promise.all(staff.map(employee => getDoc(doc(db, 'users', employee.id, 'schedules', RECURRING_SCHEDULE_ID))))
     if (version !== assignmentLoadVersion || employeeId !== selectedEmployeeId.value) return
-    capacitySchedules.value = snapshots.map((snapshot, index) => ({ employeeId: staff[index].id, assignments: snapshot.data()?.assignments || {} }))
+    const targetWeek = selectedWeekStart.value || currentWeekStart.value
+    capacitySchedules.value = snapshots.map((snapshot, index) => {
+      const data = snapshot.data() || {}
+      const effectiveSchedule = resolveRecurringScheduleVersion(data, targetWeek)
+      return { employeeId: staff[index].id, assignments: effectiveSchedule?.assignments || {} }
+    })
     const selected = snapshots[staff.findIndex(employee => employee.id === employeeId)]
-    const next = normalizeAssignments(selected?.data()?.assignments || {}, daysOfWeek)
+    const selectedData = selected?.data() || {}
+    const effectiveSchedule = resolveRecurringScheduleVersion(selectedData, targetWeek)
+    weeklyTargetHours.value = effectiveSchedule?.weeklyHoursCap
+      ?? (normalizeEmploymentType(selectedEmployee.value?.employmentType) === 'full-time' ? 48 : '')
+    const next = normalizeAssignments(effectiveSchedule?.assignments || {}, daysOfWeek)
     daysOfWeek.forEach(day => {
       const shift = branchShifts.value.find(shift => shift.id === next[day] || shift.label === next[day])
       next[day] = shift?.id || next[day]
     })
     assignments.value = { ...next }
     loadedAssignments.value = { ...next }
-    protectedDays.value = selected?.exists() ? daysOfWeek.filter(day => !next[day]) : []
+    protectedDays.value = effectiveSchedule ? daysOfWeek.filter(day => !next[day]) : []
     loadedProtectedDays.value = [...protectedDays.value]
     capacityReady.value = true
   } catch (error) {
@@ -626,7 +646,9 @@ const saveScheduleWithCapacityCheck = async (scheduleRef, payload) => {
     scheduleSnapshots.forEach((scheduleSnap, index) => {
       if (!scheduleSnap.exists() || employees.value[index]?.id === selectedEmployee.value?.id) return
 
-      const existingAssignments = scheduleSnap.data()?.assignments || {}
+      const scheduleData = scheduleSnap.data() || {}
+      const effectiveSchedule = resolveRecurringScheduleVersion(scheduleData, selectedWeekStart.value)
+      const existingAssignments = effectiveSchedule?.assignments || {}
       daysOfWeek.forEach((day) => {
         const shift = getShiftForAssignment(existingAssignments[day])
         if (!shift) return
@@ -656,7 +678,18 @@ const saveScheduleWithCapacityCheck = async (scheduleRef, payload) => {
       payload.createdAt = serverTimestamp()
     }
 
-    transaction.set(scheduleRef, payload, { merge: true })
+    const selectedScheduleData = selectedScheduleSnapshot?.data() || {}
+    const historicalLabels = { ...(selectedScheduleData.assignmentLabels || {}) }
+    daysOfWeek.forEach(day => {
+      const assignment = String(selectedScheduleData.assignments?.[day] || '').trim()
+      const label = String(historicalLabels[day] || '').trim()
+      if (!/\|\|\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$/.test(label)) {
+        const shift = branchShifts.value.find(entry => entry.id === assignment)
+        if (shift) historicalLabels[day] = shift.label
+      }
+    })
+    const versionedPayload = withRecurringScheduleVersion({ ...selectedScheduleData, assignmentLabels: historicalLabels }, payload)
+    transaction.set(scheduleRef, versionedPayload, { merge: true })
   })
 }
 
@@ -669,10 +702,19 @@ const saveAssignments = async () => {
     toast.error(hoursWarning.value)
     return
   }
+  const effectiveDate = new Date(`${selectedWeekStart.value}T12:00:00`)
+  if (Number.isNaN(effectiveDate.getTime()) || effectiveDate.getDay() !== 1) {
+    toast.error('Choose a Monday for the recurring schedule to take effect.')
+    return
+  }
+  if (selectedWeekStart.value < currentWeekStart.value) {
+    toast.error('Recurring schedule changes cannot be backdated. Choose this Monday or a later Monday.')
+    return
+  }
 
   const result = await Swal.fire({
     title: 'Save Recurring Schedule',
-    text: `Assign this recurring schedule to ${selectedEmployee.value.fullName}?`,
+    text: `Use this weekly pattern for ${selectedEmployee.value.fullName} starting the week of ${selectedWeekStart.value}? Any later recurring pattern will be replaced. Earlier weeks will remain unchanged.`,
     icon: 'question',
     showCancelButton: true,
     confirmButtonText: 'Save schedule',
@@ -696,6 +738,8 @@ const saveAssignments = async () => {
       effectiveFrom: selectedWeekStart.value,
       recurring: true,
       type: RECURRING_SCHEDULE_ID,
+      availability: null,
+      weeklyHoursCap: Number(weeklyTargetHours.value) > 0 ? Number(weeklyTargetHours.value) : null,
       assignments: { ...assignments.value },
       assignmentLabels: Object.fromEntries(
         daysOfWeek.map((day) => {

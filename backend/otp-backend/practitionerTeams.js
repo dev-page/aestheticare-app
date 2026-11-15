@@ -1,4 +1,5 @@
 import { practitionerTypes, normalizePractitionerProfile, normalizeStaffing, rateFor, teamMeetsRequirements, appointmentStaffIds, appointmentServiceId, sessionEarningBase, calculateStaffEarnings } from '../../shared/practitionerTeam.js'
+import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 const check = (ok, message, status = 409) => { if (!ok) throw Object.assign(new Error(message), { status }) }
 const closed = row => ['completed', 'cancelled', 'rejected', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(String(row.status || '').toLowerCase())
 const serviceIdFor = appointmentServiceId
@@ -183,13 +184,15 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
       const schedule = (await tx.get(db.collection('users').doc(row.employeeId).collection('schedules'))).docs.map(doc => ({ ...doc.data(), id: doc.id }))
       const day = new Date(appointment.date + 'T00:00:00Z'), week = new Date(day)
       week.setUTCDate(week.getUTCDate() - (week.getUTCDay() + 6) % 7)
-      const selected = schedule.find(item => (item.weekStart || item.id) === week.toISOString().slice(0, 10)) || schedule.find(item => item.id === 'recurring' || item.recurring || item.type === 'recurring') || {}
+      const weekSchedule = schedule.find(item => (item.weekStart || item.id) === week.toISOString().slice(0, 10))
+      const recurringSchedule = schedule.find(item => item.id === 'recurring' || item.recurring || item.type === 'recurring')
+      const selected = weekSchedule || (recurringSchedule ? resolveRecurringScheduleVersion(recurringSchedule, appointment.date) : null) || {}
       const weekday = day.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
       const availability = selected.availability?.[weekday], assignment = selected.assignments?.[weekday]
       const shifts = (await tx.get(db.collection('shifts').where('branchId', '==', appointment.branchId))).docs.map(doc => ({ ...doc.data(), id: doc.id }))
       const shift = shifts.find(item => item.id === assignment)
       const label = String(selected.assignmentLabels?.[weekday] || assignment || '').split('||').pop().trim().split(' - ')
-      const working = availability?.enabled !== false && availability?.start && availability?.end ? getBookingRange({ time: availability.start, endTime: availability.end }) : shift ? getBookingRange({ time: shift.start, endTime: shift.end }) : label.length === 2 ? getBookingRange({ time: label[0], endTime: label[1] }) : null
+      const working = availability?.enabled !== false && availability?.start && availability?.end ? getBookingRange({ time: availability.start, endTime: availability.end }) : selected.historical && label.length === 2 ? getBookingRange({ time: label[0], endTime: label[1] }) : shift ? getBookingRange({ time: shift.start, endTime: shift.end }) : label.length === 2 ? getBookingRange({ time: label[0], endTime: label[1] }) : null
       check(working && range.start >= working.start && range.end <= working.end, 'A team member is outside their published availability.')
       const leave = await tx.get(db.collection('leaveRequests').where('requesterId', '==', row.employeeId))
       check(!leave.docs.some(doc => { const data = doc.data(); return String(data.status).toLowerCase() === 'approved' && (data.startDate || data.date) <= appointment.date && (data.endDate || data.date || data.startDate) >= appointment.date }), 'A team member is on approved leave.')

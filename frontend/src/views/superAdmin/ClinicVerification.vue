@@ -56,6 +56,7 @@
             {{ selectedOcrVerified.length ? `Batch approve (${selectedOcrVerified.length})` : 'Select registrations to approve' }}
           </button>
         </div>
+        <TablePagination v-model:page="ocrPage" v-model:page-size="registrationPageSize" :total-items="ocrVerifiedClinics.length" part="top" item-label="registrations" />
         <div class="overflow-x-auto">
         <table class="w-full min-w-[620px] table-fixed text-sm">
           <colgroup>
@@ -104,6 +105,7 @@
 
       <section v-else-if="activeTab === 'manual'" class="bg-slate-800 border border-amber-700/60 rounded-xl overflow-hidden">
         <div class="px-4 py-4 border-b border-slate-700"><h2 class="text-lg font-semibold text-white">Manual Review Required</h2><p class="text-sm text-slate-400">Review document details individually before deciding.</p></div>
+        <TablePagination v-model:page="manualPage" v-model:page-size="registrationPageSize" :total-items="manualReviewClinics.length" part="top" item-label="registrations" />
         <table class="w-full text-sm"><thead class="border-b border-slate-700"><tr><th class="text-left text-slate-300 px-4 py-3">Full Name</th><th class="text-left text-slate-300 px-4 py-3">OCR result</th><th class="text-left text-slate-300 px-4 py-3">Action</th></tr></thead>
           <tbody><tr v-if="loading"><td class="px-4 py-3 text-slate-200" colspan="3">Loading registrations...</td></tr><tr v-else-if="!manualReviewClinics.length"><td class="px-4 py-3 text-slate-400" colspan="3">No registrations need manual review.</td></tr>
             <tr v-for="row in paginatedManualClinics" :key="row.id" class="border-b border-slate-700/50 last:border-b-0"><td class="px-4 py-3 text-slate-100">{{ row.fullName }}</td><td class="px-4 py-3"><span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-300">{{ row.verificationStatus || 'Not processed' }}</span></td><td class="px-4 py-3"><button type="button" class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs" @click="openDetails(row)">Review</button></td></tr>
@@ -113,6 +115,7 @@
 
       <section v-else-if="activeTab === 'rejected'" class="bg-slate-800 border border-rose-700/60 rounded-xl overflow-hidden">
         <div class="px-4 py-4 border-b border-slate-700"><h2 class="text-lg font-semibold text-white">Rejected Registrations</h2><p class="text-sm text-slate-400">Overview of clinic registrations that were rejected, including the recorded reason.</p></div>
+        <TablePagination v-model:page="rejectedPage" v-model:page-size="registrationPageSize" :total-items="filteredRejectedRegistrations.length" part="top" item-label="registrations" />
         <div class="overflow-x-auto"><table class="rejected-registration-table w-full min-w-[620px] text-sm"><thead class="border-b border-slate-700"><tr><th class="text-left text-slate-300 px-4 py-3">Applicant</th><th class="text-left text-slate-300 px-4 py-3">Email</th><th class="text-left text-slate-300 px-4 py-3">Rejection reason</th><th class="text-left text-slate-300 px-4 py-3">Rejected date</th></tr></thead><tbody><tr v-if="loadingRejectedRegistrations"><td class="px-4 py-3 text-slate-200" colspan="4">Loading rejected registrations...</td></tr><tr v-else-if="!filteredRejectedRegistrations.length"><td class="px-4 py-3 text-slate-400" colspan="4">No rejected clinic registrations.</td></tr><tr v-for="row in paginatedRejectedRegistrations" :key="row.id" class="border-b border-slate-700/50 last:border-b-0 hover:bg-slate-700/25"><td class="px-4 py-3 text-slate-100">{{ row.applicantName || 'Unnamed Applicant' }}</td><td class="px-4 py-3 text-slate-300">{{ row.email || '—' }}</td><td class="px-4 py-3 text-slate-300 whitespace-normal">{{ row.reason || 'No reason recorded' }}</td><td class="px-4 py-3 text-slate-300">{{ formatDateValue(row.rejectedAt) }}</td></tr></tbody></table></div>
         <TablePagination v-model:page="rejectedPage" v-model:page-size="registrationPageSize" :total-items="filteredRejectedRegistrations.length" />
       </section>
@@ -121,6 +124,7 @@
           <h2 class="text-lg font-semibold text-white">Approved Clinics</h2>
           <p class="text-slate-400 text-sm">List of clinics that have been approved and verified.</p>
         </div>
+        <TablePagination v-model:page="approvedPage" v-model:page-size="registrationPageSize" :total-items="filteredVerifiedClinics.length" part="top" item-label="clinics" />
         <table class="w-full text-sm">
           <thead class="border-b border-slate-700">
             <tr>

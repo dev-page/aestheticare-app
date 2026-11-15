@@ -9,6 +9,7 @@ import { day as inventoryDay } from './supplyModel.js'
 import { buildTreatmentCourseSessions, normalizeTreatmentCourseSteps, validateTreatmentCourseComposition } from '../../shared/treatmentCourse.js'
 import { APPOINTMENT_PLATFORM_COMMISSION_PERCENT, appointmentCommissionAmount, buildAppointmentPricing, sumAppointmentPricing } from '../../shared/appointmentPricing.js'
 import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
+import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 
 const bookingInventoryRow = async ({ tx, db, branchId, resource, scheduledDate }) => {
   const snapshot = await tx.get(db.collection('inventoryItems').doc(resource.id))
@@ -176,7 +177,9 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   calendarDay.setUTCDate(calendarDay.getUTCDate() - (calendarDay.getUTCDay() + 6) % 7)
   const weekKey = calendarDay.toISOString().slice(0, 10)
   const entries = schedules.docs.map((doc) => ({ ...doc.data(), id: doc.id }))
-  const schedule = entries.find((entry) => (entry.weekStart || entry.id) === weekKey) || entries.find((entry) => entry.id === 'recurring' || entry.recurring || entry.type === 'recurring') || {}
+  const weekSchedule = entries.find((entry) => (entry.weekStart || entry.id) === weekKey)
+  const recurringSchedule = entries.find((entry) => entry.id === 'recurring' || entry.recurring || entry.type === 'recurring')
+  const schedule = weekSchedule || (recurringSchedule ? resolveRecurringScheduleVersion(recurringSchedule, day) : null) || {}
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).format(dayDate)
   const directAvailability = schedule.availability?.[weekday]
   const assignment = schedule.assignments?.[weekday]
@@ -186,7 +189,8 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const [labelStart, labelEnd] = String(label || '').split('||').pop().trim().split(' - ')
   const shiftRange = directAvailability?.enabled !== false && directAvailability?.start && directAvailability?.end
     ? getBookingRange({ time: directAvailability.start, endTime: directAvailability.end })
-    : shift ? getBookingRange({ time: shift.start, endTime: shift.end }) : labelStart && labelEnd ? getBookingRange({ time: labelStart, endTime: labelEnd }) : null
+    : schedule.historical && labelStart && labelEnd ? getBookingRange({ time: labelStart, endTime: labelEnd })
+      : shift ? getBookingRange({ time: shift.start, endTime: shift.end }) : labelStart && labelEnd ? getBookingRange({ time: labelStart, endTime: labelEnd }) : null
   check(shiftRange && range.start >= shiftRange.start && range.end <= shiftRange.end, 'The selected time is outside the worker’s assigned shift or published availability.')
   const lock = db.collection('bookingResourceLocks').doc(branchId)
   await tx.get(lock)

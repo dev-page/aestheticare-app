@@ -67,6 +67,7 @@
             <label class="text-xs text-slate-400">From<input type="date" v-model="fromDate" /></label><label class="text-xs text-slate-400">Through<input type="date" v-model="toDate" /></label>
             <select v-model="sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name/reference</option></select>
           </div>
+          <TablePagination v-model:page="currentPage" v-model:page-size="rowsPerPage" :total-items="filteredRows.length" part="top" item-label="records" />
           <div v-if="isClinicPurchaseOrders" class="purchase-orders-table-wrap overflow-x-auto rounded-xl border border-slate-700">
             <table class="w-full text-left"><thead><tr><th>Purchase order</th><th>Supplier</th><th>Department</th><th>Delivery date</th><th>Items</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
               <tbody><tr v-for="order in pagedRows" :key="order.id"><td><strong>{{ order.number || order.id }}</strong><small>{{ branchName(order.branchId) }}</small></td><td>{{ supplierName(order.supplierId) || order.supplierBusinessName || 'Not specified' }}</td><td>{{ order.department || 'Inventory' }}</td><td>{{ shortDate(order.deliveryDate || order.requiredDate) }}</td><td>{{ order.lines?.length || 0 }}</td><td class="purchase-order-amount">{{ currency(order.total) }}</td><td><span class="purchase-orders-status" :class="['Rejected', 'Cancelled', 'Clarification Requested'].includes(order.status) ? 'is-negative' : ['Approved', 'Delivered', 'Completed'].includes(order.status) ? 'is-positive' : 'is-pending'">{{ order.status || 'Pending' }}</span></td><td><button @click="view(order)">View details</button></td></tr><tr v-if="!pagedRows.length"><td colspan="8">No purchase orders match these filters.</td></tr></tbody>
@@ -84,7 +85,7 @@
             </table>
           </div>
           <div v-else class="overflow-x-auto rounded-xl border border-slate-700"><table class="w-full text-left text-sm"><thead class="bg-slate-800"><tr><th>Reference / Item</th><th>Type</th><th>Status / DSS</th><th>Quantity / Amount</th><th></th></tr></thead><tbody><tr v-for="row in pagedRows" :key="row.id" class="border-t border-slate-700"><td><img v-if="row.imageUrl" :src="row.imageUrl" alt="" class="mr-2 inline-block h-10 w-10 rounded object-cover" />{{ row.number || row.name || row.businessName || row.id }}<small class="block text-slate-400">{{ row.brand || row.department || supplierName(row.supplierId) }}</small></td><td>{{ row.kind || row.itemType || 'Supplier' }}</td><td><span class="rounded bg-slate-700 px-2 py-1">{{ row.signals?.join(', ') || row.status || 'In Stock' }}</span></td><td>{{ row.currentStock !== undefined ? row.currentStock + ' ' + (row.unit || 'units') : row.total !== undefined ? currency(row.total) : row.requestedAmount !== undefined ? currency(row.requestedAmount) : row.lines?.map(l => l.quantity ?? l.accepted).join(', ') || '—' }}</td><td class="whitespace-nowrap"><button @click="view(row)">Details</button> <button v-if="department === 'inventory' && page === 'items' && can('inventory:update')" class="ml-2 rounded border border-amber-600 px-2 py-1 text-amber-200" @click="openPharmacySetup(row)">{{ row.pharmacyEnabled ? 'Remove from Pharmacy' : 'Add to Pharmacy' }}</button></td></tr><tr v-if="!pagedRows.length"><td colspan="5" class="text-center text-slate-400">No matching records. Create a request or adjust your filters.</td></tr></tbody></table></div>
-          <div class="mt-4 flex items-center justify-between"><span class="text-sm text-slate-400">{{ filteredRows.length }} records · Page {{ currentPage }} / {{ pages }}</span><div class="flex gap-2"><button :disabled="currentPage === 1" @click="currentPage--">Previous</button><button :disabled="currentPage >= pages" @click="currentPage++">Next</button></div></div>
+          <TablePagination v-model:page="currentPage" v-model:page-size="rowsPerPage" :total-items="filteredRows.length" part="bottom" item-label="records" />
           </template>
           </div>
         </template>
@@ -214,6 +215,7 @@ import { auth } from '@/config/firebaseConfig'
 import { useSubscription } from '@/composables/useSubscription'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 import SupplierDirectory from '@/views/admin/owner/operations/SupplySuppliers.vue'
 import Swal from 'sweetalert2'
 import { toast } from 'vue3-toastify'
@@ -322,9 +324,8 @@ const searchableRows = computed(() => {
   return candidates.filter(r=>ids.has(r.id)||r.links?.some(id=>ids.has(id))||['poId','rfqId','procurementId','invoiceId','receivingId','supplierId'].some(key=>ids.has(r[key])))
 })
 const filteredRows = computed(() => searchableRows.value.filter(r => (!status.value || r.status === status.value || r.signals?.includes(status.value)) && (!type.value || (r.kind || r.itemType || 'Supplier') === type.value) && (!departmentFilter.value || String(r.department || '').toLowerCase().includes(departmentFilter.value.toLowerCase())) && (!supplierFilter.value || r.supplierId === supplierFilter.value) && (!categoryFilter.value || String(r.category || '').toLowerCase().includes(categoryFilter.value.toLowerCase())) && (!fromDate.value || timestamp(r.createdAt) >= Date.parse(fromDate.value)) && (!toDate.value || timestamp(r.createdAt) < Date.parse(toDate.value) + 86400000)).sort((a,b) => sort.value === 'name' ? String(a.name || a.number || '').localeCompare(b.name || b.number || '') : (timestamp(b.createdAt) - timestamp(a.createdAt)) * (sort.value === 'oldest' ? -1 : 1)))
-const rowsPerPage = 10
-const pages = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / rowsPerPage)))
-const pagedRows = computed(() => filteredRows.value.slice((currentPage.value - 1) * rowsPerPage, currentPage.value * rowsPerPage))
+const rowsPerPage = ref(10)
+const pagedRows = computed(() => filteredRows.value.slice((currentPage.value - 1) * rowsPerPage.value, currentPage.value * rowsPerPage.value))
 const priorityRank = value => ({ Urgent: 0, High: 1, Normal: 2, Low: 3 })[value] ?? 2
 const shortDate = value => timestamp(value) ? new Date(timestamp(value)).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 watch([search,status,type,departmentFilter,supplierFilter,categoryFilter,fromDate,toDate,sort,page,reportKey], () => { currentPage.value = 1 })

@@ -206,3 +206,42 @@ html[data-ac-theme="dark"] .aestheticare-app .module-theme:is(.finance-page, .in
 html[data-ac-theme="dark"] .aestheticare-app .app-modal-panel.finance-dialog select:not([multiple]):not([size]) {
   color-scheme: dark;
 }
+
+/* Keep dark-mode table hovers and the shared pager readable across every app module. */
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) table tbody tr:hover {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) table tbody tr:hover > td {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) .activity-table tbody tr:hover :is(.activity-actor, .activity-action) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) .table-pagination {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) .table-pagination select,
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) .table-pagination-controls button {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) .table-pagination-controls button:hover:not(:disabled) {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) .table-pagination-controls .table-pagination-number.is-current,
+html[data-ac-theme="dark"] .aestheticare-app:not(.landing-route) .table-pagination-controls .table-pagination-number.is-current:hover {
+  border-color: var(--ac-primary) !important;
+  background: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}

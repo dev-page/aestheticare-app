@@ -34,6 +34,7 @@
           Total Archived Clinics: <span class="text-slate-200 font-semibold">{{ filteredClinics.length }}</span>
         </div>
 
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredClinics.length" part="top" item-label="clinics" />
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead class="border-b border-slate-700 bg-slate-800">

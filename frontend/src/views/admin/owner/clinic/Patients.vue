@@ -41,6 +41,13 @@
       </div>
 
       <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <TablePagination
+          v-model:page="currentPage"
+          v-model:page-size="itemsPerPage"
+          :total-items="totalPatients"
+          part="top"
+          item-label="patients"
+        />
         <Table
           :headers="tableHeaders"
           :data="filteredPatients"
@@ -66,28 +73,13 @@
             </div>
           </template>
         </Table>
-      </div>
-
-      <div class="flex justify-between items-center mt-6">
-        <div class="text-sm text-gray-600">
-          Showing {{ totalPatients ? (currentPage - 1) * itemsPerPage + 1 : 0 }} to {{ Math.min(currentPage * itemsPerPage, totalPatients) }} of {{ totalPatients }} patients
-        </div>
-        <div class="flex space-x-2">
-          <button
-            @click="currentPage--"
-            :disabled="currentPage === 1"
-            class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Previous
-          </button>
-          <button
-            @click="currentPage++"
-            :disabled="currentPage === totalPages"
-            class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Next
-          </button>
-        </div>
+        <TablePagination
+          v-model:page="currentPage"
+          v-model:page-size="itemsPerPage"
+          :total-items="totalPatients"
+          part="bottom"
+          item-label="patients"
+        />
       </div>
     </div>
 
@@ -130,6 +122,7 @@ import Table from '@/components/common/Table.vue'
 import Modal from '@/components/common/Modal.vue'
 import PatientForm from '@/components/clinic/PatientForm.vue'
 import PatientDetails from '@/components/clinic/PatientDetails.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -187,8 +180,7 @@ const totalPatients = computed(() => {
   if (statusFilter.value) filtered = filtered.filter((patient) => patient.status === statusFilter.value)
   return filtered.length
 })
-const totalPages = computed(() => Math.ceil(totalPatients.value / itemsPerPage.value))
-
+const totalPages = computed(() => Math.max(1, Math.ceil(totalPatients.value / itemsPerPage.value)))
 const handlePatientClick = (patient) => {
   if (hasPermission('view_patients')) {
     viewPatient(patient)

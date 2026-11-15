@@ -51,6 +51,7 @@ import { registerAttendanceManagement } from './attendanceManagement.js'
 import { registerAttendanceImports } from './attendanceImports.js'
 import { createClinicAgreementPdf, clinicAgreementTextHash } from './clinicAgreementDocument.js'
 import { CLINIC_PLATFORM_AGREEMENT } from '../../shared/clinicPlatformAgreement.js'
+import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 
 // firebase-admin v13 can hit a Google auth compatibility edge in some Node/runtime combinations.
 // Keep the same fallback used by the backend maintenance scripts so OTP requests do not fail.
@@ -2438,8 +2439,9 @@ const loadAttendanceSchedule = async (employeeId, dateKey) => {
 
   const scheduleSnap = await firestore.collection('users').doc(employeeId).collection('schedules').doc('recurring').get()
   const scheduleData = scheduleSnap.exists ? scheduleSnap.data() || {} : {}
-  const assignments = scheduleData.assignments || {}
-  const assignmentLabels = scheduleData.assignmentLabels || {}
+  const effectiveSchedule = resolveRecurringScheduleVersion(scheduleData, dateKey)
+  const assignments = effectiveSchedule?.assignments || {}
+  const assignmentLabels = effectiveSchedule?.assignmentLabels || {}
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).format(new Date(`${dateKey}T12:00:00+08:00`))
   const assignmentValue = String(assignments[weekday] || '').trim()
   const shiftLabel = String(assignmentLabels[weekday] || assignmentValue).trim()
@@ -2452,10 +2454,12 @@ const loadAttendanceSchedule = async (employeeId, dateKey) => {
     const label = `${String(entry.shiftType || 'Shift').trim()} || ${String(entry.start || '').trim()} - ${String(entry.end || '').trim()}`
     return entry.id === assignmentValue || label === shiftLabel || label === assignmentValue
   }) || {}
+  const historicalTimes = shiftLabel.match(/\|\|\s*(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})\s*$/)
+  const useHistoricalSnapshot = effectiveSchedule?.historical === true && historicalTimes
   return {
-    shiftLabel: shift.id ? `${String(shift.shiftType || 'Shift').trim()} || ${String(shift.start || '').trim()} - ${String(shift.end || '').trim()}` : shiftLabel,
-    shiftStart: String(shift.start || '').trim(),
-    shiftEnd: String(shift.end || '').trim()
+    shiftLabel: useHistoricalSnapshot ? shiftLabel : shift.id ? `${String(shift.shiftType || 'Shift').trim()} || ${String(shift.start || '').trim()} - ${String(shift.end || '').trim()}` : shiftLabel,
+    shiftStart: String(useHistoricalSnapshot ? historicalTimes[1] : shift.start || '').trim(),
+    shiftEnd: String(useHistoricalSnapshot ? historicalTimes[2] : shift.end || '').trim()
   }
 }
 

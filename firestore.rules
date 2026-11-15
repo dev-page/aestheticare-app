@@ -911,8 +911,9 @@ service cloud.firestore {
         && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('hr:create') && planAllowsWorkforceManagement(request.resource.data.branchId));
       allow update: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:update') && planAllowsWorkforceManagement(resource.data.branchId));
-      allow delete: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('hr:update') && planAllowsWorkforceManagement(resource.data.branchId));
+      // Shift templates are archived by HR instead of deleted so recurring
+      // employee schedules and historical appointments keep their reference.
+      allow delete: if false;
     }
 
     function editablePayrollMonth(branchId, month) {

@@ -16,6 +16,7 @@
             <button type="button" class="activity-export-button" @click="exportCsv">Export CSV</button>
           </div>
         </div>
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="logs.length" part="top" item-label="activity logs" />
         <div class="activity-table-wrap"><table class="activity-table"><thead><tr><th>Timestamp</th><th>User</th><th>Role</th><th>Module</th><th>Action</th><th class="activity-view-heading">View</th></tr></thead><tbody>
           <tr v-if="loading"><td colspan="6">Loading activity logs...</td></tr>
           <tr v-else-if="error"><td class="activity-table-error" colspan="6">{{ error }}</td></tr>
@@ -205,7 +206,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .activity-view-button:hover { background: #f8eddc; }
 .activity-view-button:focus-visible { outline: 3px solid #dab999; outline-offset: 2px; }
 .activity-table-error { color: #a13732 !important; }
-:deep(.table-pagination) { margin: 0; padding: 14px 16px; border-top: 1px solid #ecd6be; }
+:deep(.table-pagination-bottom) { margin: 0; }
 :global(.app-modal-panel.activity-log-modal) { border: 1px solid #ecd6be; border-radius: 16px; }
 :global(.activity-log-modal > div:first-child), :global(.activity-log-modal > div:last-child) { padding: 20px 24px; background: #fffdf9; }
 :global(.activity-log-modal > div:first-child > button) { width: 34px; height: 34px; border: 1px solid #ecd6be; border-radius: 9px; color: #765d4c; }

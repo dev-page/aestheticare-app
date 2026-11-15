@@ -23,6 +23,7 @@
       <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
 
       <section class="reports-table-wrap" aria-label="User reports">
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredIssues.length" part="top" item-label="reports" />
         <table class="w-full text-sm">
           <thead class="border-b border-slate-700">
             <tr>

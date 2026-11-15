@@ -16,10 +16,11 @@
         <div class="bg-slate-900 border border-slate-700 rounded-lg p-4"><p class="text-sm text-slate-400 mb-2">Revenue by Subscription Plan</p><div class="h-60"><canvas v-show="transactions.length" ref="breakdownChart"></canvas><p v-if="!transactions.length" class="flex h-full items-center justify-center text-sm text-slate-500">No plan revenue to display for this period.</p></div></div>
       </div></section>
       <section class="bg-slate-800 border border-slate-700 rounded-xl p-6"><h2 class="text-xl text-white mb-4">Subscription Payments</h2>
-        <div class="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div class="flex gap-3 items-center"><input v-model="searchFilter" placeholder="Search reference, plan, or date" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100"><button type="button" class="inline-flex h-10 w-10 items-center justify-center rounded bg-sky-600 text-white" aria-label="Refresh payment analytics" @click="refresh">↻</button></div><div class="text-slate-400 text-sm">Page {{ currentPage }} / {{ totalPages }}</div></div>
+        <div class="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div class="flex gap-3 items-center"><input v-model="searchFilter" placeholder="Search reference, plan, or date" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100"></div></div>
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredCount" part="top" item-label="payments" />
         <div v-if="loading" class="text-slate-300">Loading payments...</div>
         <table v-else class="w-full text-sm text-left"><thead class="text-slate-300 border-b border-slate-700"><tr><th class="px-3 py-2">Date</th><th class="px-3 py-2">Plan</th><th class="px-3 py-2">Reference</th><th class="px-3 py-2">Amount</th></tr></thead><tbody><tr v-for="payment in pagedTransactions" :key="payment.id" class="border-b border-slate-700/40"><td class="px-3 py-2 text-slate-200">{{ payment.date }}</td><td class="px-3 py-2 text-slate-200">{{ payment.plan }}</td><td class="px-3 py-2 text-slate-300">{{ payment.ref }}</td><td class="px-3 py-2 text-slate-200">₱{{ payment.amount.toLocaleString() }}</td></tr><tr v-if="!filteredCount"><td class="px-3 py-4 text-slate-400" colspan="4">No subscription payments found for the selected range.</td></tr></tbody></table>
-        <div class="mt-4 flex items-center justify-between"><div class="text-slate-400 text-sm">Showing {{ startIndex }} – {{ endIndex }} of {{ filteredCount }}</div><div class="flex gap-2"><button class="px-3 py-1 rounded bg-slate-700 text-white" :disabled="currentPage <= 1" @click="prevPage">Prev</button><button class="px-3 py-1 rounded bg-slate-700 text-white" :disabled="currentPage >= totalPages" @click="nextPage">Next</button></div></div>
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredCount" part="bottom" item-label="payments" />
       </section>
     </main>
   </div>
@@ -31,11 +32,12 @@ import Chart from 'chart.js/auto'
 import { collection, getDocs, onSnapshot } from 'firebase/firestore'
 import { usePageLoading } from '@/composables/usePageLoading'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 import { db } from '@/config/firebaseConfig'
 
 export default {
   name: 'PaymentsAnalytics',
-  components: { SuperAdminSidebar },
+  components: { SuperAdminSidebar, TablePagination },
   setup() {
     const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const thirtyDaysAgo = new Date()
@@ -49,7 +51,7 @@ export default {
     const breakdownChart = ref(null)
     const currentPage = ref(1)
     const searchFilter = ref('')
-    const pageSize = 10
+    const pageSize = ref(10)
     let unsubscribePayments = null
     let dailyChartInstance = null
     let breakdownChartInstance = null
@@ -118,19 +120,14 @@ export default {
       return keyword ? transactions.value.filter((payment) => `${payment.ref} ${payment.date} ${payment.plan}`.toLowerCase().includes(keyword)) : transactions.value
     })
     const filteredCount = computed(() => filteredTransactions.value.length)
-    const totalPages = computed(() => Math.max(1, Math.ceil(filteredCount.value / pageSize)))
-    const pagedTransactions = computed(() => filteredTransactions.value.slice((currentPage.value - 1) * pageSize, currentPage.value * pageSize))
-    const startIndex = computed(() => filteredCount.value ? (currentPage.value - 1) * pageSize + 1 : 0)
-    const endIndex = computed(() => Math.min(currentPage.value * pageSize, filteredCount.value))
-    const prevPage = () => { if (currentPage.value > 1) currentPage.value-- }
-    const nextPage = () => { if (currentPage.value < totalPages.value) currentPage.value++ }
+    const pagedTransactions = computed(() => filteredTransactions.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
     watch([searchFilter, fromDate, toDate], () => { currentPage.value = 1 })
     onMounted(trackPageLoad(() => {
       refresh()
       unsubscribePayments = pageListener(onSnapshot, collection(db, 'planPayments'), refresh, (error) => console.error('Failed to listen to subscription payments:', error))
     }))
     onUnmounted(() => { unsubscribePayments?.(); dailyChartInstance?.destroy(); breakdownChartInstance?.destroy() })
-    return { pageLoading, fromDate, toDate, refresh, loading, transactions, totals, dailyChart, breakdownChart, currentPage, searchFilter, pagedTransactions, totalPages, prevPage, nextPage, filteredCount, startIndex, endIndex }
+    return { pageLoading, fromDate, toDate, refresh, loading, transactions, totals, dailyChart, breakdownChart, currentPage, pageSize, searchFilter, pagedTransactions, filteredCount }
   }
 }
 </script>

@@ -9,6 +9,7 @@
       <input v-model.trim="search" type="search" placeholder="Filter clinic, email, plan, or reference..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredPayments.length" part="top" item-label="payments" />
         <table class="w-full text-sm">
           <thead class="border-b border-slate-700">
             <tr>

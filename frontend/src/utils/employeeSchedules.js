@@ -1,3 +1,6 @@
+import { recurringScheduleVersions, resolveRecurringScheduleVersion } from '../../../shared/recurringEmployeeSchedules.js'
+export { resolveRecurringScheduleVersion, withRecurringScheduleVersion } from '../../../shared/recurringEmployeeSchedules.js'
+
 export const RECURRING_SCHEDULE_ID = 'recurring'
 export const RECURRING_WEEKMAP_KEY = '__recurring__'
 
@@ -31,6 +34,8 @@ export const buildWeekScheduleMap = (scheduleDocs = []) => {
         assignments: data.assignments || {},
         assignmentLabels: data.assignmentLabels || data.assignments || {},
         availability: data.availability || {},
+        effectiveFrom: data.effectiveFrom || '',
+        scheduleVersions: data.scheduleVersions || [],
       }
       return
     }
@@ -51,17 +56,26 @@ export const resolveWeekAssignments = (weekMap = {}, weekKey = '') => {
   const specific = weekKey ? weekMap?.[weekKey] : null
   if (specific && typeof specific === 'object') return specific.assignmentLabels || specific.assignments || specific
   const recurring = weekMap?.[RECURRING_WEEKMAP_KEY]
-  if (recurring && typeof recurring === 'object') return recurring.assignmentLabels || recurring.assignments || recurring
+  if (recurring && typeof recurring === 'object') {
+    const version = resolveRecurringScheduleVersion(recurring, weekKey)
+    return version?.assignmentLabels || version?.assignments || {}
+  }
   return {}
 }
 
 export const hasAnyAssignedShift = (scheduleDocs = []) =>
   scheduleDocs.some((entry) => {
-    const assignments = entry?.data?.assignments || entry?.assignments || {}
-    return Object.values(assignments).some((value) => {
+    const data = entry?.data || entry || {}
+    const isRecurring = String(entry?.id || '').trim() === RECURRING_SCHEDULE_ID
+      || Boolean(data.recurring)
+      || String(data.type || '').trim().toLowerCase() === RECURRING_SCHEDULE_ID
+    const assignmentSets = isRecurring
+      ? recurringScheduleVersions(data).map((version) => version.assignments)
+      : [data.assignments || {}]
+    return assignmentSets.some((assignments) => Object.values(assignments).some((value) => {
       const normalized = String(value || '').trim().toLowerCase()
       return Boolean(normalized) && normalized !== 'off'
-    })
+    }))
   })
 
 export const parseShiftDurationHours = (shift = {}) => {
@@ -84,7 +98,8 @@ export const parseShiftDurationHours = (shift = {}) => {
 // of the HR module.
 export const getScheduleDayWindow = (scheduleMap = {}, weekKey = '', day = '') => {
   const specific = weekKey ? scheduleMap?.[weekKey] : null
-  const source = specific || scheduleMap?.[RECURRING_WEEKMAP_KEY] || {}
+  const recurring = scheduleMap?.[RECURRING_WEEKMAP_KEY] || {}
+  const source = specific || resolveRecurringScheduleVersion(recurring, weekKey) || {}
   const availability = source?.availability?.[day]
   if (availability && availability.enabled !== false && availability.start && availability.end) {
     return { start: String(availability.start), end: String(availability.end) }

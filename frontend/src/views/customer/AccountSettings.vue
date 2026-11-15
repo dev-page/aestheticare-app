@@ -37,6 +37,7 @@
             <h2 class="settings-card-title">Stay updated</h2>
             <p class="settings-copy">Your latest booking, payment, and clinic updates are shown here.</p>
             <p v-if="notificationsError" class="settings-notifications-error">{{ notificationsError }}</p>
+            <TablePagination v-if="!notificationsLoading && notifications.length" v-model:page="notificationPage" v-model:page-size="pageSize" :total-items="notifications.length" part="top" item-label="notifications" />
             <p v-if="notificationsLoading" class="settings-notifications-empty">Loading notifications...</p>
             <p v-else-if="!notifications.length" class="settings-notifications-empty">No notifications yet.</p>
             <ul v-else class="settings-notification-list">
@@ -53,11 +54,7 @@
                 </div>
               </li>
             </ul>
-            <div v-if="notifications.length > pageSize" class="settings-pagination">
-              <button type="button" class="settings-page-button" :disabled="notificationPage === 1" @click="notificationPage -= 1">Previous</button>
-              <span>Page {{ notificationPage }} of {{ notificationPageCount }}</span>
-              <button type="button" class="settings-page-button" :disabled="notificationPage === notificationPageCount" @click="notificationPage += 1">Next</button>
-            </div>
+            <TablePagination v-if="!notificationsLoading" v-model:page="notificationPage" v-model:page-size="pageSize" :total-items="notifications.length" part="bottom" item-label="notifications" />
           </div>
         </section>
 
@@ -181,6 +178,7 @@ import { toast } from 'vue3-toastify'
 import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import MyProfile from '@/views/customer/MyProfile.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -207,7 +205,7 @@ const notifications = ref([])
 const notificationsLoading = ref(false)
 const notificationsError = ref('')
 const notificationPage = ref(1)
-const pageSize = 10
+const pageSize = ref(10)
 let unsubscribeNotifications = null
 
 const deactivationReasons = [
@@ -228,8 +226,8 @@ const deletionReasons = [
 ]
 const currentReasonOptions = computed(() => accountAction.value === 'deactivate' ? deactivationReasons : deletionReasons)
 const combinedReason = computed(() => [reasonPreset.value, actionReason.value.trim()].filter(Boolean).join(': '))
-const notificationPageCount = computed(() => Math.max(1, Math.ceil(notifications.value.length / pageSize)))
-const pagedNotifications = computed(() => notifications.value.slice((notificationPage.value - 1) * pageSize, notificationPage.value * pageSize))
+const notificationPageCount = computed(() => Math.max(1, Math.ceil(notifications.value.length / pageSize.value)))
+const pagedNotifications = computed(() => notifications.value.slice((notificationPage.value - 1) * pageSize.value, notificationPage.value * pageSize.value))
 
 const selectTab = (tab) => {
   const nextTab = allowedTabs.has(tab) ? tab : 'profile'
@@ -509,9 +507,6 @@ onUnmounted(() => {
 .settings-delete-text { color: #a6473d; }
 .settings-notifications-empty, .settings-notifications-error { margin-top: 1rem; color: #775743; font-size: .85rem; }
 .settings-notifications-error { color: #a6473d; }
-.settings-pagination { display: flex; align-items: center; justify-content: center; gap: .75rem; margin-top: 1rem; color: #775743; font-size: .78rem; }
-.settings-page-button { border: 1px solid #d2a879; border-radius: .65rem; padding: .45rem .65rem; color: #6f4329; font-weight: 700; }
-.settings-page-button:disabled { cursor: not-allowed; opacity: .45; }
 .settings-inline-button { display: inline-block; text-decoration: none; }
 .settings-action-links { display: flex; flex-direction: column; align-items: flex-end; gap: .65rem; min-width: 10rem; }
 .settings-text-link { color: #8d5a3b; font-size: .8rem; font-weight: 700; text-decoration: underline; }
@@ -545,6 +540,5 @@ onUnmounted(() => {
   .settings-button { width: 100%; text-align: center; }
   .settings-notification-item { display: grid; }
   .settings-notification-actions { justify-content: flex-start; }
-  .settings-pagination { flex-wrap: wrap; }
 }
 </style>

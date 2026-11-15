@@ -34,6 +34,7 @@
       <section class="mt-6">
         <div class="mb-4"><h2 class="text-lg font-semibold text-white">{{ mode === 'inventory' ? 'Your requests' : mode === 'procurement' ? 'Inventory requests for review' : 'Records requiring action' }}</h2><p class="mt-1 text-sm text-slate-400">{{ mode === 'inventory' ? 'Track the requests you have sent to Procurement.' : mode === 'procurement' ? 'Open a request to review its details, record the external supplier quotation, and prepare a purchase order.' : 'Review the information below and complete the next workflow step.' }}</p></div>
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3"><label class="min-w-64 flex-1 text-sm text-slate-300"><span class="sr-only">Filter records</span><input v-model.trim="recordSearch" class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500" placeholder="Filter by reference, supply, status, or department" /></label><p class="text-xs text-slate-400">Newest records first · {{ filteredTableRecords.length }} record{{ filteredTableRecords.length === 1 ? '' : 's' }}</p></div>
+        <TablePagination v-model:page="tablePage" v-model:page-size="rowsPerPage" :total-items="filteredTableRecords.length" part="top" item-label="records" />
         <div v-if="mode === 'procurement'" class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/80">
           <div class="overflow-x-auto">
             <table class="min-w-full text-left text-sm">
@@ -54,7 +55,7 @@
         </div>
         <div v-if="mode === 'finance'" class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/80">
           <div class="overflow-x-auto"><table class="min-w-full text-left text-sm"><thead class="border-b border-slate-700 bg-slate-900/70 text-xs font-bold uppercase tracking-[.1em] text-slate-300"><tr><th class="px-4 py-3">Purchase order</th><th class="px-4 py-3">Supplies</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Total</th><th class="px-4 py-3">Date created</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Assign budget</th><th class="px-4 py-3 text-right">Details</th></tr></thead><tbody class="divide-y divide-slate-700"><tr v-for="record in pagedTableRecords" :key="record.id" class="transition hover:bg-slate-700/40"><td class="whitespace-nowrap px-4 py-4 font-semibold text-white">{{ record.number }}</td><td class="px-4 py-4 text-slate-300">{{ record.lines?.map(line => `${line.name} × ${line.quantity}`).join(', ') || '—' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ record.department || 'Inventory' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-100">{{ currency(record.total) }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ formatDateCreated(record.createdAt) }}</td><td class="whitespace-nowrap px-4 py-4"><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ record.status }}</span></td><td class="min-w-64 px-4 py-4"><div v-if="record.status === 'For Review'" class="flex gap-2"><select v-model="budgetByRecord[record.id]" class="min-w-0 flex-1"><option value="">Choose an Inventory budget</option><option v-for="budget in eligibleBudgetsFor(record)" :key="budget.id" :value="budget.id">{{ budget.category }} · {{ currency(budgetAvailable(budget)) }} available</option></select><button class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-60" :disabled="!budgetByRecord[record.id] || busy" @click="approve(record)">Assign</button></div><span v-else class="text-xs text-slate-400">{{ record.status === 'Approved' ? 'Budget assigned' : '—' }}</span><button v-if="record.status === 'Approved'" class="ml-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold" :disabled="busy" @click="goToProcurementOrders">Manage and issue PO</button></td><td class="whitespace-nowrap px-4 py-4 text-right"><button class="rounded-lg border border-amber-400/60 px-3 py-2 text-xs font-bold text-amber-200 transition hover:bg-amber-500 hover:text-slate-950" @click="openFinanceOrderDetails(record)">Details</button></td></tr></tbody></table></div><p v-if="!financePurchaseOrders.length" class="px-5 py-8 text-center text-sm text-slate-400">No purchase orders currently need your action.</p></div>
-        <div v-if="filteredTableRecords.length" class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400"><span>Showing {{ tableStart }}–{{ tableEnd }} of {{ filteredTableRecords.length }}</span><div class="flex items-center gap-2"><button class="rounded-lg border border-slate-600 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50" :disabled="tablePage === 1" @click="tablePage--">Previous</button><span>Page {{ tablePage }} of {{ tablePages }}</span><button class="rounded-lg border border-slate-600 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50" :disabled="tablePage >= tablePages" @click="tablePage++">Next</button></div></div>
+        <TablePagination v-model:page="tablePage" v-model:page-size="rowsPerPage" :total-items="filteredTableRecords.length" part="bottom" item-label="records" />
       </section>
       </div>
     </main>
@@ -162,6 +163,7 @@ import { usePageLoading } from '@/composables/usePageLoading'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 import LocationPicker from '@/components/common/LocationPicker.vue'
 import Modal from '@/components/common/Modal.vue'
 import { auth } from '@/config/firebaseConfig'
@@ -192,7 +194,7 @@ const financeOrderStatusTone = computed(() => {
 })
 const recordSearch = ref('')
 const tablePage = ref(1)
-const rowsPerPage = 10
+const rowsPerPage = ref(10)
 const mode = computed(() => route.path.startsWith('/inventory') ? 'inventory' : route.path.startsWith('/procurement') ? 'procurement' : 'finance')
 const title = computed(() => mode.value === 'inventory' ? 'Inventory Requests' : mode.value === 'procurement' ? 'Inventory Request Review' : 'Purchase Order Approvals')
 const intro = computed(() => mode.value === 'inventory' ? 'Create and track clinic supply needs. Procurement records external quotations and prepares purchase orders.' : mode.value === 'procurement' ? 'Review clinic needs, record external supplier quotations, and prepare purchase orders for Finance approval.' : 'Review and approve purchase orders prepared by Procurement.')
@@ -229,10 +231,7 @@ const filteredTableRecords = computed(() => {
   const query = recordSearch.value.toLowerCase()
   return query ? tableRecords.value.filter(record => recordSearchText(record).includes(query)) : tableRecords.value
 })
-const tablePages = computed(() => Math.max(1, Math.ceil(filteredTableRecords.value.length / rowsPerPage)))
-const pagedTableRecords = computed(() => filteredTableRecords.value.slice((tablePage.value - 1) * rowsPerPage, tablePage.value * rowsPerPage))
-const tableStart = computed(() => filteredTableRecords.value.length ? (tablePage.value - 1) * rowsPerPage + 1 : 0)
-const tableEnd = computed(() => Math.min(tablePage.value * rowsPerPage, filteredTableRecords.value.length))
+const pagedTableRecords = computed(() => filteredTableRecords.value.slice((tablePage.value - 1) * rowsPerPage.value, tablePage.value * rowsPerPage.value))
 watch([recordSearch, mode, filteredTableRecords], () => { tablePage.value = 1 })
 const api = async (path, body) => {
   const token = await auth.currentUser?.getIdToken()

@@ -145,6 +145,7 @@ const submitCode = async serviceKey => {
       </label>
     </section>
     <section class="records-panel table-panel">
+      <TablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="filtered.length" part="top" item-label="appointments" />
       <div class="table-scroll"><table><thead><tr><th>Client Name</th><th>Service Type</th><th>Service Name</th><th>Schedule</th><th>Status</th><th>Action</th></tr></thead>
         <tbody><tr v-for="item in paged" :key="item.id"><td><strong>{{ nameFor(item) }}</strong><div class="subline">{{ appointmentSource(item) }} · {{ bookingKind(item) }}</div></td><td>{{ serviceTypeFor(item) }}</td><td>{{ serviceNameFor(item) }}</td><td>{{ scheduleFor(item) }}</td><td><span class="status-badge">{{ item.status || 'Scheduled' }}</span></td><td><button class="outline-button" @click="selectedId = item.id">View Details</button></td></tr>
           <tr v-if="!paged.length && !error"><td colspan="6" class="empty">{{ rows.length ? 'No appointments match these filters.' : 'No appointments yet.' }}</td></tr>

@@ -53,6 +53,15 @@
             </button>
           </div>
 
+          <TablePagination
+            :page="resourcePageForRole(roleEntry.key)"
+            :page-size="resourcePageSize"
+            :total-items="filteredResourcesForRole(roleEntry.key).length"
+            part="top"
+            item-label="permissions"
+            @update:page="setResourcePage(roleEntry.key, $event)"
+            @update:page-size="resourcePageSize = $event"
+          />
           <div class="overflow-x-auto">
             <table class="w-full text-sm min-w-[720px]">
               <thead class="bg-slate-900/70">

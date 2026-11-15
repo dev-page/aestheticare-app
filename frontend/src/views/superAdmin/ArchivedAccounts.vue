@@ -34,6 +34,7 @@
           Total Archived Accounts: <span class="text-slate-200 font-semibold">{{ filteredAccounts.length }}</span>
         </div>
 
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total-items="filteredAccounts.length" part="top" item-label="accounts" />
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead class="border-b border-slate-700 bg-slate-800">

@@ -32,7 +32,9 @@
 
         <div v-if="loading" class="p-4 text-sm text-slate-300">Loading plan permissions...</div>
         <div v-else-if="!filteredPlanEntries.length" class="p-4 text-sm text-slate-300">No plans found.</div>
-        <div v-else class="grid min-w-0 grid-cols-1 gap-4 p-4 xl:grid-cols-2">
+        <div v-else>
+          <TablePagination v-model:page="planPage" v-model:page-size="planPageSize" :total-items="filteredPlanEntries.length" part="top" item-label="plans" />
+          <div class="grid min-w-0 grid-cols-1 gap-4 p-4 xl:grid-cols-2">
           <article v-for="planEntry in paginatedPlanEntries" :key="planEntry.key" class="min-w-0 rounded-xl border border-slate-700 bg-slate-900/50 p-4 sm:p-5">
             <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-700 pb-4">
               <div class="min-w-0">
@@ -65,6 +67,7 @@
               </button>
             </div>
           </article>
+          </div>
         </div>
         <TablePagination v-model:page="planPage" v-model:page-size="planPageSize" :total-items="filteredPlanEntries.length" />
       </section>
