@@ -156,7 +156,7 @@ const routes = [
 
   // CRM module routes
   { path: "/crm/dashboard", name: "crm-dashboard", component: () => import("@/views/admin/owner/crm/ReceptionistDashboard.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
-  { path: "/crm/clients", name: "crm-clients", component: () => import("@/views/admin/owner/crm/ReceptionistClientList.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
+  { path: "/crm/clients", name: "crm-clients", component: () => import("@/views/admin/owner/crm/ReceptionistClientList.vue"), meta: { requiresAuth: true, requiresPermissionsAll: ["clients:view", "appointments:view"] } },
   { path: "/crm/walk-in", name: "crm-walk-in", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermissionsAll: ["clients:view", "appointments:view", "appointments:create", "appointments:update"] } },
   { path: "/crm/clients/new", name: "crm-walk-in-client-legacy", redirect: "/crm/walk-in" },
   { path: "/crm/appointments", name: "crm-appointments", component: () => import("@/views/admin/owner/crm/AppointmentManagement.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["appointments:view", "appointments:update", "appointments:review", "consultations:view"], requiresFeature: "appointments" } },

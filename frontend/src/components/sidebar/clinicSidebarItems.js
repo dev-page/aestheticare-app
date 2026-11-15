@@ -25,7 +25,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     moduleKey: 'crm',
     children: [
       { type: 'section', label: 'CLIENT RECORDS' },
-      { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/crm/clients', permission: 'clients:view' },
+      { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/crm/clients', permissions: ['clients:view', 'appointments:view'] },
       { type: 'section', label: 'FRONT DESK' },
       { label: 'Walk-In Desk', icon: 'mdi:walk', to: '/crm/walk-in', permissions: ['clients:view', 'appointments:view', 'appointments:create', 'appointments:update'] },
       { type: 'section', label: 'APPOINTMENTS' },

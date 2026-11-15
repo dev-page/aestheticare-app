@@ -3,7 +3,7 @@
     <OwnerSidebar />
     <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 4, sections: 2 }" class="flex-1 min-w-0 p-4 md:p-8">
       <div class="walk-in-content">
-        <header class="page-heading"><div><p class="eyebrow">CRM &amp; Clinic</p><h1>Walk-In Desk</h1><p class="muted">Find or register the client, book their on-site appointment, then record consent and payment here. Each appointment has its own date and service code.</p></div><div class="flex flex-wrap gap-2"><RouterLink v-if="!isPosRoute && canRecordPayments" to="/crm/pos" class="desk-button secondary">Unpaid walk-in payments</RouterLink><RouterLink v-if="isPosRoute && canCreateAppointments" to="/crm/walk-in" class="desk-button secondary">New walk-in booking</RouterLink><RouterLink to="/crm/appointments" class="desk-button secondary">View appointments</RouterLink></div></header>
+        <header class="page-heading"><div><p class="eyebrow">CRM &amp; Clinic</p><h1>Walk-In Desk</h1><p class="muted">Choose or add the care recipient, book their on-site appointment, then record consent and payment here. New client details are saved only when the booking succeeds.</p></div><div class="flex flex-wrap gap-2"><RouterLink v-if="!isPosRoute && canRecordPayments" to="/crm/pos" class="desk-button secondary">Unpaid walk-in payments</RouterLink><RouterLink v-if="isPosRoute && canCreateAppointments" to="/crm/walk-in" class="desk-button secondary">New walk-in booking</RouterLink><RouterLink to="/crm/appointments" class="desk-button secondary">View appointments</RouterLink></div></header>
         <p v-if="error" class="desk-alert error" role="alert">{{ error }}</p>
         <p v-if="checkoutReturnNotice" class="desk-alert" role="status">{{ checkoutReturnNotice }}</p>
         <nav v-if="!isPosRoute" class="walk-in-progress" aria-label="Walk-in booking progress">
@@ -47,11 +47,22 @@
         </template>
         <template v-else-if="!createdAppointments.length">
           <section v-if="bookingStep === 1" class="desk-card walk-in-step-panel">
-            <div class="section-heading"><div><p class="eyebrow">Step 1 of 3</p><h2>Who is receiving care?</h2><p class="muted small">Find an existing clinic client or register them here. You can book on their behalf.</p></div><button v-if="canRegisterClients" type="button" class="desk-button secondary" :disabled="busy" @click="openRegistration()">Register a client</button></div>
-            <ContractAppearanceSelect id="walk-in-client" v-model="selectedClientId" label="Client" :disabled="busy" :options="clientOptions" />
-            <p class="muted small">The appointment and service code are linked to the selected recipient. A valid email is needed to send the booking details and service code.</p>
-            <p v-if="selectedClientId && !clientReady" class="field-error" role="alert">This client needs a valid email address before you can continue. Update their record or register them with the correct email.</p>
-            <p v-if="!canRegisterClients" class="muted small">To add a new client record, ask a staff member with client registration access.</p>
+            <div class="section-heading"><div><p class="eyebrow">Step 1 of 3</p><h2>Who is receiving care?</h2><p class="muted small">Choose someone already in this branch’s client list, or add their details as part of this booking. A new clinic profile is saved only when the booking succeeds.</p></div></div>
+            <ContractAppearanceSelect id="walk-in-client" v-model="selectedClientId" label="Care recipient" :disabled="busy" :options="clientOptions" />
+            <div v-if="selectedClientId === NEW_CLIENT_ID" class="new-recipient-form">
+              <p class="muted small">Enter the recipient’s details. They do not need a platform account. Email is required for booking details and the service code; phone is optional.</p>
+              <div class="field-grid">
+                <div><label for="walk-in-first-name" class="field-label">First name</label><input id="walk-in-first-name" v-model.trim="newClient.firstName" required maxlength="100" class="desk-input" :disabled="busy" autocomplete="given-name" /></div>
+                <div><label for="walk-in-middle-name" class="field-label">Middle name <span class="muted small">(optional)</span></label><input id="walk-in-middle-name" v-model.trim="newClient.middleName" maxlength="100" class="desk-input" :disabled="busy" autocomplete="additional-name" /></div>
+                <div><label for="walk-in-last-name" class="field-label">Last name</label><input id="walk-in-last-name" v-model.trim="newClient.lastName" required maxlength="100" class="desk-input" :disabled="busy" autocomplete="family-name" /></div>
+                <div><label for="walk-in-suffix" class="field-label">Suffix <span class="muted small">(optional)</span></label><input id="walk-in-suffix" v-model.trim="newClient.suffix" maxlength="20" placeholder="Jr., Sr., III" class="desk-input" :disabled="busy" /></div>
+                <div><label for="walk-in-email" class="field-label">Email address</label><input id="walk-in-email" v-model.trim="newClient.email" type="email" required maxlength="254" class="desk-input" :disabled="busy" autocomplete="email" /></div>
+                <div><label for="walk-in-phone" class="field-label">Contact number <span class="muted small">(optional)</span></label><input id="walk-in-phone" v-model.trim="newClient.phone" type="tel" inputmode="tel" maxlength="32" placeholder="+63 9XX XXX XXXX" class="desk-input" :disabled="busy" autocomplete="tel" /></div>
+              </div>
+              <p v-if="selectedClientId === NEW_CLIENT_ID && !clientReady" class="field-error" role="alert">Enter the recipient’s first and last name and a valid email. Add a valid phone number or leave it blank.</p>
+            </div>
+            <p v-else-if="selectedClientId && !clientReady" class="field-error" role="alert">This client needs a valid email address before you can continue. Update their clinic profile first.</p>
+            <p class="muted small">The appointment and service code are linked to the selected recipient. Booking for someone else? Keep the recipient selected and enter the arranger below.</p>
             <label class="desk-checkbox summary-acknowledgement"><input v-model="bookingForSomeoneElse" type="checkbox" :disabled="busy" /> Booking for someone else</label>
             <div v-if="bookingForSomeoneElse" class="field-grid">
               <div><label for="booker-name" class="field-label">Booking arranger's name</label><input id="booker-name" v-model.trim="booker.name" class="desk-input" maxlength="150" :disabled="busy" /></div>
@@ -133,18 +144,13 @@
       </div>
     </main>
     <BookingContractModal :visible="Boolean(contractTarget)" :appointment="contractTarget" :read-only="contractTarget?.contract?.status === 'signed'" @close="contractTarget = null" @updated="updateContract" />
-    <Modal :is-open="showRegistration" panel-class="walk-in-registration-modal" :panel-style="{ maxWidth: '560px' }" @close="!busy && (showRegistration = false)">
-      <template #header><h2 class="registration-title">Register walk-in client</h2></template>
-      <template #body><p class="muted small">Create a client record for this person. An email and contact number are needed for their booking and service code.</p><p v-if="registrationError" class="field-error" role="alert">{{ registrationError }}</p><form id="register-walk-in-client" class="registration-form" @submit.prevent="createClient"><div class="field-grid"><div><label for="walk-in-first-name" class="field-label">First name</label><input id="walk-in-first-name" v-model.trim="newClient.firstName" required maxlength="100" class="desk-input" :disabled="busy" /></div><div><label for="walk-in-last-name" class="field-label">Last name</label><input id="walk-in-last-name" v-model.trim="newClient.lastName" required maxlength="100" class="desk-input" :disabled="busy" /></div></div><div><label for="walk-in-email" class="field-label">Email address</label><input id="walk-in-email" v-model.trim="newClient.email" type="email" required class="desk-input" :disabled="busy" /></div><div><label for="walk-in-phone" class="field-label">Contact number</label><div class="phone-input"><span>+63</span><input id="walk-in-phone" v-model="newClient.phone" inputmode="numeric" maxlength="10" pattern="9[0-9]{9}" required placeholder="9XXXXXXXXX" :disabled="busy" @input="normalizePhone" /></div></div></form></template>
-      <template #footer><div class="registration-actions"><button type="button" class="desk-button secondary" :disabled="busy" @click="showRegistration = false">Cancel</button><button type="submit" form="register-walk-in-client" class="desk-button primary" :disabled="busy">{{ busy ? 'Saving…' : 'Save client' }}</button></div></template>
-    </Modal>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import { usePageLoading } from '@/composables/usePageLoading'
 import { usePermissions } from '@/composables/usePermissions'
@@ -152,7 +158,6 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import AppointmentCalendar from '@/components/common/AppointmentCalendar.vue'
 import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
-import Modal from '@/components/common/Modal.vue'
 import BookingContractModal from '@/components/BookingContractModal.vue'
 import ElectronicSignaturePad from '@/components/common/ElectronicSignaturePad.vue'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
@@ -166,7 +171,6 @@ const { pageLoading, trackPageLoad } = usePageLoading()
 const { hasPermission } = usePermissions()
 const route = useRoute()
 const router = useRouter()
-const canRegisterClients = computed(() => hasPermission('clients:create'))
 const canCreateAppointments = computed(() => hasPermission('appointments:create'))
 const canRecordPayments = computed(() => hasPermission('payments:create'))
 const isPosRoute = computed(() => route.path === '/crm/pos')
@@ -193,8 +197,8 @@ const schedules = ref({}), leaves = ref({}), existingAppointments = ref([]), bra
 const selectedClientId = ref(''), visits = ref([]), policyAcknowledged = ref(false), bookingStep = ref(1)
 const bookingForSomeoneElse = ref(false), booker = ref({ name: '', email: '', phone: '' }), bookingSignature = ref('')
 const createdAppointments = ref([]), posAppointments = ref([]), receipts = ref({}), cashReceived = ref({}), contractTarget = ref(null)
-const showRegistration = ref(false), registrationError = ref('')
-const emptyClient = () => ({ firstName: '', lastName: '', email: '', phone: '' })
+const NEW_CLIENT_ID = '__new_client__'
+const emptyClient = () => ({ firstName: '', middleName: '', lastName: '', suffix: '', email: '', phone: '' })
 const newClient = ref(emptyClient()), now = ref(Date.now())
 const availabilityReady = ref(false)
 let apiBase = OTP_BACKEND_CANDIDATES[0], clockTimer, submissionId = crypto.randomUUID()
@@ -206,8 +210,67 @@ const bookingSteps = computed(() => [
 ])
 const progressStep = computed(() => createdAppointments.value.length ? 3 : bookingStep.value)
 const newVisit = () => ({ key: crypto.randomUUID(), serviceId: '', practitionerId: '', date: '', time: '', notes: '', sameDayConsultationRequested: false })
-const clientFor = id => clients.value.find(client => client.id === id)
-const clientReady = computed(() => /^\S+@\S+\.\S+$/.test(String(clientFor(selectedClientId.value)?.email || '').trim()))
+const clientFor = id => id === NEW_CLIENT_ID ? {
+  ...newClient.value,
+  fullName: [newClient.value.firstName, newClient.value.middleName, newClient.value.lastName].map(value => String(value || '').trim()).filter(Boolean).join(' ')
+    + (String(newClient.value.suffix || '').trim() ? `, ${String(newClient.value.suffix).trim()}` : ''),
+} : bookingClients.value.find(client => client.id === id)
+const normalizedNewClient = computed(() => {
+  const firstName = String(newClient.value.firstName || '').trim().replace(/\s+/g, ' ')
+  const middleName = String(newClient.value.middleName || '').trim().replace(/\s+/g, ' ')
+  const lastName = String(newClient.value.lastName || '').trim().replace(/\s+/g, ' ')
+  const suffix = String(newClient.value.suffix || '').trim().replace(/\s+/g, ' ')
+  const email = String(newClient.value.email || '').trim().toLowerCase()
+  const phone = String(newClient.value.phone || '').trim()
+  return { firstName, middleName, lastName, suffix, email, phone, fullName: [firstName, middleName, lastName].filter(Boolean).join(' ') + (suffix ? `, ${suffix}` : '') }
+})
+const validNewClient = computed(() => {
+  const client = normalizedNewClient.value
+  return Boolean(client.firstName && client.lastName && client.firstName.length <= 100 && client.middleName.length <= 100 && client.lastName.length <= 100
+    && client.suffix.length <= 20 && /^\S+@\S+\.\S+$/.test(client.email)
+    && client.phone.length <= 32 && (!client.phone || /^\+?[0-9 ()-]{7,32}$/.test(client.phone)))
+})
+const clientReady = computed(() => selectedClientId.value === NEW_CLIENT_ID
+  ? validNewClient.value
+  : /^\S+@\S+\.\S+$/.test(String(clientFor(selectedClientId.value)?.email || '').trim()))
+const bookingClients = computed(() => {
+  const byId = new Map()
+  const identityToId = new Map()
+  const registerIdentity = (identity, id) => { if (identity) identityToId.set(String(identity), id) }
+  clients.value.forEach(client => {
+    if (['inactive', 'archived'].includes(String(client.status || '').toLowerCase())) return
+    byId.set(client.id, { ...client, fullName: client.fullName || [client.firstName, client.middleName, client.lastName].filter(Boolean).join(' ') })
+    registerIdentity(client.id, client.id)
+    registerIdentity(client.customerId, client.id)
+  })
+  existingAppointments.value.forEach(appointment => {
+    if (appointment.isGroupParent || appointment.isBookingOrderParent) return
+    const customerId = String(appointment.customerId || '').trim()
+    const clientId = String(appointment.clientId || '').trim()
+    const identity = customerId || clientId
+    if (!identity) return
+    const matchedId = identityToId.get(clientId) || identityToId.get(customerId)
+    if (matchedId) return
+    const id = identity
+    const fullName = String(appointment.clientName || appointment.customerName || '').trim() || 'Clinic Client'
+    byId.set(id, {
+      id,
+      clientId: clientId || id,
+      customerId: customerId || id,
+      fullName,
+      email: appointment.customerEmail || appointment.clientEmail || '',
+      phone: appointment.customerPhone || appointment.clientPhone || '',
+      source: 'appointment',
+    })
+    registerIdentity(id, id)
+    registerIdentity(clientId, id)
+    registerIdentity(customerId, id)
+  })
+  return [...byId.values()]
+})
+const availabilityClients = computed(() => selectedClientId.value === NEW_CLIENT_ID
+  ? [...bookingClients.value, { id: NEW_CLIENT_ID, ...normalizedNewClient.value }]
+  : bookingClients.value)
 const bookingArrangerReady = computed(() => !bookingForSomeoneElse.value || (
   booker.value.name.trim().length >= 2
   && /^\+?[0-9 ()-]{7,25}$/.test(booker.value.phone)
@@ -236,7 +299,7 @@ const visitPricing = visit => {
   return pricingFor(visit.sameDayConsultationRequested ? sameDayConsultationFor(service) : service)
 }
 const dateLabel = date => date ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'Asia/Manila' }).format(new Date(`${date}T00:00:00+08:00`)) : 'Date not selected'
-const clientOptions = computed(() => [{ value: '', label: 'Select a registered client' }, ...clients.value.map(client => ({ value: client.id, label: `${client.fullName} · ${client.email || 'No email'}` }))])
+const clientOptions = computed(() => [{ value: '', label: 'Select an existing client' }, ...bookingClients.value.map(client => ({ value: client.id, label: `${client.fullName} · ${client.email || 'No email'}` })), { value: NEW_CLIENT_ID, label: '+ Add a new person for this booking' }])
 const serviceOptions = computed(() => [{ value: '', label: 'Select an offering' }, ...services.value.map(service => ({ value: service.id, label: `${service.name} · ${currency(service.price)}` }))])
 const practitionerOptions = computed(() => [{ value: '', label: 'Select a practitioner' }, ...practitioners.value.map(person => ({ value: person.id, label: person.fullName }))])
 const flatVisits = computed(() => visits.value.map(visit => ({ ...visit, clientId: selectedClientId.value })))
@@ -247,7 +310,7 @@ const estimatedTotal = computed(() => currency(estimatedPricing.value.total))
 const contractPreview = computed(() => buildClientContractDocument(policy.value, { branch: branch.value, source: 'walk_in' }))
 const bookingTermsPreview = computed(() => buildBookingTermsDocument(policy.value, { branch: branch.value, source: 'walk_in' }))
 watch([bookingForSomeoneElse, booker, policy], () => { policyAcknowledged.value = false; bookingSignature.value = '' }, { deep: true })
-const availableSlots = (visit, date = visit.date) => walkInSlots({ row: { ...visit, clientId: selectedClientId.value }, date, rows: flatVisits.value, clients: clients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, now: now.value })
+const availableSlots = (visit, date = visit.date) => walkInSlots({ row: { ...visit, clientId: selectedClientId.value }, date, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, now: now.value })
 const scheduleReady = computed(() => Boolean(availabilityReady.value && clientReady.value && flatVisits.value.length
   && flatVisits.value.every(row => row.serviceId && row.practitionerId && row.date && row.time
     && availableSlots(row).some(slot => slot.value === row.time))))
@@ -272,7 +335,7 @@ const appointmentReviewRows = computed(() => flatVisits.value
 const continueToSchedule = () => {
   error.value = ''
   if (!selectedClientId.value || !clientReady.value) {
-    error.value = 'Select a registered client with a valid email address, or register the client first.'
+    error.value = 'Choose an existing client or enter the new recipient’s name and valid email.'
     return
   }
   if (!bookingArrangerReady.value) {
@@ -380,34 +443,27 @@ async function refreshPaymentQueue() {
     posAppointments.value = result.appointments || []
   } catch (cause) { error.value = cause.message || 'Unable to refresh walk-in payments.' }
 }
-function openRegistration() { registrationError.value = ''; newClient.value = emptyClient(); showRegistration.value = true }
-function normalizePhone() { let digits = newClient.value.phone.replace(/\D/g, ''); if (digits.startsWith('63')) digits = digits.slice(2); if (digits.startsWith('0')) digits = digits.slice(1); newClient.value.phone = digits.slice(0, 10) }
-async function createClient() {
-  registrationError.value = ''
-  normalizePhone()
-  const email = newClient.value.email.trim().toLowerCase()
-  if (!newClient.value.firstName || !newClient.value.lastName || !/^\S+@\S+\.\S+$/.test(email) || !/^9\d{9}$/.test(newClient.value.phone)) return void (registrationError.value = 'Enter the client’s name, valid email, and 10-digit mobile number beginning with 9.')
-  busy.value = true
-  try {
-    const client = { ...newClient.value, email, phone: `+63${newClient.value.phone}`, fullName: `${newClient.value.firstName} ${newClient.value.lastName}`.trim(), branchId: branchId.value, status: 'Active', createdBy: auth.currentUser.uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }
-    const clientRef = await addDoc(collection(db, 'clients'), client)
-    clients.value.push({ id: clientRef.id, ...client })
-    selectedClientId.value = clientRef.id
-    showRegistration.value = false
-  } catch (cause) { registrationError.value = cause.message || 'Unable to register this client.' }
-  finally { busy.value = false }
-}
 async function createAppointments() {
   error.value = ''
   if (!selectedClientId.value || !flatVisits.value.length || !policyAcknowledged.value) return void (error.value = 'Choose a client, add services, and confirm the policies.')
-  if (!clientReady.value) return void (error.value = 'Choose a registered client with a valid email address.')
+  if (!clientReady.value) return void (error.value = 'Enter the recipient’s name and a valid email address before continuing.')
   if (!scheduleReady.value) return void (error.value = 'Select an available date and time for every appointment. The same person needs separate dates.')
   if (!bookingSignature.value) return void (error.value = 'The booking arranger must sign the booking and payment terms.')
   if (!bookingArrangerReady.value) return void (error.value = 'Enter the booking arranger name and valid contact details.')
-  if (flatVisits.value.some(row => !row.serviceId || !row.practitionerId || !row.date || !row.time || !walkInSlots({ row, rows: flatVisits.value, clients: clients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, now: Date.now() }).some(slot => slot.value === row.time))) return void (error.value = 'Select an available date and time for every service. The same person needs separate dates.')
+  if (flatVisits.value.some(row => !row.serviceId || !row.practitionerId || !row.date || !row.time || !walkInSlots({ row, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, now: Date.now() }).some(slot => slot.value === row.time))) return void (error.value = 'Select an available date and time for every service. The same person needs separate dates.')
   busy.value = true
   try {
-    const result = await api('/walk-in/bookings', { branchId: branchId.value, clientId: selectedClientId.value, submissionId, policyAcknowledged: true, appointments: flatVisits.value, bookingForSomeoneElse: bookingForSomeoneElse.value, booker: bookingForSomeoneElse.value ? booker.value : null, bookingAcceptance: { accepted: true, signatureImage: bookingSignature.value } })
+    const result = await api('/walk-in/bookings', {
+      branchId: branchId.value,
+      clientId: selectedClientId.value === NEW_CLIENT_ID ? null : selectedClientId.value,
+      ...(selectedClientId.value === NEW_CLIENT_ID ? { clientDetails: normalizedNewClient.value } : {}),
+      submissionId,
+      policyAcknowledged: true,
+      appointments: flatVisits.value,
+      bookingForSomeoneElse: bookingForSomeoneElse.value,
+      booker: bookingForSomeoneElse.value ? booker.value : null,
+      bookingAcceptance: { accepted: true, signatureImage: bookingSignature.value },
+    })
     createdAppointments.value = result.appointments
   } catch (cause) { error.value = cause.message || 'Unable to create these appointments. No automatic retry was attempted.' }
   finally { busy.value = false }
@@ -528,6 +584,8 @@ onUnmounted(() => { clearInterval(clockTimer) })
 .walk-in-step-copy strong { font-size: 13px; }
 .walk-in-step-copy small { color: #846950; font-size: 11px; line-height: 1.4; }
 .walk-in-step-panel { min-width: 0; }
+.new-recipient-form { display: grid; gap: 15px; margin-top: 16px; padding: 18px; border: 1px solid #ead2b7; border-radius: 12px; background: #fff9f0; }
+.new-recipient-form > .muted { margin: 0; }
 .walk-in-step-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
 .walk-in-step-actions > .muted { flex: 1 1 260px; }
 .walk-in-review-list { display: grid; width: 100%; gap: 10px; }
@@ -541,12 +599,68 @@ onUnmounted(() => { clearInterval(clockTimer) })
 .walk-in-review-price small { color: #846950; font-size: 10px; font-weight: 500; }
 .walk-in-recipient-note, .walk-in-payment-note { width: 100%; margin: 0; color: #765d47; font-size: 12px; line-height: 1.6; }
 .walk-in-payment-note { padding: 12px 14px; border: 1px solid #e7cfb6; border-radius: 10px; background: #fff7eb; }
-:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step { background: var(--ac-surface-soft); border-color: var(--ac-border); color: var(--ac-text-secondary); }
-:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-current { background: var(--ac-primary); border-color: var(--ac-primary); color: var(--ac-on-primary); }
-:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-complete { background: var(--ac-success-bg); border-color: var(--ac-border); color: var(--ac-success); }
-:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step .walk-in-step-number { background: var(--ac-surface); color: var(--ac-text); }
-:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-current .walk-in-step-number { background: var(--ac-on-primary); color: var(--ac-primary); }
-:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-complete .walk-in-step-number { background: var(--ac-success); color: #fff; }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-secondary) !important;
+  opacity: 1;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-current {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-accent) !important;
+  color: var(--ac-on-primary) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-complete {
+  background: var(--ac-success-bg) !important;
+  border-color: var(--ac-success) !important;
+  color: var(--ac-text-secondary) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step .walk-in-step-number {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-current .walk-in-step-number {
+  background: var(--ac-on-primary) !important;
+  color: var(--ac-primary) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-complete .walk-in-step-number {
+  background: var(--ac-success) !important;
+  color: var(--ac-bg-deep) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step .walk-in-step-copy small {
+  color: var(--ac-text-muted) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-current .walk-in-step-copy small {
+  color: var(--ac-on-primary) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .desk-button.secondary {
+  background: var(--ac-surface-soft) !important;
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text-secondary) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .desk-button.secondary:hover:not(:disabled) {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-accent) !important;
+  color: var(--ac-text) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .desk-button.primary {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .desk-button.primary:hover:not(:disabled) {
+  background: var(--ac-primary-hover) !important;
+  border-color: var(--ac-primary-hover) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .desk-button:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .desk-button.primary:disabled {
+  background: var(--ac-surface-muted) !important;
+  border-color: var(--ac-border) !important;
+  color: var(--ac-text-muted) !important;
+}
 :global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-step-copy small,
 :global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-review-row p,
 :global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-review-price small,
@@ -554,10 +668,9 @@ onUnmounted(() => { clearInterval(clockTimer) })
 :global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-review-type { background: var(--ac-surface-soft); color: var(--ac-text-secondary); }
 :global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-review-row .walk-in-review-note { color: var(--ac-warning); }
 :global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-payment-note { background: var(--ac-surface-soft); border-color: var(--ac-border); color: var(--ac-text-secondary); }
-:global(html[data-ac-theme="dark"] .app-modal-panel.walk-in-registration-modal) { background: var(--ac-surface) !important; border: 1px solid var(--ac-border) !important; color: var(--ac-text) !important; }
-:global(html[data-ac-theme="dark"] .app-modal-panel.walk-in-registration-modal > :is(div:first-child, div:last-child)) { border-color: var(--ac-border) !important; }
-:global(html[data-ac-theme="dark"] .app-modal-panel.walk-in-registration-modal :is(.registration-title, .field-label, .muted, p, label, strong)) { color: var(--ac-text-secondary) !important; }
-:global(html[data-ac-theme="dark"] .app-modal-panel.walk-in-registration-modal .phone-input span) { background: var(--ac-surface-soft); color: var(--ac-text-secondary); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form { background: var(--ac-surface-soft); border-color: var(--ac-border); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form :is(.field-label, .muted) { color: var(--ac-text-secondary); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form .desk-input { background: var(--ac-bg-deep); border-color: var(--ac-border); color: var(--ac-text); }
 .page-heading, .section-heading, .client-heading, .visit-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .page-heading { align-items: flex-start; }
 h1 { margin: 0; font-size: clamp(26px, 3vw, 34px); font-weight: 700; }
@@ -592,6 +705,5 @@ button:disabled { cursor: not-allowed; opacity: .5; } button:focus-visible, inpu
 .payment-success { padding: 14px; background: #eef6ef; border: 1px solid #cadccc; border-radius: 10px; color: #426e56; font-size: 13px; }.payment-success p { margin: 0 0 8px; }
 .desk-alert { padding: 14px 16px; border-radius: 10px; font-size: 13px; }.error { border: 1px solid #e8b6aa; background: #fff0eb; color: #a04432; }.agreement-required { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border: 1px solid #edd19b; background: #fff7e7; color: #765423; }.agreement-required p { margin: 0; }.field-error { color: #a04432; font-size: 12px; margin: 10px 0; }.empty-note { padding: 24px; border: 1px dashed #dec19e; color: #876e59; font-size: 13px; border-radius: 10px; }
 .walk-in-desk :deep(.appearance-select) { margin: 0; }.walk-in-desk :deep(.appearance-select-trigger > span) { overflow-wrap: anywhere; }.walk-in-desk :deep(.appearance-select-menu li) { white-space: normal; }
-.registration-title { color: #493225; font-size: 20px; font-weight: 700; }.registration-form { display: grid; gap: 18px; margin-top: 20px; }.registration-actions { display: flex; justify-content: flex-end; gap: 10px; }.phone-input { display: flex; border: 1px solid #dec19e; border-radius: 9px; overflow: hidden; background: #fffdf9; }.phone-input span { background: #fff1de; padding: 10px 12px; color: #805638; }.phone-input input { min-width: 0; flex: 1; padding: 10px 12px; color: #493225; background: #fffdf9; }
 @media (max-width: 750px) { .walk-in-progress { grid-template-columns: minmax(0, 1fr); gap: 8px; }.walk-in-progress-step { padding: 10px 12px; }.walk-in-step-copy small { font-size: 10px; }.walk-in-review-row { flex-direction: column; }.walk-in-review-price { justify-items: start; text-align: left; }.desk-card, .client-card, .visit-card { padding: 16px; }.field-grid, .schedule-grid { grid-template-columns: minmax(0, 1fr); }.payment-form { flex-direction: column; align-items: stretch; }.payment-form > div { width: 100%; } }
 </style>

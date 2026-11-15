@@ -6,7 +6,7 @@
       <div class="mb-8 flex items-center justify-between">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Client List</h1>
-          <p class="text-slate-400">View and search all clients registered in your branch.</p>
+          <p class="text-slate-400">View branch clients and people from appointment history. New walk-in recipients are added after booking succeeds; clinic edits do not change platform account information.</p>
         </div>
       </div>
 
@@ -66,7 +66,7 @@
           <div class="flex items-start justify-between border-b border-slate-700 px-6 py-4">
             <div>
               <h2 class="text-2xl font-bold text-white">{{ selectedClient.fullName || 'Client Profile' }}</h2>
-              <p class="mt-1 text-sm text-slate-400">Client history and appointment notes for this branch.</p>
+              <p class="mt-1 text-sm text-slate-400">Clinic contact details and appointment history. Changes here do not update the customer’s platform login or past appointment records.</p>
             </div>
             <button
               type="button"
@@ -84,13 +84,20 @@
                 <button v-if="canEditSelectedClient && !editingClient" type="button" class="rounded-lg border border-purple-400/40 bg-purple-500/15 px-3 py-1.5 text-sm font-medium text-purple-200 transition hover:bg-purple-500/25" @click="beginClientEdit">Edit</button>
               </div>
               <div v-if="editingClient" class="mt-4 space-y-4">
-                <label class="block text-sm text-slate-300">Full name<input v-model.trim="clientDraft.fullName" type="text" maxlength="201" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <label class="block text-sm text-slate-300">First name<input v-model.trim="clientDraft.firstName" type="text" maxlength="100" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
+                  <label class="block text-sm text-slate-300">Middle name <span class="text-slate-500">(optional)</span><input v-model.trim="clientDraft.middleName" type="text" maxlength="100" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
+                  <label class="block text-sm text-slate-300">Last name<input v-model.trim="clientDraft.lastName" type="text" maxlength="100" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
+                  <label class="block text-sm text-slate-300">Suffix <span class="text-slate-500">(optional)</span><input v-model.trim="clientDraft.suffix" type="text" maxlength="20" placeholder="Jr., Sr., III" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
+                </div>
                 <label class="block text-sm text-slate-300">Email<input v-model.trim="clientDraft.email" type="email" maxlength="254" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
                 <label class="block text-sm text-slate-300">Phone<input v-model.trim="clientDraft.phone" type="tel" maxlength="32" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
                 <p v-if="editError" class="text-sm text-rose-300" role="alert">{{ editError }}</p>
               </div>
               <div v-else class="mt-4 space-y-3 text-sm">
                 <p><span class="text-slate-500">Name:</span> <span class="text-white">{{ selectedClient.fullName || '-' }}</span></p>
+                <p><span class="text-slate-500">Middle name:</span> <span class="text-white">{{ selectedClient.middleName || selectedClient.midName || '-' }}</span></p>
+                <p><span class="text-slate-500">Suffix:</span> <span class="text-white">{{ selectedClient.suffix || '-' }}</span></p>
                 <p><span class="text-slate-500">Email:</span> <span class="text-white">{{ selectedClient.email || '-' }}</span></p>
                 <p><span class="text-slate-500">Phone:</span> <span class="text-white">{{ selectedClient.phone || '-' }}</span></p>
                 <p><span class="text-slate-500">First Seen:</span> <span class="text-white">{{ formatDate(selectedClient.createdAt) }}</span></p>
@@ -169,7 +176,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getFirestore, collection, query, where, doc, getDoc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { getFirestore, collection, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -177,6 +184,7 @@ import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { formatClockTime } from '@/utils/appointmentDss'
 import { usePermissionsStore } from '@/stores/permissions'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 export default {
   name: 'ReceptionistClientList',
@@ -194,7 +202,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const editingClient = ref(false)
     const savingClient = ref(false)
     const editError = ref('')
-    const clientDraft = ref({ fullName: '', email: '', phone: '' })
+    const clientDraft = ref({ firstName: '', middleName: '', lastName: '', suffix: '', email: '', phone: '' })
     const branchClientRecords = ref([])
     const appointmentRecords = ref([])
     let unsubscribeClients = null
@@ -202,44 +210,26 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const normalizeText = (value) => String(value || '').trim().toLowerCase()
 
-    const hasUsefulContact = (client = {}) =>
-      Boolean(normalizeText(client.email) || normalizeText(client.phone))
-
-    const recordRicherThan = (candidate = {}, existing = {}) => {
-      const candidateScore = Number(Boolean(normalizeText(candidate.email))) + Number(Boolean(normalizeText(candidate.phone)))
-      const existingScore = Number(Boolean(normalizeText(existing.email))) + Number(Boolean(normalizeText(existing.phone)))
-      if (candidateScore !== existingScore) return candidateScore > existingScore
-      return Boolean(candidate.createdAt) && !existing.createdAt
+    const formatClientName = (client = {}) => {
+      const firstName = String(client.firstName || '').trim()
+      const middleName = String(client.middleName || client.midName || '').trim()
+      const lastName = String(client.lastName || '').trim()
+      const suffix = String(client.suffix || '').trim()
+      const structuredName = [firstName, middleName, lastName].filter(Boolean).join(' ')
+      if (structuredName) return suffix ? `${structuredName}, ${suffix}` : structuredName
+      return String(client.fullName || '').trim() || 'Unknown Client'
     }
 
-    const mergeClientRecord = (target = {}, source = {}) => ({
-      ...target,
-      ...source,
-      fullName: String(target.fullName || source.fullName || 'Unknown Client').trim() || 'Unknown Client',
-      email: String(target.email || source.email || '').trim(),
-      phone: String(target.phone || source.phone || '').trim(),
-      createdAt: target.createdAt || source.createdAt || null,
-      lastAppointment: String(target.lastAppointment || source.lastAppointment || '').trim(),
-    })
-
-    const getAppointmentClientKey = (appointment) =>
-      String(
-        appointment?.customerId ||
-        appointment?.clientId ||
-        appointment?.patientId ||
-        appointment?.customerEmail ||
-        appointment?.clientEmail ||
-        appointment?.patientEmail ||
-        appointment?.email ||
-        appointment?.customerPhone ||
-        appointment?.clientPhone ||
-        appointment?.phone ||
-        appointment?.clientName ||
-        appointment?.patientName ||
-        appointment?.customerName ||
-        appointment?.id ||
-        ''
-      ).trim()
+    const appointmentIdentity = (appointment = {}) => {
+      const clientId = String(appointment.clientId || '').trim()
+      const customerId = String(appointment.customerId || '').trim()
+      const patientId = String(appointment.patientId || '').trim()
+      const stableIds = [clientId && `client:${clientId}`, customerId && `customer:${customerId}`, patientId && `patient:${patientId}`].filter(Boolean)
+      const email = normalizeText(appointment.customerEmail || appointment.clientEmail || appointment.patientEmail || appointment.email)
+      const phone = normalizeText(appointment.customerPhone || appointment.clientPhone || appointment.patientPhone || appointment.phone)
+      const tokens = stableIds.length ? stableIds : email ? [`email:${email}`] : phone ? [`phone:${phone}`] : appointment.id ? [`appointment:${appointment.id}`] : []
+      return { tokens, clientId, customerId, appointmentId: String(appointment.id || '').trim(), identity: clientId || customerId || patientId || email || phone || appointment.id || '' }
+    }
 
     const getAppointmentClientName = (appointment) =>
       String(
@@ -254,25 +244,32 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       appointment?.createdAt || appointment?.paidAt || appointment?.completedAt || appointment?.updatedAt || appointment?.date || null
 
     const deriveAppointmentClients = computed(() => {
-      const map = new Map()
+      const map = new Map(), aliases = new Map()
 
       appointmentRecords.value.forEach((appointment) => {
-        const key = getAppointmentClientKey(appointment)
-        if (!key) return
-
+        if (appointment?.isGroupParent || appointment?.isBookingOrderParent) return
+        const identity = appointmentIdentity(appointment)
+        if (!identity.tokens.length) return
+        const key = identity.tokens.map(token => aliases.get(token)).find(Boolean) || identity.tokens[0]
         const existing = map.get(key)
         const nextCreatedAt = getAppointmentCreatedAt(appointment)
         const nextLastAppointment = appointment?.date || ''
 
         if (!existing) {
           map.set(key, {
-            id: key,
+            id: identity.identity,
+            clientId: identity.clientId,
+            customerId: identity.customerId,
+            sourceAppointmentId: identity.appointmentId,
+            directoryRecordId: '',
+            directoryCustomerId: identity.customerId,
             fullName: getAppointmentClientName(appointment),
             email: appointment?.customerEmail || appointment?.clientEmail || appointment?.patientEmail || appointment?.email || '',
             phone: appointment?.customerPhone || appointment?.clientPhone || appointment?.patientPhone || appointment?.phone || '',
             createdAt: nextCreatedAt,
             lastAppointment: nextLastAppointment,
           })
+          identity.tokens.forEach(token => aliases.set(token, key))
           return
         }
 
@@ -288,56 +285,63 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (!existing.phone) {
           existing.phone = appointment?.customerPhone || appointment?.clientPhone || appointment?.patientPhone || appointment?.phone || ''
         }
+        if (!existing.customerId && identity.customerId) existing.customerId = identity.customerId
+        if (!existing.clientId && identity.clientId) existing.clientId = identity.clientId
+        if (!existing.sourceAppointmentId && identity.appointmentId) existing.sourceAppointmentId = identity.appointmentId
+        identity.tokens.forEach(token => aliases.set(token, key))
       })
 
       return [...map.values()]
     })
 
     const clients = computed(() => {
-      const map = new Map()
+      const map = new Map(), aliases = new Map()
+      const addAliases = (client, key) => {
+        if (client.id) aliases.set(`client:${client.id}`, key)
+        if (client.customerId) aliases.set(`customer:${client.customerId}`, key)
+        if (client.clientId) aliases.set(`client:${client.clientId}`, key)
+        if (client.patientId) aliases.set(`patient:${client.patientId}`, key)
+        if (client.sourceAppointmentId) aliases.set(`appointment:${client.sourceAppointmentId}`, key)
+        // Contact fallbacks apply only to older appointments that lack an ID.
+        if (client.email) aliases.set(`email:${normalizeText(client.email)}`, key)
+        if (client.phone) aliases.set(`phone:${normalizeText(client.phone)}`, key)
+      }
 
       sortRecordsNewestFirst(branchClientRecords.value).forEach((client) => {
-        const key = String(client.customerId || client.email || client.phone || client.fullName || client.id || '').trim()
-        if (!key) return
-        map.set(key, mergeClientRecord(map.get(key), {
+        const key = client.customerId ? `customer:${client.customerId}` : `client:${client.id}`
+        const row = {
           id: client.id,
-          fullName: client.fullName || `${String(client.firstName || '').trim()} ${String(client.lastName || '').trim()}`.trim() || 'Unknown Client',
+          clientId: client.id,
+          customerId: client.customerId || '',
+          directoryRecordId: client.id,
+          directoryCustomerId: client.customerId || '',
+          fullName: formatClientName(client),
+          firstName: client.firstName || '',
+          middleName: client.middleName || client.midName || '',
+          lastName: client.lastName || '',
+          suffix: client.suffix || '',
           email: client.email || '',
           phone: client.phone || '',
           createdAt: client.createdAt || null,
-        }))
+        }
+        map.set(key, row)
+        addAliases(row, key)
       })
 
       deriveAppointmentClients.value.forEach((client) => {
-        const key = String(client.id || client.email || client.phone || client.fullName || '').trim()
-        if (key && map.has(key)) {
-          map.set(key, mergeClientRecord(map.get(key), client))
+        const identity = appointmentIdentity(client)
+        const key = identity.tokens.map(token => aliases.get(token)).find(Boolean) || identity.tokens[0]
+        const existing = map.get(key)
+        if (existing) {
+          // The clinic directory copy wins for contact details, while booking
+          // history supplies the latest appointment date.
+          const lastAppointment = [existing.lastAppointment, client.lastAppointment].filter(Boolean).sort().at(-1) || ''
+          map.set(key, { ...client, ...existing, lastAppointment, createdAt: existing.createdAt || client.createdAt || null })
+          addAliases(map.get(key), key)
           return
         }
-
-        const normalizedName = normalizeText(client.fullName)
-        if (normalizedName) {
-          const nameMatchEntry = [...map.entries()].find(([, existing]) => {
-            const existingName = normalizeText(existing.fullName)
-            if (existingName !== normalizedName) return false
-            return true
-          })
-
-          if (nameMatchEntry) {
-            const [nameKey, existing] = nameMatchEntry
-            if (hasUsefulContact(existing) && !hasUsefulContact(client)) {
-              return
-            }
-            if (recordRicherThan(existing, client)) {
-              map.set(nameKey, mergeClientRecord(client, existing))
-              return
-            }
-            map.set(nameKey, mergeClientRecord(existing, client))
-            return
-          }
-        }
-
-        map.set(key || `${normalizedName || 'client'}-${String(client.createdAt || client.lastAppointment || '').trim()}`, client)
+        map.set(key, { ...client, id: client.id || identity.identity, lastAppointment: client.lastAppointment || '' })
+        addAliases(map.get(key), key)
       })
 
       return sortRecordsNewestFirst([...map.values()].map((client) => ({
@@ -360,7 +364,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const canEditSelectedClient = computed(() => Boolean(
       selectedClient.value
-      && branchClientRecords.value.some(client => client.id === selectedClient.value.id)
       && permissions.hasPermission('clients:update')
     ))
 
@@ -368,39 +371,42 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!selectedClient.value) return []
 
       const selectedKeys = new Set([
-        normalizeText(selectedClient.value.id),
-        normalizeText(selectedClient.value.fullName),
-        normalizeText(selectedClient.value.email),
-        normalizeText(selectedClient.value.phone),
-      ].filter(Boolean))
+        selectedClient.value.directoryRecordId,
+        selectedClient.value.id,
+        selectedClient.value.clientId,
+        selectedClient.value.customerId,
+        selectedClient.value.directoryCustomerId,
+      ].map(normalizeText).filter(Boolean))
+      const selectedEmail = normalizeText(selectedClient.value.email)
+      const selectedPhone = normalizeText(selectedClient.value.phone)
 
       return sortRecordsNewestFirst(
         appointmentRecords.value.filter((appointment) => {
+          if (appointment?.isGroupParent || appointment?.isBookingOrderParent) return false
           const appointmentKeys = [
             appointment?.customerId,
             appointment?.clientId,
             appointment?.patientId,
-            appointment?.customerEmail,
-            appointment?.clientEmail,
-            appointment?.patientEmail,
-            appointment?.email,
-            appointment?.customerPhone,
-            appointment?.clientPhone,
-            appointment?.patientPhone,
-            appointment?.phone,
-            appointment?.clientName,
-            appointment?.patientName,
-            appointment?.customerName,
           ].map((value) => normalizeText(value)).filter(Boolean)
-
-          return appointmentKeys.some((key) => selectedKeys.has(key))
+          if (appointmentKeys.some((key) => selectedKeys.has(key))) return true
+          if (appointmentKeys.length) return false
+          const email = normalizeText(appointment.customerEmail || appointment.clientEmail || appointment.patientEmail || appointment.email)
+          const phone = normalizeText(appointment.customerPhone || appointment.clientPhone || appointment.patientPhone || appointment.phone)
+          return Boolean((selectedEmail && email === selectedEmail) || (selectedPhone && phone === selectedPhone))
         })
       )
     })
 
     const formatDate = (timestamp) => {
-      if (!timestamp?.toDate) return '-'
-      return timestamp.toDate().toLocaleString()
+      const date = typeof timestamp?.toDate === 'function'
+        ? timestamp.toDate()
+        : timestamp instanceof Date
+          ? timestamp
+          : timestamp
+            ? new Date(timestamp)
+            : null
+      if (!date || Number.isNaN(date.getTime())) return '-'
+      return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }).format(date)
     }
 
     const normalizeAppointmentStatus = (value) => String(value || '').trim().toLowerCase()
@@ -448,8 +454,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const beginClientEdit = () => {
       if (!canEditSelectedClient.value) return
+      const fullName = String(selectedClient.value.fullName || '').trim()
+      const commaAt = fullName.lastIndexOf(',')
+      const parsedSuffix = commaAt > 0 ? fullName.slice(commaAt + 1).trim() : ''
+      const nameParts = (commaAt > 0 ? fullName.slice(0, commaAt) : fullName).trim().split(/\s+/).filter(Boolean)
       clientDraft.value = {
-        fullName: String(selectedClient.value.fullName || '').trim(),
+        firstName: String(selectedClient.value.firstName || nameParts.shift() || '').trim(),
+        middleName: String(selectedClient.value.middleName || selectedClient.value.midName || '').trim(),
+        lastName: String(selectedClient.value.lastName || nameParts.join(' ')).trim(),
+        suffix: String(selectedClient.value.suffix || parsedSuffix).trim(),
         email: String(selectedClient.value.email || '').trim(),
         phone: String(selectedClient.value.phone || '').trim(),
       }
@@ -461,25 +474,69 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       editingClient.value = false
       savingClient.value = false
       editError.value = ''
-      clientDraft.value = { fullName: '', email: '', phone: '' }
+      clientDraft.value = { firstName: '', middleName: '', lastName: '', suffix: '', email: '', phone: '' }
     }
 
     const saveClientChanges = async () => {
       if (!selectedClient.value || !canEditSelectedClient.value || savingClient.value) return
-      const fullName = String(clientDraft.value.fullName || '').trim().replace(/\s+/g, ' ')
+      const firstName = String(clientDraft.value.firstName || '').trim().replace(/\s+/g, ' ')
+      const middleName = String(clientDraft.value.middleName || '').trim().replace(/\s+/g, ' ')
+      const lastName = String(clientDraft.value.lastName || '').trim().replace(/\s+/g, ' ')
+      const suffix = String(clientDraft.value.suffix || '').trim().replace(/\s+/g, ' ')
+      const name = [firstName, middleName, lastName].filter(Boolean).join(' ')
+      const fullName = suffix ? `${name}, ${suffix}` : name
       const email = String(clientDraft.value.email || '').trim().toLowerCase()
       const phone = String(clientDraft.value.phone || '').trim()
-      if (fullName.length < 2 || fullName.length > 201) return void (editError.value = 'Enter a client name between 2 and 201 characters.')
+      if (!firstName || !lastName || firstName.length > 100 || middleName.length > 100 || lastName.length > 100 || suffix.length > 20) return void (editError.value = 'Enter a first and last name. Middle name and suffix are optional.')
       if (email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)) return void (editError.value = 'Enter a valid email address.')
       if (phone.length > 32 || (phone && !/^\+?[0-9 ()-]{7,32}$/.test(phone))) return void (editError.value = 'Enter a valid phone number.')
 
       savingClient.value = true
       editError.value = ''
       try {
-        const clientRef = doc(db, 'clients', selectedClient.value.id)
-        const [firstName, ...lastNameParts] = fullName.split(' ')
-        await updateDoc(clientRef, { fullName, firstName, lastName: lastNameParts.join(' '), email, phone, updatedAt: serverTimestamp() })
-        selectedClient.value = { ...selectedClient.value, fullName, firstName, lastName: lastNameParts.join(' '), email, phone }
+        const token = await auth.currentUser?.getIdToken()
+        if (!token) throw Error('Sign in again to update this client.')
+        const identity = selectedClient.value.directoryRecordId
+          ? { clientRecordId: selectedClient.value.directoryRecordId }
+          : selectedClient.value.customerId || selectedClient.value.directoryCustomerId
+            ? { customerId: selectedClient.value.customerId || selectedClient.value.directoryCustomerId }
+            : selectedClient.value.sourceAppointmentId
+              ? { sourceAppointmentId: selectedClient.value.sourceAppointmentId }
+              : null
+        if (!identity) throw Error('This client has no appointment identity that can be updated securely.')
+        const body = {
+          branchId: currentBranchId.value,
+          ...identity,
+          profile: { fullName, firstName, middleName, lastName, suffix, email, phone },
+        }
+        let response, payload, lastFailure
+        for (const base of OTP_BACKEND_CANDIDATES) {
+          try {
+            response = await fetch(`${base}/clinic/clients/profile`, {
+              method: 'PUT',
+              headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+              body: JSON.stringify(body),
+            })
+            if (response.status === 404) continue
+            if (!response.headers.get('content-type')?.includes('application/json')) throw Error('The client profile service is unavailable or outdated.')
+            payload = await response.json()
+            if (!response.ok || payload.success === false) throw Error(payload.error || 'Failed to update client information.')
+            break
+          } catch (error) {
+            lastFailure = error
+            if (error.message && !/Failed to fetch|NetworkError/i.test(error.message)) throw error
+          }
+        }
+        if (!payload) throw lastFailure || Error('The client profile service is unavailable.')
+        const updated = payload.data || payload
+        selectedClient.value = {
+          ...selectedClient.value,
+          ...updated,
+          id: updated.id || selectedClient.value.id,
+          directoryRecordId: updated.id || selectedClient.value.directoryRecordId,
+          directoryCustomerId: updated.customerId || selectedClient.value.directoryCustomerId,
+          fullName, firstName, middleName, lastName, suffix, email, phone,
+        }
         toast.success('Client information updated.')
         cancelClientEdit()
       } catch (error) {

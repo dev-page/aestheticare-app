@@ -74,7 +74,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
   const permissionAliases = {
     view_patients: ['clients:view'],
-    edit_patients: ['clients:view', 'clients:create'],
+    edit_patients: ['clients:update'],
     manage_appointments: ['appointments:view', 'appointments:create'],
   }
 

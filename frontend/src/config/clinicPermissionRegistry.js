@@ -67,7 +67,6 @@ export const permissionGroups = [
         description: 'Client records and profiles.',
         permissions: [
           { key: 'clients:view', label: 'View Clients', description: 'Access client records and profiles.', icon: 'mdi:account-heart-outline' },
-          { key: 'clients:create', label: 'Register Walk-In Clients', description: 'Create client records during a walk-in booking.', icon: 'mdi:account-plus-outline' },
           { key: 'clients:update', label: 'Update Clients', description: 'Edit client records and profiles.', icon: 'mdi:account-edit-outline' },
           { key: 'clients:disable', label: 'Archive Clients', description: 'Archive client records.', icon: 'mdi:account-off-outline' },
         ],

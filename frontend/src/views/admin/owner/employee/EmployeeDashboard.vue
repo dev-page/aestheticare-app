@@ -180,7 +180,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         key: 'clients',
         label: 'Clients',
         entries: [
-          { label: 'Client List', to: '/crm/clients', permission: 'clients:view', feature: 'appointments', description: 'Review and search clinic clients.' },
+          { label: 'Client List', to: '/crm/clients', permissionsAll: ['clients:view', 'appointments:view'], feature: 'appointments', description: 'Review and search clinic clients.' },
           { label: 'Practitioner Clients', to: '/clinical/clients', permission: 'clients:view', feature: 'appointments', description: 'Open clinical client access.' }
         ]
       },
@@ -245,9 +245,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const canAccessEntry = (entry) => {
       const permissionsAny = Array.isArray(entry.permissionsAny) ? entry.permissionsAny : []
+      const permissionsAll = Array.isArray(entry.permissionsAll) ? entry.permissionsAll : []
       const permissionAllowed =
         (!entry.permission || hasPermission(entry.permission)) &&
-        (!permissionsAny.length || permissionsAny.some((permission) => hasPermission(permission)))
+        (!permissionsAny.length || permissionsAny.some((permission) => hasPermission(permission))) &&
+        permissionsAll.every((permission) => hasPermission(permission))
       const featureAllowed = !entry.feature || hasFeature(entry.feature)
       return permissionAllowed && featureAllowed
     }

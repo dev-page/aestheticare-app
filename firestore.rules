@@ -539,10 +539,9 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && ((resource.data.branchId != null && (isOwnerOfBranch(resource.data.branchId)
           || (canAccessBranch(resource.data.branchId) && hasPermission('clients:view')))) || isSuperadmin());
-      allow create: if isSignedIn()
-        && (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId) && hasPermission('clients:create'));
-      allow update: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:update'));
+      // Client profiles are created and edited only by trusted booking and
+      // clinic-directory workflows, which validate the branch and field set.
+      allow create, update: if false;
       allow delete: if isSignedIn()
         && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:disable'));
     }

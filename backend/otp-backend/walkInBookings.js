@@ -22,7 +22,7 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
       // Availability needs busy windows and recipient identities, never codes,
       // signatures, medical notes, or financial agreements.
       const fields = ['date', 'time', 'endTime', 'totalServiceDurationMinutes', 'durationMinutes',
-        'practitionerId', 'assignedPractitionerId', 'clientId', 'customerId', 'customerEmail',
+        'practitionerId', 'assignedPractitionerId', 'clientId', 'customerId', 'customerName', 'clientName', 'customerEmail', 'customerPhone',
         'status', 'isGroupParent', 'isBookingOrderParent']
       res.json({ success: true, data: { policy, appointments: appointments.docs.map(snapshot => {
         const data = snapshot.data()
@@ -34,8 +34,10 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
   app.post('/walk-in/bookings', requireAuth, async (req, res) => {
     try {
       const { branchId, submissionId, appointments: rows } = req.body || {}
-      const clientId = req.body?.clientId || req.body?.organizerClientId
-      check(typeof clientId === 'string' && clientId.trim(), 'Select a walk-in client.', 400)
+      const requestedClientId = String(req.body?.clientId || req.body?.organizerClientId || '').trim()
+      const clientDetails = req.body?.clientDetails || null
+      const creatingClient = !requestedClientId
+      check(creatingClient ? Boolean(clientDetails) : true, 'Enter the care recipient details.', 400)
       check(!req.body.groupBooking, 'Group bookings are not available for walk-ins.', 400)
       check(typeof branchId === 'string' && branchId.trim(), 'Select a branch.', 400)
       await authorizeClinicAction(req.user.uid, branchId, 'appointments:create')
@@ -59,19 +61,53 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
         check(booker.name.length >= 2 && booker.name.length <= 150 && /^\+?[0-9 ()-]{7,25}$/.test(booker.phone), 'Enter the booking arranger name and valid contact number.', 400)
         check(!booker.email || (booker.email.length <= 254 && /^\S+@\S+\.\S+$/.test(booker.email)), 'Enter a valid booking arranger email.', 400)
       }
+      let cleanClientDetails = null
+      let verifiedCustomerId = ''
+      if (creatingClient) {
+        const firstName = String(clientDetails.firstName || '').trim().replace(/\s+/g, ' ')
+        const middleName = String(clientDetails.middleName || '').trim().replace(/\s+/g, ' ')
+        const lastName = String(clientDetails.lastName || '').trim().replace(/\s+/g, ' ')
+        const suffix = String(clientDetails.suffix || '').trim().replace(/\s+/g, ' ')
+        const email = normalized(clientDetails.email || '')
+        const phone = String(clientDetails.phone || '').trim()
+        check(firstName.length >= 1 && firstName.length <= 100 && lastName.length >= 1 && lastName.length <= 100
+          && middleName.length <= 100 && suffix.length <= 20, 'Enter the recipient’s first and last name. Middle name and suffix are optional.', 400)
+        check(email.length <= 254 && /^\S+@\S+\.\S+$/.test(email), 'Enter a valid recipient email address.', 400)
+        check(phone.length <= 32 && (!phone || /^\+?[0-9 ()-]{7,32}$/.test(phone)), 'Enter a valid recipient phone number.', 400)
+        const name = [firstName, middleName, lastName].filter(Boolean).join(' ')
+        cleanClientDetails = { firstName, middleName, lastName, suffix, email, phone, fullName: suffix ? `${name}, ${suffix}` : name }
+        try {
+          const account = await admin.auth().getUserByEmail(email)
+          if (account.emailVerified) {
+            const accountProfile = await admin.firestore().collection('users').doc(account.uid).get()
+            const userData = accountProfile.exists ? accountProfile.data() || {} : {}
+            const accountName = normalized(userData.fullName || userData.name || account.displayName
+              || [userData.firstName, userData.middleName, userData.lastName].filter(Boolean).join(' '))
+            if (accountName && accountName === normalized(cleanClientDetails.fullName)) verifiedCustomerId = account.uid
+          }
+        } catch (error) {
+          if (error.code !== 'auth/user-not-found') {
+            console.warn('Walk-in account matching was unavailable:', error.message)
+          }
+        }
+      }
       const cleanRows = rows.map(row => {
-        check(row && ['clientId', 'serviceId', 'practitionerId', 'date', 'time'].every(key => typeof row[key] === 'string' && row[key].trim()), 'Each appointment needs a client, service, practitioner, date, and time.', 400)
+        check(row && ['serviceId', 'practitionerId', 'date', 'time'].every(key => typeof row[key] === 'string' && row[key].trim()), 'Each appointment needs a client, service, practitioner, date, and time.', 400)
+        const rowClientId = String(row.clientId || '').trim()
+        check(creatingClient ? (!rowClientId || rowClientId === '__new_client__') : rowClientId === requestedClientId,
+          'The selected recipient must match every appointment in this booking.', 400)
         return {
-          ...Object.fromEntries(['clientId', 'serviceId', 'practitionerId', 'date', 'time', 'notes'].map(key => [key, String(row[key] || '').trim().slice(0, key === 'notes' ? 2000 : 200)])),
+          ...Object.fromEntries(['serviceId', 'practitionerId', 'date', 'time', 'notes'].map(key => [key, String(row[key] || '').trim().slice(0, key === 'notes' ? 2000 : 200)])),
           sameDayConsultationRequested: row.sameDayConsultationRequested === true,
         }
       })
-      check(rows.every(row => !row.groupBooking) && cleanRows.every(row => row.clientId === clientId), 'Walk-in bookings support one client only. Create a separate booking for each person.', 400)
+      check(rows.every(row => !row.groupBooking), 'Walk-in bookings support one client per booking. Create a separate booking for each person.', 400)
       const db = admin.firestore()
-      const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ branchId, clientId, cleanRows, bookingForSomeoneElse, booker, signatureImage })).digest('hex')
+      const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ branchId, requestedClientId, cleanClientDetails, cleanRows, bookingForSomeoneElse, booker, signatureImage })).digest('hex')
       const requestKey = crypto.createHash('sha256').update(`${req.user.uid}:${branchId}:${submissionId}`).digest('hex')
       const bookingRef = db.collection('bookings').doc(`walk-in-${requestKey}`)
       const parentRef = db.collection('appointments').doc()
+      const newClientRef = db.collection('clients').doc()
       const childRefs = Array.from({ length: cleanRows.reduce((count, row) => count + (row.sameDayConsultationRequested ? 2 : 1), 0) }, () => db.collection('appointments').doc())
       const result = await db.runTransaction(async tx => {
         const previous = await tx.get(bookingRef)
@@ -82,11 +118,73 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
         }
         const branchSnap = await tx.get(db.collection('clinics').doc(branchId))
         check(branchSnap.exists && !['inactive', 'archived', 'closed'].includes(normalized(branchSnap.data().status)), 'This branch is unavailable.')
-        const snapshot = await tx.get(db.collection('clients').doc(clientId))
-        check(snapshot.exists && snapshot.data().branchId === branchId && !['inactive', 'archived'].includes(normalized(snapshot.data().status)), 'Select an active client registered at this branch.', 403)
-        const data = snapshot.data(), email = normalized(data.email)
+
+        let clientRecordRef = null, data = null, clientRecordNeedsCreate = false, accountCustomerId = ''
+        if (creatingClient) {
+          const [profileMatches, appointmentMatches] = await Promise.all([
+            tx.get(db.collection('clients').where('email', '==', cleanClientDetails.email)),
+            tx.get(db.collection('appointments').where('customerEmail', '==', cleanClientDetails.email)),
+          ])
+          const normalizedName = normalized(cleanClientDetails.fullName)
+          const duplicateProfile = profileMatches.docs.find(snapshot => {
+            const profile = snapshot.data() || {}
+            return profile.branchId === branchId && normalized(profile.fullName || [profile.firstName, profile.middleName, profile.lastName].filter(Boolean).join(' ')) === normalizedName
+          })
+          const duplicateAppointment = appointmentMatches.docs.find(snapshot => {
+            const appointment = snapshot.data() || {}
+            return appointment.branchId === branchId
+              && !appointment.isGroupParent && !appointment.isBookingOrderParent
+              && normalized(appointment.customerName || appointment.clientName) === normalizedName
+          })
+          check(!duplicateProfile && !duplicateAppointment, 'This client already appears in the branch list. Select their existing record instead of adding them again.', 409)
+          clientRecordRef = newClientRef
+          clientRecordNeedsCreate = true
+          accountCustomerId = verifiedCustomerId || clientRecordRef.id
+          data = cleanClientDetails
+        } else {
+          const directProfile = await tx.get(db.collection('clients').doc(requestedClientId))
+          if (directProfile.exists && directProfile.data()?.branchId === branchId) {
+            const directData = directProfile.data() || {}
+            check(!['inactive', 'archived'].includes(normalized(directData.status)), 'Select an active client at this branch.', 403)
+            clientRecordRef = directProfile.ref
+            data = directData
+            accountCustomerId = String(directData.customerId || directProfile.id)
+          } else {
+            // A customer who first booked online may be present in this branch’s
+            // appointment history without a separate clinic directory document.
+            const [profileMatches, appointmentMatches] = await Promise.all([
+              tx.get(db.collection('clients').where('customerId', '==', requestedClientId)),
+              tx.get(db.collection('appointments').where('customerId', '==', requestedClientId)),
+            ])
+            const matchingProfile = profileMatches.docs.find(snapshot => snapshot.data()?.branchId === branchId)
+            if (matchingProfile) {
+              const profile = matchingProfile.data() || {}
+              check(!['inactive', 'archived'].includes(normalized(profile.status)), 'Select an active client at this branch.', 403)
+              clientRecordRef = matchingProfile.ref
+              data = profile
+              accountCustomerId = String(profile.customerId || requestedClientId)
+            } else {
+              const appointment = appointmentMatches.docs.find(snapshot => {
+                const row = snapshot.data() || {}
+                return row.branchId === branchId && !row.isGroupParent && !row.isBookingOrderParent
+              })
+              check(appointment, 'Select a client with an appointment at this branch, or add a new recipient for this booking.', 403)
+              const appointmentData = appointment.data() || {}
+              data = {
+                fullName: appointmentData.customerName || appointmentData.clientName || 'Clinic Client',
+                email: appointmentData.customerEmail || appointmentData.clientEmail || '',
+                phone: appointmentData.customerPhone || appointmentData.clientPhone || '',
+              }
+              clientRecordRef = newClientRef
+              clientRecordNeedsCreate = true
+              accountCustomerId = requestedClientId
+            }
+          }
+        }
+        const email = normalized(data.email)
         check(/^\S+@\S+\.\S+$/.test(email), 'The client needs a valid email address.', 400)
-        const client = { customerId: clientId, clientId, customerName: data.fullName || (String(data.firstName || '') + ' ' + String(data.lastName || '')).trim(), customerEmail: email, customerPhone: data.phone || data.contactNumber || '' }
+        const clientId = clientRecordRef.id
+        const client = { customerId: accountCustomerId || clientId, clientId, customerName: data.fullName || (String(data.firstName || '') + ' ' + String(data.lastName || '')).trim(), customerEmail: email, customerPhone: data.phone || data.contactNumber || '' }
         const arranger = booker || { name: client.customerName, email: client.customerEmail, phone: client.customerPhone }
         const { policy } = await getClinicPoliciesForBranch(db, branchId, branchSnap.data())
         const bookingAgreement = {
@@ -190,6 +288,17 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
         const pricingSnapshot = sumAppointmentPricing(appointments.map(row => row.pricingSnapshot))
         const commissionAmount = appointments.reduce((sum, row) => sum + cents(row.commissionAmount), 0) / 100
         const merchantNetAmount = appointments.reduce((sum, row) => sum + cents(row.merchantNetAmount), 0) / 100
+        if (clientRecordNeedsCreate) tx.create(clientRecordRef, {
+          ...data,
+          branchId,
+          customerId: accountCustomerId || clientRecordRef.id,
+          platformAccountLinked: Boolean(accountCustomerId && accountCustomerId !== clientRecordRef.id),
+          status: 'Active',
+          source: creatingClient ? 'walk_in_booking' : 'appointment_directory',
+          createdBy: req.user.uid,
+          createdAt: now,
+          updatedAt: now,
+        })
         appointments.forEach((appointment, index) => {
           tx.set(childRefs[index], appointment)
           const count = appointment.treatmentPlan.totalSessions

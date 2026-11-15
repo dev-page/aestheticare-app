@@ -21,7 +21,10 @@ export const walkInSlots = ({ row, date = row.date, rows = [], clients = [], ser
   if (!service || !row.clientId || !row.practitionerId || !date) return []
   const client = clients.find(client => client.id === row.clientId)
   const email = String(client?.email || '').trim().toLowerCase()
-  const samePerson = other => other.clientId === row.clientId || other.customerId === row.clientId || (email && String(other.customerEmail || clients.find(client => client.id === other.clientId)?.email || '').trim().toLowerCase() === email)
+  const identities = new Set([row.clientId, client?.id, client?.clientId, client?.customerId].map(value => String(value || '').trim()).filter(Boolean))
+  const samePerson = other => identities.has(String(other.clientId || '').trim())
+    || identities.has(String(other.customerId || '').trim())
+    || (email && String(other.customerEmail || other.clientEmail || clients.find(candidate => candidate.id === other.clientId)?.email || '').trim().toLowerCase() === email)
   if (rows.some(other => other.key !== row.key && other.date === date && samePerson(other))) return []
   if (appointments.some(other => !other.isGroupParent && !other.isBookingOrderParent && other.date === date && samePerson(other) && !['cancelled', 'rejected', 'expired'].includes(String(other.status || '').toLowerCase()))) return []
   if ((leaves[row.practitionerId] || []).some(leave => leave.startDate <= date && date <= leave.endDate)) return []

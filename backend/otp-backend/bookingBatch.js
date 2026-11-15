@@ -30,6 +30,17 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
         const directBooking = getEffectiveClinicPlan(branch) === 'free'
         const { policy } = await getClinicPoliciesForBranch(db, branchId, branch)
         const customer = { customerId: uid, customerName: profile.fullName || `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || req.user.email, customerEmail: req.user.email || profile.email || '' }
+        let matchingWalkInClient = null
+        if (req.user.email_verified === true && customer.customerEmail) {
+          const existingClients = await tx.get(db.collection('clients').where('email', '==', normalized(customer.customerEmail)))
+          const matching = existingClients.docs.filter(snapshot => {
+            const client = snapshot.data() || {}
+            return client.branchId === branchId
+              && client.platformAccountLinked !== true
+              && normalized(client.fullName) === normalized(customer.customerName)
+          })
+          if (matching.length === 1) matchingWalkInClient = matching[0].ref
+        }
         const prepared = []
         for (const row of rows) {
           check(row.policyAcknowledged === true || !Object.entries(policy || {}).some(([key, value]) => key.endsWith('Enabled') && value === true && policy[key.slice(0, -7)]), 'Please acknowledge the clinic policies.', 422)
@@ -72,6 +83,12 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
         }
         const recipients = await prepareClinicBookingRecipients({ tx, db, branchId, branch, loadUserContext })
         const now = admin.firestore.FieldValue.serverTimestamp()
+        if (matchingWalkInClient) tx.update(matchingWalkInClient, {
+          customerId: uid,
+          platformAccountLinked: true,
+          linkedAt: now,
+          updatedAt: now,
+        })
         let total = 0
         prepared.forEach(({ reservation, visit, worker, service }, index) => {
           total += visit.data.totalAmount

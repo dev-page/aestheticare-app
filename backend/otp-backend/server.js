@@ -28,6 +28,7 @@ import { registerConsultationWindows, closeExpiredConsultations } from './consul
 import { remindPendingAppointmentConfirmations } from './appointmentConfirmationReminders.js'
 import { registerWalkInPayments, assertWalkInPaymentAgreements } from './walkInWorkflow.js'
 import { registerWalkInBookings } from './walkInBookings.js'
+import { registerClientDirectory } from './clientDirectory.js'
 import { registerGoogleConsultations } from './googleConsultations.js'
 import { prepareBooking } from './bookingResources.js'
 import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
@@ -4735,6 +4736,7 @@ registerWalkInBookings(app, {
     })
   },
 })
+registerClientDirectory(app, { admin, requireAuth, authorizeClinicAction })
 registerWalkInPayments(app, {
   admin, requireAuth, authorizeClinicAction,
   verifyCheckout: async (sessionId, appointmentId, branchId) => {
