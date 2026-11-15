@@ -10,7 +10,7 @@
       </div>
     </div>
 
-    <p v-if="error" class="popup-subtitle" style="color:#b91c1c;">{{ error }}</p>
+    <p v-if="error" role="alert" class="popup-subtitle" style="color:#b91c1c;">{{ error }}</p>
 
     <div v-if="isLoading" class="plan-grid plan-grid-skeleton">
       <div v-for="index in 3" :key="`skeleton-${index}`" class="plan-card skeleton-card">
@@ -63,7 +63,7 @@
     <div v-if="showResume" class="resume-card">
       <label class="resume-label">Use the email you paid with</label>
       <input v-model="resumeEmail" type="email" placeholder="you@email.com" class="resume-input" />
-      <p v-if="resumeError" class="resume-error">{{ resumeError }}</p>
+      <p v-if="resumeError" role="alert" class="resume-error">{{ resumeError }}</p>
       <button type="button" class="btn-primary" :disabled="resumeLoading" @click="resumeRegistration">
         {{ resumeLoading ? 'Checking...' : 'Continue to Registration' }}
       </button>

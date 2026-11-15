@@ -121,7 +121,7 @@
           <p class="mt-2 text-xs text-slate-400">The clinic sets the discount. Course price uses each selected listing's price multiplied by its visit count.</p>
         </div>
 
-        <p v-if="editing && form.postType === 'Service' && form.legacyMultiSessionService" class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">This older Service was configured with multiple sessions. Saving it will make future bookings single-visit; appointments already booked keep their existing course. Create a Service Package to offer a new multi-visit course.</p>
+          <p v-if="editing && form.postType === 'Service' && form.legacyMultiSessionService" role="status" class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">This older Service was configured with multiple sessions. Saving it will make future bookings single-visit; appointments already booked keep their existing course. Create a Service Package to offer a new multi-visit course.</p>
 
         <div v-if="form.postType === 'Product'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="md:col-span-2">

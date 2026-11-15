@@ -547,13 +547,14 @@ onMounted(() => {
               <p class="text-charcoal-600 text-sm mt-1">Sign in to continue your AesthetiCare experience.</p>
             </div>
 
-            <p v-if="props.customerApp && route.query.reason === 'customer-only'" role="alert" class="rounded-xl border border-gold-200 bg-cream-50 px-4 py-3 text-sm text-charcoal-800">This app is for customer accounts. Clinic staff and system administrators use the clinic website. Supplier accounts are not supported.</p>
+            <p v-if="props.customerApp && route.query.reason === 'customer-only'" role="status" class="app-alert app-alert--info px-4 py-3 text-sm">This app is for customer accounts. Clinic staff and system administrators use the clinic website. Supplier accounts are not supported.</p>
             <!-- Inactivity session-expired banner -->
             <div
               v-if="inactivityExpired"
-              class="flex items-start gap-3 rounded-xl border border-amber-300/70 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 shadow-sm"
+              role="alert"
+              class="app-alert app-alert--warning px-4 py-3 text-sm shadow-sm"
             >
-              <svg class="mt-0.5 h-5 w-5 shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="mt-0.5 h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
@@ -566,9 +567,10 @@ onMounted(() => {
             <!-- Password reset success banner -->
             <div
               v-if="passwordResetSuccess"
-              class="flex items-start gap-3 rounded-xl border border-emerald-300/70 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-sm"
+              role="status"
+              class="app-alert app-alert--success px-4 py-3 text-sm shadow-sm"
             >
-              <svg class="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="mt-0.5 h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                 />

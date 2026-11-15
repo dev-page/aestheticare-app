@@ -409,6 +409,54 @@ html:not([data-ac-theme="dark"]) aside.app-sidebar :is(a, button)[aria-current="
 
 .app-modal-panel > :is(div:first-child, div:last-child) { border-color: var(--ac-border) !important; }
 
+/* Reusable inline alert surface. Semantic colors follow the active theme. */
+.app-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  border: 1px solid var(--ac-border);
+  border-radius: var(--ac-radius-md);
+  background: var(--ac-surface-soft);
+  color: var(--ac-text-secondary);
+}
+
+.app-alert--info {
+  border-color: var(--ac-border-strong);
+  background: var(--ac-surface-soft);
+  color: var(--ac-text-secondary);
+}
+
+.app-alert--warning {
+  border-color: color-mix(in srgb, var(--ac-warning) 55%, transparent);
+  background: var(--ac-warning-bg);
+  color: var(--ac-warning);
+}
+
+.app-alert--error {
+  border-color: color-mix(in srgb, var(--ac-danger) 55%, transparent);
+  background: var(--ac-danger-bg);
+  color: var(--ac-danger);
+}
+
+.app-alert--success {
+  border-color: color-mix(in srgb, var(--ac-success) 55%, transparent);
+  background: var(--ac-success-bg);
+  color: var(--ac-success);
+}
+
+.app-alert :is(svg, span, p, strong) { color: inherit !important; }
+
+.session-expiry-dialog {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+.session-expiry-dialog :is(h2, p) { color: var(--ac-text-secondary) !important; }
+.session-expiry-dialog .session-expiry-kicker { color: var(--ac-warning) !important; }
+.session-expiry-dialog .session-expiry-continue { background: var(--ac-primary) !important; color: var(--ac-on-primary) !important; }
+.session-expiry-dialog .session-expiry-continue:hover:not(:disabled) { background: var(--ac-primary-hover) !important; }
+
 html[data-ac-theme="dark"] .app-modal-panel.register-modal {
   border-color: var(--ac-border) !important;
   background: var(--ac-surface) !important;
@@ -2290,6 +2338,249 @@ html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .dashboard-action
 html[data-ac-theme="dark"] .aestheticare-app select:not([multiple]):not([size]),
 html[data-ac-theme="dark"] .aestheticare-app .app-modal-panel select:not([multiple]):not([size]) {
   color-scheme: dark;
+}
+
+/* Dark-theme alert compatibility for existing pages that predate .app-alert.
+   Keep inline validation messages text-only; only alert surfaces with a light
+   semantic background get a dark semantic surface. */
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  [role="alert"], .error-message, .error-notice, .form-feedback-error,
+  .report-error, .recovery-error, .owner-recovery-error, .field-error,
+  .employee-edit-error, .listing-review-error, .inbox-error, .notice.error,
+  .desk-alert.error
+):not(.app-alert) {
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  [role="alert"], .error-message, .error-notice, .form-feedback-error,
+  .report-error, .recovery-error, .owner-recovery-error, .field-error,
+  .employee-edit-error, .listing-review-error, .inbox-error, .notice.error,
+  .desk-alert.error
+):not(.app-alert) :is(svg, span, p, strong, a) {
+  color: inherit !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .error-message, .error-notice, .report-error,
+  .listing-review-error, .inbox-error, .notice.error, .desk-alert.error
+):not(.app-alert) {
+  border-color: color-mix(in srgb, var(--ac-danger) 55%, transparent) !important;
+  background: var(--ac-danger-bg) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app [role="alert"]:is(
+  [class*="bg-amber-"], [class*="bg-yellow-"]
+),
+html[data-ac-theme="dark"] .aestheticare-app [role="status"]:is(
+  [class*="bg-amber-"], [class*="bg-yellow-"]
+) {
+  border-color: color-mix(in srgb, var(--ac-warning) 55%, transparent) !important;
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is([role="alert"], [role="status"]):is(
+  [class*="bg-amber-"], [class*="bg-yellow-"]
+) :is(svg, span, p, strong, a) {
+  color: inherit !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app [role="alert"]:is(
+  [class*="bg-red-"], [class*="bg-rose-"]
+),
+html[data-ac-theme="dark"] .aestheticare-app [role="status"]:is(
+  [class*="bg-red-"], [class*="bg-rose-"]
+) {
+  border-color: color-mix(in srgb, var(--ac-danger) 55%, transparent) !important;
+  background: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is([role="alert"], [role="status"]):is(
+  [class*="bg-red-"], [class*="bg-rose-"]
+) :is(svg, span, p, strong, a) {
+  color: inherit !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app [role="status"]:is(
+  [class*="bg-emerald-"], [class*="bg-green-"]
+),
+html[data-ac-theme="dark"] .aestheticare-app :is(.report-success, .form-feedback-success) {
+  border-color: color-mix(in srgb, var(--ac-success) 55%, transparent) !important;
+  background: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app [role="status"]:is(
+  [class*="text-emerald-"], [class*="text-green-"]
+),
+html[data-ac-theme="dark"] .aestheticare-app :is(.report-success, .form-feedback-success) {
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is([role="status"], .report-success, .form-feedback-success):is(
+  [class*="bg-emerald-"], [class*="bg-green-"], .report-success, .form-feedback-success
+) :is(svg, span, p, strong, a) {
+  color: inherit !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app [role="alert"]:is(
+  [class*="bg-cream-"], [class*="bg-gold-"]
+) {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app [role="alert"]:is(
+  [class*="bg-cream-"], [class*="bg-gold-"]
+) :is(svg, span, p, strong, a) {
+  color: inherit !important;
+}
+
+/* Older views use named feedback classes instead of role-based alerts. */
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .checkout-error, .settings-message-error, .contract-error
+) {
+  border-color: color-mix(in srgb, var(--ac-danger) 55%, transparent) !important;
+  background: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .popup-error, .settings-notifications-error, .notifications-error,
+  .support-file-error
+) {
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .settings-message-error, .contract-error
+) * {
+  color: inherit !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .settings-message-success, .contract-success
+) {
+  border-color: color-mix(in srgb, var(--ac-success) 55%, transparent) !important;
+  background: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .settings-message-success, .contract-success
+) * {
+  color: inherit !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .contract-warning, .renewal-notice, .pending-notice,
+  .service-details-notice
+) {
+  border-color: color-mix(in srgb, var(--ac-warning) 55%, transparent) !important;
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(
+  .contract-warning, .renewal-notice, .pending-notice,
+  .service-details-notice
+) :is(svg, p, strong, span, a) {
+  color: inherit !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .booking-notice {
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .connection-modal-shell {
+  border-color: var(--ac-border-strong) !important;
+  background: linear-gradient(145deg, var(--ac-surface-soft), var(--ac-surface) 58%, var(--ac-bg-soft)) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .connection-modal-shell :is(h2, p) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .connection-status-pill {
+  border-color: color-mix(in srgb, var(--ac-warning) 55%, transparent) !important;
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .contract-modal {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .contract-modal :is(
+  .contract-modal-header, .contract-document, .signature-section,
+  .signature-record, .contract-terms
+) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .contract-modal :is(
+  h3, h4, p, label, strong, span, li, a
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .contract-modal :is(
+  .contract-warning, .contract-error, .contract-success
+) :is(p, strong, span) {
+  color: inherit !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .contract-modal .contract-warning {
+  border-color: color-mix(in srgb, var(--ac-warning) 55%, transparent) !important;
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .contract-modal .contract-error {
+  border-color: color-mix(in srgb, var(--ac-danger) 55%, transparent) !important;
+  background: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .contract-modal .contract-success {
+  border-color: color-mix(in srgb, var(--ac-success) 55%, transparent) !important;
+  background: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .contract-modal .contract-field input {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app :is(.resume-error, .clinic-error) {
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .consultation-controls {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .consultation-controls .notice {
+  border: 1px solid color-mix(in srgb, var(--ac-warning) 55%, transparent) !important;
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .consultation-controls :is(.error, [role="alert"]) {
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .consultation-controls [role="status"] {
+  color: var(--ac-success) !important;
 }
 
 html[data-ac-theme="dark"] .aestheticare-app :is(.add-staff-select, .finance-page select, .attendance select) option:checked,

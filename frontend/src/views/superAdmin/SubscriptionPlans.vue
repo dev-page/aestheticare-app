@@ -21,7 +21,7 @@
         </div>
       </div>
 
-      <p v-if="error" class="mb-4 rounded-lg border border-[#c7a17d] bg-[#f6eadb] px-3 py-2 text-sm text-[#704d37]">{{ error }}</p>
+      <p v-if="error" role="alert" class="app-alert app-alert--error mb-4 px-3 py-2 text-sm">{{ error }}</p>
 
       <section class="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <article class="min-w-0 rounded-xl border border-[#d9bea1] bg-[#fff5e7] p-4 shadow-sm sm:p-6">

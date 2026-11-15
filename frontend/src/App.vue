@@ -53,11 +53,11 @@
     <AppLoadingScreen v-if="isLoading || processLoading" :label="processLoading ? processLabel : 'Preparing your experience...'" />
 
     <div v-if="inactivityWarning" class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 p-4 backdrop-blur-md" role="alertdialog" aria-modal="true" aria-labelledby="inactivity-title">
-      <section class="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-slate-800 shadow-2xl shadow-slate-950/20">
-        <p class="text-xs font-semibold uppercase tracking-widest text-amber-700">Session timeout</p>
-        <h2 id="inactivity-title" class="mt-2 text-xl font-semibold text-slate-900">You will be signed out soon</h2>
-        <p class="mt-2 text-sm leading-relaxed text-slate-600">There has been no activity for almost 15 minutes. Select Continue session to remain signed in.</p>
-        <div class="mt-5 flex justify-end"><button class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2" @click="continueSession">Continue session</button></div>
+      <section class="session-expiry-dialog w-full max-w-md rounded-2xl border p-6 shadow-2xl shadow-slate-950/20">
+        <p class="session-expiry-kicker text-xs font-semibold uppercase tracking-widest">Session timeout</p>
+        <h2 id="inactivity-title" class="mt-2 text-xl font-semibold">You will be signed out soon</h2>
+        <p class="mt-2 text-sm leading-relaxed">There has been no activity for almost 15 minutes. Select Continue session to remain signed in.</p>
+        <div class="mt-5 flex justify-end"><button class="session-expiry-continue rounded-lg px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2" @click="continueSession">Continue session</button></div>
       </section>
     </div>
 
@@ -82,7 +82,7 @@
               </div>
             </div>
             <div class="relative text-center md:text-left">
-              <div class="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-800 shadow-sm">
+              <div class="connection-status-pill inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-800 shadow-sm">
                 <span class="h-2 w-2 rounded-full bg-amber-500"></span>
                 {{ isOnline ? 'Connection Slow' : 'Offline' }}
               </div>

@@ -5,7 +5,7 @@
       <p class="mt-2 text-sm leading-6 text-[#6f4a2d]">{{ description }}</p>
       <label class="mt-5 block text-sm font-semibold text-[#5d3b27]" for="service-key-input">Service key</label>
       <input id="service-key-input" ref="input" v-model.trim="serviceKey" autocomplete="one-time-code" inputmode="numeric" maxlength="6" required class="mt-2 w-full rounded-xl border border-[#d9be9b] bg-white px-4 py-3 text-[#3d281d] outline-none focus:border-[#a46b45] focus:ring-4 focus:ring-[#e8bf8a]/20" placeholder="Enter the 6-digit key" />
-      <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
+      <p v-if="error" role="alert" class="mt-2 text-sm text-red-600">{{ error }}</p>
       <div class="mt-6 flex justify-end gap-3">
         <button type="button" class="rounded-xl px-4 py-2.5 text-sm font-semibold text-[#6f4a2d] hover:bg-[#f6eadb]" :disabled="loading" @click="close">Cancel</button>
         <button type="submit" class="rounded-xl bg-[#8d5a3b] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#75462e] disabled:opacity-60" :disabled="loading">{{ loading ? 'Verifying…' : 'Verify key' }}</button>

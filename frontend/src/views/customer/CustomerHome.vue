@@ -139,7 +139,7 @@
 
           <div v-else-if="errorMessage" class="state-panel">
             <p class="state-title">We couldn't load the centers right now.</p>
-            <p class="state-copy">{{ errorMessage }}</p>
+            <p class="state-copy" role="alert">{{ errorMessage }}</p>
           </div>
 
           <div v-else-if="filteredCenters.length" class="customer-results-grid">

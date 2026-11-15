@@ -55,7 +55,7 @@
             </div>
           </div>
 
-          <div v-if="route.query.demo === 'service'" class="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-[#6d4b30]">
+          <div v-if="route.query.demo === 'service'" role="status" class="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-[#6d4b30]">
             <strong>Customer booking demo</strong>
             <p class="mt-1">Select a standalone service, choose an available schedule, and create a no-charge demo appointment. The clinic can see the clearly labeled demo in Appointment Management.</p>
           </div>
@@ -262,7 +262,7 @@
               <div>
                 <h4 class="center-panel-title text-lg font-semibold mb-1">Book Appointment</h4>
                 <p class="center-panel-copy text-xs">Choose a schedule for this service. Additional services must use different dates.</p>
-                <p v-if="route.query.demo === 'service'" class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-[#6d4b30]">
+                <p v-if="route.query.demo === 'service'" role="status" class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-[#6d4b30]">
                   Demo mode is available for one standalone service. It creates a clearly marked, no-charge sample appointment and does not reserve the selected slot.
                 </p>
               </div>
@@ -326,7 +326,7 @@
                 <div class="space-y-4">
                   <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Selected Services</p>
-                    <p v-if="isFollowUpBookingFlow" class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-[#6d4b30]">
+                    <p v-if="isFollowUpBookingFlow" role="status" class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-[#6d4b30]">
                       This is a new appointment linked to your completed visit. Choose a time and submit the request; the clinic’s usual approval and payment steps still apply.
                     </p>
                     <div class="mt-3 flex flex-wrap gap-2">
