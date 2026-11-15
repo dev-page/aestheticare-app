@@ -14,6 +14,10 @@
         <div class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-300"><strong class="block text-amber-300">3. HR releases</strong>Approved employee payslips are released individually.</div>
         <div class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-300"><strong class="block text-amber-300">4. Finance pays</strong>Finance records the verified payroll transfer after all payslips are released.</div>
       </section>
+      <p class="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        Student interns / OJT are not included in employee payroll. If the clinic provides a stipend, record it under <strong>Finance → Other Expenses</strong> as “Student intern stipend.” Older profiles labeled only “Intern” stay in payroll until you classify them in <a class="underline underline-offset-2" href="/hr/employees">Employee Management</a>.
+        <a class="ml-1 underline underline-offset-2" href="/finance/expenses-payments?tab=other">Open Finance expenses</a>.
+      </p>
 
       <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <h2 class="text-lg font-semibold text-white mb-4">Payroll Settings (Deductions)</h2>
@@ -1019,7 +1023,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const snapshot = await getDocs(staffQuery)
       const candidates = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
-        .filter((emp) => emp.id !== currentUserId.value && !emp.archived && String(emp.status || '').toLowerCase() === 'active')
+        .filter((emp) => emp.id !== currentUserId.value && !emp.archived && String(emp.status || '').toLowerCase() === 'active' && emp.engagementType !== 'student_intern')
         .map((emp) => ({
           ...emp,
           id: emp.id,
@@ -1027,7 +1031,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           role: String(emp.customRoleName || emp.role || 'Staff').trim(),
           isCommissionBased: Boolean(emp.practitionerType) || emp.role === 'Practitioner',
           basePay: Number(emp.basePay || 0),
-          employmentType: emp.employmentType || ''
+          employmentType: emp.employmentType || '',
+          engagementType: emp.engagementType || 'employee'
         }))
 
       const withShiftAssignments = await Promise.all(
@@ -1152,6 +1157,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             employeeName: employee.fullName,
             branchId: currentBranchId.value,
             employmentType: employee.employmentType || null,
+            engagementType: employee.engagementType || 'employee',
             salaryType,
             hoursWorked: Number(employeeHours || 0),
             regularHours,

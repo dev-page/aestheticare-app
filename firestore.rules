@@ -289,6 +289,16 @@ service cloud.firestore {
             && canAccessBranch(resource.data.branchId)
             && hasPermission('staff:update')
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['branchId', 'branchIds', 'organizationOwnerId', 'clinicLocation'])
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['engagementType', 'employmentType', 'weeklyHoursTarget'])
+              || (request.resource.data.get('engagementType', resource.data.get('engagementType', 'employee')) in ['employee', 'student_intern']
+                && (request.resource.data.get('engagementType', resource.data.get('engagementType', 'employee')) == 'student_intern'
+                  ? request.resource.data.get('employmentType', resource.data.get('employmentType', '')) == 'Intern'
+                  : request.resource.data.get('employmentType', resource.data.get('employmentType', '')) in ['Full-time', 'Part-time'])
+                && request.resource.data.get('weeklyHoursTarget', resource.data.get('weeklyHoursTarget', 0)) is number
+                && request.resource.data.get('weeklyHoursTarget', resource.data.get('weeklyHoursTarget', 0)) >= 1
+                && request.resource.data.get('weeklyHoursTarget', resource.data.get('weeklyHoursTarget', 0)) <= 48))
+            && (request.resource.data.get('engagementType', resource.data.get('engagementType', 'employee')) != 'student_intern'
+              || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['basePay', 'basePayModel', 'monthlyBaseHours']))
             && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'userType', 'clinicId', 'permissions', 'effectivePermissions', 'customRoleIds', 'customRoleId', 'adminRole']) || hasPermission('roles:manage'))));
       allow delete: if isSignedIn()
         && (isSuperadmin()

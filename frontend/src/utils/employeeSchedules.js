@@ -90,7 +90,14 @@ export const parseShiftDurationHours = (shift = {}) => {
   const startTotal = startHour * 60 + startMinute
   const endTotal = endHour * 60 + endMinute
   if (endTotal <= startTotal) return 0
-  return (endTotal - startTotal) / 60
+  const elapsedMinutes = endTotal - startTotal
+  const explicitBreak = Number(shift?.unpaidMealBreakMinutes ?? shift?.mealBreakMinutes)
+  // Older shift templates have no break field. Keep their previous payroll
+  // behavior: infer one unpaid hour only when the scheduled span exceeds 8h.
+  const breakMinutes = Number.isFinite(explicitBreak) && explicitBreak >= 0
+    ? explicitBreak
+    : elapsedMinutes > 8 * 60 ? 60 : 0
+  return Math.max(0, elapsedMinutes - breakMinutes) / 60
 }
 
 // Basic plans store booking windows directly; Premium schedules can continue

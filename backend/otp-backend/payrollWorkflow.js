@@ -119,6 +119,7 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
       const data = entry.data() || {}
       const employee = staffById.get(data.employeeId)
       check(employee && employee.branchId === branchId, 'The payroll employee is missing from this branch. Correct the employee assignment before submission.', 409)
+      check(employee.engagementType !== 'student_intern', 'Student interns / OJT are handled as Finance operating expenses, not employee payroll.')
       // A generated payroll remains reviewable even if an employee profile was
       // archived after the period closed. When the profile still exists, its
       // current base pay must match the generated payroll snapshot.
@@ -216,6 +217,8 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     check(entries.length > 0 && entries.length <= 400, 'Payroll must contain between 1 and 400 entries.')
     check(!entries.some(entry => [entry.data().createdBy, entry.data().updatedBy].includes(req.user.uid)), 'You cannot approve payroll entries that you prepared. A different authorized approver must review them.', 403)
     check(new Set(entries.map((d) => d.data().employeeId)).size === entries.length, 'Resolve duplicate employee payroll entries before approval.')
+    const payrollStaffProfiles = await Promise.all(entries.map(entry => tx.get(db.collection('users').doc(entry.data().employeeId))))
+    check(!payrollStaffProfiles.some(profile => profile.data()?.engagementType === 'student_intern'), 'Student interns / OJT cannot be approved through employee payroll. Return this payroll to HR for correction.')
     const approvedEntries = Object.fromEntries(entries.map((d) => [d.id, d.data()]))
     const [earnings, activeSettingsSnapshot] = await Promise.all([
       tx.get(db.collection('staffEarnings').where('branchId', '==', summary.branchId)),
@@ -241,8 +244,10 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
   })
   route('/payroll/:id/release', async (tx, req, context) => {
     const entryRef = db.collection('payrolls').doc(req.params.id), entry = (await tx.get(entryRef)).data()
+    const employeeProfile = entry?.employeeId ? await tx.get(db.collection('users').doc(entry.employeeId)) : null
     await requirePayrollPlan(entry?.branchId)
     check(entry && assignedToBranch(context, entry.branchId) && context.permissions.has('payroll:update'), 'HR payroll permission required for this branch.', 403)
+    check(employeeProfile?.data()?.engagementType !== 'student_intern', 'Student interns / OJT do not receive employee payslips.')
     const month = payrollMonth(entry), summaryRef = db.collection('payrollSummaries').doc(`${entry.branchId}_${month}`)
     const summary = (await tx.get(summaryRef)).data()
     check(summary?.status === 'approved' && summary.approvedEntries?.[entryRef.id], 'Finance must approve this exact payroll entry before release. Regenerate and review older summaries.')

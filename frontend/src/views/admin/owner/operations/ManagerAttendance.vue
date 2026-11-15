@@ -140,6 +140,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             timeOut: data.timeOut || '',
             shiftStart: data.shiftStart || '',
             shiftEnd: data.shiftEnd || '',
+            unpaidMealBreakMinutes: data.unpaidMealBreakMinutes,
           })
 
           return {

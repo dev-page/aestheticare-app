@@ -12,6 +12,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
 import { recurringScheduleVersions, resolveRecurringScheduleVersion } from '../../../../../../shared/recurringEmployeeSchedules.js'
+import { parseShiftDurationHours } from '@/utils/employeeSchedules'
 
 export default {
   name: 'AddShift',
@@ -27,11 +28,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const shifts = ref([])
     const shiftsLoading = ref(false)
     const editingShiftId = ref('')
+    const breakCustomized = ref(false)
 
     const currentShift = ref({
       shiftType: '',
       start: '',
       end: '',
+      unpaidMealBreakMinutes: 0,
       branch: '',
       notes: '',
       capacity: 1,
@@ -172,10 +175,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const resetForm = () => {
       editingShiftId.value = ''
+      breakCustomized.value = false
       currentShift.value = {
         shiftType: '',
         start: '',
         end: '',
+        unpaidMealBreakMinutes: 0,
         branch: '',
         notes: '',
         capacity: 1,
@@ -185,10 +190,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const startEditingShift = (shift) => {
       editingShiftId.value = shift.id
+      breakCustomized.value = true
       currentShift.value = {
         shiftType: String(shift.shiftType || '').trim(),
         start: String(shift.start || '').trim(),
         end: String(shift.end || '').trim(),
+        unpaidMealBreakMinutes: getShiftBreakMinutes(shift),
         branch: String(shift.branch || '').trim(),
         notes: String(shift.notes || '').trim(),
         capacity: Number(shift.capacity || 1),
@@ -227,12 +234,32 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       Evening: { start: '18:00', end: '23:00' },
     }
 
+    const getShiftBreakMinutes = (shift = {}) => {
+      const storedBreak = shift.unpaidMealBreakMinutes ?? shift.mealBreakMinutes
+      const explicitBreak = Number(storedBreak)
+      if (storedBreak !== null && storedBreak !== undefined && Number.isFinite(explicitBreak) && explicitBreak >= 0) return explicitBreak
+      const start = timeToMinutes(shift.start), end = timeToMinutes(shift.end)
+      return start !== null && end - start > 8 * 60 ? 60 : 0
+    }
+    const updateDefaultMealBreak = () => {
+      if (breakCustomized.value) return
+      const start = timeToMinutes(currentShift.value.start), end = timeToMinutes(currentShift.value.end)
+      currentShift.value.unpaidMealBreakMinutes = start !== null && end !== null && end - start > 8 * 60 ? 60 : 0
+    }
+    const currentShiftPaidHours = computed(() => parseShiftDurationHours(currentShift.value))
+    const formatPaidHours = (shift) => {
+      const hours = parseShiftDurationHours(shift)
+      return `${Number.isInteger(hours) ? hours : hours.toFixed(2)} hours`
+    }
+
     const applyShiftTypeDefaults = (type) => {
       const rule = shiftTimePresets[type]
       if (!rule) return
       currentShift.value.shiftType = type
       currentShift.value.start = rule.start
       currentShift.value.end = rule.end
+      currentShift.value.unpaidMealBreakMinutes = getShiftBreakMinutes(rule)
+      breakCustomized.value = false
     }
 
     const validateShiftInput = () => {
@@ -261,6 +288,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('End time must be later than start time on the same day.')
         return false
       }
+      const unpaidMealBreakMinutes = Number(currentShift.value.unpaidMealBreakMinutes)
+      if (!Number.isInteger(unpaidMealBreakMinutes) || unpaidMealBreakMinutes < 0 || unpaidMealBreakMinutes > 180 || unpaidMealBreakMinutes >= endMinutes - startMinutes) {
+        toast.error('Enter an unpaid meal break from 0 to 180 minutes that is shorter than the shift.')
+        return false
+      }
 
       const duplicateShift = shifts.value.some((shift) =>
         shift.id !== editingShiftId.value &&
@@ -270,7 +302,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         !shift.isArchived &&
         String(shift.shiftType || '').trim().toLowerCase() === shiftName.toLowerCase() &&
         String(shift.start || '').trim() === String(currentShift.value.start || '').trim() &&
-        String(shift.end || '').trim() === String(currentShift.value.end || '').trim()
+        String(shift.end || '').trim() === String(currentShift.value.end || '').trim() &&
+        getShiftBreakMinutes(shift) === Number(currentShift.value.unpaidMealBreakMinutes)
       )
       if (duplicateShift) {
         toast.error('A shift with the same name and time already exists for this branch.')
@@ -337,7 +370,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const changesShiftIdentity = Boolean(existingShift && (
           String(existingShift.shiftType || '').trim() !== String(currentShift.value.shiftType || '').trim() ||
           String(existingShift.start || '').trim() !== String(currentShift.value.start || '').trim() ||
-          String(existingShift.end || '').trim() !== String(currentShift.value.end || '').trim()
+          String(existingShift.end || '').trim() !== String(currentShift.value.end || '').trim() ||
+          getShiftBreakMinutes(existingShift) !== Number(currentShift.value.unpaidMealBreakMinutes)
         ))
         const reducesStaffCapacity = Boolean(existingShift && Number(currentShift.value.capacity) < Number(existingShift.capacity || 1))
         const assigned = existingShift && (changesShiftIdentity || reducesStaffCapacity) ? await shiftIsAssigned(existingShift) : false
@@ -352,8 +386,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const result = await Swal.fire({
           title: isEditing ? 'Update Shift' : 'Confirm Shift',
           text: isEditing
-            ? `Save these changes to ${currentShift.value.shiftType} (${currentShift.value.start} - ${currentShift.value.end}) at ${currentShift.value.branch}?`
-            : `Create ${currentShift.value.shiftType} (${currentShift.value.start} - ${currentShift.value.end}) at ${currentShift.value.branch} with capacity for ${currentShift.value.capacity} employee(s)?`,
+            ? `Save ${currentShift.value.shiftType} (${currentShift.value.start} - ${currentShift.value.end}, ${currentShift.value.unpaidMealBreakMinutes} unpaid break minutes) at ${currentShift.value.branch}?`
+            : `Create ${currentShift.value.shiftType} (${currentShift.value.start} - ${currentShift.value.end}, ${currentShift.value.unpaidMealBreakMinutes} unpaid break minutes) at ${currentShift.value.branch} with capacity for ${currentShift.value.capacity} staff member(s)?`,
           icon: 'question',
           showCancelButton: true,
           confirmButtonText: isEditing ? 'Save changes' : 'Yes, create',
@@ -370,6 +404,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           shiftType: currentShift.value.shiftType,
           start: currentShift.value.start,
           end: currentShift.value.end,
+          unpaidMealBreakMinutes: Number(currentShift.value.unpaidMealBreakMinutes),
           branch: currentShift.value.branch,
           branchId: selectedBranch?.id || '',
           notes: currentShift.value.notes,
@@ -451,10 +486,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const duplicateShiftRecord = (shift) => {
       if (!shift || shift.isArchived) return
       editingShiftId.value = ''
+      breakCustomized.value = true
       currentShift.value = {
         shiftType: `${String(shift.shiftType || 'Shift').trim()} Copy`.slice(0, 80),
         start: String(shift.start || '').trim(),
         end: String(shift.end || '').trim(),
+        unpaidMealBreakMinutes: getShiftBreakMinutes(shift),
         branch: String(shift.branch || '').trim(),
         notes: String(shift.notes || '').trim(),
         capacity: Number(shift.capacity || 1),
@@ -473,6 +510,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       branches,
       shiftTypes,
       applyShiftTypeDefaults,
+      currentShiftPaidHours,
+      formatPaidHours,
+      getShiftBreakMinutes,
+      breakCustomized,
+      updateDefaultMealBreak,
       formatTime,
       shifts,
       shiftsLoading,
@@ -492,7 +534,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   <div class="flex flex-col md:flex-row module-theme min-w-0" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
     <OwnerSidebar v-if="!embedded" />
 
-    <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, header: !embedded, blocks: [{ variant: 'form', fields: 6, sections: 1 }, { variant: 'table', columns: 6, rows: 4 }] }" class="flex-1 min-w-0 text-white" :class="embedded ? '' : 'p-6 md:p-10'">
+    <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, header: !embedded, blocks: [{ variant: 'form', fields: 7, sections: 1 }, { variant: 'table', columns: 8, rows: 4 }] }" class="flex-1 min-w-0 text-white" :class="embedded ? '' : 'p-6 md:p-10'">
       <h1 v-if="!embedded" class="text-2xl font-bold mb-6">Add Shift</h1>
 
       <div class="bg-slate-800 rounded-xl shadow-lg p-6 md:p-8 border border-slate-700 max-w-2xl mx-auto">
@@ -531,6 +573,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <input
                 type="time"
                 v-model="currentShift.start"
+                @input="updateDefaultMealBreak"
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -539,11 +582,25 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <input
                 type="time"
                 v-model="currentShift.end"
+                @input="updateDefaultMealBreak"
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
           <p class="text-xs text-slate-400">Presets fill suggested times only. You can change either time to match your clinic’s hours. Shifts currently run within one calendar day.</p>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label for="shift-meal-break" class="block text-slate-400 mb-1">Unpaid Meal Break (minutes)</label>
+              <input id="shift-meal-break" v-model.number="currentShift.unpaidMealBreakMinutes" @input="breakCustomized = true" type="number" min="0" max="180" step="1" class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:ring-2 focus:ring-blue-500" />
+              <p class="mt-1 text-xs text-slate-400">This break is excluded from scheduled paid hours and payroll calculations.</p>
+            </div>
+            <div class="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3">
+              <p class="text-xs uppercase tracking-wide text-slate-400">Paid time per shift</p>
+              <p class="mt-1 text-lg font-semibold text-white">{{ currentShiftPaidHours }} hours</p>
+              <p class="text-xs text-slate-400">Start-to-end time minus the unpaid break.</p>
+            </div>
+          </div>
 
           <div>
             <label class="block text-slate-400 mb-1">Branch</label>
@@ -607,11 +664,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         <div v-if="shiftsLoading" class="text-sm text-slate-400">Loading shifts...</div>
         <div v-else-if="!shifts.length" class="text-sm text-slate-400">No shifts created yet.</div>
         <div v-else class="overflow-x-auto">
-          <table class="w-full min-w-[760px] text-left border-collapse">
+          <table class="w-full min-w-[960px] text-left border-collapse">
             <thead>
               <tr class="border-b border-slate-700 text-slate-400 uppercase text-xs">
                 <th class="py-3 px-3">Shift Name</th>
                 <th class="py-3 px-3">Time</th>
+                <th class="py-3 px-3">Unpaid Break</th>
+                <th class="py-3 px-3">Paid Duration</th>
                 <th class="py-3 px-3">Branch</th>
                 <th class="py-3 px-3">Staff Capacity</th>
                 <th class="py-3 px-3">Notes</th>
@@ -625,6 +684,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                   <span v-if="shift.isArchived" class="ml-2 rounded-full bg-slate-700 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-300">Archived</span>
                 </td>
                 <td class="py-3 px-3">{{ formatTime(shift.start) }} - {{ formatTime(shift.end) }}</td>
+                <td class="py-3 px-3">{{ getShiftBreakMinutes(shift) }} min</td>
+                <td class="py-3 px-3">{{ formatPaidHours(shift) }}</td>
                 <td class="py-3 px-3">{{ shift.branch || 'Unknown Branch' }}</td>
                 <td class="py-3 px-3">{{ shift.capacity || 0 }}</td>
                 <td class="py-3 px-3 text-slate-300">{{ shift.notes || 'No notes' }}</td>

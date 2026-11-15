@@ -43,7 +43,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const snapshot = await getDocs(staffQuery)
         staffList.value = snapshot.docs
           .map((snap) => ({ id: snap.id, ...snap.data() }))
-          .filter((staff) => !staff.archived)
+          .filter((staff) => !staff.archived && staff.engagementType !== 'student_intern')
           .map((staff) => ({
             id: staff.id,
             fullName: `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.email || 'Unnamed',
@@ -195,6 +195,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         <div v-if="loading" class="py-2">
           <PageSectionSkeleton variant="table" :rows="6" :columns="4" />
         </div>
+        <p class="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+          Student interns / OJT do not receive employee base pay through payroll. Record any clinic stipend in <a class="underline underline-offset-2" href="/finance/expenses-payments?tab=other">Finance → Other Expenses</a>.
+        </p>
         <p class="mb-4 text-sm text-slate-400">Hourly pay uses worked hours; daily pay uses completed attendance days. A fixed monthly retainer pays the full agreed monthly amount without automatic proration. Configure its agreed monthly hours for the hourly equivalent.</p>
         <p class="mb-4 text-sm text-slate-400">Record each employee’s start date here. HR uses it to check the clinic’s paid leave eligibility rule.</p>
         <table class="w-full text-left min-w-[900px] border-collapse">

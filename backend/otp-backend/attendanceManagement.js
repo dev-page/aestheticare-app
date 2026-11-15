@@ -1,4 +1,3 @@
-import crypto from 'node:crypto'
 import { demand, dateKey, clock, punches, validateField, fieldValues } from './attendancePolicy.js'
 
 export function registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature }) {
@@ -18,7 +17,10 @@ export function registerAttendanceManagement(app, { admin, requireAuth, requireP
     return { branchId, branch, ownerId: branch.ownerId }
   }
   const configRef = ownerId => db().collection('attendanceConfigurations').doc(ownerId)
-  const configuration = async ownerId => (await configRef(ownerId).get()).data() || { fields: [], templates: [], holidays: [] }
+  const configuration = async ownerId => {
+    const stored = (await configRef(ownerId).get()).data() || {}
+    return { fields: stored.fields || [], holidays: stored.holidays || [] }
+  }
 
   app.post('/attendance/configuration', requireAuth, requirePermission('attendance:view'), run(async req => {
     const s = await scope(req)
@@ -45,18 +47,6 @@ export function registerAttendanceManagement(app, { admin, requireAuth, requireP
       tx.create(ref.collection('audit').doc(), { action: field.archived ? 'archive' : 'create', field, actorId: req.user.uid, createdAt: stamp() })
       return { fields }
     })
-  }))
-  app.post('/attendance/template', requireAuth, requirePermission('attendance:import'), run(async req => {
-    const s = await scope(req), ref = configRef(s.ownerId)
-    const template = { id: crypto.randomUUID(), name: String(req.body.name || '').trim().slice(0, 80), mapping: req.body.mapping, mode: req.body.mode || 'shift' }
-    demand(template.name && template.mapping && Object.keys(template.mapping).length <= 50, 'Provide a name and a valid mapping.')
-    await db().runTransaction(async tx => {
-      const config = (await tx.get(ref)).data() || {}
-      const templates = config.templates || []
-      demand(templates.length < 30, 'The organization mapping-template limit is 30.')
-      tx.set(ref, { templates: [...templates, template] }, { merge: true })
-    })
-    return { template }
   }))
   app.post('/attendance/holidays', requireAuth, requirePermission('attendance:update'), run(async req => {
     const s = await scope(req)

@@ -105,6 +105,7 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
     const employeeSnap = await db.collection('users').doc(employeeId).get()
     const employee = employeeSnap.data() || {}
     check(employeeSnap.exists && (employee.branchId === branchId || (employee.branchIds || []).includes(branchId)), 'Your employee account is not assigned to this branch.', 403)
+    check(employee.engagementType !== 'student_intern', 'Student interns / OJT do not submit employee overtime requests.')
     const [attendanceSnap, schedule, clinic] = await Promise.all([
       db.collection('attendance').where('branchId', '==', branchId).where('employeeId', '==', employeeId).where('date', '==', date).limit(2).get(),
       loadAttendanceSchedule(employeeId, date),
@@ -117,6 +118,7 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
       ...attendance,
       shiftStart: attendance.shiftStart || schedule?.shiftStart,
       shiftEnd: attendance.shiftEnd || schedule?.shiftEnd,
+      unpaidMealBreakMinutes: attendance.unpaidMealBreakMinutes ?? schedule?.unpaidMealBreakMinutes,
     }, employee)
     check(calculation.overtimeMinutes > 0, 'The attendance record does not contain overtime under the clinic policy.', 400)
     const id = `ot-${employeeId}-${date}`
@@ -188,8 +190,10 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
         ...attendance,
         shiftStart: attendance.shiftStart || schedule?.shiftStart,
         shiftEnd: attendance.shiftEnd || schedule?.shiftEnd,
+        unpaidMealBreakMinutes: attendance.unpaidMealBreakMinutes ?? schedule?.unpaidMealBreakMinutes,
       }, employee) : null
       const hasValidEvidence = Boolean(attendance?.branchId === request.branchId && attendance?.timeIn && attendance?.timeOut && calculation?.overtimeMinutes > 0)
+      if (status === 'Approved') check(employee.engagementType !== 'student_intern', 'Student intern / OJT overtime cannot be approved through employee payroll.')
       if (status === 'Approved') check(hasValidEvidence, 'A complete attendance record with overtime is required to approve this request.')
       const actor = context.userData || {}
       const reviewedBy = clean(actor.fullName) || `${clean(actor.firstName)} ${clean(actor.lastName)}`.trim() || clean(actor.email) || 'Reviewer'

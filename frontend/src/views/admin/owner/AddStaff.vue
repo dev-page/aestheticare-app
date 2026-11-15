@@ -87,7 +87,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       customRoleId: '',
       customRoleIds: [],
       practitionerType: '',
-      employmentType: '',
+      engagementType: 'employee',
+      employmentType: 'Full-time',
+      weeklyHoursTarget: 40,
       userType: 'Staff',
       clinicBranch: '',   // primary branchId, retained for backwards compatibility
       branchIds: [],
@@ -100,6 +102,23 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const credentialOcrBusy = ref(false)
     let credentialOcrSequence = 0
     const showCredentialNumber = computed(() => Boolean(String(currentStaff.value.practitionerType || '').trim()))
+    const isStudentIntern = computed(() => currentStaff.value.engagementType === 'student_intern')
+
+    const setEngagementType = (value) => {
+      currentStaff.value.engagementType = value === 'student_intern' ? 'student_intern' : 'employee'
+      if (currentStaff.value.engagementType === 'student_intern') {
+        currentStaff.value.employmentType = 'Intern'
+        currentStaff.value.weeklyHoursTarget = ''
+      } else {
+        currentStaff.value.employmentType = 'Full-time'
+        currentStaff.value.weeklyHoursTarget = 40
+      }
+    }
+
+    const setEmploymentType = (value) => {
+      currentStaff.value.employmentType = value
+      currentStaff.value.weeklyHoursTarget = value === 'Full-time' ? 40 : ''
+    }
 
     const normalizedPlan = computed(() => String(activePlan.value || '').trim().toLowerCase())
     const isBasicPlan = computed(() => normalizedPlan.value === 'basic')
@@ -192,7 +211,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         customRoleId: '',
         customRoleIds: [],
         branchIds: [],
-        employmentType: '',
+        engagementType: 'employee',
+        employmentType: 'Full-time',
+        weeklyHoursTarget: 40,
         userType: 'Staff',
         clinicBranch: '',
         clinicLocation: '',
@@ -272,7 +293,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         phoneNumber: '',
         clinicBranch: '',
         clinicLocation: '',
+        engagementType: '',
         employmentType: '',
+        weeklyHoursTarget: '',
         practitionerId: ''
       }
 
@@ -328,6 +351,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
       if (!currentStaff.value.employmentType.trim()) {
         errors.employmentType = 'Employment type is required.'
+      }
+      const weeklyHours = Number(currentStaff.value.weeklyHoursTarget)
+      if (!Number.isFinite(weeklyHours) || weeklyHours < 1 || weeklyHours > 48) {
+        errors.weeklyHoursTarget = 'Enter agreed weekly hours from 1 to 48.'
       }
       if (isPractitionerRole.value && !practitionerIdFile.value) {
         errors.practitionerId = 'Practitioner credential image is required.'
@@ -521,7 +548,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       try {
         const result = await Swal.fire({
-          title: 'Confirm Employee Creation',
+          title: 'Confirm Staff Account',
           text: `Do you want to create an account for ${fullName} (${currentStaff.value.email})?`,
           icon: 'question',
           showCancelButton: true,
@@ -530,7 +557,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         })
 
         if (!result.isConfirmed) {
-          toast.info("Employee creation cancelled.")
+          toast.info("Staff account creation cancelled.")
           return
         }
 
@@ -550,7 +577,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             toast.error("This email is already registered.")
             return
           } else {
-            toast.error("Failed to create employee account.")
+            toast.error("Failed to create staff account.")
             console.error(error)
             return
           }
@@ -593,7 +620,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             effectivePermissions: [...new Set(selectedCustomRoles.value.flatMap((role) => role.permissions || []))],
             practitionerType: currentStaff.value.practitionerType,
             credentialNumber: currentStaff.value.credentialNumber,
+            engagementType: currentStaff.value.engagementType,
             employmentType: currentStaff.value.employmentType,
+            weeklyHoursTarget: Number(currentStaff.value.weeklyHoursTarget),
             userType: 'Staff',
             branchId: currentStaff.value.clinicBranch,
             branchIds: [...new Set(currentStaff.value.branchIds || [currentStaff.value.clinicBranch])],   // ✅ store branchId reference
@@ -620,10 +649,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             })
           } catch (emailError) {
             console.error('Failed to send staff welcome email:', emailError)
-            toast.warn('Employee added, but the welcome email could not be sent.')
+          toast.warn('Staff member added, but the welcome email could not be sent.')
           }
 
-          toast.success('Employee added successfully.')
+          toast.success('Staff member added successfully.')
           resetForm()
         } catch (firestoreError) {
           // Step 3: Rollback Auth if Firestore fails
@@ -658,6 +687,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       pageLoading,
       loading,
       currentStaff,
+      isStudentIntern,
+      setEngagementType,
+      setEmploymentType,
       saveStaff,
       resetForm,
       branches,
@@ -697,15 +729,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       <!-- Page Header -->
       <div v-if="!embedded" class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
-          <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Add Employee</h1>
-          <p class="text-slate-400 text-sm md:text-base">Create a new employee account and assign them to a branch.</p>
+          <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Add Staff Member</h1>
+          <p class="text-slate-400 text-sm md:text-base">Create a staff account, choose their arrangement, and assign their agreed weekly hours.</p>
         </div>
       </div>
 
       <!-- Loading Skeleton -->
       <OwnerPageSkeleton v-if="loading" variant="form" :fields="6" :sections="3" />
 
-      <!-- Add Employee Form -->
+      <!-- Add Staff Member Form -->
       <div v-else class="mx-auto max-w-3xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8">
         <form class="space-y-6" @submit.prevent="saveStaff">
           <!-- Personal Information -->
@@ -880,19 +912,39 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 <p v-else class="mt-1 text-xs text-slate-400">Choose a role to define permissions.</p>
               </div>
 
-              <!-- Employment Type -->
               <div>
+                <label class="mb-1 block text-slate-400">Staff Arrangement <span class="text-red-400">*</span></label>
+                <select
+                  :value="currentStaff.engagementType"
+                  @change="setEngagementType($event.target.value)"
+                  class="add-staff-select w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="employee">Employee</option>
+                  <option value="student_intern">Student intern / OJT</option>
+                </select>
+                <p class="mt-1 text-xs text-slate-400">Everyone uses the same schedule and attendance flow. Use Employee for staff paid through payroll, including an intern hired as an employee. Use Student intern / OJT for a training placement; record any stipend as a Finance expense.</p>
+              </div>
+
+              <!-- Employment Type -->
+              <div v-if="!isStudentIntern">
                 <label class="mb-1 block text-slate-400">Employment Type <span class="text-red-400">*</span></label>
                 <select
-                  v-model="currentStaff.employmentType"
+                  :value="currentStaff.employmentType"
+                  @change="setEmploymentType($event.target.value)"
                   class="add-staff-select w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option class="text-slate-300" value="" disabled>Select employment type</option>
                   <option class="text-white" value="Full-time">Full-time</option>
                   <option class="text-white" value="Part-time">Part-time</option>
-                  <option class="text-white" value="Intern">Intern</option>
                 </select>
                 <p v-if="fieldErrors.employmentType" class="mt-1 text-xs text-red-400">{{ fieldErrors.employmentType }}</p>
+              </div>
+              <div>
+                <label for="staff-weekly-hours" class="mb-1 block text-slate-400">Agreed Weekly Hours <span class="text-red-400">*</span></label>
+                <input id="staff-weekly-hours" v-model.number="currentStaff.weeklyHoursTarget" type="number" min="1" max="48" step="0.5" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <p v-if="!isStudentIntern && currentStaff.employmentType === 'Full-time'" class="mt-1 text-xs text-slate-400">Full-time starts at 40 hours. Adjust only to match the employee’s agreement.</p>
+                <p v-else class="mt-1 text-xs text-slate-400">Enter the hours agreed with the part-time employee or training institution (maximum 48 hours).</p>
+                <p v-if="fieldErrors.weeklyHoursTarget" class="mt-1 text-xs text-red-400">{{ fieldErrors.weeklyHoursTarget }}</p>
               </div>
             </div>
           </div>
@@ -987,7 +1039,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               :disabled="hasErrors || credentialOcrBusy"
               class="rounded-lg bg-blue-600 px-5 py-2 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Add Employee
+              Add Staff Member
             </button>
           </div>
         </form>

@@ -48,7 +48,7 @@ import { PassThrough } from 'node:stream'
 import { google } from 'googleapis'
 import vision from '@google-cloud/vision'
 import { EMAIL_WEBSITE_URL } from './emailLinks.js'
-import { demand, punches, clock, verifyLocation, scanAction } from './attendancePolicy.js'
+import { demand, clock, verifyLocation, scanAction } from './attendancePolicy.js'
 import { registerAttendanceManagement } from './attendanceManagement.js'
 import { registerAttendanceImports } from './attendanceImports.js'
 import { createClinicAgreementPdf, clinicAgreementTextHash } from './clinicAgreementDocument.js'
@@ -163,7 +163,6 @@ const ATTENDANCE_PIN_PATH = '/send-attendance-pin'
 const ATTENDANCE_RECORD_PATH = '/attendance/record'
 const ATTENDANCE_MY_RECORDS_PATH = '/attendance/my-records'
 const ATTENDANCE_QR_PATH = '/attendance/qr'
-const ATTENDANCE_IMPORT_PATH = '/attendance/import'
 const ATTENDANCE_CORRECTION_PATH = '/attendance/correct'
 const ATTENDANCE_FIELDS_PATH = '/attendance/fields'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
@@ -2284,49 +2283,6 @@ const manilaTimeLabel = (date = new Date()) =>
     hour12: true,
   }).format(date)
 
-const parseCsvLine = (line) => {
-  const values = []
-  let value = ''
-  let quoted = false
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index]
-    if (char === '"' && line[index + 1] === '"' && quoted) {
-      value += '"'
-      index += 1
-    } else if (char === '"') {
-      quoted = !quoted
-    } else if (char === ',' && !quoted) {
-      values.push(value.trim())
-      value = ''
-    } else {
-      value += char
-    }
-  }
-  values.push(value.trim())
-  return values
-}
-
-const parseAttendanceCsv = (text) => {
-  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim())
-  if (lines.length < 2) throw new Error('The CSV must contain a header row and at least one record.')
-  const headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase().replace(/[^a-z0-9]+/g, ''))
-  const rows = lines.slice(1).map((line) => {
-    const values = parseCsvLine(line)
-    return headers.reduce((row, header, index) => {
-      row[header] = values[index] || ''
-      return row
-    }, {})
-  })
-  return rows
-}
-
-const normalizeImportDate = (value) => {
-  const raw = String(value || '').trim()
-  if (!raw) return ''
-  const match = raw.match(/^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})$/)
-  return match ? `${match[1]}-${match[2]}-${match[3]}` : ''
-}
-
 const resolveBranchAccess = async (uid, branchId) => {
   const firestore = admin.firestore()
   const branchSnap = await firestore.collection('clinics').doc(branchId).get()
@@ -2436,6 +2392,7 @@ const loadAttendanceSchedule = async (employeeId, dateKey) => {
       shiftLabel: 'Approved leave',
       shiftStart: '',
       shiftEnd: '',
+      unpaidMealBreakMinutes: null,
     }
   }
 
@@ -2448,7 +2405,7 @@ const loadAttendanceSchedule = async (employeeId, dateKey) => {
   const assignmentValue = String(assignments[weekday] || '').trim()
   const shiftLabel = String(assignmentLabels[weekday] || assignmentValue).trim()
   if (!assignmentValue || assignmentValue.toLowerCase() === 'off' || shiftLabel.toLowerCase() === 'off') {
-    return { shiftLabel, shiftStart: '', shiftEnd: '' }
+    return { shiftLabel, shiftStart: '', shiftEnd: '', unpaidMealBreakMinutes: null }
   }
   const employeeData = (await firestore.collection('users').doc(employeeId).get()).data() || {}
   const shiftSnap = await firestore.collection('shifts').where('branchId', '==', employeeData.branchId || '').get()
@@ -2461,7 +2418,11 @@ const loadAttendanceSchedule = async (employeeId, dateKey) => {
   return {
     shiftLabel: useHistoricalSnapshot ? shiftLabel : shift.id ? `${String(shift.shiftType || 'Shift').trim()} || ${String(shift.start || '').trim()} - ${String(shift.end || '').trim()}` : shiftLabel,
     shiftStart: String(useHistoricalSnapshot ? historicalTimes[1] : shift.start || '').trim(),
-    shiftEnd: String(useHistoricalSnapshot ? historicalTimes[2] : shift.end || '').trim()
+    shiftEnd: String(useHistoricalSnapshot ? historicalTimes[2] : shift.end || '').trim(),
+    unpaidMealBreakMinutes: Number.isFinite(Number(shift.unpaidMealBreakMinutes ?? shift.mealBreakMinutes))
+      && Number(shift.unpaidMealBreakMinutes ?? shift.mealBreakMinutes) >= 0
+      ? Number(shift.unpaidMealBreakMinutes ?? shift.mealBreakMinutes)
+      : null
   }
 }
 
@@ -3606,7 +3567,7 @@ const refundWorkflow = registerRefundWorkflow(app, {
   buildPayMongoHeaders, finalizeCancelledOrder,
 })
 registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
-registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
+registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders })
 registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerHrWorkflow(app, { admin, requireAuth, loadUserContext, assertPlanFeature: (...args) => assertClinicPlanFeature(...args), loadAttendanceSchedule })
@@ -8357,6 +8318,7 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
         shiftLabel: schedule.shiftLabel,
         shiftStart: schedule.shiftStart,
         shiftEnd: schedule.shiftEnd,
+        unpaidMealBreakMinutes: schedule.unpaidMealBreakMinutes,
         locationVerified: hasLocation,
         locationAccuracyMeters: Number.isFinite(accuracyNumber) ? Math.round(accuracyNumber) : null,
         locationDistanceMeters: distanceMeters,
@@ -8439,77 +8401,6 @@ app.post(ATTENDANCE_QR_PATH, requireAuth, requirePermission('attendance:update')
   }
 })
 
-
-app.post(ATTENDANCE_IMPORT_PATH, requireAuth, requirePermission('attendance:import'), async (req, res) => {
-  const { branchId, csvText, fileName, dryRun = false } = req.body ?? {}
-  const normalizedBranchId = String(branchId || '').trim()
-  if (!normalizedBranchId || !String(csvText || '').trim()) return res.status(400).json({ success: false, error: 'branchId and csvText are required' })
-  try {
-    if (!await resolveBranchAccess(req.user.uid, normalizedBranchId)) return res.status(403).json({ success: false, error: 'You cannot import attendance for this branch.' })
-    const rows = parseAttendanceCsv(csvText)
-    demand(rows.length > 0 && rows.length <= 400, 'Import 1–400 rows per file.')
-    const firestore = admin.firestore()
-    await assertClinicPlanFeature(firestore, normalizedBranchId, 'attendance')
-    const contentHash = crypto.createHash('sha256').update(String(csvText)).digest('hex')
-    const priorBatch = await firestore.collection('attendanceImports').where('branchId', '==', normalizedBranchId).where('contentHash', '==', contentHash).limit(1).get()
-    if (!dryRun && !priorBatch.empty) return res.status(409).json({ success: false, error: 'This attendance file was already imported for this branch.' })
-    const valid = []
-    const rejected = []
-    const seenAttendance = new Set()
-    for (const [index, row] of rows.entries()) {
-      const employeeId = String(row.employeeid || row.uid || '').trim()
-      const email = String(row.email || '').trim().toLowerCase()
-      const date = normalizeImportDate(row.date || row.attendancedate)
-      const timeIn = String(row.timein || row.clockin || '').trim()
-      const timeOut = String(row.timeout || row.clockout || '').trim()
-      if (!date || (!employeeId && !email) || (!timeIn && !timeOut)) {
-        rejected.push({ row: index + 2, reason: 'Required fields: date, employeeId/email, and timeIn or timeOut.' })
-        continue
-      }
-      let resolvedId = employeeId
-      if (!resolvedId) {
-        const userSnap = await firestore.collection('users').where('email', '==', email).limit(2).get()
-        if (userSnap.size !== 1) {
-          rejected.push({ row: index + 2, reason: 'Email did not resolve to exactly one employee.' })
-          continue
-        }
-        resolvedId = userSnap.docs[0].id
-      }
-      const userSnap = await firestore.collection('users').doc(resolvedId).get()
-      if (!userSnap.exists || String(userSnap.data()?.branchId || '') !== normalizedBranchId) {
-        rejected.push({ row: index + 2, reason: 'Employee does not belong to this branch.' })
-        continue
-      }
-      const existingAttendance = await firestore.collection('attendance').doc(`${resolvedId}_${date}`).get()
-      if (existingAttendance.exists) {
-        rejected.push({ row: index + 2, reason: 'An attendance record already exists for this employee and date.' })
-        continue
-      }
-      const recordKey = `${resolvedId}_${date}`
-      if (seenAttendance.has(recordKey)) {
-        rejected.push({ row: index + 2, reason: 'Duplicate employee and date within this file.' })
-        continue
-      }
-      let times
-      try { times = punches(date, timeIn, timeOut, req.body.overnight === true) }
-      catch (error) { rejected.push({ row: index + 2, reason: error.message }); continue }
-      seenAttendance.add(recordKey)
-      const user = userSnap.data()
-      valid.push({ employeeId: resolvedId, employeeName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email, branchId: normalizedBranchId, date, ...times, locationVerified: false, source: 'imported', importSource: 'clinic_csv' })
-    }
-    if (!dryRun && valid.length) {
-      const batch = firestore.batch()
-      const importRef = firestore.collection('attendanceImports').doc(crypto.createHash('sha256').update(`${normalizedBranchId}:${contentHash}`).digest('hex'))
-      valid.forEach((record) => batch.create(firestore.collection('attendance').doc(`${record.employeeId}_${record.date}`), { ...record, importBatchId: importRef.id, importedBy: req.user.uid, importedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }))
-      batch.create(importRef, { branchId: normalizedBranchId, importedBy: req.user.uid, sourceFileName: String(fileName || 'attendance.csv').slice(0, 255), contentHash, validRows: valid.length, rejectedRows: rejected.length, rejected, status: rejected.length ? 'Needs Review' : 'Completed', createdAt: admin.firestore.FieldValue.serverTimestamp() })
-      await batch.commit()
-    }
-    return res.json({ success: true, dryRun: Boolean(dryRun), validRows: valid.length, rejectedRows: rejected.length, rejected })
-  } catch (error) {
-    console.error('Attendance import failed:', error)
-    return res.status(400).json({ success: false, error: error.message || 'Unable to import attendance.' })
-  }
-})
 
 app.post(ATTENDANCE_PIN_PATH, requireAuth, requirePermission('staff:create'), async (req, res) => {
   const { recipient, attendancePin, fullName } = req.body ?? {}
@@ -8692,10 +8583,19 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     const firstName = text(input.firstName, 100)
     const lastName = text(input.lastName, 100)
     const requestedRole = normalizeRoleKey(text(input.role, 80))
+    const engagementType = text(input.engagementType || 'employee', 40).toLowerCase()
+    const employmentType = text(input.employmentType, 80)
+    const weeklyHoursTarget = Number(input.weeklyHoursTarget)
     const forbiddenRoles = new Set(['Owner', 'Superadmin'])
     const branchIds = [...new Set((Array.isArray(input.branchIds) ? input.branchIds : []).map((id) => String(id || '').trim()).filter(Boolean))]
     if (!targetId || !email || !firstName || !lastName || !requestedRole || forbiddenRoles.has(requestedRole) || !branchIds.length || branchIds.length > 100) {
       return res.status(400).json({ success: false, error: 'Enter valid staff details and select at least one branch.' })
+    }
+    if (!['employee', 'student_intern'].includes(engagementType)
+      || (engagementType === 'employee' && !['Full-time', 'Part-time'].includes(employmentType))
+      || (engagementType === 'student_intern' && employmentType !== 'Intern')
+      || !Number.isFinite(weeklyHoursTarget) || weeklyHoursTarget < 1 || weeklyHoursTarget > 48) {
+      return res.status(400).json({ success: false, error: 'Choose an employee or student intern arrangement and enter agreed weekly hours from 1 to 48.' })
     }
 
     const firestore = admin.firestore()
@@ -8730,7 +8630,7 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       email, phoneNumber: text(input.phoneNumber, 30), role: requestedRole,
       customRoleId: customRoleIds[0] || null, customRoleIds,
       customRoleName: text(input.customRoleName, 150) || null, effectivePermissions,
-      employmentType: text(input.employmentType, 80), userType: 'Staff',
+      engagementType, employmentType, weeklyHoursTarget, userType: 'Staff',
       branchId: branchIds[0], branchIds, organizationOwnerId: ownerId, clinicLocation: text(branches[0].clinicLocation, 250),
       practitionerType: practitionerTypes.includes(input.practitionerType) ? input.practitionerType : null,
       status: 'Pending Activation', practitionerLicenseUrl: text(input.practitionerLicenseUrl, 2000) || null,

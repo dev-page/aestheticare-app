@@ -44,6 +44,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const licenseOcrBusy = ref(false)
     let licenseOcrSequence = 0
     const showLicenseField = computed(() => Boolean(String(currentStaff.value.practitionerType || '').trim() || String(currentStaff.value.credentialNumber || '').trim()))
+    const isStudentIntern = computed(() => currentStaff.value.engagementType === 'student_intern')
     let staffUnsubscribers = []
 
     const currentStaff = ref({
@@ -58,6 +59,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       customRoleName: '',
       branchId: '',
       branchIds: [],
+      engagementType: 'employee',
+      employmentType: 'Full-time',
+      weeklyHoursTarget: 40,
       userType: 'Staff',
       status: 'Active'
     })
@@ -196,6 +200,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       licenseOcrSequence += 1
       currentStaff.value = {
         ...staff,
+        engagementType: String(staff.engagementType || (String(staff.employmentType || '').toLowerCase().includes('intern') ? '' : 'employee')),
+        employmentType: String(staff.employmentType || ''),
+        weeklyHoursTarget: Number(staff.weeklyHoursTarget || (String(staff.employmentType || '').toLowerCase().includes('full') ? 40 : 0)),
         practitionerType: staff.practitionerType || '',
         credentialNumber: '',
         customRoleId: String(staff.customRoleId || '').trim(),
@@ -216,6 +223,27 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         originalSpecialty.value = { ...details }
       } catch (error) { specialtyError.value = 'Unable to load specialty and license details. Close and reopen the employee after restarting the updated backend.' }
       finally { loadingSpecialty.value = false }
+    }
+
+    const changeStaffArrangement = (value) => {
+      currentStaff.value.engagementType = value
+      if (value === 'student_intern') {
+        currentStaff.value.employmentType = 'Intern'
+        currentStaff.value.weeklyHoursTarget = ''
+      } else if (value === 'employee') {
+        if (!['Full-time', 'Part-time'].includes(currentStaff.value.employmentType)) currentStaff.value.employmentType = 'Full-time'
+        if (currentStaff.value.employmentType === 'Full-time') currentStaff.value.weeklyHoursTarget = 40
+      }
+      clearEditError('engagementType')
+      clearEditError('employmentType')
+      clearEditError('weeklyHoursTarget')
+    }
+
+    const changeEmploymentType = (value) => {
+      currentStaff.value.employmentType = value
+      currentStaff.value.weeklyHoursTarget = value === 'Full-time' ? 40 : ''
+      clearEditError('employmentType')
+      clearEditError('weeklyHoursTarget')
     }
 
     const clearEditError = (field) => {
@@ -295,6 +323,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       else if (!normalizePhoneNumber(staff.phoneNumber)) errors.phoneNumber = 'Enter a valid Philippine mobile number.'
       if (!Array.isArray(staff.branchIds) || !staff.branchIds.length) errors.branchId = 'Select at least one branch.'
       if (!String(staff.clinicLocation || '').trim()) errors.clinicLocation = 'Clinic location is required.'
+      if (!['employee', 'student_intern'].includes(staff.engagementType)) errors.engagementType = 'Choose employee or student intern / OJT.'
+      else if (staff.engagementType === 'student_intern' && staff.employmentType !== 'Intern') errors.employmentType = 'Student intern / OJT arrangement is required.'
+      else if (staff.engagementType === 'employee' && !['Full-time', 'Part-time'].includes(staff.employmentType)) errors.employmentType = 'Choose full-time or part-time.'
+      const weeklyHours = Number(staff.weeklyHoursTarget)
+      if (!Number.isFinite(weeklyHours) || weeklyHours < 1 || weeklyHours > 48) errors.weeklyHoursTarget = 'Enter agreed weekly hours from 1 to 48.'
       if (staff.practitionerType && !employeeSpecialtyTypes.includes(staff.practitionerType)) errors.practitionerType = 'Choose one of the suggested professional specialties.'
 
       editErrors.value = errors
@@ -416,6 +449,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             effectivePermissions: [...new Set(customRoles.value
               .filter((entry) => selectedRoleIds.includes(entry.id))
               .flatMap((entry) => entry.permissions || []))],
+            engagementType: currentStaff.value.engagementType,
+            employmentType: currentStaff.value.employmentType,
+            weeklyHoursTarget: Number(currentStaff.value.weeklyHoursTarget),
             status: nextStatus,
             archived: shouldArchive,
             archivedAt: shouldArchive ? serverTimestamp() : null
@@ -436,7 +472,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!searchQuery.value.trim()) return records
       const query = searchQuery.value.toLowerCase()
       return records.filter(staff =>
-        [staff.firstName, staff.lastName, staff.fullName, staff.email, staff.role].some((value) =>
+        [staff.firstName, staff.lastName, staff.fullName, staff.email, staff.role, staff.employmentType, staff.engagementType].some((value) =>
           String(value || '').toLowerCase().includes(query)
         ) ||
         (staff.clinicBranch && staff.clinicBranch.toLowerCase().includes(query)) ||
@@ -452,6 +488,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       currentStaff,
       editErrors,
       clearEditError,
+      isStudentIntern,
+      changeStaffArrangement,
+      changeEmploymentType,
       openEditModal,
       updateCurrentStaffLocation,
       deactivateStaff,
@@ -524,6 +563,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <td class="py-2 px-2 sm:py-3 sm:px-4">
                 <div>{{ staff.role || '-' }}<span v-if="staff.practitionerType"> / {{ staff.practitionerType }}</span></div>
                 <div v-if="staff.customRoleName" class="text-xs text-cyan-300">{{ staff.customRoleName }}</div>
+                <div class="mt-1 text-xs text-slate-400">{{ staff.engagementType === 'student_intern' ? 'Student intern / OJT' : !staff.engagementType && staff.employmentType === 'Intern' ? 'Needs arrangement review' : `Employee · ${staff.employmentType || 'Not set'}` }}<span v-if="staff.weeklyHoursTarget"> · {{ staff.weeklyHoursTarget }} h/week</span></div>
               </td>
               <td class="py-2 px-2 sm:py-3 sm:px-4">{{ staff.assignedBranchNames?.join(', ') || staff.clinicBranch }}</td>
               <td class="py-2 px-2 sm:py-3 sm:px-4">{{ staff.clinicLocation || '-' }}</td>
@@ -564,6 +604,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <div class="min-w-0">
                 <h3 class="truncate text-base font-semibold text-white">{{ staff.fullName || `${staff.firstName} ${staff.lastName}` }}</h3>
                 <p class="truncate text-sm text-slate-400">{{ staff.email || '-' }}</p>
+                <p class="mt-1 text-xs text-slate-400">{{ staff.engagementType === 'student_intern' ? 'Student intern / OJT' : !staff.engagementType && staff.employmentType === 'Intern' ? 'Needs arrangement review' : `Employee · ${staff.employmentType || 'Not set'}` }}<span v-if="staff.weeklyHoursTarget"> · {{ staff.weeklyHoursTarget }} h/week</span></p>
               </div>
               <span
                 :class="[
@@ -594,7 +635,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       <!-- Edit Modal -->
       <Modal :isOpen="showEditModal" panelClass="employee-edit-modal" :panel-style="{ maxWidth: '720px', background: '#fffdf9', color: '#3d281d' }" :close-on-backdrop="!savingEmployee" @close="!savingEmployee && (showEditModal = false)">
         <template #header>
-          <div><p class="employee-edit-eyebrow">EMPLOYEE PROFILE</p><h2 class="employee-edit-title">Edit Employee</h2><p class="employee-edit-caption">Update personal details, assignments, and professional information.</p></div>
+          <div><p class="employee-edit-eyebrow">STAFF PROFILE</p><h2 class="employee-edit-title">Edit Staff Member</h2><p class="employee-edit-caption">Update personal details, work arrangement, weekly hours, assignments, and professional information.</p></div>
         </template>
 
         <template #body>
@@ -628,6 +669,24 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
               <p class="mt-1 text-xs text-slate-400">Use a valid Philippine mobile number.</p>
               <p v-if="editErrors.phoneNumber" class="mt-1 text-xs text-red-300">{{ editErrors.phoneNumber }}</p>
+            </div>
+
+            <div>
+              <ContractAppearanceSelect id="employee-edit-arrangement" :model-value="currentStaff.engagementType" @update:model-value="changeStaffArrangement" label="Staff arrangement" :options="[{ value: '', label: 'Choose arrangement' }, { value: 'employee', label: 'Employee' }, { value: 'student_intern', label: 'Student intern / OJT' }]" />
+              <p class="mt-1 text-xs text-slate-400">Legacy intern records need an explicit choice. Use Employee for an intern paid through payroll; use Student intern / OJT for a training placement. Both use the same schedule and attendance flow.</p>
+              <p v-if="editErrors.engagementType" class="mt-1 text-xs text-red-300">{{ editErrors.engagementType }}</p>
+            </div>
+
+            <div v-if="!isStudentIntern">
+              <ContractAppearanceSelect id="employee-edit-employment-type" :model-value="currentStaff.employmentType" @update:model-value="changeEmploymentType" label="Employment type" :options="[{ value: '', label: 'Choose employment type' }, { value: 'Full-time', label: 'Full-time' }, { value: 'Part-time', label: 'Part-time' }, ...(currentStaff.employmentType === 'Intern' ? [{ value: 'Intern', label: 'Legacy intern — classify above' }] : [])]" />
+              <p v-if="editErrors.employmentType" class="mt-1 text-xs text-red-300">{{ editErrors.employmentType }}</p>
+            </div>
+
+            <div>
+              <label for="employee-edit-weekly-hours" class="block text-slate-400 mb-1">Agreed Weekly Hours</label>
+              <input id="employee-edit-weekly-hours" v-model.number="currentStaff.weeklyHoursTarget" type="number" min="1" max="48" step="0.5" class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" @input="clearEditError('weeklyHoursTarget')" />
+              <p class="mt-1 text-xs text-slate-400">Full-time defaults to 40 hours. Enter the agreed amount for part-time employees or student interns (maximum 48).</p>
+              <p v-if="editErrors.weeklyHoursTarget" class="mt-1 text-xs text-red-300">{{ editErrors.weeklyHoursTarget }}</p>
             </div>
 
             <div>

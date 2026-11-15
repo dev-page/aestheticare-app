@@ -86,13 +86,14 @@
                 </label>
 
                 <label class="block">
-                  <span class="mb-2 block text-sm font-medium text-slate-300">Employment Type</span>
+                  <span class="mb-2 block text-sm font-medium text-slate-300">Staff Arrangement</span>
                   <input
-                    :value="profile.employmentType || '-'"
+                    :value="!profile.engagementType && profile.employmentType === 'Intern' ? 'Needs arrangement review' : profile.engagementType === 'student_intern' ? 'Student intern / OJT' : `Employee · ${profile.employmentType || 'Not specified'}`"
                     type="text"
                     readonly
                     class="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-400 outline-none"
                   />
+                  <span class="mt-2 block text-xs text-slate-500">Agreed weekly hours: {{ profile.weeklyHoursTarget || 'Not set' }}</span>
                 </label>
               </div>
 
@@ -180,6 +181,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       role: '',
       customRoleName: '',
       employmentType: '',
+      engagementType: 'employee',
+      weeklyHoursTarget: 0,
       branchId: '',
       branchLabel: '',
       status: '',
@@ -275,6 +278,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         role: String(userData.role || '').trim(),
         customRoleName: String(userData.customRoleName || '').trim(),
         employmentType: String(userData.employmentType || '').trim(),
+        engagementType: String(userData.engagementType || (String(userData.employmentType || '').toLowerCase().includes('intern') ? '' : 'employee')).trim(),
+        weeklyHoursTarget: Number(userData.weeklyHoursTarget || 0),
         branchId,
         branchLabel: profile.value.branchLabel || '-',
         status: String(userData.status || '').trim(),

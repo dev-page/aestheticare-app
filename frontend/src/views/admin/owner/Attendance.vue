@@ -17,7 +17,7 @@ const { hasPermission } = usePermissions()
 const tab = ref('records'), branches = ref([]), branchId = ref(''), records = ref([])
 const date = ref(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()))
 const search = ref(''), status = ref(''), source = ref(''), busy = ref(false), error = ref('')
-const config = ref({ fields: [], templates: [], holidays: [] }), chooser = ref(false), hidden = ref([])
+const config = ref({ fields: [], holidays: [] }), chooser = ref(false), hidden = ref([])
 const selected = ref(null), audit = ref([]), reason = ref(''), edit = ref({}), batches = ref([]), batchDetails = ref(null)
 const field = ref({ label: '', type: 'text', options: '' }), holidays = ref('')
 const qr = ref(''), expires = ref(0), now = ref(Date.now()), station = ref(null), qrBusy = ref(false)
@@ -28,7 +28,7 @@ const columns = computed(() => [
   { key: 'timeOut', label: 'Time Out' }, { key: 'attendanceStatus', label: 'Status' },
   { key: 'sourceLabel', label: 'Source' },
   { key: 'employeeId', label: 'Employee ID', optional: true },
-  { key: 'totalWorkedMinutes', label: 'Work Minutes', optional: true },
+  { key: 'totalWorkedMinutes', label: 'Elapsed Minutes', optional: true },
   { key: 'verification', label: 'Verification', optional: true },
   ...(config.value.fields || []).map(f => ({ key: 'field:' + f.id, label: f.label + (f.archived ? ' (archived)' : ''), optional: true })),
 ])
@@ -181,7 +181,7 @@ onBeforeUnmount(() => clearInterval(timer))
             <div class="heading"><button type="button" :disabled="qrBusy" aria-label="Refresh attendance QR" title="Refresh attendance QR" @click="attempt(()=>refreshQr(true))"><svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': qrBusy }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg><span class="sr-only">Refresh QR</span></button><button @click="fullscreen">Full screen</button></div>
           </div>
         </section>
-        <AttendanceImportWizard v-else-if="tab==='import' && hasPermission('attendance:import')" :branch-id="branchId" :fields="config.fields || []" :templates="config.templates || []" @configuration="attempt(loadConfiguration)" @done="tab='history'" />
+        <AttendanceImportWizard v-else-if="tab==='import' && hasPermission('attendance:import')" :branch-id="branchId" @done="tab='history'" />
         <section v-else-if="tab==='history' && hasPermission('attendance:import')">
           <h2>Import History</h2><div class="table-wrap"><table><thead><tr><th>File</th><th>Date</th><th>Uploaded by</th><th>Imported</th><th>Rejected</th><th>Review</th><th>Status</th><th>Action</th></tr></thead><tbody><tr v-for="b in batches" :key="b.id"><td>{{ b.sourceFileName || b.id }}</td><td>{{ timestamp(b.createdAt) }}</td><td>{{ b.importedBy }}</td><td>{{ b.validRows }}</td><td>{{ b.rejectedRows }}</td><td>{{ b.reviewRows || 0 }}</td><td>{{ b.status || 'Completed' }}</td><td><button @click="batchDetails=b">View</button></td></tr><tr v-if="!batches.length"><td colspan="8">No imports yet.</td></tr></tbody></table></div>
         </section>
@@ -193,7 +193,7 @@ onBeforeUnmount(() => clearInterval(timer))
           <p v-if="error" class="error" role="alert">{{ error }}</p>
           <template v-if="selected">
             <p>{{ selected.employeeName }} · {{ selected.date }} · {{ selectedBranch?.clinicBranch }}</p>
-            <dl><dt>Source</dt><dd>{{ valueFor(selected,'sourceLabel') }}</dd><dt>Verification</dt><dd>{{ selected.locationVerified ? 'Location verified' : 'Not verified' }}</dd><dt>Distance / accuracy</dt><dd>{{ selected.locationDistanceMeters ?? '—' }} m / {{ selected.locationAccuracyMeters ?? '—' }} m</dd><dt>Work minutes</dt><dd>{{ selected.totalWorkedMinutes ?? '—' }}</dd><dt>Import batch</dt><dd>{{ selected.importBatchId || '—' }}</dd></dl>
+            <dl><dt>Source</dt><dd>{{ valueFor(selected,'sourceLabel') }}</dd><dt>Verification</dt><dd>{{ selected.locationVerified ? 'Location verified' : 'Not verified' }}</dd><dt>Distance / accuracy</dt><dd>{{ selected.locationDistanceMeters ?? '—' }} m / {{ selected.locationAccuracyMeters ?? '—' }} m</dd><dt>Elapsed time before break</dt><dd>{{ selected.totalWorkedMinutes ?? '—' }} min</dd><dt>Unpaid meal break</dt><dd>{{ selected.unpaidMealBreakMinutes == null ? 'Not recorded' : `${selected.unpaidMealBreakMinutes} min` }}</dd><dt>Import batch</dt><dd>{{ selected.importBatchId || '—' }}</dd></dl>
             <a v-if="selected.proofUrl" :href="selected.proofUrl" target="_blank" rel="noopener">Open attendance proof</a>
             <form v-if="hasPermission('attendance:update')" @submit.prevent="saveCorrection">
               <div class="filters"><label>Time In<input v-model="edit.timeIn" required placeholder="08:30" /></label><label>Time Out<input v-model="edit.timeOut" placeholder="17:30" /></label></div>

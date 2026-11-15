@@ -65,14 +65,18 @@
               </div>
 
               <div class="mt-4">
-                <label for="dss-weekly-target" class="assignment-field-label">Agreed Weekly Hours Cap (Optional)</label>
+                <label for="dss-weekly-target" class="assignment-field-label">Weekly Schedule Limit</label>
                 <input id="dss-weekly-target" v-model.number="weeklyTargetHours" type="number" min="1" max="48" step="0.5" :disabled="saving" class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2" />
-                <p class="mt-2 text-xs text-slate-400">The schedule cannot exceed this cap. The application also keeps every schedule at or below 48 hours per week. Full-time defaults to 48 hours.</p>
+                <p class="mt-2 text-xs text-slate-400">Defaults to the employee’s agreed hours. You can set a lower schedule limit, but not a higher one. Full-time defaults to 40 hours; the application maximum is 48. Unpaid breaks are excluded.</p>
               </div>
               <div class="mt-4 grid gap-3 md:grid-cols-2">
                 <div class="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2">
                   <p class="text-[11px] uppercase tracking-[0.2em] text-slate-400">Employment Type</p>
                   <p class="mt-1 text-sm font-semibold text-white">{{ scheduleTypeLabel }}</p>
+                </div>
+                <div class="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2">
+                  <p class="text-[11px] uppercase tracking-[0.2em] text-slate-400">Agreed Weekly Hours</p>
+                  <p class="mt-1 text-sm font-semibold text-white">{{ selectedEmployee.weeklyHoursTarget || 'Set during schedule setup' }}</p>
                 </div>
                 <div class="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2">
                   <p class="text-[11px] uppercase tracking-[0.2em] text-slate-400">Matched Templates</p>
@@ -97,7 +101,7 @@
                 <li>Bookings use practitioner schedules stored under each employee.</li>
                 <li>Schedules saved here are recurring by default for future weeks.</li>
                 <li>Each saved pattern starts on its selected Monday; earlier patterns remain available for past weeks.</li>
-                <li>Suggestions check employment type, weekly hours cap, available staff capacity, and retained off days. Intern schedules are assigned manually.</li>
+                <li>Suggestions check agreed weekly hours, available staff capacity, and retained off days. Intern schedules are assigned manually.</li>
                 <li>Choose Off for days when the employee should not accept work or appointments.</li>
                 <li>Staff capacity counts employees assigned to the same template on the same weekday.</li>
                 <li>Archived templates stay on existing schedules but are unavailable for new assignments.</li>
@@ -244,7 +248,7 @@ const selectedEmployeeId = ref('')
 const selectedWeekStart = ref('')
 const currentWeekStart = ref(getMondayDate())
 const saving = ref(false)
-const weeklyTargetHours = ref(48)
+const weeklyTargetHours = ref('')
 const capacitySchedules = ref([])
 const capacityReady = ref(false)
 const protectedDays = ref([])
@@ -319,9 +323,11 @@ const hoursWarning = computed(() => {
   if (totalAssignedHours.value > 48) return 'Schedules cannot exceed the 48-hour weekly application limit.'
   const hasCap = weeklyTargetHours.value !== '' && weeklyTargetHours.value !== null && weeklyTargetHours.value !== undefined
   const cap = Number(weeklyTargetHours.value)
-  if (hasCap && (!Number.isFinite(cap) || cap < 1 || cap > 48)) return 'Enter an agreed weekly hours cap from 1 to 48, or leave it blank.'
+  if (!hasCap || !Number.isFinite(cap) || cap < 1 || cap > 48) return 'Enter a weekly schedule limit from 1 to 48 hours.'
+  const agreedHours = Number(selectedEmployee.value.weeklyHoursTarget || 0)
+  if (agreedHours > 0 && cap > agreedHours) return `The schedule limit cannot exceed the agreed ${agreedHours}-hour weekly target.`
   if (Number.isFinite(cap) && cap > 0 && totalAssignedHours.value > cap) {
-    return `This schedule exceeds the agreed ${cap}-hour weekly cap.`
+    return `This schedule exceeds the ${cap}-hour weekly limit.`
   }
   return ''
 })
@@ -329,8 +335,8 @@ const hoursWarning = computed(() => {
 const weeklyHoursSummary = computed(() => {
   if (!selectedEmployee.value) return ''
   const cap = Number(weeklyTargetHours.value)
-  if (Number.isFinite(cap) && cap > 0) return `Assigned hours: ${totalAssignedHours.value} / ${cap} agreed weekly hours.`
-  return `Assigned hours: ${totalAssignedHours.value} / 48 application maximum.`
+  if (Number.isFinite(cap) && cap > 0) return `Assigned paid hours: ${totalAssignedHours.value} / ${cap} schedule hours.`
+  return `Enter the weekly schedule limit to check this pattern.`
 })
 
 const scheduleTypeLabel = computed(() =>
@@ -372,7 +378,7 @@ const recommendedShiftSummary = computed(() => {
   if (!selectedEmployeeScheduleType.value) return 'Set the employee employment type in Employee Management first; no type is guessed from assigned hours.'
   if (selectedEmployeeScheduleType.value === 'intern') return 'Assign intern schedules manually according to their agreed hours.'
   if (!(Number(weeklyTargetHours.value) > 0 && Number(weeklyTargetHours.value) <= 48)) return 'Enter agreed weekly hours between 1 and 48 before requesting suggestions.'
-  return 'Uses saved employment type, remaining staff capacity, and your ' + weeklyTargetHours.value + '-hour weekly cap. Existing assignments and off days are retained. Planned total: ' + recommendationPlan.value.plannedHours + ' hours. Shift duration includes the full start-to-end window.'
+  return 'Uses agreed weekly hours and remaining staff capacity. Existing assignments and off days are retained. Planned total: ' + recommendationPlan.value.plannedHours + ' paid hours after unpaid breaks.'
 })
 const applySuggestedShiftToDay = (day, shiftId) => {
   if (!capacityReady.value || !day || !shiftId) return
@@ -523,6 +529,8 @@ const hydrateEmployees = async () => {
       role: String(entry.customRoleName || entry.role || 'Staff').trim(),
       customRoleId: String(entry.customRoleId || '').trim(),
       employmentType: String(entry.employmentType || '').trim(),
+      engagementType: String(entry.engagementType || 'employee').trim(),
+      weeklyHoursTarget: Number(entry.weeklyHoursTarget || 0),
       fullName: formatFullName(entry)
     }))
     .sort((a, b) => a.fullName.localeCompare(b.fullName))
@@ -552,6 +560,7 @@ const hydrateBranchShifts = async () => {
         shiftType,
         start,
         end,
+      unpaidMealBreakMinutes: data.unpaidMealBreakMinutes ?? data.mealBreakMinutes,
         capacity: Math.max(1, Number(data.capacity) || 1),
         isArchived: data.isArchived === true,
         durationHours,
@@ -583,8 +592,12 @@ const loadAssignments = trackPageLoad(async () => {
     const selected = snapshots[staff.findIndex(employee => employee.id === employeeId)]
     const selectedData = selected?.data() || {}
     const effectiveSchedule = resolveRecurringScheduleVersion(selectedData, targetWeek)
-    weeklyTargetHours.value = effectiveSchedule?.weeklyHoursCap
-      ?? (normalizeEmploymentType(selectedEmployee.value?.employmentType) === 'full-time' ? 48 : '')
+    const agreedHours = Number(selectedEmployee.value?.weeklyHoursTarget || 0)
+      || (normalizeEmploymentType(selectedEmployee.value?.employmentType) === 'full-time' ? 40 : 0)
+    const savedLimit = Number(effectiveSchedule?.weeklyHoursCap || 0)
+    weeklyTargetHours.value = savedLimit > 0
+      ? (agreedHours > 0 ? Math.min(savedLimit, agreedHours) : savedLimit)
+      : agreedHours || ''
     const next = normalizeAssignments(effectiveSchedule?.assignments || {}, daysOfWeek)
     daysOfWeek.forEach(day => {
       const shift = branchShifts.value.find(shift => shift.id === next[day] || shift.label === next[day])
@@ -787,7 +800,8 @@ watch(selectedRole, () => {
 })
 
 watch(selectedEmployeeId, () => {
-  weeklyTargetHours.value = normalizeEmploymentType(selectedEmployee.value?.employmentType) === 'full-time' ? 48 : ''
+  weeklyTargetHours.value = selectedEmployee.value?.weeklyHoursTarget
+    || (normalizeEmploymentType(selectedEmployee.value?.employmentType) === 'full-time' ? 40 : '')
 })
 
 watch([selectedEmployeeId, selectedWeekStart], async () => {

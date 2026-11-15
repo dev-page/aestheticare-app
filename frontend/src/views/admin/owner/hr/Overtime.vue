@@ -13,7 +13,10 @@
           <p v-if="pageError" class="mt-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">{{ pageError }}</p>
         </div>
 
-        <section v-if="canSubmit" class="mb-6 rounded-3xl border border-slate-700 bg-slate-800/85 p-5 shadow-lg sm:p-6">
+        <p v-if="canSubmit && isStudentIntern" class="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          Student interns / OJT use the same attendance process, but overtime is not handled through employee payroll. Any agreed stipend is recorded as a Finance operating expense.
+        </p>
+        <section v-if="canSubmit && !isStudentIntern" class="mb-6 rounded-3xl border border-slate-700 bg-slate-800/85 p-5 shadow-lg sm:p-6">
           <h2 class="text-lg font-semibold">Submit Overtime</h2>
           <p class="mt-1 text-sm text-slate-400">Only completed attendance records with time beyond the scheduled shift can be submitted.</p>
 
@@ -125,6 +128,7 @@ const form = ref({ date: todayKey, reason: '' })
 
 const reviewerMode = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('overtime:review')))
 const canSubmit = computed(() => hasPermission('overtime:create'))
+const isStudentIntern = computed(() => currentEmployeeProfile.value.engagementType === 'student_intern')
 const overtimeCalculation = computed(() => calculatePhilippineOvertime(attendanceEvidence.value, currentEmployeeProfile.value))
 const calculatedOvertimeMinutes = computed(() => overtimeCalculation.value.overtimeMinutes)
 const calculatedHours = computed(() => formatHours(calculatedOvertimeMinutes.value))

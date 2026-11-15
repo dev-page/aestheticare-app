@@ -17,12 +17,13 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth } from '@/config/firebaseConfig'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
-const activeTab=ref('supplier'), loading=ref(true), saving=ref(false), error=ref(''), records=ref([]), branches=ref([]), branchId=ref('all'), status=ref(''), search=ref(''), permissions=ref([]), showForm=ref(false), paymentTarget=ref(null)
+const route=useRoute();const activeTab=ref(route.query.tab === 'other' ? 'other' : 'supplier'), loading=ref(true), saving=ref(false), error=ref(''), records=ref([]), branches=ref([]), branchId=ref('all'), status=ref(''), search=ref(''), permissions=ref([]), showForm=ref(false), paymentTarget=ref(null)
 const blank=()=>({branchId:'',category:'',description:'',payee:'',amount:'',expenseDate:new Date().toISOString().slice(0,10),dueDate:'',notes:''}); const draft=ref(blank()), payment=ref({amount:'',paymentMethod:'',paymentReference:''})
 const canCreate=computed(()=>permissions.value.includes('finance:payables:approve')||permissions.value.includes('administrator:full_access'));const canSettle=computed(()=>permissions.value.includes('finance:payables:settle')||permissions.value.includes('administrator:full_access'));const tabs=[{key:'supplier',label:'Supplier Invoices'},{key:'other',label:'Other Expenses'}]
 const money=value=>new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(Number(value||0)/100);const branchName=id=>branches.value.find(branch=>branch.id===id)?.name||id
@@ -33,7 +34,7 @@ const load=trackPageLoad(async()=>{loading.value=true;try{const workspace=await 
 const create=async()=>{saving.value=true;try{await api('/finance/expenses',draft.value);showForm.value=false;draft.value=blank();await load()}catch(e){error.value=e.message}finally{saving.value=false}}
 const openPayment=record=>{paymentTarget.value=record;payment.value={amount:(Number(record.outstandingAmount||0)/100).toFixed(2),paymentMethod:'',paymentReference:''}}
 const recordPayment=async()=>{saving.value=true;try{await api(`/finance/expenses/${paymentTarget.value.id}/payments`,payment.value);paymentTarget.value=null;await load()}catch(e){error.value=e.message}finally{saving.value=false}}
-onMounted(load);watch(branches,()=>{if(!draft.value.branchId&&branches.value.length===1)draft.value.branchId=branches.value[0].id})
+onMounted(load);watch(()=>route.query.tab,value=>{activeTab.value=value==='other'?'other':'supplier'});watch(branches,()=>{if(!draft.value.branchId&&branches.value.length===1)draft.value.branchId=branches.value[0].id})
 </script>
 
 <style scoped>input,select,textarea{display:block;width:100%;margin-top:.3rem;border:1px solid #475569;border-radius:.5rem;background:#1e293b;padding:.55rem .7rem;color:#f8fafc}label{font-size:.82rem;color:#cbd5e1}button{border:1px solid #64748b;border-radius:.5rem;padding:.5rem .75rem;font-size:.84rem}th,td{padding:.8rem;vertical-align:top}th{font-size:.72rem}</style>
