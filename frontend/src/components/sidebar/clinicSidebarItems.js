@@ -24,14 +24,15 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     icon: 'mdi:medical-bag',
     moduleKey: 'crm',
     children: [
-      { type: 'section', label: 'CLIENTS' },
+      { type: 'section', label: 'CLIENT RECORDS' },
       { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/crm/clients', permission: 'clients:view' },
-      { label: 'Walk-In', icon: 'mdi:walk', to: '/crm/clients/new', permission: 'clients:create' },
+      { type: 'section', label: 'FRONT DESK' },
+      { label: 'Walk-In Desk', icon: 'mdi:walk', to: '/crm/walk-in', permissions: ['clients:view', 'appointments:view', 'appointments:create', 'appointments:update'] },
       { type: 'section', label: 'APPOINTMENTS' },
       { label: 'Appointment Management', icon: 'mdi:calendar-month-outline', to: '/crm/appointments', feature: 'appointments', permissionsAny: ['appointments:view', 'appointments:update', 'appointments:review', 'consultations:view'] },
       { label: 'Prescriptions', icon: 'mdi:prescription', to: '/clinical/prescriptions', feature: 'appointments', permissionsAny: ['appointments:view', 'appointments:update', 'consultations:view'] },
       { label: 'Booking Availability', icon: 'mdi:calendar-clock-outline', to: '/appointments/booking-availability', feature: 'booking_availability', plans: ['basic'], permission: 'appointments:review' },
-      { type: 'section', label: 'OTHERS' },
+      { type: 'section', label: 'PAYMENTS & MESSAGES' },
       { label: 'Transactions', icon: 'mdi:receipt-text-outline', to: '/crm/transactions', feature: 'appointments', permission: 'payments:view' },
       { label: 'Inbox', icon: 'mdi:email-outline', to: '/crm/inbox', permission: 'inbox:view' }
     ]

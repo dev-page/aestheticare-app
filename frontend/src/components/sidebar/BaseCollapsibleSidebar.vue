@@ -466,7 +466,7 @@ export default {
         '/catalog/products-services',
         '/catalog/archived',
         '/crm/clients',
-        '/crm/clients/new',
+        '/crm/walk-in',
         '/crm/appointments',
         '/crm/transactions',
         '/crm/inbox',

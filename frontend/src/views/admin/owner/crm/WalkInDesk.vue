@@ -3,12 +3,27 @@
     <OwnerSidebar />
     <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 4, sections: 2 }" class="flex-1 min-w-0 p-4 md:p-8">
       <div class="walk-in-content">
-        <header class="page-heading"><div><p class="eyebrow">CRM &amp; Clinic</p><h1>Walk-In Desk</h1><p class="muted">Book on-site services or consultations for one client. Each appointment has its own date, recipient consent, payment, and service code.</p></div><RouterLink to="/crm/appointments" class="desk-button secondary">View appointments</RouterLink></header>
+        <header class="page-heading"><div><p class="eyebrow">CRM &amp; Clinic</p><h1>Walk-In Desk</h1><p class="muted">Find or register the client, book their on-site appointment, then record consent and payment here. Each appointment has its own date and service code.</p></div><div class="flex flex-wrap gap-2"><RouterLink v-if="!isPosRoute && canRecordPayments" to="/crm/pos" class="desk-button secondary">Unpaid walk-in payments</RouterLink><RouterLink v-if="isPosRoute && canCreateAppointments" to="/crm/walk-in" class="desk-button secondary">New walk-in booking</RouterLink><RouterLink to="/crm/appointments" class="desk-button secondary">View appointments</RouterLink></div></header>
         <p v-if="error" class="desk-alert error" role="alert">{{ error }}</p>
         <p v-if="checkoutReturnNotice" class="desk-alert" role="status">{{ checkoutReturnNotice }}</p>
+        <nav v-if="!isPosRoute" class="walk-in-progress" aria-label="Walk-in booking progress">
+          <button
+            v-for="step in bookingSteps"
+            :key="step.number"
+            type="button"
+            class="walk-in-progress-step"
+            :class="{ 'is-current': progressStep === step.number, 'is-complete': progressStep > step.number }"
+            :disabled="createdAppointments.length > 0 || step.number > bookingStep"
+            :aria-current="progressStep === step.number ? 'step' : undefined"
+            @click="goToBookingStep(step.number)"
+          >
+            <span class="walk-in-step-number">{{ step.number < progressStep ? '✓' : step.number }}</span>
+            <span class="walk-in-step-copy"><strong>{{ step.label }}</strong><small>{{ step.description }}</small></span>
+          </button>
+        </nav>
         <template v-if="isPosRoute && !createdAppointments.length">
           <section class="desk-card">
-            <div class="section-heading"><div><p class="eyebrow">POS</p><h2>Walk-in payments</h2><p class="muted small">Unpaid walk-in appointments stay here if you leave the booking screen. Confirm the recipient's signed treatment agreement before taking payment. Provisional same-day treatments appear only after practitioner clearance.</p></div><div class="flex gap-2"><button type="button" class="desk-button secondary" :disabled="busy" @click="refreshPaymentQueue">Refresh</button><RouterLink v-if="canCreateAppointments" to="/crm/appointments/new" class="desk-button primary">Book a walk-in</RouterLink></div></div>
+            <div class="section-heading"><div><p class="eyebrow">POS</p><h2>Walk-in payments</h2><p class="muted small">Unpaid walk-in appointments stay here if you leave the booking screen. Confirm the recipient's signed treatment agreement before taking payment. Provisional same-day treatments appear only after practitioner clearance.</p></div><div class="flex gap-2"><button type="button" class="desk-button secondary" :disabled="busy" @click="refreshPaymentQueue">Refresh</button><RouterLink v-if="canCreateAppointments" to="/crm/walk-in" class="desk-button primary">Book a walk-in</RouterLink></div></div>
             <article v-for="appointment in posAppointments" :key="appointment.id" class="payment-card">
               <dl v-if="appointment.pricingSnapshot" class="price-breakdown" aria-label="Appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(appointment.pricingSnapshot.subtotal) }}</dd></div><div><dt>{{ appointment.pricingSnapshot.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ appointment.pricingSnapshot.vatApplicable ? currency(appointment.pricingSnapshot.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(appointment.pricingSnapshot.total) }}</dd></div></dl>
               <p v-else class="muted small">Tax breakdown unavailable for this older booking. Total due: {{ currency(appointment.totalAmount ?? appointment.amount) }}</p>
@@ -31,10 +46,11 @@
           </section>
         </template>
         <template v-else-if="!createdAppointments.length">
-          <section class="desk-card">
-            <div class="section-heading"><div><p class="eyebrow">Step 1</p><h2>Client information</h2></div><button v-if="canRegisterClients" type="button" class="desk-button secondary" :disabled="busy" @click="openRegistration()">Register a client</button></div>
+          <section v-if="bookingStep === 1" class="desk-card walk-in-step-panel">
+            <div class="section-heading"><div><p class="eyebrow">Step 1 of 3</p><h2>Who is receiving care?</h2><p class="muted small">Find an existing clinic client or register them here. You can book on their behalf.</p></div><button v-if="canRegisterClients" type="button" class="desk-button secondary" :disabled="busy" @click="openRegistration()">Register a client</button></div>
             <ContractAppearanceSelect id="walk-in-client" v-model="selectedClientId" label="Client" :disabled="busy" :options="clientOptions" />
-            <p class="muted small">The client's service code is sent to their email after payment. Confirm their contact details before booking.</p>
+            <p class="muted small">The appointment and service code are linked to the selected recipient. A valid email is needed to send the booking details and service code.</p>
+            <p v-if="selectedClientId && !clientReady" class="field-error" role="alert">This client needs a valid email address before you can continue. Update their record or register them with the correct email.</p>
             <p v-if="!canRegisterClients" class="muted small">To add a new client record, ask a staff member with client registration access.</p>
             <label class="desk-checkbox summary-acknowledgement"><input v-model="bookingForSomeoneElse" type="checkbox" :disabled="busy" /> Booking for someone else</label>
             <div v-if="bookingForSomeoneElse" class="field-grid">
@@ -43,33 +59,51 @@
               <div><label for="booker-email" class="field-label">Booking arranger's email (optional)</label><input id="booker-email" v-model.trim="booker.email" class="desk-input" type="email" maxlength="254" :disabled="busy" /></div>
             </div>
             <p v-if="bookingForSomeoneElse" class="muted small">Keep the selected client as the person receiving treatment. The booking arranger signs only the booking and payment terms.</p>
+            <div class="walk-in-step-actions">
+              <span class="muted small">The treatment recipient signs their own treatment agreement later.</span>
+              <button type="button" class="desk-button primary" :disabled="busy || !clientReady" @click="continueToSchedule">Continue to schedule</button>
+            </div>
           </section>
-          <section class="desk-card">
-            <div class="section-heading"><div><p class="eyebrow">Step 2</p><h2>Appointment schedules</h2><p class="muted small">Choose one lead practitioner per appointment. Additional appointments require different dates.</p><p class="muted small">Assign required support staff through Treatment team in Appointment Management before treatment starts.</p></div></div>
-            <p v-if="!selectedClientId" class="empty-note">Choose a client to start scheduling.</p>
-            <article v-if="selectedClientId" class="client-card">
+          <section v-else-if="bookingStep === 2" class="desk-card walk-in-step-panel">
+            <div class="section-heading"><div><p class="eyebrow">Step 2 of 3</p><h2>Choose the visit and time</h2><p class="muted small">Schedule one or more appointments for {{ clientFor(selectedClientId)?.fullName || 'the selected client' }}. Each appointment needs its own date and time.</p><p class="muted small">Assign required support staff through Treatment team in Appointment Management before treatment starts.</p></div></div>
+            <article class="client-card">
               <div class="client-heading"><h3>{{ clientFor(selectedClientId)?.fullName || 'Selected client' }}</h3></div>
               <p v-if="clientFor(selectedClientId)" class="client-contact">{{ clientFor(selectedClientId).email || 'Email missing — update this client first' }} <span>·</span> {{ clientFor(selectedClientId).phone || clientFor(selectedClientId).contactNumber || 'No contact number' }}</p>
               <section v-for="(visit, visitIndex) in visits" :key="visit.key" class="visit-card">
-                <div class="visit-heading"><h4>Service {{ visitIndex + 1 }}</h4><button v-if="visits.length > 1" type="button" class="text-button" :disabled="busy" @click="removeVisit(visit.key)">Remove service</button></div>
+                <div class="visit-heading"><h4>Appointment {{ visitIndex + 1 }}</h4><button v-if="visits.length > 1" type="button" class="text-button" :disabled="busy" @click="removeVisit(visit.key)">Remove appointment</button></div>
                 <div class="field-grid"><ContractAppearanceSelect :id="`service-${visit.key}`" v-model="visit.serviceId" label="Service, consultation, or package" :disabled="busy" :options="serviceOptions" @update:model-value="clearSchedule(visit)" /><ContractAppearanceSelect :id="`practitioner-${visit.key}`" v-model="visit.practitionerId" label="Lead practitioner" :disabled="busy" :options="practitionerOptions" @update:model-value="clearSchedule(visit)" /></div>
                 <div class="schedule-grid">
                   <div><label class="field-label">Appointment date</label><AppointmentCalendar v-model="visit.date" :min-date="today" :disabled="busy || !availabilityReady || !selectedClientId || !visit.serviceId || !visit.practitionerId" :is-available="date => availableSlots(visit, date).length > 0" @update:model-value="visit.time = ''" /></div>
                   <div class="schedule-details"><ContractAppearanceSelect :id="`time-${visit.key}`" v-model="visit.time" label="Available time" :disabled="busy || !visit.date" :options="[{ value: '', label: visit.date ? 'Select available time' : 'Choose a date first' }, ...availableSlots(visit)]" /><p v-if="visit.date" class="selected-date">{{ dateLabel(visit.date) }}</p><p v-if="visit.date && !availableSlots(visit).length" class="field-error">This date no longer has a suitable slot. Choose another date.</p><div v-if="serviceFor(visit.serviceId)" class="service-summary"><p class="muted small">{{ visit.sameDayConsultationRequested ? 'Consultation fee due first' : 'Service price' }}</p><strong>{{ currency(visit.sameDayConsultationRequested ? sameDayConsultationFor(serviceFor(visit.serviceId))?.price : serviceFor(visit.serviceId).price) }}</strong><p class="muted small">{{ serviceFor(visit.serviceId).durationMinutes }} minutes for the first treatment visit · {{ serviceFor(visit.serviceId).totalSessions || 1 }} session(s)</p><p v-if="visit.sameDayConsultationRequested" class="small">Selected time is the consultation start. The provisional treatment starts at {{ visit.time ? formatClockTime(sameDayTreatmentTime(visit)) : 'the consultation duration plus the configured buffer' }} on the same date. Treatment fee {{ currency(serviceFor(visit.serviceId).price) }} is due only if the practitioner clears it.</p><p v-else-if="serviceFor(visit.serviceId).requiresConsultationFirst" class="small">Requires a completed consultation or approved prior-consultation clearance before booking.</p></div><label v-if="canRequestSameDay(visit)" :for="`same-day-${visit.key}`" class="desk-checkbox summary-acknowledgement"><input :id="`same-day-${visit.key}`" v-model="visit.sameDayConsultationRequested" type="checkbox" :disabled="busy" @change="visit.time = ''" /> Request an on-site consultation followed by a provisional treatment slot on the same date. The practitioner must clear treatment before its agreement or payment is available.</label><label :for="`notes-${visit.key}`" class="field-label">Notes <span class="muted">(optional)</span></label><textarea :id="`notes-${visit.key}`" v-model.trim="visit.notes" :disabled="busy" maxlength="2000" rows="3" class="desk-input" placeholder="Notes for this appointment" /></div>
                 </div>
               </section>
-              <button type="button" class="desk-button secondary" :disabled="busy || flatVisits.length >= 20" @click="visits.push(newVisit())">+ Add another service</button>
+              <button type="button" class="desk-button secondary" :disabled="busy || flatVisits.length >= 20" @click="visits.push(newVisit())">+ Add another appointment</button>
             </article>
+            <div class="walk-in-step-actions">
+              <button type="button" class="desk-button secondary" :disabled="busy" @click="goToBookingStep(1)">Back to client</button>
+              <button type="button" class="desk-button primary" :disabled="busy || !scheduleReady" @click="continueToReview">Review booking</button>
+            </div>
           </section>
-          <section class="desk-card booking-summary">
-            <div><p class="eyebrow">Review booking</p><h2>{{ flatVisits.length }} appointment{{ flatVisits.length === 1 ? '' : 's' }}</h2><p class="muted small">One client · Same-day requests collect the consultation fee first; treatment is payable only after practitioner clearance.</p></div><strong class="total-price">{{ estimatedTotal }}</strong>
+          <section v-else class="desk-card booking-summary walk-in-step-panel">
+            <div class="section-heading"><div><p class="eyebrow">Step 3 of 3</p><h2>Review and confirm</h2><p class="muted small">Check the recipient, appointments, and total before the arranger accepts the booking terms.</p></div><strong class="total-price">{{ estimatedTotal }}</strong></div>
+            <div class="walk-in-review-list" aria-label="Appointment review">
+              <article v-for="item in appointmentReviewRows" :key="item.key" class="walk-in-review-row">
+                <div><strong>{{ item.serviceName }}</strong><span class="walk-in-review-type">{{ item.typeLabel }}</span><p>{{ item.date }} · {{ item.time }} · {{ item.practitioner }}</p><p v-if="item.sameDayTreatmentTime" class="walk-in-review-note">On-site consultation first; provisional treatment at {{ item.sameDayTreatmentTime }} after practitioner clearance.</p><p v-if="item.sessionCount > 1" class="walk-in-review-note">Treatment course: {{ item.sessionCount }} visits. This appointment starts the course.</p></div>
+                <strong class="walk-in-review-price"><small>{{ item.sameDayTreatmentTime ? 'Consultation due first' : 'Appointment total' }}</small>{{ item.price }}</strong>
+              </article>
+            </div>
+            <p class="walk-in-recipient-note">Recipient: <strong>{{ clientFor(selectedClientId)?.fullName || 'Select a client' }}</strong><span v-if="bookingForSomeoneElse"> · Arranged by {{ booker.name || 'name needed' }}</span>. The arranger accepts booking/payment terms; the recipient signs the treatment agreement before payment.</p>
             <dl class="price-breakdown booking-price-breakdown" aria-label="Estimated appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(estimatedPricing.subtotal) }}</dd></div><div><dt>{{ estimatedPricing.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ estimatedPricing.vatApplicable ? currency(estimatedPricing.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(estimatedPricing.total) }}</dd></div></dl>
             <details v-if="policy.clientContract?.configured" class="contract-preview"><summary>Review the clinic agreement</summary><ClientContractDocument :document="contractPreview" /></details>
             <ClientContractDocument :document="bookingTermsPreview" />
-            <p class="muted small">Booking signer: <strong>{{ bookingForSomeoneElse ? booker.name || 'Enter the arranger name above' : clientFor(selectedClientId)?.fullName || 'Select the client above' }}</strong>. Hand the device to this person to accept booking and payment terms. The treatment recipient signs a separate agreement before payment; the arranger cannot sign it for them.</p>
+            <p class="muted small">Booking signer: <strong>{{ bookingForSomeoneElse ? booker.name || 'Enter the arranger name above' : clientFor(selectedClientId)?.fullName || 'Select the client above' }}</strong>. Hand the device to this person to accept booking and payment terms. This signature does not authorize treatment.</p>
             <ElectronicSignaturePad v-model="bookingSignature" label="Booking arranger signature — booking and payment terms only" />
             <label class="desk-checkbox summary-acknowledgement"><input v-model="policyAcknowledged" type="checkbox" :disabled="busy" /> I accept the displayed booking prices, schedules, and booking terms, and confirm this is my signature. This does not authorize treatment for someone else.</label>
-            <button type="button" class="desk-button primary" :disabled="busy || !availabilityReady || !selectedClientId || !flatVisits.length || !policyAcknowledged || !bookingSignature" @click="createAppointments">{{ busy ? 'Creating appointments…' : 'Create walk-in appointments' }}</button>
+            <p class="walk-in-payment-note">Creating the booking does not collect payment. The recipient must sign the treatment agreement first; you can collect payment here or return later through the POS queue.</p>
+            <div class="walk-in-step-actions">
+              <button type="button" class="desk-button secondary" :disabled="busy" @click="goToBookingStep(2)">Back to schedule</button>
+              <button type="button" class="desk-button primary" :disabled="busy || !availabilityReady || !clientReady || !scheduleReady || !flatVisits.length || !policyAcknowledged || !bookingSignature" @click="createAppointments">{{ busy ? 'Creating appointments…' : 'Create walk-in booking' }}</button>
+            </div>
           </section>
         </template>
         <section v-else class="desk-card">
@@ -99,7 +133,7 @@
       </div>
     </main>
     <BookingContractModal :visible="Boolean(contractTarget)" :appointment="contractTarget" :read-only="contractTarget?.contract?.status === 'signed'" @close="contractTarget = null" @updated="updateContract" />
-    <Modal :is-open="showRegistration" panel-class="walk-in-registration-modal" :panel-style="{ backgroundColor: '#fffdf9', color: '#493225', maxWidth: '560px' }" @close="!busy && (showRegistration = false)">
+    <Modal :is-open="showRegistration" panel-class="walk-in-registration-modal" :panel-style="{ maxWidth: '560px' }" @close="!busy && (showRegistration = false)">
       <template #header><h2 class="registration-title">Register walk-in client</h2></template>
       <template #body><p class="muted small">Create a client record for this person. An email and contact number are needed for their booking and service code.</p><p v-if="registrationError" class="field-error" role="alert">{{ registrationError }}</p><form id="register-walk-in-client" class="registration-form" @submit.prevent="createClient"><div class="field-grid"><div><label for="walk-in-first-name" class="field-label">First name</label><input id="walk-in-first-name" v-model.trim="newClient.firstName" required maxlength="100" class="desk-input" :disabled="busy" /></div><div><label for="walk-in-last-name" class="field-label">Last name</label><input id="walk-in-last-name" v-model.trim="newClient.lastName" required maxlength="100" class="desk-input" :disabled="busy" /></div></div><div><label for="walk-in-email" class="field-label">Email address</label><input id="walk-in-email" v-model.trim="newClient.email" type="email" required class="desk-input" :disabled="busy" /></div><div><label for="walk-in-phone" class="field-label">Contact number</label><div class="phone-input"><span>+63</span><input id="walk-in-phone" v-model="newClient.phone" inputmode="numeric" maxlength="10" pattern="9[0-9]{9}" required placeholder="9XXXXXXXXX" :disabled="busy" @input="normalizePhone" /></div></div></form></template>
       <template #footer><div class="registration-actions"><button type="button" class="desk-button secondary" :disabled="busy" @click="showRegistration = false">Cancel</button><button type="submit" form="register-walk-in-client" class="desk-button primary" :disabled="busy">{{ busy ? 'Saving…' : 'Save client' }}</button></div></template>
@@ -156,7 +190,7 @@ const checkoutReturnNotice = computed(() => route.query.walkin_payment === 'succ
     : '')
 const branchId = ref(''), busy = ref(false), error = ref(''), clients = ref([]), services = ref([]), practitioners = ref([])
 const schedules = ref({}), leaves = ref({}), existingAppointments = ref([]), branch = ref({}), policy = ref({})
-const selectedClientId = ref(''), visits = ref([]), policyAcknowledged = ref(false)
+const selectedClientId = ref(''), visits = ref([]), policyAcknowledged = ref(false), bookingStep = ref(1)
 const bookingForSomeoneElse = ref(false), booker = ref({ name: '', email: '', phone: '' }), bookingSignature = ref('')
 const createdAppointments = ref([]), posAppointments = ref([]), receipts = ref({}), cashReceived = ref({}), contractTarget = ref(null)
 const showRegistration = ref(false), registrationError = ref('')
@@ -165,8 +199,20 @@ const newClient = ref(emptyClient()), now = ref(Date.now())
 const availabilityReady = ref(false)
 let apiBase = OTP_BACKEND_CANDIDATES[0], clockTimer, submissionId = crypto.randomUUID()
 const today = computed(() => manilaDate(now.value))
+const bookingSteps = computed(() => [
+  { number: 1, label: 'Client', description: 'Choose who is receiving care' },
+  { number: 2, label: 'Schedule', description: 'Choose offering, practitioner, and time' },
+  { number: 3, label: createdAppointments.value.length ? 'Consent & payment' : 'Review & confirm', description: createdAppointments.value.length ? 'Recipient consent and payment' : 'Review terms and create booking' },
+])
+const progressStep = computed(() => createdAppointments.value.length ? 3 : bookingStep.value)
 const newVisit = () => ({ key: crypto.randomUUID(), serviceId: '', practitionerId: '', date: '', time: '', notes: '', sameDayConsultationRequested: false })
 const clientFor = id => clients.value.find(client => client.id === id)
+const clientReady = computed(() => /^\S+@\S+\.\S+$/.test(String(clientFor(selectedClientId.value)?.email || '').trim()))
+const bookingArrangerReady = computed(() => !bookingForSomeoneElse.value || (
+  booker.value.name.trim().length >= 2
+  && /^\+?[0-9 ()-]{7,25}$/.test(booker.value.phone)
+  && (!booker.value.email || /^\S+@\S+\.\S+$/.test(booker.value.email))
+))
 const serviceFor = id => services.value.find(service => service.id === id)
 const sameDayConsultationFor = service => services.value.find(item => item.id === service?.linkedConsultationId && String(item.postType || '').toLowerCase() === 'consultation') || null
 const supportsOnSite = service => (Array.isArray(service?.consultationModes) && service.consultationModes.length ? service.consultationModes : [service?.consultationMode]).some(mode => ['on-site', 'onsite'].includes(String(mode || '').trim().toLowerCase().replace(/[\s_]+/g, '-')))
@@ -202,9 +248,60 @@ const contractPreview = computed(() => buildClientContractDocument(policy.value,
 const bookingTermsPreview = computed(() => buildBookingTermsDocument(policy.value, { branch: branch.value, source: 'walk_in' }))
 watch([bookingForSomeoneElse, booker, policy], () => { policyAcknowledged.value = false; bookingSignature.value = '' }, { deep: true })
 const availableSlots = (visit, date = visit.date) => walkInSlots({ row: { ...visit, clientId: selectedClientId.value }, date, rows: flatVisits.value, clients: clients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, now: now.value })
+const scheduleReady = computed(() => Boolean(availabilityReady.value && clientReady.value && flatVisits.value.length
+  && flatVisits.value.every(row => row.serviceId && row.practitionerId && row.date && row.time
+    && availableSlots(row).some(slot => slot.value === row.time))))
+const appointmentReviewRows = computed(() => flatVisits.value
+  .filter(row => serviceFor(row.serviceId))
+  .map(row => {
+    const service = serviceFor(row.serviceId)
+    const practitioner = practitioners.value.find(person => person.id === row.practitionerId)
+    const type = String(service?.postType || '').toLowerCase()
+    return {
+      ...row,
+      serviceName: service.name,
+      typeLabel: type === 'consultation' ? 'On-site consultation' : type === 'package' ? 'Service package' : 'Service',
+      practitioner: practitioner?.fullName || 'Practitioner not selected',
+      date: dateLabel(row.date),
+      time: formatClockTime(row.time),
+      price: currency(visitPricing(row).total),
+      sessionCount: Number(service.totalSessions || 1),
+      sameDayTreatmentTime: row.sameDayConsultationRequested ? formatClockTime(sameDayTreatmentTime(row)) : '',
+    }
+  }))
+const continueToSchedule = () => {
+  error.value = ''
+  if (!selectedClientId.value || !clientReady.value) {
+    error.value = 'Select a registered client with a valid email address, or register the client first.'
+    return
+  }
+  if (!bookingArrangerReady.value) {
+    error.value = 'Enter the booking arranger’s name and a valid contact number before continuing.'
+    return
+  }
+  if (!visits.value.length) visits.value = [newVisit()]
+  bookingStep.value = 2
+}
+const continueToReview = () => {
+  error.value = ''
+  if (!scheduleReady.value) {
+    error.value = 'Choose an available offering, practitioner, date, and time for every appointment.'
+    return
+  }
+  bookingStep.value = 3
+}
+const goToBookingStep = step => {
+  if (createdAppointments.value.length || step > bookingStep.value || step < 1 || step > 3) return
+  error.value = ''
+  bookingStep.value = step
+}
 const clearSchedule = visit => { visit.date = ''; visit.time = ''; visit.sameDayConsultationRequested = false }
 const removeVisit = key => { visits.value = visits.value.filter(visit => visit.key !== key) }
 watch(selectedClientId, () => {
+  bookingStep.value = 1
+  policyAcknowledged.value = false
+  bookingSignature.value = ''
+  error.value = ''
   if (!visits.value.length && selectedClientId.value) visits.value = [newVisit()]
   else visits.value.forEach(clearSchedule)
 })
@@ -303,9 +400,10 @@ async function createClient() {
 async function createAppointments() {
   error.value = ''
   if (!selectedClientId.value || !flatVisits.value.length || !policyAcknowledged.value) return void (error.value = 'Choose a client, add services, and confirm the policies.')
-  if (!clientFor(selectedClientId.value)?.email) return void (error.value = 'Choose a registered client with a valid email address.')
+  if (!clientReady.value) return void (error.value = 'Choose a registered client with a valid email address.')
+  if (!scheduleReady.value) return void (error.value = 'Select an available date and time for every appointment. The same person needs separate dates.')
   if (!bookingSignature.value) return void (error.value = 'The booking arranger must sign the booking and payment terms.')
-  if (bookingForSomeoneElse.value && (booker.value.name.length < 2 || !/^\+?[0-9 ()-]{7,25}$/.test(booker.value.phone) || (booker.value.email && !/^\S+@\S+\.\S+$/.test(booker.value.email)))) return void (error.value = 'Enter the booking arranger name and valid contact details.')
+  if (!bookingArrangerReady.value) return void (error.value = 'Enter the booking arranger name and valid contact details.')
   if (flatVisits.value.some(row => !row.serviceId || !row.practitionerId || !row.date || !row.time || !walkInSlots({ row, rows: flatVisits.value, clients: clients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, now: Date.now() }).some(slot => slot.value === row.time))) return void (error.value = 'Select an available date and time for every service. The same person needs separate dates.')
   busy.value = true
   try {
@@ -396,7 +494,7 @@ async function verifyOnlinePayment(appointment) {
   finally { busy.value = false }
 }
 function updateContract(updated) { if (contractTarget.value && updated?.contract) contractTarget.value.contract = updated.contract }
-function startNewBooking() { contractTarget.value = null; createdAppointments.value = []; receipts.value = {}; cashReceived.value = {}; visits.value = []; selectedClientId.value = ''; bookingForSomeoneElse.value = false; booker.value = { name: '', email: '', phone: '' }; bookingSignature.value = ''; policyAcknowledged.value = false; submissionId = crypto.randomUUID(); error.value = '' }
+function startNewBooking() { contractTarget.value = null; createdAppointments.value = []; receipts.value = {}; cashReceived.value = {}; visits.value = []; selectedClientId.value = ''; bookingForSomeoneElse.value = false; booker.value = { name: '', email: '', phone: '' }; bookingSignature.value = ''; policyAcknowledged.value = false; bookingStep.value = 1; submissionId = crypto.randomUUID(); error.value = '' }
 function printReceipt(receipt) {
   const popup = window.open('', '_blank')
   if (!popup) return void (error.value = 'Allow pop-ups to print the receipt.')
@@ -417,6 +515,49 @@ onUnmounted(() => { clearInterval(clockTimer) })
 <style scoped>
 .walk-in-desk { background: #fffaf3; color: #493225; }
 .walk-in-content { max-width: 1150px; margin: 0 auto; display: grid; gap: 24px; }
+.walk-in-progress { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.walk-in-progress-step { display: flex; min-width: 0; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #e7cfb6; border-radius: 13px; background: #fffdf9; color: #654733; text-align: left; transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease; }
+.walk-in-progress-step:not(:disabled) { cursor: pointer; }
+.walk-in-progress-step:disabled { cursor: default; }
+.walk-in-progress-step.is-current { border-color: #a56a43; background: #f6e8d7; box-shadow: 0 0 0 2px rgb(165 106 67 / 12%); color: #493225; }
+.walk-in-progress-step.is-complete { border-color: #87a890; background: #edf5ed; color: #355a40; }
+.walk-in-step-number { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; border-radius: 50%; background: #efe2d2; color: #654733; font-size: 13px; font-weight: 700; }
+.is-current .walk-in-step-number { background: #8d5a3b; color: #fff; }
+.is-complete .walk-in-step-number { background: #426e56; color: #fff; }
+.walk-in-step-copy { display: grid; gap: 3px; min-width: 0; }
+.walk-in-step-copy strong { font-size: 13px; }
+.walk-in-step-copy small { color: #846950; font-size: 11px; line-height: 1.4; }
+.walk-in-step-panel { min-width: 0; }
+.walk-in-step-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+.walk-in-step-actions > .muted { flex: 1 1 260px; }
+.walk-in-review-list { display: grid; width: 100%; gap: 10px; }
+.walk-in-review-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 15px 16px; border: 1px solid #ead6c1; border-radius: 11px; background: #fffdf9; color: #493225; }
+.walk-in-review-row > div { min-width: 0; }
+.walk-in-review-row > div > strong { display: inline-block; margin-right: 8px; }
+.walk-in-review-type { display: inline-block; border-radius: 999px; background: #f4e6d5; padding: 3px 8px; color: #795638; font-size: 10px; font-weight: 700; }
+.walk-in-review-row p { margin: 5px 0 0; color: #846950; font-size: 12px; }
+.walk-in-review-row .walk-in-review-note { color: #765423; }
+.walk-in-review-price { display: grid; flex: 0 0 auto; justify-items: end; gap: 4px; color: #426e56; font-size: 14px; text-align: right; }
+.walk-in-review-price small { color: #846950; font-size: 10px; font-weight: 500; }
+.walk-in-recipient-note, .walk-in-payment-note { width: 100%; margin: 0; color: #765d47; font-size: 12px; line-height: 1.6; }
+.walk-in-payment-note { padding: 12px 14px; border: 1px solid #e7cfb6; border-radius: 10px; background: #fff7eb; }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step { background: var(--ac-surface-soft); border-color: var(--ac-border); color: var(--ac-text-secondary); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-current { background: var(--ac-primary); border-color: var(--ac-primary); color: var(--ac-on-primary); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-complete { background: var(--ac-success-bg); border-color: var(--ac-border); color: var(--ac-success); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step .walk-in-step-number { background: var(--ac-surface); color: var(--ac-text); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-current .walk-in-step-number { background: var(--ac-on-primary); color: var(--ac-primary); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-progress-step.is-complete .walk-in-step-number { background: var(--ac-success); color: #fff; }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-step-copy small,
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-review-row p,
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-review-price small,
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-recipient-note { color: var(--ac-text-muted); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-review-type { background: var(--ac-surface-soft); color: var(--ac-text-secondary); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-review-row .walk-in-review-note { color: var(--ac-warning); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-payment-note { background: var(--ac-surface-soft); border-color: var(--ac-border); color: var(--ac-text-secondary); }
+:global(html[data-ac-theme="dark"] .app-modal-panel.walk-in-registration-modal) { background: var(--ac-surface) !important; border: 1px solid var(--ac-border) !important; color: var(--ac-text) !important; }
+:global(html[data-ac-theme="dark"] .app-modal-panel.walk-in-registration-modal > :is(div:first-child, div:last-child)) { border-color: var(--ac-border) !important; }
+:global(html[data-ac-theme="dark"] .app-modal-panel.walk-in-registration-modal :is(.registration-title, .field-label, .muted, p, label, strong)) { color: var(--ac-text-secondary) !important; }
+:global(html[data-ac-theme="dark"] .app-modal-panel.walk-in-registration-modal .phone-input span) { background: var(--ac-surface-soft); color: var(--ac-text-secondary); }
 .page-heading, .section-heading, .client-heading, .visit-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .page-heading { align-items: flex-start; }
 h1 { margin: 0; font-size: clamp(26px, 3vw, 34px); font-weight: 700; }
@@ -452,5 +593,5 @@ button:disabled { cursor: not-allowed; opacity: .5; } button:focus-visible, inpu
 .desk-alert { padding: 14px 16px; border-radius: 10px; font-size: 13px; }.error { border: 1px solid #e8b6aa; background: #fff0eb; color: #a04432; }.agreement-required { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border: 1px solid #edd19b; background: #fff7e7; color: #765423; }.agreement-required p { margin: 0; }.field-error { color: #a04432; font-size: 12px; margin: 10px 0; }.empty-note { padding: 24px; border: 1px dashed #dec19e; color: #876e59; font-size: 13px; border-radius: 10px; }
 .walk-in-desk :deep(.appearance-select) { margin: 0; }.walk-in-desk :deep(.appearance-select-trigger > span) { overflow-wrap: anywhere; }.walk-in-desk :deep(.appearance-select-menu li) { white-space: normal; }
 .registration-title { color: #493225; font-size: 20px; font-weight: 700; }.registration-form { display: grid; gap: 18px; margin-top: 20px; }.registration-actions { display: flex; justify-content: flex-end; gap: 10px; }.phone-input { display: flex; border: 1px solid #dec19e; border-radius: 9px; overflow: hidden; background: #fffdf9; }.phone-input span { background: #fff1de; padding: 10px 12px; color: #805638; }.phone-input input { min-width: 0; flex: 1; padding: 10px 12px; color: #493225; background: #fffdf9; }
-@media (max-width: 750px) { .desk-card, .client-card, .visit-card { padding: 16px; }.field-grid, .schedule-grid { grid-template-columns: minmax(0, 1fr); }.payment-form { flex-direction: column; align-items: stretch; }.payment-form > div { width: 100%; } }
+@media (max-width: 750px) { .walk-in-progress { grid-template-columns: minmax(0, 1fr); gap: 8px; }.walk-in-progress-step { padding: 10px 12px; }.walk-in-step-copy small { font-size: 10px; }.walk-in-review-row { flex-direction: column; }.walk-in-review-price { justify-items: start; text-align: left; }.desk-card, .client-card, .visit-card { padding: 16px; }.field-grid, .schedule-grid { grid-template-columns: minmax(0, 1fr); }.payment-form { flex-direction: column; align-items: stretch; }.payment-form > div { width: 100%; } }
 </style>
