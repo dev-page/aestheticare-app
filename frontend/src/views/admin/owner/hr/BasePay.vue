@@ -50,7 +50,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             role: String(staff.customRoleName || staff.role || 'Staff').trim(),
             basePayModel: staff.basePayModel || 'hourly',
             monthlyBaseHours: Number(staff.monthlyBaseHours || 176),
-            basePay: staff.basePay == null || staff.basePay === '' ? '' : Number(staff.basePay)
+            basePay: staff.basePay == null || staff.basePay === '' ? '' : Number(staff.basePay),
+            employmentStartDate: String(staff.employmentStartDate || '')
           }))
       } catch (error) {
         console.error('Failed to load staff for base pay:', error)
@@ -63,20 +64,23 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const saveBasePay = async (staff) => {
       if (!staff) return
       const rawValue = String(staff.basePay ?? '').trim()
+      const hasBasePay = Boolean(rawValue)
       const basePayValue = Number(rawValue)
       let validationMessage = ''
       if (!['hourly', 'daily', 'monthly-retainer'].includes(staff.basePayModel) || !Number.isFinite(Number(staff.monthlyBaseHours)) || staff.monthlyBaseHours < 1 || staff.monthlyBaseHours > 744) {
         validationMessage = 'Choose a valid pay model and monthly hour divisor.'
-      } else if (!rawValue) {
-        validationMessage = 'Enter the employee\'s base pay.'
-      } else if (!Number.isFinite(basePayValue)) {
+      } else if (!hasBasePay && !staff.employmentStartDate) {
+        validationMessage = 'Enter base pay or an employment start date before saving.'
+      } else if (hasBasePay && !Number.isFinite(basePayValue)) {
         validationMessage = 'Base pay must be a valid number.'
-      } else if (basePayValue <= 0) {
+      } else if (hasBasePay && basePayValue <= 0) {
         validationMessage = 'Base pay must be greater than PHP 0.00.'
-      } else if (basePayValue > 1000000) {
+      } else if (hasBasePay && basePayValue > 1000000) {
         validationMessage = 'Base pay cannot exceed PHP 1,000,000.00 for this pay model.'
-      } else if (!/^\d+(\.\d{1,2})?$/.test(rawValue)) {
+      } else if (hasBasePay && !/^\d+(\.\d{1,2})?$/.test(rawValue)) {
         validationMessage = 'Base pay may contain up to two decimal places.'
+      } else if (staff.employmentStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(staff.employmentStartDate)) {
+        validationMessage = 'Enter a valid employment start date.'
       }
       if (validationMessage) {
         basePayErrors.value = { ...basePayErrors.value, [staff.id]: validationMessage }
@@ -88,11 +92,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       basePayErrors.value = nextErrors
       savingId.value = staff.id
       try {
-        await updateDoc(doc(db, 'users', staff.id), {
+        const updates = { employmentStartDate: String(staff.employmentStartDate || '') }
+        if (hasBasePay) Object.assign(updates, {
           basePay: Number(basePayValue.toFixed(2)),
           basePayModel: staff.basePayModel,
-          monthlyBaseHours: Number(staff.monthlyBaseHours || 176)
+          monthlyBaseHours: Number(staff.monthlyBaseHours || 176),
         })
+        await updateDoc(doc(db, 'users', staff.id), updates)
 
         await logActivity(db, {
           module: 'HR',
@@ -190,6 +196,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           <PageSectionSkeleton variant="table" :rows="6" :columns="4" />
         </div>
         <p class="mb-4 text-sm text-slate-400">Hourly pay uses worked hours; daily pay uses completed attendance days. A fixed monthly retainer pays the full agreed monthly amount without automatic proration. Configure its agreed monthly hours for the hourly equivalent.</p>
+        <p class="mb-4 text-sm text-slate-400">Record each employee’s start date here. HR uses it to check the clinic’s paid leave eligibility rule.</p>
         <table class="w-full text-left min-w-[900px] border-collapse">
           <thead>
             <tr class="text-slate-400 uppercase text-xs sm:text-sm border-b border-slate-700">
@@ -222,6 +229,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                   class="w-full min-w-[140px] px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <label v-if="staff.basePayModel === 'monthly-retainer'" class="block mt-3 text-xs">Agreed monthly hours<input v-model.number="staff.monthlyBaseHours" type="number" min="1" max="744" step="1" class="mt-2 w-full rounded-lg border px-3 py-2" /></label>
+                <label class="block mt-3 text-xs">Employment start date<input v-model="staff.employmentStartDate" type="date" class="mt-2 w-full rounded-lg border px-3 py-2" /></label>
                 <p v-if="basePayErrors[staff.id]" :id="`base-pay-error-${staff.id}`" class="mt-1 text-xs text-rose-300" role="alert">{{ basePayErrors[staff.id] }}</p>
               </td>
               <td class="py-2 px-3 sm:py-3 sm:px-4">

@@ -5,7 +5,7 @@ import { getAppointmentSlots } from './appointmentSlots.js'
 const fixture = (overrides = {}) => ({
   date: '2030-09-23', practitionerId: 'worker', durationMinutes: 60,
   now: new Date('2030-09-22T00:00:00+08:00').getTime(),
-  schedules: { worker: { __recurring__: { Monday: 'Morning || 08:00 - 12:00', Sunday: 'Off' } } },
+  schedules: { worker: { __recurring__: { assignments: { Monday: 'Morning || 08:00 - 12:00', Sunday: 'Off' }, assignmentLabels: { Monday: 'Morning || 08:00 - 12:00', Sunday: 'Off' } } } },
   ...overrides,
 })
 
@@ -15,7 +15,8 @@ test('calendar and times follow assigned days, full duration, and weekly overrid
   assert.equal(slots[0].value, '08:00')
   assert.equal(slots.at(-1).value, '10:30')
   assert.deepEqual(getAppointmentSlots(fixture({ schedules: { worker: {
-    __recurring__: { Monday: '08:00 - 12:00' }, '2030-09-23': { Monday: 'Off' },
+    __recurring__: { assignments: { Monday: '08:00 - 12:00' }, assignmentLabels: { Monday: '08:00 - 12:00' } },
+    '2030-09-23': { assignments: { Monday: 'Off' }, assignmentLabels: { Monday: 'Off' } },
   } } })), [])
 })
 
@@ -36,7 +37,11 @@ test('today omits elapsed times using Manila time, and never offers a slot past 
 
 test('missing, off, and malformed schedules do not offer free-form fallback times', () => {
   for (const label of ['', 'Off', 'unknown-shift-id', '17:00 - 08:00']) {
-    assert.deepEqual(getAppointmentSlots(fixture({ schedules: { worker: { __recurring__: { Monday: label } } } })), [])
+    const schedules = { worker: { __recurring__: {
+      assignments: { Monday: label },
+      assignmentLabels: { Monday: label },
+    } } }
+    assert.deepEqual(getAppointmentSlots(fixture({ schedules })), [])
   }
 })
 

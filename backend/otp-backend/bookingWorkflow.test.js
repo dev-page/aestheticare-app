@@ -251,6 +251,7 @@ test('Payment endpoint records deposit once and completes after final payment', 
     app: { post: (path, auth, callback) => { handler = callback } }, requireAuth() {}, assertPayMongoConfigured: () => true,
     admin: { firestore }, normalizeBookingStatus: normalized, normalized, paymentDue, afterPaymentStatus, initialPaymentReceived, assertWorkflow,
     buildPayMongoHeaders: () => ({}), console: { error() {} },
+    refundWorkflow: { handlePayMongoRefund: async () => ({ ignored: true }) },
     registerAppointmentPaymentWebhook() {},
     fetch: async () => ({ ok: true, json: async () => ({ data: { attributes: { paid_at: providerPaid ? 123 : null, metadata: { appointmentId: 'a', customerId: 'customer' }, payments: [{ id: 'payment', attributes: { amount: providerAmount, status: providerPaid ? 'paid' : 'failed' } }] } } }) }),
   })

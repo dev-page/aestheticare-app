@@ -87,7 +87,7 @@ import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, onMounted, ref } from 'vue'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -95,6 +95,8 @@ import { db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { logActivity } from '@/utils/activityLogger'
 import { calculatePhilippineOvertime } from '@/utils/philippineOvertime'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { workflowApi } from '@/utils/workflowApi'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -115,7 +117,6 @@ const selectedStatus = ref('')
 const currentUserId = ref('')
 const currentUserName = ref('')
 const currentBranchId = ref('')
-const currentOwnerId = ref('')
 const currentEmployeeProfile = ref({})
 const formError = ref('')
 const pageError = ref('')
@@ -128,15 +129,6 @@ const overtimeCalculation = computed(() => calculatePhilippineOvertime(attendanc
 const calculatedOvertimeMinutes = computed(() => overtimeCalculation.value.overtimeMinutes)
 const calculatedHours = computed(() => formatHours(calculatedOvertimeMinutes.value))
 const filteredRequests = computed(() => requests.value.filter((request) => !selectedStatus.value || request.status === selectedStatus.value))
-
-function toMinutes(value) {
-  const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/)
-  if (!match) return null
-  const hours = Number(match[1])
-  const minutes = Number(match[2])
-  if (hours > 23 || minutes > 59) return null
-  return hours * 60 + minutes
-}
 
 function formatHours(minutes) {
   const value = Number(minutes || 0) / 60
@@ -166,11 +158,6 @@ async function resolveContext() {
   currentEmployeeProfile.value = profile
   currentUserName.value = nameFromProfile(profile)
   currentBranchId.value = String(profile.branchId || '').trim()
-  if (currentBranchId.value) {
-    const branch = await getDoc(doc(db, 'clinics', currentBranchId.value))
-    currentOwnerId.value = String(branch.data()?.ownerId || '').trim()
-  }
-  if (reviewerMode.value && !currentOwnerId.value) currentOwnerId.value = user.uid
 }
 
 async function loadOwnAttendance() {
@@ -182,10 +169,19 @@ async function loadOwnAttendance() {
 
 async function loadRequests() {
   if (!currentUserId.value) return
-  const requestQuery = reviewerMode.value && currentOwnerId.value
-    ? query(collection(db, 'overtimeRequests'), where('ownerId', '==', currentOwnerId.value))
-    : query(collection(db, 'overtimeRequests'), where('requesterId', '==', currentUserId.value))
-  const snapshot = await getDocs(requestQuery)
+  if (reviewerMode.value) {
+    if (!currentBranchId.value) throw new Error('Your account has no branch assignment for overtime review.')
+    const token = await auth.currentUser?.getIdToken()
+    if (!token) throw new Error('Please sign in again to view overtime requests.')
+    const response = await fetch(`${OTP_API_BASE}/hr/overtime-requests?branchId=${encodeURIComponent(currentBranchId.value)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const payload = await response.json()
+    if (!response.ok || !payload.success) throw new Error(payload.error || 'Overtime requests could not be loaded.')
+    requests.value = (Array.isArray(payload.data) ? payload.data : []).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+    return
+  }
+  const snapshot = await getDocs(query(collection(db, 'overtimeRequests'), where('requesterId', '==', currentUserId.value)))
   requests.value = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
 }
 
@@ -194,40 +190,21 @@ async function submitRequest() {
   if (!form.value.date || form.value.date > todayKey) return (formError.value = 'Choose a completed date.')
   if (!calculatedOvertimeMinutes.value) return (formError.value = 'No overtime was calculated from the attendance record.')
   if (String(form.value.reason || '').trim().length < 10) return (formError.value = 'Provide a reason with at least 10 characters.')
-  const requestId = `${currentUserId.value}_${form.value.date}`
-  if (requests.value.some((request) => request.requestId === requestId && request.status === 'Pending')) return (formError.value = 'A pending request already exists for this date.')
+  if (requests.value.some((request) => request.requesterId === currentUserId.value && request.date === form.value.date && ['Pending', 'Approved'].includes(request.status))) return (formError.value = 'A pending or approved request already exists for this date.')
 
   try {
     saving.value = true
-    await setDoc(doc(db, 'overtimeRequests', requestId), {
-      requestId,
-      requesterId: currentUserId.value,
-      requesterName: currentUserName.value,
-      ownerId: currentOwnerId.value,
+    await workflowApi('/hr/overtime-requests', {
       branchId: currentBranchId.value,
       date: form.value.date,
-      shiftLabel: attendanceEvidence.value.shiftLabel || '',
-      scheduledStart: attendanceEvidence.value.shiftStart || '',
-      scheduledEnd: attendanceEvidence.value.shiftEnd || '',
-      actualTimeIn: attendanceEvidence.value.timeIn || '',
-      actualTimeOut: attendanceEvidence.value.timeOut || '',
-      attendanceStatus: attendanceEvidence.value.attendanceStatus || attendanceEvidence.value.status || 'Recorded',
-      attendanceRecordId: `${currentUserId.value}_${form.value.date}`,
-      calculatedOvertimeMinutes: calculatedOvertimeMinutes.value,
-      nightDifferentialMinutes: overtimeCalculation.value.nightMinutes,
-      dayClassification: overtimeCalculation.value.dayClassification,
-      overtimeRateMultiplier: overtimeCalculation.value.multiplier,
-      reason: String(form.value.reason).trim(),
-      status: 'Pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      reason: String(form.value.reason).trim()
     })
     form.value.reason = ''
     await loadRequests()
     toast.success('Overtime request submitted.')
   } catch (error) {
     console.error('Failed to submit overtime request:', error)
-    formError.value = 'Unable to submit the overtime request.'
+    formError.value = error?.message || 'Unable to submit the overtime request.'
   } finally {
     saving.value = false
   }
@@ -244,13 +221,13 @@ async function reviewRequest(request, status) {
     if (!result.isConfirmed) return
   }
   try {
-    await updateDoc(doc(db, 'overtimeRequests', request.id), { status, reviewRemarks, reviewedBy: currentUserName.value, reviewedById: currentUserId.value, reviewedAt: serverTimestamp(), updatedAt: serverTimestamp() })
+    await workflowApi(`/hr/overtime-requests/${encodeURIComponent(request.id)}/review`, { status, reviewRemarks })
     await logActivity(db, { module: 'HR', action: `${status} overtime request`, details: `${currentUserName.value} marked ${request.requesterName}'s overtime request for ${request.date} as ${status}.` })
     await loadRequests()
     toast.success(`Overtime request ${status.toLowerCase()}.`)
   } catch (error) {
     console.error('Failed to review overtime request:', error)
-    toast.error('Unable to update the overtime request.')
+    toast.error(error?.message || 'Unable to update the overtime request.')
   }
 }
 

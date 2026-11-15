@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { planLotConsumption, reconcileLotsToInventory } from './inventoryLots.js'
+import { planLotConsumption, reconcileLotsToInventory, summarizeInventoryLotReconciliation } from './inventoryLots.js'
 
 test('lot consumption follows FEFO, skips expired stock, and preserves reserved units', () => {
   const plan = planLotConsumption({
@@ -77,4 +77,28 @@ test('inventory stock increases are recorded as auditable opening-lot adjustment
     lotRecords: [{ id: plan.lotWrites[0].id, ...plan.lotWrites[0].data, receivedAt: '2026-01-01' }],
   })
   assert.equal(nextCount.lotWrites[0].created, false)
+})
+
+test('inventory reconciliation reports item and lot mismatches without mixing branches or items', () => {
+  const report = summarizeInventoryLotReconciliation(
+    [
+      { id: 'serum', branchId: 'clinic-a', name: 'Serum', unit: 'bottles', currentStock: 5 },
+      { id: 'cream', branchId: 'clinic-a', name: 'Cream', unit: 'jars', currentStock: 2 },
+      { id: 'bad', branchId: 'clinic-a', name: 'Bad lot data', currentStock: 3 },
+      { id: 'other', branchId: 'clinic-b', name: 'Other branch', currentStock: 9 },
+    ],
+    [
+      { id: 'serum-lot', branchId: 'clinic-a', itemId: 'serum', remainingQuantity: 2 },
+      { id: 'cross-branch', branchId: 'clinic-b', itemId: 'serum', remainingQuantity: 100 },
+      { id: 'cross-item', branchId: 'clinic-a', itemId: 'cream', remainingQuantity: 5 },
+      { id: 'invalid', branchId: 'clinic-a', itemId: 'bad', remainingQuantity: 'unknown' },
+    ],
+  )
+
+  assert.deepEqual(report.map(({ id, currentStock, lotQuantity, difference, issue }) => ({ id, currentStock, lotQuantity, difference, issue })), [
+    { id: 'bad', currentStock: 3, lotQuantity: 0, difference: -3, issue: 'Invalid lot quantity' },
+    { id: 'cream', currentStock: 2, lotQuantity: 5, difference: 3, issue: 'Mismatch' },
+    { id: 'other', currentStock: 9, lotQuantity: 0, difference: -9, issue: 'Mismatch' },
+    { id: 'serum', currentStock: 5, lotQuantity: 2, difference: -3, issue: 'Mismatch' },
+  ])
 })

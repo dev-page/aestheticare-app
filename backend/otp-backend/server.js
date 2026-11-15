@@ -10,6 +10,7 @@ import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
 import { cancellationRefundEstimate, isCancellationPolicyEnabled, isReschedulePolicyEnabled, rescheduleAllowanceForPolicy } from '../../shared/appointmentChangePolicy.js'
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
+import { registerHrWorkflow } from './hrWorkflow.js'
 import { registerPractitionerTeams } from './practitionerTeams.js'
 import { appointmentStaffIds, practitionerTypes } from '../../shared/practitionerTeam.js'
 import { registerSupplyWorkflow } from './supplyWorkflow.js'
@@ -3608,6 +3609,7 @@ registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resol
 registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoHeaders })
 registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
+registerHrWorkflow(app, { admin, requireAuth, loadUserContext, assertPlanFeature: (...args) => assertClinicPlanFeature(...args), loadAttendanceSchedule })
 
 app.post('/admin/trigger-clinic-registration-verification', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const uid = String(req.body?.uid || '').trim()

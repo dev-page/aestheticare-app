@@ -590,25 +590,18 @@ service cloud.firestore {
             && canAccessBranch(resource.data.branchId)
             && (hasPermission('overtime:view') || hasPermission('payroll:update'))
             && planAllowsWorkforceManagement(resource.data.branchId)));
-      allow create: if isSignedIn()
-        && request.resource.data.requesterId == request.auth.uid
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('overtime:create')
-        && planAllowsWorkforceManagement(request.resource.data.branchId)
-        && request.resource.data.status == 'Pending'
-        && request.resource.data.calculatedOvertimeMinutes > 0;
-      allow update: if isSignedIn()
-        && resource.data.branchId != null
-        && canAccessBranch(resource.data.branchId)
-        && hasPermission('overtime:review')
-        && planAllowsWorkforceManagement(resource.data.branchId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'reviewRemarks', 'reviewedBy', 'reviewedById', 'reviewedAt', 'updatedAt'
-        ]);
+      // Requests and decisions are written by the backend after it validates
+      // attendance evidence, branch scope, permissions, and reviewer identity.
+      allow create, update: if false;
       allow delete: if false;
     }
 
+    match /leavePolicySettings/{branchId} {
+      allow read, write: if false;
+    }
+    match /leavePolicyAudit/{auditId} {
+      allow read, write: if false;
+    }
     match /leaveRequests/{requestId} {
       allow read: if isSignedIn()
         && (isSuperadmin()
@@ -617,32 +610,9 @@ service cloud.firestore {
             && canAccessBranch(resource.data.branchId)
             && hasPermission('leave:review')
             && planAllowsWorkforceManagement(resource.data.branchId)));
-      allow create: if isSignedIn()
-        && request.resource.data.requesterId == request.auth.uid
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('leave:create')
-        && planAllowsWorkforceManagement(request.resource.data.branchId)
-        && request.resource.data.status == 'Pending';
-      allow update: if isSignedIn()
-        && resource.data.branchId != null
-        && canAccessBranch(resource.data.branchId)
-        && planAllowsWorkforceManagement(resource.data.branchId)
-        && ((resource.data.requesterId == request.auth.uid
-          && resource.data.status == 'Pending'
-          && (request.resource.data.status == 'Pending' || request.resource.data.status == 'Cancelled')
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'requesterName', 'requesterRole', 'employmentType', 'branchName',
-            'paymentType', 'leaveType', 'startDate', 'endDate', 'daysRequested',
-            'year', 'reason', 'attachmentUrl', 'attachmentFileName',
-            'attachmentMimeType', 'updatedAt'
-          ]))
-          || (hasPermission('leave:review')
-            && (request.resource.data.status == 'Approved' || request.resource.data.status == 'Rejected')
-            && (request.resource.data.status == 'Approved' || ('reviewRemarks' in request.resource.data))
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'status', 'reviewRemarks', 'reviewedBy', 'reviewedById', 'reviewedAt', 'updatedAt'
-            ])));
+      // The backend validates scheduled workdays, paid-leave allowance, request
+      // overlap, and independent review before writing request changes.
+      allow create, update: if false;
       allow delete: if false;
     }
 
@@ -955,11 +925,8 @@ service cloud.firestore {
         && canAccessBranch(branchId)
         && hasPermission('payroll:view')
         && planAllowsWorkforceManagement(branchId);
-      allow create, update: if isSignedIn()
-        && request.resource.data.branchId == branchId
-        && canAccessBranch(branchId)
-        && hasPermission('payroll:update')
-        && planAllowsWorkforceManagement(branchId);
+      // Settings writes are validated and audited by the authenticated payroll API.
+      allow create, update: if false;
       allow delete: if false;
     }
 
@@ -969,11 +936,7 @@ service cloud.firestore {
         && canAccessBranch(resource.data.branchId)
         && hasPermission('payroll:view')
         && planAllowsWorkforceManagement(resource.data.branchId);
-      allow create: if isSignedIn()
-        && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('payroll:update')
-        && planAllowsWorkforceManagement(request.resource.data.branchId);
+      allow create: if false;
       allow update, delete: if false;
     }
 

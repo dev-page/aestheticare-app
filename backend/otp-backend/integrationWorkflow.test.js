@@ -6,7 +6,7 @@ import { recordVerifiedOrder, registerOrderWorkflow, lockOrderCancellation, fina
 const harness = (seed) => {
   const records = new Map(Object.entries(seed)), routes = new Map()
   let serial = 0, queue = Promise.resolve()
-  const ref = (path) => ({ path, id: path.split('/').pop(), collection: (name) => collection(path + '/' + name) })
+  const ref = (path) => ({ path, id: path.split('/').pop(), collection: (name) => collection(path + '/' + name), async get() { return snap(path, records.get(path)) } })
   const collection = (path, filters = []) => ({ path, filters, doc: (id = 'auto' + ++serial) => ref(path + '/' + id), where: (key, op, value) => collection(path, [...filters, [key, op, value]]) })
   const snap = (path, data) => ({ id: path.split('/').pop(), ref: ref(path), exists: data !== undefined, data: () => data === undefined ? undefined : structuredClone(data) })
   const db = { collection, runTransaction(fn) {
@@ -37,17 +37,45 @@ const harness = (seed) => {
     hr: { uid: 'hr', roleKey: 'HR', userData: { branchId: 'clinic' }, permissions: new Set(['payroll:update']) },
     outsider: { uid: 'outsider', roleKey: 'Manager', userData: { branchId: 'other' }, permissions: new Set(['procurement:review', 'orders:update']) },
   }
-  const app = { post(path, auth, handler) { routes.set(path, handler) } }
+  const app = { get(path, auth, handler) { routes.set(`GET ${path}`, handler) }, post(path, auth, handler) { routes.set(`POST ${path}`, handler) } }
   const deps = { admin: { firestore }, requireAuth() {}, loadUserContext: async (uid) => contexts[uid], assertPlanFeature: async () => {}, buildPayMongoHeaders() {} }
   registerPayrollWorkflow(app, deps); registerOrderWorkflow(app, deps)
-  const call = async (path, uid, params, body = {}) => {
+  const call = async (path, uid, params, body = {}, query = {}, method = 'POST') => {
     const result = { code: 200 }
-    await routes.get(path)({ user: { uid }, params, body }, { status(code) { result.code = code; return this }, json(data) { result.body = data } })
+    await routes.get(`${method} ${path}`)({ user: { uid }, params, body, query }, { status(code) { result.code = code; return this }, json(data) { result.body = data } })
     return result
   }
   return { records, db, timestamp, call }
 }
 const base = () => ({ 'clinics/clinic': { ownerId: 'owner' }, 'users/finance': { branchId: 'clinic', role: 'Finance' } })
+const testPayrollSettings = { sssRate: 10, philHealthRate: 0, pagIbigRate: 0, incomeTaxRate: 0, useGraduatedIncomeTax: false }
+const testPayrollEntry = () => ({
+  branchId: 'clinic', employeeId: 'worker', employeeName: 'Worker', payPeriodMonthKey: '2026-09',
+  basePayModel: 'monthly-retainer', baseRate: 1000, hourlyRate: 1000 / 176, basePayAmount: 1000,
+  monthlyBaseHours: 176, hoursWorked: 0, regularHours: 0, workedDays: 0,
+  overtimeHours: 0, overtimePay: 0, nightDifferential: 0, commission: 0,
+  paidLeaveDays: 0, paidLeaveHours: 0, unpaidLeaveDays: 0, unpaidLeaveHours: 0, unpaidLeaveDeduction: 0,
+  totalPay: 1000, deductions: {
+    sss: { amount: 100, rate: 10 },
+    philHealth: { amount: 0, rate: 0 },
+    pagIbig: { amount: 0, rate: 0, capped: false },
+    incomeTax: { amount: 0, rate: 0, mode: 'flat' },
+  },
+  deductionSettingsSnapshot: { ...testPayrollSettings }, totalDeductions: 100, netPay: 900,
+})
+
+test('Payroll deduction settings are branch scoped, validated, and audited by the backend', async () => {
+  const h = harness(base())
+  const settings = { sssRate: 4, philHealthRate: 2, pagIbigRate: 1, incomeTaxRate: 5, useGraduatedIncomeTax: false }
+  const saved = await h.call('/payroll/settings', 'hr', {}, { branchId: 'clinic', ...settings })
+  assert.equal(saved.code, 200)
+  assert.deepEqual(h.records.get('payrollSettings/clinic'), { branchId: 'clinic', ...settings, updatedBy: 'hr', updatedAt: h.timestamp() })
+  assert.equal([...h.records].filter(([path]) => path.startsWith('payrollSettingsAudit/')).length, 1)
+  const loaded = await h.call('/payroll/settings', 'hr', {}, {}, { branchId: 'clinic' }, 'GET')
+  assert.deepEqual(loaded.body.data, settings)
+  assert.equal((await h.call('/payroll/settings', 'finance', {}, { branchId: 'clinic', ...settings })).code, 403)
+  assert.equal((await h.call('/payroll/settings', 'hr', {}, { branchId: 'clinic', ...settings, sssRate: 101 })).code, 400)
+})
 
 test('Payroll approval rejects its submitter and entry preparer even with approval permission', async () => {
   for (const identity of [{ submittedBy: 'finance', updatedBy: 'hr' }, { updatedBy: 'finance' }, { updatedBy: 'hr', preparerIds: ['finance', 'hr'] }]) {
@@ -113,7 +141,7 @@ test('Cancellation blocks fulfillment and restores deducted stock once with one 
 })
 
 test('Payroll requires Finance-approved snapshot; repeat release creates only one payslip', async () => {
-  const h = harness({ ...base(), 'payrollSummaries/clinic_2026-09': { branchId: 'clinic', monthKey: '2026-09', status: 'pending', totalNetPay: 900, updatedBy: 'hr' }, 'payrolls/p': { branchId: 'clinic', employeeId: 'worker', employeeName: 'Worker', payPeriodMonthKey: '2026-09', totalPay: 1000, netPay: 900, totalDeductions: 100 } })
+  const h = harness({ ...base(), 'users/worker': { branchId: 'clinic', basePay: 1000, basePayModel: 'monthly-retainer', monthlyBaseHours: 176 }, 'payrollSettings/clinic': { branchId: 'clinic', ...testPayrollSettings }, 'payrollSummaries/clinic_2026-09': { branchId: 'clinic', monthKey: '2026-09', status: 'pending', totalNetPay: 900, updatedBy: 'hr' }, 'payrolls/p': testPayrollEntry() })
   assert.equal((await h.call('/payroll/:id/release', 'hr', { id: 'p' })).code, 409)
   assert.equal((await h.call('/finance/payroll/:id/approve', 'hr', { id: 'clinic_2026-09' })).code, 403)
   assert.equal((await h.call('/finance/payroll/:id/approve', 'finance', { id: 'clinic_2026-09' })).code, 200)
@@ -126,7 +154,7 @@ test('Payroll requires Finance-approved snapshot; repeat release creates only on
   assert.equal(h.records.get('payrollSummaries/clinic_2026-09').releasedCount, 1)
 })
 test('HR submission and Finance rejection notify the assigned branch participants', async () => {
-  const h = harness({ ...base(), 'payrolls/p': { branchId: 'clinic', employeeId: 'worker', payPeriodMonthKey: '2026-09', totalPay: 1000, totalDeductions: 100, netPay: 900 } })
+  const h = harness({ ...base(), 'users/worker': { branchId: 'clinic', basePay: 1000, basePayModel: 'monthly-retainer', monthlyBaseHours: 176 }, 'payrollSettings/clinic': { branchId: 'clinic', ...testPayrollSettings }, 'payrolls/p': testPayrollEntry() })
   assert.equal((await h.call('/payroll/summaries/:id/submit', 'hr', { id: 'clinic_2026-09' }, { branchId: 'clinic', monthKey: '2026-09', payrollEntryIds: ['p'] })).code, 200)
   assert.equal(h.records.get('payrollSummaries/clinic_2026-09').totalNetPay, 900)
   assert.equal((await h.call('/finance/payroll/:id/reject', 'finance', { id: 'clinic_2026-09' }, { reason: 'Correct hours' })).code, 200)

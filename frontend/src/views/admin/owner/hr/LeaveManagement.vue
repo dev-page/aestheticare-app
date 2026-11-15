@@ -20,6 +20,31 @@
           </router-link>
         </div>
 
+        <section v-if="reviewerMode && branchOptions.length" class="mt-6 rounded-3xl border border-amber-500/25 bg-slate-800/85 p-5 shadow-lg">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-semibold text-white">Paid leave rule</h2>
+              <p class="mt-1 max-w-3xl text-sm text-slate-400">Set the annual allowance and service wait for standard paid leave. HR records employment start dates in Base Pay.</p>
+            </div>
+            <button type="button" class="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-50" :disabled="savingPolicy || !policyBranchId" @click="saveLeavePolicy">
+              {{ savingPolicy ? 'Saving...' : 'Save rule' }}
+            </button>
+          </div>
+          <div class="mt-4 grid gap-4 sm:grid-cols-3">
+            <label class="text-sm text-slate-300">Clinic branch
+              <select v-model="policyBranchId" class="mt-1 w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-white" @change="loadLeavePolicy">
+                <option v-for="branch in branchOptions" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
+              </select>
+            </label>
+            <label class="text-sm text-slate-300">Paid workdays per year
+              <input v-model.number="leavePolicy.annualPaidDays" type="number" min="0" max="365" step="1" class="mt-1 w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-white" />
+            </label>
+            <label class="text-sm text-slate-300">Months of service before eligibility
+              <input v-model.number="leavePolicy.eligibilityMonths" type="number" min="0" max="60" step="1" class="mt-1 w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-white" />
+            </label>
+          </div>
+        </section>
+
         <section class="mt-8 rounded-3xl border border-slate-700 bg-slate-800/85 p-6 shadow-lg">
           <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
             <input
@@ -162,7 +187,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -170,8 +195,11 @@ import { auth, db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { LEAVE_STATUSES, formatLeaveDateRange, isPendingLeaveStatus } from '@/utils/leaveRequests'
 import { logActivity } from '@/utils/activityLogger'
+import { workflowApi } from '@/utils/workflowApi'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { loadOwnerBranchScope, loadClinicDocsByIds } from '@/utils/ownerBranchScope'
 import { leaveRequestScopes, subscribeLeaveScopes } from '@/utils/leaveRequestScope'
+import { DEFAULT_LEAVE_POLICY, normalizeLeavePolicy } from '../../../../../../shared/leavePolicy.js'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -185,6 +213,10 @@ const leaveRequests = ref([])
 const currentUserId = ref('')
 const currentUserName = ref('')
 const branchIds = ref([])
+const branchOptions = ref([])
+const policyBranchId = ref('')
+const leavePolicy = ref({ ...DEFAULT_LEAVE_POLICY })
+const savingPolicy = ref(false)
 let unsubscribeLeaveRequests = null
 let isDisposed = false
 const reviewerMode = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('leave:review')))
@@ -246,13 +278,41 @@ const resolveViewerContext = trackPageLoad(async () => {
     || user.email || 'Employee'
   const clinics = await loadClinicDocsByIds(db, scope.branchIds)
   // Workforce records are authorized per branch and are Premium-only.
-  branchIds.value = clinics.filter(clinic => clinic.subscriptionPlan === 'premium').map(clinic => clinic.id)
+  const eligibleClinics = clinics.filter(clinic => clinic.subscriptionPlan === 'premium')
+  branchIds.value = eligibleClinics.map(clinic => clinic.id)
+  branchOptions.value = eligibleClinics.map(clinic => ({ id: clinic.id, name: clinic.clinicBranch || clinic.clinicName || clinic.id }))
+  if (!branchOptions.value.some(branch => branch.id === policyBranchId.value)) policyBranchId.value = branchOptions.value[0]?.id || ''
   if (!branchIds.value.length) throw new Error('No assigned branch includes Premium workforce access. Check your branch assignment and subscription.')
 })
 
 const subscriptionErrorMessage = error => error?.code === 'permission-denied'
   ? 'Access to leave requests was denied. Your assigned branches, leave-review permission, and branch Premium plan must allow this access.'
   : error?.message || 'Leave requests could not be loaded. Please check your connection and try again.'
+
+const loadLeavePolicy = async () => {
+  if (!policyBranchId.value || !reviewerMode.value) return
+  try {
+    const token = await auth.currentUser?.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/hr/leave-policy?branchId=${encodeURIComponent(policyBranchId.value)}`, { headers: { Authorization: `Bearer ${token}` } })
+    const payload = await response.json()
+    if (!response.ok || !payload.success) throw new Error(payload.error || 'Paid leave rule could not be loaded.')
+    leavePolicy.value = normalizeLeavePolicy(payload.data)
+  } catch (error) {
+    toast.error(error.message || 'Paid leave rule could not be loaded.')
+  }
+}
+
+const saveLeavePolicy = async () => {
+  if (!policyBranchId.value || savingPolicy.value) return
+  savingPolicy.value = true
+  try {
+    leavePolicy.value = normalizeLeavePolicy(leavePolicy.value)
+    await workflowApi('/hr/leave-policy', { branchId: policyBranchId.value, ...leavePolicy.value })
+    toast.success('Paid leave rule saved.')
+  } catch (error) {
+    toast.error(error.message || 'Paid leave rule could not be saved.')
+  } finally { savingPolicy.value = false }
+}
 
 const subscribeLeaveRequests = () => {
   unsubscribeLeaveRequests?.()
@@ -280,6 +340,7 @@ const reloadLeaveRequests = trackPageLoad(async () => {
   try {
     await resolveViewerContext()
     if (isDisposed) return
+    if (reviewerMode.value) await loadLeavePolicy()
     subscribeLeaveRequests()
   } catch (error) {
     console.error('Failed to load leave management:', error)
@@ -289,14 +350,7 @@ const reloadLeaveRequests = trackPageLoad(async () => {
 })
 
 const updateLeaveStatus = async (request, status, reviewRemarks = '') => {
-  await updateDoc(doc(db, 'leaveRequests', request.id), {
-    status,
-    reviewRemarks,
-    reviewedBy: currentUserName.value,
-    reviewedById: currentUserId.value,
-    reviewedAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  })
+  await workflowApi(`/hr/leave-requests/${encodeURIComponent(request.id)}/review`, { status, reviewRemarks })
 
   await logActivity(db, {
     module: 'HR',
@@ -348,10 +402,7 @@ const cancelLeaveRequest = async (request) => {
   })
   if (!prompt.isConfirmed) return
 
-  await updateDoc(doc(db, 'leaveRequests', request.id), {
-    status: 'Cancelled',
-    updatedAt: serverTimestamp()
-  })
+  await workflowApi(`/hr/leave-requests/${encodeURIComponent(request.id)}/cancel`, {})
 
   await logActivity(db, {
     module: 'HR',

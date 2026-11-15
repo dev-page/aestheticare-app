@@ -6,7 +6,7 @@
       <div class="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Finance Reports</h1>
-          <p class="text-slate-400">Monthly operational report for sales, inventory valuation, and purchases<span v-if="hasPayroll">, including payroll</span>.</p>
+            <p class="text-slate-400">Monthly financial activity: collections and refunds use transaction dates, payroll uses its pay period, and costs use invoice or expense dates.</p>
         </div>
         <div class="flex flex-wrap items-end gap-3">
           <label class="block text-slate-400 text-sm mb-2">Report Month</label>
@@ -21,45 +21,58 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6" :class="hasPayroll ? 'xl:grid-cols-4' : 'xl:grid-cols-3'">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
         <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <p class="text-slate-400 text-sm">Revenue</p>
-          <p class="text-2xl font-bold text-green-400">{{ formatCurrency(report.revenue) }}</p>
-        </div>
-        <div v-if="hasPayroll" class="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <p class="text-slate-400 text-sm">Payroll</p>
-          <p class="text-2xl font-bold text-rose-400">{{ formatCurrency(report.payroll) }}</p>
+          <p class="text-slate-400 text-sm">Gross Collections</p>
+          <p class="text-2xl font-bold text-green-400">{{ formatCurrency(report.grossCollections) }}</p>
         </div>
         <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <p class="text-slate-400 text-sm">Inventory Cost</p>
-          <p class="text-2xl font-bold text-amber-400">{{ formatCurrency(report.inventoryCost) }}</p>
+          <p class="text-slate-400 text-sm">Refunds</p>
+          <p class="text-2xl font-bold text-rose-400">{{ formatCurrency(report.refunds) }}</p>
         </div>
         <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <p class="text-slate-400 text-sm">Net Profit</p>
-          <p class="text-2xl font-bold text-white">{{ formatCurrency(report.netProfit) }}</p>
+          <p class="text-slate-400 text-sm">Net Collections</p>
+          <p class="text-2xl font-bold text-green-300">{{ formatCurrency(report.netCollections) }}</p>
+        </div>
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+          <p class="text-slate-400 text-sm">Net Recorded Activity</p>
+          <p class="text-2xl font-bold text-white">{{ formatCurrency(report.netRecordedActivity) }}</p>
         </div>
       </div>
 
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
-        <h2 class="text-xl font-semibold text-white mb-4">Monthly Profit and Loss</h2>
+        <h2 class="text-xl font-semibold text-white mb-4">Monthly Activity Summary</h2>
         <div class="space-y-2 text-sm">
           <div class="flex justify-between text-slate-300">
-            <span>Revenue</span>
-            <span>{{ formatCurrency(report.revenue) }}</span>
+            <span>Gross collections</span>
+            <span>{{ formatCurrency(report.grossCollections) }}</span>
+          </div>
+          <div class="flex justify-between text-slate-300">
+            <span>Less: Refunds</span>
+            <span>- {{ formatCurrency(report.refunds) }}</span>
+          </div>
+          <div class="flex justify-between text-slate-300">
+            <span>Net collections</span>
+            <span>{{ formatCurrency(report.netCollections) }}</span>
           </div>
           <div v-if="hasPayroll" class="flex justify-between text-slate-300">
             <span>Less: Payroll</span>
             <span>- {{ formatCurrency(report.payroll) }}</span>
           </div>
           <div class="flex justify-between text-slate-300">
-            <span>Less: Inventory Purchases</span>
-            <span>- {{ formatCurrency(report.inventoryCost) }}</span>
+            <span>Less: Supplier invoices</span>
+            <span>- {{ formatCurrency(report.supplierCosts) }}</span>
+          </div>
+          <div class="flex justify-between text-slate-300">
+            <span>Less: Operating Expenses</span>
+            <span>- {{ formatCurrency(report.operatingExpenses) }}</span>
           </div>
           <div class="border-t border-slate-700 pt-2 flex justify-between text-white font-semibold">
-            <span>Net Profit</span>
-            <span>{{ formatCurrency(report.netProfit) }}</span>
+            <span>Net recorded activity</span>
+            <span>{{ formatCurrency(report.netRecordedActivity) }}</span>
           </div>
         </div>
+        <p class="mt-4 text-xs text-slate-400">This operational summary groups each record by its financial event date. It is not an audited profit-and-loss statement.</p>
       </div>
 
       <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
@@ -116,14 +129,18 @@
 
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
         <h2 class="text-lg font-semibold text-white mb-4">Cost Percentage Analysis</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div v-if="hasPayroll" class="bg-slate-700 rounded-lg p-4">
             <p class="text-slate-400 text-xs uppercase tracking-wide">Payroll % of Revenue</p>
             <p class="text-white text-xl font-semibold mt-1">{{ percent(report.payrollPercent) }}</p>
           </div>
           <div class="bg-slate-700 rounded-lg p-4">
-            <p class="text-slate-400 text-xs uppercase tracking-wide">Inventory % of Revenue</p>
+            <p class="text-slate-400 text-xs uppercase tracking-wide">Supplier Costs % of Revenue</p>
             <p class="text-white text-xl font-semibold mt-1">{{ percent(report.inventoryPercent) }}</p>
+          </div>
+          <div class="bg-slate-700 rounded-lg p-4">
+            <p class="text-slate-400 text-xs uppercase tracking-wide">Operating Expenses % of Revenue</p>
+            <p class="text-white text-xl font-semibold mt-1">{{ percent(report.operatingExpensesPercent) }}</p>
           </div>
           <div class="bg-slate-700 rounded-lg p-4">
             <p class="text-slate-400 text-xs uppercase tracking-wide">Inventory Valuation</p>
@@ -145,6 +162,8 @@ import { getApp } from 'firebase/app'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { useSubscription } from '@/composables/useSubscription'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
+import { summarizeFinanceMonth } from '../../../../../../shared/financeSummary.js'
 
 export default {
   name: 'FinanceReports',
@@ -160,62 +179,39 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const currentBranchId = ref('')
     const transactions = ref([])
     const payrolls = ref([])
-    const purchases = ref([])
+    const financialRecords = ref([])
     const inventoryItems = ref([])
     const users = ref([])
     const selectedMonth = ref(new Date().toISOString().slice(0, 7))
 
-    const toDate = (timestamp) => (timestamp?.toDate ? timestamp.toDate() : null)
-    const monthKey = (date) =>
-      date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : ''
     const formatCurrency = (value) =>
       new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value || 0))
     const percent = (value) => `${Number(value || 0).toFixed(2)}%`
     const exportPdf = () => window.print()
 
-    const isInSelectedMonth = (timestamp) => monthKey(toDate(timestamp)) === selectedMonth.value
-
-    const monthlyTransactions = computed(() => transactions.value.filter((tx) => isInSelectedMonth(tx.createdAt)))
-    const monthlyPayrolls = computed(() => payrolls.value.filter((entry) => {
-      const month = String(entry.monthKey || monthKey(toDate(entry.createdAt || entry.updatedAt)))
-      return month === selectedMonth.value && String(entry.status || '').toLowerCase() === 'approved'
+    const monthlySummary = computed(() => summarizeFinanceMonth({
+      transactions: transactions.value,
+      payrolls: payrolls.value,
+      financialRecords: financialRecords.value,
+      monthKey: selectedMonth.value,
     }))
-    const monthlyPurchases = computed(() =>
-      purchases.value.filter((entry) => {
-        if (String(entry.status || '').toLowerCase() !== 'delivered') return false
-        return isInSelectedMonth(entry.deliveredAt || entry.updatedAt || entry.createdAt)
-      })
-    )
-
-    const purchaseTotal = (entry) => {
-      const directTotal = Number(entry.totalCost || entry.total || 0)
-      if (directTotal > 0) return directTotal
-      return (
-        Number(entry.quantity || 0) *
-        Number(entry.unitCost || entry.costPerUnit || entry.costPrice || entry.unitPrice || entry.price || 0)
-      )
-    }
+    const monthlySalesTransactions = computed(() => monthlySummary.value.monthlyTransactions.filter(tx => Number(tx.amount || 0) > 0))
 
     const getInventoryUnitPrice = (item) =>
       Number(item.unitPrice || item.price || item.costPrice || item.unitCost || item.costPerUnit || 0)
 
     const report = computed(() => {
-      const revenue = monthlyTransactions.value.reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
-      const payroll = monthlyPayrolls.value.reduce((sum, entry) => sum + Number(entry.totalPayroll || 0), 0)
-      const inventoryCost = monthlyPurchases.value.reduce((sum, entry) => sum + purchaseTotal(entry), 0)
-      const netProfit = revenue - payroll - inventoryCost
+      const summary = monthlySummary.value
       const inventoryValuation = inventoryItems.value.reduce(
         (sum, item) => sum + Number(item.currentStock || 0) * getInventoryUnitPrice(item),
         0
       )
       return {
-        revenue,
-        payroll,
-        inventoryCost,
-        netProfit,
+        ...summary,
         inventoryValuation,
-        payrollPercent: revenue > 0 ? (payroll / revenue) * 100 : 0,
-        inventoryPercent: revenue > 0 ? (inventoryCost / revenue) * 100 : 0
+        payrollPercent: summary.netCollections > 0 ? (summary.payroll / summary.netCollections) * 100 : 0,
+        inventoryPercent: summary.netCollections > 0 ? (summary.supplierCosts / summary.netCollections) * 100 : 0,
+        operatingExpensesPercent: summary.netCollections > 0 ? (summary.operatingExpenses / summary.netCollections) * 100 : 0
       }
     })
 
@@ -230,7 +226,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const salesByStaff = computed(() => {
       const grouped = {}
-      monthlyTransactions.value.forEach((tx) => {
+      monthlySalesTransactions.value.forEach((tx) => {
         const key = tx.receptionistId || 'unassigned'
         if (!grouped[key]) {
           grouped[key] = { id: key, name: userMap.value[key] || 'Unassigned', total: 0 }
@@ -242,7 +238,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const salesByService = computed(() => {
       const grouped = {}
-      monthlyTransactions.value.forEach((tx) => {
+      monthlySalesTransactions.value.forEach((tx) => {
         const key =
           tx.service ||
           (tx.type === 'appointment_payment'
@@ -261,17 +257,33 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const payrollRequest = hasPayroll.value
         ? getDocs(query(collection(db, 'payrollSummaries'), where('branchId', '==', currentBranchId.value)))
         : Promise.resolve({ docs: [] })
-      const [txSnap, payrollSnap, purchaseSnap, inventorySnap, usersSnap] = await Promise.all([
+      const financeRecordsRequest = (async () => {
+        const token = await auth.currentUser?.getIdToken()
+        if (!token) throw new Error('Sign in to load finance records.')
+        let lastError
+        for (const base of OTP_BACKEND_CANDIDATES) {
+          try {
+            const response = await fetch(`${base}/finance/records?branchId=${encodeURIComponent(currentBranchId.value)}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+            const payload = await response.json()
+            if (!response.ok || !payload.success) throw new Error(payload.error || 'Finance records could not be loaded.')
+            return Array.isArray(payload.data) ? payload.data : []
+          } catch (error) { lastError = error }
+        }
+        throw lastError || new Error('Finance records could not be loaded.')
+      })()
+      const [txSnap, payrollSnap, financeRows, inventorySnap, usersSnap] = await Promise.all([
         getDocs(query(collection(db, 'transactions'), where('branchId', '==', currentBranchId.value))),
         payrollRequest,
-        getDocs(query(collection(db, 'purchaseRequests'), where('branchId', '==', currentBranchId.value))),
+        financeRecordsRequest,
         getDocs(query(collection(db, 'inventoryItems'), where('branchId', '==', currentBranchId.value))),
         getDocs(query(collection(db, 'users'), where('branchId', '==', currentBranchId.value), where('userType', '==', 'Staff')))
       ])
 
       transactions.value = txSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
       payrolls.value = payrollSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
-      purchases.value = purchaseSnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      financialRecords.value = financeRows
       inventoryItems.value = inventorySnap.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
       users.value = usersSnap.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
@@ -287,7 +299,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           currentBranchId.value = ''
           transactions.value = []
           payrolls.value = []
-          purchases.value = []
+          financialRecords.value = []
           inventoryItems.value = []
           users.value = []
           return

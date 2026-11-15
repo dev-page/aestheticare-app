@@ -30,6 +30,42 @@ const normalizeLots = (branchId, itemId, records) => records
   .filter(({ id, data }) => id && data.branchId === branchId && data.itemId === itemId)
   .map(lot => ({ ...lot, data: { ...lot.data, remainingQuantity: numericQuantity(lot.data.remainingQuantity) } }))
 
+export const summarizeInventoryLotReconciliation = (items = [], lotRecords = []) => {
+  const totals = new Map()
+  for (const record of lotRecords) {
+    const lot = recordData(record), branchId = String(lot.branchId || ''), itemId = String(lot.itemId || '')
+    if (!branchId || !itemId) continue
+    const key = `${branchId}\u0000${itemId}`
+    if (!totals.has(key)) totals.set(key, { quantity: 0, invalidLotIds: [] })
+    const aggregate = totals.get(key), quantity = Number(lot.remainingQuantity)
+    if (!Number.isSafeInteger(quantity) || quantity < 0) aggregate.invalidLotIds.push(String(record.id || 'Unknown lot'))
+    else {
+      aggregate.quantity += quantity
+      if (!Number.isSafeInteger(aggregate.quantity)) aggregate.invalidLotIds.push(String(record.id || 'Unknown lot'))
+    }
+  }
+  return items.map(item => {
+    const branchId = String(item.branchId || ''), id = String(item.id || '')
+    const total = totals.get(`${branchId}\u0000${id}`) || { quantity: 0, invalidLotIds: [] }
+    const currentStock = Number(item.currentStock ?? 0)
+    const validStock = Number.isSafeInteger(currentStock) && currentStock >= 0
+    const difference = total.quantity - (validStock ? currentStock : 0)
+    const issue = !validStock ? 'Invalid item stock' : total.invalidLotIds.length ? 'Invalid lot quantity' : difference ? 'Mismatch' : ''
+    if (!issue) return null
+    return {
+      id,
+      branchId,
+      name: String(item.name || id || 'Unnamed item'),
+      unit: String(item.unit || 'units'),
+      currentStock: validStock ? currentStock : null,
+      lotQuantity: total.quantity,
+      difference,
+      invalidLotIds: total.invalidLotIds,
+      issue,
+    }
+  }).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+}
+
 export const reconcileLotsToInventory = ({ branchId, itemId, item = {}, lotRecords = [] }) => {
   const target = numericQuantity(item.currentStock)
   let lots = normalizeLots(branchId, itemId, lotRecords)

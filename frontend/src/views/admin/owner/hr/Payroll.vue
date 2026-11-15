@@ -17,6 +17,7 @@
 
       <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <h2 class="text-lg font-semibold text-white mb-4">Payroll Settings (Deductions)</h2>
+        <p class="mb-4 text-sm text-slate-400">These clinic settings drive the estimate and are checked by the payroll service before Finance review. Confirm the rates with your payroll adviser.</p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -373,6 +374,8 @@
                 <div>
                   <div class="text-slate-400 text-xs uppercase mb-2">Earnings</div>
                   <div class="flex justify-between"><span>Hours Worked</span><span>{{ selectedPayslip?.earnings?.hoursWorked ?? '-' }}</span></div>
+                  <div class="flex justify-between"><span>Regular / overtime hours</span><span>{{ selectedPayslip?.earnings?.regularHours ?? 0 }} / {{ selectedPayslip?.earnings?.overtimeHours ?? 0 }}</span></div>
+                  <div class="flex justify-between"><span>Paid leave days</span><span>{{ selectedPayslip?.earnings?.paidLeaveDays ?? 0 }}</span></div>
                   <div class="flex justify-between"><span>Hourly Rate</span><span>{{ formatCurrency(selectedPayslip?.earnings?.hourlyRate || 0) }}</span></div>
                   <div class="flex justify-between"><span>Commission</span><span>{{ formatCurrency(selectedPayslip?.earnings?.commission || 0) }}</span></div>
                   <div class="flex justify-between font-semibold text-white mt-2"><span>Total</span><span>{{ formatCurrency(selectedPayslip?.earnings?.total || 0) }}</span></div>
@@ -383,6 +386,7 @@
                   <div class="flex justify-between"><span>PhilHealth</span><span>{{ formatCurrency(selectedPayslip?.deductions?.philHealth?.amount || 0) }}</span></div>
                   <div class="flex justify-between"><span>Pag-IBIG</span><span>{{ formatCurrency(selectedPayslip?.deductions?.pagIbig?.amount || 0) }}</span></div>
                   <div class="flex justify-between"><span>Income Tax</span><span>{{ formatCurrency(selectedPayslip?.deductions?.incomeTax?.amount || 0) }}</span></div>
+                  <div class="flex justify-between"><span>Unpaid leave</span><span>{{ formatCurrency(selectedPayslip?.deductions?.unpaidLeave?.amount || 0) }}</span></div>
                   <div class="flex justify-between font-semibold text-white mt-2"><span>Total</span><span>{{ formatCurrency(selectedPayslip?.totalDeductions || 0) }}</span></div>
                 </div>
               </div>
@@ -414,6 +418,7 @@ import { usePageLoading } from '@/composables/usePageLoading'
 import { workflowApi } from '@/utils/workflowApi'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { basePayForPeriod } from '../../../../../../shared/practitionerTeam.js'
+import { DEFAULT_PAYROLL_DEDUCTION_SETTINGS, calculatePayrollDeductions } from '../../../../../../shared/payrollDeductions.js'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
@@ -424,7 +429,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { logActivity } from '@/utils/activityLogger'
 import { hasAnyAssignedShift } from '@/utils/employeeSchedules'
-import { calculatePhilippineOvertimePay } from '@/utils/philippineOvertime'
+import { calculatePhilippineOvertime, calculatePhilippineOvertimePay } from '@/utils/philippineOvertime'
 
 export default {
   name: 'PayrollAndPayslipManagement',
@@ -478,13 +483,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const commissionRangeStart = ref('')
     const commissionRangeEnd = ref('')
     const loadingCommission = ref(false)
-    const deductionSettings = ref({
-      sssRate: 4.5,
-      philHealthRate: 2.5,
-      pagIbigRate: 2,
-      incomeTaxRate: 10,
-      useGraduatedIncomeTax: true
-    })
+    const deductionSettings = ref({ ...DEFAULT_PAYROLL_DEDUCTION_SETTINGS })
     const savingSettings = ref(false)
 
     const formatCurrency = (value) => {
@@ -581,6 +580,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 <h3>Earnings</h3>
                 <table>
                   <tr><th>Hours Worked</th><td>${slip.earnings?.hoursWorked ?? '-'}</td></tr>
+                  <tr><th>Regular / Overtime Hours</th><td>${slip.earnings?.regularHours ?? 0} / ${slip.earnings?.overtimeHours ?? 0}</td></tr>
+                  <tr><th>Paid Leave Days</th><td>${slip.earnings?.paidLeaveDays ?? 0}</td></tr>
                   <tr><th>Hourly Rate</th><td>${formatCurrency(slip.earnings?.hourlyRate || 0)}</td></tr>
                   <tr><th>Commission</th><td>${formatCurrency(slip.earnings?.commission || 0)}</td></tr>
                   <tr><th>Total</th><td>${formatCurrency(slip.earnings?.total || 0)}</td></tr>
@@ -593,6 +594,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                   <tr><th>PhilHealth</th><td>${formatCurrency(slip.deductions?.philHealth?.amount || 0)}</td></tr>
                   <tr><th>Pag-IBIG</th><td>${formatCurrency(slip.deductions?.pagIbig?.amount || 0)}</td></tr>
                   <tr><th>Income Tax</th><td>${formatCurrency(slip.deductions?.incomeTax?.amount || 0)}</td></tr>
+                  <tr><th>Unpaid Leave</th><td>${formatCurrency(slip.deductions?.unpaidLeave?.amount || 0)}</td></tr>
                   <tr><th>Total Deductions</th><td>${formatCurrency(slip.totalDeductions || 0)}</td></tr>
                 </table>
               </div>
@@ -655,6 +657,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const rowHeight = 18
       const earningsRows = [
         ['Hours Worked', String(slip.earnings?.hoursWorked ?? '-')],
+        ['Regular / OT Hours', `${slip.earnings?.regularHours ?? 0} / ${slip.earnings?.overtimeHours ?? 0}`],
+        ['Paid Leave Days', String(slip.earnings?.paidLeaveDays ?? 0)],
         ['Hourly Rate', formatCurrency(slip.earnings?.hourlyRate || 0)],
         ['Commission', formatCurrency(slip.earnings?.commission || 0)],
         ['Total Earnings', formatCurrency(slip.earnings?.total || 0)]
@@ -685,6 +689,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         ['PhilHealth', formatCurrency(slip.deductions?.philHealth?.amount || 0)],
         ['Pag-IBIG', formatCurrency(slip.deductions?.pagIbig?.amount || 0)],
         ['Income Tax', formatCurrency(slip.deductions?.incomeTax?.amount || 0)],
+        ['Unpaid Leave', formatCurrency(slip.deductions?.unpaidLeave?.amount || 0)],
         ['Total Deductions', formatCurrency(slip.totalDeductions || 0)]
       ]
       const deductionsHeight = (deductionsRows.length + 1) * rowHeight
@@ -874,80 +879,22 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const roundCurrency = (value) => Number((Number(value) || 0).toFixed(2))
 
-    const computeIncomeTaxMonthly = (gross) => {
-      const income = Number(gross) || 0
-      if (income <= 20833) return 0
-      if (income <= 33332) return (income - 20833) * 0.15
-      if (income <= 66666) return 1875 + (income - 33333) * 0.2
-      if (income <= 166666) return 8541.8 + (income - 66667) * 0.25
-      if (income <= 666666) return 33541.8 + (income - 166667) * 0.3
-      return 183541.8 + (income - 666667) * 0.35
-    }
-
-    const computeDeductions = (grossPay) => {
-      const gross = Number(grossPay) || 0
-      const sssRate = Number(deductionSettings.value.sssRate || 0)
-      const philHealthRate = Number(deductionSettings.value.philHealthRate || 0)
-      const pagIbigRate = Number(deductionSettings.value.pagIbigRate || 0)
-      const incomeTaxRate = Number(deductionSettings.value.incomeTaxRate || 0)
-      const useGraduated = Boolean(deductionSettings.value.useGraduatedIncomeTax)
-
-      const sss = gross * (sssRate / 100)
-      const philHealth = gross * (philHealthRate / 100)
-      const pagIbigRaw = gross * (pagIbigRate / 100)
-      const pagIbig = Math.min(pagIbigRaw, 200)
-      const incomeTax = useGraduated ? computeIncomeTaxMonthly(gross) : gross * (incomeTaxRate / 100)
-
-      const incomeTaxRateEffective = gross > 0 ? (incomeTax / gross) * 100 : 0
-
-      return {
-        sss: { amount: roundCurrency(sss), rate: roundCurrency(sssRate) },
-        philHealth: { amount: roundCurrency(philHealth), rate: roundCurrency(philHealthRate) },
-        pagIbig: { amount: roundCurrency(pagIbig), rate: roundCurrency(pagIbigRate), capped: pagIbigRaw > 200 },
-        incomeTax: {
-          amount: roundCurrency(incomeTax),
-          rate: roundCurrency(useGraduated ? incomeTaxRateEffective : incomeTaxRate),
-          mode: useGraduated ? 'graduated' : 'flat'
-        }
-      }
-    }
+    const computeDeductions = (grossPay) => calculatePayrollDeductions(grossPay, deductionSettings.value)
 
     const loadPayrollSettings = trackPageLoad(async () => {
       if (!currentBranchId.value) return
-      const settingsSnap = await getDoc(doc(db, 'payrollSettings', currentBranchId.value))
-      if (!settingsSnap.exists()) return
-      const data = settingsSnap.data() || {}
-      deductionSettings.value = {
-        sssRate: Number(data.sssRate ?? deductionSettings.value.sssRate),
-        philHealthRate: Number(data.philHealthRate ?? deductionSettings.value.philHealthRate),
-        pagIbigRate: Number(data.pagIbigRate ?? deductionSettings.value.pagIbigRate),
-        incomeTaxRate: Number(data.incomeTaxRate ?? deductionSettings.value.incomeTaxRate),
-        useGraduatedIncomeTax: data.useGraduatedIncomeTax !== undefined
-          ? Boolean(data.useGraduatedIncomeTax)
-          : deductionSettings.value.useGraduatedIncomeTax
-      }
+      const token = await auth.currentUser?.getIdToken()
+      const response = await fetch(`${OTP_API_BASE}/payroll/settings?branchId=${encodeURIComponent(currentBranchId.value)}`, { headers: { Authorization: `Bearer ${token}` } })
+      const payload = await response.json()
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Payroll deduction settings could not be loaded.')
+      deductionSettings.value = { ...deductionSettings.value, ...(payload.data || {}) }
     })
 
     const savePayrollSettings = async () => {
       if (!currentBranchId.value) return
       savingSettings.value = true
       try {
-        await addDoc(collection(db, 'payrollSettingsAudit'), {
-          branchId: currentBranchId.value,
-          ...deductionSettings.value,
-          updatedBy: currentUserId.value,
-          updatedAt: serverTimestamp()
-        })
-        await setDoc(
-          doc(db, 'payrollSettings', currentBranchId.value),
-          {
-            branchId: currentBranchId.value,
-            ...deductionSettings.value,
-            updatedBy: currentUserId.value,
-            updatedAt: serverTimestamp()
-          },
-          { merge: true }
-        )
+        await workflowApi('/payroll/settings', { branchId: currentBranchId.value, ...deductionSettings.value })
         toast.success('Payroll deduction settings updated.')
       } catch (error) {
         console.error('Failed to save payroll settings:', error)
@@ -999,14 +946,24 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const outMinutes = parseClockToMinutes(data.timeOut)
         if (inMinutes === null || outMinutes === null) return sum
 
-        let duration = outMinutes - inMinutes
-        if (duration < 0) duration += 24 * 60
-        if (duration > 0) dates.add(String(data.date || snap.id))
-        return sum + Math.max(duration, 0)
+        const worked = calculatePhilippineOvertime(data, {})
+        if (worked.workedMinutes > 0) dates.add(String(data.date || snap.id))
+        return sum + Math.max(worked.workedMinutes || 0, 0)
       }, 0)
 
       workedDays.set(employeeId, dates.size)
       return roundToQuarterHour(totalMinutes / 60)
+    }
+
+    const getPayrollLeaveAdjustments = async (monthKey) => {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Sign in to load approved leave for payroll.')
+      const response = await fetch(`${OTP_API_BASE}/hr/payroll-leave-adjustments?branchId=${encodeURIComponent(currentBranchId.value)}&monthKey=${encodeURIComponent(monthKey)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Approved leave could not be loaded. Payroll was not generated.')
+      return Object.fromEntries((Array.isArray(payload.data) ? payload.data : []).map(row => [row.employeeId, row]))
     }
 
     const computeApprovedOvertime = async (employee, monthKey = '') => {
@@ -1026,6 +983,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           timeOut: data.actualTimeOut,
           shiftStart: data.scheduledStart,
           shiftEnd: data.scheduledEnd,
+          unpaidMealBreakMinutes: data.unpaidMealBreakMinutes,
           dayClassification: data.dayClassification,
         }, employee, employee.basePay)
         const minutes = Math.max(0, Number(data.calculatedOvertimeMinutes || calculation.overtimeMinutes))
@@ -1149,25 +1107,40 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         )
 
         const generatedIds = []
+        const leaveAdjustments = await getPayrollLeaveAdjustments(monthKey)
         for (const employee of employees.value) {
           if (!employee?.id) continue
 
           const employeeHours = await computeWorkedHoursFromAttendance(employee.id, monthKey)
-          if ((!employeeHours || employeeHours <= 0) && employee.basePayModel !== 'monthly-retainer') continue
-
-          const base = basePayForPeriod({ model: employee.basePayModel || 'hourly', rate: Number(employee.basePay || 0), hours: employeeHours, days: workedDays.get(employee.id) || 0, monthlyHours: Number(employee.monthlyBaseHours || 176) })
-          const overtime = await computeApprovedOvertime({ ...employee, basePay: base.hourlyEquivalent }, monthKey)
-          const overtimeHours = roundToQuarterHour(overtime.minutes / 60)
+          const leave = leaveAdjustments[employee.id] || { paidLeaveDays: 0, paidLeaveHours: 0, unpaidLeaveDays: 0, unpaidLeaveHours: 0 }
+          if ((!employeeHours || employeeHours <= 0) && !leave.paidLeaveDays && !leave.unpaidLeaveDays && employee.basePayModel !== 'monthly-retainer') continue
 
           const basePay = Number(employee.basePay || 0)
           if (basePay <= 0) continue
+          const baseRate = basePayForPeriod({ model: employee.basePayModel || 'hourly', rate: basePay, hours: 0, days: 0, monthlyHours: Number(employee.monthlyBaseHours || 176) })
+          const overtime = await computeApprovedOvertime({ ...employee, basePay: baseRate.hourlyEquivalent }, monthKey)
+          const overtimeHours = roundToQuarterHour(overtime.minutes / 60)
+          const regularHours = roundToQuarterHour(Math.max(0, employeeHours - overtimeHours))
+
+          const base = basePayForPeriod({
+            model: employee.basePayModel || 'hourly',
+            rate: basePay,
+            hours: (employee.basePayModel || 'hourly') === 'hourly' ? regularHours + Number(leave.paidLeaveHours || 0) : employeeHours,
+            days: (workedDays.get(employee.id) || 0) + Number(leave.paidLeaveDays || 0),
+            monthlyHours: Number(employee.monthlyBaseHours || 176)
+          })
+          const unpaidLeaveDeduction = (employee.basePayModel || 'hourly') === 'monthly-retainer'
+            ? roundCurrency(Math.min(base.amount, Number(leave.unpaidLeaveHours || 0) * base.hourlyEquivalent))
+            : 0
+          const basePayAmount = roundCurrency(base.amount)
 
           const commissionResult = await computeCommissionForEmployee(employee.id, monthStart, monthEnd)
           const commissionAmount = Number(commissionResult.total || 0)
 
           const overtimePay = roundCurrency(overtime.pay + overtime.nightDifferential)
-          const totalPay = base.amount + overtimePay + commissionAmount
+          const totalPay = basePayAmount + overtimePay + commissionAmount
           const deductions = computeDeductions(totalPay)
+          if (unpaidLeaveDeduction) deductions.unpaidLeave = { amount: unpaidLeaveDeduction, rate: 0, mode: 'hours' }
           const totalDeductions = roundCurrency(
             Object.values(deductions).reduce((sum, entry) => sum + Number(entry?.amount || 0), 0)
           )
@@ -1181,6 +1154,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             employmentType: employee.employmentType || null,
             salaryType,
             hoursWorked: Number(employeeHours || 0),
+            regularHours,
+            paidLeaveDays: Number(leave.paidLeaveDays || 0),
+            paidLeaveHours: Number(leave.paidLeaveHours || 0),
+            unpaidLeaveDays: Number(leave.unpaidLeaveDays || 0),
+            unpaidLeaveHours: Number(leave.unpaidLeaveHours || 0),
+            unpaidLeaveDeduction,
             overtimeHours: Number(overtimeHours || 0),
             overtimeRateMultiplier: overtimeHours ? Number((overtime.pay / (overtimeHours * base.hourlyEquivalent)).toFixed(4)) : 1.25,
             nightDifferential: Number(overtime.nightDifferential.toFixed(2)),
@@ -1188,13 +1167,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             hourlyRate: base.hourlyEquivalent,
             baseRate: Number(basePay || 0),
             basePayModel: employee.basePayModel || 'hourly',
-            basePayAmount: base.amount,
+            basePayAmount,
             workedDays: workedDays.get(employee.id) || 0,
             hourlyEquivalent: base.hourlyEquivalent,
             monthlyBaseHours: Number(employee.monthlyBaseHours || 176),
             commission: commissionAmount,
             staffEarningIds: commissionResult.ids,
             totalPay,
+            deductionSettingsSnapshot: { ...deductionSettings.value },
             deductions,
             totalDeductions,
             netPay,
@@ -1411,16 +1391,34 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const monthKey = approvalMonthKey.value
         const start = new Date(monthKey + '-01T00:00:00+08:00')
         const hours = await computeWorkedHoursFromAttendance(employee.id, monthKey)
-        const base = basePayForPeriod({ model: employee.basePayModel || 'hourly', rate: Number(employee.basePay || 0), hours, days: workedDays.get(employee.id) || 0, monthlyHours: Number(employee.monthlyBaseHours || 176) })
-        const overtime = await computeApprovedOvertime({ ...employee, basePay: base.hourlyEquivalent }, monthKey)
+        const leaveAdjustments = await getPayrollLeaveAdjustments(monthKey)
+        const leave = leaveAdjustments[employee.id] || { paidLeaveDays: 0, paidLeaveHours: 0, unpaidLeaveDays: 0, unpaidLeaveHours: 0 }
+        const basePay = Number(employee.basePay || 0)
+        const model = employee.basePayModel || 'hourly'
+        const rateBasis = basePayForPeriod({ model, rate: basePay, hours: 0, days: 0, monthlyHours: Number(employee.monthlyBaseHours || 176) })
+        const overtime = await computeApprovedOvertime({ ...employee, basePay: rateBasis.hourlyEquivalent }, monthKey)
+        const overtimeHours = roundToQuarterHour(overtime.minutes / 60)
+        const regularHours = roundToQuarterHour(Math.max(0, hours - overtimeHours))
+        const base = basePayForPeriod({
+          model,
+          rate: basePay,
+          hours: model === 'hourly' ? regularHours + Number(leave.paidLeaveHours || 0) : hours,
+          days: (workedDays.get(employee.id) || 0) + Number(leave.paidLeaveDays || 0),
+          monthlyHours: Number(employee.monthlyBaseHours || 176)
+        })
+        const unpaidLeaveDeduction = model === 'monthly-retainer'
+          ? roundCurrency(Math.min(base.amount, Number(leave.unpaidLeaveHours || 0) * base.hourlyEquivalent))
+          : 0
+        const basePayAmount = roundCurrency(base.amount)
         const commission = await computeCommissionForEmployee(employee.id, start)
         const overtimePay = roundCurrency(overtime.pay + overtime.nightDifferential)
-        const totalPay = roundCurrency(base.amount + overtimePay + commission.total)
+        const totalPay = roundCurrency(basePayAmount + overtimePay + commission.total)
         const deductions = computeDeductions(totalPay)
+        if (unpaidLeaveDeduction) deductions.unpaidLeave = { amount: unpaidLeaveDeduction, rate: 0, mode: 'hours' }
         const totalDeductions = roundCurrency(Object.values(deductions).reduce((sum, item) => sum + Number(item?.amount || 0), 0))
         const netPay = roundCurrency(totalPay - totalDeductions)
         if (netPay < 0) throw new Error('Adjustments exceed this period earnings. Finance must review the balance.')
-        const payload = { employeeId: employee.id, employeeName: employee.fullName, branchId: currentBranchId.value, payPeriodMonthKey: monthKey, salaryType: employee.basePayModel || 'hourly', hoursWorked: hours, hourlyRate: base.hourlyEquivalent, baseRate: Number(employee.basePay || 0), basePayModel: employee.basePayModel || 'hourly', basePayAmount: base.amount, workedDays: workedDays.get(employee.id) || 0, monthlyBaseHours: Number(employee.monthlyBaseHours || 176), overtimePay, commission: commission.total, staffEarningIds: commission.ids, totalPay, deductions, totalDeductions, netPay, createdBy: currentUserId.value, createdAt: serverTimestamp() }
+        const payload = { employeeId: employee.id, employeeName: employee.fullName, branchId: currentBranchId.value, payPeriodMonthKey: monthKey, salaryType: model, hoursWorked: hours, regularHours, overtimeHours, overtimeRateMultiplier: overtimeHours ? Number((overtime.pay / (overtimeHours * base.hourlyEquivalent)).toFixed(4)) : 1.25, nightDifferential: Number(overtime.nightDifferential.toFixed(2)), paidLeaveDays: Number(leave.paidLeaveDays || 0), paidLeaveHours: Number(leave.paidLeaveHours || 0), unpaidLeaveDays: Number(leave.unpaidLeaveDays || 0), unpaidLeaveHours: Number(leave.unpaidLeaveHours || 0), unpaidLeaveDeduction, hourlyRate: base.hourlyEquivalent, baseRate: basePay, basePayModel: model, basePayAmount, workedDays: workedDays.get(employee.id) || 0, monthlyBaseHours: Number(employee.monthlyBaseHours || 176), overtimePay, commission: commission.total, staffEarningIds: commission.ids, totalPay, deductionSettingsSnapshot: { ...deductionSettings.value }, deductions, totalDeductions, netPay, createdBy: currentUserId.value, createdAt: serverTimestamp() }
         const existing = payrolls.value.find(item => item.employeeId === employee.id && item.payPeriodMonthKey === monthKey)
         if (existing?.payslipReleasedAt) throw new Error('A released payslip cannot be overwritten.')
         if (existing) await updateDoc(doc(db, 'payrolls', existing.id), { ...payload, createdBy: existing.createdBy || currentUserId.value, createdAt: existing.createdAt || serverTimestamp(), updatedBy: currentUserId.value, updatedAt: serverTimestamp() })

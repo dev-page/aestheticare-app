@@ -8,19 +8,16 @@
           <p class="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300">HR and Payroll</p>
           <h1 class="mt-3 text-3xl font-bold text-white">{{ pageTitle }}</h1>
           <p class="mt-2 max-w-3xl text-sm text-slate-400">
-            Submit a leave request using your assigned clinic context. Paid leave balance is tracked for the current year.
+            Submit a leave request using your assigned clinic context. Leave days follow your recurring schedule, and pending paid leave reserves your balance.
           </p>
         </div>
 
         <section class="rounded-3xl border border-slate-700 bg-slate-800/85 p-6 shadow-lg">
           <div class="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5 text-sm text-amber-100">
             <p class="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Leave Policy</p>
-            <ul class="mt-3 space-y-2 text-slate-100">
-              <li>- Service Incentive Leave (SIL): 5 days per year after 1 year of employment.</li>
-              <li>- Maternity Leave: 105 days with full pay for live childbirth (regardless of civil status).</li>
-              <li>- Paid leave requests are checked against your remaining balance before submission.</li>
-            </ul>
+            <p class="mt-3 text-slate-100">Standard paid leave: up to {{ leavePolicy.annualPaidDays }} scheduled workdays per calendar year after {{ leavePolicy.eligibilityMonths }} month<span v-if="leavePolicy.eligibilityMonths !== 1">s</span> of service. Your employment start date and remaining balance are checked before submission. Special leave types follow their separate clinic rules.</p>
           </div>
+          <p v-if="policyLoadError" role="alert" class="mt-4 rounded-xl border border-rose-500/40 bg-rose-950/40 p-4 text-sm text-rose-100">{{ policyLoadError }}</p>
 
           <div class="grid gap-4 lg:grid-cols-3">
             <div class="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
@@ -76,7 +73,7 @@
 
             <div class="grid gap-6 md:grid-cols-3">
               <div>
-                <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Days Requested</label>
+                <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Scheduled Workdays</label>
                 <input :value="daysRequested" type="number" readonly class="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-white" />
               </div>
               <div>
@@ -171,15 +168,19 @@ import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { collection, addDoc, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import Swal from 'sweetalert2'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth, db, storage } from '@/config/firebaseConfig'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { usePermissions } from '@/composables/usePermissions'
-import { LEAVE_TYPES, PAID_LEAVE_ALLOWANCE, PAYMENT_TYPES, calculateLeaveDays, isPendingLeaveStatus } from '@/utils/leaveRequests'
+import { LEAVE_TYPES, PAYMENT_TYPES, isPendingLeaveStatus } from '@/utils/leaveRequests'
+import { scheduledWorkDates, scheduledWorkDatesForYear } from '../../../../../../shared/employeeLeave.js'
+import { DEFAULT_LEAVE_POLICY, isEligibleForPaidLeave, normalizeLeavePolicy } from '../../../../../../shared/leavePolicy.js'
 import { logActivity } from '@/utils/activityLogger'
+import { workflowApi } from '@/utils/workflowApi'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -194,7 +195,11 @@ const branchId = ref('')
 const ownerId = ref('')
 const currentRoleLabel = ref('')
 const employmentType = ref('')
+const employmentStartDate = ref('')
+const leavePolicy = ref({ ...DEFAULT_LEAVE_POLICY })
+const policyLoadError = ref('')
 const currentUserName = ref('')
+const recurringSchedule = ref({})
 const editingRequestId = ref('')
 const attachmentFile = ref(null)
 const attachmentName = ref('')
@@ -221,17 +226,26 @@ const requestYear = computed(() => {
   return new Date().getFullYear()
 })
 
-const daysRequested = computed(() => calculateLeaveDays(form.value.startDate, form.value.endDate))
-const paidLeaveRemaining = computed(() => Math.max(0, PAID_LEAVE_ALLOWANCE - paidLeaveUsed.value))
+const daysRequested = computed(() => scheduledWorkDates(form.value.startDate, form.value.endDate, recurringSchedule.value).length)
+const paidDaysInRequestYear = computed(() => scheduledWorkDatesForYear(form.value.startDate, form.value.endDate, requestYear.value, recurringSchedule.value).length)
+const specialLeave = computed(() => ['Maternity Leave', 'Paternity Leave'].includes(form.value.leaveType))
+const isPaidLeaveEligible = computed(() => isEligibleForPaidLeave(employmentStartDate.value, form.value.startDate || new Date().toISOString().slice(0, 10), leavePolicy.value.eligibilityMonths))
+const paidLeaveRemaining = computed(() => leavePolicy.value.eligibilityMonths > 0 && !isPaidLeaveEligible.value
+  ? 0
+  : Math.max(0, leavePolicy.value.annualPaidDays - paidLeaveUsed.value))
 const pageTitle = computed(() => (editingRequestId.value ? 'Update Leave Request' : 'Request Leave'))
 const submitLabel = computed(() => (editingRequestId.value ? 'Update Request' : 'Submit Request'))
 const attachmentLabel = computed(() => attachmentName.value || 'No file selected')
 const reasonLength = computed(() => String(form.value.reason || '').trim().length)
 const paidLeaveWarning = computed(() => {
-  if (form.value.paymentType !== 'Paid Leave') return ''
+  if (form.value.paymentType !== 'Paid Leave' || specialLeave.value) return ''
+  if (!form.value.leaveType || !form.value.startDate) return ''
+  if (!isPaidLeaveEligible.value) return employmentStartDate.value
+    ? `This clinic requires ${leavePolicy.value.eligibilityMonths} month(s) of service before the requested start date for standard paid leave.`
+    : 'Your employment start date is missing. Ask HR to add it before requesting paid leave.'
   if (!daysRequested.value) return ''
-  if (daysRequested.value > paidLeaveRemaining.value) {
-    return `This request needs ${daysRequested.value} paid leave day(s), but only ${paidLeaveRemaining.value} day(s) are available for this year.`
+  if (paidDaysInRequestYear.value > paidLeaveRemaining.value) {
+    return `This request needs ${paidDaysInRequestYear.value} paid leave day(s) in ${requestYear.value}, but only ${paidLeaveRemaining.value} day(s) are available for that year.`
   }
   return ''
 })
@@ -313,6 +327,7 @@ const canSubmit = computed(() => {
     Boolean(form.value.startDate) &&
     Boolean(form.value.endDate) &&
     Boolean(String(form.value.reason || '').trim()) &&
+    !policyLoadError.value &&
     daysRequested.value > 0 &&
     !paidLeaveWarning.value
   )
@@ -332,6 +347,9 @@ const resolveCurrentContext = trackPageLoad(async () => {
   }
 
   const profile = userSnap.data() || {}
+  employmentStartDate.value = String(profile.employmentStartDate || '').trim()
+  const scheduleSnap = await getDoc(doc(db, 'users', user.uid, 'schedules', 'recurring'))
+  recurringSchedule.value = scheduleSnap.exists() ? scheduleSnap.data() || {} : {}
   currentUserName.value =
     String(profile.fullName || '').trim() ||
     `${String(profile.firstName || '').trim()} ${String(profile.lastName || '').trim()}`.trim() ||
@@ -358,16 +376,35 @@ const resolveCurrentContext = trackPageLoad(async () => {
 const loadPaidLeaveUsage = trackPageLoad(async () => {
   const user = auth.currentUser
   if (!user) return
+  if (!branchId.value) { leavePolicy.value = { ...DEFAULT_LEAVE_POLICY }; paidLeaveUsed.value = 0; return }
 
-  const requestsSnap = await getDocs(query(collection(db, 'leaveRequests'), where('requesterId', '==', user.uid)))
+  const token = await user.getIdToken()
+  policyLoadError.value = ''
+  try {
+    const policyResponse = await fetch(`${OTP_API_BASE}/hr/leave-policy?branchId=${encodeURIComponent(branchId.value)}`, { headers: { Authorization: `Bearer ${token}` } })
+    const policyPayload = await policyResponse.json()
+    if (!policyResponse.ok || !policyPayload.success) throw new Error(policyPayload.error || 'Clinic leave policy could not be loaded.')
+    leavePolicy.value = normalizeLeavePolicy(policyPayload.data)
+  } catch (error) {
+    policyLoadError.value = error.message || 'Clinic leave policy could not be loaded. Refresh the page to try again.'
+    toast.error(policyLoadError.value)
+    return
+  }
+
+  const requestsSnap = await getDocs(query(collection(db, 'leaveRequests'), where('requesterId', '==', user.uid), where('branchId', '==', branchId.value)))
+  const scheduleSnap = await getDoc(doc(db, 'users', user.uid, 'schedules', 'recurring'))
+  recurringSchedule.value = scheduleSnap.exists() ? scheduleSnap.data() || {} : {}
   const targetYear = requestYear.value
   const usage = requestsSnap.docs.reduce((total, requestDoc) => {
     const data = requestDoc.data() || {}
-    const year = Number(data.year || 0)
+    if (requestDoc.id === editingRequestId.value) return total
     const isPaid = String(data.paymentType || '').trim() === 'Paid Leave'
-    const isApproved = String(data.status || '').trim() === 'Approved'
-    if (!isPaid || !isApproved || year !== targetYear) return total
-    return total + Number(data.daysRequested || 0)
+    const status = String(data.status || '').trim()
+    const reservesBalance = status === 'Approved' || status === 'Pending'
+    if (!isPaid || !reservesBalance || ['Maternity Leave', 'Paternity Leave'].includes(data.leaveType)) return total
+    const days = data.daysByYear?.[targetYear]
+      ?? scheduledWorkDatesForYear(data.startDate, data.endDate, targetYear, recurringSchedule.value).length
+    return total + Number(days || 0)
   }, 0)
   paidLeaveUsed.value = usage
 })
@@ -487,21 +524,13 @@ const submitLeaveRequest = async () => {
       daysRequested: daysRequested.value,
       year: requestYear.value,
       reason: String(form.value.reason || '').trim(),
-      updatedAt: serverTimestamp(),
       ...attachmentMeta
     }
 
     if (editingRequestId.value) {
-      await updateDoc(doc(db, 'leaveRequests', editingRequestId.value), payload)
+      await workflowApi(`/hr/leave-requests/${encodeURIComponent(editingRequestId.value)}/update`, payload)
     } else {
-      await addDoc(collection(db, 'leaveRequests'), {
-        ...payload,
-        status: 'Pending',
-        reviewedBy: '',
-        reviewedAt: null,
-        reviewRemarks: '',
-        createdAt: serverTimestamp()
-      })
+      await workflowApi('/hr/leave-requests', payload)
     }
 
     await logActivity(db, {
@@ -514,7 +543,7 @@ const submitLeaveRequest = async () => {
     goToManagement()
   } catch (error) {
     console.error(error)
-    toast.error('Failed to save leave request.')
+    toast.error(error?.message || 'Failed to save leave request.')
   } finally {
     saving.value = false
   }

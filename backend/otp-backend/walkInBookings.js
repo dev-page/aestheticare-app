@@ -95,7 +95,7 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
         check(row && ['serviceId', 'practitionerId', 'date', 'time'].every(key => typeof row[key] === 'string' && row[key].trim()), 'Each appointment needs a client, service, practitioner, date, and time.', 400)
         const rowClientId = String(row.clientId || '').trim()
         check(creatingClient ? (!rowClientId || rowClientId === '__new_client__') : rowClientId === requestedClientId,
-          'The selected recipient must match every appointment in this booking.', 400)
+          'A walk-in booking must be for one client. Select the same recipient for every appointment.', 400)
         return {
           ...Object.fromEntries(['serviceId', 'practitionerId', 'date', 'time', 'notes'].map(key => [key, String(row[key] || '').trim().slice(0, key === 'notes' ? 2000 : 200)])),
           sameDayConsultationRequested: row.sameDayConsultationRequested === true,

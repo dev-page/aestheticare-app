@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
 import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMatch, stockSignals, hasPermission, permissionsByKind } from './supplyModel.js'
-import { reconcileLotsToInventory } from './inventoryLots.js'
+import { reconcileLotsToInventory, summarizeInventoryLotReconciliation } from './inventoryLots.js'
 
 const docs = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }))
 const cleanId = value => { const id = String(value || ''); demand(/^[A-Za-z0-9_-]{1,150}$/.test(id), 'Invalid record identifier.', 400); return id }
@@ -124,6 +124,9 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const internal = true
     const broadRead = ['inventory:view', 'procurement:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
     const items = broadRead ? (await scopedDocs('inventoryItems')).map(i => ({ ...i, signals: stockSignals(i), availableStock: Math.max(0, Number(i.currentStock || 0) - Number(i.reservedStock || 0)) })) : []
+    const stockReconciliation = hasPermission(ctx, 'inventory:view') && req.query.reconcile === '1'
+      ? summarizeInventoryLotReconciliation(items, await scopedDocs('supplyLots'))
+      : []
     // Supplier contacts are global/business records. Branch eligibility and
     // private purchasing notes live in clinicSuppliers, so never infer access
     // from the legacy suppliers.branchId field.
@@ -154,7 +157,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     }
     const movements = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('inventoryMovements') : []
     const snapshots = internal && (hasPermission(ctx, 'inventory:view') || hasPermission(ctx, 'reports:view')) ? await scopedDocs('supplySnapshots') : []
-    res.json({ success: true, data: { branchId, branches, records, items, suppliers, movements, snapshots, permissions: [...ctx.permissions], roleKey: ctx.roleKey, supplier: false, uid: ctx.uid } })
+    res.json({ success: true, data: { branchId, branches, records, items, suppliers, movements, snapshots, stockReconciliation, permissions: [...ctx.permissions], roleKey: ctx.roleKey, supplier: false, uid: ctx.uid } })
   }))
 
   app.post('/supply/items', requireAuth, wrap(async (req, res, ctx) => {
@@ -337,7 +340,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           const invoiceNumber = required(input.invoiceNumber, 'Invoice number'); demand(!records.some(r => r.kind === 'invoice' && r.supplierId === po.supplierId && r.invoiceNumber === invoiceNumber), 'This supplier invoice number already exists.')
           const receiving = records.filter(r => r.kind === 'receiving' && r.poId === po.id && r.status === 'Onboarded')
           result = create('invoice', { ...quoteTotals(input, { requireStatedTotal: true }), mode: po.mode, status: 'Submitted', poId: po.id, supplierId: po.supplierId, invoiceNumber, invoiceDate: dateKey(input.invoiceDate), links: [...new Set([...linksOf(po), po.id, ...receiving.flatMap(record => [record.id, record.inspectionId].filter(Boolean))])], receivingIds: receiving.map(record => record.id) });
-          financialWrites.push([db.collection('financialRecords').doc(`supply-${result.id}`), { id: `supply-${result.id}`, branchId, kind: 'procurementPayable', status: 'Unpaid', category: 'Procurement', description: `Supplier invoice ${invoiceNumber}`, payee: po.supplierId, amount: result.total, paidAmount: 0, outstandingAmount: result.total, supplyInvoiceId: result.id, purchaseOrderId: po.id, createdBy: ctx.uid, createdAt: now, updatedAt: now }, false]); break
+          financialWrites.push([db.collection('financialRecords').doc(`supply-${result.id}`), { id: `supply-${result.id}`, branchId, kind: 'procurementPayable', status: 'Unpaid', category: 'Procurement', description: `Supplier invoice ${invoiceNumber}`, payee: po.supplierId, amount: result.total, paidAmount: 0, outstandingAmount: result.total, expenseDate: dateKey(input.invoiceDate), invoiceDate: dateKey(input.invoiceDate), supplyInvoiceId: result.id, purchaseOrderId: po.id, createdBy: ctx.uid, createdAt: now, updatedAt: now }, false]); break
         }
         default: demand(false, 'Unsupported record type.', 400)
       }

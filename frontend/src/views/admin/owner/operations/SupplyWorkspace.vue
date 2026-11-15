@@ -38,6 +38,22 @@
               <button type="button" class="module-action" title="Export filtered report" :disabled="exporting" @click="exportReport">{{ exporting ? 'Exporting...' : 'Export report' }}</button>
             </div>
           </div>
+          <section v-if="department === 'inventory' && page === 'items' && data.stockReconciliation?.length" class="mb-5 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+            <div class="mb-3">
+              <h2 class="font-semibold text-amber-100">Stock check: {{ data.stockReconciliation.length }} item<span v-if="data.stockReconciliation.length !== 1">s</span> need review</h2>
+              <p class="mt-1 text-sm text-slate-300">Recorded inventory totals do not match the remaining quantities in their lots. Review the count before receiving or dispensing; this check does not change stock.</p>
+            </div>
+            <div class="overflow-x-auto rounded-xl border border-slate-700">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-slate-800 text-slate-300"><tr><th class="px-3 py-2">Branch</th><th class="px-3 py-2">Item</th><th class="px-3 py-2">Inventory total</th><th class="px-3 py-2">Lot total</th><th class="px-3 py-2">Difference</th><th class="px-3 py-2">Issue</th></tr></thead>
+                <tbody><tr v-for="row in data.stockReconciliation" :key="`${row.branchId}-${row.id}`" class="border-t border-slate-700 text-slate-200">
+                  <td class="px-3 py-2">{{ branchName(row.branchId) }}</td><td class="px-3 py-2 font-medium">{{ row.name }}</td>
+                  <td class="px-3 py-2">{{ row.currentStock == null ? 'Invalid' : `${row.currentStock} ${row.unit}` }}</td><td class="px-3 py-2">{{ row.lotQuantity }} {{ row.unit }}</td>
+                  <td class="px-3 py-2">{{ row.difference > 0 ? '+' : '' }}{{ row.difference }} {{ row.unit }}</td><td class="px-3 py-2 text-amber-200">{{ row.issue }}<span v-if="row.invalidLotIds?.length" class="block text-xs text-slate-400">Lot IDs: {{ row.invalidLotIds.join(', ') }}</span></td>
+                </tr></tbody>
+              </table>
+            </div>
+          </section>
           <div v-if="isClinicPurchaseOrders" class="purchase-orders-filters">
             <label class="purchase-orders-search">Search orders<input v-model="search" placeholder="Search order number, supplier, or supply..." /></label>
             <ContractAppearanceSelect id="purchase-orders-status" label="Order status" v-model="status" :options="[{ value: '', label: 'All statuses' }, ...statuses.map(value => ({ value, label: value }))]" />
@@ -238,7 +254,7 @@ const intro = computed(() => ({ inventory: page.value === 'receiving' ? 'Receive
 const tabMap = { management: ['dashboard','reports'], inventory: ['items','requests','receiving'], procurement: ['requests','orders','suppliers'], finance: ['budgets','requests','invoices'] }
 const clinicSupplyPath = (module, targetPage) => ({ finance: `/finance/procurement/${targetPage}`, management: `/management/supply/${targetPage}` })[module] || `/${module}/${targetPage}`
 const tabs = computed(() => (tabMap[department.value] || []).map(key => ({ key, label: ({ budgets: 'Budget Allocations', requests: department.value === 'finance' ? 'Purchase Order Approvals' : department.value === 'procurement' ? 'Inventory Request Review' : 'Inventory Requests', receiving: 'Receiving & Inspection', discrepancies: 'Discrepancies', income: 'Sales & Revenue', invoices: 'Invoices & Payments', reports: department.value === 'finance' ? 'Financial Reports' : 'Reports', items: 'Inventory List' })[key] || label(key), to: key === 'income' && department.value === 'finance' ? '/finance/sales' : clinicSupplyPath(department.value, key) })))
-const data = ref({ records: [], items: [], suppliers: [], branches: [], movements: [], permissions: [] }), branchId = ref(''), loading = ref(true), busy = ref(false), error = ref(''), notice = ref('')
+const data = ref({ records: [], items: [], suppliers: [], branches: [], movements: [], permissions: [], stockReconciliation: [] }), branchId = ref(''), loading = ref(true), busy = ref(false), error = ref(''), notice = ref('')
 const selected = ref(null), history = ref({ history: [], documents: [] })
 const search = ref(''), status = ref(''), type = ref(''), departmentFilter = ref(''), supplierFilter = ref(''), categoryFilter = ref(''), fromDate = ref(''), toDate = ref(''), sort = ref('newest'), currentPage = ref(1)
 const formKind = ref(''), form = ref({}), formFields = ref([]), formTarget = ref(null), formError = ref(''), requestSubmission = ref('send')
@@ -257,7 +273,7 @@ const api = async (path, body) => {
 }
 const load = trackPageLoad(async (silent = false) => {
   if (!silent) loading.value = true
-  try { const result = await api('/workspace' + (branchId.value ? '?branchId=' + encodeURIComponent(branchId.value) : '')); const clean = list => Array.isArray(list) ? list.filter(entry => entry && typeof entry === 'object') : []; data.value = { ...result, records: clean(result.records), items: clean(result.items), suppliers: clean(result.suppliers), branches: clean(result.branches), movements: clean(result.movements), permissions: Array.isArray(result.permissions) ? result.permissions : [] }; branchId.value = result.branchId || ''; error.value = ''; const reminderScope = branchId.value; if (result.supplier || (reminderScope && reminderScope !== 'all')) api('/reminders', result.supplier ? {} : { branchId: reminderScope }).catch(() => {}); if (selected.value) selected.value = [...data.value.records, ...data.value.items, ...data.value.suppliers].find(r => r.id === selected.value.id) || null }
+  try { const params = new URLSearchParams(); if (branchId.value) params.set('branchId', branchId.value); if (department.value === 'inventory' && page.value === 'items') params.set('reconcile', '1'); const result = await api('/workspace' + (params.size ? '?' + params.toString() : '')); const clean = list => Array.isArray(list) ? list.filter(entry => entry && typeof entry === 'object') : []; data.value = { ...result, records: clean(result.records), items: clean(result.items), suppliers: clean(result.suppliers), branches: clean(result.branches), movements: clean(result.movements), stockReconciliation: clean(result.stockReconciliation), permissions: Array.isArray(result.permissions) ? result.permissions : [] }; branchId.value = result.branchId || ''; error.value = ''; const reminderScope = branchId.value; if (result.supplier || (reminderScope && reminderScope !== 'all')) api('/reminders', result.supplier ? {} : { branchId: reminderScope }).catch(() => {}); if (selected.value) selected.value = [...data.value.records, ...data.value.items, ...data.value.suppliers].find(r => r.id === selected.value.id) || null }
   catch (e) { error.value = e.message } finally { loading.value = false }
 })
 const label = key => ({ delivery: 'Delivery Fee', sentBy: 'Sent by Department', confirmedBy: 'Confirmed by Department', shippedBy: 'Shipped by Department', catalogPricingVerifiedBy: 'Catalog Pricing Verified by Department' })[key] || String(key).replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())
