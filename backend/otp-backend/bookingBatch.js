@@ -2,6 +2,7 @@ import { prepareBooking } from './bookingResources.js'
 import { assertWorkflow as check, normalized } from './bookingWorkflow.js'
 import { prepareClinicBookingRecipients, writeClinicBookingNotifications } from './clinicBookingNotifications.js'
 import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
+import { BOOKING_PAYMENT_HOLD_MS, isBookingPaymentHoldReleased } from '../../shared/bookingPaymentHold.js'
 
 export const validateSchedules = rows => {
   check(Array.isArray(rows) && rows.length >= 1 && rows.length <= 10, 'Schedule between one and ten services.', 400)
@@ -11,9 +12,10 @@ export const validateSchedules = rows => {
 }
 
 // Prepare every visit before writing anything: failure leaves no partial order.
-export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan = () => 'paid', loadUserContext }) => {
+export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature, getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan = () => 'paid', loadUserContext, reapExpiredAppointmentHolds = async () => {} }) => {
   app.post('/bookings/batch', requireAuth, async (req, res) => {
     try {
+      await reapExpiredAppointmentHolds()
       const rows = req.body?.appointments
       validateSchedules(rows)
       const db = admin.firestore(), uid = req.user.uid
@@ -27,7 +29,8 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
       const result = await db.runTransaction(async tx => {
         const branchSnap = await tx.get(db.collection('clinics').doc(branchId)), branch = branchSnap.data() || {}
         check(branchSnap.exists && branch.isPublished === true && !['inactive', 'archived'].includes(normalized(branch.status)), 'This clinic is unavailable.')
-        const directBooking = getEffectiveClinicPlan(branch) === 'free'
+        const directBooking = true
+        const paymentHoldExpiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + BOOKING_PAYMENT_HOLD_MS)
         const { policy } = await getClinicPoliciesForBranch(db, branchId, branch)
         const customer = { customerId: uid, customerName: profile.fullName || `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || req.user.email, customerEmail: req.user.email || profile.email || '' }
         let matchingWalkInClient = null
@@ -75,7 +78,7 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
         // order as well as each visit so one unit cannot fund two appointments.
         const materialTotals = new Map()
         for (const { visit } of prepared) for (const resource of visit.data.resources || []) if (resource.kind === 'material') materialTotals.set(resource.id, Number(materialTotals.get(resource.id) || 0) + resource.quantity)
-        const existing = (await tx.get(db.collection('appointments').where('branchId', '==', branchId))).docs.map(doc => doc.data()).filter(row => !row.isGroupParent && !row.isBookingOrderParent && !['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(normalized(row.status)))
+        const existing = (await tx.get(db.collection('appointments').where('branchId', '==', branchId))).docs.map(doc => doc.data()).filter(row => !row.isGroupParent && !row.isBookingOrderParent && !isBookingPaymentHoldReleased(row) && !['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(normalized(row.status)))
         for (const [id, quantity] of materialTotals) {
           const stock = (await tx.get(db.collection('inventoryItems').doc(id))).data()
           const reserved = existing.reduce((sum, row) => sum + (row.materialsConsumed ? 0 : (row.resources || []).filter(resource => resource.id === id && resource.kind === 'material').reduce((total, resource) => total + resource.quantity, 0)), 0)
@@ -93,24 +96,18 @@ export const registerBookingBatch = (app, { admin, requireAuth, getBookingRange,
         prepared.forEach(({ reservation, visit, worker, service }, index) => {
           total += visit.data.totalAmount
           const name = service.title || service.serviceName || service.consultationName || 'Service'
-          const data = { ...reservation, ...visit.data, bookingId: orderRef.id, bookingOrderId: orderRef.id, paymentManagedByOrganizer: true, parentAppointmentId: parentRef.id, service: name, services: [name], serviceIds: [service.id], type: normalized(service.postType) === 'consultation' ? 'Consultation' : 'Service', consultationMode: service.consultationMode || null, practitionerName: worker.fullName || `${worker.firstName || ''} ${worker.lastName || ''}`.trim() || worker.email, assignedPractitionerId: reservation.practitionerId, approvalStatus: 'Pending', status: 'Pending Approval', amountPaid: 0, paymentStatus: 'Pending', serviceKey: null, workerKeyVerified: false, workerCompleted: false, customerCompleted: false, createdAt: now, updatedAt: now }
+          const data = { ...reservation, ...visit.data, bookingId: orderRef.id, bookingOrderId: orderRef.id, paymentManagedByOrganizer: true, paymentHoldParentId: parentRef.id, paymentHoldStatus: 'active', paymentHoldExpiresAt, parentAppointmentId: parentRef.id, service: name, services: [name], serviceIds: [service.id], type: normalized(service.postType) === 'consultation' ? 'Consultation' : 'Service', consultationMode: service.consultationMode || null, practitionerName: worker.fullName || `${worker.firstName || ''} ${worker.lastName || ''}`.trim() || worker.email, assignedPractitionerId: reservation.practitionerId, approvalStatus: 'Approved', status: 'Awaiting Payment', amountPaid: 0, paymentStatus: 'Pending', serviceKey: null, workerKeyVerified: false, workerCompleted: false, customerCompleted: false, createdAt: now, updatedAt: now }
           tx.set(refs[index], data)
-          if (directBooking) {
-            tx.update(refs[index], { approvalStatus: 'Approved', status: 'Awaiting Payment' })
-            const count = Number(data.treatmentPlan?.totalSessions || 1)
-            if (count > 1) for (let number = 1; number <= count; number++) tx.set(db.collection('treatmentSessions').doc(`${refs[index].id}-${number}`), { branchId, treatmentPlanAppointmentId: refs[index].id, customerId: uid, customerName: customer.customerName, practitionerId: data.practitionerId, sessionNumber: number, totalSessions: count, status: number === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: number === 1 ? refs[index].id : '', ...(number === 1 ? { date: data.date, time: data.time } : {}), sessionIntervalDays: data.treatmentPlan?.sessionIntervalDays || 1, createdAt: now, updatedAt: now }, { merge: true })
-          }
+          const count = Number(data.treatmentPlan?.totalSessions || 1)
+          if (count > 1) for (let number = 1; number <= count; number++) tx.set(db.collection('treatmentSessions').doc(`${refs[index].id}-${number}`), { branchId, treatmentPlanAppointmentId: refs[index].id, customerId: uid, customerName: customer.customerName, practitionerId: data.practitionerId, sessionNumber: number, totalSessions: count, status: number === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: number === 1 ? refs[index].id : '', sessionIntervalDays: data.treatmentPlan?.sessionIntervalDays || 1, createdAt: now, updatedAt: now }, { merge: true })
           tx.set(visit.lock, { updatedAt: now })
           for (const lock of visit.customerLocks || []) tx.set(lock, { updatedAt: now })
         })
-        const parent = { ...customer, branchId, bookingId: orderRef.id, bookingOrderId: orderRef.id, bookingWorkflowVersion: 2, isBookingOrderParent: true, service: `Service bookings (${rows.length} appointments)`, services: prepared.map(p => p.service.title || p.service.serviceName || 'Service'), selectedServiceIds: [], date: rows[0].date, time: '', practitionerId: '', totalServiceDurationMinutes: 0, totalAmount: Math.round(total * 100) / 100, amount: Math.round(total * 100) / 100, amountPaid: 0, installmentsAllowed: false, depositPercent: 100, approvalStatus: 'Pending', status: 'Pending Approval', paymentStatus: 'Pending', contract: { status: 'signed', terms: 'Each appointment requires individual treatment consent before check-in.' }, appointmentIds: refs.map(ref => ref.id), createdAt: now, updatedAt: now }
+        const parent = { ...customer, branchId, bookingId: orderRef.id, bookingOrderId: orderRef.id, bookingWorkflowVersion: 2, isBookingOrderParent: true, paymentHoldStatus: 'active', paymentHoldExpiresAt, service: `Service bookings (${rows.length} appointments)`, services: prepared.map(p => p.service.title || p.service.serviceName || 'Service'), selectedServiceIds: [], date: rows[0].date, time: '', practitionerId: '', totalServiceDurationMinutes: 0, totalAmount: Math.round(total * 100) / 100, amount: Math.round(total * 100) / 100, amountPaid: 0, installmentsAllowed: false, depositPercent: 100, approvalStatus: 'Approved', status: 'Awaiting Payment', paymentStatus: 'Pending', contract: { status: 'signed', terms: 'Each appointment requires individual treatment consent before check-in.' }, appointmentIds: refs.map(ref => ref.id), createdAt: now, updatedAt: now }
         tx.set(parentRef, parent)
         tx.set(orderRef, { ...parent, appointmentId: parentRef.id })
-        if (directBooking) {
-          tx.update(parentRef, { approvalStatus: 'Approved', status: 'Awaiting Payment' })
-          tx.update(orderRef, { approvalStatus: 'Approved', status: 'Awaiting Payment' })
-        }
-        tx.set(db.collection('notifications').doc(), { recipientUserId: uid, title: directBooking ? 'Bookings submitted' : 'Booking requests submitted', message: directBooking ? 'Your services have separate appointment dates. Complete payment to continue.' : 'Your services have separate appointment dates. The clinic will review them together.', link: '/customer/appointments', read: false, createdAt: now })
+        tx.update(orderRef, { approvalStatus: 'Approved', status: 'Awaiting Payment' })
+        tx.set(db.collection('notifications').doc(), { recipientUserId: uid, title: directBooking ? 'Appointment times held' : 'Booking requests submitted', message: directBooking ? 'Your services have separate appointment dates. Sign each agreement and complete one checkout within 15 minutes to confirm them.' : 'Your services have separate appointment dates. The clinic will review them together.', link: '/customer/appointments', read: false, createdAt: now })
         writeClinicBookingNotifications({ tx, db, recipients, branchId, bookingId: orderRef.id, appointmentId: parentRef.id, customerName: customer.customerName, count: rows.length, directBooking, createdAt: now })
         return { bookingId: orderRef.id, appointmentId: parentRef.id, appointmentIds: refs.map(ref => ref.id) }
       })

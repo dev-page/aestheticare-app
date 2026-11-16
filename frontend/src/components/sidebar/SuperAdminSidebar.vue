@@ -30,20 +30,13 @@ export default {
       { label: 'Verification', icon: 'shield', to: '/superadmin/verification' },
       {
         key: 'subscription',
-        label: 'Subscription',
+        label: 'Subscription Management',
         icon: 'cash',
         children: [
           { label: 'Setup Plans', icon: 'settings', to: '/superadmin/subscription/plans' },
-          { label: 'Permissions', icon: 'lock', to: '/superadmin/subscription/permissions' }
-        ]
-      },
-      {
-        key: 'payments',
-        label: 'Payments',
-        icon: 'credit-card',
-        children: [
-          { label: 'Analytics', icon: 'chart-line', to: '/superadmin/payments/analytics' },
-          { label: 'Subscriptions', icon: 'receipt', to: '/superadmin/subscription/payments' }
+          { label: 'Permissions', icon: 'lock', to: '/superadmin/subscription/permissions' },
+          { label: 'Payment History', icon: 'receipt', to: '/superadmin/subscription/payments' },
+          { label: 'Analytics', icon: 'chart-line', to: '/superadmin/subscription/analytics' }
         ]
       },
       { label: 'User Reports', icon: 'reportIssue', to: '/superadmin/tickets' },

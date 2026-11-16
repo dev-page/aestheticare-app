@@ -8,7 +8,7 @@
           <div>
             <p class="appointments-eyebrow">{{ isUnpaidAppointmentsPage ? 'Payment centre' : 'My care' }}</p>
             <h1 class="appointments-title">{{ isUnpaidAppointmentsPage ? 'Unpaid Appointments' : 'My Appointments' }}</h1>
-            <p v-if="isUnpaidAppointmentsPage" class="appointments-subtitle">Sign your clinic contract first, then complete payment for your approved booking.</p>
+            <p v-if="isUnpaidAppointmentsPage" class="appointments-subtitle">Sign your agreement and pay within the slot-hold window. Verified payment confirms your appointment.</p>
             <p v-else class="appointments-subtitle">See every request, upcoming visit, online consultation, and completed service in one place.</p>
           </div>
           <button v-if="!isUnpaidAppointmentsPage && unpaidAppointments.length" type="button" class="appointments-pay-link" @click="router.push({ name: 'customer-unpaid-appointments' })">
@@ -18,10 +18,11 @@
 
         <section v-if="contractsToSign.length" class="appointments-panel">
           <div class="panel-head"><div><p class="panel-kicker">Next step: sign your contract</p><h2 class="panel-title">Review and sign before payment</h2></div></div>
-          <p class="p-4 text-sm">1. Clinic approval ? 2. Review and e-sign ? 3. Payment ? 4. Your appointment</p>
+          <p class="p-4 text-sm">Your slot is held for 15 minutes. Review and sign the agreement, then pay. The appointment is confirmed when payment is verified.</p>
           <article v-for="appt in contractsToSign" :key="appt.id" class="unpaid-appointment-card">
             <h3 class="unpaid-appointment-title">{{ formatAppointmentServices(appt) }}</h3>
             <p>{{ appt.clinic }} ? {{ appt.date }} ? {{ formatClockTime(appt.time) }}</p>
+            <p v-if="paymentHoldMessage(appt)" class="text-sm font-semibold text-[#8d5a3b]">{{ paymentHoldMessage(appt) }}</p>
             <button v-if="appt.contract?.terms || appt.contract?.templateUrl" type="button" class="appointment-button appointment-button-primary" @click="openContract(appt)">Review &amp; e-sign contract</button>
             <p v-else class="text-sm">Your clinic is preparing the contract. Payment will be available after you sign.</p>
           </article>
@@ -35,7 +36,8 @@
               <span class="status-badge" :class="statusToneClass(order.status)">{{ order.status }}</span>
             </div>
             <p class="mt-2">{{ order.appointmentIds?.length || 0 }} separately scheduled services · Total ₱{{ Number(order.totalAmount || order.amount || 0).toFixed(2) }}</p>
-            <p v-if="order.approvalStatus !== 'Approved'" class="mt-2 text-sm">The clinic will review this booking before payment is available.</p>
+            <p v-if="paymentHoldMessage(order)" class="mt-2 text-sm font-semibold text-[#8d5a3b]">{{ paymentHoldMessage(order) }}</p>
+            <p v-if="order.approvalStatus !== 'Approved'" class="mt-2 text-sm">This booking is waiting for clinic review.</p>
             <p v-else-if="paymentDue(order) <= 0" class="mt-2 text-sm">This order is fully paid.</p>
             <button v-else-if="bookingOrderReady(order) && paymentDue(order) > 0" type="button" class="appointment-button appointment-button-primary mt-3" @click="payAppointment(order)">Pay order {{ formatBookingDue(order) }}</button>
             <p v-else class="mt-2 text-sm">Sign the agreement for each appointment before paying for this order.</p>
@@ -64,6 +66,8 @@
                 </div>
                 <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
               </div>
+
+              <p v-if="paymentHoldMessage(appt)" class="text-sm font-semibold text-[#8d5a3b]">{{ paymentHoldMessage(appt) }}</p>
 
               <dl class="unpaid-appointment-details">
                 <div><dt>Date</dt><dd>{{ appt.date }}</dd></div>
@@ -99,7 +103,7 @@
             </article>
           </div>
 
-          <div v-else class="state-panel">No approved appointments are waiting for payment.</div>
+          <div v-else class="state-panel">No appointments are waiting for payment.</div>
         </section>
 
         <template v-if="!isUnpaidAppointmentsPage">
@@ -209,7 +213,7 @@
                       >
                         {{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}
                       </button>
-                      <span v-if="appt.approvalStatus !== 'Approved' && !appt.meetLink && !appt.consultationCustomerReadyAt" class="appointment-menu-empty">Waiting for clinic approval.</span>
+                      <span v-if="appt.approvalStatus !== 'Approved' && !appt.meetLink && !appt.consultationCustomerReadyAt" class="appointment-menu-empty">Waiting for clinic review.</span>
                       <span v-else-if="!appt.meetLink && !appt.consultationCustomerReadyAt && !canRequestCancellation(appt) && !(appt.contract && appt.approvalStatus === 'Approved') && !canPayAppointment(appt) && !canConfirmCompletion(appt)" class="appointment-menu-empty">No actions available</span>
                         </div>
                       </div>
@@ -502,7 +506,7 @@
                   </span>
                 </div>
 
-                <p class="mb-3 text-xs leading-5 text-[#7f6654]">Times follow the practitioner’s published hours. The clinic checks private leave and other bookings when you submit, then checks availability again before approval.</p>
+                <p class="mb-3 text-xs leading-5 text-[#7f6654]">Times are shown only when the full appointment fits both the clinic’s opening hours and the practitioner’s published hours. Availability is checked again when you submit.</p>
 
                 <div v-if="requestModal.loadingAvailability" class="request-info-card">
                   Loading published hours...
@@ -641,6 +645,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { formatClockTime } from '@/utils/appointmentDss'
+import { intersectClinicHoursAndShift, weekdayForDateKey } from '../../../../shared/clinicOperatingHours.js'
+import { isBookingPaymentHoldReleased, timestampMillis } from '../../../../shared/bookingPaymentHold.js'
 import BookingContractModal from '@/components/BookingContractModal.vue'
 import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
@@ -710,7 +716,11 @@ const requestModalSchedules = ref({})
 const requestModalLeaves = ref([])
 const requestModalAppointments = ref([])
 const requestModalReservations = ref([])
+const requestModalOperatingHours = ref({})
+const requestModalLegacyOperatingHours = ref({})
 const requestModalLoadSeq = ref(0)
+const holdClockNow = ref(Date.now())
+let holdClockInterval = null
 let unsubscribeAuth = null
 let unsubscribeAppointments = null
 let unsubscribeClinics = null
@@ -880,7 +890,7 @@ const buildBlockedRanges = (appointmentList = [], options = {}) => {
       appointment?.assignedPractitionerId || appointment?.practitionerId || ''
     ).trim()
     const status = normalizeAppointmentStatus(appointment?.status)
-    if (!date || !practitionerId || !blockingStatuses.has(status)) return
+    if (!date || !practitionerId || !blockingStatuses.has(status) || isBookingPaymentHoldReleased(appointment, holdClockNow.value)) return
 
     const start = parseClockToMinutes(appointment?.time)
     if (start === null) return
@@ -944,8 +954,9 @@ const requestAvailableSlots = computed(() => {
       leave.startDate <= dateKey && dateKey <= leave.endDate
     )
     if (onApprovedLeave) continue
-    const weekKey = getWeekStartKey(date)
-    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
+    const weekKey = getWeekStartKey(dateKey)
+    const dayKey = weekdayForDateKey(dateKey)
+    const dayName = dayKey ? `${dayKey[0].toUpperCase()}${dayKey.slice(1)}` : ''
     const assignments = resolveWeekAssignments(requestModalSchedules.value, weekKey)
     const shiftLabel = String(assignments?.[dayName] || '').trim()
     if (!shiftLabel) continue
@@ -953,32 +964,29 @@ const requestAvailableSlots = computed(() => {
     const windowMinutes = extractShiftWindowMinutes(shiftLabel)
     if (!windowMinutes) continue
 
-    let { start, end } = windowMinutes
-    if (end < start) {
-      end += 24 * 60
-    }
-
-    let slotStart = start
-    if (dateKey === todayKey && slotStart <= nowMinutes) {
-      slotStart = nowMinutes + SLOT_STEP_MINUTES
-    }
-
     const blockedRanges = blockedMap.get(`${dateKey}|${requestAssignedPractitionerId.value}`) || []
+    const clinicWindows = intersectClinicHoursAndShift(
+      requestModalOperatingHours.value,
+      dateKey,
+      { start: minutesToTime12(windowMinutes.start), end: minutesToTime12(windowMinutes.end) },
+      requestModalLegacyOperatingHours.value,
+    )
 
-    for (let minutes = slotStart; minutes + slotDurationMinutes <= end; minutes += SLOT_STEP_MINUTES) {
-      const normalizedMinutes = minutes % (24 * 60)
-      const time = minutesToTime12(normalizedMinutes)
-      const key = `${dateKey}|${time}|${requestAssignedPractitionerId.value}`
-      const endMinutes = normalizedMinutes + slotDurationMinutes
-      if (overlapsBlockedRange(normalizedMinutes, endMinutes, blockedRanges)) {
-        continue
+    for (const clinicWindow of clinicWindows) {
+      let slotStart = clinicWindow.start
+      if (dateKey === todayKey && slotStart <= nowMinutes) slotStart = nowMinutes + SLOT_STEP_MINUTES
+      for (let minutes = slotStart; minutes + slotDurationMinutes <= Math.min(clinicWindow.end, 1440); minutes += SLOT_STEP_MINUTES) {
+        const time = minutesToTime12(minutes)
+        const key = `${dateKey}|${time}|${requestAssignedPractitionerId.value}`
+        const endMinutes = minutes + slotDurationMinutes
+        if (overlapsBlockedRange(minutes, endMinutes, blockedRanges)) continue
+        slots.push({
+          key,
+          date: dateKey,
+          time,
+          practitionerName: requestModalPractitioner.value?.fullName || requestModal.value.appointment?.assignedPractitionerName || requestModal.value.appointment?.practitionerName || 'Assigned Practitioner',
+        })
       }
-      slots.push({
-        key,
-        date: dateKey,
-        time,
-        practitionerName: requestModalPractitioner.value?.fullName || requestModal.value.appointment?.assignedPractitionerName || requestModal.value.appointment?.practitionerName || 'Assigned Practitioner',
-      })
     }
   }
 
@@ -1100,6 +1108,8 @@ const resetRequestModalState = () => {
   requestModalLeaves.value = []
   requestModalAppointments.value = []
   requestModalReservations.value = []
+  requestModalOperatingHours.value = {}
+  requestModalLegacyOperatingHours.value = {}
 }
 
 const loadRescheduleAvailability = trackPageLoad(async (appointment, { autoSelect = true } = {}) => {
@@ -1114,6 +1124,8 @@ const loadRescheduleAvailability = trackPageLoad(async (appointment, { autoSelec
   requestModalLeaves.value = []
   requestModalAppointments.value = []
   requestModalReservations.value = []
+  requestModalOperatingHours.value = {}
+  requestModalLegacyOperatingHours.value = {}
 
   try {
     if (!branchId || !practitionerId) {
@@ -1124,8 +1136,9 @@ const loadRescheduleAvailability = trackPageLoad(async (appointment, { autoSelec
     // Customers may use published recurring availability, but must never read
     // private staff leave, other appointments, temporary reservations, or a
     // practitioner profile. The booking API revalidates the slot on submit.
-    const [scheduleSnap] = await Promise.all([
+    const [scheduleSnap, clinicSnap] = await Promise.all([
       getDocs(query(collection(db, 'users', practitionerId, 'schedules'), where('recurring', '==', true))),
+      getDoc(doc(db, 'clinics', branchId)),
     ])
 
     if (loadSeq !== requestModalLoadSeq.value || !requestModal.value.open) return
@@ -1133,6 +1146,9 @@ const loadRescheduleAvailability = trackPageLoad(async (appointment, { autoSelec
     requestModalSchedules.value = buildWeekScheduleMap(
       scheduleSnap.docs.map((snap) => ({ id: snap.id, data: snap.data() || {} }))
     )
+    const clinic = clinicSnap.exists() ? clinicSnap.data() || {} : {}
+    requestModalOperatingHours.value = clinic.operatingHours && typeof clinic.operatingHours === 'object' ? clinic.operatingHours : {}
+    requestModalLegacyOperatingHours.value = { openDays: clinic.openDays || [], openTime: clinic.openTime || '', closeTime: clinic.closeTime || '' }
     requestModalLeaves.value = []
     requestModalAppointments.value = []
     requestModalReservations.value = []
@@ -1793,6 +1809,7 @@ const formatPricingAmount = (amount) => new Intl.NumberFormat('en-PH', { style: 
 
 const contractsToSign = computed(() => customerLifecycleAppointments.value.filter(appointment =>
   appointment.approvalStatus === 'Approved'
+  && !isBookingPaymentHoldReleased(appointment, holdClockNow.value)
   && appointment.sameDayTreatmentStatus !== 'pending_clinical_clearance'
   && normalizeAppointmentStatus(appointment.contract?.status) !== 'signed'
   && ['approved', 'awaiting payment', 'payment pending', 'contract pending', 'paid', 'scheduled', 'ready to start'].includes(normalizeAppointmentStatus(appointment.status))
@@ -1801,6 +1818,7 @@ const contractsToSign = computed(() => customerLifecycleAppointments.value.filte
 const bookingOrderReady = (order) => bookingOrderReadyForPayment(order, customerLifecycleAppointments.value)
 
 const canPayAppointment = (appointment) => {
+  if (isBookingPaymentHoldReleased(appointment, holdClockNow.value)) return false
   if (appointment.isBookingOrderParent) return bookingOrderReady(appointment) && paymentDue(appointment) > 0
   if (appointment.sameDayTreatmentStatus === 'pending_clinical_clearance') return false
   if (appointment.paymentManagedByOrganizer && !appointment.isBookingOrderParent && !appointment.isGroupParent) return false
@@ -1810,8 +1828,21 @@ const canPayAppointment = (appointment) => {
 }
 
 const canModifyUnpaidAppointment = (appointment) => {
+  if (isBookingPaymentHoldReleased(appointment, holdClockNow.value)) return false
   const status = normalizeAppointmentStatus(appointment?.status)
   return ['awaiting payment', 'payment pending', 'approved'].includes(status)
+}
+
+const paymentHoldMessage = (appointment) => {
+  if (!appointment || ['confirmed', 'awaiting_clinical_clearance'].includes(String(appointment.paymentHoldStatus || '').toLowerCase())) return ''
+  if (String(appointment.paymentHoldStatus || '').toLowerCase() === 'released' || normalizeAppointmentStatus(appointment.status) === 'expired') return 'This 15-minute hold expired and the time was released. Choose a new available time to book again.'
+  if (!appointment.paymentHoldExpiresAt) return ''
+  if (isBookingPaymentHoldReleased(appointment, holdClockNow.value)) return 'This 15-minute hold expired and the time was released. Choose a new available time to book again.'
+  if (appointment.activePaymongoCheckoutSessionId || String(appointment.paymentHoldStatus || '').toLowerCase() === 'checkout_active') return 'Checkout is in progress. The slot stays reserved while payment is confirmed.'
+  const remaining = Math.max(0, Math.ceil((timestampMillis(appointment.paymentHoldExpiresAt) - holdClockNow.value) / 1000))
+  const minutes = Math.floor(remaining / 60)
+  const seconds = String(remaining % 60).padStart(2, '0')
+  return `Slot held for ${minutes}:${seconds}. Sign and pay before the timer ends.`
 }
 
 const getAppointmentPolicyEntries = (appointment) => {
@@ -2039,6 +2070,7 @@ const handlePaymentReturn = async (user) => {
 }
 
 onMounted(trackPageLoad(() => {
+  holdClockInterval = setInterval(() => { holdClockNow.value = Date.now() }, 1000)
   startClinicsListener()
   unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
     if (!user) {
@@ -2055,6 +2087,7 @@ onMounted(trackPageLoad(() => {
 }))
 
 onUnmounted(() => {
+  if (holdClockInterval) clearInterval(holdClockInterval)
   if (unsubscribeAppointments) unsubscribeAppointments()
   if (unsubscribeClinics) unsubscribeClinics()
   if (unsubscribeTreatmentSessions) unsubscribeTreatmentSessions()

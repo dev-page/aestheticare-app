@@ -1,4 +1,5 @@
 import { getAppointmentSlots } from './appointmentSlots.js'
+import { isBookingPaymentHoldReleased } from '../../../shared/bookingPaymentHold.js'
 
 export const manilaDate = (now = Date.now()) => {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now))
@@ -16,7 +17,7 @@ const durationFor = (row, services) => {
     + treatmentMinutes
 }
 
-export const walkInSlots = ({ row, date = row.date, rows = [], clients = [], services = [], schedules = {}, appointments = [], leaves = {}, now = Date.now() }) => {
+export const walkInSlots = ({ row, date = row.date, rows = [], clients = [], services = [], schedules = {}, appointments = [], leaves = {}, operatingHours, legacyOperatingHours = {}, now = Date.now() }) => {
   const service = services.find(service => service.id === row.serviceId)
   if (!service || !row.clientId || !row.practitionerId || !date) return []
   const client = clients.find(client => client.id === row.clientId)
@@ -26,8 +27,8 @@ export const walkInSlots = ({ row, date = row.date, rows = [], clients = [], ser
     || identities.has(String(other.customerId || '').trim())
     || (email && String(other.customerEmail || other.clientEmail || clients.find(candidate => candidate.id === other.clientId)?.email || '').trim().toLowerCase() === email)
   if (rows.some(other => other.key !== row.key && other.date === date && samePerson(other))) return []
-  if (appointments.some(other => !other.isGroupParent && !other.isBookingOrderParent && other.date === date && samePerson(other) && !['cancelled', 'rejected', 'expired'].includes(String(other.status || '').toLowerCase()))) return []
+  if (appointments.some(other => !other.isGroupParent && !other.isBookingOrderParent && !isBookingPaymentHoldReleased(other, now) && other.date === date && samePerson(other) && !['cancelled', 'rejected', 'expired'].includes(String(other.status || '').toLowerCase()))) return []
   if ((leaves[row.practitionerId] || []).some(leave => leave.startDate <= date && date <= leave.endDate)) return []
   const draft = rows.filter(other => other.key !== row.key && other.date && other.time && other.practitionerId).map(other => ({ ...other, status: 'Unpaid', durationMinutes: durationFor(other, services) }))
-  return getAppointmentSlots({ date, practitionerId: row.practitionerId, schedules, appointments: [...appointments, ...draft], durationMinutes: durationFor(row, services), now })
+  return getAppointmentSlots({ date, practitionerId: row.practitionerId, schedules, appointments: [...appointments, ...draft], durationMinutes: durationFor(row, services), operatingHours, legacyOperatingHours, now })
 }

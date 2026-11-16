@@ -4,32 +4,34 @@ Deploy the frontend, OTP backend, Firestore rules, and Storage rules together. C
 
 ## Individual services and packages
 
-Each appointment contains one service for one customer. A customer cannot book another service on the same date, including at another branch. Multiple selections use separate dates and can be submitted atomically through one shared checkout. The booking order is a payment container; its children are the actual service appointments. The clinic approves the order's appointments together, and the customer signs each appointment agreement before the shared checkout becomes available. Shared orders and group bookings require full payment.
+Each appointment contains one service for one customer. A customer cannot book another service on the same date, including at another branch. Multiple selections use separate dates and can be submitted atomically through one shared checkout. The booking order is a payment container; its children are the actual service appointments. The system holds their slots for 15 minutes while the customer signs each appointment agreement and completes the shared checkout. Verified payment confirms the order. Shared orders and group bookings require full payment.
 
 Packages expand into individual visits in the package component order, repeating component sessions and package cycles. Only the first visit is booked initially. The package price is charged once, and later visit appointments are prepaid. Later visits reserve their own materials and equipment.
 
-Clinic prices, contract terms, session definitions, practitioner eligibility, published schedules, approved leave, stock, consultation clearance, and conflicts are validated on the backend. Consumable availability is checked across the entire shared submission. Branch and customer-day transaction locks protect concurrent reservations.
+Clinic prices, contract terms, session definitions, practitioner eligibility, clinic opening hours, published practitioner schedules, approved leave, stock, consultation clearance, and conflicts are validated on the backend. The complete appointment duration must fit within both clinic hours and the practitioner's available shift. Consumable availability is checked across the entire shared submission. Branch and customer-day transaction locks protect concurrent reservations.
 
-Paid clinics review the shared request and its individual appointments together. Free-plan service bookings become payable directly because that tier has no clinic approval queue.
+Online service bookings are payable directly across clinic plans; they do not wait in a clinic approval queue. After payment verification, the customer and clinic receive confirmation notifications. An unpaid hold expires and releases its slots. Clinic review remains available for consultation clearances, clinical decisions, cancellations, rescheduling, and other workflows that need staff judgment.
 
 ## On-site appointment stages
 
-1. Clinic approves the booking, unless the clinic uses direct free-plan booking.
-2. Customer reviews and signs the treatment agreement in **My Appointments**. Signing creates and emails the individual six-digit code; the appointment or private attendee page displays it after the required initial payment is received.
-3. Customer completes the required payment in **My Appointments**. Both a signed agreement and required payment are needed before on-site check-in or online consultation access.
-4. Reception verifies the code and marks the customer **Checked in**. Verification opens 30 minutes before the start and expires at the end of the appointment window.
-5. If a code is unavailable, authorized reception or the assigned practitioner records how the attendee's identity was verified. This is audited.
-6. The assigned practitioner sees checked-in customers first in **Practitioner Queue**, starts the service, and consumes its reserved materials once.
-7. The practitioner records treatment notes and aftercare, then finishes the service.
-8. The customer confirms receipt. A remaining installment balance becomes **Balance Due**; full settlement produces **Completed**.
+1. Customer chooses a time that fits clinic opening hours and practitioner availability; the backend validates the full duration and briefly holds the slot.
+2. Customer reviews and signs the treatment agreement in **My Appointments**.
+3. Customer completes the required payment before the 15-minute hold expires. The appointment is confirmed only after the backend verifies payment and notifies the customer and clinic. If checkout expires first, the slot is released.
+4. Signing creates and emails the individual six-digit code; the appointment or private attendee page displays it after the required initial payment is received.
+5. Both a signed agreement and required payment are needed before on-site check-in or online consultation access.
+6. Reception verifies the code and marks the customer **Checked in**. Verification opens 30 minutes before the start and expires at the end of the appointment window.
+7. If a code is unavailable, authorized reception or the assigned practitioner records how the attendee's identity was verified. This is audited.
+8. The assigned practitioner sees checked-in customers first in **Practitioner Queue**, starts the service, and consumes its reserved materials once.
+9. The practitioner records treatment notes and aftercare, then finishes the service.
+10. The customer confirms receipt. A remaining installment balance becomes **Balance Due**; full settlement produces **Completed**.
 
 ## Same-day on-site consultation and treatment
 
 Same-day booking is an explicit per-service option. The service must require a consultation and link to a published consultation on the same branch that supports on-site appointments. The clinic sets a 0–60 minute buffer on the service listing. Online consultations and group bookings do not use this flow.
 
-The customer selects **Request consultation and treatment on the same day** when the platform cannot find a qualifying prior consultation. The selected start time is the on-site consultation start. Availability reserves one continuous block for the consultation, configured buffer, and treatment with the same practitioner. The treatment appointment has its own record and a provisional status; both clinic schedule approval and practitioner availability checks apply.
+The customer selects **Request consultation and treatment on the same day** when the platform cannot find a qualifying prior consultation. The selected start time is the on-site consultation start. Availability reserves one continuous block for the consultation, configured buffer, and treatment with the same practitioner, and the whole block must fit within clinic hours and practitioner availability. The treatment appointment has its own record and a provisional status.
 
-After any required clinic approval, the customer signs and pays for the consultation. The assigned practitioner completes the consultation, then explicitly chooses whether treatment may proceed that day. Only after that clinical decision does the treatment agreement become available. If cleared, the recipient signs and pays for treatment before check-in. If not cleared, the provisional treatment appointment is cancelled and its time and materials are released; no treatment fee is collected. The consultation remains a separate appointment and payment.
+The customer signs and pays for the consultation within its 15-minute slot hold. The assigned practitioner completes the consultation, then explicitly chooses whether treatment may proceed that day. Only after that clinical decision does the treatment agreement become available and a fresh 15-minute hold start for the treatment fee. If not cleared, the provisional treatment appointment is cancelled and its time and materials are released; no treatment fee is collected. The consultation remains a separate appointment and payment.
 
 For walk-ins, reception can select the same-day option while booking the client. Reception collects only the consultation payment first. The treatment does not appear in the POS payment queue until the assigned practitioner clears it. The same signed booking-arranger terms and recipient-specific treatment agreement rules still apply.
 
@@ -39,11 +41,11 @@ After a regular booked service is finished, the appointment remains **Awaiting C
 
 ## Groups
 
-The organizer pays, and each attendee chooses one service. Guests can choose different services. Initial slots are consecutive with the selected practitioner; clinic staff can assign each attendee another eligible practitioner and available slot independently. After any required clinic approval, the organizer pays once for the whole group. Attendee consent is separate from payment, and every attendee must complete their own consent before check-in.
+The organizer pays, and each attendee chooses one service. Guests can choose different services. Initial slots are consecutive with the selected practitioner; clinic staff can assign each attendee another eligible practitioner and available slot independently. The organizer has 15 minutes to sign and pay once for the whole group; verified payment confirms the group appointments. Attendee consent is separate from payment, and every attendee must complete their own consent before check-in.
 
 Every attendee, including an organizer receiving a service, gets a private invitation email. The invitation opens only that attendee's consent, code, appointment status, completion confirmation, schedule requests, and treatment sessions. Guests do not need customer accounts. An existing account is not currently linked to a guest appointment; the recipient uses the private invitation. Keep invitation links private.
 
-Approval and payment cover the group. Consent, reception check-in, service execution, completion, and change requests remain individual. Group booking is limited to standalone services that do not require a prior consultation; the system cannot currently verify consultation history for each invited guest. Book consultation-required services individually so the clinic can verify each recipient's eligibility. A cancellation affects the attendee's allocated paid amount under clinic policy; approved refunds use the organizer's original payment. Code delivery uses the backend's existing Postmark configuration.
+One payment covers the group. Consent, reception check-in, service execution, completion, and change requests remain individual. Group booking is limited to standalone services that do not require a prior consultation; the system cannot currently verify consultation history for each invited guest. Book consultation-required services individually so the clinic can verify each recipient's eligibility. A cancellation affects the attendee's allocated paid amount under clinic policy; approved refunds use the organizer's original payment. Code delivery uses the backend's existing Postmark configuration.
 
 ## Later treatment sessions
 
@@ -55,7 +57,7 @@ Session progress is updated once when care is confirmed, even if the first visit
 
 ## Online consultations
 
-Consultations remain individual; group consultation booking is disabled. The customer submits a booking request without being charged. After any required clinic approval, the customer signs the agreement and completes the required payment in **My Appointments**. The in-app appointment actions then provide the saved check-in code, payment status, and contract status.
+Consultations remain individual; group consultation booking is disabled. The customer chooses an available time, after which the backend briefly holds it. The customer signs the agreement and completes payment in **My Appointments** within 15 minutes. Verified payment confirms the consultation; an unpaid hold expires and releases the time. The in-app appointment actions then provide the saved check-in code, payment status, and contract status.
 
 The customer checks in from the appointment action menu using the saved code (or enters the emailed code) to generate the Google Meet link. The assigned practitioner's individually connected Google account owns the primary-calendar event, and the backend verifies Google's organizer before releasing the link. Arrival order does not change the host. Missing or revoked hosting authorization blocks creation rather than using the platform's shared account. The practitioner joins using the hosting email and starts the timer after both waiting-room entries, current attendance is confirmed when available, and identity/readiness are attested. See [Google Meet setup](google-meet-setup.md) for OAuth configuration and live rollout checks.
 
@@ -65,6 +67,8 @@ The customer may record the end of their participation. The practitioner ends th
 
 **Vercel Hobby scheduling:** `vercel.json` schedules reminders and consultation cleanup once daily so deployment meets Hobby cron limits. Daily consultation cleanup is a fallback, not timely session closure. For minute-by-minute timeout processing, an external scheduler must call `/api/cron/online-consultation-timeouts` with `Authorization: Bearer <CRON_SECRET>`, or the backend must run continuously outside Vercel with its existing interval. Vercel serverless execution cannot guarantee that interval runs between requests. An external scheduler is not configured by this repository change.
 
+Appointment payment holds expose `/api/cron/appointment-payment-holds` with the same `CRON_SECRET` authorization. Availability, booking, walk-in, and checkout requests also run expiry cleanup on demand, so expired slots are cleared when a fresh booking check occurs. Configure an external scheduler if holds must be released promptly even when no users are making requests; Vercel's daily Hobby cron schedule is not frequent enough for a 15-minute payment window.
+
 ## Supplier directory records
 
 Clinic staff create and manage supplier business contacts for Procurement. Any registration, permit, tax, or FDA LTO fields are clinic-maintained supplier records and do not create a supplier account or portal login. Supplier-role accounts are not supported by the clinic platform.
@@ -73,7 +77,7 @@ Clinic staff create and manage supplier business contacts for Procurement. Any r
 
 ### Walk-in scheduling
 
-Online customer requests and clinic walk-ins use two intake paths into the same appointment record and downstream service lifecycle. Online customers choose an offering, delivery mode, practitioner, and available slot, then submit a request without an immediate charge. Clinics review the request when their plan requires approval; the customer signs the treatment agreement and pays in My Appointments. Walk-ins are scheduled by clinic staff and are approved at creation; the booking arranger accepts booking/payment terms, the treatment recipient signs the separate treatment agreement, and staff records payment at POS. Both paths require approval, signed treatment consent, and the required payment before service access.
+Online customers choose an offering, delivery mode, practitioner, and available slot. The system validates clinic hours and practitioner availability, then holds the appointment for 15 minutes while the customer signs and pays in My Appointments. Verified payment confirms the booking and notifies the clinic; an unpaid slot is released. Walk-ins are scheduled by clinic staff and are approved at creation; the booking arranger accepts booking/payment terms, the treatment recipient signs the separate treatment agreement, and staff records payment at POS. Both paths require signed treatment consent and the required payment before service access.
 
 Walk-In Desk supports one care recipient and up to twenty service appointments. Staff can select an existing branch client (including customers found through prior appointment history) or enter a new recipient inline. New recipient details are stored only when the booking succeeds. An existing verified customer account is linked only when its email and full name match; a later online booking links a single exact matching walk-in profile, while ambiguous matches stay separate. Group booking is unavailable for walk-ins; reception creates separate bookings for other clients. Each appointment has its own visible availability calendar, lead practitioner, time, and notes. The client must use different dates for additional services, except that an explicitly configured same-day consultation and treatment pair occupies one service row and creates two linked appointments. Supporting staff are assigned through **Treatment team** in Appointment Management before treatment starts, according to the service's staffing requirements.
 

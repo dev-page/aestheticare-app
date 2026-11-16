@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
     <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'form', fields: 2, sections: 1 }, { variant: 'cards', cardStyle: 'stat', cards: 3 }, { variant: 'charts', panels: 2 }, { variant: 'table', columns: 4, rows: 5 }] }" class="flex-1 p-8">
-      <div class="mb-6"><h1 class="text-3xl font-bold text-white mb-2">Payments — Analytics</h1><p class="text-slate-400">Subscription revenue and payment activity. Use the date filter to scope payment results.</p></div>
+      <div class="mb-6"><h1 class="text-3xl font-bold text-white mb-2">Subscription Analytics</h1><p class="text-slate-400">Review subscription revenue, payment activity, and active subscriptions for a selected date range.</p></div>
       <section class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">
         <div class="flex gap-3 items-end"><div><label class="text-xs text-slate-400">From</label><input v-model="fromDate" type="date" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100"></div><div><label class="text-xs text-slate-400">To</label><input v-model="toDate" type="date" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100"></div><button type="button" class="inline-flex h-10 w-10 items-center justify-center rounded bg-sky-600 text-white" aria-label="Refresh payment analytics" @click="refresh">↻</button></div>
         <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">

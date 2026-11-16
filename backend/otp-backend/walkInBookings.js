@@ -6,9 +6,10 @@ import { prepareSameDayPair, sameDayAppointment } from './sameDayBookings.js'
 import { sumAppointmentPricing } from '../../shared/appointmentPricing.js'
 
 export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClinicAction,
-  assertClinicPlanFeature, getBookingRange, rangesOverlap, getApprovedLeaveForDate, getClinicPoliciesForBranch, sendBooking }) => {
+  assertClinicPlanFeature, getBookingRange, rangesOverlap, getApprovedLeaveForDate, getClinicPoliciesForBranch, sendBooking, reapExpiredAppointmentHolds = async () => {} }) => {
   app.get('/walk-in/availability', requireAuth, async (req, res) => {
     try {
+      await reapExpiredAppointmentHolds()
       const branchId = String(req.query?.branchId || '').trim()
       check(branchId, 'Select a branch.', 400)
       await authorizeClinicAction(req.user.uid, branchId, 'appointments:create')
@@ -23,8 +24,8 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
       // signatures, medical notes, or financial agreements.
       const fields = ['date', 'time', 'endTime', 'totalServiceDurationMinutes', 'durationMinutes',
         'practitionerId', 'assignedPractitionerId', 'clientId', 'customerId', 'customerName', 'clientName', 'customerEmail', 'customerPhone',
-        'status', 'isGroupParent', 'isBookingOrderParent']
-      res.json({ success: true, data: { policy, appointments: appointments.docs.map(snapshot => {
+        'status', 'isGroupParent', 'isBookingOrderParent', 'paymentHoldStatus', 'paymentHoldExpiresAt', 'activePaymongoCheckoutSessionId']
+      res.json({ success: true, data: { policy, operatingHours: branch.data()?.operatingHours || {}, legacyOperatingHours: { openDays: branch.data()?.openDays || [], openTime: branch.data()?.openTime || '', closeTime: branch.data()?.closeTime || '' }, appointments: appointments.docs.map(snapshot => {
         const data = snapshot.data()
         return { id: snapshot.id, ...Object.fromEntries(fields.filter(field => data[field] !== undefined).map(field => [field, data[field]])),
           treatmentTeam: (data.treatmentTeam || []).map(member => ({ employeeId: member.employeeId })) }
@@ -33,6 +34,7 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
   })
   app.post('/walk-in/bookings', requireAuth, async (req, res) => {
     try {
+      await reapExpiredAppointmentHolds()
       const { branchId, submissionId, appointments: rows } = req.body || {}
       const requestedClientId = String(req.body?.clientId || req.body?.organizerClientId || '').trim()
       const clientDetails = req.body?.clientDetails || null

@@ -254,7 +254,7 @@
 
             <section v-if="scheduledBookings.length" class="mt-6 rounded-2xl border border-[#e0c09a] bg-[#fffaf3] p-5">
               <h4 class="center-panel-title">Your scheduled services</h4>
-              <p class="mt-1 text-sm text-[#6f4a2d]">Each service has its own date. Submit them together for one checkout after clinic approval.</p>
+              <p class="mt-1 text-sm text-[#6f4a2d]">Each service keeps its own date. Submitting starts a 15-minute hold for the whole order; sign each agreement and complete one checkout before it expires.</p>
               <ul class="mt-3 space-y-2"><li v-for="(visit, index) in scheduledBookings" :key="index" class="flex items-center justify-between gap-3 rounded-xl bg-[#f7ead7] p-3 text-sm"><span>{{ visit.selectedServices[0].title || visit.selectedServices[0].name }} · {{ visit.date }} {{ formatClockTime(visit.time) }} · {{ visit.practitionerName }}</span><button type="button" :disabled="bookingPaymentSaving" @click="scheduledBookings.splice(index, 1)">Remove</button></li></ul>
               <button type="button" :disabled="bookingPaymentSaving" class="mt-4 rounded-xl bg-[#8d5a3b] px-4 py-2 text-white disabled:opacity-50" @click="submitScheduledBookings">Submit scheduled services</button>
             </section>
@@ -327,7 +327,7 @@
                   <div class="booking-sidecard rounded-2xl border p-4 text-[#3d281d]">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b6a4d]">Selected Services</p>
                     <p v-if="isFollowUpBookingFlow" role="status" class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-[#6d4b30]">
-                      This is a new appointment linked to your completed visit. Choose a time and submit the request; the clinic’s usual approval and payment steps still apply.
+                      This is a new appointment linked to your completed visit. Choose a time, submit, then sign and pay within the 15-minute hold to confirm it.
                     </p>
                     <div class="mt-3 flex flex-wrap gap-2">
                       <span
@@ -354,7 +354,7 @@
                       <template v-if="groupBookingEnabled">
                         <div class="group-booking-instructions">
                           <strong>How group booking works</strong>
-                          <p>If clinic approval is required, wait for it before the organizer pays once for the group. Every attendee gets a private consent link and must complete their own treatment consent before check-in. Guests do not need a platform account; if you are attending too, complete your own link.</p>
+                          <p>The organizer signs and pays once for the group within the 15-minute slot hold. Payment confirmation confirms the appointments. Every attendee gets a private consent link and must complete their own treatment consent before check-in. Guests do not need a platform account.</p>
                         </div>
                         <p v-if="groupHasConsultationPrerequisite" class="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900" role="status">
                           Group booking cannot verify consultation requirements for each guest yet. Book each attendee separately so the clinic can confirm their consultation before treatment.
@@ -402,7 +402,7 @@
                       <span class="ml-1 font-semibold text-[#3d281d]">{{ assignedPractitioner?.fullName || '-' }}</span>
                     </p>
                     <p class="mt-3 text-xs text-[#8b6a4d]">
-                      {{ sameDayConsultationRequested ? 'Consultation fee due after any required clinic approval:' : 'Full payment due after approval:' }}
+                      {{ sameDayConsultationRequested ? 'Consultation payment due now:' : 'Payment due to confirm this appointment:' }}
                       <span class="ml-1 font-semibold text-[#3d281d]">₱{{ bookingDueAmount.toFixed(2) }}</span>
                     </p>
                     <dl class="mt-3 space-y-1 border-t border-[#e6cfb0] pt-3 text-xs text-[#6f4a2d]">
@@ -446,12 +446,12 @@
                         </button>
                       </div>
                       <div v-else class="mt-3 rounded-xl border border-dashed border-[#d9be9b] bg-[#fff7ec] px-4 py-6 text-sm text-[#6f4a2d]">
-                        {{ hasBookingAvailability ? 'No available time slots for the selected date.' : 'No booking schedule is available yet for this branch.' }}
+                        {{ hasBookingAvailability ? 'No slot fits the full service duration within both clinic opening hours and practitioner availability.' : 'No booking schedule is available yet for this branch.' }}
                       </div>
                     </div>
                     <div class="mt-4 border-t border-[#e6cfb0] pt-4">
-                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">No payment is collected at booking</p>
-                      <p class="mt-2 text-xs leading-5 text-[#6f4a2d]">Submitting this request does not charge you. After any required clinic approval, review and sign the consultation agreement in My Appointments. Checkout then shows the available payment methods. For a same-day request, treatment consent and payment appear only after the practitioner clears the treatment.</p>
+                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">Your time is held for 15 minutes</p>
+                      <p class="mt-2 text-xs leading-5 text-[#6f4a2d]">After submitting, open My Appointments to review and sign the agreement, then pay. Payment is verified before the appointment is confirmed; if the hold expires before payment, the time is released. For same-day consultation and treatment, the consultation is paid first; treatment stays provisional until the practitioner clears it.</p>
                       <div class="mt-3">
                         <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-[#8b6a4d]">Mobile Number <span class="font-normal normal-case">(optional contact number)</span></label>
                         <div class="mt-1 flex items-stretch overflow-hidden rounded-xl border bg-[#fffaf3]" :class="bookingPhoneError ? 'border-rose-400' : 'border-[#e0c09a]'">
@@ -644,6 +644,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { buildWeekScheduleMap, getScheduleDayWindow } from '@/utils/employeeSchedules'
+import { intersectClinicHoursAndShift, weekdayForDateKey } from '../../../../shared/clinicOperatingHours.js'
 import { calculateCommissionAmount, getServiceCommissionPercent } from '@/utils/transactionFees'
 import { appointmentCommissionAmount, buildAppointmentPricing, sumAppointmentPricing } from '../../../../shared/appointmentPricing.js'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
@@ -970,6 +971,8 @@ const center = ref({
   businessEmail: '',
   contactNumber: '',
   services: [],
+  operatingHours: {},
+  legacyOperatingHours: {},
   profilePicture: '',
   bannerPicture: '',
   status: '',
@@ -1003,6 +1006,8 @@ const buildCenterModel = (branchId, data = {}) => ({
   businessEmail: data.businessEmail || '',
   contactNumber: data.contactNumber || '',
   services: Array.isArray(data.services) ? data.services.filter(Boolean) : [],
+  operatingHours: data.operatingHours && typeof data.operatingHours === 'object' ? data.operatingHours : {},
+  legacyOperatingHours: { openDays: data.openDays || [], openTime: data.openTime || '', closeTime: data.closeTime || '' },
   profilePicture: data.profilePicture || '',
   bannerPicture: data.bannerPicture || '',
   status: String(data.status || '').trim(),
@@ -1451,6 +1456,8 @@ const loadPractitioners = trackPageLoad(async (branchId = activeBranchId.value) 
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(payload?.error || 'Unable to load booking availability.')
     practitioners.value = Array.isArray(payload.practitioners) ? payload.practitioners : []
+    center.value.operatingHours = payload.operatingHours && typeof payload.operatingHours === 'object' ? payload.operatingHours : {}
+    center.value.legacyOperatingHours = payload.legacyOperatingHours && typeof payload.legacyOperatingHours === 'object' ? payload.legacyOperatingHours : {}
     practitionerSchedules.value = Object.fromEntries(Object.entries(payload.schedules || {}).map(([practitionerId, schedules]) => [practitionerId, buildWeekScheduleMap(Array.isArray(schedules) ? schedules : [])]))
     practitionerLeaves.value = payload.leaves && typeof payload.leaves === 'object' ? payload.leaves : {}
     appointments.value = Array.isArray(payload.busyWindows) ? payload.busyWindows : []
@@ -1583,7 +1590,8 @@ const bookingSlots = computed(() => {
     const dateKey = toDateInput(date)
     if (customerBusyDates.value.includes(dateKey)) continue
     const weekKey = getWeekStartKey(date)
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
+    const dayKey = weekdayForDateKey(dateKey)
+    const dayName = dayKey ? `${dayKey[0].toUpperCase()}${dayKey.slice(1)}` : ''
 
     practitioners.value.forEach((practitioner) => {
       const selected = selectedServices.value[0]
@@ -1593,22 +1601,14 @@ const bookingSlots = computed(() => {
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
       if (!scheduleWindow) return
-      const windowMinutes = extractShiftWindowMinutes(`${scheduleWindow.start} - ${scheduleWindow.end}`)
-      if (!windowMinutes) return
-
-      let { start, end } = windowMinutes
-      if (end < start) {
-        end += 24 * 60
-      }
-
-      let slotStart = start
-      if (dateKey === todayKey && slotStart <= nowMinutes) {
-        slotStart = nowMinutes + SLOT_STEP_MINUTES
-      }
-
+      const scheduleWindows = intersectClinicHoursAndShift(center.value.operatingHours, dateKey, scheduleWindow, center.value.legacyOperatingHours)
+      if (!scheduleWindows.length) return
       const blockedRanges = blockedMap.get(`${dateKey}|${practitioner.id}`) || []
 
-      for (let minutes = slotStart; minutes + slotDurationMinutes <= end; minutes += SLOT_STEP_MINUTES) {
+      for (const scheduleRange of scheduleWindows) {
+        let slotStart = scheduleRange.start
+        if (dateKey === todayKey && slotStart <= nowMinutes) slotStart = nowMinutes + SLOT_STEP_MINUTES
+        for (let minutes = slotStart; minutes + slotDurationMinutes <= scheduleRange.end; minutes += SLOT_STEP_MINUTES) {
         const normalizedMinutes = minutes % (24 * 60)
         const time = minutesToTime(normalizedMinutes)
         const key = `${dateKey}|${time}|${practitioner.id}`
@@ -1624,6 +1624,7 @@ const bookingSlots = computed(() => {
           label: `${dateKey} • ${minutesToTime12(normalizedMinutes)} - ${minutesToTime12(endMinutes)} • ${practitioner.fullName}`,
           isAvailable: !overlapsBlockedRange(normalizedMinutes, normalizedMinutes + slotDurationMinutes, blockedRanges),
         })
+      }
       }
     })
   }
@@ -1770,7 +1771,8 @@ const buildBookingSlotsForPractitioners = (practitionerList = []) => {
     const dateKey = toDateInput(date)
     if (customerBusyDates.value.includes(dateKey)) continue
     const weekKey = getWeekStartKey(date)
-    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
+    const dayKey = weekdayForDateKey(dateKey)
+    const dayName = dayKey ? `${dayKey[0].toUpperCase()}${dayKey.slice(1)}` : ''
 
     practitionerList.forEach((practitioner) => {
       const selected = selectedServices.value[0]
@@ -1780,22 +1782,14 @@ const buildBookingSlotsForPractitioners = (practitionerList = []) => {
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
       if (!scheduleWindow) return
-      const windowMinutes = extractShiftWindowMinutes(`${scheduleWindow.start} - ${scheduleWindow.end}`)
-      if (!windowMinutes) return
-
-      let { start, end } = windowMinutes
-      if (end < start) {
-        end += 24 * 60
-      }
-
-      let slotStart = start
-      if (dateKey === todayKey && slotStart <= nowMinutes) {
-        slotStart = nowMinutes + SLOT_STEP_MINUTES
-      }
-
+      const scheduleWindows = intersectClinicHoursAndShift(center.value.operatingHours, dateKey, scheduleWindow, center.value.legacyOperatingHours)
+      if (!scheduleWindows.length) return
       const blockedRanges = blockedMap.get(`${dateKey}|${practitioner.id}`) || []
 
-      for (let minutes = slotStart; minutes + slotDurationMinutes <= end; minutes += SLOT_STEP_MINUTES) {
+      for (const scheduleRange of scheduleWindows) {
+        let slotStart = scheduleRange.start
+        if (dateKey === todayKey && slotStart <= nowMinutes) slotStart = nowMinutes + SLOT_STEP_MINUTES
+        for (let minutes = slotStart; minutes + slotDurationMinutes <= scheduleRange.end; minutes += SLOT_STEP_MINUTES) {
         const normalizedMinutes = minutes % (24 * 60)
         const time = minutesToTime(normalizedMinutes)
         const key = `${dateKey}|${time}|${practitioner.id}`
@@ -1811,6 +1805,7 @@ const buildBookingSlotsForPractitioners = (practitionerList = []) => {
           label: `${dateKey} â€¢ ${minutesToTime12(normalizedMinutes)} - ${minutesToTime12(endMinutes)} â€¢ ${practitioner.fullName}`,
           isAvailable: !overlapsBlockedRange(normalizedMinutes, normalizedMinutes + slotDurationMinutes, blockedRanges),
         })
+      }
       }
     })
   }
@@ -2845,7 +2840,7 @@ const submitScheduledBookings = async () => {
     if (!response.ok || !result.success) throw new Error(result.error || 'Unable to submit appointments.')
     scheduledBookings.value = []
     clearBookingSelection()
-    toast.success('Appointments submitted. Each service has its own schedule and verification code.')
+    toast.success('Your appointment times are held for 15 minutes. Sign each agreement and complete one checkout to confirm them.')
     await router.replace({ name: 'customer-appointments' })
   } catch (error) { toast.error(error.message) } finally { bookingPaymentSaving.value = false }
 }
@@ -2996,8 +2991,8 @@ const submitBooking = async () => {
       const result = await response.json().catch(() => null)
       if (!response.ok || !result?.success) throw new Error(result?.error || 'Failed to submit the same-day booking request.')
       await Swal.fire({
-        title: 'Same-day request submitted',
-        text: 'If clinic approval is required, the clinic will review both appointments first. Sign and pay for the consultation when it is ready. The treatment time is provisional; your practitioner must clear it after the consultation before you can sign or pay for treatment.',
+        title: 'Same-day booking held',
+        text: 'Your consultation and provisional treatment times are held for 15 minutes. Sign and pay for the consultation first. The practitioner must clear the treatment after the consultation before you can sign or pay for it.',
         icon: 'success', confirmButtonText: 'View Appointments', confirmButtonColor: '#8d5a3b',
       })
       clearBookingSelection()
@@ -3054,10 +3049,10 @@ const submitBooking = async () => {
       throw new Error(result?.error || 'Failed to submit the booking request.')
     }
     await Swal.fire({
-      title: 'Booking request created',
+      title: 'Appointment time held',
       text: groupBookingEnabled.value
-        ? 'Open My Appointments to follow your group booking. If clinic approval is required, wait for it; then the organizer pays once for everyone. Each attendee receives a private email link to complete their own treatment consent before check-in. Guests do not need a platform account. If you are attending, complete your own link too.'
-        : 'Open My Appointments to follow your booking. If clinic approval is required, wait for the clinic to approve it. Then review and sign the agreement and pay the required amount; your service code is emailed after signing and appears in the app after the initial payment.',
+        ? 'Your group slots are held for 15 minutes. The organizer signs the agreements and pays once; verified payment confirms the appointments. Each attendee receives a private link for their own treatment consent.'
+        : 'Your selected time is held for 15 minutes. Open My Appointments to sign the agreement and pay. Payment verification confirms the appointment and enables its service code.',
       icon: 'success',
       confirmButtonText: 'View Appointments',
       confirmButtonColor: '#8d5a3b',

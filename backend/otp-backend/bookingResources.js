@@ -10,6 +10,8 @@ import { buildTreatmentCourseSessions, normalizeTreatmentCourseSteps, validateTr
 import { APPOINTMENT_PLATFORM_COMMISSION_PERCENT, appointmentCommissionAmount, buildAppointmentPricing, sumAppointmentPricing } from '../../shared/appointmentPricing.js'
 import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
 import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
+import { bookingFitsClinicHours } from '../../shared/clinicOperatingHours.js'
+import { isBookingPaymentHoldReleased } from '../../shared/bookingPaymentHold.js'
 
 const bookingInventoryRow = async ({ tx, db, branchId, resource, scheduledDate }) => {
   const snapshot = await tx.get(db.collection('inventoryItems').doc(resource.id))
@@ -31,6 +33,9 @@ const bookingInventoryRow = async ({ tx, db, branchId, resource, scheduledDate }
 
 export const prepareBooking = async ({ tx, db, reservation, getBookingRange, rangesOverlap, appointmentId = null, allowSameDayConsultationRequest = false }) => {
   const branchId = reservation.branchId
+  const clinicSnapshot = await tx.get(db.collection('clinics').doc(String(branchId || '')))
+  const clinic = clinicSnapshot.exists ? clinicSnapshot.data() || {} : {}
+  check(clinicSnapshot.exists, 'The selected clinic branch is unavailable.', 404)
   const ids = [...new Set(reservation.selectedServiceIds || reservation.serviceIds || [])]
   check(ids.length > 0, 'Select a published service.', 400)
   check(ids.length === 1, 'Each service requires its own appointment and a separate date. Schedule selected services individually.', 400)
@@ -148,6 +153,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   check(/^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(dayDate.getTime()) && new Date(dayDate.getTime() + 8 * 3600000).toISOString().slice(0, 10) === day, 'Choose a valid booking date.', 400)
   check(dayDate.getTime() + range.start * 60000 > Date.now(), 'Choose a future booking date and time.')
   check(range.end <= 24 * 60, 'The service must finish within the selected day.')
+  check(bookingFitsClinicHours(clinic.operatingHours, day, range.start, range.end, clinic), 'The full appointment duration must fit within the clinic’s opening hours. Choose a time when both the clinic and practitioner are available.', 409)
   const workerId = reservation.practitionerId || reservation.assignedPractitionerId
   check(workerId, 'Select an available worker.', 400)
   const worker = await tx.get(db.collection('users').doc(workerId))
@@ -198,16 +204,16 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const customerLocks = [...new Set(identities)].map(identity => db.collection('bookingCustomerDayLocks').doc(crypto.createHash('sha256').update(`${identity}:${day}`).digest('hex')))
   for (const customerLock of customerLocks) await tx.get(customerLock)
   const appointments = await tx.get(db.collection('appointments').where('branchId', '==', branchId))
-  const active = appointments.docs.filter((doc) => doc.id !== appointmentId).map((doc) => doc.data()).filter((a) => !a.isGroupParent && !a.isBookingOrderParent && !['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(normalized(a.status)))
+  const active = appointments.docs.filter((doc) => doc.id !== appointmentId).map((doc) => doc.data()).filter((a) => !a.isGroupParent && !a.isBookingOrderParent && !isBookingPaymentHoldReleased(a) && !['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(normalized(a.status)))
   const customerRows = reservation.customerId && (!group || group.organizerIncluded) ? await tx.get(db.collection('appointments').where('customerId', '==', reservation.customerId)) : { docs: [] }
-  check(!customerRows.docs.some(doc => doc.id !== appointmentId && !doc.data().isGroupParent && !doc.data().isBookingOrderParent && doc.data().date === day && !['cancelled', 'rejected', 'expired'].includes(normalized(doc.data().status))), 'This customer already has a service on this date. Choose a separate date.', 409)
+  check(!customerRows.docs.some(doc => doc.id !== appointmentId && !doc.data().isGroupParent && !doc.data().isBookingOrderParent && !isBookingPaymentHoldReleased(doc.data()) && doc.data().date === day && !['cancelled', 'rejected', 'expired'].includes(normalized(doc.data().status))), 'This customer already has a service on this date. Choose a separate date.', 409)
   if (reservation.customerEmail && (!group || group.organizerIncluded)) {
     const emailRows = await tx.get(db.collection('appointments').where('customerEmail', '==', normalized(reservation.customerEmail)))
-    check(!emailRows.docs.some(doc => doc.id !== appointmentId && !doc.data().isGroupParent && !doc.data().isBookingOrderParent && doc.data().date === day && !['cancelled', 'rejected', 'expired'].includes(normalized(doc.data().status))), 'This attendee already has a service on this date. Choose another date.', 409)
+    check(!emailRows.docs.some(doc => doc.id !== appointmentId && !doc.data().isGroupParent && !doc.data().isBookingOrderParent && !isBookingPaymentHoldReleased(doc.data()) && doc.data().date === day && !['cancelled', 'rejected', 'expired'].includes(normalized(doc.data().status))), 'This attendee already has a service on this date. Choose another date.', 409)
   }
   for (const guest of guests) {
     const guestRows = await tx.get(db.collection('appointments').where('customerEmail', '==', normalized(guest.email)))
-    check(!guestRows.docs.some(doc => doc.id !== appointmentId && doc.data().date === day && !doc.data().isGroupParent && !doc.data().isBookingOrderParent && !['cancelled', 'rejected', 'expired'].includes(normalized(doc.data().status))), 'A group attendee already has a service on this date. Choose another date.', 409)
+    check(!guestRows.docs.some(doc => doc.id !== appointmentId && doc.data().date === day && !doc.data().isGroupParent && !doc.data().isBookingOrderParent && !isBookingPaymentHoldReleased(doc.data()) && !['cancelled', 'rejected', 'expired'].includes(normalized(doc.data().status))), 'A group attendee already has a service on this date. Choose another date.', 409)
   }
   const overlaps = (a) => {
     const existing = getBookingRange(a)
@@ -221,7 +227,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const installmentsAllowed = !group && offer.allowInstallments === true
   const depositPercent = installmentsAllowed ? Number(offer.depositPercent || 50) : 100
   check(depositPercent >= 1 && depositPercent <= 100, 'The clinic must configure a valid deposit percentage.')
-  const contractBranch = (await tx.get(db.collection('clinics').doc(branchId))).data() || {}
+  const contractBranch = clinic
   const contractOwnerId = String(contractBranch.ownerId || contractBranch.organizationOwnerId || '').trim()
   let contractPolicy = contractOwnerId ? (await tx.get(db.collection('clinicPolicies').doc(contractOwnerId))).data() : null
   if (!contractPolicy) contractPolicy = (await tx.get(db.collection('clinicPolicies').doc(branchId))).data() || {}
@@ -275,7 +281,7 @@ const prepareGroupBooking = async ({ tx, db, reservation, getBookingRange, range
   }
   const inventory = []
   for (const resource of resources.values()) inventory.push(await bookingInventoryRow({ tx, db, branchId: reservation.branchId, resource, scheduledDate: reservation.date }))
-  const appointments = (await tx.get(db.collection('appointments').where('branchId', '==', reservation.branchId))).docs.filter(doc => doc.id !== appointmentId).map(doc => doc.data()).filter(row => !row.isGroupParent && !row.isBookingOrderParent && !['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(normalized(row.status)))
+  const appointments = (await tx.get(db.collection('appointments').where('branchId', '==', reservation.branchId))).docs.filter(doc => doc.id !== appointmentId).map(doc => doc.data()).filter(row => !row.isGroupParent && !row.isBookingOrderParent && !isBookingPaymentHoldReleased(row) && !['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(normalized(row.status)))
   const first = visits[0], duration = visits.reduce((sum, visit) => sum + visit.data.totalServiceDurationMinutes, 0)
   const groupRange = getBookingRange({ time: reservation.time, totalServiceDurationMinutes: duration })
   const conflict = resourceConflict({ requirements: [...resources.values()], inventory, appointments, overlaps: row => { const range = getBookingRange(row); return row.date === reservation.date && range && rangesOverlap(groupRange.start, groupRange.end, range.start, range.end) } })

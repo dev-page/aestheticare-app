@@ -3,8 +3,8 @@
     <SuperAdminSidebar />
 
     <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="flex-1 p-8">
-      <h1 class="text-3xl font-bold text-white mb-2">Plan Payments</h1>
-      <p class="text-slate-400 mb-6">Payment history from clinic owners for their subscriptions.</p>
+      <h1 class="text-3xl font-bold text-white mb-2">Subscription Payment History</h1>
+      <p class="text-slate-400 mb-6">Review payments clinic owners made for their subscription plans.</p>
 
       <input v-model.trim="search" type="search" placeholder="Filter clinic, email, plan, or reference..." class="mb-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500" />
 

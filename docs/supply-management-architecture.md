@@ -1,5 +1,9 @@
 # Integrated supply management implementation
 
+## Procurement Management overview
+
+Procurement Management maintains clinic supplier business and contact records, along with product/material references used for purchasing. Authorized clinic staff record supplier quotations received outside AesthetiCare, including supplier-specific taxes, fees, discounts, and terms; prepare purchase orders for Finance approval against an allocated budget; and record when orders are issued and confirmed externally. Inventory handles delivery inspection and stock updates. Suppliers do not sign in or transact through the platform.
+
 ## Architecture and compatibility
 
 Vue department workspaces use authenticated Express `/supply` APIs. Firebase Admin performs all workflow writes in transactions. Existing `inventoryItems`, `inventoryMovements`, `suppliers`, and supplier catalog records remain the shared sources of truth used by bookings and POS. Existing legacy purchase records stay accessible under explicitly labelled legacy screens; they are not silently converted or received again.

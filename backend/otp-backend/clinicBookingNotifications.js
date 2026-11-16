@@ -32,8 +32,28 @@ export const writeClinicBookingNotifications = ({ tx, db, recipients, branchId, 
     tx.set(db.collection('notifications').doc(`booking-created-${bookingId}-${recipient.uid}`), {
       recipientUserId: recipient.uid, branchId, bookingId, appointmentId,
       eventType: 'booking_created', title: directBooking ? 'New online booking' : 'New online booking request',
-      message: `${customerName || 'A customer'} submitted ${count === 1 ? 'an online appointment' : `${count} separately scheduled appointments`}. ${directBooking ? 'Awaiting customer payment; payment is not yet confirmed.' : 'Review the booking request before approval. Payment is not yet confirmed.'}`,
+      message: `${customerName || 'A customer'} submitted ${count === 1 ? 'an online appointment' : `${count} separately scheduled appointments`}. ${directBooking ? 'The time is held for 15 minutes while the customer signs and pays; payment is not yet confirmed.' : 'Review the booking request before approval. Payment is not yet confirmed.'}`,
       link: `/crm/appointments?${query}`, read: false, deleted: false, createdAt,
+    })
+  }
+}
+
+export const writeClinicAppointmentPaidNotifications = ({ tx, db, recipients, branchId, appointmentId, bookingId, customerName, serviceName, appointmentDate, appointmentTime, createdAt }) => {
+  const schedule = [appointmentDate, appointmentTime].filter(Boolean).join(' at ')
+  for (const recipient of recipients || []) {
+    const query = new URLSearchParams({ tab: 'all', branchId })
+    tx.set(db.collection('notifications').doc(`booking-paid-${appointmentId}-${recipient.uid}`), {
+      recipientUserId: recipient.uid,
+      branchId,
+      ...(bookingId ? { bookingId } : {}),
+      appointmentId,
+      eventType: 'booking_paid',
+      title: 'Online booking confirmed',
+      message: `${customerName || 'A customer'} paid for ${serviceName || 'an appointment'}${schedule ? ` scheduled for ${schedule}` : ''}. The appointment is confirmed.`,
+      link: `/crm/appointments?${query}`,
+      read: false,
+      deleted: false,
+      createdAt,
     })
   }
 }

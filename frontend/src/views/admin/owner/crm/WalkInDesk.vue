@@ -316,7 +316,7 @@ const estimatedTotal = computed(() => currency(estimatedPricing.value.total))
 const contractPreview = computed(() => buildClientContractDocument(policy.value, { branch: branch.value, source: 'walk_in' }))
 const bookingTermsPreview = computed(() => buildBookingTermsDocument(policy.value, { branch: branch.value, source: 'walk_in' }))
 watch([bookingForSomeoneElse, booker, policy], () => { policyAcknowledged.value = false; bookingSignature.value = '' }, { deep: true })
-const availableSlots = (visit, date = visit.date) => walkInSlots({ row: { ...visit, clientId: selectedClientId.value }, date, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, now: now.value })
+const availableSlots = (visit, date = visit.date) => walkInSlots({ row: { ...visit, clientId: selectedClientId.value }, date, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, operatingHours: branch.value.operatingHours || {}, legacyOperatingHours: { openDays: branch.value.openDays || [], openTime: branch.value.openTime || '', closeTime: branch.value.closeTime || '' }, now: now.value })
 const scheduleReady = computed(() => Boolean(availabilityReady.value && clientReady.value && flatVisits.value.length
   && flatVisits.value.every(row => row.serviceId && row.practitionerId && row.date && row.time
     && availableSlots(row).some(slot => slot.value === row.time))))
@@ -456,7 +456,7 @@ async function createAppointments() {
   if (!scheduleReady.value) return void (error.value = 'Select an available date and time for every appointment. The same person needs separate dates.')
   if (!bookingSignature.value) return void (error.value = 'The booking arranger must sign the booking and payment terms.')
   if (!bookingArrangerReady.value) return void (error.value = 'Enter the booking arranger name and valid contact details.')
-  if (flatVisits.value.some(row => !row.serviceId || !row.practitionerId || !row.date || !row.time || !walkInSlots({ row, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, now: Date.now() }).some(slot => slot.value === row.time))) return void (error.value = 'Select an available date and time for every service. The same person needs separate dates.')
+  if (flatVisits.value.some(row => !row.serviceId || !row.practitionerId || !row.date || !row.time || !walkInSlots({ row, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, operatingHours: branch.value.operatingHours || {}, legacyOperatingHours: { openDays: branch.value.openDays || [], openTime: branch.value.openTime || '', closeTime: branch.value.closeTime || '' }, now: Date.now() }).some(slot => slot.value === row.time))) return void (error.value = 'Select an available date and time for every service. The same person needs separate dates.')
   busy.value = true
   try {
     const result = await api('/walk-in/bookings', {

@@ -1,4 +1,5 @@
 import { assertWorkflow as check, normalized } from './bookingWorkflow.js'
+import { BOOKING_PAYMENT_HOLD_MS } from '../../shared/bookingPaymentHold.js'
 
 const clockMinutes = value => /^\d{2}:\d{2}$/.test(String(value || '')) ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3)) : NaN
 
@@ -45,10 +46,12 @@ export const registerSameDayTreatmentClearance = (app, { admin, requireAuth }) =
         const clear = decision === 'clear'
         const update = clear ? {
           sameDayTreatmentStatus: 'cleared', sameDayTreatmentClearedAt: timestamp, sameDayTreatmentClearedById: uid,
-          sameDayTreatmentClearanceNote: note, status: treatment.source === 'walk_in' ? 'Unpaid' : 'Contract Pending', paymentStatus: 'Pending', updatedAt: timestamp,
+          sameDayTreatmentClearanceNote: note, status: treatment.source === 'walk_in' ? 'Unpaid' : 'Contract Pending', paymentStatus: 'Pending',
+          ...(treatment.source === 'walk_in' ? {} : { paymentHoldStatus: 'active', paymentHoldExpiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + BOOKING_PAYMENT_HOLD_MS) }),
+          updatedAt: timestamp,
         } : {
           sameDayTreatmentStatus: 'not_cleared', sameDayTreatmentClearedAt: timestamp, sameDayTreatmentClearedById: uid,
-          sameDayTreatmentClearanceNote: note, status: 'Cancelled', paymentStatus: 'Not Applicable', updatedAt: timestamp,
+          sameDayTreatmentClearanceNote: note, status: 'Cancelled', paymentStatus: 'Not Applicable', paymentHoldStatus: 'released', paymentHoldDeadlineAt: treatment.paymentHoldExpiresAt || null, paymentHoldExpiresAt: null, updatedAt: timestamp,
         }
         tx.update(treatmentRef, update)
         tx.update(consultationRef, { sameDayTreatmentStatus: update.sameDayTreatmentStatus, sameDayTreatmentClearedAt: timestamp, sameDayTreatmentClearedById: uid, sameDayTreatmentClearanceNote: note, updatedAt: timestamp })

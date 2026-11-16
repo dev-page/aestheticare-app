@@ -3,11 +3,14 @@ import { assertWorkflow as check, normalized } from './bookingWorkflow.js'
 import { sameDayServiceConfigurationError } from './listingApproval.js'
 import { appointmentStaffIds } from '../../shared/practitionerTeam.js'
 import { prepareClinicBookingRecipients, writeClinicBookingNotifications } from './clinicBookingNotifications.js'
+import { BOOKING_PAYMENT_HOLD_MS } from '../../shared/bookingPaymentHold.js'
+import { isBookingPaymentHoldReleased } from '../../shared/bookingPaymentHold.js'
+import { bookingFitsClinicHours } from '../../shared/clinicOperatingHours.js'
 
 const clock = minutes => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 const parseTime = value => /^\d{2}:\d{2}$/.test(String(value || '')) ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3)) : NaN
 const activeStatus = value => !['cancelled', 'rejected', 'completed', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(normalized(value))
-export const sameDayAppointment = (data, { reservation, bookingId, treatmentAppointmentId, consultationAppointmentId, directBooking, createdAt }) => ({
+export const sameDayAppointment = (data, { reservation, bookingId, treatmentAppointmentId, consultationAppointmentId, directBooking, createdAt, paymentHoldExpiresAt = null }) => ({
   ...reservation,
   ...data,
   bookingWorkflowVersion: 2,
@@ -20,6 +23,10 @@ export const sameDayAppointment = (data, { reservation, bookingId, treatmentAppo
     ? (consultationAppointmentId ? 'Awaiting Clinical Clearance' : 'Awaiting Payment')
     : 'Pending Approval',
   paymentStatus: consultationAppointmentId ? 'Not Applicable' : 'Pending',
+  ...(paymentHoldExpiresAt ? consultationAppointmentId
+    ? { paymentHoldStatus: 'awaiting_clinical_clearance', paymentHoldExpiresAt: null }
+    : { paymentHoldStatus: 'active', paymentHoldExpiresAt }
+    : {}),
   amountPaid: 0,
   serviceKey: null,
   customerKeyVerified: false,
@@ -67,10 +74,13 @@ export const prepareSameDayPair = async ({ tx, db, reservation, getBookingRange,
   const treatmentRange = getBookingRange({ ...treatmentReservation, ...treatmentVisit.data })
   check(consultationRange && treatmentRange && consultationRange.end + bufferMinutes === treatmentRange.start, 'The linked treatment schedule is invalid.', 409)
   const pairRange = { start: consultationRange.start, end: treatmentRange.end }
+  const branchSnapshot = await tx.get(db.collection('clinics').doc(String(reservation.branchId || '')))
+  const branch = branchSnapshot.exists ? branchSnapshot.data() || {} : {}
+  check(branchSnapshot.exists && bookingFitsClinicHours(branch.operatingHours, reservation.date, pairRange.start, pairRange.end, branch), 'The consultation, buffer, and treatment must fit within one continuous clinic opening period.', 409)
   const existing = await tx.get(db.collection('appointments').where('branchId', '==', reservation.branchId))
   const conflict = existing.docs.some(doc => {
     const appointment = doc.data() || {}
-    if (!activeStatus(appointment.status) || !appointmentStaffIds(appointment).includes(String(reservation.practitionerId || '')) || appointment.date !== reservation.date) return false
+    if (!activeStatus(appointment.status) || isBookingPaymentHoldReleased(appointment) || !appointmentStaffIds(appointment).includes(String(reservation.practitionerId || '')) || appointment.date !== reservation.date) return false
     const range = getBookingRange(appointment)
     return range && rangesOverlap(pairRange.start, pairRange.end, range.start, range.end)
   })
@@ -87,10 +97,11 @@ export const prepareSameDayPair = async ({ tx, db, reservation, getBookingRange,
 
 export const registerSameDayBookings = (app, {
   admin, requireAuth, getBookingRange, rangesOverlap, assertClinicPlanFeature,
-  getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan = () => 'paid', loadUserContext,
+  getClinicPoliciesForBranch, getApprovedLeaveForDate, getEffectiveClinicPlan = () => 'paid', loadUserContext, reapExpiredAppointmentHolds = async () => {},
 }) => {
   app.post('/bookings/same-day', requireAuth, async (req, res) => {
     try {
+      await reapExpiredAppointmentHolds()
       const body = req.body || {}
       const branchId = String(body.branchId || '').trim()
       const serviceId = String(body.serviceId || '').trim()
@@ -123,7 +134,8 @@ export const registerSameDayBookings = (app, {
         const branchSnap = await tx.get(db.collection('clinics').doc(branchId))
         const branch = branchSnap.data() || {}
         check(branchSnap.exists && branch.isPublished === true && !['inactive', 'archived', 'closed'].includes(normalized(branch.status)), 'This clinic is unavailable.', 409)
-        const directBooking = getEffectiveClinicPlan(branch) === 'free'
+        const directBooking = true
+        const paymentHoldExpiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + BOOKING_PAYMENT_HOLD_MS)
         const { policy } = await getClinicPoliciesForBranch(db, branchId, branch)
         const policyRequired = Object.entries(policy || {}).some(([key, value]) => key.endsWith('Enabled') && value === true && String(policy[key.slice(0, -7)] || '').trim())
         check(!policyRequired || body.policyAcknowledged === true, 'Please review and acknowledge the active clinic policies before submitting.', 422)
@@ -132,7 +144,7 @@ export const registerSameDayBookings = (app, {
         const now = admin.firestore.FieldValue.serverTimestamp()
         const consult = sameDayAppointment(pair.consultationVisit.data, {
           reservation: pair.consultationReservation, bookingId: bookingRef.id,
-          treatmentAppointmentId: treatmentRef.id, directBooking, createdAt: now,
+          treatmentAppointmentId: treatmentRef.id, directBooking, createdAt: now, paymentHoldExpiresAt,
         })
         consult.endTime = pair.treatmentTime
         consult.sameDayConsultationEndTime = pair.consultationVisit.data.endTime
@@ -140,14 +152,15 @@ export const registerSameDayBookings = (app, {
         consult.sameDayTreatmentName = pair.treatmentVisit.data.service
         const treatment = sameDayAppointment(pair.treatmentVisit.data, {
           reservation: pair.treatmentReservation, bookingId: bookingRef.id,
-          consultationAppointmentId: consultationRef.id, directBooking, createdAt: now,
+          consultationAppointmentId: consultationRef.id, directBooking, createdAt: now, paymentHoldExpiresAt,
         })
         treatment.sameDayConsultationBufferMinutes = pair.bufferMinutes
         treatment.paymentStatus = 'Not Applicable'
         tx.set(consultationRef, consult)
         tx.set(treatmentRef, treatment)
         tx.set(bookingRef, {
-          ...customer, branchId, source: 'customer_booking_request', status: directBooking ? 'approved' : 'requested',
+          ...customer, branchId, source: 'customer_booking', status: 'Awaiting Payment',
+          paymentHoldStatus: 'active', paymentHoldExpiresAt,
           bookingWorkflowVersion: 2, sameDayBooking: true, appointmentIds: [consultationRef.id, treatmentRef.id],
           appointmentId: consultationRef.id, totalAmount: pair.consultationVisit.data.totalAmount + pair.treatmentVisit.data.totalAmount,
           amountDueNow: pair.consultationVisit.data.totalAmount, createdAt: now, updatedAt: now,

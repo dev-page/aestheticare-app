@@ -5,6 +5,7 @@ import { prepareTeamStart } from './practitionerTeams.js'
 import { normalized, initialPaymentReceived, balanceSettled, afterPaymentStatus, assertWorkflow as check } from './bookingWorkflow.js'
 import { planLotConsumption } from './inventoryLots.js'
 import { day as inventoryDay } from './supplyModel.js'
+import { timestampMillis } from '../../shared/bookingPaymentHold.js'
 
 const getServiceKeyWindow = (appointment) => {
   const date = String(appointment.date || '').trim()
@@ -89,6 +90,10 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
           check(customer || assistedSigning, 'Only the customer or authorized walk-in assistant can submit the signature.', 403)
           check(appointment.sameDayTreatmentStatus !== 'pending_clinical_clearance', 'The assigned practitioner must clear this treatment after the consultation before it can be signed.', 409)
           check(appointment.approvalStatus === 'Approved', 'The clinic must approve this booking before signing.')
+          const paymentHoldExpiresAt = timestampMillis(appointment.paymentHoldExpiresAt)
+          if (customer && appointment.source !== 'walk_in' && paymentHoldExpiresAt) {
+            check(String(appointment.paymentHoldStatus || '').toLowerCase() !== 'released' && paymentHoldExpiresAt > Date.now(), 'The payment window expired. Choose a new available appointment time before signing.', 409)
+          }
           check(normalized(appointment.contract?.status) !== 'signed', 'This contract has already been signed.')
           const signatureImage = String(req.body?.signatureImage || '')
           check(req.body?.accepted === true, 'Please accept the contract before signing.', 400)
