@@ -56,8 +56,10 @@
       </div>
 
       <div class="popup-actions">
-        <button type="button" class="btn-secondary" @click="maybeLater">Maybe Later</button>
-        <router-link to="/register" class="btn-primary">Register your clinic</router-link>
+        <button type="button" class="btn-secondary" @click="maybeLater">{{ isClinicOwner ? 'Back to subscription' : 'Maybe Later' }}</button>
+        <router-link v-if="isClinicOwner" to="/account/plans" class="btn-primary">Choose or renew a plan</router-link>
+        <span v-else-if="isSuspended" class="clinic-owner-hint">Ask your clinic owner to choose or renew a subscription.</span>
+        <router-link v-else to="/register" class="btn-primary">Register your clinic</router-link>
       </div>
     </div>
   </section>
@@ -67,8 +69,9 @@
 <script setup>
 import { usePageLoading } from '@/composables/usePageLoading'
 import { useThemeStore } from '@/stores/theme'
+import { useSubscription } from '@/composables/useSubscription'
 
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
@@ -79,6 +82,11 @@ import {
 } from "@/utils/subscriptionPlans";
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 const theme = useThemeStore()
+const { isSuspended, userRole } = useSubscription()
+const isClinicOwner = computed(() => {
+  const role = String(userRole.value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+  return isSuspended.value && ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(role)
+})
 
 
 const router = useRouter();
@@ -117,7 +125,7 @@ const loadPlans = trackPageLoad(async () => {
 });
 
 const maybeLater = () => {
-  router.push({ path: "/" });
+  router.push(isClinicOwner.value ? { path: '/account/subscription' } : { path: '/' })
 };
 
 const planCardClass = (plan) => {
@@ -525,6 +533,12 @@ onBeforeUnmount(() => {
   transform: translateY(-1px);
 }
 
+.clinic-owner-hint {
+  color: #795c46;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 @media (min-width: 768px) {
   .subscription-popup {
     padding: 1rem 1.2rem 1.3rem;
@@ -655,6 +669,10 @@ onBeforeUnmount(() => {
   border-color: var(--ac-border-strong) !important;
   background: linear-gradient(120deg, #8f5e3d 0%, #6d4a32 100%) !important;
   color: var(--ac-on-primary) !important;
+}
+
+.theme-dark .subscription-shell .clinic-owner-hint {
+  color: var(--ac-text-secondary) !important;
 }
 
 .theme-dark .subscription-shell .popup-error {

@@ -20,11 +20,25 @@ export function subscriptionDateLabel(value) {
   }).format(date) : '-'
 }
 
-// Use a coherent owner record. An explicit null means cleared, not missing.
+const hasRecognizedSubscription = (record = {}) => {
+  const plan = String(record.subscriptionPlan || record.plan || '').trim().toLowerCase()
+  const paymentStatus = String(record.paymentStatus || '').trim().toLowerCase()
+  return paymentStatus === 'trial' || plan.includes('basic') || plan.includes('premium')
+}
+
+// Prefer a real offer over legacy placeholder values such as `free`.
 export function subscriptionRecord(user = {}, clinic = {}) {
-  const primary = user.subscriptionPlan ? user : clinic
+  const primary = hasRecognizedSubscription(user)
+    ? user
+    : hasRecognizedSubscription(clinic)
+      ? clinic
+      : user.subscriptionPlan || user.plan
+        ? user
+        : clinic
   const fallback = primary === user ? clinic : user
   const record = { ...fallback, ...primary }
-  if (String(record.subscriptionPlan || '').toLowerCase().includes('free')) record.subscriptionExpiresAt = null
+  if (['free', 'free-plan', 'free_plan', 'freeplan'].includes(String(record.subscriptionPlan || '').trim().toLowerCase())) {
+    record.subscriptionExpiresAt = null
+  }
   return record
 }

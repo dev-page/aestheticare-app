@@ -14,10 +14,11 @@ exports.runSubscriptionMaintenance = async ({ admin, now = new Date(), normalize
       const main = branches.docs.find(doc => doc.id === ownerId) || branches.docs[0]
       if (!main) return 0
       const record = { ...main.data(), ...(owner.exists ? owner.data() : {}) }
-      let plan = normalizePlanKey(record.subscriptionPlan || record.plan)
-      let expiry = toDate(record.subscriptionExpiresAt)
       let paymentStatus = String(record.paymentStatus || '').toLowerCase()
-      let status = String(record.subscriptionAccessStatus || (paymentStatus === 'trial' ? 'trial' : 'active')).toLowerCase()
+      let plan = paymentStatus === 'trial' ? 'premium' : normalizePlanKey(record.subscriptionPlan || record.plan)
+      let expiry = toDate(record.subscriptionExpiresAt)
+      let status = String(record.subscriptionAccessStatus || (paymentStatus === 'trial' ? 'trial' : (plan ? 'active' : 'unsubscribed'))).toLowerCase()
+      if (!plan && !record.pendingSubscriptionPlan) status = 'unsubscribed'
       let payload = {}
       const pending = normalizePlanKey(record.pendingSubscriptionPlan)
       const applyAt = toDate(record.pendingSubscriptionApplyAt) || expiry
@@ -26,13 +27,24 @@ exports.runSubscriptionMaintenance = async ({ admin, now = new Date(), normalize
         expiry = toDate(record.pendingSubscriptionNextExpiresAt) || new Date(applyAt.getTime() + getPlanDurationDays(plan, record.pendingSubscriptionBillingCycle || 'month') * 86400000)
         paymentStatus = record.pendingSubscriptionPaymentId ? 'paid' : 'pending'
         status = 'active'
-        payload = { ...clearPendingSubscriptionFields(), subscriptionStartedAt: applyAt, paymentStatus, paymentId: record.pendingSubscriptionPaymentId || null, subscriptionGraceEndsAt: null, subscriptionRetentionEndsAt: null }
+        payload = {
+          ...clearPendingSubscriptionFields(),
+          subscriptionStartedAt: applyAt,
+          paymentStatus,
+          paymentId: record.pendingSubscriptionPaymentId || null,
+          subscriptionGraceEndsAt: new Date(expiry.getTime() + gracePeriodDays * 86400000),
+          subscriptionRetentionEndsAt: null,
+        }
       }
-      const graceEndsAt = toDate(record.subscriptionGraceEndsAt)
+      let graceEndsAt = toDate(payload.subscriptionGraceEndsAt) || toDate(record.subscriptionGraceEndsAt)
+      if (plan && expiry && !graceEndsAt) {
+        graceEndsAt = new Date(expiry.getTime() + gracePeriodDays * 86400000)
+        payload.subscriptionGraceEndsAt = graceEndsAt
+      }
       if (plan && ['trial', 'active', 'canceled'].includes(status) && expiry && now >= expiry) {
         status = 'grace_period'
         payload.subscriptionGraceStartedAt = expiry
-        payload.subscriptionGraceEndsAt = graceEndsAt || new Date(expiry.getTime() + gracePeriodDays * 86400000)
+        payload.subscriptionGraceEndsAt = graceEndsAt
       }
       const finalGraceEnd = toDate(payload.subscriptionGraceEndsAt) || graceEndsAt
       if (status === 'grace_period' && finalGraceEnd && now >= finalGraceEnd) {
@@ -45,7 +57,14 @@ exports.runSubscriptionMaintenance = async ({ admin, now = new Date(), normalize
         payload.subscriptionDispositionStatus = 'review_required'
         payload.subscriptionDispositionEligibleAt = retentionEndsAt
       }
-      const desired = { ...payload, subscriptionPlan: plan || null, subscriptionExpiresAt: expiry || null, subscriptionAccessStatus: status, updatedAt: admin.firestore.FieldValue.serverTimestamp() }
+      const desired = {
+        ...payload,
+        subscriptionPlan: plan || null,
+        ...(paymentStatus === 'free' && !plan ? { paymentStatus: null } : {}),
+        subscriptionExpiresAt: expiry || null,
+        subscriptionAccessStatus: status,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }
       const changed = [record, ...branches.docs.map(doc => doc.data())].some(current =>
         Object.keys(desired).some(key => key !== 'updatedAt' && String(current[key] || '') !== String(desired[key] || '')))
       if (!changed) return 0

@@ -93,7 +93,7 @@ const expireAppointmentHold = async ({ admin, appointmentId, latePayment = null 
   })
 }
 
-export const createAppointmentPaymentHoldReaper = ({ admin, getPayMongoHeaders, recordPayment, getCronSecret }) => {
+export const createAppointmentPaymentHoldReaper = ({ app, admin, getPayMongoHeaders, recordPayment, getCronSecret }) => {
   let running = false
   const expireDueHolds = async () => {
     if (running) return { expired: 0, skipped: true }

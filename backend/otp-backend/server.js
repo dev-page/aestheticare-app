@@ -3,7 +3,7 @@ import { registerAppointmentPaymentWebhook } from './appointmentPaymentWebhook.j
 import { createAppointmentPaymentHoldReaper } from './appointmentPaymentHolds.js'
 import { registerConsultationEvents } from './consultationEvents.js'
 import { subscriptionDate } from '../../shared/subscriptionDates.js'
-import { subscriptionLifecycle, hasActivePaidCycle } from '../../shared/subscriptionLifecycle.js'
+import { subscriptionLifecycle, hasActivePaidCycle, GRACE_PERIOD_DAYS } from '../../shared/subscriptionLifecycle.js'
 import { registerSubscriptionTrial } from './subscriptionTrial.js'
 import { registerSubscriptionReminders, sendSubscriptionReminders } from './subscriptionReminders.js'
 import { serviceOnlyClinicPolicies } from '../../shared/clinicPolicyContent.js'
@@ -3726,18 +3726,13 @@ const toMillis = (value) => {
 
 const normalizePlanKey = (value) => {
   const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return 'free'
-  if (raw === 'free-plan' || raw === 'freeplan' || raw === 'free_plan' || raw === 'free-trial' || raw === 'trial') {
-    return 'free'
-  }
+  if (!raw || ['free', 'free-plan', 'freeplan', 'free_plan', 'free-trial', 'trial'].includes(raw)) return ''
   if (raw.includes('premium')) return 'premium'
   if (raw.includes('basic')) return 'basic'
-  if (raw.includes('free')) return 'free'
   return raw
 }
 
 const PLAN_PRIORITIES = {
-  free: 0,
   basic: 1,
   premium: 2,
 }
@@ -3747,9 +3742,6 @@ const getEffectiveClinicPlan = (clinic = {}) => {
 }
 
 const PLAN_FEATURES = Object.freeze({
-  // Employee accounts are a basic clinic need, separate from premium HR
-  // workflows such as shifts, attendance, and payroll.
-  free: new Set(['booking_availability', 'staff_management']),
   // Basic is a single-clinic operational plan: bookings, consultations,
   // services/packages, orders, inventory and operational finance.
   basic: new Set(['booking_availability', 'staff_management', 'online_consultations', 'reports']),
@@ -3761,7 +3753,10 @@ const assertClinicPlanFeature = async (firestore, branchId, feature) => {
   const clinicSnap = await firestore.collection('clinics').doc(String(branchId || '').trim()).get()
   assertWorkflow(clinicSnap.exists, 'Clinic branch not found.', 404)
   const clinic = clinicSnap.data() || {}
-  const plan = getEffectiveClinicPlan(clinic)
+  const lifecycle = subscriptionLifecycle(clinic)
+  const plan = lifecycle.plan
+  assertWorkflow(lifecycle.isOperational, 'This clinic subscription is inactive. Sign in to renew or choose a plan to restore clinic access.', 403)
+  assertWorkflow(['basic', 'premium'].includes(plan), 'Choose Free Trial, Basic, or Premium to use clinic operations.', 403)
   const configured = await firestore.collection('planPermissions').doc(plan).get()
   const configuredFeatures = configured.exists && Array.isArray(configured.data()?.permissions)
     ? new Set(configured.data().permissions.map(value => String(value || '').trim()).filter(Boolean))
@@ -3781,7 +3776,7 @@ const getPlanPriority = (planKey) => PLAN_PRIORITIES[normalizePlanKey(planKey)] 
 
 const getPlanDurationDays = (planKey, billingCycle = 'month') => {
   const normalizedPlan = normalizePlanKey(planKey)
-  if (normalizedPlan === 'free') return 0
+  if (!['basic', 'premium'].includes(normalizedPlan)) return 0
   const cycle = String(billingCycle || '').trim().toLowerCase()
   if (cycle === 'year' || cycle === 'annual') return 365
   return 30
@@ -3840,7 +3835,7 @@ const loadOwnerSubscriptionContext = async (firestore, ownerUid) => {
   const paymentStatus = String(clinicData.paymentStatus || userData.paymentStatus || '').trim().toLowerCase()
   const currentPlan = paymentStatus === 'trial'
     ? 'premium'
-    : normalizePlanKey(clinicData.subscriptionPlan || userData.subscriptionPlan || userData.plan || 'free')
+    : normalizePlanKey(clinicData.subscriptionPlan || userData.subscriptionPlan || userData.plan)
   const currentExpiresAt = toDateValue(clinicData.subscriptionExpiresAt || userData.subscriptionExpiresAt)
   const rawPendingPlan = String(clinicData.pendingSubscriptionPlan || userData.pendingSubscriptionPlan || '').trim()
   const pendingPlan = rawPendingPlan ? normalizePlanKey(rawPendingPlan) : ''
@@ -3891,6 +3886,7 @@ const applySubscriptionPaymentForOwner = async ({
 }) => {
   const context = await loadOwnerSubscriptionContext(firestore, ownerUid)
   const normalizedTargetPlan = normalizePlanKey(targetPlan)
+  assertWorkflow(['basic', 'premium'].includes(normalizedTargetPlan), 'Choose Basic or Premium for a paid subscription.', 400)
   const currentPlan = context.currentPlan
   const currentPriority = getPlanPriority(currentPlan)
   const targetPriority = getPlanPriority(normalizedTargetPlan)
@@ -3925,8 +3921,7 @@ const applySubscriptionPaymentForOwner = async ({
   if (targetPriority < currentPriority && hasActiveCurrentCycle) {
     const applyAt = currentExpiresAt
     const durationDays = getPlanDurationDays(normalizedTargetPlan, billingCycle)
-    const nextExpiresAt =
-      targetPriority === 0 ? null : new Date(applyAt.getTime() + durationDays * DAY_MS)
+    const nextExpiresAt = new Date(applyAt.getTime() + durationDays * DAY_MS)
 
     await updateOwnerSubscriptionDocuments(firestore, ownerUid, {
       pendingSubscriptionPlan: normalizedTargetPlan,
@@ -3951,9 +3946,8 @@ const applySubscriptionPaymentForOwner = async ({
   }
 
   const durationDays = getPlanDurationDays(normalizedTargetPlan, billingCycle)
-  const nextExpiresAt =
-    targetPriority === 0 ? null : new Date(paymentDate.getTime() + durationDays * DAY_MS)
-  const nextPaymentStatus = targetPriority === 0 ? 'free' : 'paid'
+  const nextExpiresAt = new Date(paymentDate.getTime() + durationDays * DAY_MS)
+  const nextPaymentStatus = 'paid'
 
   await updateOwnerSubscriptionDocuments(firestore, ownerUid, {
     subscriptionPlan: normalizedTargetPlan,
@@ -3961,6 +3955,8 @@ const applySubscriptionPaymentForOwner = async ({
     paymentId: paymentReference || null,
     subscriptionStartedAt: paymentDate,
     subscriptionExpiresAt: nextExpiresAt,
+    subscriptionGraceEndsAt: new Date(nextExpiresAt.getTime() + GRACE_PERIOD_DAYS * DAY_MS),
+    subscriptionRetentionEndsAt: null,
     subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
     ...clearPendingSubscriptionFields(),
   })
@@ -6036,9 +6032,7 @@ app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
             branchAdminName: `${profileBase.firstName} ${profileBase.lastName}`.trim(),
             approvalStatus: pendingStatus,
             registrationStatus: pendingStatus,
-            subscriptionPlan: 'free',
-            paymentStatus: 'free',
-            subscriptionExpiresAt: null,
+            subscriptionAccessStatus: 'unsubscribed',
             isPublished: false,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           })
@@ -6057,6 +6051,10 @@ app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
             clinicBranch: 'Main Branch',
             status: pendingStatus,
             registrationStatus: pendingStatus,
+            subscriptionAccessStatus: 'unsubscribed',
+            subscriptionPlan: admin.firestore.FieldValue.delete(),
+            paymentStatus: admin.firestore.FieldValue.delete(),
+            subscriptionExpiresAt: admin.firestore.FieldValue.delete(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           })
           return { created: true, repaired: true }
@@ -6115,9 +6113,7 @@ app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
         status: 'Pending OTP Verification',
         registrationStatus: 'Pending OTP Verification',
         emailVerified: false,
-        subscriptionPlan: 'free',
-        paymentStatus: 'free',
-        subscriptionExpiresAt: null,
+        subscriptionAccessStatus: 'unsubscribed',
       })
       transaction.create(clinicRef, {
         clinicName: registrationText(clinicInput.clinicName, 160),
@@ -6140,9 +6136,7 @@ app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
         branchAdminName: `${profileBase.firstName} ${profileBase.lastName}`.trim(),
         approvalStatus: 'Pending OTP Verification',
         registrationStatus: 'Pending OTP Verification',
-        subscriptionPlan: 'free',
-        paymentStatus: 'free',
-        subscriptionExpiresAt: null,
+        subscriptionAccessStatus: 'unsubscribed',
         isPublished: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       })
@@ -6635,32 +6629,57 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
   }
 })
 
-// Public clinic catalog reads run through the trusted backend. This prevents a
-// customer-facing page from failing when Firestore rules cannot prove a
-// compound listing query is limited to a published clinic.
+// Public catalog reads use the trusted backend so published-center visibility
+// and reviewed tax-profile checks do not depend on customer Firestore rules.
 app.get('/public/clinics/:branchId/catalog', async (req, res) => {
+  const branchId = String(req.params?.branchId || '').trim()
+  let stage = 'initialization'
   try {
-    const branchId = String(req.params?.branchId || '').trim()
     if (!branchId) return res.status(400).json({ success: false, error: 'branchId is required.' })
+    if (!adminReady) return res.status(503).json({ success: false, error: 'Center catalog is temporarily unavailable.' })
     const firestore = admin.firestore()
+    stage = 'clinic lookup'
     const clinicSnap = await firestore.collection('clinics').doc(branchId).get()
     const clinic = clinicSnap.exists ? clinicSnap.data() || {} : null
     if (!clinic || clinic.isPublished !== true || String(clinic.status || '').trim().toLowerCase() === 'inactive') {
       return res.status(404).json({ success: false, error: 'Center unavailable.' })
     }
-    const isFreePlan = getEffectiveClinicPlan(clinic) === 'free'
-    const { policy: clinicPolicy } = await getClinicPoliciesForBranch(firestore, branchId, clinic)
+    stage = 'subscription validation'
+    const subscription = subscriptionLifecycle(clinic)
+    if (!subscription.plan || !subscription.isOperational) {
+      return res.status(404).json({ success: false, error: 'Center unavailable.' })
+    }
+    let clinicPolicy = {}
+    stage = 'clinic policy lookup'
+    try {
+      const policyResult = await getClinicPoliciesForBranch(firestore, branchId, clinic)
+      clinicPolicy = policyResult?.policy || {}
+    } catch (policyError) {
+      // Catalog visibility does not depend on policy availability. Fail closed
+      // for VAT-applicable listings until the reviewed tax status can be read.
+      console.error('Public clinic catalog policy lookup failed:', {
+        branchId,
+        code: policyError?.code || null,
+        message: policyError?.message || String(policyError),
+      })
+    }
+    stage = 'catalog query'
     const postsSnap = await firestore.collection('productServicePosts').where('branchId', '==', branchId).get()
     const posts = postsSnap.docs
       .map((postSnap) => ({ id: postSnap.id, ...postSnap.data() }))
       .filter(isCustomerCareListing)
-      .filter((post) => !isFreePlan || post.postType === 'Service')
       // Do not advertise legacy VAT prices that cannot be booked until an
       // administrator has confirmed the clinic's BIR tax profile.
       .filter((post) => clinicPolicy.vatRegistered === true || post.vatApplicable !== true)
     return res.json({ success: true, posts })
   } catch (error) {
-    console.error('Public clinic catalog load failed:', error?.message || error)
+    console.error('Public clinic catalog load failed:', {
+      branchId,
+      stage,
+      code: error?.code || null,
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    })
     return res.status(500).json({ success: false, error: 'Unable to load this center’s products and services.' })
   }
 })
@@ -7600,107 +7619,6 @@ app.post('/auth/registration-profile', requireAuth, async (req, res) => {
   }
 })
 
-app.post('/admin/unpublish-expired-clinics', requireAuth, requireRole(['superadmin']), async (req, res) => {
-
-  const ownerId = String(req.body?.ownerId || '').trim()
-  const firestore = admin.firestore()
-  const now = new Date()
-
-  const toDate = (value) => {
-    if (!value) return null
-    if (typeof value?.toDate === 'function') return value.toDate()
-    if (value instanceof Date) return value
-    if (typeof value === 'number') return new Date(value)
-    if (typeof value === 'string') {
-      const parsed = new Date(value)
-      return Number.isNaN(parsed.getTime()) ? null : parsed
-    }
-    return null
-  }
-
-  try {
-    const clinicsRef = firestore.collection('clinics')
-    const clinicsSnapshot = ownerId
-      ? await clinicsRef.where('ownerId', '==', ownerId).get()
-      : await clinicsRef.get()
-
-    if (clinicsSnapshot.empty) {
-      return res.json({ success: true, updated: 0 })
-    }
-
-    const updates = []
-    clinicsSnapshot.forEach((docSnap) => {
-      const data = docSnap.data() || {}
-      // Expiry preserves clinic publication and returns it to Free.
-      const expiresAt = toDate(data.subscriptionExpiresAt)
-      if (!expiresAt) return
-      if (now.getTime() <= expiresAt.getTime()) return
-      updates.push(
-        docSnap.ref.update({
-          subscriptionPlan: 'free', paymentStatus: 'free', subscriptionExpiresAt: null,
-          ...(String(data.paymentStatus).toLowerCase() === 'trial' ? {} : { lastPaidSubscriptionPlan: data.subscriptionPlan }),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        })
-      )
-    })
-
-    if (!updates.length) {
-      return res.json({ success: true, updated: 0 })
-    }
-
-    await Promise.all(updates)
-    return res.json({ success: true, updated: updates.length })
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      error: error?.message || 'Failed to unpublish expired clinics',
-    })
-  }
-})
-
-// A paid tier expires back into the permanent Free Plan. This endpoint makes
-// that fallback durable for the owner and every branch without deleting any
-// clinic data. The client also applies Free immediately while this sync runs.
-app.post('/subscription/sync-effective-plan', requireAuth, async (req, res) => {
-  try {
-    const firestore = admin.firestore()
-    const ownerId = String(req.user?.uid || '').trim()
-    if (!ownerId) return res.status(401).json({ success: false, error: 'Authentication is required.' })
-
-    const userRef = firestore.collection('users').doc(ownerId)
-    const [userSnap, branchesSnap] = await Promise.all([
-      userRef.get(),
-      firestore.collection('clinics').where('ownerId', '==', ownerId).get(),
-    ])
-    const userData = userSnap.exists ? userSnap.data() || {} : {}
-    const userPlan = getEffectiveClinicPlan(userData)
-    const batch = firestore.batch()
-    let updated = 0
-
-    const downgrade = (ref, data) => {
-      const storedPlan = normalizePlanKey(data.subscriptionPlan || data.plan || 'free')
-      if (storedPlan === 'free' || getEffectiveClinicPlan(data) !== 'free') return
-      batch.set(ref, {
-        subscriptionPlan: 'free',
-        paymentStatus: 'free',
-        subscriptionExpiresAt: null,
-        ...(String(data.paymentStatus).toLowerCase() === 'trial' ? {} : { lastPaidSubscriptionPlan: storedPlan }),
-        subscriptionDowngradedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true })
-      updated += 1
-    }
-
-    downgrade(userRef, userData)
-    branchesSnap.forEach((branchSnap) => downgrade(branchSnap.ref, branchSnap.data() || {}))
-
-    if (updated) await batch.commit()
-    return res.json({ success: true, plan: userPlan, updated })
-  } catch (error) {
-    return res.status(500).json({ success: false, error: error?.message || 'Unable to synchronize the subscription plan.' })
-  }
-})
-
 app.post('/dev/backfill-client-contact-info', requireAuth, requireRole(['superadmin']), async (_req, res) => {
   if (!isDevelopment || String(process.env.ENABLE_DEV_ENDPOINTS || '').toLowerCase() !== 'true') {
     return res.status(404).json({
@@ -7734,7 +7652,7 @@ app.post('/owner/subscription/plan-change-preview', requireAuth, async (req, res
     return res.status(401).json({ success: false, error: 'Unauthorized' })
   }
 
-  if (!targetPlan || !['free', 'basic', 'premium'].includes(targetPlan)) {
+  if (!targetPlan || !['basic', 'premium'].includes(targetPlan)) {
     return res.status(400).json({ success: false, error: 'A valid target plan is required.' })
   }
 
@@ -7815,7 +7733,7 @@ app.post('/owner/subscription/schedule-plan-change', requireAuth, async (req, re
     return res.status(401).json({ success: false, error: 'Unauthorized' })
   }
 
-  if (!targetPlan || !['free', 'basic', 'premium'].includes(targetPlan)) {
+  if (!targetPlan || !['basic', 'premium'].includes(targetPlan)) {
     return res.status(400).json({
       success: false,
       error: 'A valid target plan is required.',
@@ -10331,6 +10249,7 @@ const recordAppointmentPayment = async (req, res) => {
 }
 app.post('/appointments/:id/record-payment', requireAuth, recordAppointmentPayment)
 const appointmentPaymentHoldExpiry = createAppointmentPaymentHoldReaper({
+  app,
   admin,
   getPayMongoHeaders: buildPayMongoHeaders,
   recordPayment: recordAppointmentPayment,

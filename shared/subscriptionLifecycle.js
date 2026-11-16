@@ -10,6 +10,7 @@ export function normalizeSubscriptionPlan(value) {
   if (plan.includes('free-trial') || plan === 'trial') return TRIAL_PLAN
   if (plan.includes('premium')) return 'premium'
   if (plan.includes('basic')) return 'basic'
+  // Legacy `free` values represented an unselected subscription, not a plan.
   return ''
 }
 
@@ -20,16 +21,28 @@ export function subscriptionLifecycle(record = {}, now = new Date()) {
   const trial = paymentStatus === 'trial'
   // A trial is the standalone Free Trial offer, whose entitlement is always Premium.
   // This also upgrades the effective access of legacy trial records that stored Basic.
-  const plan = trial ? 'premium' : normalizeSubscriptionPlan(record.subscriptionPlan || record.plan || record.selectedPlan)
+  const storedPlan = normalizeSubscriptionPlan(record.subscriptionPlan || record.plan || record.selectedPlan)
+  // `free-trial` is an offer, not an entitlement on its own. Only a trusted
+  // trial activation (`paymentStatus: trial`) grants Premium permissions.
+  const plan = trial ? 'premium' : storedPlan === TRIAL_PLAN ? '' : storedPlan
   const expiresAt = subscriptionDate(trial ? (record.subscriptionTrialEndsAt || record.subscriptionExpiresAt) : record.subscriptionExpiresAt)
-  const graceEndsAt = subscriptionDate(record.subscriptionGraceEndsAt || record.gracePeriodEndDate)
+  const recordedGraceEndsAt = subscriptionDate(record.subscriptionGraceEndsAt || record.gracePeriodEndDate)
+  const graceEndsAt = recordedGraceEndsAt || (expiresAt ? new Date(expiresAt.getTime() + GRACE_PERIOD_DAYS * 86400000) : null)
   const retentionEndsAt = subscriptionDate(record.subscriptionRetentionEndsAt || record.retentionEndDate)
   const usedTrial = Boolean(record.subscriptionTrialUsedAt || record.subscriptionTrialStartedAt)
   const paidBefore = Boolean(record.lastPaidSubscriptionPlan || record.paymentId || paymentStatus === 'paid')
-  const status = storedStatus || (expiresAt && expiresAt <= now ? 'grace_period' : (trial ? 'trial' : (plan ? 'active' : 'expired')))
+  const endedCurrentCycle = Boolean(expiresAt && expiresAt <= now)
+  const gracePeriodEnded = Boolean(graceEndsAt && graceEndsAt <= now && (endedCurrentCycle || storedStatus === 'grace_period'))
+  const status = !plan
+    ? 'unsubscribed'
+    : gracePeriodEnded
+      ? 'expired'
+    : storedStatus && !(['trial', 'active', 'canceled'].includes(storedStatus) && endedCurrentCycle)
+      ? storedStatus
+      : endedCurrentCycle ? 'grace_period' : (trial ? 'trial' : 'active')
   return { plan, status, trial, expiresAt, graceEndsAt, retentionEndsAt,
-    isOperational: ['trial', 'active', 'canceled'].includes(status) && (!expiresAt || expiresAt > now)
-      || status === 'grace_period' && Boolean(graceEndsAt && graceEndsAt > now),
+    isOperational: Boolean(plan) && (['trial', 'active', 'canceled'].includes(status) && (!expiresAt || expiresAt > now)
+      || status === 'grace_period' && Boolean(graceEndsAt && graceEndsAt > now)),
     trialEligible: !usedTrial && !paidBefore }
 }
 

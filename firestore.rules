@@ -47,6 +47,10 @@ service cloud.firestore {
           || userData().userType == 'customer');
     }
 
+    function isValidPhilippineMobile(value) {
+      return value is string && value.matches('^\\+639[0-9]{9}$');
+    }
+
     function applicantCannotChangeVerificationFields() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'status', 'approvalStatus', 'registrationStatus', 'verificationStatus', 'verificationResults',
@@ -182,10 +186,16 @@ service cloud.firestore {
         && threadId == thread.branchId + '_' + thread.customerId;
     }
 
+    function clinicHasSubscription(branchId) {
+      return exists(/databases/$(database)/documents/clinics/$(branchId))
+        && (clinicDoc(branchId).data.get('subscriptionPlan', '') in ['basic', 'premium']
+          || clinicDoc(branchId).data.get('paymentStatus', '') == 'trial');
+    }
+
     // Use the server timestamp so expiry restrictions do not depend on the UI
     // or on the hourly maintenance job running first.
     function subscriptionAllowsBusinessWrite(branchId) {
-      return exists(/databases/$(database)/documents/clinics/$(branchId))
+      return clinicHasSubscription(branchId)
         // Subscription is a clinic-wide authorization layer. Role permissions
         // are checked by the caller, but can never override an expired clinic.
         && (clinicDoc(branchId).data.get('isActive', true) != false)
@@ -196,6 +206,9 @@ service cloud.firestore {
           || (clinicDoc(branchId).data.get('subscriptionAccessStatus', '') in ['trial', 'active', 'canceled']
             && (clinicDoc(branchId).data.get('subscriptionExpiresAt', null) == null
               || request.time < clinicDoc(branchId).data.subscriptionExpiresAt))
+          || (clinicDoc(branchId).data.get('subscriptionAccessStatus', '') in ['trial', 'active', 'canceled']
+            && clinicDoc(branchId).data.get('subscriptionGraceEndsAt', null) != null
+            && request.time < clinicDoc(branchId).data.subscriptionGraceEndsAt)
           // Legacy records remain usable until migrated, but an expired legacy
           // date is never a bypass.
           || (!('subscriptionAccessStatus' in clinicDoc(branchId).data)
@@ -236,6 +249,11 @@ service cloud.firestore {
       allow create: if isSignedIn() && isSuperadmin();
       allow update: if isSignedIn()
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['practitionerType'])
+        && (!isCustomer()
+          || ((!request.resource.data.diff(resource.data).affectedKeys().hasAny(['contactNumber'])
+              || isValidPhilippineMobile(request.resource.data.contactNumber))
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['phoneNumber'])
+              || isValidPhilippineMobile(request.resource.data.phoneNumber))))
         && ((request.auth.uid == userId
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'welcomeNotificationSent', 'welcomeNotificationAt', 'welcomeNotificationRead', 'welcomeNotificationDeleted'
@@ -754,20 +772,14 @@ service cloud.firestore {
           'price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount'
         ]);
       }
-      function isFreeServiceListing(data) {
-        return data.get('postType', '') == 'Service'
-          && data.get('financeStatus', '') == 'approved'
-          && data.get('isPublished', false) == true
-          && get(/databases/$(database)/documents/clinics/$(data.branchId)).data.get('subscriptionPlan', 'free') == 'free';
-      }
       allow read: if (isPublicClinic(resource.data.branchId)
           && resource.data.get('financeStatus', '') == 'approved' && resource.data.get('isPublished', false) == true)
         || (isSignedIn() && canAccessBranch(resource.data.branchId));
       allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId)
-        && hasPermission('services:create') && (draft() || isFreeServiceListing(request.resource.data));
+        && hasPermission('services:create') && draft();
       allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('services:update')
         && request.resource.data.branchId == resource.data.branchId
-        && ((financialChange() && (draft() || isFreeServiceListing(request.resource.data))) || (!financialChange()
+        && ((financialChange() && draft()) || (!financialChange()
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
             'financeStatus', 'financeReview', 'isPublished', 'publishedBy', 'publishedAt', 'submittedBy'
           ])));

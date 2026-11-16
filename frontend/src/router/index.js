@@ -5,29 +5,13 @@ import { usePermissions } from "@/composables/usePermissions";
 import { useSubscription } from "@/composables/useSubscription";
 import { collection, doc, getDoc, getDocs, limit, query, where } from "firebase/firestore";
 import { auth, db } from "@/config/firebaseConfig";
-import { subscriptionDate } from '../../../shared/subscriptionDates.js';
-import { isFreeClinicRoute as isFreePlanRoute } from '../../../shared/freeClinicRoutes.js';
+import { isSubscriptionRecoveryRoute } from '../../../shared/subscriptionRecoveryRoutes.js';
 import { CUSTOMER_APP_LOGIN, customerAppAuthRedirect, isCustomerAppAccount, isCustomerAppContext, isCustomerAppRoute } from '@/utils/customerApp';
 import { recoverFromStaleAsset } from '@/utils/appUpdate';
 
 const isMobileApp = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 
-const subscriptionExpiryHasPassed = (value) => {
-  if (!value) return false
-  const date = subscriptionDate(value)
-  return Boolean(date && date.getTime() <= Date.now())
-}
-
 const isTrueFlag = (value) => value === true || String(value || '').trim().toLowerCase() === 'true'
-
-const hasFreePlanOnboardingSessionAccess = (uid) => {
-  if (!uid || typeof window === 'undefined') return false
-  try {
-    return window.sessionStorage.getItem(`free-plan-onboarding-continued:${uid}`) === 'true'
-  } catch {
-    return false
-  }
-}
 
 const routes = [
   { path: '/superadmin/suppliers/verification', redirect: '/superadmin/verification' },
@@ -361,12 +345,6 @@ const isEmployeeAccount = (userData = {}) => {
   return userType === 'staff' || userType === 'employee'
 }
 
-const isFreeSubscriptionPlan = (value) => {
-  const plan = String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-')
-  return !plan || plan === 'free' || plan === 'free-plan' || plan === 'free-trial' || plan === 'trial'
-}
-
-
 const isAuthReady = (isLoading) => {
   if (!isLoading.value) return Promise.resolve()
 
@@ -421,7 +399,7 @@ router.beforeEach(async (to, from, next) => {
 
   const { user, isLoading, initAuth } = useAuth();
   const { hasPermission } = usePermissions();
-  const { hasFeature, activePlan, initSubscription } = useSubscription();
+  const { hasFeature, initSubscription, isSuspended } = useSubscription();
 
   initAuth();
 
@@ -530,15 +508,6 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
-  const activeSubscriptionPlan = currentUserData.subscriptionPlan
-    || currentUserData.plan
-    || clinicSubscriptionData.subscriptionPlan
-    || clinicSubscriptionData.plan
-  const subscriptionExpiresAt = currentUserData.subscriptionExpiresAt || clinicSubscriptionData.subscriptionExpiresAt
-  const effectiveSubscriptionPlan = subscriptionExpiryHasPassed(subscriptionExpiresAt)
-    && !isFreeSubscriptionPlan(activeSubscriptionPlan)
-    ? 'free'
-    : activeSubscriptionPlan
   const userStatus = String(currentUserData.status || '').trim().toLowerCase()
   const clinicApprovalStatus = String(
     clinicSubscriptionData.approvalStatus || currentUserData.approvalStatus || ''
@@ -599,7 +568,7 @@ router.beforeEach(async (to, from, next) => {
   // Check plans before owner/alternate permission shortcuts below.
   if (currentUser && to.meta.requiresAuth && isClinicAccount(currentUserData) && !isSystemAdmin && !isClinicSetupRoute) {
     await initSubscription(true)
-    if (activePlan.value === 'free' && !isFreePlanRoute(routePath)) return next('/subscription-features')
+    if (isSuspended.value && !isSubscriptionRecoveryRoute(routePath)) return next('/subscription-features')
   }
   if (!isSystemAdmin && to.meta.requiresFeature && !hasFeature(to.meta.requiresFeature)) return next('/subscription-features')
 

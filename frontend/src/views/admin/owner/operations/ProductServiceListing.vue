@@ -6,16 +6,12 @@
       <div class="listing-page-heading mb-6">
         <div><p class="listing-eyebrow">Clinic services</p>
         <h1 class="text-2xl md:text-3xl font-bold mb-1">Service Listings</h1>
-        <p class="text-slate-400">{{ isFreePlan ? 'Publish service listings directly for customer booking.' : 'Save drafts, submit financial terms to Finance, then publish approved listings.' }}</p>
+        <p class="text-slate-400">Save drafts, submit financial terms to Finance, then publish approved listings.</p>
         </div><button v-if="activeListingTab === 'listings'" type="button" class="listing-primary-button" @click="activeListingTab = 'create'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg><span>Create listing</span></button>
       </div>
 
       <div v-if="activeListingTab === 'listings'" class="listing-overview"><article><span>Total listings</span><strong>{{ posts.length }}</strong></article><article><span>Published</span><strong>{{ posts.filter(post => post.isPublished).length }}</strong></article><article><span>Unpublished</span><strong>{{ posts.filter(post => !post.isPublished).length }}</strong></article></div>
       <nav class="listing-tabs" aria-label="Service listing sections"><button type="button" :class="{ 'is-active': activeListingTab === 'listings' }" :aria-pressed="activeListingTab === 'listings'" @click="activeListingTab = 'listings'">Listings</button><button type="button" :class="{ 'is-active': activeListingTab === 'create' }" :aria-pressed="activeListingTab === 'create'" @click="activeListingTab = 'create'">Create Listing</button></nav>
-
-      <div v-if="activeListingTab === 'listings' && isFreePlan" class="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/20 p-4 text-sm text-amber-100">
-        Free Plan includes up to <strong>{{ freePlanPostLimit }} service listings</strong>. Services publish directly and can be booked online. Upgrade to Basic for consultations, packages, and Finance workflows.
-      </div>
 
       <details v-if="activeListingTab === 'listings' && applicablePolicies.length" class="listing-policy-panel">
         <summary class="listing-disclosure-trigger"><span>Applicable branch policies <small>{{ applicablePolicies.length }} enabled</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
@@ -33,7 +29,7 @@
       <div v-show="activeListingTab === 'create'" class="listing-create-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <h2 class="text-lg font-semibold mb-2">Create listing</h2><p class="listing-section-description">Add the service details, booking rules, and resources needed for each appointment.</p>
 
-        <ServiceListingFields :model="form" :disabled="loading" :is-free-plan="isFreePlan" :vat-registered="clinicVatRegistered" :tax-status="clinicTaxStatus" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
+        <ServiceListingFields :model="form" :disabled="loading" :vat-registered="clinicVatRegistered" :tax-status="clinicTaxStatus" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
 
         <div class="flex gap-2">
           <button
@@ -68,12 +64,9 @@
                 <span class="text-xs text-slate-400">{{ formatDate(post.createdAt) }}</span>
               </div>
               <h3 class="font-semibold mb-1">{{ post.title }}</h3>
-              <p class="listing-publication-status mb-2 text-sm font-semibold" :class="{ 'is-published': post.isPublished }">{{ isFreePlan ? (post.isPublished ? 'Published' : 'Draft') : (post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft') }}</p>
-              <p v-if="!isFreePlan && post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
-              <div v-if="canManageListingWorkflow && isFreePlan && !post.isPublished" class="mb-3 flex flex-wrap gap-2">
-                <button :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">Publish</button>
-              </div>
-              <div v-if="!isFreePlan" class="mb-3 flex flex-wrap gap-2">
+              <p class="listing-publication-status mb-2 text-sm font-semibold" :class="{ 'is-published': post.isPublished }">{{ post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft' }}</p>
+              <p v-if="post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
+              <div class="mb-3 flex flex-wrap gap-2">
                 <button v-if="canManageListingWorkflow && (!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus))" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Submitting…' : 'Submit to Finance' }}</button>
                 <button v-if="canManageListingWorkflow && post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Publishing…' : 'Publish' }}</button>
                 <button v-if="canManageListingWorkflow && post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Unpublishing…' : 'Unpublish' }}</button>
@@ -150,11 +143,11 @@
         <div class="w-full max-w-2xl rounded-xl bg-slate-800 border border-slate-700 max-h-[calc(100vh-2rem)] overflow-hidden flex flex-col">
           <div class="listing-edit-heading px-6 pt-6 pb-4 border-b border-slate-700">
             <h3 class="text-lg font-semibold">Edit listing</h3><button type="button" aria-label="Close edit listing" @click="closeEditModal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke-linecap="round" /></svg></button>
-            <p class="text-sm text-amber-300">{{ isFreePlan ? 'Update the listing details below. The listing type stays the same.' : 'Price or booking changes may require Finance review before publishing. The listing type stays the same.' }}</p>
+            <p class="text-sm text-amber-300">Price or booking changes may require Finance review before publishing. The listing type stays the same.</p>
           </div>
 
           <div class="flex-1 overflow-y-auto px-6 py-5">
-            <ServiceListingFields :model="editForm" editing :disabled="loading" :is-free-plan="isFreePlan" :vat-registered="clinicVatRegistered" :tax-status="clinicTaxStatus" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="editImageFileName" @image-change="handleEditImageUpload" />
+            <ServiceListingFields :model="editForm" editing :disabled="loading" :vat-registered="clinicVatRegistered" :tax-status="clinicTaxStatus" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="editImageFileName" @image-change="handleEditImageUpload" />
           </div>
 
           <div class="border-t border-slate-700 px-6 py-4">
@@ -195,15 +188,12 @@ import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
-import { useSubscription } from '@/composables/useSubscription'
 import { getClinicPolicyOwnerId } from '@/utils/clinicPolicies'
 import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
 import ServiceListingFields from '@/components/common/ServiceListingFields.vue'
 import { normalizeServiceCategory } from '../../../../../../shared/serviceCategories.js'
 import { normalizeTreatmentCourseSteps, treatmentCourseVisitCount, validateTreatmentCourseComposition } from '../../../../../../shared/treatmentCourse.js'
 import { buildClientContractDocument, clientContractPolicies } from '../../../../../../shared/clientContract.js'
-
-const FREE_PLAN_POST_LIMIT = 5
 
 export default {
   name: 'ProductServiceListing',
@@ -215,8 +205,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const storage = getStorage(getApp())
     const auth = getAuth(getApp())
     const { userRole, isClinicAdminOwner } = usePermissions()
-    const { activePlan } = useSubscription()
-    const isFreePlan = computed(() => String(activePlan.value || 'free').trim().toLowerCase() === 'free')
     const canManageListingWorkflow = computed(() =>
       isClinicAdminOwner.value || String(userRole.value || '').trim().toLowerCase() === 'manager'
     )
@@ -256,14 +244,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const actionLoadingId = ref('')
 
     const newListingState = () => {
-      if (!isFreePlan.value) return draftListing()
-      return {
-        financeStatus: 'approved',
-        isPublished: true,
-        financeReview: null,
-        publishedBy: currentUserId.value,
-        publishedAt: serverTimestamp(),
-      }
+      return draftListing()
     }
 
     const showEditModal = ref(false)
@@ -533,7 +514,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const snapshot = await getDocs(postQuery)
       posts.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
-        .filter((post) => post.archived !== true && (!isFreePlan.value || post.postType === 'Service'))
+        .filter((post) => post.archived !== true)
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
     })
 
@@ -628,12 +609,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     )
 
-    watch(isFreePlan, (free) => {
-      if (free && form.value.postType !== 'Service') resetForm()
-      if (free) form.value.requiresConsultationFirst = false
-      if (free) form.value.sameDayConsultationAllowed = false
-    }, { immediate: true })
-
     const createPost = async () => {
       const postType = form.value.postType
       const selectedName = postType === 'Product'
@@ -651,22 +626,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const packageSubtotal = postType === 'Package' ? packageSubtotalForSteps(courseSteps) : 0
       const packageDiscountPercent = postType === 'Package' ? Math.min(90, Math.max(0, Number(form.value.discountPercent || 0))) : 0
       const packageFollowUpComponents = packageComponents.filter((post) => post.followUpAllowed === true)
-
-      if (isFreePlan.value && postType !== 'Service') {
-        toast.error('Free Plan supports service listings only. Upgrade to Basic to list products, consultations, or packages.')
-        return
-      }
-
-      if (isFreePlan.value && form.value.requiresConsultationFirst) {
-        toast.error('Free Plan supports direct service bookings only. Consultations and packages require Basic.')
-        return
-      }
-
-      const postsCreated = 1
-      if (isFreePlan.value && posts.value.length + postsCreated > FREE_PLAN_POST_LIMIT) {
-        toast.error(`Free Plan allows up to ${FREE_PLAN_POST_LIMIT} listings. Archive a listing or upgrade to Basic to add more.`)
-        return
-      }
 
       if (!selectedName?.trim() || !form.value.description?.trim()) {
         toast.error('Please complete all required fields.')
@@ -756,7 +715,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           discountAmount: postType === 'Package' ? Math.round((packageSubtotal - packageSubtotal * (1 - packageDiscountPercent / 100)) * 100) / 100 : 0,
           requiresConsultationFirst: postType === 'Service' ? Boolean(form.value.requiresConsultationFirst) : false,
           linkedConsultationId: postType === 'Service' && form.value.requiresConsultationFirst ? form.value.linkedConsultationId : null,
-          sameDayConsultationAllowed: postType === 'Service' && !isFreePlan.value ? Boolean(form.value.sameDayConsultationAllowed) : false,
+          sameDayConsultationAllowed: postType === 'Service' ? Boolean(form.value.sameDayConsultationAllowed) : false,
           sameDayConsultationBufferMinutes: postType === 'Service' && form.value.sameDayConsultationAllowed ? Number(form.value.sameDayConsultationBufferMinutes ?? 15) : 15,
           consultationFee: postType === 'Consultation' ? Number(form.value.consultationFee || 0) : null,
           followUpAllowed: postType === 'Service'
@@ -800,7 +759,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           details: `Created ${postType.toLowerCase()} post: ${selectedName.trim()}.`
         })
 
-        toast.success(isFreePlan.value ? 'Service published and ready for online booking.' : 'Draft saved. Submit it for Finance review when ready.')
+        toast.success('Draft saved. Submit it for Finance review when ready.')
         resetForm()
         await loadPosts()
         listingSearch.value = ''
@@ -878,12 +837,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('User branch is not available.')
         return
       }
-      if (isFreePlan.value && editForm.value.postType !== 'Service') {
-        toast.error('Free Plan supports service listings only.')
-        return
-      }
-      if (isFreePlan.value) editForm.value.requiresConsultationFirst = false
-      if (isFreePlan.value) editForm.value.sameDayConsultationAllowed = false
       if (!editForm.value.description?.trim() || !editForm.value.name?.trim()) {
         toast.error('Please complete all required fields.')
         return
@@ -967,9 +920,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           vatPriceMode: editForm.value.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
           discountPercent: editPackageDiscountPercent,
           discountAmount: editForm.value.postType === 'Package' ? Math.round(editPackageSubtotal * editPackageDiscountPercent / 100 * 100) / 100 : 0,
-          requiresConsultationFirst: editForm.value.postType === 'Service' && !isFreePlan.value ? Boolean(editForm.value.requiresConsultationFirst) : false,
-          linkedConsultationId: editForm.value.postType === 'Service' && !isFreePlan.value && editForm.value.requiresConsultationFirst ? editForm.value.linkedConsultationId : null,
-          sameDayConsultationAllowed: editForm.value.postType === 'Service' && !isFreePlan.value ? Boolean(editForm.value.sameDayConsultationAllowed) : false,
+          requiresConsultationFirst: editForm.value.postType === 'Service' ? Boolean(editForm.value.requiresConsultationFirst) : false,
+          linkedConsultationId: editForm.value.postType === 'Service' && editForm.value.requiresConsultationFirst ? editForm.value.linkedConsultationId : null,
+          sameDayConsultationAllowed: editForm.value.postType === 'Service' ? Boolean(editForm.value.sameDayConsultationAllowed) : false,
           sameDayConsultationBufferMinutes: editForm.value.postType === 'Service' && editForm.value.sameDayConsultationAllowed ? Number(editForm.value.sameDayConsultationBufferMinutes ?? 15) : 15,
           consultationFee: editForm.value.postType === 'Consultation' ? Number(editForm.value.consultationFee || 0) : null,
           followUpAllowed: editForm.value.postType === 'Service'
@@ -1160,8 +1113,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       applicablePolicies,
       hasClientContract,
       listingContractPreview,
-      isFreePlan,
-      freePlanPostLimit: FREE_PLAN_POST_LIMIT,
       posts,
       activeListingTab,
       listingSearch,

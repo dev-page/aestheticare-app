@@ -91,10 +91,11 @@ import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 
-const normalizePlanLabel = (value) => {
+const normalizePlanLabel = (value, paymentStatus = '') => {
   const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return '-'
-  if (raw.includes('free')) return 'FreePlan'
+  if (String(paymentStatus || '').trim().toLowerCase() === 'trial' || raw.includes('free-trial') || raw === 'trial') return 'Free Trial'
+  if (!raw) return 'No plan selected'
+  if (['free', 'free-plan', 'freeplan', 'free_plan'].includes(raw)) return 'No plan selected'
   if (raw.includes('basic')) return 'Basic'
   if (raw.includes('premium')) return 'Premium'
   return value
@@ -183,7 +184,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               ownerEmail,
               statusLabel,
               archived,
-              planLabel: normalizePlanLabel(clinic.subscriptionPlan || clinic.plan || ''),
+              planLabel: normalizePlanLabel(clinic.subscriptionPlan || clinic.plan || '', clinic.paymentStatus),
               location: clinic.clinicLocation || clinic.location || '',
               createdAt: clinic.archivedAt || clinic.updatedAt || clinic.createdAt || null,
             }

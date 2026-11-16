@@ -297,6 +297,7 @@ import { useSubscription } from '@/composables/useSubscription'
 import { usePermissions } from '@/composables/usePermissions'
 import { clearSidebarTransientState, useSidebarState } from '@/composables/useSidebarState'
 import { sidebarRouteMatches } from '@/utils/sidebarRouteMatch'
+import { isSubscriptionRecoveryRoute } from '../../../../shared/subscriptionRecoveryRoutes.js'
 
 export default {
   name: 'BaseCollapsibleSidebar',
@@ -318,7 +319,7 @@ export default {
     const db = getFirestore()
     const auth = getAuth()
     const { isLoading } = useAuth()
-    const { hasFeature, initSubscription, activePlan, isLoading: subscriptionLoading } = useSubscription()
+    const { hasFeature, initSubscription, activePlan, isSuspended, isLoading: subscriptionLoading } = useSubscription()
     const { hasPermission, effectivePermissions, loading: permissionsLoading, userRole } = usePermissions()
 
     const enableTransitions = ref(false)
@@ -457,36 +458,13 @@ export default {
         return ['owner', 'clinicowner', 'clinicadmin', 'clinicadministrator'].includes(compactRole)
       }
 
-      const isFreePlanDestination = (path) => [
-        '/clinic/dashboard',
-        '/clinic/branches',
-        '/clinic/profile',
-        '/clinic/page',
-        '/clinic/policies',
-        '/catalog/products-services',
-        '/catalog/archived',
-        '/crm/clients',
-        '/crm/walk-in',
-        '/crm/appointments',
-        '/crm/transactions',
-        '/crm/inbox',
-        '/account/profile',
-        '/account/change-password',
-        '/account/subscription',
-        '/account/plans',
-        '/account/closure',
-        '/notifications',
-        '/support/report',
-      ].some((allowedPath) => path === allowedPath || path.startsWith(`${allowedPath}/`))
-
       const isItemAllowed = (item) => {
       const required = getItemFeatures(item)
         const requiredPermissions = getItemPermissions(item)
         const currentRole = String(userRole.value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
         if (item?.ownerOnly && !isOwnerLike(currentRole)) return false
       const shouldApplySubscriptionRules = isClinicSideRole(currentRole)
-      const isFreeClinicOwner = isOwnerLike(currentRole) && String(activePlan.value || '').trim().toLowerCase() === 'free'
-      if (isFreeClinicOwner && item?.to && !isFreePlanDestination(item.to)) return false
+      if (shouldApplySubscriptionRules && isSuspended.value && item?.to && !isSubscriptionRecoveryRoute(item.to)) return false
       const featureAllowed = !required.length || required.every((feature) => hasFeature(feature))
       const allowedPlans = Array.isArray(item?.plans) ? item.plans.map((plan) => String(plan || '').trim().toLowerCase()) : []
       const planAllowed = !allowedPlans.length || allowedPlans.includes(String(activePlan.value || '').trim().toLowerCase())

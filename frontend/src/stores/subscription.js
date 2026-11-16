@@ -2,8 +2,8 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
-import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { subscriptionDate } from '../../../shared/subscriptionDates.js'
+import { subscriptionLifecycle } from '../../../shared/subscriptionLifecycle.js'
 
 const SUBSCRIPTION_STATUS = Object.freeze({
   ACTIVE: 'active',
@@ -15,13 +15,6 @@ const PLAN_FEATURES_CACHE_PREFIX = 'subscription:features:'
 const PLAN_CACHE_TTL_MS = 5 * 60 * 1000
 
 const DEFAULT_FEATURES = {
-  free: [
-    'subscription',
-    'staff_management',
-    'services',
-    'appointments',
-    'booking_availability',
-  ],
   basic: [
     'subscription',
     'staff_management',
@@ -74,11 +67,9 @@ DEFAULT_FEATURES.premium = [
 
 const normalizePlanKey = (value) => {
   const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return 'free'
-  if (raw === 'free' || raw === 'freeplan' || raw === 'free_plan') return 'free'
+  if (!raw || ['free', 'freeplan', 'free-plan', 'free_plan', 'free-trial', 'trial'].includes(raw)) return ''
   if (raw.includes('basic')) return 'basic'
   if (raw.includes('premium')) return 'premium'
-  if (raw.includes('free') || raw.includes('trial')) return 'free'
   return raw
 }
 
@@ -144,7 +135,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
   const resolveSubscriptionForUser = async (userId) => {
     const userSnap = await getDoc(doc(db, 'users', userId))
     if (!userSnap.exists()) {
-      return { planKey: 'free', expiresAt: null, role: '', userType: '', paymentStatus: '', email: '', status: '' }
+      return { planKey: '', expiresAt: null, graceEndsAt: null, role: '', userType: '', paymentStatus: '', email: '', status: 'unsubscribed' }
     }
     const userData = userSnap.data() || {}
     const role = String(userData.role || '').trim()
@@ -153,11 +144,14 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     const userEmail = String(userData.email || '').trim().toLowerCase()
     const userSubscriptionStatus = String(userData.subscriptionAccessStatus || '').trim().toLowerCase()
 
-    const hasDirectPlan = Boolean(userData.subscriptionPlan || userData.plan)
-    if (hasDirectPlan) {
-      const directPlan = getEntitlementPlanKey(userData.subscriptionPlan || userData.plan, userPaymentStatus)
-      const directExpiresAt = toDate(userData.subscriptionExpiresAt)
-      return { planKey: directPlan, expiresAt: directExpiresAt, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus }
+    const directPlan = getEntitlementPlanKey(userData.subscriptionPlan || userData.plan, userPaymentStatus)
+    if (directPlan) {
+      return {
+        planKey: directPlan,
+        expiresAt: toDate(userData.subscriptionExpiresAt),
+        graceEndsAt: toDate(userData.subscriptionGraceEndsAt),
+        role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus,
+      }
     }
 
     // Customers, suppliers, and system administrators do not belong to a
@@ -165,7 +159,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     // them: that query is correctly denied by Firestore and was creating
     // avoidable permission errors during normal sign-in/navigation.
     if (isNonClinicSubscriptionRole(role, userTypeValue)) {
-      return { planKey: 'free', expiresAt: null, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus }
+      return { planKey: '', expiresAt: null, graceEndsAt: null, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: 'active' }
     }
 
     const branchId = userData.branchId
@@ -173,11 +167,12 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       const clinicSnap = await getDoc(doc(db, 'clinics', branchId))
       if (clinicSnap.exists()) {
         const clinicData = clinicSnap.data() || {}
-        const clinicPlan = clinicData.subscriptionPlan || clinicData.plan
+        const clinicPlan = getEntitlementPlanKey(clinicData.subscriptionPlan || clinicData.plan, clinicData.paymentStatus || userPaymentStatus)
         if (clinicPlan) {
           return {
-            planKey: getEntitlementPlanKey(clinicPlan, clinicData.paymentStatus || userPaymentStatus),
+            planKey: clinicPlan,
             expiresAt: toDate(clinicData.subscriptionExpiresAt),
+            graceEndsAt: toDate(clinicData.subscriptionGraceEndsAt),
             role,
             userType: userTypeValue,
             paymentStatus: String(clinicData.paymentStatus || '').trim() || userPaymentStatus,
@@ -190,11 +185,12 @@ export const useSubscriptionStore = defineStore('subscription', () => {
           const ownerSnap = await getDoc(doc(db, 'users', clinicOwnerId))
           if (ownerSnap.exists()) {
             const ownerData = ownerSnap.data() || {}
-            const ownerPlan = ownerData.subscriptionPlan || ownerData.plan
+            const ownerPlan = getEntitlementPlanKey(ownerData.subscriptionPlan || ownerData.plan, ownerData.paymentStatus || userPaymentStatus)
             if (ownerPlan) {
               return {
-                planKey: getEntitlementPlanKey(ownerPlan, ownerData.paymentStatus || userPaymentStatus),
+                planKey: ownerPlan,
                 expiresAt: toDate(ownerData.subscriptionExpiresAt),
+                graceEndsAt: toDate(ownerData.subscriptionGraceEndsAt),
                 role,
                 userType: userTypeValue,
                 paymentStatus: String(ownerData.paymentStatus || '').trim() || userPaymentStatus,
@@ -211,11 +207,12 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     const ownerSnap = await getDocs(ownerQuery)
     if (!ownerSnap.empty) {
       const clinicData = ownerSnap.docs[0].data() || {}
-      const clinicPlan = clinicData.subscriptionPlan || clinicData.plan
+      const clinicPlan = getEntitlementPlanKey(clinicData.subscriptionPlan || clinicData.plan, clinicData.paymentStatus || userPaymentStatus)
       if (clinicPlan) {
         return {
-          planKey: getEntitlementPlanKey(clinicPlan, clinicData.paymentStatus || userPaymentStatus),
+          planKey: clinicPlan,
           expiresAt: toDate(clinicData.subscriptionExpiresAt),
+          graceEndsAt: toDate(clinicData.subscriptionGraceEndsAt),
           role,
           userType: userTypeValue,
             paymentStatus: String(clinicData.paymentStatus || '').trim() || userPaymentStatus,
@@ -225,11 +222,12 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       }
     }
 
-    return { planKey: 'free', expiresAt: null, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: userSubscriptionStatus }
+    return { planKey: '', expiresAt: null, graceEndsAt: null, role, userType: userTypeValue, paymentStatus: userPaymentStatus, email: userEmail, status: 'unsubscribed' }
   }
 
   const loadPlanPermissions = async (planKey) => {
-    const allowed = new Set(DEFAULT_FEATURES[planKey] || DEFAULT_FEATURES.free)
+    if (!planKey) return []
+    const allowed = new Set(DEFAULT_FEATURES[planKey] || [])
     try {
       const cached = JSON.parse(localStorage.getItem(`${PLAN_FEATURES_CACHE_PREFIX}${planKey}`) || 'null')
       if (cached && Array.isArray(cached.data) && cached.ts) {
@@ -280,7 +278,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         if (snapshot.exists()) {
           const data = snapshot.data() || {}
           if (Array.isArray(data.permissions) && data.permissions.length) {
-            const allowed = new Set(DEFAULT_FEATURES[planKey] || DEFAULT_FEATURES.free)
+            const allowed = new Set(DEFAULT_FEATURES[planKey] || [])
             // A plan-permissions document can refine a plan, but it must not
             // grant a Basic clinic a Premium-only workforce/payroll feature.
             activeFeatures.value = [...new Set([
@@ -300,7 +298,7 @@ export const useSubscriptionStore = defineStore('subscription', () => {
             return
           }
         }
-        activeFeatures.value = DEFAULT_FEATURES[planKey] || DEFAULT_FEATURES.free
+        activeFeatures.value = DEFAULT_FEATURES[planKey] || []
       },
       (error) => {
         // Registration deliberately signs the applicant out once documents
@@ -408,38 +406,39 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         userType.value = subscriptionMeta.userType || ''
         return
       }
-      let planKey = subscriptionMeta.planKey
-      let paymentStatus = String(subscriptionMeta.paymentStatus || '').trim().toLowerCase()
-      let resolvedExpiresAt = subscriptionMeta.expiresAt
-      // Billing dates are assigned by the verified payment backend only.
-
-      // Free is the permanent fallback tier. A paid plan that has reached its
-      // end date must immediately behave as Free instead of leaving the clinic
-      // read-only or suspended until a maintenance task runs.
-      if (planKey !== 'free' && resolvedExpiresAt && resolvedExpiresAt.getTime() <= Date.now()) {
-        const expiredPlan = planKey
-        planKey = 'free'
-        paymentStatus = 'free'
-        resolvedExpiresAt = null
-        try {
-          const token = await user.getIdToken()
-          await fetch(`${OTP_API_BASE}/subscription/sync-effective-plan`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-          })
-        } catch (error) {
-          // The client still uses Free immediately. The next authenticated
-          // request will retry the durable clinic-record downgrade.
-          console.warn(`Could not persist the expired ${expiredPlan} plan fallback.`, error)
-        }
+      if (isNonClinicSubscriptionRole(subscriptionMeta.role, subscriptionMeta.userType)) {
+        stopPlanPermissionsListener()
+        activePlanKey = ''
+        activePlan.value = ''
+        activeFeatures.value = []
+        isReadOnly.value = false
+        isExpired.value = false
+        isSuspended.value = false
+        subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
+        graceEndsAt.value = null
+        subscriptionExpiresAt.value = null
+        userRole.value = subscriptionMeta.role || ''
+        userType.value = subscriptionMeta.userType || ''
+        return
       }
 
+      const paymentStatus = String(subscriptionMeta.paymentStatus || '').trim().toLowerCase()
+      const subscriptionState = subscriptionLifecycle({
+        subscriptionPlan: subscriptionMeta.planKey,
+        paymentStatus,
+        subscriptionExpiresAt: subscriptionMeta.expiresAt,
+        subscriptionGraceEndsAt: subscriptionMeta.graceEndsAt,
+        subscriptionAccessStatus: subscriptionMeta.status,
+      })
+      const planKey = subscriptionState.plan
+      const resolvedExpiresAt = subscriptionState.expiresAt
       activePlanKey = planKey
       activePlan.value = planKey
       subscriptionExpiresAt.value = resolvedExpiresAt
+      graceEndsAt.value = subscriptionState.graceEndsAt
       userRole.value = subscriptionMeta.role || ''
       userType.value = subscriptionMeta.userType || ''
-      const permissions = await loadPlanPermissions(planKey)
+      const permissions = planKey ? await loadPlanPermissions(planKey) : []
       activeFeatures.value = permissions
       if (auth.currentUser?.uid === user.uid) startPlanPermissionsListener(planKey)
       try {
@@ -455,23 +454,21 @@ export const useSubscriptionStore = defineStore('subscription', () => {
         // ignore cache errors
       }
 
-      // Access status is written by the scheduled trusted backend.  The UI is
-      // advisory only; Firestore rules enforce the same clinic-wide block.
-      const lifecycleStatus = String(subscriptionMeta.status || '').toLowerCase()
-      const operational = ['trial', 'active', 'grace_period', 'canceled', ''].includes(lifecycleStatus)
+      const lifecycleStatus = subscriptionState.status
+      const operational = subscriptionState.isOperational
       isExpired.value = lifecycleStatus === 'expired'
       isReadOnly.value = !operational
       isSuspended.value = !operational
       subscriptionStatus.value = operational ? SUBSCRIPTION_STATUS.ACTIVE : SUBSCRIPTION_STATUS.SUSPENDED
-      graceEndsAt.value = null
     } catch (error) {
       console.error('Failed to load subscription features:', error)
-      activePlan.value = 'free'
-      activeFeatures.value = DEFAULT_FEATURES.free
-      isReadOnly.value = false
+      activePlanKey = ''
+      activePlan.value = ''
+      activeFeatures.value = []
+      isReadOnly.value = true
       isExpired.value = false
-      isSuspended.value = false
-      subscriptionStatus.value = SUBSCRIPTION_STATUS.ACTIVE
+      isSuspended.value = true
+      subscriptionStatus.value = SUBSCRIPTION_STATUS.SUSPENDED
       graceEndsAt.value = null
       subscriptionExpiresAt.value = null
     } finally {

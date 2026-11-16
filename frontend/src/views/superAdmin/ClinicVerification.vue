@@ -495,10 +495,11 @@ import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { toast } from 'vue3-toastify'
 
-const normalizePlanLabel = (value) => {
+const normalizePlanLabel = (value, paymentStatus = '') => {
   const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return 'Not specified'
-  if (raw.includes('free')) return 'FreePlan'
+  if (String(paymentStatus || '').trim().toLowerCase() === 'trial' || raw.includes('free-trial') || raw === 'trial') return 'Free Trial'
+  if (!raw) return 'No plan selected'
+  if (['free', 'free-plan', 'freeplan', 'free_plan'].includes(raw)) return 'No plan selected'
   if (raw.includes('basic')) return 'Basic'
   if (raw.includes('premium')) return 'Premium'
   return value
@@ -826,7 +827,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               email: user.email || clinic.ownerEmail || clinic.email || clinic.registrantEmail || clinic.applicantEmail || '',
               ownerName: fullName,
               ownerEmail: user.email || clinic.ownerEmail || clinic.email || clinic.registrantEmail || clinic.applicantEmail || '',
-              planLabel: normalizePlanLabel(resolvedPlan),
+              planLabel: normalizePlanLabel(resolvedPlan, resolvedPayment),
               paymentStatus: resolvedPayment,
               centerStatus: clinic.status || clinic.moderationStatus || 'Active',
               approvedAtLabel: approvedAt && approvedAt.toDate ? approvedAt.toDate().toLocaleDateString() : '-',
@@ -1040,7 +1041,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               clinicLocationLat: clinic.clinicLocationLat || '',
               clinicLocationLng: clinic.clinicLocationLng || '',
               planKey: String(resolvedPlan || '').trim().toLowerCase(),
-              planLabel: normalizePlanLabel(resolvedPlan),
+              planLabel: normalizePlanLabel(resolvedPlan, resolvedPayment),
               paymentStatus: resolvedPayment,
               platformAgreementAcceptance: clinic.platformAgreementAcceptance || null,
               platformAgreementAcceptances: Array.isArray(clinic.platformAgreementAcceptances) ? clinic.platformAgreementAcceptances : [],

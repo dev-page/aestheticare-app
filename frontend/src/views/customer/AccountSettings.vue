@@ -14,9 +14,9 @@
           <div>
             <p class="settings-card-kicker">Current account</p>
             <h2 class="settings-card-title">{{ accountEmail || 'Customer account' }}</h2>
-          <p class="settings-copy">Deactivation signs you out. You can restore the account yourself by signing in within 30 days.</p>
+          <p class="settings-copy">Deactivation signs you out. Sign in within 30 days, then choose Reactivate on the recovery page to restore access.</p>
           </div>
-          <span class="settings-status" :class="status === 'Active' ? 'settings-status-active' : 'settings-status-inactive'">{{ status }}</span>
+          <span class="settings-status" :class="status === 'Active' ? 'settings-status-active' : 'settings-status-inactive'">{{ deletionRequested ? 'Deletion Pending' : status }}</span>
         </section>
 
         <nav class="settings-tabs" aria-label="Account settings sections">
@@ -135,7 +135,6 @@
           </div>
           <button type="button" class="settings-modal-close" aria-label="Close" @click="closeAccountAction">&times;</button>
         </div>
-        <label class="settings-modal-label" for="account-action-reason">Reason</label>
         <label class="settings-modal-label" for="account-action-preset">Common reason</label>
         <select id="account-action-preset" v-model="reasonPreset" class="settings-modal-select">
           <option value="" disabled>Select a reason</option>
@@ -147,7 +146,7 @@
           <p class="settings-modal-label">Important terms</p>
           <ul v-if="accountAction === 'deactivate'" class="settings-terms-list">
             <li>Your account will be deactivated immediately and you will be signed out.</li>
-            <li>Your records will be retained for 30 days. Sign in during that period to reactivate your account.</li>
+            <li>You can restore access within 30 days by signing in and choosing Reactivate. After that, self-service recovery ends and the account stays inactive.</li>
             <li>Deactivation is not the same as permanent deletion.</li>
           </ul>
           <ul v-else class="settings-terms-list">
@@ -156,9 +155,14 @@
             <li>After 30 days, deletion becomes permanent.</li>
           </ul>
         </div>
+        <label class="settings-modal-label" for="account-confirmation-email">Type your account email</label>
+        <input id="account-confirmation-email" v-model.trim="confirmationEmail" type="email" autocomplete="email" :placeholder="accountEmail" class="settings-modal-input" />
+        <p class="settings-hint">Enter the email address shown on your signed-in account.</p>
+        <label class="settings-modal-label" for="account-confirmation-phrase">To continue, type {{ requiredConfirmationPhrase }}</label>
+        <input id="account-confirmation-phrase" v-model="confirmationPhrase" type="text" autocomplete="off" :placeholder="requiredConfirmationPhrase" class="settings-modal-input" />
         <div class="mt-5 flex justify-end gap-3">
           <button type="button" class="settings-button settings-button-secondary" @click="closeAccountAction">Cancel</button>
-          <button type="button" :class="['settings-button', accountAction === 'deactivate' ? 'settings-button-warning' : 'settings-button-danger']" :disabled="busy || !combinedReason.trim()" @click="submitAccountAction">
+          <button type="button" :class="['settings-button', accountAction === 'deactivate' ? 'settings-button-warning' : 'settings-button-danger']" :disabled="!canSubmitAccountAction" @click="submitAccountAction">
             {{ busy ? 'Processing...' : accountAction === 'deactivate' ? 'Confirm Deactivation' : 'Start Deletion' }}
           </button>
         </div>
@@ -200,6 +204,8 @@ const errorMessage = ref('')
 const accountAction = ref('')
 const actionReason = ref('')
 const reasonPreset = ref('')
+const confirmationEmail = ref('')
+const confirmationPhrase = ref('')
 const exporting = ref(false)
 const notifications = ref([])
 const notificationsLoading = ref(false)
@@ -226,6 +232,10 @@ const deletionReasons = [
 ]
 const currentReasonOptions = computed(() => accountAction.value === 'deactivate' ? deactivationReasons : deletionReasons)
 const combinedReason = computed(() => [reasonPreset.value, actionReason.value.trim()].filter(Boolean).join(': '))
+const requiredConfirmationPhrase = computed(() => accountAction.value === 'deactivate' ? 'DEACTIVATE ACCOUNT' : 'DELETE ACCOUNT')
+const confirmationEmailMatches = computed(() => Boolean(accountEmail.value) && confirmationEmail.value.trim().toLowerCase() === accountEmail.value.trim().toLowerCase())
+const confirmationPhraseMatches = computed(() => confirmationPhrase.value.trim() === requiredConfirmationPhrase.value)
+const canSubmitAccountAction = computed(() => !busy.value && Boolean(accountAction.value) && Boolean(combinedReason.value.trim()) && confirmationEmailMatches.value && confirmationPhraseMatches.value)
 const notificationPageCount = computed(() => Math.max(1, Math.ceil(notifications.value.length / pageSize.value)))
 const pagedNotifications = computed(() => notifications.value.slice((notificationPage.value - 1) * pageSize.value, notificationPage.value * pageSize.value))
 
@@ -252,6 +262,8 @@ const openAccountAction = (nextAction) => {
   accountAction.value = nextAction
   actionReason.value = ''
   reasonPreset.value = ''
+  confirmationEmail.value = ''
+  confirmationPhrase.value = ''
   errorMessage.value = ''
 }
 
@@ -260,6 +272,8 @@ const closeAccountAction = () => {
   accountAction.value = ''
   actionReason.value = ''
   reasonPreset.value = ''
+  confirmationEmail.value = ''
+  confirmationPhrase.value = ''
 }
 
 const loadAccount = trackPageLoad(async () => {
@@ -351,7 +365,7 @@ const deactivateAccount = () => openAccountAction('deactivate')
 const requestDeletion = () => openAccountAction('delete')
 
 const submitAccountAction = async () => {
-  if (!auth.currentUser || !accountAction.value || !combinedReason.value.trim()) return
+  if (!auth.currentUser || !canSubmitAccountAction.value) return
   busy.value = true
   action.value = accountAction.value
   errorMessage.value = ''
@@ -524,6 +538,8 @@ onUnmounted(() => {
 .settings-modal-close { color: #8b6a4d; font-size: 1.5rem; line-height: 1; }
 .settings-modal-label { display: block; margin-top: 1.25rem; color: #6f4329; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .settings-modal-textarea { margin-top: .5rem; width: 100%; resize: vertical; border: 1px solid #e6c196; border-radius: .9rem; background: white; padding: .8rem; color: #3d281d; outline: none; }
+.settings-modal-input { margin-top: .5rem; width: 100%; border: 1px solid #e6c196; border-radius: .9rem; background: white; padding: .8rem; color: #3d281d; outline: none; }
+.settings-modal-input:focus { border-color: #a66a2c; box-shadow: 0 0 0 3px rgba(166, 106, 44, .15); }
 .settings-modal-textarea:focus { border-color: #a66a2c; box-shadow: 0 0 0 3px rgba(166, 106, 44, .15); }
 .settings-modal-select { margin-top: .5rem; width: 100%; border: 1px solid #e6c196; border-radius: .9rem; background: white; padding: .8rem; color: #3d281d; outline: none; }
 .settings-modal-select:focus { border-color: #a66a2c; box-shadow: 0 0 0 3px rgba(166, 106, 44, .15); }

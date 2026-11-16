@@ -9,18 +9,15 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const normalizePlanKey = (value) => {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return ''
-  if (raw === 'free-plan' || raw === 'freeplan' || raw === 'free_plan' || raw === 'free-trial' || raw === 'trial') {
-    return 'free'
-  }
+  if (['free', 'free-plan', 'freeplan', 'free_plan', 'free-trial', 'trial'].includes(raw)) return ''
   if (raw.includes('premium')) return 'premium'
   if (raw.includes('basic')) return 'basic'
-  if (raw.includes('free')) return 'free'
   return raw
 }
 
 const getPlanDurationDays = (planKey, billingCycle = 'month') => {
   const normalizedPlan = normalizePlanKey(planKey)
-  if (!normalizedPlan || normalizedPlan === 'free') return 0
+  if (!normalizedPlan) return 0
   const normalizedCycle = String(billingCycle || '').trim().toLowerCase()
   if (normalizedCycle === 'year' || normalizedCycle === 'annual') return 365
   return 30

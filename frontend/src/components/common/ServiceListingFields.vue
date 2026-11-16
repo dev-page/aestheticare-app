@@ -1,7 +1,7 @@
 <template>
   <fieldset class="listing-fields" :disabled="disabled">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <ContractAppearanceSelect :id="editing ? 'edit-listing-post-type' : 'listing-post-type'" v-model="form.postType" class="listing-post-type" label="Post Type" :disabled="editing || disabled" :options="isFreePlan ? [{ value: 'Service', label: 'Service · Single visit' }] : [{ value: 'Service', label: 'Service · Single visit' }, { value: 'Consultation', label: 'Consultation' }, { value: 'Package', label: 'Service Package · Treatment course' }]" />
+          <ContractAppearanceSelect :id="editing ? 'edit-listing-post-type' : 'listing-post-type'" v-model="form.postType" class="listing-post-type" label="Post Type" :disabled="editing || disabled" :options="[{ value: 'Service', label: 'Service · Single visit' }, { value: 'Consultation', label: 'Consultation' }, { value: 'Package', label: 'Service Package · Treatment course' }]" />
 
           <div v-if="form.postType === 'Product'">
             <label class="block text-slate-400 mb-1">Product</label>
@@ -159,9 +159,9 @@
             <h3 class="font-semibold text-white">{{ form.postType === 'Service' ? 'Booking Rules' : 'Consultation Rules' }}</h3>
             <p class="mt-1 text-xs text-slate-400">{{ form.postType === 'Service' ? 'Set only the rules customers need to know before requesting this service.' : 'Set the fee, duration, and appointment mode for this consultation.' }}</p>
           </div>
-          <label v-if="form.postType !== 'Service' || !isFreePlan" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+          <label class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
             <input
-              v-if="form.postType === 'Service' && !isFreePlan"
+              v-if="form.postType === 'Service'"
               v-model="form.requiresConsultationFirst"
               type="checkbox"
               class="mt-1 h-4 w-4 accent-blue-500"
@@ -180,7 +180,7 @@
               <span class="block text-xs text-slate-400">
                 {{ form.postType === 'Consultation'
                   ? 'This consultation can be booked separately.'
-                  : isFreePlan ? 'Consultations are unavailable on Free Plan.' : 'Enable this when the service must be assessed before a booking can proceed.' }}
+                  : 'Enable this when the service must be assessed before a booking can proceed.' }}
               </span>
             </span>
           </label>
@@ -203,7 +203,7 @@
               {{ form.postType === 'Consultation' ? 'Required for consultation posts.' : 'Required when consultation is enabled.' }}
             </p>
           </div>
-          <label v-if="form.postType === 'Service'" :class="{ 'md:col-span-2': isFreePlan }" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+          <label v-if="form.postType === 'Service'" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
             <input v-model="form.followUpAllowed" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
             <span>
               <span class="block font-medium text-white">Allow follow-ups</span>
@@ -287,7 +287,7 @@
           <ol v-if="form.postType === 'Package' && courseSteps.length" class="mt-2 list-inside list-decimal space-y-1 text-xs text-slate-300"><li v-for="(step, index) in courseSteps" :key="index">{{ courseStepName(step) }} · {{ step.visitCount }} visit{{ Number(step.visitCount) === 1 ? '' : 's' }} · minimum {{ step.minimumGapDays }}-day gap before the next visit</li></ol>
           <p v-if="form.postType === 'Product'" class="mt-2 text-slate-300">Source: selected inventory product</p>
           <p class="mt-1 text-slate-300">{{ form.postType === 'Package' ? 'Calculated package' : `Proposed ${String(form.postType || 'Service').toLowerCase()}` }} price: ₱{{ Number(form.postType === 'Package' ? packagePrice : (form.price || form.consultationFee || 0)).toFixed(2) }}</p>
-          <p class="mt-1 text-xs text-amber-200">{{ isFreePlan ? 'Free Plan service listings publish directly; Finance approval is not required.' : 'Financial terms, including installment settings, require Finance approval before publication.' }}</p>
+          <p class="mt-1 text-xs text-amber-200">Financial terms, including installment settings, require Finance approval before publication.</p>
         </div>
 
     <ServiceStaffingFields v-if="['Service', 'Consultation'].includes(form.postType)" :model="form" />
@@ -299,7 +299,7 @@ import { computed, ref, watch } from 'vue'
 import { normalizeServiceCategory, serviceCategoryKey, serviceCategoryOptions } from '../../../../shared/serviceCategories.js'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import ServiceStaffingFields from './ServiceStaffingFields.vue'
-const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, isFreePlan: Boolean, vatRegistered: Boolean, taxStatus: { type: String, default: 'needs_review' }, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
+const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, vatRegistered: Boolean, taxStatus: { type: String, default: 'needs_review' }, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
 defineEmits(['image-change'])
 const form = computed(() => props.model)
 const vatRegistered = computed(() => props.vatRegistered === true)

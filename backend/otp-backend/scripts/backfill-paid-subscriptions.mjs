@@ -33,11 +33,9 @@ const isClinicAdminRole = (value) => {
 
 const normalizePlan = (value) => {
   const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return ''
-  if (raw.includes('basic')) return 'basic'
-  if (raw.includes('premium')) return 'premium'
-  if (raw.includes('free')) return 'free-trial'
-  return raw
+  if (raw === 'basic') return 'basic'
+  if (raw === 'premium') return 'premium'
+  return ''
 }
 
 const toMillis = (value) => {

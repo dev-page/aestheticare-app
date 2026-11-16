@@ -14,21 +14,27 @@
           <section class="subscription-card current-plan" aria-labelledby="current-plan-title">
             <div class="card-heading">
               <span class="eyebrow" id="current-plan-title">Current plan</span>
-              <span class="status-pill" :class="{ 'status-warning': !isFree && (!isPaid || daysRemaining === null || daysRemaining <= 7) }">{{ statusLabel }}</span>
+              <span class="status-pill" :class="{ 'status-warning': statusNeedsAttention }">{{ statusLabel }}</span>
             </div>
             <h2 class="plan-name">{{ planLabel }}</h2>
-            <div class="plan-price">{{ planPrice }} <span>{{ isFree ? 'No subscription fee' : planCycle }}</span></div>
+            <div class="plan-price">{{ planPrice }} <span>{{ planCycle }}</span></div>
             <p class="plan-description">{{ planDescription }}</p>
             <dl class="billing-facts">
-              <div><dt>Payment</dt><dd>{{ isFree ? 'No payment required' : paymentStatusLabel }}</dd></div>
-              <div><dt>{{ isFree ? 'Plan duration' : isTrial ? 'Trial ends on' : 'Expires on' }}</dt><dd>{{ isFree ? 'No expiry' : expiresAtLabel }}</dd></div>
-              <div v-if="!isFree && daysRemaining !== null && daysRemaining > 0"><dt>Time remaining</dt><dd>{{ daysRemaining }} {{ daysRemaining === 1 ? 'day' : 'days' }}</dd></div>
+              <div><dt>Payment</dt><dd>{{ isUnsubscribed ? '—' : paymentStatusLabel }}</dd></div>
+              <div><dt>{{ isTrial ? 'Trial ends on' : 'Expires on' }}</dt><dd>{{ hasOffer ? expiresAtLabel : '—' }}</dd></div>
+              <div v-if="hasOffer && daysRemaining !== null && daysRemaining > 0"><dt>Time remaining</dt><dd>{{ daysRemaining }} {{ daysRemaining === 1 ? 'day' : 'days' }}</dd></div>
+              <div v-if="accessStatus === 'grace_period' && graceDaysRemaining !== null && graceDaysRemaining > 0"><dt>Grace period ends</dt><dd>{{ graceEndsAtLabel }} · {{ graceDaysRemaining }} {{ graceDaysRemaining === 1 ? 'day' : 'days' }} left</dd></div>
             </dl>
-            <p v-if="!isFree" class="date-note">Dates are shown in Philippine time.</p>
-            <p v-if="isTrial" class="pending-notice">No automatic charge. When the trial ends, a 7-day grace period begins. Renew before it ends to keep operational access; clinic records remain retained.</p>
-            <div v-if="!isFree && daysRemaining !== null && daysRemaining <= 7" class="renewal-notice" role="status">
+            <p v-if="hasOffer" class="date-note">Dates are shown in Philippine time.</p>
+            <p v-if="isUnsubscribed" class="pending-notice">No subscription is selected. Choose Free Trial if eligible, or choose Basic or Premium to enable clinic operations. Your clinic records remain retained.</p>
+            <p v-if="isTrial" class="pending-notice">No automatic charge. When the 14-day Free Trial ends, a 7-day grace period begins. Choose Basic or Premium before grace ends to keep operational access; clinic records remain retained.</p>
+            <div v-if="accessStatus === 'grace_period' || accessStatus === 'expired'" class="renewal-notice" role="status">
               <Icon icon="lucide:clock-3" width="19" aria-hidden="true" />
-              <div><strong>{{ daysRemaining <= 0 ? 'Your plan has reached its end date' : 'Your renewal is coming up' }}</strong><p>{{ daysRemaining <= 0 ? 'A 7-day grace period applies before operational access is restricted. Your clinic records remain retained while you renew.' : 'Review your plan options before expiry to keep your paid features.' }}</p></div>
+              <div><strong>{{ accessStatus === 'expired' ? 'Clinic operations are paused' : 'Your subscription is in its grace period' }}</strong><p>{{ accessStatus === 'expired' ? 'Choose Basic or Premium to restore clinic operations. Your account, records, and existing appointments remain retained.' : `Renew or choose a plan by ${graceEndsAtLabel} to keep clinic operations active.` }}</p></div>
+            </div>
+            <div v-else-if="hasOffer && daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 7" class="renewal-notice" role="status">
+              <Icon icon="lucide:clock-3" width="19" aria-hidden="true" />
+              <div><strong>{{ isTrial ? 'Your Free Trial is ending soon' : 'Your renewal is coming up' }}</strong><p>{{ isTrial ? 'Choose Basic or Premium before the trial and grace period end to keep clinic operations active.' : 'Review your plan options before expiry to keep clinic operations active.' }}</p></div>
             </div>
             <div v-if="pendingPlanNotice" class="pending-notice"><Icon icon="lucide:calendar-clock" width="19" aria-hidden="true" /><p>{{ pendingPlanNotice }}</p></div>
             <div class="plan-inclusions">
@@ -38,9 +44,9 @@
           </section>
           <aside class="subscription-card billing-card" aria-labelledby="billing-title">
             <div class="billing-icon"><Icon icon="lucide:wallet-cards" width="24" aria-hidden="true" /></div>
-            <h2 id="billing-title">{{ isFree ? 'Ready for more?' : 'Manage your subscription' }}</h2>
-            <p>{{ isFree ? 'Compare plans and choose the features that fit your clinic.' : 'Review available plans and manage your next billing cycle.' }}</p>
-            <button type="button" class="app-button app-button--primary explore-button" @click="goToUpgrade">Explore Plans <Icon icon="lucide:arrow-right" width="17" aria-hidden="true" /></button>
+            <h2 id="billing-title">{{ isUnsubscribed ? 'Choose a subscription' : 'Manage your subscription' }}</h2>
+            <p>{{ isUnsubscribed ? 'Compare Free Trial, Basic, and Premium. There is no permanent Free plan.' : 'Review available plans and manage your next billing cycle.' }}</p>
+            <button type="button" class="app-button app-button--primary explore-button" @click="goToUpgrade">{{ isUnsubscribed || accessStatus === 'expired' ? 'Choose a plan' : 'Explore Plans' }} <Icon icon="lucide:arrow-right" width="17" aria-hidden="true" /></button>
             <div class="billing-help">
               <div><Icon icon="lucide:credit-card" width="19" aria-hidden="true" /><div><h3>Pay through checkout</h3><p>Choose a plan and complete payment through secure checkout.</p></div></div>
               <div><Icon icon="lucide:bell" width="19" aria-hidden="true" /><div><h3>Stay ahead of expiry</h3><p>Trials and paid plans receive notification and email reminders 7, 3, and 1 day before expiry.</p></div></div>
@@ -85,10 +91,12 @@ const router = useRouter()
 const loading = ref(true)
 const error = ref('')
 
-const planKey = ref('basic')
+const planKey = ref('')
 const isTrial = ref(false)
 const paymentStatus = ref('')
+const accessStatus = ref('unsubscribed')
 const subscriptionExpiresAt = ref(null)
+const graceEndsAt = ref(null)
 const planData = ref(null)
 const subscriptionTrialDays = ref(0)
 const pendingPlan = ref('')
@@ -136,27 +144,28 @@ const formatCycle = (cycle) => {
 
 const syncPlanData = () => {
   const entitlementPlanKey = isTrial.value ? 'premium' : planKey.value
-  planData.value = planDocs.value.get(entitlementPlanKey) || (isFree.value ? planDocs.value.get('free') || planDocs.value.get('free-trial') : null) || null
+  planData.value = entitlementPlanKey ? planDocs.value.get(entitlementPlanKey) || null : null
 }
 
 const formatDate = subscriptionDateLabel
 
 const normalizePlanLabel = (value) => {
   const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return 'Not set'
+  if (!raw) return 'No subscription selected'
   if (raw.includes('free')) return 'No active subscription'
   if (raw.includes('basic')) return 'Basic'
   if (raw.includes('premium')) return 'Premium'
   return value
 }
 
-const planLabel = computed(() => isTrial.value ? 'Free Trial' : normalizePlanLabel(planKey.value))
-const isFree = computed(() => planKey.value.includes('free'))
+const planLabel = computed(() => isTrial.value ? 'Free Trial' : isUnsubscribed.value ? 'No subscription selected' : normalizePlanLabel(planKey.value))
+const isUnsubscribed = computed(() => !isTrial.value && !['basic', 'premium'].includes(planKey.value))
+const hasOffer = computed(() => !isUnsubscribed.value)
 const isPaid = computed(() => paymentStatus.value.toLowerCase() === 'paid')
-const planPrice = computed(() => isFree.value || isTrial.value ? formatCurrency(0) : planData.value?.price != null ? formatCurrency(planData.value.price) : 'Price unavailable')
+const planPrice = computed(() => isTrial.value ? formatCurrency(0) : isUnsubscribed.value ? '—' : planData.value?.price != null ? formatCurrency(planData.value.price) : 'Price unavailable')
 const planCycle = computed(() => {
   if (isTrial.value) return `${Number(subscriptionTrialDays.value || 14)} days · Premium access`
-  if (isFree.value) return 'No billing cycle'
+  if (isUnsubscribed.value) return 'No plan selected'
   const cycle = formatCycle(planData.value?.billingCycle || planData.value?.cycle || '')
   return cycle === 'Trial' ? 'Billing cycle unavailable' : `per ${{ monthly: 'month', yearly: 'year', annually: 'year', annual: 'year' }[cycle] || cycle}`
 })
@@ -164,25 +173,35 @@ const daysRemaining = computed(() => {
   const expiry = subscriptionDate(subscriptionExpiresAt.value)
   return expiry ? Math.ceil((expiry.getTime() - currentTime.value) / 86400000) : null
 })
+const graceEndsAtLabel = computed(() => formatDate(graceEndsAt.value))
+const graceDaysRemaining = computed(() => {
+  const graceEnd = subscriptionDate(graceEndsAt.value)
+  return graceEnd ? Math.ceil((graceEnd.getTime() - currentTime.value) / 86400000) : null
+})
 const statusLabel = computed(() => {
-  if (isFree.value) return 'Active'
-  if (isTrial.value) return 'Trial active'
-  if (daysRemaining.value !== null && daysRemaining.value <= 0) return 'Expired'
+  if (isUnsubscribed.value) return 'No active subscription'
+  if (accessStatus.value === 'expired') return 'Expired · access paused'
+  if (accessStatus.value === 'grace_period') return 'Grace period'
+  if (isTrial.value) return 'Free Trial active'
   if (!isPaid.value) return 'Pending payment'
   if (daysRemaining.value === null) return 'Check billing details'
   return daysRemaining.value <= 7 ? 'Expiring soon' : 'Active'
 })
+const statusNeedsAttention = computed(() => isUnsubscribed.value || ['expired', 'grace_period'].includes(accessStatus.value) || (!isTrial.value && !isPaid.value) || (daysRemaining.value !== null && daysRemaining.value <= 7))
 const planDescription = computed(() => {
-  if (planKey.value === 'free-trial' || planKey.value === 'free') return 'Operational access is restricted until the clinic renews. Historical records remain retained.'
+  if (isUnsubscribed.value) return 'Choose Free Trial if eligible, or select Basic or Premium. Clinic operations require an active offer; clinic records remain retained.'
+  if (accessStatus.value === 'expired') return 'Clinic operations are paused until the clinic chooses Basic or Premium. The account, records, and existing appointments remain retained.'
+  if (accessStatus.value === 'grace_period') return 'Your plan has ended. Clinic operations remain available during the 7-day grace period; renew before it ends.'
+  if (isTrial.value) return 'Free Trial includes Premium access for 14 days and does not charge automatically.'
   return planData.value?.description || 'No description available.'
 })
 const planFeatures = computed(() => {
-  if (planKey.value === 'free-trial' || planKey.value === 'free') return []
+  if (isUnsubscribed.value) return []
   return planData.value?.features || []
 })
 const paymentStatusLabel = computed(() => {
   if (isTrial.value) return 'No charge during trial'
-  if (planKey.value === 'free-trial' || planKey.value === 'free') return '-'
+  if (isUnsubscribed.value) return '—'
   const raw = String(paymentStatus.value || '').trim().toLowerCase()
   if (!raw) return '-'
   return raw.charAt(0).toUpperCase() + raw.slice(1)
@@ -204,9 +223,11 @@ const applySubscriptionData = (userData = {}, clinicData = {}) => {
   const lifecycle = subscriptionLifecycle(data)
   planKey.value = lifecycle.plan
   isTrial.value = lifecycle.trial
+  accessStatus.value = lifecycle.status
   subscriptionTrialDays.value = Number(data.subscriptionTrialDays || 0)
   paymentStatus.value = data.paymentStatus || ''
   subscriptionExpiresAt.value = lifecycle.expiresAt
+  graceEndsAt.value = lifecycle.graceEndsAt
   pendingPlan.value = String(data.pendingSubscriptionPlan || '').trim().toLowerCase()
   pendingApplyAt.value = data.pendingSubscriptionApplyAt ?? null
   syncPlanData()
@@ -306,8 +327,12 @@ const subscribePaymentHistory = (ownerId, email) => {
 }
 
 const goToUpgrade = () => {
-  const targetPlan = isTrial.value ? 'premium' : isFree.value ? 'basic' : planKey.value === 'basic' ? 'premium' : planKey.value
-  router.push({ path: '/account/plans', query: { plan: targetPlan } })
+  const targetPlan = isUnsubscribed.value || isTrial.value
+    ? ''
+    : accessStatus.value === 'active' && planKey.value === 'basic'
+      ? 'premium'
+      : planKey.value
+  router.push({ path: '/account/plans', query: targetPlan ? { plan: targetPlan } : {} })
 }
 
 onMounted(trackPageLoad(async () => {

@@ -1,6 +1,8 @@
 import { normalizeStaffing } from '../../shared/practitionerTeam.js'
 import { validateTreatmentCourseComposition, validateTreatmentCourseSteps } from '../../shared/treatmentCourse.js'
 import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
+import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
+import { subscriptionRecord } from '../../shared/subscriptionDates.js'
 export const financialFields = ['price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount', 'vatApplicable', 'vatPriceMode']
 export const validateListingNumbers = (post) => {
   try { normalizeStaffing(post.staffingRequirements) } catch (error) { return error.message }
@@ -53,26 +55,12 @@ export const approvedOrderLines = (items, listings, amount) => {
   if (lines.reduce((sum, line) => sum + line.amount * line.quantity, 0) !== Number(amount)) fail('Your cart total changed. Refresh your cart before paying.')
   return lines
 }
-export const listingTransition = (post, action, role, uid, note = '', { isFreePlan = false } = {}) => {
+export const listingTransition = (post, action, role, uid, note = '') => {
   const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }) }
   if (post.archived) fail('Restore the listing before submitting it for review.')
   if (['submit', 'publish'].includes(action)) {
     const error = validateListingNumbers(post)
     if (error) fail(error, 400)
-  }
-  if (isFreePlan) {
-    if (post.postType !== 'Service') fail('Free Plan can publish service listings only.', 403)
-    if (!['Owner', 'Manager'].includes(role)) fail('Only the clinic owner or manager can publish listings.', 403)
-    if (action === 'publish' || action === 'submit') {
-      return {
-        financeStatus: 'approved',
-        isPublished: true,
-        financeReview: null,
-        publishedBy: uid,
-      }
-    }
-    if (action === 'unpublish') return { isPublished: false, publishedBy: null }
-    fail('Free Plan listings do not require Finance approval.', 403)
   }
   if (action === 'submit') {
     if (!['Owner', 'Manager'].includes(role)) fail('Only the clinic owner or manager can submit listings.', 403)
@@ -110,10 +98,10 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         const owner = context.roleKey === 'Owner' && (clinic.ownerId === req.user.uid || post.branchId === req.user.uid)
         const assignedBranches = new Set([context.userData?.branchId, ...(Array.isArray(context.userData?.branchIds) ? context.userData.branchIds : [])].filter(Boolean))
         if (!owner && (context.roleKey === 'Owner' || !assignedBranches.has(post.branchId))) throw Object.assign(new Error('This listing belongs to another clinic.'), { status: 403 })
-        // Only an explicitly assigned Free Plan bypasses Finance review.
-        // Legacy clinic records without a plan retain their existing approval
-        // workflow until their subscription data is migrated.
-        const isFreePlan = String(clinic.subscriptionPlan || clinic.plan || '').trim().toLowerCase() === 'free'
+        const subscription = subscriptionLifecycle(subscriptionRecord(context.userData || {}, clinic))
+        if (!subscription.isOperational || !['basic', 'premium'].includes(subscription.plan)) {
+          throw Object.assign(new Error('An active Free Trial, Basic, or Premium subscription is required to manage listings.'), { status: 403 })
+        }
         if (['submit', 'publish'].includes(action) && post.vatApplicable === true) {
           const policyOwnerId = String(clinic.ownerId || clinic.organizationOwnerId || '').trim()
           const taxPolicy = policyOwnerId
@@ -138,7 +126,6 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
           context.roleKey,
           req.user.uid,
           String(req.body?.note || '').slice(0, 2000),
-          { isFreePlan },
         )
         if (action === 'publish' && post.postType === 'Package') {
           const stepIds = Array.isArray(post.treatmentCourseSteps)
@@ -158,7 +145,7 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
           }
         }
         const timestamp = admin.firestore.FieldValue.serverTimestamp()
-        const recipients = !isFreePlan && action === 'submit'
+        const recipients = action === 'submit'
           ? (await tx.get(db.collection('users').where('branchId', '==', post.branchId).where('role', '==', 'Finance'))).docs.map((doc) => doc.id)
           : [post.submittedBy, post.createdBy, clinic.ownerId].filter(Boolean)
         if (update.financeReview) update.financeReview.reviewedAt = timestamp
@@ -167,7 +154,7 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         tx.set(ref.collection('approvalHistory').doc(), { action, actorId: req.user.uid, note: String(req.body?.note || '').slice(0, 2000), terms: Object.fromEntries(financialFields.map((key) => [key, post[key] ?? null])), createdAt: timestamp })
         for (const uid of new Set(recipients)) {
           if (uid === req.user.uid) continue
-          if (!isFreePlan) tx.set(db.collection('notifications').doc(), { recipientUserId: uid, title: 'Listing review updated', message: `${post.title || 'Product/service'}: ${action === 'submit' ? 'Awaiting Finance review' : action}.`, link: action === 'submit' ? '/finance/listing-approvals' : '/catalog/products-services', read: false, deleted: false, createdAt: timestamp })
+          tx.set(db.collection('notifications').doc(), { recipientUserId: uid, title: 'Listing review updated', message: `${post.title || 'Product/service'}: ${action === 'submit' ? 'Awaiting Finance review' : action}.`, link: action === 'submit' ? '/finance/listing-approvals' : '/catalog/products-services', read: false, deleted: false, createdAt: timestamp })
         }
         return { financeStatus: update.financeStatus || post.financeStatus, isPublished: update.isPublished }
       })

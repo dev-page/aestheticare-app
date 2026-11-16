@@ -271,15 +271,6 @@ const handleLogin = async () => {
       setProcessLoading(true, 'Loading your account...')
       await userCredentials.user.reload()
 
-      // A Free-plan "Continue" action only grants access for the active
-      // browser session. Start every new sign-in with a fresh onboarding
-      // decision unless the owner has explicitly chosen "Don't show again".
-      try {
-        window.sessionStorage.removeItem(`free-plan-onboarding-continued:${userCredentials.user.uid}`)
-      } catch {
-        // Session storage is optional; routing still enforces the Free plan.
-      }
-
       try {
         const userData = await fetchAuthenticatedProfile(userCredentials.user)
 
@@ -299,6 +290,14 @@ const handleLogin = async () => {
         }
 
         const accountStatus = String(userData.status || '').trim().toLowerCase()
+        // Deletion requests also set status to Inactive. Route them to recovery
+        // before the general closed-account check below.
+        if (hasCustomerDeletionWindow(userData)) {
+          toast.info('Your account is pending deletion. You can cancel it during the 30-day recovery period.')
+          clearFormFields()
+          startRedirectFlow('/customer/account-recovery')
+          return
+        }
         const accountClosed = userData.archived === true || userData.accountClosed === true || ['inactive', 'disabled', 'closed', 'deactivated', 'rejected'].includes(accountStatus)
         if (accountClosed) {
           if (hasCustomerRecoveryWindow(userData)) {
@@ -329,13 +328,6 @@ const handleLogin = async () => {
         if (['pending', 'pending approval'].includes(accountStatus)) {
           toast.error('Your account is still awaiting approval.')
           setProcessLoading(false)
-          return
-        }
-
-        if (hasCustomerDeletionWindow(userData)) {
-          toast.info('Your account is pending deletion. You can cancel it during the 30-day recovery period.')
-          clearFormFields()
-          startRedirectFlow('/customer/account-recovery')
           return
         }
 

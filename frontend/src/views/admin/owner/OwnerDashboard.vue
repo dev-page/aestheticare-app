@@ -87,17 +87,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         ? linkedKeys.some(key => ['paymentPolicy', 'cancellationPolicy', 'reschedulePolicy', 'noShowPolicy', 'walkInPolicy'].includes(key))
         : Boolean(setupBranch.value?.policiesLinkedAt)
       const postTypes = new Set(setupListings.value.map(post => String(post.postType || '').toLowerCase()))
-      const plan = String(subscriptionStore.activePlan || 'free').toLowerCase()
-      const canCreateAllListings = plan === 'basic' || plan === 'premium'
+      const plan = String(subscriptionStore.activePlan || '').toLowerCase()
+      const canCreateAllListings = ['basic', 'premium'].includes(plan)
       return [
         { key: 'policies', label: 'Configure clinic policies', description: 'Choose and save the policies customers should follow.', done: setupPolicyConfigured.value, to: '/clinic/policies', action: 'Configure policies' },
         { key: 'link-policies', label: 'Link policies to a branch', description: 'Choose which saved policies apply at your branch.', done: policiesLinked, to: '/clinic/branches', action: 'Link policies', disabled: !setupBranch.value },
         { key: 'clinic-logo', label: 'Upload your clinic logo', description: 'Add the logo customers will see on your public clinic page.', done: Boolean(setupBranch.value?.profilePicture), to: { path: '/clinic/page', query: { branchId: setupBranch.value?.id || '', edit: 'branding' } }, action: 'Add logo', disabled: !setupBranch.value },
         { key: 'clinic-banner', label: 'Upload a clinic banner', description: 'Add a banner image for your public clinic page.', done: Boolean(setupBranch.value?.bannerPicture), to: { path: '/clinic/page', query: { branchId: setupBranch.value?.id || '', edit: 'branding' } }, action: 'Add banner', disabled: !setupBranch.value },
         { key: 'employee', label: 'Add your first employee', description: 'Create at least one employee account for your clinic.', done: totalEmployees.value > 0, to: '/hr/employees/new', action: 'Add employee' },
-        { key: 'consultation', label: 'Add a consultation', description: 'Create a consultation listing for your clinic.', done: postTypes.has('consultation'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add consultation' : 'Upgrade to add', disabled: !canCreateAllListings },
-        { key: 'service', label: 'Add a service', description: 'Create a service customers can book.', done: postTypes.has('service'), to: '/catalog/products-services', action: 'Add service', disabled: plan !== 'free' && !canCreateAllListings },
-        { key: 'package', label: 'Add a package', description: 'Bundle services into a treatment package.', done: postTypes.has('package'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add package' : 'Upgrade to add', disabled: !canCreateAllListings },
+        { key: 'consultation', label: 'Add a consultation', description: 'Create a consultation listing for your clinic.', done: postTypes.has('consultation'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add consultation' : 'Choose a plan', disabled: !canCreateAllListings },
+        { key: 'service', label: 'Add a service', description: 'Create a service customers can book.', done: postTypes.has('service'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add service' : 'Choose a plan', disabled: !canCreateAllListings },
+        { key: 'package', label: 'Add a package', description: 'Bundle services into a treatment package.', done: postTypes.has('package'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add package' : 'Choose a plan', disabled: !canCreateAllListings },
       ]
     })
     const setupCompletedCount = computed(() => setupTasks.value.filter(task => task.done).length)
@@ -775,7 +775,7 @@ const renderEmployeeChart = () => {
               <div class="setup-task-copy"><h3>{{ task.label }}</h3><p>{{ task.description }}</p></div>
               <RouterLink v-if="!task.done && !task.disabled" :to="task.to" class="setup-task-action">{{ task.action }} <span aria-hidden="true">&gt;</span></RouterLink>
               <span v-else-if="task.done" class="setup-task-status">Done</span>
-              <RouterLink v-else-if="task.disabled && task.key !== 'link-policies'" to="/account/subscription" class="setup-task-action">Upgrade Plan to Add</RouterLink>
+              <RouterLink v-else-if="task.disabled && task.key !== 'link-policies'" to="/account/subscription" class="setup-task-action">{{ task.action }}</RouterLink>
               <span v-else class="setup-task-status">Create a branch first</span>
             </li>
           </ol>

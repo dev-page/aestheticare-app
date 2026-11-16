@@ -12,8 +12,8 @@
 
       <section v-if="!loading" class="trial-offer">
         <div>
-          <h2>{{ trialActive ? 'Your Free Trial is active' : trialEligible ? 'Start with 14 days of Premium access' : 'Choose a subscription plan' }}</h2>
-          <p>{{ trialActive ? `Your Premium access ends on ${subscriptionDateLabel(currentPlanExpiresAt)}. No payment is collected during the trial. A 7-day grace period follows while you choose Basic or Premium.` : trialEligible ? 'Free Trial is a separate plan, available once per clinic after clinic approval. Basic and Premium are paid plans with no trial settings.' : 'Expired subscriptions restrict operations after the 7-day grace period. Clinic records remain retained while you renew or export authorised data.' }}</p>
+          <h2>{{ offerStatusTitle }}</h2>
+          <p>{{ offerStatusDescription }}</p>
         </div>
         <button v-if="trialEligible && eligibleTrialPlan" type="button" class="app-button app-button--primary" :disabled="submitting || startingTrial" @click="selectPlan(eligibleTrialPlan.id)">Select Free Trial</button>
       </section>
@@ -144,8 +144,10 @@ const error = ref('')
 const selectedPlan = ref('basic')
 const allPlans = ref([])
 const plans = ref([])
-const currentPlan = ref('free')
+const currentPlan = ref('')
 const currentPlanExpiresAt = ref(null)
+const currentGraceEndsAt = ref(null)
+const currentAccessStatus = ref('unsubscribed')
 const trialEligible = ref(false)
 const trialActive = ref(false)
 const startingTrial = ref(false)
@@ -154,16 +156,33 @@ const pendingPlan = ref('')
 const selectedPlanData = computed(() => plans.value.find((plan) => plan.id === selectedPlan.value) || null)
 const eligibleTrialPlan = computed(() => trialEligible.value ? plans.value.find((plan) => plan.id === FREE_TRIAL_PLAN_ID) || null : null)
 const selectedPlanTrialEligible = computed(() => trialEligible.value && selectedPlanData.value?.id === FREE_TRIAL_PLAN_ID)
+const offerStatusTitle = computed(() => {
+  if (currentAccessStatus.value === 'expired') return 'Your subscription has expired'
+  if (currentAccessStatus.value === 'grace_period') return 'Your subscription is in its grace period'
+  if (trialActive.value) return 'Your Free Trial is active'
+  if (trialEligible.value) return 'Start with 14 days of Premium access'
+  if (['basic', 'premium'].includes(currentPlan.value)) return `Your ${currentPlan.value === 'basic' ? 'Basic' : 'Premium'} subscription`
+  return 'Choose a subscription plan'
+})
+const offerStatusDescription = computed(() => {
+  if (currentAccessStatus.value === 'expired') return 'Clinic operations are paused. Choose Basic or Premium to restore access; your account, records, and existing appointments remain retained.'
+  if (currentAccessStatus.value === 'grace_period') return `The previous ${trialActive.value ? 'Free Trial' : currentPlan.value === 'basic' ? 'Basic' : 'Premium'} period has ended. Renew or choose a plan by ${subscriptionDateLabel(currentGraceEndsAt.value)} to keep clinic operations active.`
+  if (trialActive.value) return `Your Premium access ends on ${subscriptionDateLabel(currentPlanExpiresAt.value)}. No payment is collected during the trial. A 7-day grace period follows while you choose Basic or Premium.`
+  if (trialEligible.value) return 'Free Trial is a separate offer, available once per clinic after approval. Basic and Premium are paid plans with no attached trial.'
+  if (['basic', 'premium'].includes(currentPlan.value)) return `Your ${currentPlan.value === 'basic' ? 'Basic' : 'Premium'} access is active until ${subscriptionDateLabel(currentPlanExpiresAt.value)}. You can select another plan for the next billing cycle.`
+  return 'No offer is selected. Choose Free Trial if eligible, or choose Basic or Premium. Clinic operations require one of these offers.'
+})
 let unsubscribePlans = null
 
 const defaultPlans = () => createDefaultSubscriptionPlans()
 
 const normalizePlanId = (value) => {
   const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return 'free'
+  if (!raw) return ''
   if (raw.includes('premium')) return 'premium'
   if (raw.includes('basic')) return 'basic'
-  if (raw.includes('free') || raw.includes('trial')) return 'free'
+  if (raw.includes('free-trial') || raw === 'trial') return 'free-trial'
+  if (['free', 'freeplan', 'free-plan', 'free_plan'].includes(raw)) return ''
   return raw
 }
 
@@ -229,6 +248,8 @@ const loadPlans = trackPageLoad(async () => {
     const lifecycle = subscriptionLifecycle(subscriptionRecord(userData, clinicData))
     currentPlan.value = lifecycle.plan
     currentPlanExpiresAt.value = lifecycle.expiresAt
+    currentGraceEndsAt.value = lifecycle.graceEndsAt
+    currentAccessStatus.value = lifecycle.status
     trialEligible.value = lifecycle.trialEligible && subscriptionLifecycle(clinicData).trialEligible
     trialActive.value = lifecycle.trial
     pendingPlan.value = normalizePlanId(clinicData.pendingSubscriptionPlan || userData.pendingSubscriptionPlan || '')

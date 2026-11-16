@@ -89,10 +89,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const pageSize = ref(10)
     let unsubscribeClinics = null
 
-    const normalizePlanLabel = (value) => {
+    const normalizePlanLabel = (value, paymentStatus = '') => {
       const raw = String(value || '').trim().toLowerCase()
-      if (!raw) return 'Not set'
-      if (raw.includes('free')) return 'FreePlan'
+      if (String(paymentStatus || '').trim().toLowerCase() === 'trial' || raw.includes('free-trial') || raw === 'trial') return 'Free Trial'
+      if (!raw) return 'No plan selected'
+      if (['free', 'free-plan', 'freeplan', 'free_plan'].includes(raw)) return 'No plan selected'
       if (raw.includes('basic')) return 'Basic'
       if (raw.includes('premium')) return 'Premium'
       return value
@@ -146,7 +147,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               clinicLocation: clinic.clinicLocation || '',
               ownerName: fullName,
               ownerEmail: user.email || clinic.ownerEmail || clinic.email || clinic.registrantEmail || clinic.applicantEmail || '',
-              planLabel: normalizePlanLabel(resolvedPlan),
+              planLabel: normalizePlanLabel(resolvedPlan, resolvedPayment),
               paymentStatus: resolvedPayment,
               centerStatus: clinic.status || clinic.moderationStatus || 'Active',
               approvedAtLabel: formatDate(approvedAt),

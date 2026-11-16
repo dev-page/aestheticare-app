@@ -36,11 +36,10 @@ export async function sendSubscriptionReminders({ admin, sendEmail, websiteUrl, 
     const notificationRef = db.collection('notifications').doc(`subscription-expiry-${key}`)
     const token = randomUUID()
     const trial = String(record.paymentStatus).toLowerCase() === 'trial'
-    const trialPlanLabel = String(record.subscriptionPlan).toLowerCase() === 'premium' ? 'Premium' : 'Basic'
-    const title = trial ? `Your ${trialPlanLabel} trial is ending soon` : 'Your subscription is nearing expiry'
+    const title = trial ? 'Your Free Trial is ending soon' : 'Your subscription is nearing expiry'
     const message = trial
-      ? `Your ${trialPlanLabel} trial ends on ${subscriptionDateLabel(expiry)} (Philippine time). No automatic charge applies. Your clinic returns to Free unless you purchase a plan. Your records and existing appointments are retained.`
-      : `Your ${record.subscriptionPlan} subscription expires on ${subscriptionDateLabel(expiry)} (Philippine time). Your clinic returns to Free after expiry, with records and existing appointments retained. Review your Subscription Plan to arrange renewal and keep your paid features.`
+      ? `Your 14-day Free Trial ends on ${subscriptionDateLabel(expiry)} (Philippine time). No automatic charge applies. A 7-day grace period follows; after it ends, clinic operations are paused until you choose Basic or Premium. Your account, records, and existing appointments are retained.`
+      : `Your ${record.subscriptionPlan} subscription expires on ${subscriptionDateLabel(expiry)} (Philippine time). A 7-day grace period follows; after it ends, clinic operations are paused until you renew. Your account, records, and existing appointments are retained. Open Subscription Plan to renew.`
     try {
       const claim = await db.runTransaction(async tx => {
         const [currentOwner, currentClinic, previous] = await Promise.all([tx.get(ownerRef), tx.get(clinicRef), tx.get(reminderRef)])

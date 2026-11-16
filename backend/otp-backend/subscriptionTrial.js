@@ -1,4 +1,4 @@
-import { subscriptionLifecycle, TRIAL_DAYS, TRIAL_PLAN } from '../../shared/subscriptionLifecycle.js'
+import { subscriptionLifecycle, TRIAL_DAYS, TRIAL_PLAN, GRACE_PERIOD_DAYS } from '../../shared/subscriptionLifecycle.js'
 
 export function registerSubscriptionTrial(app, { admin, requireAuth, loadUserContext }) {
   const db = admin.firestore()
@@ -34,7 +34,8 @@ export function registerSubscriptionTrial(app, { admin, requireAuth, loadUserCon
         // the selected third plan while the subscription is unpaid.
         const fields = { subscriptionPlan: 'premium', paymentStatus: 'trial', paymentId: null,
           subscriptionStartedAt: null, subscriptionExpiresAt: endsAt,
-          subscriptionAccessStatus: 'trial', subscriptionGraceEndsAt: null,
+          subscriptionAccessStatus: 'trial',
+          subscriptionGraceEndsAt: new Date(endsAt.getTime() + GRACE_PERIOD_DAYS * 86400000),
           subscriptionRetentionEndsAt: null,
           subscriptionTrialPlan: TRIAL_PLAN, subscriptionTrialUsedAt: stamp, subscriptionTrialDays: TRIAL_DAYS,
           subscriptionTrialStartedAt: now, subscriptionTrialEndsAt: endsAt,
@@ -43,7 +44,7 @@ export function registerSubscriptionTrial(app, { admin, requireAuth, loadUserCon
         tx.set(clinicRef, fields, { merge: true })
         tx.set(db.collection('notifications').doc(`subscription-trial-${req.user.uid}`), {
           recipientUserId: req.user.uid, title: 'Your Free Trial has started',
-          message: `You have ${TRIAL_DAYS} days of Premium access. No payment is collected during the trial. After it ends, a 7-day grace period applies while you choose Basic or Premium.`,
+          message: `Your Free Trial gives you ${TRIAL_DAYS} days of Premium access with no automatic charge. After it ends, a 7-day grace period applies. Clinic operations pause after grace unless you choose Basic or Premium. Your account and clinic records are retained.`,
           link: '/account/subscription', read: false, createdAt: stamp })
         return { plan: TRIAL_PLAN, accessPlan: 'premium', trialDays: TRIAL_DAYS, expiresAt: endsAt.toISOString() }
       })

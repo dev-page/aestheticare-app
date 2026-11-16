@@ -57,7 +57,7 @@ onMounted(async () => {
 })
 const canView = computed(() => hasPermission('appointments:view') || hasPermission('appointments:update'))
 const canReview = computed(() => hasPermission('appointments:review'))
-// Existing paid consultations remain available after returning to Free.
+// Subscription expiry controls operational access; it never downgrades the clinic to another plan.
 const canOnline = computed(() => hasPermission('consultations:view'))
 const canQueue = computed(() => canView.value || canOnline.value)
 const pageState = computed(() => resolveAppointmentManagementState({

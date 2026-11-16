@@ -87,13 +87,14 @@ const toNumber = (value) => {
 const normalizePlan = (value) => {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return null
-  if (raw.includes('free')) return 'freeTrial'
+  if (raw === 'free-trial' || raw === 'trial') return 'freeTrial'
   if (raw.includes('basic')) return 'basic'
   if (raw.includes('premium')) return 'premium'
   return null
 }
 
 const extractPlanFromRecord = (record = {}) => {
+  if (String(record.paymentStatus || '').trim().toLowerCase() === 'trial') return 'freeTrial'
   const direct = [
     record.subscriptionPlan,
     record.plan,

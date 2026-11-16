@@ -34,7 +34,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import Modal from './Modal.vue'
 import { notificationDestination } from '@/utils/notificationDestination'
 import { useSubscription } from '@/composables/useSubscription'
-import { isFreeClinicRoute } from '../../../../shared/freeClinicRoutes.js'
+import { isSubscriptionRecoveryRoute } from '../../../../shared/subscriptionRecoveryRoutes.js'
 
 const props = defineProps({
   isOpen: Boolean,
@@ -44,13 +44,13 @@ const props = defineProps({
 })
 defineEmits(['close'])
 const router = useRouter()
-const { activePlan, hasFeature } = useSubscription()
+const { isSuspended, hasFeature } = useSubscription()
 const destination = computed(() => {
   const result = notificationDestination(props.notification || {}, props)
   const resolved = router.resolve(result.to)
   const clinicAccount = !/customer|supplier|superadmin|systemadmin/i.test(`${props.userType} ${props.role}`)
   const requiredFeature = resolved.matched.find(record => record.meta.requiresFeature)?.meta.requiresFeature
-  if (clinicAccount && activePlan.value && ((activePlan.value === 'free' && !isFreeClinicRoute(resolved.path)) || (requiredFeature && !hasFeature(requiredFeature)))) {
+  if (clinicAccount && ((isSuspended.value && !isSubscriptionRecoveryRoute(resolved.path)) || (requiredFeature && !hasFeature(requiredFeature)))) {
     return { to: '/account/subscription', label: 'View plan options', restricted: true }
   }
   return resolved.matched.some(record => !record.path.includes(':pathMatch'))

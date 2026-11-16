@@ -272,7 +272,6 @@ const toNumber = (value) => {
 
 const billingCyclePattern = /^(month|year|one-time)$/i
 const LAST_ACTIVE_PLAN_ERROR = 'LAST_ACTIVE_PLAN'
-const FREE_PLAN_PROTECTED_ERROR = 'FREE_PLAN_PROTECTED'
 const BUILT_IN_PLAN_PROTECTED_ERROR = 'BUILT_IN_PLAN_PROTECTED'
 const BUILT_IN_PLAN_IDS = new Set(['free-trial', 'basic', 'premium'])
 
@@ -349,16 +348,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       })
     }
 
-    const showProtectedPlanNotice = async () => {
-      await systemAdminSwal.fire({
-        title: 'Built-in plans are protected',
-        text: 'Free Trial, Basic, and Premium are the three supported plans and cannot be deleted.',
-        icon: 'info',
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#6b4b34',
-      })
-    }
-
     const savePlanDocument = async (planId, data) => {
       const normalizedId = String(planId || '').trim()
       const planRef = doc(db, 'subscriptionPlans', normalizedId)
@@ -367,10 +356,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (data.isDeleted === true && BUILT_IN_PLAN_IDS.has(normalizedId.toLowerCase())) {
           throw new Error(BUILT_IN_PLAN_PROTECTED_ERROR)
         }
-        if (normalizedId.toLowerCase() === 'free' && (data.isDeleted === true || data.isActive === false)) {
-          throw new Error(FREE_PLAN_PROTECTED_ERROR)
-        }
-
         const currentPlans = plans.value.filter((plan) => !plan.isDraft && String(plan.id || '').trim())
         const planIds = new Set(currentPlans.map((plan) => String(plan.id).trim()))
         planIds.add(normalizedId)
@@ -591,8 +576,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             confirmButtonText: 'OK',
             confirmButtonColor: '#6b4b34',
           })
-        } else if (err.message === FREE_PLAN_PROTECTED_ERROR) {
-          await showProtectedPlanNotice()
         } else if (err.message === LAST_ACTIVE_PLAN_ERROR) {
           await showLastActivePlanNotice()
         } else {
@@ -724,9 +707,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           showConfirmButton: false,
         })
       } catch (err) {
-        if (err.message === FREE_PLAN_PROTECTED_ERROR) {
-          await showProtectedPlanNotice()
-        } else if (err.message === LAST_ACTIVE_PLAN_ERROR) {
+        if (err.message === LAST_ACTIVE_PLAN_ERROR) {
           await showLastActivePlanNotice()
         } else {
           console.error('Error saving plan:', err)

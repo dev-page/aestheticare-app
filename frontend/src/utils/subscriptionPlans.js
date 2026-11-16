@@ -1,6 +1,5 @@
 const BASE_PRIORITY = {
   'free-trial': 0,
-  free: 0,
   basic: 499,
   premium: 999,
 }

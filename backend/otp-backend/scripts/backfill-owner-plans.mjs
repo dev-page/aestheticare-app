@@ -14,10 +14,11 @@ const serviceAccountPath =
 
 const normalizePlan = (value) => {
   const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return 'free-trial'
-  if (raw === 'freetrial' || raw === 'free_trial' || raw === 'free trial') return 'free-trial'
+  if (['free-trial', 'freetrial', 'free_trial', 'free trial', 'trial'].includes(raw)) return 'free-trial'
   if (raw === 'basic' || raw === 'premium') return raw
-  return 'free-trial'
+  // A missing or legacy Free value means no offer was selected. Do not grant
+  // a trial as a side effect of a migration script.
+  return ''
 }
 
 const paymentStatusForPlan = (plan, currentStatus) => {
@@ -48,10 +49,11 @@ const run = async () => {
 
     await db.collection('users').doc(uid).set(
       {
-        subscriptionPlan: plan,
-        plan,
-        paymentStatus: paymentStatusForPlan(plan, userData.paymentStatus),
-        paymentId: userData.paymentId || null,
+        subscriptionPlan: plan || admin.firestore.FieldValue.delete(),
+        plan: plan || admin.firestore.FieldValue.delete(),
+        paymentStatus: plan ? paymentStatusForPlan(plan, userData.paymentStatus) : admin.firestore.FieldValue.delete(),
+        paymentId: plan ? userData.paymentId || null : admin.firestore.FieldValue.delete(),
+        subscriptionAccessStatus: plan ? userData.subscriptionAccessStatus || (plan === 'free-trial' ? 'trial' : 'active') : 'unsubscribed',
         planBackfilledAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -64,10 +66,11 @@ const run = async () => {
       const clinicPlan = normalizePlan(clinicData.subscriptionPlan || clinicData.plan || plan)
       await db.collection('clinics').doc(clinicDoc.id).set(
         {
-          subscriptionPlan: clinicPlan,
-          plan: clinicPlan,
-          paymentStatus: paymentStatusForPlan(clinicPlan, clinicData.paymentStatus),
-          paymentId: clinicData.paymentId || null,
+          subscriptionPlan: clinicPlan || admin.firestore.FieldValue.delete(),
+          plan: clinicPlan || admin.firestore.FieldValue.delete(),
+          paymentStatus: clinicPlan ? paymentStatusForPlan(clinicPlan, clinicData.paymentStatus) : admin.firestore.FieldValue.delete(),
+          paymentId: clinicPlan ? clinicData.paymentId || null : admin.firestore.FieldValue.delete(),
+          subscriptionAccessStatus: clinicPlan ? clinicData.subscriptionAccessStatus || (clinicPlan === 'free-trial' ? 'trial' : 'active') : 'unsubscribed',
           planBackfilledAt: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -81,10 +84,11 @@ const run = async () => {
       const clinicPlan = normalizePlan(clinicData.subscriptionPlan || clinicData.plan || plan)
       await db.collection('clinics').doc(uid).set(
         {
-          subscriptionPlan: clinicPlan,
-          plan: clinicPlan,
-          paymentStatus: paymentStatusForPlan(clinicPlan, clinicData.paymentStatus),
-          paymentId: clinicData.paymentId || null,
+          subscriptionPlan: clinicPlan || admin.firestore.FieldValue.delete(),
+          plan: clinicPlan || admin.firestore.FieldValue.delete(),
+          paymentStatus: clinicPlan ? paymentStatusForPlan(clinicPlan, clinicData.paymentStatus) : admin.firestore.FieldValue.delete(),
+          paymentId: clinicPlan ? clinicData.paymentId || null : admin.firestore.FieldValue.delete(),
+          subscriptionAccessStatus: clinicPlan ? clinicData.subscriptionAccessStatus || (clinicPlan === 'free-trial' ? 'trial' : 'active') : 'unsubscribed',
           planBackfilledAt: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }

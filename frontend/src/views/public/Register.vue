@@ -2596,7 +2596,7 @@ const claimPrepaidSubscriptionPayment = async () => {
       const draft = JSON.parse(sessionStorage.getItem('register_clinic_draft') || '{}')
       paymentId = String(draft?.paymentId || '').trim()
     } catch (_error) {
-      // A missing browser draft simply means this is a free registration.
+      // A missing browser draft simply means there is no prepaid plan payment to claim.
     }
   }
   if (!paymentId || !auth.currentUser) return null

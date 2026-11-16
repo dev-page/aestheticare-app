@@ -192,8 +192,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const planLabel = computed(() => {
       const raw = String(activePlan.value || '').trim().toLowerCase()
-      if (!raw) return 'Plan'
-      if (raw.includes('free')) return 'FreePlan'
+      if (!raw) return 'No plan'
+      if (raw.includes('free-trial') || raw === 'trial') return 'Free Trial'
+      if (['free', 'free-plan', 'freeplan', 'free_plan'].includes(raw)) return 'No plan'
       if (raw.includes('basic')) return 'Basic'
       if (raw.includes('premium')) return 'Premium'
       return activePlan.value
