@@ -142,4 +142,5 @@ onUnmounted(() => { unsubscribeAuth?.(); unsubscribeAppointments?.() })
 :global(html[data-ac-theme="dark"]) .prescriptions-shell .skeleton-line,
 :global(html[data-ac-theme="dark"]) .prescriptions-shell .skeleton-pill { background: linear-gradient(90deg, var(--ac-surface-muted), var(--ac-border), var(--ac-surface-muted)); background-size: 200% 100%; }
 @media (prefers-reduced-motion: reduce) { .skeleton-line, .skeleton-pill { animation: none; } }
+@media (max-width: 420px) { .prescription-card.skeleton-card { padding: .85rem; } .skeleton-prescription-footer { align-items: stretch; flex-wrap: wrap; } .skeleton-prescription-footer .skeleton-line.button { width: 100%; } }
 </style>

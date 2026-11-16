@@ -4,6 +4,7 @@
     title="AesthetiCare"
     subtitle="Your wellness space"
     panel-key="customer"
+    :mobile-drawer="true"
     default-name="Customer"
     default-email="customer@aestheticare.com"
     :items="items"

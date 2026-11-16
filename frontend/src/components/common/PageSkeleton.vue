@@ -96,7 +96,7 @@ defineProps({
       </template>
       <template v-else-if="variant === 'appointments'">
         <div class="appointment-tabs-skeleton"><div v-for="tab in 4" :key="tab" class="bone tab"></div></div>
-        <div class="skeleton-surface"><div class="skeleton-section-heading"><div class="bone medium"></div><div class="bone short"></div></div><div class="skeleton-toolbar appointment-toolbar"><div class="bone search"></div><div class="bone input"></div><div class="bone input"></div></div><div class="skeleton-table-scroll"><div class="skeleton-table" :style="{ '--columns': 6 }"><div v-for="row in rows + 1" :key="row" class="skeleton-table-row"><div v-for="column in 6" :key="column" class="bone" :class="column === 1 ? 'medium' : column === 6 ? 'short' : ''"></div></div></div></div></div>
+        <div class="skeleton-surface"><div class="skeleton-section-heading"><div class="bone medium"></div><div class="bone short"></div></div><div class="skeleton-toolbar appointment-toolbar"><div class="bone search"></div><div class="bone input"></div><div class="bone input"></div></div><div class="skeleton-table-scroll appointment-loading-table"><div class="skeleton-table" :style="{ '--columns': 6 }"><div v-for="row in rows + 1" :key="row" class="skeleton-table-row" :class="{ 'appointment-loading-heading': row === 1 }"><div v-for="column in 6" :key="column" class="bone" :class="column === 1 ? 'medium' : column === 6 ? 'short' : ''"></div></div></div></div></div>
       </template>
       <template v-else-if="variant === 'appointment-cards'">
         <div class="skeleton-surface"><div class="skeleton-section-heading"><div class="bone medium"></div><div class="bone short"></div></div><div class="appointment-card-grid"><div v-for="card in 3" :key="card" class="skeleton-surface appointment-card"><div class="prescription-card-head"><div><div class="bone medium"></div><div class="bone subtitle"></div></div><div class="bone button small"></div></div><div class="appointment-detail-grid"><div v-for="detail in 3" :key="detail"><div class="bone short"></div><div class="bone medium"></div></div></div><div class="skeleton-surface appointment-price-details"><div class="bone medium"></div><div v-for="line in 4" :key="line" class="skeleton-list-row"><div class="bone medium"></div><div class="bone short"></div></div></div><div class="prescription-footer-skeleton"><div class="bone subtitle"></div><div class="bone button"></div></div></div></div></div>
@@ -205,6 +205,7 @@ defineProps({
 .skeleton-form { width: 100%; max-width: 900px; margin: 0 auto; display: grid; gap: 28px; }
 .skeleton-form-section { display: grid; gap: 20px; }
 .skeleton-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; }
+.profile-form .skeleton-fields { grid-template-columns: 1fr; }
 .skeleton-field { display: grid; gap: 10px; }
 .input { height: 44px; width: 100%; border-radius: 10px; }
 .avatar { width: 84px; height: 84px; border-radius: 50%; }
@@ -267,7 +268,7 @@ defineProps({
 .appointment-notice-skeleton { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
 .appointment-notice-skeleton .subtitle { grid-column: 1; }
 .appointment-notice-skeleton .button { grid-column: 2; grid-row: 1 / span 2; }
-.appointment-tabs-skeleton { display: flex; gap: 10px; overflow: hidden; padding: 8px 0 14px; border-bottom: 1px solid var(--ac-border); }
+.appointment-tabs-skeleton { display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-inline: contain; padding: 8px 0 14px; border-bottom: 1px solid var(--ac-border); }
 .tab { height: 38px; min-width: 140px; }
 .appointment-toolbar { margin-top: 14px; }
 .role-editor-grid { grid-template-columns: minmax(240px, .8fr) minmax(0, 1.6fr); margin-top: 16px; }
@@ -285,7 +286,7 @@ defineProps({
 .refunds-tables { display: grid; gap: 18px; min-width: 0; }
 .subscription-plan-skeleton { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .subscription-plan-skeleton > .skeleton-surface { display: grid; gap: 14px; }
-.appointment-card-grid { display: grid; gap: 14px; margin-top: 18px; }
+.appointment-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 14px; margin-top: 18px; }
 .appointment-card { display: grid; gap: 16px; }
 .appointment-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .appointment-detail-grid > div { display: grid; gap: 10px; }
@@ -316,5 +317,16 @@ defineProps({
 @media (max-width: 900px) { .skeleton-cards, .skeleton-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .discovery-filter-grid, .discovery-filter-grid.secondary, .refunds-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .discovery-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .calendar-dashboard-grid, .pharmacy-pos-grid, .refunds-layout, .employee-profile-skeleton, .checkout-skeleton-grid, .shift-assignment-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .skeleton-fields, .skeleton-panels, .skeleton-split, .payslip-columns, .subscription-plan-skeleton { grid-template-columns: 1fr; } .skeleton-surface { padding: 18px; } .skeleton-toolbar { gap: 12px; } .discovery-filter-grid, .discovery-filter-grid.secondary, .discovery-cards, .refunds-filters, .superadmin-summary-grid, .payslip-totals, .appointment-detail-grid, .center-profile-panels { grid-template-columns: 1fr; } .superadmin-summary-grid > :nth-child(5) { grid-column: auto; } .weekly-schedule-row { grid-template-columns: minmax(80px, 1fr) 24px repeat(2, minmax(0, 1fr)); gap: 8px; } .calendar-month-grid { grid-auto-rows: minmax(46px, auto); gap: 4px; } .calendar-day { padding: 5px; } .prescription-filter, .role-editor-grid { grid-template-columns: 1fr; } .payslip-heading { flex-direction: column; } .payslip-meta { justify-items: start; } .owner-dashboard-hero { align-items: flex-start; flex-direction: column; } .clinic-branch-banner { align-items: flex-start; flex-direction: column; padding-top: 80px; } .clinic-avatar, .center-profile-avatar { width: 82px; height: 82px; } .clinic-brand-row { align-items: flex-start; flex-wrap: wrap; margin-top: -25px; padding-inline: 4px; } .clinic-banner-placeholder { height: 130px; } .center-profile-banner { min-height: 220px; align-items: flex-start; flex-direction: column; } }
+@media (max-width: 767px) {
+  .appointment-loading-table { overflow: visible; }
+  .appointment-loading-table .skeleton-table { min-width: 0; }
+  .appointment-loading-heading { display: none; }
+  .appointment-loading-table .skeleton-table-row { grid-template-columns: 1fr; gap: .75rem; padding: 1rem; margin-bottom: .75rem; border: 1px solid var(--ac-border); border-radius: 1rem; background: var(--ac-surface); }
+  .appointment-loading-table .skeleton-table-row .bone { width: 100%; }
+  .appointment-loading-table .skeleton-table-row .bone.medium { width: min(72%, 10rem); }
+  .appointment-loading-table .skeleton-table-row .bone.short { width: min(38%, 5rem); }
+  .appointment-toolbar { flex-wrap: wrap; }
+  .appointment-toolbar .bone.search { width: 100%; }
+}
 @media (prefers-reduced-motion: reduce) { .bone { animation: none; } }
 </style>

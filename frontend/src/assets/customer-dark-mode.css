@@ -127,7 +127,7 @@ html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
 }
 
 html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
-  button:not(.customer-home-primary-action):not(.cart-checkout-button):not(.orders-button-primary):not(.orders-button-success):not(.appointments-pay-link):not(.appointment-button-primary):not(.checkout-submit):not(.profile-save-button):not(.settings-button-primary):not(.settings-button-danger):not(.settings-button-warning):not(.recovery-primary):not(.center-cart-button):not(.center-action-button):not(.customer-center-button):not(.customer-chat-send),
+  button:not(.customer-home-primary-action):not(.cart-checkout-button):not(.orders-button-primary):not(.orders-button-success):not(.appointments-pay-link):not(.appointment-button-primary):not(.checkout-submit):not(.profile-save-button):not(.settings-button-primary):not(.settings-button-danger):not(.settings-button-warning):not(.recovery-primary):not(.center-cart-button):not(.center-chat-button):not(.center-action-button):not(.customer-center-button):not(.customer-chat-send),
   a[role="button"]:not(.customer-home-primary-action):not(.orders-button-primary):not(.orders-button-success):not(.appointments-pay-link):not(.appointment-button-primary):not(.checkout-submit):not(.profile-save-button):not(.recovery-primary):not(.center-cart-button):not(.center-action-button):not(.customer-center-button)
 ) {
   border-color: var(--ac-border-strong) !important;
@@ -137,11 +137,12 @@ html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
 
 html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
   .center-tab-button.is-active, .settings-tab-active, .appointments-tab-active,
+  .favorites-filter[aria-pressed="true"],
   .service-category-filters button.is-selected, .nearby-location-button,
   .customer-home-secondary-action, .orders-button-primary,
   .appointments-pay-link, .appointment-button-primary, .checkout-submit,
   .profile-save-button, .settings-button-primary, .recovery-primary,
-  .center-cart-button, .center-action-button, .customer-center-button,
+  .center-cart-button, .center-chat-button, .center-action-button, .customer-center-button,
   .customer-chat-send
 ) {
   border-color: var(--ac-primary) !important;
@@ -151,10 +152,11 @@ html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
 
 html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
   .center-tab-button.is-active, .settings-tab-active, .appointments-tab-active,
+  .favorites-filter[aria-pressed="true"],
   .service-category-filters button.is-selected, .nearby-location-button,
   .orders-button-primary, .appointments-pay-link, .appointment-button-primary,
   .checkout-submit, .profile-save-button, .settings-button-primary,
-  .recovery-primary, .center-cart-button, .center-action-button,
+  .recovery-primary, .center-cart-button, .center-chat-button, .center-action-button,
   .customer-center-button, .customer-chat-send
 ) * {
   color: var(--ac-on-primary) !important;

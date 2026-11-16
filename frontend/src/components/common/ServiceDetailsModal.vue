@@ -153,4 +153,39 @@ onUnmounted(() => {
 .service-details-actions button:disabled { opacity: .6; cursor: wait; }
 .service-details-dialog button:focus-visible, .service-details-policy summary:focus-visible { outline: 3px solid #b88759; outline-offset: 3px; }
 @media (max-width: 700px) { .service-details-overlay { padding: 12px; } .service-details-layout { grid-template-columns: 1fr; } .service-details-dialog { max-height: calc(100dvh - 24px); border-radius: 18px; } .service-details-visual { position: relative; height: 230px; } .service-details-visual img { min-height: 0; } .service-details-content { padding: 24px 20px; } .service-details-category { bottom: 16px; left: 16px; } }
+@media (max-width: 420px) { .service-details-overlay { padding: 8px; } .service-details-dialog { max-height: calc(100dvh - 16px); border-radius: 14px; } .service-details-content { padding: 20px 16px; } .service-details-facts { grid-template-columns: 1fr; gap: 12px; padding: 14px; } }
+
+:global(html[data-ac-theme="dark"] .service-details-dialog) {
+  border-color: #694830;
+  background: #291a12;
+  color: #f4e7d9;
+}
+:global(html[data-ac-theme="dark"] .service-details-dialog) :is(h2, h3, dd, strong) { color: #f4e7d9; }
+:global(html[data-ac-theme="dark"] .service-details-dialog) :is(p, li) { color: #d7c1ad; }
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-eyebrow),
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-facts dt) { color: #c99a70; }
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-price) { color: #e4b485; }
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-tax) { color: #bba18a; }
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-close) {
+  border-color: #76543a;
+  background: #3a281d;
+  color: #f4e7d9;
+}
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-facts),
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-notice) {
+  border-color: #65472f;
+  background: #36251a;
+}
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-category) {
+  border: 1px solid rgba(223, 188, 151, .35);
+  background: rgba(41, 26, 18, .94);
+  color: #f4e7d9;
+}
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-policy) {
+  border-color: #65472f;
+  background: #332217;
+  color: #f4e7d9;
+}
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-actions) { border-color: #65472f; }
+:global(html[data-ac-theme="dark"] .service-details-dialog .service-details-verification) { color: #e0b68f; }
 </style>

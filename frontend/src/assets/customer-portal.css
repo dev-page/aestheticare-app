@@ -150,17 +150,49 @@ body .settings-tabs { scrollbar-width: thin; }
 body .settings-tab { border-radius: .8rem !important; }
 body .settings-tab-active { box-shadow: 0 8px 18px rgba(107, 61, 30, .12); }
 
+/* Let customer flex and grid content shrink inside the viewport on every route. */
+body .customer-theme :is(main, section, article, form, fieldset, div) { min-width: 0; }
+body .customer-theme :is(img, video, iframe, canvas) { max-width: 100%; }
+body .customer-theme :is(input, select, textarea, button) { max-width: 100%; }
+
 @media (max-width: 767px) {
+  body .customer-theme { min-width: 0; width: 100%; }
+  body .customer-theme > main,
+  body .customer-theme main { min-width: 0; max-width: 100%; }
+
   body .customer-home-content,
   body .cart-content,
   body .orders-content,
   body .appointments-content,
   body .customer-settings-content,
-  body .profile-content { padding-inline: 1rem !important; }
+  body .profile-content,
+  body .prescriptions-content,
+  body .support-content { width: 100%; min-width: 0; padding-inline: 1rem !important; }
+
+  body .customer-theme :is(.settings-tabs, .center-tabs, .appointments-tabs) {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  body .customer-theme :is(.settings-modal, .appointment-details-shell, .request-modal-shell, .customer-chat-modal, .branch-picker-modal) {
+    max-width: calc(100vw - 1rem);
+  }
 
   body .cart-header,
   body .orders-header,
   body .appointments-header,
   body .settings-hero,
   body .checkout-hero { border-radius: 1.25rem !important; }
+
+  body .appointments-main .page-section-skeleton.variant-table .skeleton-table-head { display: none; }
+  body .appointments-main .page-section-skeleton.variant-table .skeleton-table-body { gap: .75rem; }
+  body .appointments-main .page-section-skeleton.variant-table .skeleton-table-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: .7rem;
+    padding: .9rem;
+    border: 1px solid var(--ac-border);
+    border-radius: 1rem;
+    background: var(--ac-surface, #fffdf8);
+  }
 }

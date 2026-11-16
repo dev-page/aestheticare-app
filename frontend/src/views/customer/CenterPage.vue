@@ -30,6 +30,16 @@
                   <h1 class="text-3xl md:text-5xl font-bold text-[#3d281d]">{{ center.name || 'Center' }}</h1>
                   <p class="mt-2 text-[#6f4a2d]">{{ center.location || 'Location not set' }}</p>
                 </div>
+                <button
+                  type="button"
+                  class="center-chat-button"
+                  :aria-label="unreadChatCount ? `Chat with clinic, ${unreadChatCount} unread messages` : 'Chat with clinic'"
+                  @click="openChat"
+                >
+                  <Icon icon="mdi:chat-processing-outline" class="h-5 w-5" aria-hidden="true" />
+                  <span>Chat with clinic</span>
+                  <span v-if="unreadChatCount > 0" class="center-chat-pill">{{ unreadChatCount }}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -255,7 +265,7 @@
             <section v-if="scheduledBookings.length" class="mt-6 rounded-2xl border border-[#e0c09a] bg-[#fffaf3] p-5">
               <h4 class="center-panel-title">Your scheduled services</h4>
               <p class="mt-1 text-sm text-[#6f4a2d]">Each service keeps its own date. Submitting starts a 15-minute hold for the whole order; sign each agreement and complete one checkout before it expires.</p>
-              <ul class="mt-3 space-y-2"><li v-for="(visit, index) in scheduledBookings" :key="index" class="flex items-center justify-between gap-3 rounded-xl bg-[#f7ead7] p-3 text-sm"><span>{{ visit.selectedServices[0].title || visit.selectedServices[0].name }} · {{ visit.date }} {{ formatClockTime(visit.time) }} · {{ visit.practitionerName }}</span><button type="button" :disabled="bookingPaymentSaving" @click="scheduledBookings.splice(index, 1)">Remove</button></li></ul>
+              <ul class="mt-3 space-y-2"><li v-for="(visit, index) in scheduledBookings" :key="index" class="flex items-center justify-between gap-3 rounded-xl bg-[#f7ead7] p-3 text-sm"><span class="min-w-0 flex-1 break-words">{{ visit.selectedServices[0].title || visit.selectedServices[0].name }} · {{ visit.date }} {{ formatClockTime(visit.time) }} · {{ visit.practitionerName }}</span><button class="shrink-0" type="button" :disabled="bookingPaymentSaving" @click="scheduledBookings.splice(index, 1)">Remove</button></li></ul>
               <button type="button" :disabled="bookingPaymentSaving" class="mt-4 rounded-xl bg-[#8d5a3b] px-4 py-2 text-white disabled:opacity-50" @click="submitScheduledBookings">Submit scheduled services</button>
             </section>
             <div v-if="selectedServices.length" class="booking-panel center-booking-panel mt-8 rounded-2xl border p-6">
@@ -492,16 +502,17 @@
               </div>
               <p v-if="availabilityMessage" class="booking-notice mt-2 text-xs">{{ availabilityMessage }}</p>
               <textarea v-model="bookingForm.notes" rows="3" class="mt-4 w-full px-3 py-3 rounded-2xl bg-[#fffaf3] text-[#3d281d] border border-[#e0c09a] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20" placeholder="Notes (optional)"></textarea>
-              <div class="mt-4 flex gap-3">
-                <button v-if="!groupBookingEnabled && !sameDayConsultationRequested" type="button" :disabled="bookingPaymentSaving" class="rounded-2xl border border-[#e0c09a] px-4 py-2 text-[#6f4a2d]" @click="saveScheduledService">Save schedule &amp; add another service</button>
+              <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <button v-if="!groupBookingEnabled && !sameDayConsultationRequested" type="button" :disabled="bookingPaymentSaving" class="w-full rounded-2xl border border-[#e0c09a] px-4 py-2 text-[#6f4a2d] sm:w-auto" @click="saveScheduledService">Save schedule &amp; add another service</button>
                 <button
+                  type="button"
                   @click="submitBooking"
                   :disabled="bookingPaymentSaving"
-                  class="px-4 py-2 rounded-2xl bg-[#8d5a3b] hover:bg-[#6f4329] text-white shadow-md shadow-amber-950/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  class="w-full rounded-2xl bg-[#8d5a3b] px-4 py-2 text-white shadow-md shadow-amber-950/20 hover:bg-[#6f4329] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {{ bookingPaymentSaving ? 'Submitting...' : 'Submit Booking Request' }}
                 </button>
-                <button @click="clearBookingSelection" class="px-4 py-2 rounded-2xl border border-[#e0c09a] bg-[#fffaf3] text-[#6f4a2d] hover:bg-[#fff2e1]">Cancel</button>
+                <button type="button" @click="clearBookingSelection" class="w-full rounded-2xl border border-[#e0c09a] bg-[#fffaf3] px-4 py-2 text-[#6f4a2d] hover:bg-[#fff2e1] sm:w-auto">Cancel</button>
               </div>
             </div>
           </div>
@@ -538,21 +549,6 @@
       @close="selectedServiceDetails = null"
       @book="bookServiceDetails"
     />
-    <button
-      type="button"
-      class="center-chat-button"
-      title="Chat with clinic"
-      @click="openChat"
-    >
-      <Icon icon="mdi:chat-processing-outline" class="h-6 w-6" />
-      <span
-        v-if="unreadChatCount > 0"
-        class="absolute -top-1 -right-1 h-5 min-w-[1.25rem] px-1 rounded-full bg-red-500 text-[11px] leading-5 text-white font-semibold flex items-center justify-center"
-      >
-        {{ unreadChatCount }}
-      </span>
-    </button>
-
     <div v-if="showChatModal" class="customer-chat-modal fixed inset-0 z-50 flex items-end md:items-center justify-center bg-[rgba(31,18,11,0.55)] p-4 backdrop-blur-sm">
       <div class="customer-chat-card w-full max-w-lg rounded-[1.75rem] border border-[#e0c09a] bg-[#fffaf3] shadow-[0_30px_80px_rgba(60,34,18,0.26)]">
         <div class="customer-chat-header flex items-center justify-between border-b border-[#efd7ba] px-4 py-3">
@@ -3212,6 +3208,12 @@ const formatChatTime = (timestamp) => {
   color: #6f4a2d;
 }
 
+.center-panel-copy,
+.center-location-value,
+.customer-chat-message-text {
+  overflow-wrap: anywhere;
+}
+
 .center-location-box {
   border: 1px solid rgba(224, 192, 154, 0.9);
   background: linear-gradient(180deg, rgba(255, 249, 240, 0.96), rgba(250, 238, 220, 0.96));
@@ -3332,25 +3334,28 @@ const formatChatTime = (timestamp) => {
 }
 
 .center-chat-button {
-  position: fixed;
-  z-index: 45;
-  right: max(1.5rem, env(safe-area-inset-right));
-  bottom: max(1.5rem, env(safe-area-inset-bottom));
+  position: relative;
   display: inline-flex;
-  height: 3.5rem;
-  width: 3.5rem;
+  min-height: 2.75rem;
+  width: auto;
+  align-self: flex-start;
   align-items: center;
   justify-content: center;
+  gap: .55rem;
   border: 1px solid rgba(255, 248, 235, 0.42);
-  border-radius: 999px;
+  border-radius: .85rem;
+  padding: .65rem .9rem;
   background: linear-gradient(135deg, #9b6744 0%, #70432b 100%);
   color: #fffaf3;
-  box-shadow: 0 16px 32px rgba(71, 40, 23, 0.28);
+  font-size: .85rem;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(71, 40, 23, 0.18);
   transition: transform 0.18s ease, filter 0.18s ease;
 }
 
-.center-chat-button:hover { transform: translateY(-2px) scale(1.03); filter: brightness(1.06); }
+.center-chat-button:hover { transform: translateY(-1px); filter: brightness(1.06); }
 .center-chat-button :deep(svg) { height: 1.4rem; width: 1.4rem; }
+.center-chat-pill { display: inline-grid; min-width: 1.25rem; height: 1.25rem; place-items: center; border-radius: 999px; padding-inline: .25rem; background: #b94d46; color: #fff !important; font-size: .7rem; line-height: 1; }
 
 .center-qty-stepper {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);

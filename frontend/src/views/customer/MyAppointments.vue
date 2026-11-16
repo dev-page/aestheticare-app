@@ -55,7 +55,7 @@
           </div>
 
           <div v-if="loading" class="state-panel">
-            <PageSectionSkeleton variant="cards" :rows="3" :columns="2" />
+            <PageSkeleton variant="appointment-cards" :header="false" />
           </div>
 
           <div v-else-if="unpaidAppointments.length" class="unpaid-appointments-grid">
@@ -124,7 +124,25 @@
               <p v-else class="mt-3 border-t border-[#ead8c0] pt-3 text-sm text-[#765b45]">All visits in this treatment course are resolved.</p>
             </article>
           </div>
-          <div v-if="treatmentSessions.length" class="appointments-table-wrap"><table class="appointments-table"><thead><tr><th>Visit</th><th>Treatment</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead><tbody><tr v-for="session in treatmentSessionsForDisplay" :key="session.id"><td>Visit {{ session.sessionNumber }} of {{ session.totalSessions }}</td><td>{{ session.serviceName }}</td><td>{{ session.date ? `${formatCourseDate(session.date)} ${formatClockTime(session.time)}` : session.requestedDate ? `Requested: ${formatCourseDate(session.requestedDate)} ${formatClockTime(session.requestedTime)}` : session.earliestScheduleDate ? `Eligible from ${formatCourseDate(session.earliestScheduleDate)}` : 'Not scheduled yet' }}</td><td>{{ session.status }}</td><td><button v-if="session.status === 'Schedule Proposed'" type="button" class="appointment-button appointment-button-secondary" @click="confirmSessionSchedule(session)">Confirm proposed date</button><button v-if="canRequestSessionSchedule(session)" type="button" class="appointment-button appointment-button-secondary" @click="openRequestModal('session', session)">{{ session.status === 'Scheduled' ? 'Request reschedule' : 'Request schedule' }}</button><span v-else-if="String(session.status || '').toLowerCase().includes('requested')" class="text-sm text-[#7f6654]">Awaiting clinic review</span><span v-else class="text-sm text-[#7f6654]">{{ session.sessionNumber > 1 ? 'Available after the prior visit is resolved' : '' }}</span></td></tr></tbody></table></div>
+          <div v-if="treatmentSessions.length" class="appointments-table-wrap">
+            <table class="appointments-table">
+              <thead><tr><th>Visit</th><th>Treatment</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody>
+                <tr v-for="session in treatmentSessionsForDisplay" :key="session.id">
+                  <td data-label="Visit">Visit {{ session.sessionNumber }} of {{ session.totalSessions }}</td>
+                  <td data-label="Treatment">{{ session.serviceName }}</td>
+                  <td data-label="Date &amp; Time">{{ session.date ? `${formatCourseDate(session.date)} ${formatClockTime(session.time)}` : session.requestedDate ? `Requested: ${formatCourseDate(session.requestedDate)} ${formatClockTime(session.requestedTime)}` : session.earliestScheduleDate ? `Eligible from ${formatCourseDate(session.earliestScheduleDate)}` : 'Not scheduled yet' }}</td>
+                  <td data-label="Status">{{ session.status }}</td>
+                  <td data-label="Action">
+                    <button v-if="session.status === 'Schedule Proposed'" type="button" class="appointment-button appointment-button-secondary" @click="confirmSessionSchedule(session)">Confirm proposed date</button>
+                    <button v-if="canRequestSessionSchedule(session)" type="button" class="appointment-button appointment-button-secondary" @click="openRequestModal('session', session)">{{ session.status === 'Scheduled' ? 'Request reschedule' : 'Request schedule' }}</button>
+                    <span v-else-if="String(session.status || '').toLowerCase().includes('requested')" class="text-sm text-[#7f6654]">Awaiting clinic review</span>
+                    <span v-else class="text-sm text-[#7f6654]">{{ session.sessionNumber > 1 ? 'Available after the prior visit is resolved' : '' }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div v-else class="state-panel">No treatment sessions have been scheduled yet.</div>
         </section>
         <section v-if="activeAppointmentTab === 'online'" class="appointments-panel">
@@ -667,6 +685,7 @@ import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
+import PageSkeleton from '@/components/common/PageSkeleton.vue'
 import { buildWeekScheduleMap, resolveWeekAssignments } from '@/utils/employeeSchedules'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -2683,7 +2702,7 @@ onUnmounted(() => {
 .appointment-details-facts dd,
 .appointment-details-price-list dd { margin: 0.25rem 0 0; font-size: 0.88rem; font-weight: 700; overflow-wrap: anywhere; }
 .appointment-details-code,
-.appointment-details-payment-info code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+.appointment-details-payment-info code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; overflow-wrap: anywhere; }
 .appointment-details-price-list .appointment-details-price-total { border: 1px solid var(--customer-border, #ddbe99); background: var(--customer-surface, #fffdf9); }
 .appointment-details-price-total dt,
 .appointment-details-price-total dd { font-weight: 900; }

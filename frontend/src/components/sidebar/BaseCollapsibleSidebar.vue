@@ -4,7 +4,27 @@
     :class="['relative flex-shrink-0 self-stretch', isSmallScreen ? 'w-0' : '', enableTransitions ? 'transition-all duration-300' : '']"
   >
     <button
-      v-if="isSmallScreen && collapsed"
+      v-if="isSmallScreen && mobileDrawer && !mobileDrawerOpen"
+      type="button"
+      class="customer-mobile-menu-trigger fixed left-3 top-3 z-50 flex h-11 w-11 items-center justify-center rounded-xl border border-[#765039] bg-[#2a180f] text-[#f3e7e0] shadow-lg transition-colors duration-200 hover:bg-[#3a2417] hover:text-white"
+      aria-label="Open navigation menu"
+      aria-controls="customer-sidebar-panel"
+      aria-expanded="false"
+      title="Open menu"
+      @click="openMobileSidebar"
+    >
+      <Icon icon="mdi:menu" class="h-5 w-5" />
+    </button>
+
+    <div
+      v-if="isSmallScreen && mobileDrawer && mobileDrawerOpen"
+      class="fixed inset-0 z-[59] cursor-default bg-[#160d08]/60 backdrop-blur-[2px]"
+      aria-hidden="true"
+      @click="closeSidebar"
+    ></div>
+
+    <button
+      v-if="isSmallScreen && collapsed && !mobileDrawer"
       type="button"
       class="fixed left-0 top-24 z-50 flex h-12 w-12 items-center justify-center rounded-r-xl border border-[#5a3927] bg-[#2a180f] text-[#f3e7e0] shadow-2xl transition-colors duration-200 hover:bg-[#3a2417] hover:text-white"
       aria-label="Open sidebar"
@@ -15,7 +35,10 @@
     </button>
 
     <aside
+      :id="mobileDrawer ? 'customer-sidebar-panel' : undefined"
       :style="asideStyle"
+      :aria-hidden="isSmallScreen && mobileDrawer && !mobileDrawerOpen ? 'true' : 'false'"
+      :inert="isSmallScreen && mobileDrawer && !mobileDrawerOpen"
       :class="[
         'app-sidebar readonly-exempt z-40 h-full bg-[#1f120b] border border-[#3a2417] rounded-tr-2xl rounded-br-2xl shadow-2xl flex flex-col overflow-hidden',
         enableTransitions ? 'transition-all duration-300' : ''
@@ -25,13 +48,13 @@
         <div class="flex items-start gap-3">
           <template v-if="showSkeleton">
             <div class="h-10 w-10 rounded-lg border border-[#5a3927] bg-[#3a2417] animate-pulse"></div>
-            <div v-if="!collapsed" class="min-w-0 flex-1 space-y-2">
+            <div v-if="!sidebarCollapsed" class="min-w-0 flex-1 space-y-2">
               <div class="h-4 w-28 rounded bg-[#3a2417] animate-pulse"></div>
               <div class="h-3 w-20 rounded bg-[#3a2417] animate-pulse"></div>
             </div>
           </template>
           <template v-else>
-            <div v-if="!collapsed" class="min-w-0 flex-1">
+            <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
               <h2 class="text-white font-semibold text-lg truncate">{{ title }}</h2>
               <p class="text-[#c9b3a5] text-xs truncate">{{ subtitle }}</p>
             </div>
@@ -42,16 +65,16 @@
         <button
           type="button"
           class="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#5a3927] bg-[#2a180f] px-3 py-2 text-sm font-semibold text-[#f3e7e0] transition-colors duration-200 hover:bg-[#3a2417] hover:text-white"
-          :class="collapsed ? 'px-2' : ''"
-          :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-          :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+          :class="sidebarCollapsed ? 'px-2' : ''"
+          :title="isSmallScreen && mobileDrawer ? 'Close menu' : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+          :aria-label="isSmallScreen && mobileDrawer ? 'Close menu' : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
           @click="toggleCollapsed"
         >
           <Icon
-            :icon="collapsed ? 'mdi:chevron-right' : 'mdi:chevron-left'"
+            :icon="isSmallScreen && mobileDrawer ? 'mdi:close' : sidebarCollapsed ? 'mdi:chevron-right' : 'mdi:chevron-left'"
             class="h-4 w-4"
           />
-          <span v-if="!collapsed">Collapse sidebar</span>
+          <span v-if="!sidebarCollapsed">{{ isSmallScreen && mobileDrawer ? 'Close menu' : 'Collapse sidebar' }}</span>
         </button>
       </div>
 
@@ -61,11 +84,11 @@
           <div
             :class="[
               'flex items-center rounded-lg border border-[#3a2417] bg-[#2a180f]',
-              collapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2.5'
+              sidebarCollapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2.5'
             ]"
           >
             <div class="h-8 w-8 rounded-lg border border-[#5a3927] bg-[#3a2417] animate-pulse"></div>
-            <div v-if="!collapsed" class="flex-1">
+            <div v-if="!sidebarCollapsed" class="flex-1">
               <div class="h-3 w-24 rounded bg-[#3a2417] animate-pulse"></div>
             </div>
           </div>
@@ -79,12 +102,12 @@
               :data-onboarding-key="item.tourKey || undefined"
               :class="[
                 'group relative w-full flex items-center rounded-lg transition-colors duration-200',
-                collapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2.5',
+                sidebarCollapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2.5',
                 item.locked
                   ? 'text-[#b99b88] bg-[#24160f]'
                   : 'text-[#e8d8cf] hover:text-white hover:bg-[#3a2417]'
               ]"
-              :title="collapsed ? item.lockTitle || item.label : item.lockTitle || ''"
+              :title="sidebarCollapsed ? item.lockTitle || item.label : item.lockTitle || ''"
             >
                 <span
                 :class="[
@@ -94,14 +117,14 @@
               >
                 <Icon :icon="item.locked ? 'mdi:lock-outline' : iconName(item.icon)" class="w-4 h-4" />
               </span>
-              <span v-if="!collapsed" class="text-sm font-medium truncate">{{ item.label }}</span>
+              <span v-if="!sidebarCollapsed" class="text-sm font-medium truncate">{{ item.label }}</span>
               <Icon
-                v-if="!collapsed && item.locked"
+                v-if="!sidebarCollapsed && item.locked"
                 icon="mdi:lock-outline"
                 class="w-4 h-4 text-amber-300"
               />
               <svg
-                v-if="!collapsed"
+                v-if="!sidebarCollapsed"
                 class="w-4 h-4 ml-auto transition-transform duration-200"
                 :class="isGroupOpen(item) ? 'rotate-90' : ''"
                 fill="none"
@@ -111,7 +134,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
               </svg>
               <span
-                v-if="collapsed"
+                v-if="sidebarCollapsed"
                 class="pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-md bg-[#3a2417] border border-[#5a3927] text-[#f3e7e0] px-2 py-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity z-20"
               >
                 {{ item.label }}
@@ -119,7 +142,7 @@
             </button>
 
             <ul
-              v-if="!collapsed && isGroupOpen(item)"
+              v-if="!sidebarCollapsed && isGroupOpen(item)"
               class="mt-1 space-y-1"
             >
               <li v-for="child in item.children" :key="child.key || child.to || child.label">
@@ -184,14 +207,14 @@
               @click="handleItemNavigation"
               :class="[
                 'group relative w-full flex items-center rounded-lg transition-colors duration-200',
-                collapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2.5',
+                sidebarCollapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2.5',
                 item.locked
                   ? 'cursor-not-allowed text-[#9f8578] bg-[#24160f] opacity-80'
                   : isActive(item.to)
                   ? 'bg-[#6b3f27] text-white'
                   : 'text-[#e8d8cf] hover:text-white hover:bg-[#3a2417]'
               ]"
-              :title="collapsed ? item.lockTitle || item.label : item.lockTitle || ''"
+              :title="sidebarCollapsed ? item.lockTitle || item.label : item.lockTitle || ''"
             >
               <span
                 :class="[
@@ -205,26 +228,26 @@
               >
                 <Icon :icon="item.locked ? 'mdi:lock-outline' : iconName(item.icon)" class="w-4 h-4" />
               </span>
-              <span v-if="!collapsed" class="text-sm font-medium truncate">{{ item.label }}</span>
+              <span v-if="!sidebarCollapsed" class="text-sm font-medium truncate">{{ item.label }}</span>
               <Icon
-                v-if="!collapsed && item.locked"
+                v-if="!sidebarCollapsed && item.locked"
                 icon="mdi:lock-outline"
                 class="ml-auto w-4 h-4 text-amber-300"
               />
               <span
-                v-else-if="!collapsed && item.badge && Number(item.badge) > 0"
+                v-else-if="!sidebarCollapsed && item.badge && Number(item.badge) > 0"
                 class="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold leading-4 text-white"
               >
                 {{ item.badge }}
               </span>
               <span
-                v-if="collapsed && item.badge && Number(item.badge) > 0"
+                v-if="sidebarCollapsed && item.badge && Number(item.badge) > 0"
                 class="absolute right-2 top-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-white shadow"
               >
                 {{ item.badge }}
               </span>
               <span
-                v-if="collapsed"
+                v-if="sidebarCollapsed"
                 class="pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-md bg-[#3a2417] border border-[#5a3927] text-[#f3e7e0] px-2 py-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity z-20"
               >
                 {{ item.label }}
@@ -238,11 +261,11 @@
       <div class="p-3 border-t border-[#3a2417]">
         <div
           class="flex items-center rounded-lg border border-[#3a2417] bg-[#150d08]"
-          :class="collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'"
+          :class="sidebarCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'"
         >
           <template v-if="isLoading">
             <div class="h-9 w-9 rounded-full bg-[#3a2417] border border-[#5a3927] animate-pulse"></div>
-            <div v-if="!collapsed" class="min-w-0 flex-1 space-y-2">
+            <div v-if="!sidebarCollapsed" class="min-w-0 flex-1 space-y-2">
               <div class="h-3 w-24 rounded bg-[#3a2417] animate-pulse"></div>
               <div class="h-3 w-32 rounded bg-[#3a2417] animate-pulse"></div>
             </div>
@@ -251,7 +274,7 @@
             <div class="h-9 w-9 rounded-full bg-[#3a2417] border border-[#5a3927] text-white text-sm font-semibold flex items-center justify-center" :title="displayName">
               {{ userInitial }}
             </div>
-            <div v-if="!collapsed" class="min-w-0">
+            <div v-if="!sidebarCollapsed" class="min-w-0">
               <p class="text-white text-sm font-medium truncate">{{ displayName }}</p>
               <p class="text-[#c9b3a5] text-xs truncate">{{ displayEmail }}</p>
             </div>
@@ -262,7 +285,7 @@
           <div
             :class="[
               'w-full rounded-lg border border-[#5a3927] bg-[#2a180f] animate-pulse',
-              collapsed ? 'h-10' : 'h-10'
+              sidebarCollapsed ? 'h-10' : 'h-10'
             ]"
           ></div>
         </div>
@@ -271,14 +294,14 @@
           @click="logout"
           :class="[
             'mt-2 w-full rounded-lg border border-[#5a3927] text-[#f0e2d8] hover:bg-[#3a2417] hover:text-white transition-colors',
-            collapsed ? 'h-10 flex items-center justify-center' : 'px-3 py-2 flex items-center gap-2 justify-center'
+            sidebarCollapsed ? 'h-10 flex items-center justify-center' : 'px-3 py-2 flex items-center gap-2 justify-center'
           ]"
-          :title="collapsed ? 'Logout' : ''"
+          :title="sidebarCollapsed ? 'Logout' : ''"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
           </svg>
-          <span v-if="!collapsed">Logout</span>
+          <span v-if="!sidebarCollapsed">Logout</span>
         </button>
       </div>
     </aside>
@@ -311,6 +334,7 @@ export default {
       default: () => []
     },
     panelKey: { type: String, required: true },
+    mobileDrawer: { type: Boolean, default: false },
     defaultName: { type: String, default: 'User' },
     defaultEmail: { type: String, default: 'user@aestheticare.com' }
   },
@@ -327,6 +351,7 @@ export default {
     const lastVisibleItems = ref([])
     const groupStorageKey = `sidebar:${props.panelKey}:groups`
     const isSmallScreen = ref(typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false)
+    const mobileDrawerOpen = ref(false)
     const wasSmallScreen = ref(false)
     const userStorageKey = `sidebar:${props.panelKey}:user`
     const displayName = ref(props.defaultName)
@@ -342,6 +367,7 @@ export default {
     const notificationsUserCache = ref([])
     const notificationsRoleCache = ref([])
     const { collapsed, toggleCollapsed: toggleSidebarCollapsed, syncFromStorage } = useSidebarState(() => props.panelKey)
+    const sidebarCollapsed = computed(() => isSmallScreen.value && props.mobileDrawer ? false : collapsed.value)
 
     const userInitial = computed(() => {
       const source = String(displayName.value || '').trim()
@@ -357,6 +383,34 @@ export default {
 
     const asideStyle = computed(() => {
       if (isSmallScreen.value) {
+        if (props.mobileDrawer) {
+          if (!mobileDrawerOpen.value) {
+            return {
+              position: 'fixed',
+              left: '0',
+              top: '0',
+              width: '0px',
+              height: '0px',
+              minHeight: '0px',
+              opacity: '0',
+              pointerEvents: 'none',
+              transform: 'translateX(-100%)',
+              zIndex: 60
+            }
+          }
+
+          return {
+            position: 'fixed',
+            left: '0',
+            top: '0',
+            width: 'min(18rem, calc(100vw - 1rem))',
+            height: '100dvh',
+            minHeight: '100dvh',
+            maxHeight: '100dvh',
+            zIndex: 60
+          }
+        }
+
         if (collapsed.value) {
           return {
             position: 'fixed',
@@ -554,7 +608,7 @@ export default {
     )
     const showSkeleton = ref(false)
     let skeletonTimer = null
-    const skeletonCount = computed(() => (collapsed.value ? 7 : 8))
+    const skeletonCount = computed(() => (sidebarCollapsed.value ? 7 : 8))
 
     const isActive = (target) => Boolean(target && sidebarRouteMatches(route, router.resolve(target)))
     const isExactActive = (target) => Boolean(target && sidebarRouteMatches(route, router.resolve(target), true))
@@ -612,7 +666,7 @@ export default {
       const key = groupKey(group)
       if (!key) return
 
-      if (collapsed.value) {
+      if (sidebarCollapsed.value) {
         collapsed.value = false
         window.dispatchEvent(
           new CustomEvent('sidebar-collapsed-change', {
@@ -632,6 +686,10 @@ export default {
     }
 
     const toggleCollapsed = () => {
+      if (isSmallScreen.value && props.mobileDrawer) {
+        closeSidebar()
+        return
+      }
       toggleSidebarCollapsed()
       window.dispatchEvent(
         new CustomEvent('sidebar-collapsed-change', {
@@ -641,6 +699,10 @@ export default {
     }
 
     const closeSidebar = () => {
+      if (isSmallScreen.value && props.mobileDrawer) {
+        mobileDrawerOpen.value = false
+        return
+      }
       if (!isSmallScreen.value || collapsed.value) return
       collapsed.value = true
       window.dispatchEvent(
@@ -649,6 +711,29 @@ export default {
         })
       )
     }
+
+    const openMobileSidebar = () => {
+      if (isSmallScreen.value && props.mobileDrawer) mobileDrawerOpen.value = true
+    }
+
+    let previousBodyOverflow = null
+    const syncMobileBodyScroll = (isOpen) => {
+      if (typeof document === 'undefined') return
+      if (isOpen) {
+        if (previousBodyOverflow === null) previousBodyOverflow = document.body.style.overflow
+        document.body.style.overflow = 'hidden'
+      } else if (previousBodyOverflow !== null) {
+        document.body.style.overflow = previousBodyOverflow
+        previousBodyOverflow = null
+      }
+    }
+
+    watch(
+      () => isSmallScreen.value && props.mobileDrawer && mobileDrawerOpen.value,
+      syncMobileBodyScroll
+    )
+
+    let mobileEscapeHandler = null
 
     const handleItemNavigation = () => {
       saveSidebarScrollPosition()
@@ -884,6 +969,7 @@ export default {
 
     const syncCollapsedWithViewport = () => {
       const small = window.matchMedia('(max-width: 767px)').matches
+      if (small !== wasSmallScreen.value && props.mobileDrawer) mobileDrawerOpen.value = false
       isSmallScreen.value = small
       if (small && !wasSmallScreen.value) {
         syncFromStorage()
@@ -924,6 +1010,10 @@ export default {
       window.addEventListener(NOTIFICATION_READ_STATE_EVENT, notificationReadStateHandler)
 
       syncCollapsedWithViewport()
+      mobileEscapeHandler = (event) => {
+        if (event.key === 'Escape' && mobileDrawerOpen.value) closeSidebar()
+      }
+      window.addEventListener('keydown', mobileEscapeHandler)
       viewportHandler = () => syncCollapsedWithViewport()
       window.addEventListener('resize', viewportHandler)
       sidebarNav.value?.addEventListener('scroll', saveSidebarScrollPosition, { passive: true })
@@ -944,6 +1034,7 @@ export default {
       () => route.fullPath,
       () => {
         syncOpenGroupsToRoute()
+        if (mobileDrawerOpen.value) closeSidebar()
         restoreSidebarScrollPosition()
       }
     )
@@ -973,6 +1064,8 @@ export default {
       if (viewportHandler) {
         window.removeEventListener('resize', viewportHandler)
       }
+      if (mobileEscapeHandler) window.removeEventListener('keydown', mobileEscapeHandler)
+      syncMobileBodyScroll(false)
       if (unsubscribeNotificationsUser) unsubscribeNotificationsUser()
       if (unsubscribeNotificationsRole) unsubscribeNotificationsRole()
       if (notificationReadStateHandler) window.removeEventListener(NOTIFICATION_READ_STATE_EVENT, notificationReadStateHandler)
@@ -984,6 +1077,9 @@ export default {
     return {
       sidebarNav,
       collapsed,
+      sidebarCollapsed,
+      mobileDrawerOpen,
+      openMobileSidebar,
       closeSidebar,
       displayName,
       displayEmail,

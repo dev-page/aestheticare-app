@@ -49,7 +49,7 @@
 
               <div class="filter-shell">
                 <span class="filter-label"><Icon icon="mdi:crosshairs-gps" aria-hidden="true" /> Nearby</span>
-                <div class="flex items-center gap-2">
+                <div class="nearby-filter-controls">
                   <button
                     type="button"
                     class="nearby-location-button"
@@ -868,25 +868,57 @@ watch(radiusKm, () => {
   line-height: 1.7;
 }
 
-@media (min-width: 900px) {
-  .customer-filter-grid {
-    grid-template-columns: minmax(13rem, 1.35fr) minmax(9rem, 0.78fr) minmax(9rem, 0.82fr) minmax(14rem, 1.1fr);
-  }
+.nearby-filter-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(5.5rem, .68fr);
+  align-items: stretch;
+  gap: .5rem;
+}
 
+.nearby-filter-controls .filter-input { min-width: 0; max-width: none; padding-inline: .55rem; }
+.nearby-location-button { min-width: 0; white-space: normal; line-height: 1.15; }
+
+.discovery-filter-secondary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.filter-secondary-group {
+  display: grid;
+  grid-template-columns: auto repeat(2, minmax(8rem, 1fr));
+  align-items: end;
+  gap: .85rem;
+  min-width: 0;
+}
+
+.compact-filter-shell { display: grid; min-width: 0; gap: .35rem; }
+.compact-filter-shell .filter-label { white-space: nowrap; }
+.compact-filter-input { width: 100%; min-width: 0; height: 2.45rem; }
+.favorites-filter { min-height: 2.45rem; height: auto; white-space: nowrap; }
+.clear-filters-button {
+  min-height: 2.45rem;
+  justify-content: center;
+  border: 1px solid rgba(224, 202, 183, .92);
+  border-radius: .65rem;
+  padding: 0 .75rem;
+  white-space: nowrap;
+}
+
+@media (min-width: 900px) {
   .customer-results-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1180px) {
-  .customer-filter-grid {
-    grid-template-columns: minmax(13rem, 1.35fr) minmax(9rem, 0.78fr) minmax(9rem, 0.82fr) minmax(14rem, 1.1fr);
+  .discovery-filter-main {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, .9fr) minmax(0, .9fr) minmax(0, 1.2fr);
     align-items: end;
   }
 
-  .customer-filter-grid .filter-shell:last-of-type {
-    min-width: 0;
-  }
+  .discovery-filter-secondary { grid-template-columns: minmax(0, 1fr) auto; }
+  .filter-secondary-group { grid-template-columns: auto repeat(2, minmax(8.5rem, 1fr)); }
 }
 
 @media (min-width: 1280px) {
@@ -910,6 +942,18 @@ watch(radiusKm, () => {
     padding: 1rem 1rem 1.5rem;
   }
 
+  .customer-home-hero {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: .25rem;
+    border-radius: 1.25rem;
+  }
+
+  .customer-home-hero-actions { width: 100%; }
+  .customer-home-primary-action,
+  .customer-home-secondary-action { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; }
+
   .customer-results-head,
   .center-footer {
     flex-direction: column;
@@ -922,14 +966,33 @@ watch(radiusKm, () => {
 }
 
 @media (max-width: 980px) {
+  .customer-home-hero { align-items: flex-start; flex-direction: column; }
   .discovery-filter-main { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .discovery-filter-secondary { align-items: flex-start; flex-direction: column; }
+  .discovery-filter-secondary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: .8rem;
+  }
+
+  .filter-secondary-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+    gap: .75rem;
+  }
+
+  .favorites-filter { grid-column: 1 / -1; justify-self: start; }
 }
 
 @media (max-width: 560px) {
   .discovery-filter-main { grid-template-columns: 1fr; }
-  .filter-secondary-group { align-items: flex-start; flex-direction: column; gap: 0.65rem; }
-  .compact-filter-shell { width: 100%; justify-content: space-between; }
-  .compact-filter-input { min-width: 9rem; }
+  .nearby-filter-controls { grid-template-columns: minmax(0, 1fr) minmax(6rem, .65fr); }
+  .discovery-filter-secondary { grid-template-columns: 1fr; }
+  .filter-secondary-group { grid-template-columns: 1fr; }
+  .favorites-filter { grid-column: auto; width: 100%; justify-content: center; }
+  .clear-filters-button { justify-self: end; }
+  .customer-results-section { padding: 1rem; border-radius: 1.25rem; }
+  .customer-results-title { font-size: 1.8rem; }
 }
 </style>
