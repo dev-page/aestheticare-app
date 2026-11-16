@@ -10166,8 +10166,12 @@ const recordAppointmentPayment = async (req, res) => {
     const payment = Array.isArray(attributes.payments) ? attributes.payments.find((entry) => entry.attributes?.status === 'paid') || (attributes.paid_at ? attributes.payments[0] : null) || {} : {}
     const paymentId = payment.id || null
     const paymentAmount = Number(payment.attributes?.amount || 0) / 100
-    const paidAtRaw = Number(payment.attributes?.paid_at || attributes.paid_at || 0)
-    const paymentPaidAt = paidAtRaw > 0 ? (paidAtRaw < 1e12 ? paidAtRaw * 1000 : paidAtRaw) : 0
+    const paidAtValue = payment.attributes?.paid_at || attributes.paid_at || 0
+    const paidAtNumeric = Number(paidAtValue)
+    const paidAtParsed = Number.isFinite(paidAtNumeric) && paidAtNumeric > 0
+      ? (paidAtNumeric < 1e12 ? paidAtNumeric * 1000 : paidAtNumeric)
+      : Date.parse(String(paidAtValue || ''))
+    const paymentPaidAt = Number.isFinite(paidAtParsed) && paidAtParsed > 0 ? paidAtParsed : 0
     if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) return res.status(409).json({ success: false, error: 'The provider has not confirmed a valid payment amount.' })
     const result = await firestore.runTransaction(async (tx) => {
       const freshSnap = await tx.get(appointmentRef)
@@ -10210,14 +10214,34 @@ const recordAppointmentPayment = async (req, res) => {
         ? firestore.collection('appointments').doc(String(fresh.sameDayTreatmentAppointmentId))
         : null
       const sameDayTreatmentSnap = sameDayTreatmentRef ? await tx.get(sameDayTreatmentRef) : null
-      tx.set(firestore.collection('transactions').doc('booking-' + checkoutSessionId), { branchId: fresh.branchId, customerId: fresh.customerId, appointmentId, checkoutSessionId, type: 'service_payment', service: fresh.service || 'Service booking', amount: paymentAmount, total: paymentAmount, invoiceTotal: totalAmount, pricingSnapshot: fresh.pricingSnapshot || null, method: payment.attributes?.source?.type || payment.attributes?.payment_method?.type || 'Online', status: 'Paid', createdAt: timestamp })
+      const referenceNumber = String(attributes.reference_number || metadata.referenceNumber || '').trim()
+      const paidTimestamp = paymentPaidAt > 0 ? admin.firestore.Timestamp.fromMillis(paymentPaidAt) : timestamp
+      tx.set(firestore.collection('transactions').doc('booking-' + checkoutSessionId), {
+        branchId: fresh.branchId,
+        customerId: fresh.customerId,
+        appointmentId,
+        checkoutSessionId,
+        transactionCode: checkoutSessionId,
+        referenceNumber: referenceNumber || '',
+        paymentId,
+        type: 'service_payment',
+        service: fresh.service || 'Service booking',
+        amount: paymentAmount,
+        total: paymentAmount,
+        invoiceTotal: totalAmount,
+        pricingSnapshot: fresh.pricingSnapshot || null,
+        method: payment.attributes?.source?.type || payment.attributes?.payment_method?.type || 'Online',
+        status: 'Paid',
+        paidAt: paidTimestamp,
+        createdAt: timestamp,
+      })
       tx.update(appointmentRef, {
         status, amountPaid, balance: Math.max(0, totalAmount - amountPaid),
         paymentStatus: fullyPaid ? 'Paid' : 'Partially Paid', paymentCoverage: fullyPaid ? 'full' : 'installment',
         recordedPaymentSessions: [...sessions, checkoutSessionId], paymongoCheckoutSessionId: checkoutSessionId,
         activePaymongoCheckoutSessionId: '', paymentHoldStatus: 'confirmed',
         paymentHoldDeadlineAt: fresh.paymentHoldExpiresAt || null, paymentHoldExpiresAt: null,
-        paymongoPaymentId: paymentId, paymongoPaidAt: timestamp, updatedAt: timestamp,
+        paymongoPaymentId: paymentId, paymongoPaidAt: paidTimestamp, updatedAt: timestamp,
         ...(status === 'Completed' ? { completedAt: timestamp } : {}),
       })
       if (sameDayTreatmentRef && sameDayTreatmentSnap?.exists) tx.update(sameDayTreatmentRef, {
@@ -10243,6 +10267,51 @@ const recordAppointmentPayment = async (req, res) => {
   }
 }
 app.post('/appointments/:id/record-payment', requireAuth, recordAppointmentPayment)
+app.get('/appointments/:id/payment-receipt', requireAuth, async (req, res) => {
+  const appointmentId = String(req.params.id || '').trim()
+  if (!appointmentId) return res.status(400).json({ success: false, error: 'Appointment ID is required.' })
+  try {
+    const firestore = admin.firestore()
+    const appointmentSnap = await firestore.collection('appointments').doc(appointmentId).get()
+    if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
+    const appointment = appointmentSnap.data() || {}
+    if (String(appointment.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
+
+    // Customer clients cannot read the clinic transaction collection directly.
+    // Query only this appointment's records on the server, then return a small
+    // receipt-safe projection after checking each transaction's customer ID.
+    const transactions = await firestore.collection('transactions').where('appointmentId', '==', appointmentId).get()
+    const toIso = value => {
+      if (value?.toDate) return value.toDate().toISOString()
+      if (typeof value === 'number' && Number.isFinite(value)) return new Date(value).toISOString()
+      const date = value ? new Date(value) : null
+      return date && !Number.isNaN(date.getTime()) ? date.toISOString() : null
+    }
+    const payments = transactions.docs
+      .map(snapshot => ({ id: snapshot.id, ...(snapshot.data() || {}) }))
+      .filter(transaction => String(transaction.customerId || '') === req.user.uid
+        && transaction.type === 'service_payment'
+        && Number(transaction.amount || 0) > 0)
+      .map(transaction => ({
+        id: transaction.id,
+        transactionCode: String(transaction.transactionCode || transaction.referenceNumber || transaction.checkoutSessionId || transaction.id),
+        referenceNumber: String(transaction.referenceNumber || ''),
+        checkoutSessionId: String(transaction.checkoutSessionId || ''),
+        paymentId: String(transaction.paymentId || ''),
+        amount: Number(transaction.amount || 0),
+        method: String(transaction.method || 'Online payment'),
+        status: String(transaction.status || 'Paid'),
+        paidAt: toIso(transaction.paidAt || transaction.createdAt || appointment.paymongoPaidAt),
+        paidAtSource: transaction.paidAt ? 'provider' : (transaction.createdAt || appointment.paymongoPaidAt ? 'recorded' : 'unknown'),
+      }))
+      .sort((left, right) => String(right.paidAt || '').localeCompare(String(left.paidAt || '')))
+
+    return res.json({ success: true, data: { appointmentId, payments } })
+  } catch (error) {
+    console.error('appointments/payment-receipt error:', error)
+    return res.status(500).json({ success: false, error: 'Payment records could not be loaded.' })
+  }
+})
 const appointmentPaymentHoldExpiry = createAppointmentPaymentHoldReaper({
   app,
   admin,

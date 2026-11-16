@@ -37,6 +37,7 @@
             </div>
             <p class="mt-2">{{ order.appointmentIds?.length || 0 }} separately scheduled services · Total ₱{{ Number(order.totalAmount || order.amount || 0).toFixed(2) }}</p>
             <p v-if="paymentHoldMessage(order)" class="mt-2 text-sm font-semibold text-[#8d5a3b]">{{ paymentHoldMessage(order) }}</p>
+            <button type="button" class="appointment-button appointment-button-secondary justify-self-start" @click="openAppointmentDetails(order)">View booking details</button>
             <p v-if="order.approvalStatus !== 'Approved'" class="mt-2 text-sm">This booking is waiting for clinic review.</p>
             <p v-else-if="paymentDue(order) <= 0" class="mt-2 text-sm">This order is fully paid.</p>
             <button v-else-if="bookingOrderReady(order) && paymentDue(order) > 0" type="button" class="appointment-button appointment-button-primary mt-3" @click="payAppointment(order)">Pay order {{ formatBookingDue(order) }}</button>
@@ -181,42 +182,7 @@
                   </td>
                   <td data-label="Actions">
                     <div class="table-actions">
-                      <button v-if="canConfirmCompletion(appt)" type="button" class="appointment-button appointment-button-primary" @click="confirmCompletion(appt)">Confirm I received this consultation</button>
-                      <div class="appointment-menu">
-                        <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id, $event)"><span aria-hidden="true">&#8943;</span></button>
-                        <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" :style="actionMenuStyle" role="menu" aria-label="Appointment actions">
-                      <p class="appointment-menu-label">Appointment actions</p>
-                      <button type="button" class="appointment-menu-item" @click="runAction(() => selectedOnlineConsultation = appt)">Consultation controls / Report a problem</button>
-                      <button
-                        v-if="appt.contract && appt.approvalStatus === 'Approved' && appt.sameDayTreatmentStatus !== 'pending_clinical_clearance'"
-                        type="button"
-                        class="appointment-menu-item"
-                        @click="runAction(() => openContract(appt))"
-                      >{{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View contract' : 'Review and sign contract' }}</button>
-                      <button
-                        v-if="canPayAppointment(appt)"
-                        type="button"
-                        class="appointment-menu-item appointment-menu-item-primary"
-                        @click="runAction(() => payAppointment(appt))"
-                      >Pay {{ formatBookingDue(appt) }}</button>
-                      <p v-if="appt.consultationCustomerReadyAt && !appt.consultationInviteAt" class="appointment-menu-label">You are checked in. Wait here for your practitioner's Meet invitation.</p>
-                      <button v-if="!appt.meetLink && !appt.consultationCustomerReadyAt" type="button" class="appointment-menu-item" :disabled="serviceKeyVerifying || isCancelledAppointment(appt) || appt.approvalStatus !== 'Approved' || appt.contract?.status !== 'signed' || !initialPaymentReceived(appt)" @click="runAction(() => appt.serviceKey ? submitServiceKey(appt.serviceKey, appt) : verifyServiceKey(appt))">{{ serviceKeyVerifying ? 'Checking code…' : appt.serviceKey ? 'Check in with saved code' : 'Enter check-in code' }}</button>
-                      <button v-if="appt.meetLink && onlineAccessOpen(appt)" type="button" class="appointment-menu-item" :disabled="isCancelledAppointment(appt)" @click="runAction(() => openMeetLink(appt))">Join Google Meet</button>
-                      <button v-if="appt.status === 'Ongoing' && !appt.consultationClientEndedAt" type="button" class="appointment-menu-item" @click="runAction(() => endConsultationParticipation(appt))">End my consultation participation</button>
-                      <button v-if="appt.meetLink && onlineAccessOpen(appt)" type="button" class="appointment-menu-item" @click="runAction(() => copyMeetLink(appt))">Copy Link</button>
-                      <button
-                        v-if="canRequestCancellation(appt)"
-                        type="button"
-                        class="appointment-menu-item appointment-menu-item-danger"
-                        :disabled="isRequestPending(appt, 'cancel')"
-                        @click="runAction(() => openRequestModal('cancel', appt))"
-                      >
-                        {{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}
-                      </button>
-                      <span v-if="appt.approvalStatus !== 'Approved' && !appt.meetLink && !appt.consultationCustomerReadyAt" class="appointment-menu-empty">Waiting for clinic review.</span>
-                      <span v-else-if="!appt.meetLink && !appt.consultationCustomerReadyAt && !canRequestCancellation(appt) && !(appt.contract && appt.approvalStatus === 'Approved') && !canPayAppointment(appt) && !canConfirmCompletion(appt)" class="appointment-menu-empty">No actions available</span>
-                        </div>
-                      </div>
+                      <button type="button" class="appointment-button appointment-button-secondary" @click="openAppointmentDetails(appt)">View details</button>
                     </div>
                   </td>
                 </tr>
@@ -278,40 +244,7 @@
                   </td>
                   <td data-label="Actions">
                     <div class="table-actions">
-                      <button v-if="canConfirmCompletion(appt)" type="button" class="appointment-button appointment-button-primary" @click="confirmCompletion(appt)">Confirm I received this service</button>
-                      <div class="appointment-menu">
-                        <button type="button" class="appointment-menu-trigger" :aria-expanded="openActionMenuId === appt.id" :aria-controls="`appointment-actions-${appt.id}`" aria-label="Open appointment actions" @click="toggleActionMenu(appt.id, $event)"><span aria-hidden="true">&#8943;</span></button>
-                        <div v-if="openActionMenuId === appt.id" :id="`appointment-actions-${appt.id}`" class="appointment-menu-popover" :style="actionMenuStyle" role="menu" aria-label="Appointment actions">
-                      <p class="appointment-menu-label">Appointment actions</p>
-                      <button
-                        v-if="appt.contract && appt.approvalStatus === 'Approved' && appt.sameDayTreatmentStatus !== 'pending_clinical_clearance'"
-                        type="button"
-                        class="appointment-menu-item"
-                        @click="runAction(() => openContract(appt))"
-                      >
-                        {{ normalizeAppointmentStatus(appt.contract.status) === 'signed' ? 'View Contract' : 'Sign Contract' }}
-                      </button>
-                      <p v-if="appt.serviceKey && initialPaymentReceived(appt)" class="appointment-menu-key">Check-in code: {{ appt.serviceKey }} — show this to reception on your appointment day.</p>
-                      <p v-if="appt.treatmentNotes" class="appointment-menu-key">Treatment notes: {{ appt.treatmentNotes }}</p>
-                      <p v-if="appt.sameDayTreatmentStatus === 'pending_clinical_clearance'" class="appointment-menu-label">Treatment consent and payment unlock after practitioner clearance.</p>
-                      <p v-if="appt.aftercareInstructions" class="appointment-menu-key">Aftercare: {{ appt.aftercareInstructions }}</p>
-                      <button
-                        v-if="canRequestReschedule(appt)"
-                        @click="runAction(() => openRequestModal('reschedule', appt))"
-                        class="appointment-menu-item"
-                        :disabled="isRequestPending(appt, 'reschedule')"
-                      >
-                        {{ isRequestPending(appt, 'reschedule') ? 'Pending Approval' : 'Reschedule' }}
-                      </button>
-                      <button
-                        @click="runAction(() => openRequestModal('cancel', appt))"
-                        class="appointment-menu-item appointment-menu-item-danger"
-                        :disabled="isRequestPending(appt, 'cancel')"
-                      >
-                        {{ isRequestPending(appt, 'cancel') ? 'Pending Approval' : 'Cancel' }}
-                      </button>
-                        </div>
-                      </div>
+                      <button type="button" class="appointment-button appointment-button-secondary" @click="openAppointmentDetails(appt)">View details</button>
                     </div>
                   </td>
                 </tr>
@@ -393,6 +326,7 @@
                       <span v-else-if="followUpAvailabilityMessage(appt)" class="table-secondary">
                         {{ followUpAvailabilityMessage(appt) }}
                       </span>
+                      <button type="button" class="appointment-button appointment-button-secondary" @click="openAppointmentDetails(appt)">View details</button>
                     </div>
                   </td>
                 </tr>
@@ -574,6 +508,101 @@
         </div>
       </div>
     </main>
+    <div v-if="selectedAppointmentDetails" class="appointment-details-overlay" @click.self="closeAppointmentDetails" @keydown.esc="closeAppointmentDetails">
+      <section class="appointment-details-shell" role="dialog" aria-modal="true" aria-labelledby="appointment-details-title">
+        <header class="appointment-details-header">
+          <div>
+            <p class="appointment-details-kicker">{{ selectedAppointmentDetails.isBookingOrderParent ? 'Booking order' : 'Appointment details' }}</p>
+            <h2 id="appointment-details-title" class="appointment-details-title">{{ formatAppointmentServices(selectedAppointmentDetails) }}</h2>
+            <p class="appointment-details-subtitle">{{ selectedAppointmentDetails.clinic }}<span v-if="selectedAppointmentDetails.branchName"> · {{ selectedAppointmentDetails.branchName }}</span></p>
+          </div>
+          <div class="appointment-details-header-actions">
+            <span class="status-badge" :class="statusToneClass(selectedAppointmentDetails.status)">{{ selectedAppointmentDetails.status }}</span>
+            <button type="button" class="request-close-button" aria-label="Close appointment details" @click="closeAppointmentDetails"><span class="text-xl leading-none">&times;</span></button>
+          </div>
+        </header>
+
+        <div class="appointment-details-body">
+          <section class="appointment-details-section">
+            <h3>Booking information</h3>
+            <dl class="appointment-details-facts">
+              <div><dt>Booked on</dt><dd>{{ formatReceiptDateTime(selectedAppointmentDetails.createdAt) }}</dd></div>
+              <div><dt>Customer</dt><dd>{{ selectedAppointmentDetails.customerName || auth.currentUser?.displayName || 'Customer' }}</dd></div>
+              <div><dt>Practitioner</dt><dd>{{ selectedAppointmentDetails.practitionerName || selectedAppointmentDetails.assignedPractitionerName || selectedAppointmentDetails.practitioner || 'Not assigned' }}</dd></div>
+              <div><dt>Appointment code</dt><dd class="appointment-details-code">{{ selectedAppointmentDetails.id }}</dd></div>
+            </dl>
+          </section>
+
+          <section class="appointment-details-section">
+            <div class="appointment-details-section-head"><h3>Services and schedule</h3><span>{{ appointmentScheduleRows.length }} {{ appointmentScheduleRows.length === 1 ? 'visit' : 'visits' }}</span></div>
+            <div class="appointment-details-schedule-list">
+              <article v-for="(visit, index) in appointmentScheduleRows" :key="visit.id || `${selectedAppointmentDetails.id}-${index}`" class="appointment-details-schedule-row">
+                <div><strong>{{ visit.serviceName }}</strong><span v-if="visit.sessionLabel">{{ visit.sessionLabel }}</span></div>
+                <div class="appointment-details-visit-time"><strong>{{ visit.date ? formatCourseDate(visit.date) : 'Not scheduled yet' }}</strong><span>{{ visit.time ? formatClockTime(visit.time) : visit.status || 'Time not set' }}</span></div>
+                <span v-if="visit.status" class="appointment-details-visit-status">{{ visit.status }}</span>
+              </article>
+            </div>
+          </section>
+
+          <section class="appointment-details-section">
+            <div class="appointment-details-section-head"><h3>Price summary</h3><span>{{ selectedAppointmentDetails.paymentStatus || (Number(selectedAppointmentDetails.amountPaid || 0) > 0 ? 'Partially paid' : 'Payment due') }}</span></div>
+            <dl class="appointment-details-price-list">
+              <div><dt>Subtotal</dt><dd>{{ formatPricingAmount(selectedAppointmentDetails.pricingSnapshot?.subtotal ?? selectedAppointmentDetails.totalAmount ?? selectedAppointmentDetails.amount ?? 0) }}</dd></div>
+              <div v-if="Number(selectedAppointmentDetails.pricingSnapshot?.discountAmount || selectedAppointmentDetails.pricingSnapshot?.discount || 0) > 0"><dt>Discount</dt><dd>−{{ formatPricingAmount(selectedAppointmentDetails.pricingSnapshot?.discountAmount ?? selectedAppointmentDetails.pricingSnapshot?.discount) }}</dd></div>
+              <div><dt>VAT</dt><dd>{{ selectedAppointmentDetails.pricingSnapshot?.vatApplicable ? `${formatPricingAmount(selectedAppointmentDetails.pricingSnapshot?.vatAmount || 0)} (12%${selectedAppointmentDetails.pricingSnapshot?.vatPriceMode === 'inclusive' ? ', included' : ''})` : 'No VAT' }}</dd></div>
+              <div class="appointment-details-price-total"><dt>Total price</dt><dd>{{ formatPricingAmount(selectedAppointmentDetails.pricingSnapshot?.total ?? selectedAppointmentDetails.totalAmount ?? selectedAppointmentDetails.amount ?? 0) }}</dd></div>
+              <div><dt>Paid to date</dt><dd>{{ formatPricingAmount(selectedAppointmentDetails.amountPaid || 0) }}</dd></div>
+              <div><dt>Balance</dt><dd>{{ formatPricingAmount(Math.max(0, Number(selectedAppointmentDetails.pricingSnapshot?.total ?? selectedAppointmentDetails.totalAmount ?? selectedAppointmentDetails.amount ?? 0) - Number(selectedAppointmentDetails.amountPaid || 0))) }}</dd></div>
+            </dl>
+          </section>
+
+          <section class="appointment-details-section">
+            <div class="appointment-details-section-head"><h3>Payments and receipts</h3><span v-if="!appointmentPaymentsLoading">{{ appointmentPayments.length }} verified {{ appointmentPayments.length === 1 ? 'payment' : 'payments' }}</span></div>
+            <p v-if="appointmentPaymentsLoading" class="appointment-details-note" aria-live="polite">Loading payment records…</p>
+            <p v-else-if="appointmentPaymentsError" class="appointment-details-note appointment-details-note-error" role="alert">{{ appointmentPaymentsError }}</p>
+            <div v-else-if="appointmentPayments.length" class="appointment-details-payments">
+              <article v-for="payment in appointmentPayments" :key="payment.id" class="appointment-details-payment-row">
+                <div class="appointment-details-payment-info">
+                  <strong>{{ formatPricingAmount(payment.amount) }} · {{ payment.method || 'Online payment' }}</strong>
+                  <span>{{ payment.paidAtSource === 'provider' ? 'Paid' : 'Recorded' }} {{ formatReceiptDateTime(payment.paidAt) }}<span v-if="payment.paidAtSource !== 'provider'"> · provider payment time was not retained</span></span>
+                  <span>Transaction code: <code>{{ payment.transactionCode }}</code></span>
+                  <span v-if="payment.referenceNumber">Payment reference: <code>{{ payment.referenceNumber }}</code></span>
+                  <span v-if="payment.paymentId">Payment ID: <code>{{ payment.paymentId }}</code></span>
+                </div>
+                <button type="button" class="appointment-button appointment-button-secondary" @click="downloadAppointmentReceipt(payment)">Download PDF receipt</button>
+              </article>
+            </div>
+            <p v-else class="appointment-details-note">No verified payment is recorded for this booking yet. A downloadable receipt appears here after payment is verified.</p>
+          </section>
+
+          <section v-if="selectedAppointmentDetails.serviceKey || selectedAppointmentDetails.treatmentNotes || selectedAppointmentDetails.aftercareInstructions" class="appointment-details-section">
+            <h3>Service notes</h3>
+            <p v-if="selectedAppointmentDetails.serviceKey && initialPaymentReceived(selectedAppointmentDetails)"><strong>Check-in code:</strong> <code>{{ selectedAppointmentDetails.serviceKey }}</code></p>
+            <p v-if="selectedAppointmentDetails.treatmentNotes"><strong>Practitioner notes:</strong> {{ selectedAppointmentDetails.treatmentNotes }}</p>
+            <p v-if="selectedAppointmentDetails.aftercareInstructions"><strong>Aftercare:</strong> {{ selectedAppointmentDetails.aftercareInstructions }}</p>
+          </section>
+        </div>
+
+        <footer class="appointment-details-actions">
+          <p v-if="selectedAppointmentDetails.consultationCustomerReadyAt && !selectedAppointmentDetails.consultationInviteAt" class="appointment-details-note">You are checked in. Wait here for your practitioner's Meet invitation.</p>
+          <div class="appointment-details-action-buttons">
+            <button v-if="isOnlineConsultationAppointment(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => selectedOnlineConsultation = selectedAppointmentDetails)">Consultation controls</button>
+            <button v-if="selectedAppointmentDetails.contract && selectedAppointmentDetails.approvalStatus === 'Approved' && selectedAppointmentDetails.sameDayTreatmentStatus !== 'pending_clinical_clearance'" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => openContract(selectedAppointmentDetails))">{{ normalizeAppointmentStatus(selectedAppointmentDetails.contract.status) === 'signed' ? 'View contract' : 'Review and sign' }}</button>
+            <button v-if="canPayAppointment(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="runAppointmentDetailsAction(() => payAppointment(selectedAppointmentDetails))">Pay {{ formatBookingDue(selectedAppointmentDetails) }}</button>
+            <button v-if="isOnlineConsultationAppointment(selectedAppointmentDetails) && !selectedAppointmentDetails.meetLink && !selectedAppointmentDetails.consultationCustomerReadyAt" type="button" class="appointment-button appointment-button-secondary" :disabled="serviceKeyVerifying || isCancelledAppointment(selectedAppointmentDetails) || selectedAppointmentDetails.approvalStatus !== 'Approved' || selectedAppointmentDetails.contract?.status !== 'signed' || !initialPaymentReceived(selectedAppointmentDetails)" @click="runAppointmentDetailsAction(() => selectedAppointmentDetails.serviceKey ? submitServiceKey(selectedAppointmentDetails.serviceKey, selectedAppointmentDetails) : verifyServiceKey(selectedAppointmentDetails))">{{ selectedAppointmentDetails.serviceKey ? 'Check in with saved code' : 'Enter check-in code' }}</button>
+            <button v-if="selectedAppointmentDetails.meetLink && onlineAccessOpen(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="runAppointmentDetailsAction(() => openMeetLink(selectedAppointmentDetails))">Join Google Meet</button>
+            <button v-if="selectedAppointmentDetails.meetLink && onlineAccessOpen(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => copyMeetLink(selectedAppointmentDetails))">Copy Meet link</button>
+            <button v-if="selectedAppointmentDetails.status === 'Ongoing' && !selectedAppointmentDetails.consultationClientEndedAt" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => endConsultationParticipation(selectedAppointmentDetails))">End consultation participation</button>
+            <button v-if="canConfirmCompletion(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="runAppointmentDetailsAction(() => confirmCompletion(selectedAppointmentDetails))">Confirm service received</button>
+            <button v-if="canRequestReschedule(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" :disabled="isRequestPending(selectedAppointmentDetails, 'reschedule')" @click="runAppointmentDetailsAction(() => openRequestModal('reschedule', selectedAppointmentDetails))">{{ isRequestPending(selectedAppointmentDetails, 'reschedule') ? 'Reschedule pending' : 'Request reschedule' }}</button>
+            <button v-if="canRequestCancellation(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-danger" :disabled="isRequestPending(selectedAppointmentDetails, 'cancel')" @click="runAppointmentDetailsAction(() => openRequestModal('cancel', selectedAppointmentDetails))">{{ isRequestPending(selectedAppointmentDetails, 'cancel') ? 'Cancellation pending' : 'Request cancellation' }}</button>
+            <button v-if="normalizeAppointmentStatus(selectedAppointmentDetails.status) === 'completed'" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => openFeedback(selectedAppointmentDetails))">Leave feedback</button>
+            <button v-if="canBookFollowUp(selectedAppointmentDetails) && !hasOpenFollowUp(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => bookFollowUp(selectedAppointmentDetails))">Book follow-up</button>
+            <button type="button" class="appointment-button appointment-button-secondary" @click="closeAppointmentDetails">Close</button>
+          </div>
+        </footer>
+      </section>
+    </div>
     <OnlineConsultationControls v-if="selectedOnlineConsultation" :key="selectedOnlineConsultation.id" :appointment="selectedOnlineConsultation" customer auto-open @close="selectedOnlineConsultation = null" />
     <BookingContractModal
       :visible="showContractModal"
@@ -688,8 +717,11 @@ const treatmentPlanGroups = computed(() => {
     return { id: group.id, name: plan?.treatmentPlan?.planName || plan?.service || rows[0]?.serviceName || 'Treatment course', totalSessions, completedCount: rows.filter(session => normalizeAppointmentStatus(session.status) === 'completed').length, nextSession, nextSessionStatus }
   })
 })
-const openActionMenuId = ref(null)
-const actionMenuStyle = ref({})
+const selectedAppointmentDetails = ref(null)
+const appointmentPayments = ref([])
+const appointmentPaymentsLoading = ref(false)
+const appointmentPaymentsError = ref('')
+let appointmentPaymentsRequest = 0
 const clinicsById = ref({})
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
@@ -754,34 +786,6 @@ const isOnlineConsultationAppointment = (appointment) => {
     .join(' ')
 
   return (type === 'consultation' && mode === 'online') || serviceText.includes('online consultation')
-}
-
-const toggleActionMenu = (appointmentId, event) => {
-  if (openActionMenuId.value === appointmentId) {
-    openActionMenuId.value = null
-    return
-  }
-
-  const rect = event?.currentTarget?.getBoundingClientRect()
-  if (rect) {
-    const viewportPadding = 12
-    const menuWidth = Math.min(272, window.innerWidth - (viewportPadding * 2))
-    const belowSpace = window.innerHeight - rect.bottom - viewportPadding
-    const aboveSpace = rect.top - viewportPadding
-    const openBelow = belowSpace >= aboveSpace
-    const left = Math.max(viewportPadding, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - viewportPadding))
-
-    actionMenuStyle.value = openBelow
-      ? { top: `${rect.bottom + 10}px`, bottom: 'auto', left: `${left}px`, maxHeight: `${Math.max(120, belowSpace - 10)}px` }
-      : { top: 'auto', bottom: `${window.innerHeight - rect.top + 10}px`, left: `${left}px`, maxHeight: `${Math.max(120, aboveSpace - 10)}px` }
-  }
-  openActionMenuId.value = appointmentId
-}
-
-const runAction = async (action) => {
-  openActionMenuId.value = null
-  actionMenuStyle.value = {}
-  await action()
 }
 
 const parseClockToMinutes = (value) => {
@@ -1209,6 +1213,105 @@ const formatAppointmentServices = (appointment) => {
     return appointment.services.join(', ')
   }
   return appointment?.service || 'Service not set'
+}
+
+const customerAppointmentRecords = computed(() => [...new Map([
+  ...upcomingAppointments.value,
+  ...pastAppointments.value,
+  ...onlineConsultations.value,
+].map(appointment => [appointment.id, appointment])).values()])
+
+const appointmentScheduleRows = computed(() => {
+  const appointment = selectedAppointmentDetails.value
+  if (!appointment) return []
+
+  if (appointment.isBookingOrderParent && Array.isArray(appointment.appointmentIds)) {
+    const childAppointments = appointment.appointmentIds
+      .map(id => customerAppointmentRecords.value.find(item => item.id === id))
+      .filter(Boolean)
+      .sort((left, right) => `${left.date || ''} ${left.time || ''}`.localeCompare(`${right.date || ''} ${right.time || ''}`))
+    if (childAppointments.length) return childAppointments.map((child, index) => ({
+      id: child.id,
+      serviceName: formatAppointmentServices(child),
+      date: child.date,
+      time: child.time,
+      status: child.status,
+      sessionLabel: `Service ${index + 1} of ${childAppointments.length}`,
+    }))
+  }
+
+  const treatmentDefinitions = Array.isArray(appointment.treatmentPlan?.sessions) ? appointment.treatmentPlan.sessions : []
+  if (Number(appointment.treatmentPlan?.totalSessions || 0) > 1 && treatmentDefinitions.length) {
+    return treatmentDefinitions.map((definition, index) => {
+      const sessionNumber = index + 1
+      const session = treatmentSessions.value.find(item => item.treatmentPlanAppointmentId === appointment.id && Number(item.sessionNumber) === sessionNumber)
+      return {
+        id: session?.id || `${appointment.id}-visit-${sessionNumber}`,
+        serviceName: definition?.serviceName || definition?.name || appointment.service || 'Treatment visit',
+        date: session?.date || (index === 0 ? appointment.date : ''),
+        time: session?.time || (index === 0 ? appointment.time : ''),
+        status: session?.status || (index === 0 ? appointment.status : 'Not scheduled yet'),
+        sessionLabel: `Visit ${sessionNumber} of ${treatmentDefinitions.length}`,
+      }
+    })
+  }
+
+  const details = Array.isArray(appointment.serviceDetails) ? appointment.serviceDetails : []
+  const names = details.map(item => typeof item === 'string' ? item : item?.title || item?.name || item?.serviceName).filter(Boolean)
+  const fallbackNames = Array.isArray(appointment.services) ? appointment.services : []
+  const serviceNames = names.length ? names : (fallbackNames.length ? fallbackNames : [appointment.service || 'Service'])
+  return serviceNames.map((name, index) => ({
+    id: `${appointment.id}-service-${index}`,
+    serviceName: typeof name === 'string' ? name : name?.title || name?.name || name?.serviceName || 'Service',
+    date: appointment.date,
+    time: appointment.time,
+    status: appointment.status,
+  }))
+})
+
+const formatReceiptDateTime = value => {
+  const milliseconds = timestampMillis(value)
+  if (!milliseconds) return 'Not recorded'
+  return new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(milliseconds))
+}
+
+const closeAppointmentDetails = () => {
+  selectedAppointmentDetails.value = null
+  appointmentPayments.value = []
+  appointmentPaymentsError.value = ''
+  appointmentPaymentsLoading.value = false
+  appointmentPaymentsRequest += 1
+}
+
+const openAppointmentDetails = async appointment => {
+  if (!appointment?.id) return
+  selectedAppointmentDetails.value = appointment
+  appointmentPayments.value = []
+  appointmentPaymentsError.value = ''
+  appointmentPaymentsLoading.value = true
+  const requestId = ++appointmentPaymentsRequest
+  try {
+    const user = auth.currentUser
+    if (!user) throw new Error('Please sign in again to view payment records.')
+    const token = await user.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/appointments/${encodeURIComponent(appointment.id)}/payment-receipt`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Payment records could not be loaded.')
+    if (requestId !== appointmentPaymentsRequest) return
+    appointmentPayments.value = Array.isArray(payload.data?.payments) ? payload.data.payments : []
+  } catch (error) {
+    if (requestId !== appointmentPaymentsRequest) return
+    appointmentPaymentsError.value = error?.message || 'Payment records could not be loaded.'
+  } finally {
+    if (requestId === appointmentPaymentsRequest) appointmentPaymentsLoading.value = false
+  }
+}
+
+const runAppointmentDetailsAction = async action => {
+  closeAppointmentDetails()
+  await action()
 }
 
 const getAppointmentTimestampMillis = (value) => {
@@ -1806,6 +1909,99 @@ const reschedule = async (appt) => {
 
 const formatBookingDue = (appointment) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(paymentDue(appointment) / 100)
 const formatPricingAmount = (amount) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(amount || 0))
+const downloadAppointmentReceipt = async (payment) => {
+  const appointment = selectedAppointmentDetails.value
+  if (!appointment || String(payment?.status || '').toLowerCase() !== 'paid' || Number(payment?.amount || 0) <= 0) {
+    toast.info('A receipt is available only for a verified payment.')
+    return
+  }
+  try {
+    const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
+    const currency = amount => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(amount || 0))
+    const safeCode = String(payment.transactionCode || payment.checkoutSessionId || payment.id || appointment.id)
+    const pricing = appointment.pricingSnapshot || {}
+    const clinicName = appointment.clinic || 'AesthetiCare clinic'
+
+    pdf.setFillColor(61, 40, 29)
+    pdf.rect(0, 0, 210, 42, 'F')
+    pdf.setTextColor(255, 248, 235)
+    pdf.setFont('helvetica', 'bold').setFontSize(20)
+    pdf.text('AesthetiCare', 15, 18)
+    pdf.setFontSize(10).setFont('helvetica', 'normal')
+    pdf.text('PAYMENT RECEIPT', 15, 27)
+    pdf.text(clinicName, 15, 35, { maxWidth: 175 })
+    pdf.setTextColor(61, 40, 29)
+    pdf.setFont('helvetica', 'bold').setFontSize(12)
+    pdf.text('Payment details', 15, 54)
+    autoTable(pdf, {
+      startY: 59,
+      theme: 'plain',
+      body: [
+        ['Transaction code', safeCode],
+        ...(payment.referenceNumber ? [['Payment reference', payment.referenceNumber]] : []),
+        ['PayMongo payment ID', payment.paymentId || 'Not provided'],
+        [payment.paidAtSource === 'provider' ? 'Paid on' : 'Payment recorded', formatReceiptDateTime(payment.paidAt)],
+        ['Payment method', payment.method || 'Online payment'],
+        ['Customer', appointment.customerName || auth.currentUser?.displayName || 'Customer'],
+        ['Appointment code', appointment.id],
+        ['Booked on', formatReceiptDateTime(appointment.createdAt)],
+      ],
+      styles: { fontSize: 9, cellPadding: 2.4, textColor: [77, 56, 42] },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 42 }, 1: { cellWidth: 138 } },
+      margin: { left: 15, right: 15 },
+    })
+
+    let y = (pdf.lastAutoTable?.finalY || 105) + 8
+    pdf.setTextColor(61, 40, 29).setFont('helvetica', 'bold').setFontSize(12)
+    pdf.text('Services and schedule', 15, y)
+    autoTable(pdf, {
+      startY: y + 5,
+      head: [['Service', 'Date', 'Time', 'Status']],
+      body: appointmentScheduleRows.value.map(visit => [visit.serviceName, visit.date ? formatCourseDate(visit.date) : 'Not scheduled', visit.time ? formatClockTime(visit.time) : 'Not set', visit.status || 'Scheduled']),
+      theme: 'grid',
+      styles: { fontSize: 8.5, cellPadding: 2.5, textColor: [77, 56, 42], lineColor: [230, 207, 176] },
+      headStyles: { fillColor: [247, 234, 213], textColor: [77, 48, 31], fontStyle: 'bold' },
+      margin: { left: 15, right: 15 },
+    })
+
+    y = (pdf.lastAutoTable?.finalY || y + 18) + 8
+    if (y > 235) { pdf.addPage(); y = 20 }
+    pdf.setFont('helvetica', 'bold').setFontSize(12).setTextColor(61, 40, 29)
+    pdf.text('Price summary', 15, y)
+    const total = Number(pricing.total ?? appointment.totalAmount ?? appointment.amount ?? 0)
+    const chronologicalPayments = appointmentPayments.value
+      .filter(item => String(item.status || '').toLowerCase() === 'paid')
+      .sort((left, right) => timestampMillis(left.paidAt) - timestampMillis(right.paidAt))
+    const currentPaymentIndex = chronologicalPayments.findIndex(item => item.id === payment.id)
+    const paidToDate = currentPaymentIndex >= 0
+      ? chronologicalPayments.slice(0, currentPaymentIndex + 1).reduce((sum, item) => sum + Number(item.amount || 0), 0)
+      : Number(payment.amount || 0)
+    autoTable(pdf, {
+      startY: y + 5,
+      body: [
+        ['Subtotal', currency(pricing.subtotal ?? total)],
+        ['Discount', currency(pricing.discountAmount ?? pricing.discount ?? 0)],
+        ['VAT', pricing.vatApplicable === true ? `${currency(pricing.vatAmount || 0)} (12%${pricing.vatPriceMode === 'inclusive' ? ', included' : ''})` : 'No VAT'],
+        ['Total price', currency(total)],
+        ['This payment', currency(payment.amount)],
+        ['Paid to date', currency(paidToDate)],
+      ],
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 2.4, textColor: [77, 56, 42] },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55 }, 1: { halign: 'right', cellWidth: 132 } },
+      margin: { left: 15, right: 15 },
+    })
+    const footerY = Math.min((pdf.lastAutoTable?.finalY || y + 25) + 12, 285)
+    pdf.setDrawColor(230, 207, 176).line(15, footerY - 5, 195, footerY - 5)
+    pdf.setFont('helvetica', 'normal').setFontSize(8).setTextColor(120, 97, 79)
+    pdf.text('Generated from the verified payment record in AesthetiCare.', 15, footerY)
+    pdf.save(`AesthetiCare-Receipt-${safeCode.replace(/[^a-zA-Z0-9_-]/g, '-')}.pdf`)
+  } catch (error) {
+    console.error('Failed to create appointment receipt:', error)
+    toast.error('The receipt PDF could not be created. Please try again.')
+  }
+}
 
 const contractsToSign = computed(() => customerLifecycleAppointments.value.filter(appointment =>
   appointment.approvalStatus === 'Approved'
@@ -2394,106 +2590,6 @@ onUnmounted(() => {
   gap: 0.55rem;
 }
 
-.appointment-menu {
-  position: relative;
-  display: inline-flex;
-  justify-content: flex-end;
-}
-
-.appointment-menu-trigger {
-  display: inline-grid;
-  width: 2.75rem;
-  height: 2.75rem;
-  min-width: 2.75rem;
-  place-items: center;
-  border: 1px solid rgba(126, 78, 53, 0.22);
-  border-radius: 0.9rem;
-  background: linear-gradient(180deg, #fffaf3 0%, #fdf1e2 100%);
-  color: #6e4330;
-  font-size: 1.55rem;
-  font-weight: 800;
-  line-height: 1;
-  box-shadow: 0 2px 5px rgba(87, 56, 35, 0.06);
-  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
-
-.appointment-menu-trigger:hover,
-.appointment-menu-trigger[aria-expanded="true"] {
-  border-color: rgba(126, 78, 53, 0.38);
-  background: #f3dfc8;
-  box-shadow: 0 6px 14px rgba(87, 56, 35, 0.14);
-  transform: translateY(-1px);
-}
-
-.appointment-menu-trigger:focus-visible {
-  outline: 3px solid rgba(159, 102, 67, 0.28);
-  outline-offset: 2px;
-}
-
-.appointment-menu-popover {
-  position: fixed;
-  z-index: 1000;
-  display: grid;
-  width: min(17rem, calc(100vw - 1.5rem));
-  min-width: 13.5rem;
-  max-width: calc(100vw - 1.5rem);
-  gap: 0.15rem;
-  margin: 0;
-  padding: 0.5rem;
-  border: 1px solid rgba(126, 78, 53, 0.2);
-  border-radius: 1rem;
-  background: rgba(255, 252, 247, 0.98);
-  box-shadow: 0 18px 40px rgba(70, 42, 26, 0.2), 0 3px 8px rgba(70, 42, 26, 0.08);
-  overflow-y: auto;
-}
-
-.appointment-menu-label {
-  margin: 0;
-  padding: 0.38rem 0.55rem 0.3rem;
-  color: #8a6249;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.appointment-menu-item {
-  width: 100%;
-  min-height: 2.55rem;
-  padding: 0.68rem 0.75rem;
-  border: 0;
-  border-radius: 0.7rem;
-  background: transparent;
-  color: #4d301f;
-  font-size: 0.84rem;
-  font-weight: 700;
-  text-align: left;
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.appointment-menu-item:hover:not(:disabled) {
-  background: #f3e2ce;
-}
-
-.appointment-menu-item-primary {
-  background: #f3e2ce;
-  color: #704127;
-}
-
-.appointment-menu-item-danger {
-  color: #a04646;
-}
-
-.appointment-menu-item-danger:hover:not(:disabled) {
-  background: #f9e4df;
-}
-
-.appointment-menu-item:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.appointment-menu-empty,
 .appointment-menu-key {
   margin: 0;
   padding: 0.6rem 0.7rem;
@@ -2509,6 +2605,105 @@ onUnmounted(() => {
   background: #fff4e4;
   overflow-wrap: anywhere;
 }
+
+.appointment-details-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(35, 23, 15, 0.72);
+  backdrop-filter: blur(5px);
+}
+
+.appointment-details-shell {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 58rem);
+  max-height: min(92vh, 58rem);
+  overflow: hidden;
+  border: 1px solid var(--customer-border, #e6c196);
+  border-radius: 1.4rem;
+  background: var(--customer-surface, #fffdf9);
+  color: var(--customer-text, #3d281d);
+  box-shadow: 0 28px 90px rgba(20, 12, 7, 0.4);
+}
+
+.appointment-details-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.4rem;
+  border-bottom: 1px solid var(--customer-border, #ead8c0);
+  background: var(--customer-surface-soft, #fbf3e7);
+}
+
+.appointment-details-kicker {
+  margin: 0;
+  color: var(--customer-muted, #98613d);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.appointment-details-title {
+  margin: 0.3rem 0 0;
+  color: var(--customer-text, #3d281d);
+  font-family: "Playfair Display", "Times New Roman", serif;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1.15;
+}
+
+.appointment-details-subtitle { margin: 0.4rem 0 0; color: var(--customer-muted, #806b5a); }
+.appointment-details-header-actions { display: flex; align-items: center; gap: 0.65rem; }
+.appointment-details-body { display: grid; gap: 0.9rem; padding: 1rem 1.25rem; overflow-y: auto; }
+
+.appointment-details-section {
+  padding: 1rem;
+  border: 1px solid var(--customer-border, #ead8c0);
+  border-radius: 1rem;
+  background: var(--customer-surface-soft, #fff9f0);
+  color: var(--customer-text, #3d281d);
+}
+
+.appointment-details-section h3 { margin: 0; font-size: 0.94rem; font-weight: 800; }
+.appointment-details-section p { margin: 0.4rem 0 0; line-height: 1.5; }
+.appointment-details-section-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; margin-bottom: 0.75rem; }
+.appointment-details-section-head > span { color: var(--customer-muted, #806b5a); font-size: 0.78rem; }
+
+.appointment-details-facts,
+.appointment-details-price-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; margin: 0.75rem 0 0; }
+.appointment-details-facts > div,
+.appointment-details-price-list > div { min-width: 0; padding: 0.65rem 0.75rem; border-radius: 0.75rem; background: var(--customer-surface, #fffdf9); }
+.appointment-details-facts dt,
+.appointment-details-price-list dt { color: var(--customer-muted, #806b5a); font-size: 0.67rem; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; }
+.appointment-details-facts dd,
+.appointment-details-price-list dd { margin: 0.25rem 0 0; font-size: 0.88rem; font-weight: 700; overflow-wrap: anywhere; }
+.appointment-details-code,
+.appointment-details-payment-info code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+.appointment-details-price-list .appointment-details-price-total { border: 1px solid var(--customer-border, #ddbe99); background: var(--customer-surface, #fffdf9); }
+.appointment-details-price-total dt,
+.appointment-details-price-total dd { font-weight: 900; }
+
+.appointment-details-schedule-list,
+.appointment-details-payments { display: grid; gap: 0.55rem; }
+.appointment-details-schedule-row,
+.appointment-details-payment-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem; border: 1px solid var(--customer-border, #ead8c0); border-radius: 0.8rem; background: var(--customer-surface, #fffdf9); }
+.appointment-details-schedule-row > div,
+.appointment-details-payment-info { display: grid; min-width: 0; gap: 0.2rem; }
+.appointment-details-schedule-row span,
+.appointment-details-payment-info span { color: var(--customer-muted, #806b5a); font-size: 0.78rem; overflow-wrap: anywhere; }
+.appointment-details-visit-time { text-align: right; }
+.appointment-details-visit-status { flex: 0 0 auto; }
+.appointment-details-payment-row .appointment-button { flex: 0 0 auto; }
+.appointment-details-note { margin: 0; color: var(--customer-muted, #806b5a); font-size: 0.85rem; line-height: 1.5; }
+.appointment-details-note-error { color: var(--ac-danger, #a04646); }
+
+.appointment-details-actions { display: grid; gap: 0.75rem; padding: 1rem 1.25rem; border-top: 1px solid var(--customer-border, #ead8c0); background: var(--customer-surface-soft, #fbf3e7); }
+.appointment-details-action-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.55rem; }
 
 .payment-agreement {
   flex: 1 1 100%;
@@ -3003,6 +3198,37 @@ onUnmounted(() => {
 }
 
 @media (max-width: 767px) {
+  .appointment-details-overlay {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 0.65rem;
+  }
+
+  .appointment-details-shell {
+    max-height: calc(100dvh - 1.3rem);
+    border-radius: 1rem;
+  }
+
+  .appointment-details-header,
+  .appointment-details-body,
+  .appointment-details-actions {
+    padding: 0.9rem;
+  }
+
+  .appointment-details-facts,
+  .appointment-details-price-list {
+    grid-template-columns: 1fr;
+  }
+
+  .appointment-details-schedule-row,
+  .appointment-details-payment-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .appointment-details-visit-time { text-align: left; }
+  .appointment-details-action-buttons { width: 100%; }
+
   .unpaid-appointment-details {
     grid-template-columns: 1fr;
   }
