@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { doc, onSnapshot } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import { useAuthStore } from '@/stores/auth'
 import { useSubscriptionStore } from '@/stores/subscription'
@@ -23,6 +23,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const roleKey = ref('')
   const isEmployeeAccount = ref(false)
   const customRoleIds = ref([])
+  const customRoleOwnerId = ref('')
   let unsubscribeUser = null
   let unsubscribeRole = null
   const customRoleUnsubscribers = new Map()
@@ -58,9 +59,12 @@ export const usePermissionsStore = defineStore('permissions', () => {
         doc(db, 'clinicRoles', roleId),
         (customRoleSnap) => {
           const roleData = customRoleSnap.exists() ? customRoleSnap.data() || {} : {}
+          const roleOwnerId = String(roleData.ownerId || '').trim()
+          const belongsToCurrentClinic = !isEmployeeAccount.value
+            || Boolean(customRoleOwnerId.value && roleOwnerId === customRoleOwnerId.value)
           customRolePermissionMap.set(
             roleId,
-            Array.isArray(roleData.permissions) ? roleData.permissions : []
+            belongsToCurrentClinic && Array.isArray(roleData.permissions) ? roleData.permissions : []
           )
           customRolePermissions.value = [...customRolePermissionMap.values()].flat()
         },
@@ -81,6 +85,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const isClinicOwnerAccount = (data = {}, uid = '') => {
     const userType = String(data.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
     const role = String(data.role || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+    if (userType === 'staff' || userType === 'employee') return false
     // Legacy clinic registrants used the "Clinic Admin" label. Their main
     // branch was created with their UID, which keeps them owners after the
     // role split without elevating branch-admin employees.
@@ -94,6 +99,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
     if (isClinicOwnerAccount({ ...data, role: value, userType }, uid)) return 'Owner'
     const compact = String(value || userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
     if (!compact) return ''
+    const compactUserType = String(userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+    if (compactUserType === 'staff' || compactUserType === 'employee') {
+      return compact === 'clinicadmin' || compact === 'clinicadministrator' ? 'Clinic Admin' : 'Staff'
+    }
     if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') return 'Superadmin'
     if (compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Clinic Admin'
     return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
@@ -101,9 +110,9 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
   const CACHE_TTL_MS = 5 * 60 * 1000
 
-  const loadCachedPermissions = (uid, role, shouldLoadRoleCache = true) => {
+  const loadCachedPermissions = (uid, role, shouldLoadRoleCache = true, shouldLoadUserCache = true) => {
     try {
-      if (uid) {
+      if (uid && shouldLoadUserCache) {
         const userCache = JSON.parse(localStorage.getItem(`permissions:user:${uid}`) || 'null')
         if (userCache && Array.isArray(userCache.data) && userCache.ts) {
           const isFresh = Date.now() - userCache.ts < CACHE_TTL_MS
@@ -126,9 +135,9 @@ export const usePermissionsStore = defineStore('permissions', () => {
     }
   }
 
-  const persistPermissions = (uid, role, shouldPersistRoleCache = true) => {
+  const persistPermissions = (uid, role, shouldPersistRoleCache = true, shouldPersistUserCache = true) => {
     try {
-      if (uid) {
+      if (uid && shouldPersistUserCache) {
         localStorage.setItem(
           `permissions:user:${uid}`,
           JSON.stringify({ data: userPermissions.value || [], ts: Date.now() })
@@ -152,6 +161,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
         userPermissions.value = []
         rolePermissions.value = []
         isEmployeeAccount.value = false
+        customRoleOwnerId.value = ''
         clearCustomRoleListeners()
         roleKey.value = ''
         customRoleIds.value = []
@@ -185,12 +195,39 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
       unsubscribeUser = onSnapshot(
         doc(db, 'users', newUser.uid),
-        (snapshot) => {
+        async (snapshot) => {
           const data = snapshot.exists() ? snapshot.data() || {} : {}
-          isEmployeeAccount.value = String(data.userType || '').trim().toLowerCase() === 'staff'
+          const userType = String(data.userType || '').trim().toLowerCase()
+          const isStaffAccount = userType === 'staff' || userType === 'employee'
+          isEmployeeAccount.value = isStaffAccount
+          if (isStaffAccount) {
+            try {
+              localStorage.removeItem(`permissions:user:${newUser.uid}`)
+            } catch (_error) {
+              // Ignore browser storage errors; staff permissions use live role documents.
+            }
+          }
+          let expectedOwnerId = String(data.organizationOwnerId || '').trim()
+          if (isStaffAccount && !expectedOwnerId) {
+            const branchId = String(data.branchId || '').trim()
+            if (branchId) {
+              try {
+                const branchSnap = await getDoc(doc(db, 'clinics', branchId))
+                expectedOwnerId = String(branchSnap.data()?.ownerId || '').trim()
+              } catch (error) {
+                console.error('Unable to resolve employee clinic ownership:', error)
+              }
+            }
+          }
+          const ownerChanged = customRoleOwnerId.value !== expectedOwnerId
+          customRoleOwnerId.value = expectedOwnerId
+          if (ownerChanged) clearCustomRoleListeners()
           userPermissions.value = [
             ...(Array.isArray(data.permissions) ? data.permissions : []),
-            ...(Array.isArray(data.effectivePermissions) ? data.effectivePermissions : []),
+            // For staff, effectivePermissions is only a materialized snapshot
+            // of role access. The live clinicRoles listeners below are the
+            // authority, so a revoked role permission cannot linger here.
+            ...(!isStaffAccount && Array.isArray(data.effectivePermissions) ? data.effectivePermissions : []),
           ]
           const normalizedStoredRole = String(data.role || data.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
           if (
@@ -202,11 +239,11 @@ export const usePermissionsStore = defineStore('permissions', () => {
           }
           const nextCustomRoleIds = normalizeCustomRoleIds(data)
           const nextUserType = String(data.userType || '').trim().toLowerCase()
-          const isStaffUser = nextUserType === 'staff'
+          const isStaffUser = nextUserType === 'staff' || nextUserType === 'employee'
           const nextRole = normalizeRoleKey(data.role || data.userType || '', data.userType, data, newUser.uid)
           if (nextRole !== roleKey.value) {
             roleKey.value = nextRole
-            loadCachedPermissions(newUser.uid, roleKey.value, !isStaffUser)
+            loadCachedPermissions(newUser.uid, roleKey.value, !isStaffUser, !isStaffUser)
             if (unsubscribeRole) {
               unsubscribeRole()
               unsubscribeRole = null
@@ -232,7 +269,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
           }
           customRoleIds.value = nextCustomRoleIds
           syncCustomRoleListeners(nextCustomRoleIds)
-          persistPermissions(newUser.uid, roleKey.value, !isStaffUser)
+          persistPermissions(newUser.uid, roleKey.value, !isStaffUser, !isStaffUser)
           loading.value = false
         },
         (error) => {
@@ -242,13 +279,15 @@ export const usePermissionsStore = defineStore('permissions', () => {
           customRolePermissions.value = []
           roleKey.value = ''
           customRoleIds.value = []
+          customRoleOwnerId.value = ''
           clearCustomRoleListeners()
           loading.value = false
         }
       )
       const initialRole = normalizeRoleKey(newUser?.role || newUser?.userType || '', newUser?.userType, {}, newUser?.uid)
       roleKey.value = initialRole
-      loadCachedPermissions(newUser.uid, initialRole, String(newUser?.userType || '').trim().toLowerCase() !== 'staff')
+      const isStaffUser = ['staff', 'employee'].includes(String(newUser?.userType || '').trim().toLowerCase())
+      loadCachedPermissions(newUser.uid, initialRole, !isStaffUser, !isStaffUser)
     },
     { immediate: true }
   )

@@ -13,7 +13,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     icon: 'mdi:hospital-building',
     tourKey: 'clinic-setup',
     children: [
-      { label: 'Clinic Profile', icon: 'profile', to: '/clinic/profile', permission: 'clinic_profile:update' },
+      { label: 'Clinic Profile', icon: 'profile', to: '/clinic/profile', permissionsAny: ['clinic_profile:view', 'clinic_profile:update'] },
       { label: 'Branch Management', icon: 'mdi:map-marker-outline', to: '/clinic/branches', permissionsAny: ['branches:view', 'branches:create'] },
       { label: 'Policy & Contract Management', icon: 'mdi:file-document-outline', to: '/clinic/policies', permissionsAny: ['policies:view', 'policies:update'] }
     ]

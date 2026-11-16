@@ -903,6 +903,163 @@ onBeforeUnmount(() => {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 237, 226, 0.96));
 }
 
+/* Keep the recovery form readable when the global application theme is dark. */
+:global(html[data-ac-theme="dark"]) .forgot-shell {
+  background:
+    radial-gradient(circle at top left, rgba(185, 121, 79, 0.14), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(111, 74, 50, 0.24), transparent 32%),
+    linear-gradient(135deg, var(--ac-bg-deep), var(--ac-bg) 56%, #2b1a11);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-glow-left {
+  background: rgba(185, 121, 79, 0.12);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-glow-right {
+  background: rgba(217, 154, 108, 0.1);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-hero {
+  border-color: var(--ac-border);
+  background: linear-gradient(180deg, #342419, #24180f);
+  color: var(--ac-text);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-kicker,
+:global(html[data-ac-theme="dark"]) .forgot-card-kicker,
+:global(html[data-ac-theme="dark"]) .forgot-step-label {
+  color: #e4b485;
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-title,
+:global(html[data-ac-theme="dark"]) .forgot-card-title {
+  color: var(--ac-text);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-copy,
+:global(html[data-ac-theme="dark"]) .forgot-point-copy,
+:global(html[data-ac-theme="dark"]) .forgot-step-copy {
+  color: var(--ac-text-secondary);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-point-title {
+  color: var(--ac-text);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-point {
+  border-color: var(--ac-border);
+  background: rgba(255, 248, 235, 0.045);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-point-icon {
+  border: 1px solid var(--ac-border);
+  background: var(--ac-surface-muted);
+  color: var(--ac-text);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-card {
+  border-color: var(--ac-border);
+  background: var(--ac-surface);
+  color: var(--ac-text);
+  box-shadow: var(--ac-shadow-lg);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-step-badge {
+  border: 1px solid var(--ac-border);
+  background: var(--ac-surface-muted);
+  color: var(--ac-text-secondary);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-step-dot {
+  background: var(--ac-surface-muted);
+  border-color: var(--ac-border-strong);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-step-dot.active {
+  background: var(--ac-accent);
+  border-color: var(--ac-accent);
+  box-shadow: 0 0 0 4px rgba(217, 154, 108, 0.16);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-step-line {
+  background: var(--ac-border);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-step-line.active {
+  background: linear-gradient(90deg, #b9794f, #d99a6c);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-field-label {
+  color: var(--ac-text-secondary);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-input,
+:global(html[data-ac-theme="dark"]) .otp-digit {
+  border-color: var(--ac-border-strong);
+  background: var(--ac-bg-deep);
+  color: var(--ac-text);
+  color-scheme: dark;
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-input::placeholder {
+  color: var(--ac-text-muted);
+  opacity: 1;
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-input:focus,
+:global(html[data-ac-theme="dark"]) .otp-digit:focus {
+  border-color: var(--ac-accent);
+  box-shadow: 0 0 0 4px rgba(217, 154, 108, 0.18);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-eye-button {
+  color: var(--ac-text-secondary);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-eye-button:hover {
+  background: var(--ac-surface-muted);
+  color: var(--ac-text);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-button-ghost {
+  border-color: var(--ac-border);
+  background: var(--ac-surface-soft);
+  color: var(--ac-text-secondary);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-button-ghost:hover:not(:disabled) {
+  background: var(--ac-surface-muted);
+  color: var(--ac-text);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-button-secondary {
+  border-color: var(--ac-border);
+  background: var(--ac-surface-muted);
+  color: var(--ac-text-secondary);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-button-secondary:hover:not(:disabled) {
+  background: var(--ac-bg-deep);
+  color: var(--ac-text);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-resend-card {
+  border-color: var(--ac-border);
+  background: var(--ac-surface-soft);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-resend-title {
+  color: var(--ac-text);
+}
+
+:global(html[data-ac-theme="dark"]) .forgot-resend-copy {
+  color: var(--ac-text-muted);
+}
+
+:global(html[data-ac-theme="dark"]) .otp-digit-filled {
+  background: var(--ac-surface-muted);
+}
+
 @media (min-width: 1024px) {
   .forgot-layout {
     grid-template-columns: 1.05fr 0.95fr;

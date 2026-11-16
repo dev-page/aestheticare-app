@@ -38,7 +38,7 @@
           </div>
           <div class="clinic-banner-preview" :style="bannerPreview ? { backgroundImage: `url('${bannerPreview}')` } : undefined">
             <div v-if="!bannerPreview" class="clinic-banner-placeholder"><span>Clinic banner preview</span></div>
-            <label class="clinic-upload-button clinic-banner-upload">{{ bannerFile ? 'Change banner' : 'Upload banner' }}<input ref="bannerInput" type="file" accept="image/jpeg,image/png,image/webp" @change="handleBannerUpload" /></label>
+            <label v-if="canEditClinicProfile" class="clinic-upload-button clinic-banner-upload">{{ bannerFile ? 'Change banner' : 'Upload banner' }}<input ref="bannerInput" type="file" accept="image/jpeg,image/png,image/webp" @change="handleBannerUpload" /></label>
           </div>
           <div class="clinic-branding-footer">
             <div class="clinic-logo-preview">
@@ -46,7 +46,7 @@
               <span v-else>{{ clinicDisplayName ? clinicDisplayName.charAt(0) : 'C' }}</span>
             </div>
             <div class="clinic-logo-copy"><strong>Clinic logo</strong><small>Square image, JPG, PNG, or WebP. Maximum 5 MB.</small></div>
-            <label class="clinic-upload-button">{{ logoFile ? 'Change logo' : 'Upload logo' }}<input ref="logoInput" type="file" accept="image/jpeg,image/png,image/webp" @change="handleLogoUpload" /></label>
+            <label v-if="canEditClinicProfile" class="clinic-upload-button">{{ logoFile ? 'Change logo' : 'Upload logo' }}<input ref="logoInput" type="file" accept="image/jpeg,image/png,image/webp" @change="handleLogoUpload" /></label>
           </div>
           <p class="clinic-upload-hint">Banner: JPG, PNG, or WebP, maximum 5 MB. Use a wide image for the best fit.</p>
         </section>
@@ -55,9 +55,9 @@
           <div class="clinic-card-heading"><div><h2>Clinic information</h2><p>Keep your public contact details and description up to date.</p></div></div>
           <div class="clinic-form-grid">
             <label class="clinic-field clinic-field-full"><span>Clinic name <small>Registered name</small></span><input :value="clinic.clinicName" type="text" readonly /><small class="clinic-field-note">The registered clinic name is protected from changes here.</small></label>
-            <label class="clinic-field"><span>Clinic email address</span><input v-model="clinic.businessEmail" type="email" placeholder="clinic@example.com" autocomplete="email" /></label>
-            <label class="clinic-field"><span>Clinic phone number</span><div class="clinic-phone-input"><b>+63</b><input :value="clinic.contactNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" @input="handleContactNumberInput" @blur="validateContactNumber" /></div><small v-if="contactNumberError" class="clinic-error">{{ contactNumberError }}</small></label>
-            <label class="clinic-field clinic-field-full"><span>About the clinic</span><textarea v-model="clinic.description" rows="4" maxlength="1200" placeholder="Introduce your clinic, its approach, and what customers can expect."></textarea><small class="clinic-field-note">{{ (clinic.description || '').length }}/1200 characters</small></label>
+            <label class="clinic-field"><span>Clinic email address</span><input v-model="clinic.businessEmail" :readonly="!canEditClinicProfile" type="email" placeholder="clinic@example.com" autocomplete="email" /></label>
+            <label class="clinic-field"><span>Clinic phone number</span><div class="clinic-phone-input"><b>+63</b><input :value="clinic.contactNumber" :readonly="!canEditClinicProfile" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" @input="handleContactNumberInput" @blur="validateContactNumber" /></div><small v-if="contactNumberError" class="clinic-error">{{ contactNumberError }}</small></label>
+            <label class="clinic-field clinic-field-full"><span>About the clinic</span><textarea v-model="clinic.description" :readonly="!canEditClinicProfile" rows="4" maxlength="1200" placeholder="Introduce your clinic, its approach, and what customers can expect."></textarea><small class="clinic-field-note">{{ (clinic.description || '').length }}/1200 characters</small></label>
           </div>
         </section>
 
@@ -82,8 +82,8 @@
         </section>
 
         <div class="clinic-profile-actions">
-          <p>Changes are saved to the selected clinic branch.</p>
-          <button type="submit" :disabled="saving">{{ saving ? 'Saving clinic profile…' : 'Save Clinic Profile' }}</button>
+          <p>{{ canEditClinicProfile ? 'Changes are saved to the selected clinic branch.' : 'You have view-only access to this clinic profile.' }}</p>
+          <button v-if="canEditClinicProfile" type="submit" :disabled="saving">{{ saving ? 'Saving clinic profile…' : 'Save Clinic Profile' }}</button>
         </div>
       </form>
     </main>
@@ -93,6 +93,7 @@
 
 <script>
 import { usePageLoading } from '@/composables/usePageLoading'
+import { usePermissions } from '@/composables/usePermissions'
 
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue';
 import { ref, onMounted, onUnmounted, computed } from 'vue';
@@ -112,6 +113,8 @@ export default {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp());
+    const { hasPermission } = usePermissions();
+    const canEditClinicProfile = computed(() => hasPermission('clinic_profile:update'));
     const clinic = ref({
       clinicName: '',
       businessEmail: '',
@@ -434,7 +437,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (user) {
           const userSnap = await getDoc(doc(db, 'users', user.uid));
           const userData = userSnap.exists() ? userSnap.data() || {} : {};
-          isClinicOwnerAccount.value = isClinicOwnerRole(userData.role || userData.userType || userData.customRoleName);
+          const userType = String(userData.userType || '').trim().toLowerCase();
+          isClinicOwnerAccount.value = !['staff', 'employee'].includes(userType)
+            && isClinicOwnerRole(userData.role || userData.userType || userData.customRoleName);
 
           if (isOwnerLikeRole(userData.role || userData.customRoleName)) {
             const clinicRef = doc(db, 'clinics', user.uid);
@@ -674,6 +679,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     };
 
     const saveClinicProfile = async () => {
+      if (!canEditClinicProfile.value) {
+        toast.error('You only have permission to view the clinic profile.');
+        return;
+      }
       const user = auth.currentUser;
       if (!user) {
         toast.error('Sign in to edit the clinic profile.');
@@ -733,6 +742,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     return {
       pageLoading,
+      canEditClinicProfile,
       clinic,
       contactNumberError,
       handleContactNumberInput,

@@ -8,7 +8,8 @@
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Backup Database</h1>
-          <p class="text-slate-400">Generate and download a full backup of your clinic data.</p>
+          <p class="text-slate-400">Generate and download a clinic data export for offline reference or analysis.</p>
+          <p class="mt-2 max-w-3xl text-xs leading-5 text-slate-500">Exports include selected clinic records. They do not include every Firebase resource and cannot restore deleted or changed data from this page.</p>
         </div>
         <div class="flex flex-wrap gap-2">
           <button
@@ -48,9 +49,9 @@
           <p class="text-lg text-white font-semibold">{{ lastBackupSize }}</p>
         </div>
         <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
-          <h2 class="text-sm text-slate-400 mb-1">Next Auto Backup</h2>
-          <p class="text-lg text-white font-semibold">{{ nextBackupLabel }}</p>
-          <p class="text-xs text-slate-500 mt-1">In {{ nextBackupCountdown }}</p>
+          <h2 class="text-sm text-slate-400 mb-1">Automatic Exports</h2>
+          <p class="text-lg text-white font-semibold">{{ backupScheduleLabel }}</p>
+          <p class="text-xs text-slate-500 mt-1">{{ backupScheduleNote }}</p>
         </div>
       </section>
 
@@ -153,9 +154,8 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { auth, db, storage } from '@/config/firebaseConfig'
+import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore'
-import { getDownloadURL, ref as storageRef } from 'firebase/storage'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
@@ -171,11 +171,8 @@ const backupOwnerId = ref('')
 const downloadingId = ref('')
 const menuState = ref({ visible: false, x: 0, y: 0, backup: null })
 let unsubscribe = null
-let countdownTimer = null
-
-const backupDailyHour = Number(import.meta.env.VITE_BACKUP_DAILY_HOUR || 2)
-const backupMonthlyDay = Number(import.meta.env.VITE_BACKUP_MONTHLY_DAY || 1)
-const nowTick = ref(Date.now())
+const backupSchedule = ref(null)
+const backupScheduleLoading = ref(false)
 
 const canCreate = computed(() => true)
 
@@ -242,40 +239,48 @@ const lastBackupStatus = computed(() => (lastBackup.value ? lastBackup.value.sta
 const lastBackupSize = computed(() => (lastBackup.value ? lastBackup.value.sizeLabel : '-'))
 const downloadTooltip = 'Your browser will choose the save location.'
 
-const computeNextBackupTime = (baseTime) => {
-  const now = new Date(baseTime)
-  const next = new Date(now)
-  next.setMinutes(0, 0, 0)
-  next.setHours(backupDailyHour)
-  if (next <= now) {
-    next.setDate(next.getDate() + 1)
+const backupScheduleLabel = computed(() => {
+  if (backupScheduleLoading.value) return 'Checking server…'
+  if (!backupSchedule.value) return 'Status unavailable'
+  if (!backupSchedule.value.enabled) return 'Disabled on server'
+  const hour = Number(backupSchedule.value.dailyHour)
+  const time = Number.isFinite(hour)
+    ? new Date(2000, 0, 1, hour).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+    : 'configured time'
+  return `Daily at ${time}`
+})
+
+const backupScheduleNote = computed(() => {
+  if (backupScheduleLoading.value) return 'Reading the backend schedule configuration.'
+  if (!backupSchedule.value) return 'The backend schedule could not be checked.'
+  if (!backupSchedule.value.enabled) return 'Enable BACKUP_SCHEDULE_ENABLED on the server to run automatic exports.'
+  return `Monthly export on day ${backupSchedule.value.monthlyDay} · ${backupSchedule.value.timeZone || 'server time'}`
+})
+
+const refreshBackupSchedule = async () => {
+  const user = auth.currentUser
+  if (!user || !backupOwnerId.value) {
+    backupSchedule.value = null
+    return
   }
-  return next
+
+  backupScheduleLoading.value = true
+  try {
+    const token = await user.getIdToken()
+    const params = new URLSearchParams({ ownerId: backupOwnerId.value })
+    const response = await fetch(`${OTP_API_BASE}/owner/backup/schedule?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok || !payload.success) throw new Error(payload.error || 'Unable to read schedule.')
+    backupSchedule.value = payload.data || null
+  } catch (scheduleError) {
+    console.error('Failed to load backup schedule:', scheduleError)
+    backupSchedule.value = null
+  } finally {
+    backupScheduleLoading.value = false
+  }
 }
-
-const nextBackupTime = computed(() => computeNextBackupTime(nowTick.value))
-
-const nextBackupLabel = computed(() => {
-  const next = nextBackupTime.value
-  return next.toLocaleString('en-PH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-})
-
-const nextBackupCountdown = computed(() => {
-  const diffMs = Math.max(0, nextBackupTime.value.getTime() - nowTick.value)
-  const totalMinutes = Math.floor(diffMs / 60000)
-  const days = Math.floor(totalMinutes / (60 * 24))
-  const hours = Math.floor((totalMinutes % (60 * 24)) / 60)
-  const minutes = totalMinutes % 60
-  if (days > 0) return `${days}d ${hours}h ${minutes}m`
-  if (hours > 0) return `${hours}h ${minutes}m`
-  return `${minutes}m`
-})
 
 const refreshBackups = trackPageLoad(async () => {
   const user = auth.currentUser
@@ -297,6 +302,8 @@ const refreshBackups = trackPageLoad(async () => {
     loading.value = false
     return
   }
+
+  await refreshBackupSchedule()
 
   const backupQuery = query(
     collection(db, 'backups'),
@@ -370,8 +377,16 @@ const downloadBackup = async (backup) => {
   error.value = ''
   success.value = ''
   try {
-    const url = await getDownloadURL(storageRef(storage, backup.storagePath))
-    window.open(url, '_blank', 'noopener')
+    const response = await fetchBackupFile(backup)
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = (backup.fileName || 'backup').replace(/\.json$/i, '') + '.json'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
   } catch (err) {
     console.error('Failed to download backup:', err)
     error.value = 'Unable to download backup.'
@@ -381,28 +396,46 @@ const downloadBackup = async (backup) => {
   }
 }
 
-const loadBackupJson = trackPageLoad(async (backup) => {
-  const url = await getDownloadURL(storageRef(storage, backup.storagePath))
-  const response = await fetch(url)
+const fetchBackupFile = async (backup) => {
+  const user = auth.currentUser
+  if (!user) throw new Error('User not authenticated.')
+  const token = await user.getIdToken()
+  const response = await fetch(`${OTP_API_BASE}/owner/backup/download`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      ownerId: backupOwnerId.value || await resolveBackupOwnerId(user),
+      storagePath: backup.storagePath,
+      fileName: backup.fileName || 'backup',
+    }),
+  })
   if (!response.ok) {
-    throw new Error('Failed to download backup file.')
+    const contentType = String(response.headers.get('content-type') || '')
+    const payload = contentType.includes('application/json') ? await response.json() : null
+    throw new Error(payload?.error || 'Failed to download backup.')
   }
+  return response
+}
+
+const loadBackupJson = trackPageLoad(async (backup) => {
+  const response = await fetchBackupFile(backup)
   return response.json()
 })
 
 const buildCsvContent = (rows = []) => {
-  if (!rows.length) return 'collection,'
-  const keys = Object.keys(rows[0] || {})
+  if (!rows.length) return 'collection'
   const escapeCell = (value) => {
     if (value === null || value === undefined) return ''
     const raw = typeof value === 'string' ? value : JSON.stringify(value)
     const escaped = raw.replace(/"/g, '""')
     return `"${escaped}"`
   }
-  const header = ['collection', ...keys].join(',')
-  const lines = rows.map((row) => {
-    return ['data', ...keys.map((key) => escapeCell(row[key]))].join(',')
-  })
+  const keys = [...new Set(rows.flatMap((row) => Object.keys(row || {})))].filter((key) => key !== 'collection')
+  const header = ['collection', ...keys].map(escapeCell).join(',')
+  const lines = rows.map((row) => [escapeCell(row.collection), ...keys.map((key) => escapeCell(row[key]))].join(','))
   return [header, ...lines].join('\n')
 }
 
@@ -416,7 +449,7 @@ const downloadCsv = async (backup) => {
     const records = []
     Object.entries(data?.collections || {}).forEach(([collectionName, items]) => {
       if (!Array.isArray(items)) return
-      items.forEach((item) => records.push({ collection: collectionName, ...item }))
+      items.forEach((item) => records.push({ ...item, collection: collectionName }))
     })
     const csvContent = buildCsvContent(records)
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -507,13 +540,5 @@ onMounted(refreshBackups)
 
 onUnmounted(() => {
   if (unsubscribe) unsubscribe()
-  if (countdownTimer) clearInterval(countdownTimer)
 })
-
-onMounted(trackPageLoad(() => {
-  if (countdownTimer) clearInterval(countdownTimer)
-  countdownTimer = setInterval(() => {
-    nowTick.value = Date.now()
-  }, 60000)
-}))
 </script>

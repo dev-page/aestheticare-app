@@ -121,7 +121,7 @@ const routes = [
   // additional branches is a Premium multi-branch feature.
   { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/Branches.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["branches:view", "branches:create"] } },
   { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/Branches.vue"), meta: { requiresAuth: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
-  { path: "/clinic/profile", name: "clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:update" } },
+  { path: "/clinic/profile", name: "clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["clinic_profile:view", "clinic_profile:update"] } },
   { path: "/clinic/page", name: "clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:update" } },
   { path: "/clinic/policies", name: "clinic-policies", component: () => import("@/views/admin/owner/OwnerPolicyManagement.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["policies:view", "policies:update"] } },
   { path: "/management/reports", name: "management-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
@@ -280,6 +280,7 @@ const router = createRouter({
 const isOwnerLikeRole = (userData = {}, uid = '') => {
   const role = String(userData.role || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
   const userType = String(userData.userType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+  if (userType === 'staff' || userType === 'employee') return false
   return userType === 'owner' || role === 'owner' || role === 'clinicowner' || (
     ['clinicadmin', 'clinicadministrator'].includes(role) && Boolean(uid) && String(userData.branchId || '').trim() === uid
   )
@@ -288,6 +289,8 @@ const isOwnerLikeRole = (userData = {}, uid = '') => {
 const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
 
 const isSuperadminRole = (userData = {}) => {
+  const userType = normalizeRole(userData.userType)
+  if (userType === 'staff' || userType === 'employee') return false
   const role = normalizeRole(userData.role || userData.userType)
   return ['superadmin', 'systemadmin', 'sysadmin'].includes(role)
 }

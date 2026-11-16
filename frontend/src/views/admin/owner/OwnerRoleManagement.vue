@@ -591,6 +591,7 @@ import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { useSubscription } from '@/composables/useSubscription'
 import { auth, db } from '@/config/firebaseConfig'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import {
   allPermissionKeys,
   fullAccessPermissionKey,
@@ -1413,65 +1414,30 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       try {
         const normalizedPermissions = normalizePermissionSet(selectedRoleDraft.value.permissions)
         selectedRoleDraft.value.permissions = allPermissionKeys.filter((key) => normalizedPermissions.has(key))
-        await updateDoc(doc(db, 'clinicRoles', selectedRole.value.id), {
-          permissions: selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
-            ? [fullAccessPermissionKey]
-            : [...selectedRoleDraft.value.permissions],
-          updatedAt: serverTimestamp(),
+        const token = await auth.currentUser?.getIdToken()
+        if (!token) throw new Error('Sign in again before saving role permissions.')
+        const response = await fetch(`${OTP_API_BASE}/clinic-roles/${encodeURIComponent(selectedRole.value.id)}/permissions`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ permissions: selectedRoleDraft.value.permissions }),
         })
-
-        // Keep a denormalized permission snapshot for Firestore rules and fast account loading.
-        const rolePermissionMap = new Map(
-          roles.value.map((role) => [role.id, Array.isArray(role.permissions) ? role.permissions : []])
-        )
-        rolePermissionMap.set(
-          selectedRole.value.id,
-          selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
-            ? [fullAccessPermissionKey]
-            : [...selectedRoleDraft.value.permissions]
-        )
-        const branchChunks = chunkArray(branchIds.value, 10)
-        for (const chunk of branchChunks) {
-          const assignedUsersSnapshot = await getDocs(
-            query(collection(db, 'users'), where('branchId', 'in', chunk))
-          )
-          let batch = writeBatch(db)
-          let batchSize = 0
-          const commits = []
-
-          assignedUsersSnapshot.forEach((userDoc) => {
-            const userData = userDoc.data() || {}
-            const assignedRoleIds = [
-              ...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []),
-              userData.customRoleId,
-            ]
-              .map((value) => String(value || '').trim())
-              .filter(Boolean)
-              .filter((value, index, values) => values.indexOf(value) === index)
-            if (!assignedRoleIds.includes(selectedRole.value.id)) return
-
-            const permissions = new Set(Array.isArray(userData.permissions) ? userData.permissions : [])
-            assignedRoleIds.forEach((roleId) => {
-              ;(rolePermissionMap.get(roleId) || []).forEach((permission) => permissions.add(permission))
-            })
-            batch.update(userDoc.ref, { effectivePermissions: [...normalizePermissionSet([...permissions])] })
-            batchSize += 1
-            if (batchSize >= 450) {
-              commits.push(batch.commit())
-              batch = writeBatch(db)
-              batchSize = 0
-            }
-          })
-
-          if (batchSize > 0) commits.push(batch.commit())
-          if (commits.length) await Promise.all(commits)
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok || !payload.success) {
+          throw new Error(payload.error || 'Unable to save role permissions right now.')
         }
-        toast.success('Role permissions saved.')
+
+        const updatedStaffCount = Number(payload.data?.updatedStaffCount || 0)
+        toast.success(`Role permissions saved and applied to ${updatedStaffCount} ${updatedStaffCount === 1 ? 'employee' : 'employees'}.`)
         await loadRoles()
         activeTab.value = 'permissions'
+        return true
       } catch (error) {
         console.error('Failed to save role permissions:', error)
         toast.error('Unable to save role permissions right now.')
+        return false
       } finally {
         saving.value = false
       }
@@ -1514,7 +1480,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           color: ROLE_COLOR,
           updatedAt: serverTimestamp(),
         })
-        await saveRolePermissions()
+        const permissionsSaved = await saveRolePermissions()
+        if (!permissionsSaved) return
         toast.success(`${template.name} reset to its recommended defaults.`)
       } catch (error) {
         console.error('Failed to reset built-in role:', error)

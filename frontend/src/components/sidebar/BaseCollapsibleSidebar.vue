@@ -606,6 +606,48 @@ export default {
       return decorated
     })
 
+    // Role edits arrive through Firestore role listeners. If access to the
+    // page currently open is revoked, leave it immediately instead of
+    // waiting for the next navigation to run the router guard again.
+    watch(
+      () => effectivePermissions.value.join('|'),
+      () => {
+        if (permissionsLoading.value) return
+        const meta = route.meta || {}
+        const requiredAll = [
+          ...(meta.requiresPermission ? [meta.requiresPermission] : []),
+          ...(Array.isArray(meta.requiresPermissionsAll) ? meta.requiresPermissionsAll : []),
+        ]
+        let requiredAny = Array.isArray(meta.requiresPermissionsAny) ? [...meta.requiresPermissionsAny] : []
+        if (meta.requiresSupplyAccess) {
+          const department = String(route.params.department || '').toLowerCase()
+          const page = String(route.params.page || 'dashboard').toLowerCase()
+          if ((department === 'inventory' && page === 'requests') || route.path === '/inventory/requests') {
+            requiredAny = ['inventory:create', 'inventory:review']
+          } else if (department === 'inventory' && ['onboarding', 'receiving'].includes(page)) {
+            requiredAll.push('inventory:create')
+          } else if (department === 'inventory' || route.path === '/inventory/requests') {
+            requiredAll.push('inventory:view')
+          } else if (department === 'procurement' || route.path === '/procurement/requests') {
+            requiredAll.push('procurement:view')
+          }
+        }
+        const permissionAlternates = {
+          'inventory:review': ['inventory:create'],
+          'orders:view': ['inventory:view'],
+          'orders:update': ['inventory:update', 'inventory:review'],
+        }
+        const hasAll = requiredAll.every((permission) =>
+          hasPermission(permission) || (permissionAlternates[permission] || []).some((alternate) => hasPermission(alternate))
+        )
+        const hasAny = !requiredAny.length || requiredAny.some((permission) => hasPermission(permission))
+        if (hasAll && hasAny) return
+
+        const dashboardTo = props.items.find((item) => item?.to)?.to || '/'
+        if (route.path !== dashboardTo) void router.replace(dashboardTo)
+      }
+    )
+
     const sidebarLoading = computed(
       () => isLoading.value || subscriptionLoading.value || permissionsLoading.value
     )

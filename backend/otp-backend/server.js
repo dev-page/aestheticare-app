@@ -2089,27 +2089,35 @@ const requiresOperationalLoginOtp = (userData = {}) => {
   return accountKinds.has(normalize(userData.role)) || accountKinds.has(normalize(userData.userType))
 }
 
-// Built-in branch administrator permissions. These cover every operational
-// module while deliberately excluding organization ownership, billing,
-// backups, role administration, and creating additional branches.
+// Built-in branch administrator permissions mirror the frontend permission
+// store. Clinic owners receive the additional account and role controls below.
 const CLINIC_ADMIN_PERMISSIONS = new Set([
-  'branches:view', 'branches:create', 'clinic_profile:view', 'clinic_profile:update',
+  'clinic_profile:view',
   'staff:view', 'staff:create', 'staff:update', 'staff:disable',
   'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import',
   'clients:view', 'clients:update', 'clients:disable',
-  'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create',
+  'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create',
   'payments:view', 'payments:create', 'inbox:view', 'reports:view',
   'services:view', 'services:create', 'services:update', 'services:disable',
   'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review',
   'suppliers:create', 'suppliers:update', 'orders:view', 'orders:update',
+  'pharmacy:view', 'pharmacy:dispense', 'pharmacy:manage',
   'procurement:view', 'procurement:create', 'procurement:review',
   'hr:view', 'hr:create', 'hr:update',
   'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review',
   'payroll:view', 'payroll:update', 'payroll:approve',
   'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle',
   'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view',
-  'policies:view', 'policies:update', 'roles:manage', 'subscription:view', 'backups:view', 'backups:create', 'activities:view', 'notifications:view',
+  'policies:view', 'policies:update', 'activities:view', 'notifications:view',
   'profile:view', 'password:update',
+])
+const CLINIC_OWNER_ADDITIONAL_PERMISSIONS = new Set([
+  'branches:view', 'branches:create', 'clinic_profile:update', 'roles:manage',
+  'subscription:view', 'backups:view', 'backups:create',
+])
+const CLINIC_ROLE_PERMISSION_KEYS = new Set([
+  ...CLINIC_ADMIN_PERMISSIONS,
+  ...CLINIC_OWNER_ADDITIONAL_PERMISSIONS,
 ])
 
 const loadUserContext = async (uid) => {
@@ -2120,14 +2128,18 @@ const loadUserContext = async (uid) => {
   const rawUserType = String(userData.userType || '').trim()
   const compactRole = rawRole.toLowerCase().replace(/[\s_-]+/g, '')
   const compactUserType = rawUserType.toLowerCase().replace(/[\s_-]+/g, '')
+  const isStaffAccount = compactUserType === 'staff' || compactUserType === 'employee'
   const legacyClinicAdmin = ['clinicadmin', 'clinicadministrator'].includes(compactRole)
-  const ownerByType = compactUserType === 'owner' || compactRole === 'owner' || compactRole === 'clinicowner'
-  const ownerByClinic = legacyClinicAdmin
+  const ownerByType = !isStaffAccount && (compactUserType === 'owner' || compactRole === 'owner' || compactRole === 'clinicowner')
+  const ownerByClinic = !isStaffAccount && legacyClinicAdmin
     ? (await firestore.collection('clinics').where('ownerId', '==', uid).limit(1).get()).size > 0
     : false
-  const roleKey = (ownerByType || ownerByClinic) ? 'Owner' : normalizeRoleKey(rawRole || rawUserType)
+  const staffRoleKey = isStaffAccount
+    ? (legacyClinicAdmin ? 'Clinic Admin' : 'Staff')
+    : normalizeRoleKey(rawRole || rawUserType)
+  const roleKey = (ownerByType || ownerByClinic) ? 'Owner' : staffRoleKey
   let rolePermissions = []
-  if (roleKey) {
+  if (roleKey && !isStaffAccount) {
     const roleSnap = await firestore.collection('rolePermissions').doc(roleKey).get()
     const roleData = roleSnap.exists ? roleSnap.data() || {} : {}
     rolePermissions = Array.isArray(roleData.permissions) ? roleData.permissions : []
@@ -2139,6 +2151,14 @@ const loadUserContext = async (uid) => {
     .map((value) => String(value || '').trim())
     .filter(Boolean)
     .filter((value, index, values) => values.indexOf(value) === index)
+  let staffOwnerId = String(userData.organizationOwnerId || '').trim()
+  if (isStaffAccount && !staffOwnerId) {
+    const branchId = String(userData.branchId || '').trim()
+    if (branchId) {
+      const branchSnap = await firestore.collection('clinics').doc(branchId).get()
+      staffOwnerId = String(branchSnap.data()?.ownerId || '').trim()
+    }
+  }
   const customRolePermissions = []
   if (customRoleIds.length) {
     const customRoleSnaps = await Promise.all(
@@ -2146,6 +2166,7 @@ const loadUserContext = async (uid) => {
     )
     customRoleSnaps.forEach((roleSnap) => {
       const roleData = roleSnap.exists ? roleSnap.data() || {} : {}
+      if (isStaffAccount && (!staffOwnerId || String(roleData.ownerId || '').trim() !== staffOwnerId)) return
       if (Array.isArray(roleData.permissions)) {
         customRolePermissions.push(...roleData.permissions)
       }
@@ -2153,7 +2174,10 @@ const loadUserContext = async (uid) => {
   }
   const userPermissions = [
     ...(Array.isArray(userData.permissions) ? userData.permissions : []),
-    ...(Array.isArray(userData.effectivePermissions) ? userData.effectivePermissions : []),
+    // Staff role permissions are loaded from the current clinicRoles records
+    // above. Their effectivePermissions field is a cache for Firestore rules,
+    // and must never keep a revoked permission alive in backend authorization.
+    ...(!isStaffAccount && Array.isArray(userData.effectivePermissions) ? userData.effectivePermissions : []),
   ]
   // Existing system administrators were created before system-admin RBAC was added.
   // Keep those legacy accounts functional until an explicit adminRole is assigned.
@@ -2166,17 +2190,22 @@ const loadUserContext = async (uid) => {
   // Clinic owners are the accountable administrators for their own branch.
   // Give them the same operational permissions as a Clinic Admin; supply
   // workflow endpoints still verify clinic ownership/branch access separately.
-  const permissions = roleKey === 'Clinic Admin' || roleKey === 'Owner'
+  const builtInClinicPermissions = roleKey === 'Owner'
+    ? [...CLINIC_ADMIN_PERMISSIONS, ...CLINIC_OWNER_ADDITIONAL_PERMISSIONS]
+    : roleKey === 'Clinic Admin'
+      ? [...CLINIC_ADMIN_PERMISSIONS]
+      : []
+  const permissions = builtInClinicPermissions.length
     ? [...new Set([
-      ...CLINIC_ADMIN_PERMISSIONS,
+      ...builtInClinicPermissions,
       ...userPermissions,
       ...rolePermissions,
       ...customRolePermissions,
     ])].filter((permission) => permission !== 'administrator:full_access')
     : [...userPermissions, ...rolePermissions, ...customRolePermissions]
-      // Custom clinic roles may never elevate a staff member to platform-wide
-      // administrator access. Superadmin accounts keep their explicit role.
-      .filter((permission) => roleKey === 'Superadmin' || permission !== 'administrator:full_access')
+        // Custom clinic roles may never elevate a staff member to platform-wide
+        // administrator access. Superadmin accounts keep their explicit role.
+        .filter((permission) => roleKey === 'Superadmin' || permission !== 'administrator:full_access')
   return {
     uid,
     roleKey,
@@ -8025,6 +8054,50 @@ app.post('/owner/backup', requireAuth, requirePermission('backups:create'), asyn
   }
 })
 
+app.get('/owner/backup/schedule', requireAuth, requirePermission('backups:view'), async (req, res) => {
+  const ownerId = String(req.query?.ownerId || '').trim()
+  if (!ownerId) return res.status(400).json({ success: false, error: 'ownerId is required.' })
+  try {
+    await authorizeOwnerBackupAccess(req, ownerId)
+    return res.json({
+      success: true,
+      data: {
+        enabled: backupScheduleEnabled,
+        dailyHour: backupDailyHour,
+        monthlyDay: backupMonthlyDay,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      },
+    })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error?.message || 'Unable to load backup schedule.' })
+  }
+})
+
+app.post('/owner/backup/download', requireAuth, requirePermission('backups:view'), async (req, res) => {
+  const ownerId = String(req.body?.ownerId || '').trim()
+  const storagePath = String(req.body?.storagePath || '').trim()
+  const fileName = String(req.body?.fileName || 'backup').trim().replace(/\.json$/i, '').replace(/[^\w.-]+/g, '_').slice(0, 100)
+  if (!ownerId || !storagePath) {
+    return res.status(400).json({ success: false, error: 'ownerId and storagePath are required.' })
+  }
+  if (!storagePath.startsWith(`backups/${ownerId}/`)) {
+    return res.status(403).json({ success: false, error: 'Unauthorized backup path.' })
+  }
+
+  try {
+    await authorizeOwnerBackupAccess(req, ownerId)
+    const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
+    if (!bucketName) return res.status(500).json({ success: false, error: 'Firebase Storage bucket is not configured.' })
+    const [jsonBuffer] = await admin.storage().bucket(bucketName).file(storagePath).download()
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename=\"${fileName || 'backup'}.json\"`)
+    return res.status(200).send(jsonBuffer)
+  } catch (error) {
+    console.error('Failed to download clinic backup:', error)
+    return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to download backup.' })
+  }
+})
+
 app.post('/owner/backup/zip', requireAuth, requirePermission('backups:view'), async (req, res) => {
 
   const ownerId = String(req.body?.ownerId || '').trim()
@@ -8477,6 +8550,124 @@ const handleAccountWelcome = async (req, res) => {
 }
 
 app.post(STAFF_WELCOME_PATH, requireAuth, requirePermission('staff:create'), handleAccountWelcome)
+
+// Save a clinic role's permissions through the trusted backend so the role
+// record and every employee's Firestore-rule snapshot stay in sync. The
+// browser cannot update copied effectivePermissions directly because that
+// would let a role manager invent grants outside the clinic role itself.
+app.put('/clinic-roles/:roleId/permissions', requireAuth, requirePermission('roles:manage'), async (req, res) => {
+  try {
+    const roleId = String(req.params.roleId || '').trim()
+    const requestedPermissions = req.body?.permissions
+    if (!roleId || !Array.isArray(requestedPermissions) || requestedPermissions.length > 100) {
+      return res.status(400).json({ success: false, error: 'Provide a valid clinic role and permission list.' })
+    }
+
+    const permissions = [...new Set(requestedPermissions
+      .map((permission) => String(permission || '').trim())
+      .filter((permission) => permission && CLINIC_ROLE_PERMISSION_KEYS.has(permission)))]
+    const invalidPermissions = requestedPermissions
+      .map((permission) => String(permission || '').trim())
+      .filter((permission) => permission && !CLINIC_ROLE_PERMISSION_KEYS.has(permission))
+    if (invalidPermissions.length) {
+      return res.status(400).json({ success: false, error: 'One or more permissions are not assignable to clinic staff.' })
+    }
+
+    const firestore = admin.firestore()
+    const roleRef = firestore.collection('clinicRoles').doc(roleId)
+    const roleSnap = await roleRef.get()
+    if (!roleSnap.exists) return res.status(404).json({ success: false, error: 'Clinic role not found.' })
+    const ownerId = String(roleSnap.data()?.ownerId || '').trim()
+    if (!ownerId) return res.status(400).json({ success: false, error: 'Clinic role has no organization owner.' })
+
+    const actor = req.userContext || await loadUserContext(req.user.uid)
+    const actorIsOwner = actor.roleKey === 'Owner' && actor.uid === ownerId
+    let actorBelongsToOwner = String(actor.userData?.organizationOwnerId || '').trim() === ownerId
+    if (!actorBelongsToOwner && !actorIsOwner) {
+      const actorBranchIds = [...new Set([
+        actor.userData?.branchId,
+        ...(Array.isArray(actor.userData?.branchIds) ? actor.userData.branchIds : []),
+      ].map((id) => String(id || '').trim()).filter(Boolean))]
+      const actorBranches = await Promise.all(actorBranchIds.map((id) => firestore.collection('clinics').doc(id).get()))
+      actorBelongsToOwner = actorBranches.some((branch) => branch.exists && String(branch.data()?.ownerId || '').trim() === ownerId)
+    }
+    if (!actorIsOwner && !actorBelongsToOwner) {
+      return res.status(403).json({ success: false, error: 'You are not authorized to manage roles for this clinic.' })
+    }
+
+    await roleRef.update({
+      permissions,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+
+    const [primaryAssignments, multiAssignments] = await Promise.all([
+      firestore.collection('users').where('customRoleId', '==', roleId).get(),
+      firestore.collection('users').where('customRoleIds', 'array-contains', roleId).get(),
+    ])
+    const assignedUsers = new Map()
+    ;[...primaryAssignments.docs, ...multiAssignments.docs].forEach((userDoc) => assignedUsers.set(userDoc.id, userDoc))
+
+    const rolePermissionCache = new Map([[roleId, permissions]])
+    const clinicOwnerCache = new Map()
+    const staffBelongsToOwner = async (userData) => {
+      const storedOwnerId = String(userData.organizationOwnerId || '').trim()
+      if (storedOwnerId) return storedOwnerId === ownerId
+      const branchIds = [...new Set([
+        userData.branchId,
+        ...(Array.isArray(userData.branchIds) ? userData.branchIds : []),
+      ].map((id) => String(id || '').trim()).filter(Boolean))]
+      const branchOwners = await Promise.all(branchIds.map(async (branchId) => {
+        if (!clinicOwnerCache.has(branchId)) {
+          clinicOwnerCache.set(branchId, firestore.collection('clinics').doc(branchId).get())
+        }
+        const branchSnap = await clinicOwnerCache.get(branchId)
+        return String(branchSnap.data()?.ownerId || '').trim()
+      }))
+      return branchOwners.includes(ownerId)
+    }
+    const staffUpdates = []
+    for (const userDoc of assignedUsers.values()) {
+      const userData = userDoc.data() || {}
+      const userType = String(userData.userType || '').trim().toLowerCase()
+      if (userType !== 'staff' && userType !== 'employee') continue
+      if (!await staffBelongsToOwner(userData)) continue
+
+      const assignedRoleIds = [...new Set([
+        ...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []),
+        userData.customRoleId,
+      ].map((id) => String(id || '').trim()).filter(Boolean))]
+      const missingRoleIds = assignedRoleIds.filter((id) => !rolePermissionCache.has(id))
+      const roleSnaps = await Promise.all(missingRoleIds.map((id) => firestore.collection('clinicRoles').doc(id).get()))
+      roleSnaps.forEach((snap) => {
+        const roleData = snap.exists ? snap.data() || {} : {}
+        rolePermissionCache.set(snap.id, Array.isArray(roleData.permissions) ? roleData.permissions : [])
+      })
+
+      const effectivePermissions = [...new Set([
+        ...(Array.isArray(userData.permissions) ? userData.permissions : []),
+        ...assignedRoleIds.flatMap((id) => rolePermissionCache.get(id) || []),
+      ].map((permission) => String(permission || '').trim())
+        .filter((permission) => permission && CLINIC_ROLE_PERMISSION_KEYS.has(permission)))]
+      staffUpdates.push({ ref: userDoc.ref, effectivePermissions })
+    }
+
+    for (let offset = 0; offset < staffUpdates.length; offset += 400) {
+      const batch = firestore.batch()
+      staffUpdates.slice(offset, offset + 400).forEach(({ ref, effectivePermissions }) => {
+        batch.update(ref, {
+          effectivePermissions,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+      })
+      await batch.commit()
+    }
+
+    return res.json({ success: true, data: { roleId, updatedStaffCount: staffUpdates.length } })
+  } catch (error) {
+    console.error('Failed to save clinic role permissions:', error)
+    return res.status(error.status || 500).json({ success: false, error: 'Unable to save role permissions right now.' })
+  }
+})
 
 // Trusted multi-branch assignment: the browser never decides organizational scope.
 app.post('/staff/:userId/branch-assignments', requireAuth, requirePermission('staff:update'), async (req, res) => {
