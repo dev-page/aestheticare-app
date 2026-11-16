@@ -628,7 +628,7 @@
 </template>
 
 <script setup>
-import { isCustomerCareListing } from '../../../../shared/customerCatalog.js'
+import { isClinicCustomerDiscoverable, isCustomerCareListing } from '../../../../shared/customerCatalog.js'
 import { onlinePolicy } from '../../../../shared/onlineConsultation.js'
 import { isCategorizedService, normalizeServiceCategory, serviceCategoryOptions, filterCategorizedServices } from '../../../../shared/serviceCategories.js'
 import { usePageLoading } from '@/composables/usePageLoading'
@@ -1476,10 +1476,7 @@ const loadBranchData = trackPageLoad(async (branchId) => {
 
   const data = clinicSnap.data() || {}
 
-  const clinicStatus = String(data.status || '').trim()
-  const moderationStatus = String(data.moderationStatus || '').trim()
-  const published = data.isPublished === true
-  const centerBlocked = !published || String(clinicStatus).toLowerCase() === 'inactive'
+  const centerBlocked = !isClinicCustomerDiscoverable(data)
 
   if (centerBlocked) {
     throw new Error('Center unavailable.')
@@ -3078,10 +3075,7 @@ onMounted(trackPageLoad(async () => {
     }
 
     const rootData = rootSnap.data() || {}
-    const clinicStatus = String(rootData.status || '').trim().toLowerCase()
-    const published = rootData.isPublished === true
-    const centerAvailable = published && clinicStatus !== 'inactive'
-    if (!centerAvailable) {
+    if (!isClinicCustomerDiscoverable(rootData)) {
       toast.error('This branch is currently unavailable.')
       router.replace({ name: 'centers' })
       return
@@ -3097,7 +3091,6 @@ onMounted(trackPageLoad(async () => {
       await startUnreadListener()
     }
   } catch (error) {
-    console.error(error)
     const message = String(error?.message || '').toLowerCase()
     if (message.includes('not found')) {
       toast.error('Center not found.')
@@ -3106,6 +3099,7 @@ onMounted(trackPageLoad(async () => {
       toast.error('This branch is currently unavailable.')
       router.replace({ name: 'centers' })
     } else {
+      console.error(error)
       toast.error('Failed to load center page.')
     }
   } finally {

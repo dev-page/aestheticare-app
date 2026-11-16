@@ -1,4 +1,4 @@
-import { isCustomerCareListing, assertCustomerCheckoutSupported } from '../../shared/customerCatalog.js'
+import { isClinicCustomerDiscoverable, isCustomerCareListing, assertCustomerCheckoutSupported } from '../../shared/customerCatalog.js'
 import { registerAppointmentPaymentWebhook } from './appointmentPaymentWebhook.js'
 import { createAppointmentPaymentHoldReaper } from './appointmentPaymentHolds.js'
 import { registerConsultationEvents } from './consultationEvents.js'
@@ -6641,12 +6641,7 @@ app.get('/public/clinics/:branchId/catalog', async (req, res) => {
     stage = 'clinic lookup'
     const clinicSnap = await firestore.collection('clinics').doc(branchId).get()
     const clinic = clinicSnap.exists ? clinicSnap.data() || {} : null
-    if (!clinic || clinic.isPublished !== true || String(clinic.status || '').trim().toLowerCase() === 'inactive') {
-      return res.status(404).json({ success: false, error: 'Center unavailable.' })
-    }
-    stage = 'subscription validation'
-    const subscription = subscriptionLifecycle(clinic)
-    if (!subscription.plan || !subscription.isOperational) {
+    if (!isClinicCustomerDiscoverable(clinic)) {
       return res.status(404).json({ success: false, error: 'Center unavailable.' })
     }
     let clinicPolicy = {}

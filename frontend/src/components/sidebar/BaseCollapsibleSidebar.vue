@@ -297,6 +297,7 @@ import { useSubscription } from '@/composables/useSubscription'
 import { usePermissions } from '@/composables/usePermissions'
 import { clearSidebarTransientState, useSidebarState } from '@/composables/useSidebarState'
 import { sidebarRouteMatches } from '@/utils/sidebarRouteMatch'
+import { NOTIFICATION_READ_STATE_EVENT } from '@/utils/notificationState'
 import { isSubscriptionRecoveryRoute } from '../../../../shared/subscriptionRecoveryRoutes.js'
 
 export default {
@@ -337,6 +338,7 @@ export default {
     const notificationsRoleKey = ref('')
     let unsubscribeNotificationsUser = null
     let unsubscribeNotificationsRole = null
+    let notificationReadStateHandler = null
     const notificationsUserCache = ref([])
     const notificationsRoleCache = ref([])
     const { collapsed, toggleCollapsed: toggleSidebarCollapsed, syncFromStorage } = useSidebarState(() => props.panelKey)
@@ -786,6 +788,15 @@ export default {
       notificationsUnread.value = Array.from(map.values()).filter((item) => !item.read && !item.deleted).length
     }
 
+    const applyNotificationReadState = (event) => {
+      const { notificationId, read } = event?.detail || {}
+      if (!notificationId) return
+      const update = (item) => item.id === notificationId ? { ...item, read: Boolean(read) } : item
+      notificationsUserCache.value = notificationsUserCache.value.map(update)
+      notificationsRoleCache.value = notificationsRoleCache.value.map(update)
+      updateNotificationsUnread()
+    }
+
     const startNotificationBadgeListener = (userId, roleKey, branchId) => {
       if (!userId) return
       if (unsubscribeNotificationsUser) {
@@ -909,6 +920,9 @@ export default {
 
       initSubscription()
 
+      notificationReadStateHandler = applyNotificationReadState
+      window.addEventListener(NOTIFICATION_READ_STATE_EVENT, notificationReadStateHandler)
+
       syncCollapsedWithViewport()
       viewportHandler = () => syncCollapsedWithViewport()
       window.addEventListener('resize', viewportHandler)
@@ -961,6 +975,7 @@ export default {
       }
       if (unsubscribeNotificationsUser) unsubscribeNotificationsUser()
       if (unsubscribeNotificationsRole) unsubscribeNotificationsRole()
+      if (notificationReadStateHandler) window.removeEventListener(NOTIFICATION_READ_STATE_EVENT, notificationReadStateHandler)
       if (skeletonTimer) {
         clearTimeout(skeletonTimer)
       }

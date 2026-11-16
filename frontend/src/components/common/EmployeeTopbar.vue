@@ -1,11 +1,6 @@
 <template>
   <div class="employee-topbar readonly-exempt">
     <div class="employee-topbar-inner" :style="topbarStyle">
-      <div class="employee-topbar-left">
-        <span class="employee-topbar-kicker">AesthetiCare</span>
-        <span class="employee-topbar-title">{{ resolvedTitle }}</span>
-        <span v-if="roleValue" class="employee-topbar-role">{{ roleValue }}</span>
-      </div>
       <div class="employee-topbar-right">
         <div class="employee-topbar-notifications">
         <button type="button" class="employee-topbar-btn" aria-label="Notifications" @click="toggleNotifications">
@@ -59,12 +54,9 @@ import { auth, db } from '@/config/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
 import NotificationDetailsDialog from '@/components/common/NotificationDetailsDialog.vue'
 import { toast } from 'vue3-toastify'
+import { NOTIFICATION_READ_STATE_EVENT, publishNotificationReadState } from '@/utils/notificationState'
 
 const props = defineProps({
-  title: {
-    type: String,
-    default: 'Employee Panel'
-  },
   planLabel: {
     type: String,
     default: 'Plan'
@@ -96,10 +88,6 @@ const props = defineProps({
   sidebarCollapsed: {
     type: Boolean,
     default: false
-  },
-  panelKey: {
-    type: String,
-    default: ''
   },
   useSidebarOffset: {
     type: Boolean,
@@ -143,12 +131,6 @@ const badgeLabelClass = computed(() => {
   return props.badgeVariant === 'date' ? 'badge-date' : ''
 })
 
-const resolvedTitle = computed(() => {
-  if (props.title) return props.title
-  const identity = `${props.panelKey} ${userTypeValue.value} ${roleValue.value}`.toLowerCase()
-  return identity.includes('customer') ? 'Customer Workspace' : 'Clinic Workspace'
-})
-
 const router = useRouter()
 const showNotifications = ref(false)
 const latestNotifications = ref([])
@@ -162,6 +144,7 @@ let unsubscribeAuth = null
 let unsubscribeUser = null
 let unsubscribeRole = null
 let resizeHandler = null
+let notificationReadStateHandler = null
 
 
 const formatDate = (value) => {
@@ -198,6 +181,21 @@ const unreadCount = computed(() => {
   })
   return Array.from(map.values()).filter((item) => !item.read && !item.deleted).length
 })
+
+const applyNotificationReadState = (event) => {
+  const { notificationId, read } = event?.detail || {}
+  if (!notificationId) return
+  const update = (item) => item.id === notificationId ? { ...item, read: Boolean(read) } : item
+  userDocsCache.value = userDocsCache.value.map(update)
+  roleDocsCache.value = roleDocsCache.value.map(update)
+  if (welcomeNotification.value?.id === notificationId) {
+    welcomeNotification.value = { ...welcomeNotification.value, read: Boolean(read) }
+  }
+  if (selectedNotification.value?.id === notificationId) {
+    selectedNotification.value = { ...selectedNotification.value, read: Boolean(read) }
+  }
+  mergeNotifications(userDocsCache.value, roleDocsCache.value)
+}
 
 const startListeners = (userId, roleKey, branchId) => {
   loading.value = true
@@ -297,6 +295,7 @@ const openNotificationModal = async (item) => {
     userDocsCache.value = userDocsCache.value.map(markRead)
     roleDocsCache.value = roleDocsCache.value.map(markRead)
     mergeNotifications(userDocsCache.value, roleDocsCache.value)
+    publishNotificationReadState(item.id, true)
   } catch (error) {
     console.warn('Unable to mark notification as read:', error)
   }
@@ -311,6 +310,8 @@ const welcomeNotification = ref(null)
 
 onMounted(() => {
   syncSmallScreen()
+  notificationReadStateHandler = applyNotificationReadState
+  window.addEventListener(NOTIFICATION_READ_STATE_EVENT, notificationReadStateHandler)
   resizeHandler = () => syncSmallScreen()
   window.addEventListener('resize', resizeHandler)
   unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -357,6 +358,7 @@ onUnmounted(() => {
   if (unsubscribeUser) unsubscribeUser()
   if (unsubscribeRole) unsubscribeRole()
   if (resizeHandler) window.removeEventListener('resize', resizeHandler)
+  if (notificationReadStateHandler) window.removeEventListener(NOTIFICATION_READ_STATE_EVENT, notificationReadStateHandler)
 })
 </script>
 
@@ -375,42 +377,10 @@ onUnmounted(() => {
 .employee-topbar-inner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 0.78rem 1.5rem;
   padding-left: calc(var(--sidebar-offset-padding, 1.5rem) + var(--sidebar-offset, 19rem));
   gap: 0.75rem;
-}
-
-.employee-topbar-title {
-  color: var(--ac-text, #342419);
-  font-size: 0.98rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.employee-topbar-kicker {
-  color: var(--ac-text-muted, #795f4b);
-  font-size: .65rem;
-  font-weight: 700;
-  letter-spacing: .16em;
-  text-transform: uppercase;
-}
-
-.employee-topbar-role {
-  border: 1px solid var(--ac-border, #ead2b2);
-  border-radius: 999px;
-  background: var(--ac-surface-soft, #fff7ec);
-  color: var(--ac-text-secondary, #624733);
-  padding: .2rem .55rem;
-  font-size: .68rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.employee-topbar-left {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.65rem;
 }
 
 .employee-topbar-right {
@@ -607,12 +577,8 @@ onUnmounted(() => {
   .employee-topbar-inner {
     padding: 0.45rem 0.7rem;
     padding-left: 1rem;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.4rem;
-  }
-
-  .employee-topbar-title {
-    font-size: 0.74rem;
   }
 
   .employee-topbar-right {
@@ -643,11 +609,6 @@ onUnmounted(() => {
     padding-bottom: 0.35rem;
   }
 
-  .employee-topbar-left,
-  .employee-topbar-right {
-    width: auto;
-  }
-
   .employee-topbar-right {
     justify-content: flex-end;
   }
@@ -657,8 +618,5 @@ onUnmounted(() => {
     justify-content: center;
   }
 
-  .employee-topbar-title {
-    font-size: 0.68rem;
-  }
 }
 </style>

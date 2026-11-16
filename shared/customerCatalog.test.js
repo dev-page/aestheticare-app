@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isCustomerCareListing, assertCustomerCheckoutSupported } from './customerCatalog.js'
+import { isCustomerCareListing, isClinicCustomerDiscoverable, assertCustomerCheckoutSupported } from './customerCatalog.js'
 
 const published = { financeStatus: 'approved', isPublished: true, archived: false }
 test('the public catalog permits approved, published care listings and excludes products', () => {
@@ -14,4 +14,23 @@ test('the public catalog permits approved, published care listings and excludes 
 test('product checkout is rejected before creating a payment while service and subscription payments remain available', () => {
   for (const module of ['customer_order', ' CUSTOMER_ORDER ']) assert.throws(() => assertCustomerCheckoutSupported({ module }), error => error.status === 410)
   for (const module of ['subscription', 'customer_appointment', 'customer_consultation']) assert.doesNotThrow(() => assertCustomerCheckoutSupported({ module }))
+})
+
+test('customer discovery excludes clinics whose subscription is no longer operational', () => {
+  const now = new Date('2026-11-16T00:00:00.000Z')
+  const activeClinic = {
+    isPublished: true,
+    status: 'Active',
+    subscriptionPlan: 'premium',
+    paymentStatus: 'paid',
+    subscriptionExpiresAt: '2026-11-22T00:00:00.000Z',
+  }
+  const expiredClinic = {
+    ...activeClinic,
+    subscriptionExpiresAt: '2026-10-28T09:15:07.906Z',
+  }
+
+  assert.equal(isClinicCustomerDiscoverable(activeClinic, now), true)
+  assert.equal(isClinicCustomerDiscoverable(expiredClinic, now), false)
+  assert.equal(isClinicCustomerDiscoverable({ ...activeClinic, isPublished: false }, now), false)
 })

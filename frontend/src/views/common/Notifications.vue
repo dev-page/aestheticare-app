@@ -2,11 +2,9 @@
   <div :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen notifications-shell-module' : 'notifications-shell'">
     <EmployeeTopbar
       v-if="!isSystemAdminView"
-      title=""
       :plan-label="planLabel"
       :is-expired="isExpired"
       :sidebar-collapsed="sidebarCollapsed"
-      :panel-key="panelKey"
       :badge-label="badgeLabel"
       :badge-tone="badgeTone"
       :badge-variant="badgeVariant"
@@ -125,6 +123,7 @@ import EmployeeTopbar from '@/components/common/EmployeeTopbar.vue'
 import PageSectionSkeleton from '@/components/common/PageSectionSkeleton.vue'
 import { Icon } from '@iconify/vue'
 import NotificationDetailsDialog from '@/components/common/NotificationDetailsDialog.vue'
+import { publishNotificationReadState } from '@/utils/notificationState'
 
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
@@ -329,15 +328,23 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!item.isWelcome && !item.read) {
         try {
           await updateDoc(doc(db, 'notifications', item.id), { read: true })
+          const markRead = (notification) => notification.id === item.id ? { ...notification, read: true } : notification
+          userDocsCache.value = userDocsCache.value.map(markRead)
+          roleDocsCache.value = roleDocsCache.value.map(markRead)
+          notifications.value = notifications.value.map(markRead)
+          if (selectedNotification.value?.id === item.id) {
+            selectedNotification.value = { ...selectedNotification.value, read: true }
+          }
+          publishNotificationReadState(item.id, true)
         } catch (_error) {
-          // ignore
+          console.warn('Unable to mark notification as read:', _error)
         }
       }
     }
 
     const openNotification = async (item) => {
       await markNotificationRead(item)
-      selectedNotification.value = item
+      selectedNotification.value = notifications.value.find((notification) => notification.id === item.id) || item
       showNotificationModal.value = true
     }
 

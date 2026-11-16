@@ -1,11 +1,9 @@
 <template>
   <div :data-panel="panelKey" :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen support-shell support-shell-module' : 'support-shell'">
     <EmployeeTopbar
-      title=""
       :plan-label="planLabel"
       :is-expired="isExpired"
       :sidebar-collapsed="sidebarCollapsed"
-      :panel-key="panelKey"
       :badge-label="badgeLabel"
       :badge-tone="badgeTone"
       :badge-variant="badgeVariant"

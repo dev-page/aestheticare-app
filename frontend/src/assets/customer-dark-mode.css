@@ -1,0 +1,273 @@
+/* Customer pages use a shared dark palette so page-scoped light styles cannot
+   leave cream panels beneath light text when dark mode is active. */
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme {
+  --customer-bg: var(--ac-bg);
+  --customer-surface: var(--ac-surface);
+  --customer-surface-soft: var(--ac-surface-soft);
+  --customer-border: var(--ac-border);
+  --customer-text: var(--ac-text);
+  --customer-muted: var(--ac-text-muted);
+  --customer-ink: var(--ac-primary);
+  --customer-ink-hover: var(--ac-primary-hover);
+  --customer-button-text: var(--ac-on-primary);
+  color: var(--ac-text) !important;
+  color-scheme: dark;
+  background: var(--ac-bg) !important;
+  background-image: radial-gradient(circle at 90% 0%, rgba(185, 121, 79, .12), transparent 28rem),
+    linear-gradient(145deg, #1b100a, #24180f 58%, #2f1e14) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  main, .customer-home-main, .cart-main, .orders-main, .appointments-main,
+  .customer-settings-main, .profile-main, .checkout-main, .prescriptions-main
+) {
+  color: var(--ac-text) !important;
+  background: radial-gradient(circle at 96% 0%, rgba(185, 121, 79, .1), transparent 26rem),
+    linear-gradient(160deg, #21150e 0%, #24180f 58%, #2f1e14 100%) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .center-shell, .center-panel, .center-section-card, .center-item-card,
+  .center-review-card, .center-branch-card, .center-toolbar,
+  .customer-filter-panel, .customer-results-section, .state-panel,
+  .center-card, .cart-header, .cart-empty-panel, .cart-item-card,
+  .cart-summary-panel, .orders-header, .orders-panel, .orders-toolbar,
+  .orders-table-wrap, .appointments-header, .appointments-panel,
+  .unpaid-appointments-panel, .unpaid-appointment-card, .request-modal-shell,
+  .request-policy-card, .request-card, .settings-hero, .settings-card,
+  .settings-tab-panel, .settings-notification-item, .settings-modal,
+  .settings-terms, .profile-panel, .checkout-shell, .checkout-hero,
+  .checkout-panel, .checkout-item-card, .checkout-location-box,
+  .payment-agreement, .prescription-card, .empty-state, .recovery-card,
+  .recovery-note, .group-booking-panel, .group-booking-instructions,
+  .group-self-option, .group-guest-card, .booking-sidecard
+) {
+  border-color: var(--ac-border) !important;
+  background-color: var(--ac-surface) !important;
+  background-image: none !important;
+  color: var(--ac-text-secondary) !important;
+  box-shadow: var(--ac-shadow-sm) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .center-location-box, .center-service-pill, .center-badge,
+  .center-count-pill, .customer-page-chip, .filter-shell, .filter-input,
+  .compact-filter-input, .customer-sort-select, .cart-qty-value,
+  .appointments-table-wrap, .appointments-table, .orders-table,
+  .request-modal-summary, .appointment-card, .appointment-summary,
+  .appointment-meta, .checkout-stat-chip, .checkout-count-pill,
+  .checkout-item-thumb, .payment-option, .record-badge, .detail-section,
+  .medicine-row, .settings-notification-unread, .settings-profile-panel,
+  .settings-tab, .settings-notification-actions, .group-input
+) {
+  border-color: var(--ac-border) !important;
+  background-color: var(--ac-surface-soft) !important;
+  background-image: none !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  h1, h2, h3, h4, h5, h6, p, span, strong, small, em, li, dt, dd,
+  th, td, label, legend, a, .center-panel-title, .center-panel-copy,
+  .center-muted-state, .center-location-label, .center-location-value,
+  .service-preview-content, .service-preview-content h3,
+  .service-preview-duration, .service-preview-price, .service-preview-tax,
+  .appointments-title, .panel-title, .appointment-service, .appointment-clinic,
+  .appointments-subtitle, .panel-note, .request-modal-title,
+  .request-modal-summary, .request-action-note, .request-card-title,
+  .state-copy, .profile-field-label, .profile-subtitle, .checkout-title,
+  .checkout-subtitle, .checkout-panel-title, .settings-title,
+  .settings-subtitle, .settings-copy, .settings-card-title,
+  .settings-notification-copy, .page-heading h1, .subtitle,
+  .prescription-copy, .visit-meta, .practitioner-line, .recovery-copy,
+  .recovery-note, .recovery-note strong, .center-footer
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .customer-home-eyebrow, .customer-results-note, .customer-page-eyebrow,
+  .filter-label, .center-kicker, .center-location-label, .settings-eyebrow,
+  .settings-card-kicker, .settings-hint, .settings-modal-label,
+  .settings-notification-copy small, .appointments-eyebrow, .appointments-kicker,
+  .panel-kicker, .appointment-card-kicker, .request-modal-kicker,
+  .request-card-kicker, .request-field-label, .meta-label, .summary-label,
+  .checkout-eyebrow, .checkout-panel-kicker, .eyebrow, .clinic-name,
+  .practitioner-line, .recovery-kicker
+) {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea,
+  .center-search-input, .filter-input, .compact-filter-input, .profile-input,
+  .checkout-input-wrap, .checkout-input-wrap input, .group-input,
+  .settings-modal-input, .settings-modal-textarea, .settings-modal-select,
+  .customer-chat-input
+) {
+  border-color: var(--ac-border-strong) !important;
+  background-color: #1b100a !important;
+  color: var(--ac-text) !important;
+  color-scheme: dark;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  input, select, textarea
+)::placeholder {
+  color: #b99b80 !important;
+  opacity: 1;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .phone-input-shell, .phone-input-shell span, .checkout-input-wrap,
+  .center-search-shell, .center-search-input, .customer-chat-input
+) {
+  border-color: var(--ac-border-strong) !important;
+  background-color: #1b100a !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  button:not(.customer-home-primary-action):not(.cart-checkout-button):not(.orders-button-primary):not(.orders-button-success):not(.appointments-pay-link):not(.appointment-button-primary):not(.checkout-submit):not(.profile-save-button):not(.settings-button-primary):not(.settings-button-danger):not(.settings-button-warning):not(.recovery-primary):not(.center-cart-button):not(.center-action-button):not(.customer-center-button):not(.customer-chat-send),
+  a[role="button"]:not(.customer-home-primary-action):not(.orders-button-primary):not(.orders-button-success):not(.appointments-pay-link):not(.appointment-button-primary):not(.checkout-submit):not(.profile-save-button):not(.recovery-primary):not(.center-cart-button):not(.center-action-button):not(.customer-center-button)
+) {
+  border-color: var(--ac-border-strong) !important;
+  background-color: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .center-tab-button.is-active, .settings-tab-active, .appointments-tab-active,
+  .service-category-filters button.is-selected, .nearby-location-button,
+  .customer-home-secondary-action, .orders-button-primary,
+  .appointments-pay-link, .appointment-button-primary, .checkout-submit,
+  .profile-save-button, .settings-button-primary, .recovery-primary,
+  .center-cart-button, .center-action-button, .customer-center-button,
+  .customer-chat-send
+) {
+  border-color: var(--ac-primary) !important;
+  background: var(--ac-primary) !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .center-tab-button.is-active, .settings-tab-active, .appointments-tab-active,
+  .service-category-filters button.is-selected, .nearby-location-button,
+  .orders-button-primary, .appointments-pay-link, .appointment-button-primary,
+  .checkout-submit, .profile-save-button, .settings-button-primary,
+  .recovery-primary, .center-cart-button, .center-action-button,
+  .customer-center-button, .customer-chat-send
+) * {
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .orders-button-danger, .settings-button-danger
+) {
+  border-color: var(--ac-danger) !important;
+  background: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .orders-button-success
+) {
+  border-color: var(--ac-success) !important;
+  background: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme .settings-button-warning {
+  border-color: var(--ac-warning) !important;
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .orders-table thead tr, .appointments-table thead tr,
+  .settings-modal .settings-modal-header
+) {
+  background: var(--ac-surface-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .orders-table tbody tr, .appointments-table tbody tr
+) {
+  background: var(--ac-surface) !important;
+  border-color: var(--ac-border) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .orders-table tbody tr:hover, .appointments-table tbody tr:hover,
+  .cart-qty-button:hover, .cart-remove-button:hover, .service-preview-details:hover,
+  .service-category-filters button:hover, .settings-tab:hover,
+  .appointments-tab:hover, .center-secondary-button:hover
+) {
+  background-color: var(--ac-surface-muted) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .orders-status-completed, .settings-status-active, .settings-message-success
+) {
+  border-color: var(--ac-success) !important;
+  background: var(--ac-success-bg) !important;
+  color: var(--ac-success) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .orders-status-cancelled, .settings-status-inactive,
+  .settings-message-error, .field-error, .recovery-error
+) {
+  border-color: var(--ac-danger) !important;
+  background: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .orders-status-pending, .appointments-status-pending, .record-badge
+) {
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .order-cell-skeleton, .skeleton-card, .skeleton-line, .skeleton-pill,
+  .skeleton-prescription-details, .skeleton-prescription-row,
+  .skeleton-prescription-footer
+) {
+  border-color: var(--ac-border) !important;
+  background-color: var(--ac-surface-soft) !important;
+  background-image: linear-gradient(90deg, #342419, #493224, #342419) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .service-category-filters button:not(.is-selected), .center-secondary-button,
+  .service-preview-details, .appointments-link, .customer-home-primary-action,
+  .cart-qty-button, .cart-remove-button, .orders-button:not(.orders-button-primary):not(.orders-button-success),
+  .appointments-tab:not(.appointments-tab-active), .settings-tab:not(.settings-tab-active),
+  .recovery-secondary
+) {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .center-tabs, .settings-tabs, .appointments-tabs, .orders-toolbar,
+  .checkout-panel-head, .detail-section, .medicine-row
+) {
+  border-color: var(--ac-border) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .center-avatar, .checkout-item-thumb, .profile-avatar, .empty-icon
+) {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(button, a, input, select, textarea):focus-visible {
+  outline-color: var(--ac-accent) !important;
+  box-shadow: 0 0 0 3px rgba(217, 154, 108, .24) !important;
+}

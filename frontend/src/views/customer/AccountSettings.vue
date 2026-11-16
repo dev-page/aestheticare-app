@@ -183,6 +183,7 @@ import { auth, db } from '@/config/firebaseConfig'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import MyProfile from '@/views/customer/MyProfile.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
+import { publishNotificationReadState } from '@/utils/notificationState'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -318,6 +319,8 @@ const markNotificationRead = async (item) => {
   if (!item?.id || item.read) return
   try {
     await updateDoc(doc(db, 'notifications', item.id), { read: true, updatedAt: serverTimestamp() })
+    notifications.value = notifications.value.map(notification => notification.id === item.id ? { ...notification, read: true } : notification)
+    publishNotificationReadState(item.id, true)
   } catch (error) {
     console.error('Failed to mark notification as read:', error)
     toast.error('Unable to update that notification.')

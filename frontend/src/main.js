@@ -11,6 +11,7 @@ import VueSweetalert2 from 'vue-sweetalert2'
 import 'sweetalert2/dist/sweetalert2.min.css'
 import './assets/app-design-system.css'
 import './assets/finance-pages.css'
+import './assets/customer-dark-mode.css'
 import { installAppUpdateCheck } from '@/utils/appUpdate'
 import { useThemeStore } from '@/stores/theme'
 

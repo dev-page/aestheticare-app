@@ -11,11 +11,9 @@
       <ThemeSelector class="global-theme-selector readonly-exempt" />
       <EmployeeTopbar
         v-if="showEmployeeTopbar && !isClinicOnboardingRoute"
-        :title="topbarTitle"
         :plan-label="planLabel"
         :is-expired="isExpired"
         :sidebar-collapsed="sidebarCollapsed"
-        :panel-key="sidebarPanelKey"
         :badge-label="customerTopbarLabel"
         :badge-tone="customerTopbarTone"
         :badge-variant="customerTopbarVariant"
@@ -256,23 +254,6 @@ const showEmployeeTopbar = computed(() => {
     path.startsWith('/procurement') ||
     path.startsWith('/customer')
   )
-})
-
-const topbarTitle = computed(() => {
-  const path = String(route.path || '').toLowerCase()
-  if (path.startsWith('/clinic')) return 'Clinic Administration'
-  if (path.startsWith('/clinical')) return 'Clinical Workspace'
-  if (path.startsWith('/hr')) return 'Human Resources'
-  if (path.startsWith('/operations')) return 'Operations'
-  if (path.startsWith('/catalog')) return 'Services'
-  if (path.startsWith('/crm')) return 'Client Management'
-  if (path.startsWith('/finance')) return 'Finance'
-  if (path.startsWith('/management')) return 'Management'
-  if (path.startsWith('/inventory') || path.startsWith('/procurement') || path.startsWith('/supply')) return 'Supply Management'
-  if (path.startsWith('/account')) return 'Account'
-  if (path.startsWith('/owner')) return 'Clinic Administration'
-  if (path.startsWith('/customer')) return ''
-  return 'Clinic Workspace'
 })
 
 const isCustomerPanel = computed(() => String(route.path || '').toLowerCase().startsWith('/customer'))

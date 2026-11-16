@@ -1,4 +1,4 @@
-import { isCustomerCareListing } from '../../../shared/customerCatalog.js'
+import { isClinicCustomerDiscoverable, isCustomerCareListing } from '../../../shared/customerCatalog.js'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 
@@ -24,12 +24,9 @@ const buildBranches = (clinics, serviceMap) =>
   clinics
     .filter((clinic) => {
       const ownerId = toText(clinic.ownerId)
-      const status = toText(clinic.status).toLowerCase()
-      const isPublished = clinic.isPublished === true
       return (
         Boolean(ownerId) &&
-        status !== 'inactive' &&
-        isPublished
+        isClinicCustomerDiscoverable(clinic)
       )
     })
     .map((clinic) => {
