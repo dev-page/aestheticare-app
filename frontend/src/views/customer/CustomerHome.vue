@@ -5,7 +5,7 @@
     <main v-page-loading="{ active: pageLoading, variant: 'discovery', cards: 6, header: false }" class="customer-home-main flex-1">
       <div class="customer-home-content">
         <section class="customer-home-hero">
-          <div>
+          <div class="customer-home-hero-copy">
             <p class="customer-home-eyebrow">Find care that fits your routine</p>
             <h1>Feel confident about your next appointment.</h1>
             <p>Discover verified clinics, compare their services, and manage your appointments in one calm, simple space.</p>
@@ -511,6 +511,7 @@ watch(radiusKm, () => {
   padding: 1.5rem 1.4rem 2rem;
   display: grid;
   gap: 1.35rem;
+  container: customer-home-content / inline-size;
 }
 
 .customer-filter-panel,
@@ -541,6 +542,7 @@ watch(radiusKm, () => {
 .customer-home-hero h1 { max-width: 42rem; margin: .45rem 0 0; color: #fffaf4; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.8rem, 3.5vw, 3rem); line-height: 1.08; letter-spacing: -.035em; }
 .customer-home-hero p:not(.customer-home-eyebrow) { max-width: 42rem; margin: .75rem 0 0; color: #f4e2d0; font-size: .92rem; line-height: 1.65; }
 .customer-home-hero-actions { display: flex; flex: none; flex-wrap: wrap; gap: .65rem; }.customer-home-primary-action, .customer-home-secondary-action { border-radius: .8rem; padding: .72rem .9rem; font-size: .82rem; font-weight: 700; text-decoration: none; transition: transform .16s ease, background .16s ease; }.customer-home-primary-action { background: #fff8ee; color: #58311d; }.customer-home-secondary-action { border: 1px solid rgba(255, 244, 231, .5); color: #fff8ee; }.customer-home-primary-action:hover, .customer-home-secondary-action:hover { transform: translateY(-2px); }
+.customer-home-hero-copy { min-width: 0; }
 
 .customer-filter-panel {
   padding: 1rem;
@@ -994,5 +996,33 @@ watch(radiusKm, () => {
   .clear-filters-button { justify-self: end; }
   .customer-results-section { padding: 1rem; border-radius: 1.25rem; }
   .customer-results-title { font-size: 1.8rem; }
+}
+
+/* Base the hero layout on the actual content column, not only viewport width. */
+@container customer-home-content (max-width: 48rem) {
+  .customer-home-hero {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .customer-home-hero-copy { width: 100%; }
+  .customer-home-hero h1 { max-width: 30rem; font-size: clamp(1.65rem, 6vw, 2rem); line-height: 1.12; }
+  .customer-home-hero p:not(.customer-home-eyebrow) { max-width: 36rem; }
+  .customer-home-hero-actions { width: 100%; flex: 0 1 auto; }
+  .customer-home-hero-actions > a { flex: 1 1 9rem; justify-content: center; text-align: center; }
+}
+
+@media (max-width: 767px) {
+  .customer-home-shell .customer-home-hero {
+    display: flex;
+    align-items: stretch !important;
+    flex-direction: column !important;
+    gap: 1rem;
+  }
+
+  .customer-home-shell .customer-home-hero-copy { width: 100%; min-width: 0; }
+  .customer-home-shell .customer-home-hero h1 { width: 100%; max-width: 30rem; }
+  .customer-home-shell .customer-home-hero-actions { width: 100%; flex: 0 1 auto; }
 }
 </style>
