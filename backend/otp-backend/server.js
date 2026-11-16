@@ -4691,7 +4691,7 @@ registerWalkInBookings(app, {
   admin, requireAuth, authorizeClinicAction, assertClinicPlanFeature,
   getBookingRange, rangesOverlap, getApprovedLeaveForDate, getClinicPoliciesForBranch,
   sendBooking: async appointment => {
-    if (!postmarkClient || !senderEmail) return
+    if (!appointment.customerEmail || !postmarkClient || !senderEmail) return
     await sendPostmarkMessage({
       to: appointment.customerEmail,
       subject: 'Your AesthetiCare walk-in appointment is booked',
@@ -10434,11 +10434,6 @@ app.use((error, req, res, _next) => {
     success: false,
     error: 'The API request could not be completed.',
     requestId,
-    diagnostic: {
-      name: error?.name || null,
-      code: error?.code || null,
-      message: error?.message || null,
-    },
   })
 })
 

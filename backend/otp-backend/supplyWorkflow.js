@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
-import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMatch, stockSignals, hasPermission, permissionsByKind } from './supplyModel.js'
+import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMatch, stockSignals, availableStock, categoriesMatch, hasPermission, permissionsByKind } from './supplyModel.js'
 import { reconcileLotsToInventory, summarizeInventoryLotReconciliation } from './inventoryLots.js'
 
 const docs = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }))
@@ -123,7 +123,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const records = (await scopedDocs('supplyRecords')).filter(r => canRead(ctx, r))
     const internal = true
     const broadRead = ['inventory:view', 'procurement:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
-    const items = broadRead ? (await scopedDocs('inventoryItems')).map(i => ({ ...i, signals: stockSignals(i), availableStock: Math.max(0, Number(i.currentStock || 0) - Number(i.reservedStock || 0)) })) : []
+    const items = broadRead ? (await scopedDocs('inventoryItems')).map(i => ({ ...i, signals: stockSignals(i), availableStock: availableStock(i) })) : []
     const stockReconciliation = hasPermission(ctx, 'inventory:view') && req.query.reconcile === '1'
       ? summarizeInventoryLotReconciliation(items, await scopedDocs('supplyLots'))
       : []
@@ -437,14 +437,17 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         else { allow(ctx, 'finance:payables:approve'); const ownerSelfApproval = ctx.roleKey === 'Owner' && r.createdBy === ctx.uid; demand(r.createdBy !== ctx.uid || ownerSelfApproval, 'Finance approval must be performed by another user.'); demand(r.status === 'Submitted', 'Budget request is not awaiting a decision.')
           if (action === 'approve') {
             demand((r.quotationId || r.directSupplierCatalog || r.directSupplierQuote) && Array.isArray(r.lines) && r.lines.length, 'Funding requests must include Procurement’s documented supplier quotation terms.', 400)
-            const budget = get(input.budgetId, 'budget'); demand(budget.department === r.department, 'Budget department must match the request.')
+            const budget = get(input.budgetId, 'budget')
+            demand(budget.status === 'Active', 'Choose an active budget.')
+            demand(budget.department === r.department, 'Budget department must match the request.')
+            demand(categoriesMatch(budget.category, r.category), 'Budget category must match the request.')
             const approvedAmount = money(input.approvedAmount); demand(approvedAmount >= r.requestedAmount && approvedAmount <= budget.total - budget.committed - budget.spent, 'Insufficient available budget, or approved amount is below the quotation.')
             set(budget, { committed: budget.committed + approvedAmount })
             const remarks = required(input.remarks, 'Approval remarks')
             const approval = create('financeApproval', { status: 'Approved', budgetRequestId: r.id, budgetId: budget.id, approvedAmount, decision: 'Approved', remarks, financeOfficerId: ctx.uid, decidedAt: now, links: [...linksOf(r), r.id] }, `approval-${r.id}`)
             const allocation = create('budgetAllocation', { status: 'Committed', budgetRequestId: r.id, financeApprovalId: approval.id, budgetId: budget.id, amount: approvedAmount, releasedAmount: 0, allocatedBy: ctx.uid, allocatedAt: now, links: [...linksOf(approval), approval.id] }, `allocation-${r.id}`)
             result = set(r, { status: 'Approved', budgetId: budget.id, approvedAmount, approvedBy: ctx.uid, approvedAt: now, remarks, ownerSelfApproved: ownerSelfApproval, financeApprovalId: approval.id, budgetAllocationId: allocation.id })
-            create('po', { lines: r.lines, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, adjustments: r.adjustments || [], taxTreatment: r.taxTreatment || '', ...(r.statedTotal === undefined ? {} : { statedTotal: r.statedTotal }), total: r.requestedAmount, sourceQuotationId: r.quotationId || '', directSupplierCatalog: Boolean(r.directSupplierCatalog || r.directSupplierQuote), mode: r.mode || 'Online', supplierId: r.supplierId, paymentTerms: r.paymentTerms, warranty: r.warranty, status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...linksOf(allocation), allocation.id, ...(r.quotationId ? [r.quotationId] : [])], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
+            create('po', { lines: r.lines, category: r.category, subtotal: r.subtotal, tax: r.tax, delivery: r.delivery, otherCharges: r.otherCharges, discount: r.discount, adjustments: r.adjustments || [], taxTreatment: r.taxTreatment || '', ...(r.statedTotal === undefined ? {} : { statedTotal: r.statedTotal }), total: r.requestedAmount, sourceQuotationId: r.quotationId || '', directSupplierCatalog: Boolean(r.directSupplierCatalog || r.directSupplierQuote), mode: r.mode || 'Online', supplierId: r.supplierId, paymentTerms: r.paymentTerms, warranty: r.warranty, status: 'Approved', budgetId: budget.id, budgetRequestId: r.id, financeApprovalId: approval.id, budgetAllocationId: allocation.id, procurementId: r.procurementId, links: [...linksOf(allocation), allocation.id, ...(r.quotationId ? [r.quotationId] : [])], committedAmount: approvedAmount, paidAmount: 0, accepted: {}, deliveryDate: r.deliveryDate, deliveryLocation: r.deliveryLocation, terms: r.terms }, `po-${r.id}`)
           } else { demand(['reject', 'return'].includes(action), 'Invalid action.'); result = set(r, { status: action === 'reject' ? 'Rejected' : 'Returned', remarks: required(input.remarks, 'Decision reason'), reviewedBy: ctx.uid, reviewedAt: now }) }
         }
       } else if (r.kind === 'po') {
@@ -454,7 +457,9 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           demand(r.createdBy !== ctx.uid || ownerSelfApproval, 'Finance approval must be performed by another user.')
           if (action === 'approve') {
             const budget = get(input.budgetId, 'budget')
+            demand(budget.status === 'Active', 'Choose an active budget.')
             demand(budget.department === r.department, 'Budget department must match the purchase order.')
+            demand(categoriesMatch(budget.category, r.category), 'Budget category must match the purchase order.')
             const approvedAmount = money(input.approvedAmount)
             demand(approvedAmount >= r.total && approvedAmount <= budget.total - budget.committed - budget.spent, 'Insufficient available budget, or approved amount is below the purchase order.')
             const remarks = required(input.remarks, 'Approval remarks')

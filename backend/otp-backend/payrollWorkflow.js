@@ -120,13 +120,9 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
       const employee = staffById.get(data.employeeId)
       check(employee && employee.branchId === branchId, 'The payroll employee is missing from this branch. Correct the employee assignment before submission.', 409)
       check(employee.engagementType !== 'student_intern', 'Student interns / OJT are handled as Finance operating expenses, not employee payroll.')
-      // A generated payroll remains reviewable even if an employee profile was
-      // archived after the period closed. When the profile still exists, its
-      // current base pay must match the generated payroll snapshot.
-      check(!employee.archived, 'An archived employee payroll entry must be corrected before submission.')
-      const model = data.basePayModel || 'hourly'
-      const rate = Number(employee?.basePay ?? data.baseRate ?? data.hourlyRate ?? 0)
-      const monthlyHours = Number(employee?.monthlyBaseHours || 176)
+      const model = data.basePayModel || employee.basePayModel || 'hourly'
+      const rate = Number(data.baseRate ?? data.hourlyRate ?? employee.basePay ?? 0)
+      const monthlyHours = Number(data.monthlyBaseHours ?? employee.monthlyBaseHours ?? 176)
       const monthAttendance = attendanceRows.filter(row => row.employeeId === data.employeeId && String(row.date || '').startsWith(`${monthKey}-`) && row.timeIn && row.timeOut)
       let workedMinutes = 0
       const workedDateKeys = new Set()
@@ -167,11 +163,9 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
       check(Number(data.paidLeaveDays || 0) === expectedLeave.paidLeaveDays && near(data.paidLeaveHours, expectedLeave.paidLeaveHours)
         && Number(data.unpaidLeaveDays || 0) === expectedLeave.unpaidLeaveDays && near(data.unpaidLeaveHours, expectedLeave.unpaidLeaveHours), 'Approved leave changed. Regenerate payroll to include leave adjustments.')
       {
-        check(Math.round(Number(employee.basePay || 0) * 100) === Math.round(Number(data.baseRate ?? data.hourlyRate ?? 0) * 100) && (employee.basePayModel || 'hourly') === (data.basePayModel || 'hourly'), `Base pay changed for ${data.employeeName || 'an employee'}. Regenerate payroll before submission.`)
-        if (data.basePayModel === 'monthly-retainer') check(Number(employee.monthlyBaseHours || 176) === Number(data.monthlyBaseHours), 'The monthly hourly-equivalent divisor changed. Regenerate payroll.')
         const base = basePayForPeriod({
           model,
-          rate: Number(employee.basePay || 0),
+          rate,
           hours: model === 'hourly' ? expectedRegularHours + expectedLeave.paidLeaveHours : workedHours,
           days: workedDateKeys.size + expectedLeave.paidLeaveDays,
           monthlyHours,

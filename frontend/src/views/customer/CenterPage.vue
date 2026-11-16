@@ -610,6 +610,7 @@
               v-model="chatInput"
               type="text"
               placeholder="Type your message..."
+              maxlength="4000"
               class="customer-chat-input flex-1 rounded-2xl border border-[#e0c09a] bg-white px-3 py-2 text-[#3d281d] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20"
             />
             <button
@@ -2009,7 +2010,19 @@ const startChatListener = async () => {
   const q = query(messagesRef)
   chatUnsubscribe = pageListener(onSnapshot, q, (snapshot) => {
     chatMessages.value = snapshot.docs
-      .map((snap) => ({ id: snap.id, ...snap.data() }))
+      .flatMap((snap) => {
+        const message = { id: snap.id, ...snap.data() }
+        if (!message.quickAnswerKey || message.senderRole !== 'customer') return [message]
+        return [message, {
+          id: `${snap.id}-guide`,
+          text: buildQuickAnswer({ key: message.quickAnswerKey }),
+          senderId: 'system',
+          senderName: 'AesthetiCare Guide',
+          senderRole: 'system',
+          createdAt: message.createdAt,
+          clientCreatedAt: Number(message.clientCreatedAt || 0) + 1,
+        }]
+      })
       .sort((a, b) => {
         const aServer = a.createdAt?.seconds || 0
         const bServer = b.createdAt?.seconds || 0
@@ -2130,6 +2143,8 @@ const sendChat = async () => {
       branchId: activeBranchId.value,
       branchName: center.value.name || '',
       subject: `New chat message from ${profile?.name || 'Customer'}`,
+      customerId: user.uid,
+      senderId: user.uid,
       senderName: profile?.name || 'Customer',
       senderEmail: profile?.email || '',
       body: messageText,
@@ -2177,21 +2192,20 @@ const formatPriceRange = () => {
   return `${formatRange(servicePrices, 'Services')} ${formatRange(consultationPrices, 'Consultations')}`.trim()
 }
 
-const buildQuickAnswer = (key) => {
+const buildQuickAnswer = ({ key }) => {
   switch (key) {
     case 'services':
-      if (!center.value.services.length) return 'We do not have a published services list yet.'
-      return `We currently offer: ${center.value.services.join(', ')}.`
+      return center.value.services?.length
+        ? `We currently offer: ${center.value.services.join(', ')}.`
+        : 'We do not have a published services list yet.'
     case 'contact':
       return `You can reach us at ${center.value.contactNumber || 'our phone'} or ${center.value.businessEmail || center.value.email || 'our email'}.`
     case 'location':
-      return center.value.location
-        ? `We are located at ${center.value.location}.`
-        : 'Our location is not set yet.'
+      return center.value.location ? `We are located at ${center.value.location}.` : 'Our location is not set yet.'
     case 'price':
       return formatPriceRange()
     case 'booking':
-      return 'To book, go to Services & Consultations, select a service, then choose a date and time. You can also chat with the receptionist for help.'
+      return 'To book, open Services & Consultations, select an offering, then choose a date and time. You can also message the clinic for help.'
     default:
       return 'Thanks for your question. A receptionist will reply soon.'
   }
@@ -2209,7 +2223,6 @@ const sendQuickQuestion = async (question) => {
     if (!threadRef) return
     const profile = await resolveCustomerProfile()
     const questionText = question?.label || 'Quick question'
-    const answerText = buildQuickAnswer(question?.key)
 
     const baseTime = Date.now()
     await addDoc(collection(threadRef, 'messages'), {
@@ -2219,22 +2232,14 @@ const sendQuickQuestion = async (question) => {
       senderEmail: profile?.email || '',
       senderRole: 'customer',
       createdAt: serverTimestamp(),
-      clientCreatedAt: baseTime
-    })
-
-    await addDoc(collection(threadRef, 'messages'), {
-      text: answerText,
-      senderId: 'system',
-      senderName: 'AesthetiCare',
-      senderRole: 'system',
-      createdAt: serverTimestamp(),
-      clientCreatedAt: baseTime + 1
+      clientCreatedAt: baseTime,
+      quickAnswerKey: question?.key || '',
     })
 
     await setDoc(
       threadRef,
       {
-        lastMessage: answerText,
+        lastMessage: questionText,
         lastMessageAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       },
@@ -2242,7 +2247,7 @@ const sendQuickQuestion = async (question) => {
     )
   } catch (error) {
     console.error(error)
-    toast.error('Failed to send quick answer.')
+    toast.error('Failed to send quick question.')
   }
 }
 

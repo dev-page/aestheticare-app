@@ -40,6 +40,7 @@ export const registerWalkInPayments = (app, { admin, requireAuth, authorizeClini
             customerName: appointment.customerName || appointment.clientName || 'Walk-in client',
             customerEmail: appointment.customerEmail || '',
             bookedByName: appointment.bookedByName || appointment.clientName || appointment.customerName || 'Walk-in client',
+            bookedByEmail: appointment.bookedByEmail || '',
             service: appointment.service || 'Treatment',
             date: appointment.date || '',
             time: appointment.time || '',

@@ -124,6 +124,7 @@ export const registerRefundWorkflow = (app, {
         status: nextState,
         refundMethod: 'PayMongo',
         amount,
+        refundOperationId: operationId,
         paymongoRefundId: refundId || op.paymongoRefundId || null,
         paymongoRefundStatus: rawStatus,
         ...(rawStatus === 'succeeded' ? { refundedAt: time } : {}),
@@ -191,31 +192,44 @@ export const registerRefundWorkflow = (app, {
       const preview = await tx.get(recordRef)
       fail(preview.exists && String(preview.data()?.branchId || '') === branchId, 'Refund record is unavailable.', 404)
       const record = preview.data() || {}
-      let requestSnap = null
-      if (requestRef) requestSnap = await tx.get(requestRef)
-      if (requestRef) {
-        fail(requestSnap.exists && ['Requested', 'Processing', 'Pending'].includes(requestSnap.data()?.status), 'This refund request is no longer active.', 409)
-        fail(requestSnap.data()?.orderId === recordId || entityType === 'appointment', 'Refund request does not match this order.', 409)
-      }
       let currentOp = null
       if (record.refundOperationId) {
         const currentSnap = await tx.get(db.collection('refundOperations').doc(String(record.refundOperationId)))
         if (currentSnap.exists) currentOp = { id: currentSnap.id, ...currentSnap.data() }
+      }
+      let requestSnap = null
+      if (requestRef) requestSnap = await tx.get(requestRef)
+      let requestOp = null
+      const requestOperationId = clean(requestSnap?.data()?.refundOperationId)
+      if (requestOperationId) {
+        if (currentOp?.id === requestOperationId) requestOp = currentOp
+        else {
+          const requestOperationSnap = await tx.get(db.collection('refundOperations').doc(requestOperationId))
+          if (requestOperationSnap.exists) requestOp = { id: requestOperationSnap.id, ...requestOperationSnap.data() }
+        }
+      }
+      const completedRequestOperation = [requestOp, currentOp].find(operation => operation?.status === 'Refunded' && operation.requestId === requestId)
+      if (requestRef) {
+        fail(requestSnap.exists && (['Requested', 'Processing', 'Pending'].includes(requestSnap.data()?.status) || Boolean(completedRequestOperation)), 'This refund request is no longer active.', 409)
+        fail(requestSnap.data()?.orderId === recordId || entityType === 'appointment', 'Refund request does not match this order.', 409)
+      }
+      if (completedRequestOperation) {
+        operationId = completedRequestOperation.id
+        shouldSubmit = false
+        operationResult = completedRequestOperation
+        return
       }
       if (currentOp && ['Submitting', 'Processing'].includes(currentOp.status)) {
         operationId = currentOp.id
         shouldSubmit = !currentOp.paymongoRefundId
         operationResult = currentOp
         if (!shouldSubmit) return
-      } else if (currentOp?.status === 'Refunded') {
-        operationId = currentOp.id
-        shouldSubmit = false
-        operationResult = currentOp
       } else {
         const alreadyRefundedCents = Math.round(Number(record.refundedAmountTotal || 0) * 100)
         const remainingCents = Math.max(0, paidCents - alreadyRefundedCents)
         fail(amountCents > 0 && amountCents <= remainingCents, 'Refund amount exceeds the remaining paid balance.', 400)
-        fail(!record.paymongoRefundId || record.paymongoRefundStatus === 'failed' || currentOp?.status === 'Failed' || currentOp?.status === 'Requested', 'A PayMongo refund is already active or completed.', 409)
+        const newRequestAfterPartialRefund = currentOp?.status === 'Refunded' && currentOp.requestId !== requestId
+        fail(!record.paymongoRefundId || record.paymongoRefundStatus === 'failed' || currentOp?.status === 'Failed' || currentOp?.status === 'Requested' || newRequestAfterPartialRefund, 'A PayMongo refund is already active or completed.', 409)
         operationId = candidateId
         const opRef = db.collection('refundOperations').doc(operationId)
         const now = stamp()
@@ -225,14 +239,14 @@ export const registerRefundWorkflow = (app, {
           description: clean(description) || 'Customer refund', reason: clean(reason), method: 'PayMongo', status: 'Submitting', idempotencyKey: candidateKey,
           actorId: actorId || '', createdAt: now, updatedAt: now,
         })
-        tx.set(recordRef, { refundStatus: 'Processing', refundRequestStatus: 'Processing', refundAmount: amountCents / 100, refundOperationId: operationId, refundMethod: 'PayMongo', updatedAt: now }, { merge: true })
-        if (requestRef && requestSnap?.exists) tx.set(requestRef, { status: 'Processing', refundMethod: 'PayMongo', amount: amountCents / 100, updatedAt: now }, { merge: true })
+        tx.set(recordRef, { refundStatus: 'Processing', refundRequestStatus: 'Processing', refundAmount: amountCents / 100, refundOperationId: operationId, refundMethod: 'PayMongo', paymongoRefundId: null, paymongoRefundStatus: 'processing', updatedAt: now }, { merge: true })
+        if (requestRef && requestSnap?.exists) tx.set(requestRef, { status: 'Processing', refundMethod: 'PayMongo', amount: amountCents / 100, refundOperationId: operationId, updatedAt: now }, { merge: true })
       }
     })
 
     const opRef = db.collection('refundOperations').doc(operationId)
     const operation = (await opRef.get()).data() || {}
-    if (!shouldSubmit || operation.paymongoRefundId) return { operationId, status: operation.status || operationResult?.status || 'Processing', paymongoRefundId: operation.paymongoRefundId || operationResult?.paymongoRefundId || null, providerStatus: operation.providerStatus || operationResult?.providerStatus || 'processing' }
+    if (!shouldSubmit || operation.paymongoRefundId) return { operationId, status: operation.status || operationResult?.status || 'Processing', paymongoRefundId: operation.paymongoRefundId || operationResult?.paymongoRefundId || null, providerStatus: operation.providerStatus || operationResult?.providerStatus || 'processing', requestId: operation.requestId || requestId }
 
     let response
     try {
@@ -253,7 +267,7 @@ export const registerRefundWorkflow = (app, {
     }
     const refund = payload?.data || {}
     const attributes = refund.attributes || {}
-    await opRef.set({ paymongoRefundId: refund.id || null, providerStatus: attributes.status || 'pending', status: stateForProvider(attributes.status), updatedAt: stamp() }, { merge: true })
+    await opRef.set({ paymongoRefundId: refund.id || null, providerStatus: attributes.status || 'pending', updatedAt: stamp() }, { merge: true })
     const updated = await reconcileOperation(operationId, refund)
     return { operationId, ...updated }
   }
@@ -435,6 +449,14 @@ export const registerRefundWorkflow = (app, {
       const preview = previewSnap.data() || {}, requestData = requestPreview.data() || {}
       fail(previewSnap.exists && requestPreview.exists && requestData.orderId === orderId && requestData.branchId === preview.branchId, 'Refund request is unavailable.', 404)
       fail(await hasBranchAccess(context, String(preview.branchId || '')), 'Branch access is not allowed.', 403)
+      const completedOperationId = String(requestData.refundOperationId || (preview.refundRequestId === requestId ? preview.refundOperationId : '') || '')
+      if (method === 'original' && requestData.status === 'Refunded' && completedOperationId) {
+        const operationSnap = await db.collection('refundOperations').doc(completedOperationId).get()
+        const operation = operationSnap.data() || {}
+        if (operation.status === 'Refunded' && operation.requestId === requestId && operation.method === 'PayMongo') {
+          return res.json({ success: true, data: { operationId: operationSnap.id, status: operation.status, paymongoRefundId: operation.paymongoRefundId || null, providerStatus: operation.providerStatus || 'succeeded', orderId, requestId, method: 'PayMongo' } })
+        }
+      }
       fail(['Requested', 'Processing', 'Pending'].includes(requestData.status), 'This refund request is no longer awaiting settlement.', 409)
       const paidCents = cents(preview.amountPaid ?? preview.totalPaid ?? preview.total ?? 0)
       const remainingPaidCents = Math.max(0, paidCents - Math.round(Number(preview.refundedAmountTotal || 0) * 100))
@@ -556,6 +578,14 @@ export const registerRefundWorkflow = (app, {
       const appointmentRef = db.collection('appointments').doc(appointmentId)
       const previewSnap = await appointmentRef.get(), preview = previewSnap.data() || {}
       fail(previewSnap.exists && await hasBranchAccess(context, String(preview.branchId || '')), 'Appointment is unavailable for this branch.', 404)
+      const requestId = clean(preview.refundRequestId) || (String(preview.approvalStatus || '').toLowerCase() === 'rejected' ? `booking-rejected-${appointmentId}` : `appointment-cancel-${appointmentId}`)
+      if (preview.refundOperationId) {
+        const operationSnap = await db.collection('refundOperations').doc(String(preview.refundOperationId)).get()
+        const operation = operationSnap.data() || {}
+        if (operation.status === 'Refunded' && operation.requestId === requestId && operation.method === 'PayMongo') {
+          return res.json({ success: true, data: { operationId: operationSnap.id, status: operation.status, paymongoRefundId: operation.paymongoRefundId || null, providerStatus: operation.providerStatus || 'succeeded', requestId, method: 'PayMongo', appointmentId } })
+        }
+      }
       const refundNeedsRetry = preview.refundStatus === 'Requested'
         || (preview.refundStatus === 'Processing' && !clean(preview.paymongoRefundId))
       fail(['Cancelled', 'Rejected'].includes(String(preview.status || '')) && refundNeedsRetry, 'Only a failed or uncertain refund for a cancelled appointment can be retried.', 409)
@@ -569,7 +599,7 @@ export const registerRefundWorkflow = (app, {
         entityType: 'appointment', recordId: appointmentId, branchId: String(preview.branchId || ''),
         customerId: preview.customerId || '', customerName: preview.customerName || preview.clientName || 'Customer',
         paymentId: clean(preview.paymongoPaymentId), amount: amountCents / 100, paidAmount: paidCents / 100,
-        requestId: clean(preview.refundRequestId) || (String(preview.approvalStatus || '').toLowerCase() === 'rejected' ? `booking-rejected-${appointmentId}` : `appointment-cancel-${appointmentId}`),
+        requestId,
         actorId: context.uid, description: preview.service || 'Appointment refund', reason: 'Refund retry requested by clinic finance',
       })
       return res.json({ success: true, data: { ...result, appointmentId } })

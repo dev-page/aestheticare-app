@@ -10,13 +10,25 @@ export const quantity = (value, allowZero = false) => {
   return result
 }
 export const required = (value, label) => { const text = String(value || '').trim(); demand(text && text.length <= 4000, `${label} is required (up to 4000 characters).`, 400); return text }
+export const normalizeCategory = value => typeof value === 'string'
+  ? value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase()
+  : ''
+export const categoriesMatch = (left, right) => {
+  const normalizedLeft = normalizeCategory(left)
+  return Boolean(normalizedLeft && normalizedLeft === normalizeCategory(right))
+}
 export const day = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 export const dateKey = value => { const text = String(value || ''); const parsed = new Date(text); demand(/^\d{4}-\d{2}-\d{2}$/.test(text) && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text, 'A valid date is required.', 400); return text }
+const finiteStock = value => {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+}
+export const availableStock = item => Math.max(0, finiteStock(item?.currentStock) - finiteStock(item?.reservedStock))
 export const stockSignals = (item, today = day()) => {
   const flags = []
-  const stock = Number(item.currentStock || 0)
-  if (stock <= Number(item.minStock || 0)) flags.push('For Restocking')
-  const max = Number(item.maxStock || item.targetStock || 0)
+  const stock = finiteStock(item?.currentStock)
+  if (availableStock(item) <= finiteStock(item?.minStock)) flags.push('For Restocking')
+  const max = finiteStock(item?.maxStock || item?.targetStock)
   if (max > 0 && stock > max) flags.push('Overstocked')
   if (item.expiryDate) {
     const days = (Date.parse(item.expiryDate) - Date.parse(today)) / 86400000

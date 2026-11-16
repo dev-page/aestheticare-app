@@ -72,22 +72,24 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
         const phone = String(clientDetails.phone || '').trim()
         check(firstName.length >= 1 && firstName.length <= 100 && lastName.length >= 1 && lastName.length <= 100
           && middleName.length <= 100 && suffix.length <= 20, 'Enter the recipient’s first and last name. Middle name and suffix are optional.', 400)
-        check(email.length <= 254 && /^\S+@\S+\.\S+$/.test(email), 'Enter a valid recipient email address.', 400)
+        check(email.length <= 254 && (!email || /^\S+@\S+\.\S+$/.test(email)), 'Enter a valid recipient email address or leave it blank.', 400)
         check(phone.length <= 32 && (!phone || /^\+?[0-9 ()-]{7,32}$/.test(phone)), 'Enter a valid recipient phone number.', 400)
         const name = [firstName, middleName, lastName].filter(Boolean).join(' ')
         cleanClientDetails = { firstName, middleName, lastName, suffix, email, phone, fullName: suffix ? `${name}, ${suffix}` : name }
-        try {
-          const account = await admin.auth().getUserByEmail(email)
-          if (account.emailVerified) {
-            const accountProfile = await admin.firestore().collection('users').doc(account.uid).get()
-            const userData = accountProfile.exists ? accountProfile.data() || {} : {}
-            const accountName = normalized(userData.fullName || userData.name || account.displayName
-              || [userData.firstName, userData.middleName, userData.lastName].filter(Boolean).join(' '))
-            if (accountName && accountName === normalized(cleanClientDetails.fullName)) verifiedCustomerId = account.uid
-          }
-        } catch (error) {
-          if (error.code !== 'auth/user-not-found') {
-            console.warn('Walk-in account matching was unavailable:', error.message)
+        if (email) {
+          try {
+            const account = await admin.auth().getUserByEmail(email)
+            if (account.emailVerified) {
+              const accountProfile = await admin.firestore().collection('users').doc(account.uid).get()
+              const userData = accountProfile.exists ? accountProfile.data() || {} : {}
+              const accountName = normalized(userData.fullName || userData.name || account.displayName
+                || [userData.firstName, userData.middleName, userData.lastName].filter(Boolean).join(' '))
+              if (accountName && accountName === normalized(cleanClientDetails.fullName)) verifiedCustomerId = account.uid
+            }
+          } catch (error) {
+            if (error.code !== 'auth/user-not-found') {
+              console.warn('Walk-in account matching was unavailable:', error.message)
+            }
           }
         }
       }
@@ -121,10 +123,17 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
 
         let clientRecordRef = null, data = null, clientRecordNeedsCreate = false, accountCustomerId = ''
         if (creatingClient) {
-          const [profileMatches, appointmentMatches] = await Promise.all([
-            tx.get(db.collection('clients').where('email', '==', cleanClientDetails.email)),
-            tx.get(db.collection('appointments').where('customerEmail', '==', cleanClientDetails.email)),
-          ])
+          const [profileMatches, appointmentMatches] = cleanClientDetails.email
+            ? await Promise.all([
+                tx.get(db.collection('clients').where('email', '==', cleanClientDetails.email)),
+                tx.get(db.collection('appointments').where('customerEmail', '==', cleanClientDetails.email)),
+              ])
+            : cleanClientDetails.phone
+              ? await Promise.all([
+                  tx.get(db.collection('clients').where('phone', '==', cleanClientDetails.phone)),
+                  tx.get(db.collection('appointments').where('customerPhone', '==', cleanClientDetails.phone)),
+                ])
+              : [{ docs: [] }, { docs: [] }]
           const normalizedName = normalized(cleanClientDetails.fullName)
           const duplicateProfile = profileMatches.docs.find(snapshot => {
             const profile = snapshot.data() || {}
@@ -182,9 +191,11 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
           }
         }
         const email = normalized(data.email)
-        check(/^\S+@\S+\.\S+$/.test(email), 'The client needs a valid email address.', 400)
+        const phone = String(data.phone || data.contactNumber || '').trim()
+        check(!email || (email.length <= 254 && /^\S+@\S+\.\S+$/.test(email)), 'The client email address is invalid. Update it or leave it blank.', 400)
+        check(phone.length <= 32 && (!phone || /^\+?[0-9 ()-]{7,32}$/.test(phone)), 'The client phone number is invalid. Update it or leave it blank.', 400)
         const clientId = clientRecordRef.id
-        const client = { customerId: accountCustomerId || clientId, clientId, customerName: data.fullName || (String(data.firstName || '') + ' ' + String(data.lastName || '')).trim(), customerEmail: email, customerPhone: data.phone || data.contactNumber || '' }
+        const client = { customerId: accountCustomerId || clientId, clientId, customerName: data.fullName || (String(data.firstName || '') + ' ' + String(data.lastName || '')).trim(), customerEmail: email, customerPhone: phone }
         const arranger = booker || { name: client.customerName, email: client.customerEmail, phone: client.customerPhone }
         const { policy } = await getClinicPoliciesForBranch(db, branchId, branchSnap.data())
         const bookingAgreement = {

@@ -156,6 +156,32 @@ service cloud.firestore {
         && clinicDoc(clinicId).data.isPublished == true;
     }
 
+    function canUseClinicInbox(branchId) {
+      return isSignedIn()
+        && branchId is string
+        && branchId.size() > 0
+        && canAccessBranch(branchId)
+        && hasPermission('inbox:view');
+    }
+
+    function isShortMessage(value) {
+      return value is string && value.size() > 0 && value.size() <= 4000;
+    }
+
+    function threadCustomerOwns(threadId) {
+      let thread = get(/databases/$(database)/documents/chatThreads/$(threadId)).data;
+      return isSignedIn()
+        && thread.customerId == request.auth.uid
+        && threadId == thread.branchId + '_' + request.auth.uid;
+    }
+
+    function clinicCanUseThread(threadId) {
+      let thread = get(/databases/$(database)/documents/chatThreads/$(threadId)).data;
+      return thread.branchId is string
+        && canUseClinicInbox(thread.branchId)
+        && threadId == thread.branchId + '_' + thread.customerId;
+    }
+
     // Use the server timestamp so expiry restrictions do not depend on the UI
     // or on the hourly maintenance job running first.
     function subscriptionAllowsBusinessWrite(branchId) {
@@ -826,48 +852,131 @@ service cloud.firestore {
 
     match /messages/{messageId} {
       allow read: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId));
-      allow create: if isSignedIn();
-      allow update, delete: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId));
+        && resource.data.branchId is string
+        && canUseClinicInbox(resource.data.branchId);
+      allow create: if isCustomer()
+        && request.resource.data.keys().hasAll([
+          'branchId', 'branchName', 'threadId', 'customerId', 'senderId',
+          'subject', 'senderName', 'senderEmail', 'body', 'isRead', 'type', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'branchId', 'branchName', 'threadId', 'customerId', 'senderId',
+          'subject', 'senderName', 'senderEmail', 'body', 'isRead', 'type', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.type == 'chat'
+        && request.resource.data.isRead == false
+        && request.resource.data.branchId is string
+        && exists(/databases/$(database)/documents/clinics/$(request.resource.data.branchId))
+        && request.resource.data.threadId == request.resource.data.branchId + '_' + request.auth.uid
+        && exists(/databases/$(database)/documents/chatThreads/$(request.resource.data.threadId))
+        && get(/databases/$(database)/documents/chatThreads/$(request.resource.data.threadId)).data.customerId == request.auth.uid
+        && get(/databases/$(database)/documents/chatThreads/$(request.resource.data.threadId)).data.branchId == request.resource.data.branchId
+        && isShortMessage(request.resource.data.body)
+        && request.resource.data.branchName is string
+        && request.resource.data.branchName.size() <= 200
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() <= 200
+        && request.resource.data.senderName is string
+        && request.resource.data.senderName.size() <= 120
+        && request.resource.data.senderEmail is string
+        && request.resource.data.senderEmail.size() <= 254
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+      allow update: if isSignedIn()
+        && resource.data.branchId is string
+        && canUseClinicInbox(resource.data.branchId)
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.senderId == resource.data.senderId
+        && request.resource.data.branchId == resource.data.branchId
+        && request.resource.data.threadId == resource.data.threadId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'updatedAt'])
+        && request.resource.data.isRead == true
+        && request.resource.data.updatedAt is timestamp;
+      allow delete: if false;
     }
 
     match /reviews/{reviewId} {
       allow read: if isPublicClinic(resource.data.branchId)
         || (isSignedIn() && canAccessBranch(resource.data.branchId));
-      allow create: if isSignedIn()
-        && request.resource.data.customerId == request.auth.uid
-        && request.resource.data.appointmentId != null
-        && get(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId)).data.customerId == request.auth.uid
-        && get(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId)).data.status == 'Completed';
-      allow update, delete: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId));
+      allow create, update, delete: if false;
     }
 
     match /chatThreads/{threadId} {
       allow read: if isSignedIn()
         && ((resource.data.customerId == request.auth.uid)
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId))
-          || isSuperadmin());
-      allow create: if isSignedIn()
-        && request.resource.data.customerId == request.auth.uid;
+          || canUseClinicInbox(resource.data.branchId));
+      allow create: if isCustomer()
+        && request.resource.data.keys().hasAll(['branchId', 'customerId', 'customerName', 'customerEmail', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['branchId', 'customerId', 'customerName', 'customerEmail', 'updatedAt'])
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.branchId is string
+        && request.resource.data.branchId.size() > 0
+        && exists(/databases/$(database)/documents/clinics/$(request.resource.data.branchId))
+        && threadId == request.resource.data.branchId + '_' + request.auth.uid
+        && request.resource.data.customerName is string
+        && request.resource.data.customerName.size() <= 120
+        && request.resource.data.customerEmail is string
+        && request.resource.data.customerEmail.size() <= 254
+        && request.resource.data.updatedAt is timestamp;
       allow update: if isSignedIn()
-        && ((resource.data.customerId == request.auth.uid)
-          || (resource.data.branchId != null && canAccessBranch(resource.data.branchId))
-          || isSuperadmin());
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.branchId == resource.data.branchId
+        && ((isCustomer()
+            && resource.data.customerId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'customerName', 'customerEmail', 'customerLastReadAt',
+              'branchName', 'lastMessage', 'lastMessageAt', 'updatedAt'
+            ])
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['customerName'])
+              || (request.resource.data.customerName is string && request.resource.data.customerName.size() <= 120))
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['customerEmail'])
+              || (request.resource.data.customerEmail is string && request.resource.data.customerEmail.size() <= 254))
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['customerLastReadAt'])
+              || request.resource.data.customerLastReadAt is timestamp)
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['branchName'])
+              || (request.resource.data.branchName is string && request.resource.data.branchName.size() <= 200))
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessage'])
+              || isShortMessage(request.resource.data.lastMessage))
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessageAt'])
+              || request.resource.data.lastMessageAt is timestamp)
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedAt'])
+              || request.resource.data.updatedAt is timestamp))
+          || (canUseClinicInbox(resource.data.branchId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage', 'lastMessageAt', 'updatedAt'])
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessage'])
+              || isShortMessage(request.resource.data.lastMessage))
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessageAt'])
+              || request.resource.data.lastMessageAt is timestamp)
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedAt'])
+              || request.resource.data.updatedAt is timestamp)));
       allow delete: if false;
 
       match /messages/{messageId} {
         allow read: if isSignedIn()
-          && ((get(/databases/$(database)/documents/chatThreads/$(threadId)).data.customerId == request.auth.uid)
-            || (get(/databases/$(database)/documents/chatThreads/$(threadId)).data.branchId != null
-              && canAccessBranch(get(/databases/$(database)/documents/chatThreads/$(threadId)).data.branchId))
-            || isSuperadmin());
+          && (threadCustomerOwns(threadId) || clinicCanUseThread(threadId));
         allow create: if isSignedIn()
-          && ((get(/databases/$(database)/documents/chatThreads/$(threadId)).data.customerId == request.auth.uid)
-            || (get(/databases/$(database)/documents/chatThreads/$(threadId)).data.branchId != null
-              && canAccessBranch(get(/databases/$(database)/documents/chatThreads/$(threadId)).data.branchId))
-            || isSuperadmin());
+          && request.resource.data.keys().hasAll(['text', 'senderId', 'senderName', 'senderRole', 'createdAt'])
+          && request.resource.data.keys().hasOnly([
+            'text', 'senderId', 'senderName', 'senderEmail', 'senderRole', 'createdAt', 'clientCreatedAt', 'quickAnswerKey'
+          ])
+          && isShortMessage(request.resource.data.text)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderName is string
+          && request.resource.data.senderName.size() <= 120
+          && request.resource.data.createdAt is timestamp
+          && (!('clientCreatedAt' in request.resource.data) || request.resource.data.clientCreatedAt is int)
+          && (!('quickAnswerKey' in request.resource.data)
+            || (request.resource.data.senderRole == 'customer'
+              && request.resource.data.quickAnswerKey in ['services', 'contact', 'location', 'price', 'booking']))
+          && ((isCustomer()
+              && threadCustomerOwns(threadId)
+              && request.resource.data.senderRole == 'customer'
+              && (!('senderEmail' in request.resource.data)
+                || (request.resource.data.senderEmail is string && request.resource.data.senderEmail.size() <= 254)))
+            || (clinicCanUseThread(threadId)
+              && request.resource.data.senderRole == 'clinic'));
         allow update, delete: if false;
       }
     }
@@ -876,8 +985,8 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && (isSuperadmin() || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)));
       allow create: if isSignedIn()
+        && request.resource.data.actorId == request.auth.uid
         && ((isSuperadmin()
-          && request.resource.data.actorId == request.auth.uid
           && request.resource.data.branchId == null)
           || (request.resource.data.branchId != null && canAccessBranch(request.resource.data.branchId)));
       allow update, delete: if false;

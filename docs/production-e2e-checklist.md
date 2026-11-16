@@ -33,6 +33,8 @@ Run this checklist against staging, not the production database. Use separate te
 - [ ] Confirm a Finance user can only read records for assigned branches.
 - [ ] Confirm an employee cannot modify another employee's role, payroll, or attendance.
 - [ ] Confirm every approval, rejection, refund, and role change creates an audit/activity entry.
+- [ ] Confirm direct Firestore writes cannot create or edit reviews, impersonate chat senders, change chat ownership, or attribute activity to another user.
+- [ ] Confirm API 500 responses expose only a generic message and request ID while server logs retain diagnostic details.
 
 ## HR and Payroll
 
@@ -43,7 +45,10 @@ Run this checklist against staging, not the production database. Use separate te
 - [ ] Finance approves the summary and confirms payslips become available.
 - [ ] Finance rejects the summary with a reason and HR can correct and resubmit it.
 - [ ] Confirm approved payroll cannot be edited by HR.
+- [ ] Generate a payroll period, change or archive an employee pay profile, then confirm the saved period still validates from its pay snapshot.
 - [ ] Confirm Financial Reports include approved payroll only.
+- [ ] Download the attendance CSV template, fill it, preview/import it, and confirm CSV and one-sheet XLSX files use the same validated columns and row limits.
+- [ ] Confirm Attendance backgrounds, fields, tables, and dialogs remain readable in both light and dark themes.
 
 ## Inventory, Procurement, and Finance
 
@@ -55,6 +60,7 @@ Run this checklist against staging, not the production database. Use separate te
 - [ ] Confirm historical Online-mode records remain readable and cannot be modified.
 - [ ] Exercise PO approval, external issue, clinic-recorded supplier confirmation, and expected delivery date.
 - [ ] Confirm only a confirmed PO appears in Inventory receiving and Procurement-only users cannot record a receipt.
+- [ ] Confirm Finance rejects an inactive budget or a budget with a different category, and accepts an active budget with matching department/category and sufficient funds.
 - [ ] Record partial, accepted, rejected, damaged, expired, serialized, and batch-tracked deliveries.
 - [ ] Confirm only accepted quantities enter inventory and retrying onboarding is idempotent.
 - [ ] Resolve rejected-goods discrepancies and verify their photos/documents remain linked.
@@ -75,7 +81,9 @@ Run this checklist against staging, not the production database. Use separate te
 - [ ] An authorized Finance user can approve and issue one voucher only.
 - [ ] An authorized Finance user can reject a request with a recorded decision.
 - [ ] Confirm duplicate refund clicks do not create duplicate vouchers or transactions.
+- [ ] For a partially paid order, issue two distinct partial refund requests and confirm each request settles once; retry either request and confirm no second refund is submitted.
 - [ ] Confirm payment webhook retries are idempotent.
+- [ ] Book an on-site walk-in with recipient email omitted, collect consent/payment, and hand the printed receipt and service code to the recipient; confirm online booking still requires its normal contact details.
 
 ## OCR, Email, and Consultation Integrations
 

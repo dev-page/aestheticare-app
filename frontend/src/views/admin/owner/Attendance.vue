@@ -272,6 +272,38 @@ dt { color: #8a725f; }a { color: #8d5c3c; }summary { cursor: pointer; font-size:
 .attendance :deep(.steps .active) { background: #8d5c3c; color: #fffaf4; }
 .attendance :deep(.buttons) { align-items: center; flex-wrap: wrap; }
 .attendance :deep(section > .panel) { background: #fffdf9; border-color: #ead2b2; }
+:global(html[data-ac-theme="dark"]) .attendance { background: #24180f !important; color: #fff8eb !important; }
+:global(html[data-ac-theme="dark"]) .attendance :is(h1,h2,h3,strong,dt,summary) { color: #fff1d9 !important; }
+:global(html[data-ac-theme="dark"]) .attendance :is(p,small,label,dd,li) { color: #e0c9af !important; }
+:global(html[data-ac-theme="dark"]) .attendance :is(.attendance-page-heading,.attendance-records-panel,.table-wrap,.panel,.dialog,.summary > div,.shell > .filters) {
+  background: #342419 !important; border-color: #6d4a32 !important; color: #fff8eb !important;
+}
+:global(html[data-ac-theme="dark"]) .attendance :deep(section > .panel) { background: #342419 !important; border-color: #6d4a32 !important; }
+:global(html[data-ac-theme="dark"]) .attendance .attendance-eyebrow { color: #d99a6c !important; }
+:global(html[data-ac-theme="dark"]) .attendance .attendance-tabs { border-color: #6d4a32; }
+:global(html[data-ac-theme="dark"]) .attendance .attendance-tabs button { color: #c9ab8e !important; }
+:global(html[data-ac-theme="dark"]) .attendance .attendance-tabs button:hover,
+:global(html[data-ac-theme="dark"]) .attendance .attendance-tabs button.active { color: #f0d2ac !important; background: #493224 !important; }
+:global(html[data-ac-theme="dark"]) .attendance :deep(button) { background: #493224 !important; border-color: #81583b !important; color: #fff1d9 !important; }
+:global(html[data-ac-theme="dark"]) .attendance :deep(button:hover:not(:disabled)) { background: #5a3d29 !important; border-color: #b17c53 !important; }
+:global(html[data-ac-theme="dark"]) .attendance :deep(input:not([type=checkbox])),
+:global(html[data-ac-theme="dark"]) .attendance :deep(select),
+:global(html[data-ac-theme="dark"]) .attendance :deep(textarea) {
+  background: #2b1a11 !important; color: #fff8eb !important; border-color: #81583b !important; color-scheme: dark;
+}
+:global(html[data-ac-theme="dark"]) .attendance :deep(select option) { background: #2b1a11 !important; color: #fff8eb !important; }
+:global(html[data-ac-theme="dark"]) .attendance th { background: #493224; color: #f0d2ac; border-color: #6d4a32; }
+:global(html[data-ac-theme="dark"]) .attendance td { color: #f0ddc8; border-color: #5a3d29; }
+:global(html[data-ac-theme="dark"]) .attendance table tbody tr:hover { background: #493224 !important; }
+:global(html[data-ac-theme="dark"]) .attendance table tbody tr:hover td { color: #fff1d9 !important; }
+:global(html[data-ac-theme="dark"]) .attendance .badge { background: #493224; color: #f0ddc8; }
+:global(html[data-ac-theme="dark"]) .attendance .good { background: #294b34; color: #c6f0ce; }
+:global(html[data-ac-theme="dark"]) .attendance .review { background: #58421e; color: #f2d99e; }
+:global(html[data-ac-theme="dark"]) .attendance .error { background: #572b28; border-color: #8d4b42; color: #ffd7d1 !important; }
+:global(html[data-ac-theme="dark"]) .attendance .station { background: #342419; }
+:global(html[data-ac-theme="dark"]) .attendance .overlay { background: rgba(20, 11, 6, .82); }
+:global(html[data-ac-theme="dark"]) .attendance .dialog dl { background: #2b1a11; }
+:global(html[data-ac-theme="dark"]) .attendance a { color: #f0c295; }
 @media(max-width:1000px) { .summary { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media(max-width:640px) { .shell { padding: 0; }.summary { gap: 12px; }.summary > div { padding: 16px; }.summary strong { font-size: 24px; }.heading { flex-wrap: wrap; }.filters { grid-template-columns: 1fr; }.attendance-records-panel { padding: 16px; }.dialog { padding: 16px; }.dialog dl { grid-template-columns: 1fr; gap: 4px; }.dialog dd { margin: 0 0 10px; overflow-wrap: anywhere; }.station:fullscreen { padding: 16px; }.station:fullscreen img { width: min(100%,420px); }.attendance-tabs { gap: 0; }.attendance .attendance-tabs button { padding: 12px 14px; } }
 </style>

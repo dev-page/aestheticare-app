@@ -6,7 +6,7 @@ const named = (key, label, select) => ({ key, label, select })
 const kind = (data, value) => (data.records || []).filter(row => row.kind === value)
 const flags = (data, flag) => (data.items || []).filter(item => item.signals?.includes(flag))
 const orders = data => kind(data, 'po')
-const ongoing = row => ['Sent to Supplier', 'Supplier Confirmed', 'Ongoing', 'Partially Received'].includes(row.status)
+const ongoing = row => ['Sent to Supplier', 'Supplier Confirmed', 'Ongoing', 'Receiving', 'Partially Received'].includes(row.status)
 const receipts = data => kind(data, 'receiving')
 const inventory = data => data.items || []
 const financialRows = data => kind(data, 'budget').map(b => ({ ...b, available: b.total - b.committed - b.spent, utilizationPercent: b.total ? Math.round(10000 * b.spent / b.total) / 100 : 0 }))
