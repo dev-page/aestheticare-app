@@ -124,7 +124,7 @@
             <button type="button" class="text-slate-400 hover:text-white" @click="closeAddModal">✕</button>
           </div>
 
-          <form class="mt-6 space-y-4" @submit.prevent="createAdmin">
+          <form class="mt-6 space-y-4" @submit.prevent="createAdmin" :aria-busy="saving">
             <div class="grid gap-4 md:grid-cols-2">
               <label class="space-y-2">
                 <span class="text-sm text-slate-300">First Name</span>

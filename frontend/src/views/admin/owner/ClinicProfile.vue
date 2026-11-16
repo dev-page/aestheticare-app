@@ -31,7 +31,7 @@
         </div>
       </section>
 
-      <form class="clinic-profile-form" @submit.prevent="saveClinicProfile">
+      <form class="clinic-profile-form" @submit.prevent="saveClinicProfile" :aria-busy="saving">
         <section class="clinic-profile-card clinic-branding-card">
           <div class="clinic-card-heading">
             <div><h2>Clinic branding</h2><p>Choose the logo and banner customers will see on your public clinic page.</p></div>

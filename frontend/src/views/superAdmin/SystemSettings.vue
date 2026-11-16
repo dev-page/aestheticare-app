@@ -19,7 +19,7 @@
           </button>
         </div>
 
-        <form id="post-form-panel" class="post-form" role="tabpanel" :aria-labelledby="`post-tab-${activeType}`" @submit.prevent="publish">
+        <form id="post-form-panel" class="post-form" role="tabpanel" :aria-labelledby="`post-tab-${activeType}`" @submit.prevent="publish" :aria-busy="publishing">
           <div v-if="activeType === 'maintenance'" class="form-grid">
             <label class="form-field"><span>Maintenance title</span><input v-model.trim="draft.title" required maxlength="120" placeholder="e.g. Scheduled platform maintenance" /></label>
             <label class="form-field"><span>Expected impact</span><select v-model="draft.impact"><option value="limited">Some features may be unavailable</option><option value="unavailable">Platform may be unavailable</option><option value="none">No expected interruption</option></select></label>

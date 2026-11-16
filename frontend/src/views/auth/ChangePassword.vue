@@ -17,6 +17,7 @@ const confirmPassword = ref('')
 const enteredOtp = ref('')
 const generatedOtp = ref('')
 const showOtp = ref(false)
+const isSubmitting = ref(false)
 
 const passwordVisible = ref(false)
 const confirmPasswordVisible = ref(false)
@@ -105,6 +106,7 @@ const validatePassword = (pwd) => {
 }
 
 const handleChangePassword = async () => {
+  if (isSubmitting.value) return
   if (!showOtp.value) {
     if (!currentPassword.value || !newPassword.value || !confirmPassword.value) {
       toast.error('Please fill in all password fields.')
@@ -116,14 +118,18 @@ const handleChangePassword = async () => {
     }
     if (!validatePassword(newPassword.value)) return
 
-    generatedOtp.value = generateOtp()
-    const result = await sendOtpEmail(auth.currentUser.email, generatedOtp.value)
-
-    if (result.success) {
-      showOtp.value = true
-      toast.info('OTP sent to your email. Please verify.')
-    } else {
-      toast.error(result.error || 'Failed to send OTP email.')
+    isSubmitting.value = true
+    try {
+      generatedOtp.value = generateOtp()
+      const result = await sendOtpEmail(auth.currentUser.email, generatedOtp.value)
+      if (result.success) {
+        showOtp.value = true
+        toast.info('OTP sent to your email. Please verify.')
+      } else {
+        toast.error(result.error || 'Failed to send OTP email.')
+      }
+    } finally {
+      isSubmitting.value = false
     }
     return
   }
@@ -133,6 +139,7 @@ const handleChangePassword = async () => {
     return
   }
 
+  isSubmitting.value = true
   try {
     const user = auth.currentUser
     const credential = EmailAuthProvider.credential(user.email, currentPassword.value)
@@ -159,6 +166,8 @@ const handleChangePassword = async () => {
       return
     }
     toast.error(`Failed to change password: ${err.message}`)
+  } finally {
+    isSubmitting.value = false
   }
 }
 
@@ -198,7 +207,7 @@ onMounted(async () => {
     <div class="relative z-10 flex items-center justify-center px-4 pt-24 pb-12 text-sm">
       <div class="relative w-full max-w-[560px] rounded-3xl overflow-hidden bg-white/68 backdrop-blur-xl border border-gold-200/60 shadow-2xl shadow-gold-900/15">
         <div class="relative z-10 px-6 py-10 sm:px-10">
-          <form class="space-y-4" @submit.prevent="handleChangePassword">
+          <form class="space-y-4" @submit.prevent="handleChangePassword" :aria-busy="isSubmitting">
             <div class="mb-2">
               <h1 class="form-title text-3xl sm:text-4xl leading-tight">Change Password</h1>
               <p class="text-charcoal-600 text-sm mt-1">
@@ -280,9 +289,10 @@ onMounted(async () => {
 
             <button
               type="submit"
+              :disabled="isSubmitting"
               class="w-full py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition"
             >
-              {{ showOtp ? 'Verify OTP & Update Password' : 'Send OTP' }}
+              {{ isSubmitting ? (showOtp ? 'Updating password…' : 'Sending OTP…') : (showOtp ? 'Verify OTP & Update Password' : 'Send OTP') }}
             </button>
 
             <div class="text-center text-sm">

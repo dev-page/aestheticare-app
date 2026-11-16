@@ -598,7 +598,7 @@
           </div>
           <button type="button" class="request-close-button" aria-label="Close feedback form" :disabled="feedbackModal.saving" @click="closeFeedbackModal"><span class="text-xl leading-none">&times;</span></button>
         </header>
-        <form class="request-modal-body" @submit.prevent="submitFeedback">
+        <form class="request-modal-body" @submit.prevent="submitFeedback" :aria-busy="feedbackModal.saving">
           <fieldset>
             <legend class="request-field-label">Your rating <span aria-hidden="true">*</span></legend>
             <div class="flex gap-2" role="group" aria-label="Choose a rating from 1 to 5">

@@ -58,7 +58,7 @@
           </div>
           <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-5">
             <span class="text-xs text-slate-500">Last saved: {{ savedAt ? formatDate(savedAt) : 'Not saved yet' }}</span>
-            <button type="button" :disabled="saving || !canManagePolicies" @click="savePolicies" class="rounded-xl bg-amber-600 px-5 py-3 font-semibold transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50">{{ saving ? 'Saving...' : canManagePolicies ? 'Save Services Policies' : 'View-only access' }}</button>
+            <button type="button" :aria-busy="saving" :disabled="saving || !canManagePolicies" @click="savePolicies" class="app-form-action rounded-xl bg-amber-600 px-5 py-3 font-semibold transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50">{{ saving ? 'Saving...' : canManagePolicies ? 'Save Services Policies' : 'View-only access' }}</button>
           </div>
         </section>
 
@@ -79,7 +79,7 @@
             </div>
             <aside class="border-t border-slate-700 bg-slate-950/40 p-5 lg:border-l lg:border-t-0"><div class="flex items-center gap-2 text-amber-200"><Icon icon="mdi:information-outline" class="h-5 w-5" /><h3 class="font-semibold">How this policy works</h3></div><div class="mt-4 space-y-4 text-sm leading-6 text-slate-300"><p>This policy applies when a client visits the clinic for a service, consultation, or treatment package.</p><ul class="space-y-3 text-slate-400"><li>Full payment is required before the service starts.</li><li>Appointments follow the clinic's applicable payment, cancellation, rescheduling, and no-show policies.</li><li>Before recording payment, staff verifies the selected service, price, session details, and applicable policies with the client.</li></ul></div></aside>
           </div>
-          <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-5"><span class="text-xs text-slate-500">Last saved: {{ savedAt ? formatDate(savedAt) : 'Not saved yet' }}</span><button type="button" :disabled="saving || !canManagePolicies" @click="savePolicies" class="rounded-xl bg-amber-600 px-5 py-3 font-semibold transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50">{{ saving ? 'Saving...' : canManagePolicies ? 'Save Walk-In Policy' : 'View-only access' }}</button></div>
+          <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-5"><span class="text-xs text-slate-500">Last saved: {{ savedAt ? formatDate(savedAt) : 'Not saved yet' }}</span><button type="button" :aria-busy="saving" :disabled="saving || !canManagePolicies" @click="savePolicies" class="app-form-action rounded-xl bg-amber-600 px-5 py-3 font-semibold transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50">{{ saving ? 'Saving...' : canManagePolicies ? 'Save Walk-In Policy' : 'View-only access' }}</button></div>
         </section>
         </template>
         <section v-else class="client-contract-editor">
@@ -105,7 +105,7 @@
                 </div>
                 <button type="button" class="contract-reset-appearance" @click="Object.assign(contractAppearance, normalizeContractAppearance())">Reset appearance</button>
               </fieldset>
-              <button type="button" class="save-contract-button" :disabled="savingContract || !canManagePolicies || !policyOwnerId" @click="saveClientContract">{{ savingContract ? 'Saving…' : 'Save Client Contract' }}</button>
+              <button type="button" class="save-contract-button app-form-action" :aria-busy="savingContract" :disabled="savingContract || !canManagePolicies || !policyOwnerId" @click="saveClientContract">{{ savingContract ? 'Saving…' : 'Save Client Contract' }}</button>
               <p class="contract-editor-note">{{ contractSavedAt ? `Last saved: ${formatDate(contractSavedAt)}` : 'Save to use this agreement for new bookings.' }}</p>
             </div>
             <div class="client-contract-preview"><h3>Agreement preview</h3><p class="contract-editor-note">New bookings use your saved content and appearance. Existing agreements retain their original design. Policy wording and the signature section remain protected.</p><ClientContractDocument class="contract-live-preview" :document="contractPreview" /></div>
@@ -121,7 +121,7 @@
           <button type="button" @click="closeEditor" class="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white" aria-label="Close policy editor"><Icon icon="mdi:close" class="h-5 w-5" /></button>
         </header>
         <div class="grid lg:grid-cols-2">
-          <form class="space-y-5 p-6" @submit.prevent="applyEditor">
+          <form class="space-y-5 p-6" @submit.prevent="applyEditor" :aria-busy="false">
             <template v-if="activeEditor === 'payment'">
               <PolicyToggle v-model="editor.fullPayment" label="Full Payment" description="Require the customer to pay the entire service fee at booking." />
               <NumberField v-model="editor.downpaymentPercentage" label="Downpayment Percentage" suffix="%" :disabled="editor.fullPayment" :min="1" :max="100" required />

@@ -1,6 +1,6 @@
 <template>
   <div v-if="visible" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4" @click.self="close">
-    <form class="w-full max-w-md rounded-2xl border border-[#d9be9b] bg-[#fffaf3] p-6 shadow-2xl" @submit.prevent="submit">
+    <form class="w-full max-w-md rounded-2xl border border-[#d9be9b] bg-[#fffaf3] p-6 shadow-2xl" @submit.prevent="submit" :aria-busy="loading">
       <h3 class="text-xl font-semibold text-[#3d281d]">Verify service key</h3>
       <p class="mt-2 text-sm leading-6 text-[#6f4a2d]">{{ description }}</p>
       <label class="mt-5 block text-sm font-semibold text-[#5d3b27]" for="service-key-input">Service key</label>

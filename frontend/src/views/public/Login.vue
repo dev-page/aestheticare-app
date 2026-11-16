@@ -533,7 +533,7 @@ onMounted(() => {
           <span class="form-side-bubble f-bubble-1 hidden lg:block" aria-hidden="true"></span>
           <span class="form-side-bubble f-bubble-2 hidden lg:block" aria-hidden="true"></span>
           <span class="form-side-bubble f-bubble-3 hidden lg:block" aria-hidden="true"></span>
-          <form class="space-y-4 w-full max-w-[480px]" @submit.prevent="handleLogin">
+          <form class="space-y-4 w-full max-w-[480px]" @submit.prevent="handleLogin" :aria-busy="isSubmitting">
             <div class="mb-2">
               <h1 class="login-title text-3xl sm:text-4xl leading-tight">Welcome Back</h1>
               <p class="text-charcoal-600 text-sm mt-1">Sign in to continue your AesthetiCare experience.</p>
@@ -689,7 +689,8 @@ onMounted(() => {
 
         <button
           type="button"
-          class="mt-5 w-full rounded-xl bg-gold-700 py-3 font-semibold text-white transition hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-60"
+          class="app-form-action mt-5 w-full rounded-xl bg-gold-700 py-3 font-semibold text-white transition hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-60"
+          :aria-busy="isSubmitting"
           :disabled="isSubmitting || loginOtpCode.length !== 6"
           @click="verifyLoginOtp"
         >
@@ -698,11 +699,12 @@ onMounted(() => {
 
         <button
           type="button"
-          class="mt-3 w-full rounded-xl border border-gold-200 py-3 text-sm font-semibold text-gold-800 transition hover:bg-gold-50 disabled:cursor-not-allowed disabled:opacity-50"
+          class="app-form-action mt-3 w-full rounded-xl border border-gold-200 py-3 text-sm font-semibold text-gold-800 transition hover:bg-gold-50 disabled:cursor-not-allowed disabled:opacity-50"
+          :aria-busy="isSubmitting"
           :disabled="isSubmitting || loginOtpResendCountdown > 0"
           @click="resendLoginOtp"
         >
-          {{ loginOtpResendCountdown > 0 ? `Resend available in ${loginOtpResendCountdown}s` : 'Resend OTP' }}
+          {{ isSubmitting ? 'Sending OTP…' : loginOtpResendCountdown > 0 ? `Resend available in ${loginOtpResendCountdown}s` : 'Resend OTP' }}
         </button>
       </div>
     </div>

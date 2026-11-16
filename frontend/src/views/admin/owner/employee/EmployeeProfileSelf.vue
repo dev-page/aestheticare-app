@@ -43,7 +43,7 @@
           </section>
 
           <section class="rounded-3xl border border-slate-800 bg-slate-800/80 p-6 shadow-lg">
-            <form class="space-y-5" @submit.prevent="saveProfile">
+            <form class="space-y-5" @submit.prevent="saveProfile" :aria-busy="saving">
               <div class="grid gap-5 md:grid-cols-2">
                 <label class="block">
                   <span class="mb-2 block text-sm font-medium text-slate-300">First Name</span>

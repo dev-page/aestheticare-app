@@ -100,6 +100,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const practitionerIdFile = ref(null)
     const credentialOcrResult = ref(null)
     const credentialOcrBusy = ref(false)
+    const savingStaff = ref(false)
     let credentialOcrSequence = 0
     const showCredentialNumber = computed(() => Boolean(String(currentStaff.value.practitionerType || '').trim()))
     const isStudentIntern = computed(() => currentStaff.value.engagementType === 'student_intern')
@@ -534,6 +535,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const saveStaff = async () => {
+      if (savingStaff.value) return
       if (credentialOcrBusy.value) {
         toast.info('Wait for credential OCR to finish before creating the employee account.')
         return
@@ -544,6 +546,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return
       }
 
+      savingStaff.value = true
       const fullName = buildFullName()
 
       try {
@@ -670,6 +673,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       } catch (err) {
         console.error(err)
         toast.error("Unexpected error while saving employee.")
+      } finally {
+        savingStaff.value = false
       }
     }
 
@@ -698,6 +703,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       selectedCustomRoleName,
       isPractitionerRole,
       showCredentialUpload,
+      savingStaff,
       practitionerIdFile,
       credentialOcrResult,
       credentialOcrBusy,
@@ -739,7 +745,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       <!-- Add Staff Member Form -->
       <div v-else class="mx-auto max-w-3xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8">
-        <form class="space-y-6" @submit.prevent="saveStaff">
+        <form class="space-y-6" @submit.prevent="saveStaff" :aria-busy="savingStaff">
           <!-- Personal Information -->
           <div>
             <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Personal Information</h2>
@@ -1036,10 +1042,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             </button>
             <button
               type="submit"
-              :disabled="hasErrors || credentialOcrBusy"
+              :disabled="hasErrors || credentialOcrBusy || savingStaff"
               class="rounded-lg bg-blue-600 px-5 py-2 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Add Staff Member
+              {{ savingStaff ? 'Adding staff member…' : 'Add Staff Member' }}
             </button>
           </div>
         </form>

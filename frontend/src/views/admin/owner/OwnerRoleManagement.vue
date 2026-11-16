@@ -255,7 +255,7 @@
                     Create a role record first. After saving it, move to the permissions tab to define what that role can access.
                   </p>
 
-                  <form class="mt-6 space-y-5" @submit.prevent="createRole">
+                  <form class="mt-6 space-y-5" @submit.prevent="createRole" :aria-busy="saving">
                     <label class="field-block">
                       <span class="field-label">Role Name</span>
                       <input v-model.trim="newRole.name" type="text" class="discord-input" placeholder="e.g. Head Receptionist" />

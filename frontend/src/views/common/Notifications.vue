@@ -1,5 +1,5 @@
 <template>
-  <div :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen notifications-shell-module' : 'notifications-shell'">
+  <div :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen notifications-shell-module' : panelKey === 'customer' ? 'customer-theme notifications-shell' : 'notifications-shell'">
     <EmployeeTopbar
       v-if="!isSystemAdminView"
       :plan-label="planLabel"

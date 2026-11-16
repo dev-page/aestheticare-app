@@ -154,7 +154,7 @@ onBeforeUnmount(() => clearInterval(timer))
             <p>Optional columns</p>
             <label v-for="column in columns.filter(c=>c.optional)" :key="column.key" class="inline"><input type="checkbox" :checked="!hidden.includes(column.key)" @change="toggleColumn(column.key)" /> {{ column.label }}</label>
             <details v-if="config.canManageFields"><summary>Organization custom fields</summary>
-              <form @submit.prevent="addField" class="filters">
+              <form @submit.prevent="addField" class="filters" :aria-busy="busy">
                 <label>Field label<input v-model="field.label" required maxlength="80" /></label>
                 <label>Type<select v-model="field.type"><option v-for="type in ['text','number','date','dropdown','boolean']" :key="type">{{ type }}</option></select></label>
                 <label v-if="field.type==='dropdown'">Options (comma separated)<input v-model="field.options" required /></label>
@@ -169,7 +169,7 @@ onBeforeUnmount(() => clearInterval(timer))
             <tr v-for="r in filtered" :key="r.employeeId + r.date"><td v-for="c in visible" :key="c.key"><span :class="c.key==='attendanceStatus' ? ['badge',r.attendanceStatus==='Complete'?'good':r.attendanceStatus==='Needs Review'?'review':''] : ''">{{ valueFor(r,c.key) }}</span></td><td><button :disabled="!r.id || busy" @click="openRecord(r)">View</button></td></tr>
             <tr v-if="!filtered.length"><td :colspan="visible.length+1">No records for these filters.</td></tr>
           </tbody></table></div>
-          <details v-if="config.canManageFields" class="panel"><summary>Organization non-working holidays</summary><p>Dates are evaluated with recurring schedules and approved leave. Absence is determined one hour after the scheduled shift ends. Overnight shifts end the following day.</p><label>One YYYY-MM-DD date per line<textarea v-model="holidays" rows="4" /></label><button :disabled="busy" @click="saveHolidays">Save holiday calendar</button></details>
+          <details v-if="config.canManageFields" class="panel"><summary>Organization non-working holidays</summary><p>Dates are evaluated with recurring schedules and approved leave. Absence is determined one hour after the scheduled shift ends. Overnight shifts end the following day.</p><label>One YYYY-MM-DD date per line<textarea v-model="holidays" rows="4" /></label><button class="app-form-action" :aria-busy="busy" :disabled="busy" @click="saveHolidays">Save holiday calendar</button></details>
         </section>
         <section v-else-if="tab==='qr'">
           <h2>Branch QR Station</h2>
@@ -195,7 +195,7 @@ onBeforeUnmount(() => clearInterval(timer))
             <p>{{ selected.employeeName }} · {{ selected.date }} · {{ selectedBranch?.clinicBranch }}</p>
             <dl><dt>Source</dt><dd>{{ valueFor(selected,'sourceLabel') }}</dd><dt>Verification</dt><dd>{{ selected.locationVerified ? 'Location verified' : 'Not verified' }}</dd><dt>Distance / accuracy</dt><dd>{{ selected.locationDistanceMeters ?? '—' }} m / {{ selected.locationAccuracyMeters ?? '—' }} m</dd><dt>Elapsed time before break</dt><dd>{{ selected.totalWorkedMinutes ?? '—' }} min</dd><dt>Unpaid meal break</dt><dd>{{ selected.unpaidMealBreakMinutes == null ? 'Not recorded' : `${selected.unpaidMealBreakMinutes} min` }}</dd><dt>Import batch</dt><dd>{{ selected.importBatchId || '—' }}</dd></dl>
             <a v-if="selected.proofUrl" :href="selected.proofUrl" target="_blank" rel="noopener">Open attendance proof</a>
-            <form v-if="hasPermission('attendance:update')" @submit.prevent="saveCorrection">
+            <form v-if="hasPermission('attendance:update')" @submit.prevent="saveCorrection" :aria-busy="busy">
               <div class="filters"><label>Time In<input v-model="edit.timeIn" required placeholder="08:30" /></label><label>Time Out<input v-model="edit.timeOut" placeholder="17:30" /></label></div>
               <label class="inline"><input v-model="edit.overnight" type="checkbox" /> Overnight shift</label>
               <label v-for="f in activeFields" :key="f.id">{{ f.label }}

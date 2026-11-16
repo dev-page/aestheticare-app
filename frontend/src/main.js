@@ -17,6 +17,13 @@ import { useThemeStore } from '@/stores/theme'
 
 installAppUpdateCheck()
 
+// Ignore repeat submits while an async form action is already running.
+document.addEventListener('submit', (event) => {
+  if (event.target?.getAttribute?.('aria-busy') !== 'true') return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, true)
+
 const pinia = createPinia()
 useThemeStore(pinia).initialize()
 

@@ -10,7 +10,7 @@
         <p class="mt-3 text-sm text-[#6f4a2d]">Your consent, attendance, and code apply only to you. Keep your invitation link private.</p>
         <p class="mt-2 text-sm text-[#6f4a2d]">The organizer pays for the group. You can complete consent before or after payment, but both must be complete before check-in. You do not need a platform account.</p>
         <div class="mt-4 rounded-xl bg-[#fff8eb] p-4"><h2 class="font-semibold">Treatment agreement</h2><ClientContractDocument v-if="appointment.contractDocument" :document="appointment.contractDocument" class="mt-2" /><p v-else class="mt-2 whitespace-pre-wrap text-sm leading-6">{{ appointment.terms || 'Contact the clinic for your treatment agreement.' }}</p></div>
-        <form v-if="!appointment.consentCompleted" class="mt-6 space-y-4" @submit.prevent="accept">
+        <form v-if="!appointment.consentCompleted" class="mt-6 space-y-4" @submit.prevent="accept" :aria-busy="busy">
           <label class="block text-sm font-semibold">Your full name<input v-model.trim="name" required maxlength="150" class="mt-1 w-full rounded-xl border border-[#d9be9b] px-3 py-2" /></label>
           <label class="flex gap-2 text-sm"><input v-model="accepted" required type="checkbox" /> I am this attendee and have read and accept the treatment agreement.</label>
           <button class="rounded-xl bg-[#8d5a3b] px-4 py-2 text-white" :disabled="busy || !appointment.terms">Confirm individual consent</button>
@@ -30,7 +30,7 @@
             <button v-if="session.status === 'Schedule Proposed'" class="mt-2 underline" :disabled="busy" @click="confirmSession(session)">Confirm proposed schedule</button>
             <button v-if="session.appointmentStatus === 'Awaiting Customer Confirmation'" class="mt-2 underline" :disabled="busy" @click="confirmCompletion(session.appointmentId)">Confirm I received this session</button>
             <button v-if="session.canRequestSchedule" class="mt-2 ml-3 underline" :disabled="busy" @click="openSessionRequest(session)">{{ String(session.status || '').toLowerCase() === 'unscheduled' ? 'Choose a session date' : 'Request a different date' }}</button>
-            <form v-if="sessionRequests[session.id]" class="mt-3 grid gap-3 rounded-lg bg-[#fff8eb] p-3" @submit.prevent="submitSessionRequest(session)">
+            <form v-if="sessionRequests[session.id]" class="mt-3 grid gap-3 rounded-lg bg-[#fff8eb] p-3" @submit.prevent="submitSessionRequest(session)" :aria-busy="busy">
               <label class="block text-sm">Preferred date<input v-model="sessionRequests[session.id].date" type="date" :min="sessionMinDate(session)" required class="mt-1 block w-full rounded-xl border border-[#d9be9b] p-2" /></label>
               <label class="block text-sm">Preferred time<input v-model="sessionRequests[session.id].time" type="time" required class="mt-1 block w-full rounded-xl border border-[#d9be9b] p-2" /></label>
               <label class="block text-sm">Reason<textarea v-model.trim="sessionRequests[session.id].reason" required minlength="5" maxlength="1000" class="mt-1 block w-full rounded-xl border border-[#d9be9b] p-2" /></label>
@@ -38,7 +38,7 @@
             </form>
           </article>
         </section>
-        <form v-if="appointment.consentCompleted && (appointment.canRequestReschedule || appointment.canRequestCancellation)" class="mt-5 space-y-3" @submit.prevent="requestChange">
+        <form v-if="appointment.consentCompleted && (appointment.canRequestReschedule || appointment.canRequestCancellation)" class="mt-5 space-y-3" @submit.prevent="requestChange" :aria-busy="busy">
           <h2 class="font-semibold">Request a change for your appointment</h2>
           <select v-model="changeType" class="w-full rounded-xl border border-[#d9be9b] p-2">
             <option v-if="appointment.canRequestReschedule" value="reschedule">Reschedule ({{ appointment.rescheduleCount }} of {{ appointment.maximumRescheduleAllowance }} used)</option>

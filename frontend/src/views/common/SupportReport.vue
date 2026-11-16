@@ -1,5 +1,5 @@
 <template>
-  <div :data-panel="panelKey" :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen support-shell support-shell-module' : 'support-shell'">
+  <div :data-panel="panelKey" :class="isModuleView ? 'module-theme bg-slate-900 min-h-screen support-shell support-shell-module' : panelKey === 'customer' ? 'customer-theme support-shell' : 'support-shell'">
     <EmployeeTopbar
       :plan-label="planLabel"
       :is-expired="isExpired"
@@ -27,7 +27,7 @@
           </div>
 
           <section :class="isModuleView ? 'support-panel support-panel-module' : 'support-panel'">
-            <form class="space-y-5" @submit.prevent="submitReport">
+            <form class="space-y-5" @submit.prevent="submitReport" :aria-busy="submitting">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label :class="isModuleView ? 'support-field-label support-field-label-module' : 'support-field-label'">Reported By</label>

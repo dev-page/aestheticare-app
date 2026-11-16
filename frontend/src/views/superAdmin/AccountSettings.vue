@@ -48,7 +48,7 @@
               </div>
             </div>
 
-            <form class="space-y-4" @submit.prevent="saveProfile">
+            <form class="space-y-4" @submit.prevent="saveProfile" :aria-busy="savingProfile">
               <div class="grid gap-4 sm:grid-cols-2">
                 <label class="space-y-2">
                   <span class="text-sm text-slate-300">First Name</span>
@@ -92,7 +92,7 @@
               </div>
             </div>
 
-            <form class="space-y-4" @submit.prevent="changePassword">
+            <form class="space-y-4" @submit.prevent="changePassword" :aria-busy="changingPassword">
               <label class="block space-y-2">
                 <span class="text-sm text-slate-300">Current Password</span>
                 <input v-model="passwords.current" type="password" autocomplete="current-password" required class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none transition focus:border-cyan-500" />

@@ -15,7 +15,7 @@
           <div><p class="text-xs font-bold tracking-[0.14em] text-amber-400">NEW REQUEST</p><h2 class="mt-1 text-lg font-semibold text-white">Request clinic supplies</h2><p class="mt-1 max-w-2xl text-sm leading-6 text-slate-400">Describe the item your clinic needs. Procurement will compare external quotations and prepare a purchase order.</p></div>
           <span class="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-200">Inventory starts the request</span>
         </div>
-          <form class="p-5 sm:p-6" @submit.prevent="createRequest">
+          <form class="p-5 sm:p-6" @submit.prevent="createRequest" :aria-busy="busy">
             <p v-if="!requestBranchId" class="mb-5 rounded-xl border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">Your assigned clinic branch is still loading. Wait a moment before sending this request.</p>
           <div class="grid gap-5 md:grid-cols-2">
             <label class="form-field"><span>Supply or item name <b>*</b></span><input v-model.trim="draft.name" placeholder="e.g. Surgical gloves" required /><small>Use a general item description. It does not need to match a supplier's exact product name.</small></label>

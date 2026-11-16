@@ -22,7 +22,8 @@
   --ac-accent-soft: #f1d5b5;
   --ac-success: #39734a;
   --ac-success-bg: #e6f1e8;
-  --ac-warning: #8a5b18;
+  --ac-warning: #5f3b22;
+  --ac-warning-text: var(--ac-warning);
   --ac-warning-bg: #fbefcf;
   --ac-danger: #a13f38;
   --ac-danger-hover: #842f2a;
@@ -384,7 +385,7 @@ html:not([data-ac-theme="dark"]) aside.app-sidebar :is(a, button)[aria-current="
 
 :is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-emerald-"], [class*="text-green-"]) { color: var(--ac-success) !important; }
 :is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-red-"], [class*="text-rose-"]) { color: var(--ac-danger) !important; }
-:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-amber-"], [class*="text-yellow-"]) { color: var(--ac-warning) !important; }
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-amber-"], [class*="text-yellow-"]) { color: var(--ac-warning-text) !important; }
 :is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is([class*="text-blue-"], [class*="text-sky-"], [class*="text-cyan-"], [class*="text-indigo-"]) { color: var(--ac-info) !important; }
 
 :is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-emerald-"],
@@ -392,7 +393,7 @@ html:not([data-ac-theme="dark"]) aside.app-sidebar :is(a, button)[aria-current="
 :is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-red-"],
 :is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-rose-"] { background: var(--ac-danger-bg) !important; color: var(--ac-danger) !important; }
 :is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-amber-"],
-:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-yellow-"] { background: var(--ac-warning-bg) !important; color: var(--ac-warning) !important; }
+:is(.owner-theme, .module-theme, .customer-theme, .supplier-theme) main :is(div, span, p)[class*="bg-yellow-"] { background: var(--ac-warning-bg) !important; color: var(--ac-warning-text) !important; }
 
 /* ---------- Shared modal, alerts, and toasts ---------- */
 
@@ -429,7 +430,7 @@ html:not([data-ac-theme="dark"]) aside.app-sidebar :is(a, button)[aria-current="
 .app-alert--warning {
   border-color: color-mix(in srgb, var(--ac-warning) 55%, transparent);
   background: var(--ac-warning-bg);
-  color: var(--ac-warning);
+  color: var(--ac-warning-text);
 }
 
 .app-alert--error {
@@ -453,7 +454,7 @@ html:not([data-ac-theme="dark"]) aside.app-sidebar :is(a, button)[aria-current="
 }
 
 .session-expiry-dialog :is(h2, p) { color: var(--ac-text-secondary) !important; }
-.session-expiry-dialog .session-expiry-kicker { color: var(--ac-warning) !important; }
+.session-expiry-dialog .session-expiry-kicker { color: var(--ac-warning-text) !important; }
 .session-expiry-dialog .session-expiry-continue { background: var(--ac-primary) !important; color: var(--ac-on-primary) !important; }
 .session-expiry-dialog .session-expiry-continue:hover:not(:disabled) { background: var(--ac-primary-hover) !important; }
 
@@ -479,7 +480,7 @@ html[data-ac-theme="dark"] .app-modal-panel.register-modal :is(
 }
 
 html[data-ac-theme="dark"] .app-modal-panel.register-modal [class*="text-gold-"] {
-  color: var(--ac-accent) !important;
+  color: var(--ac-warning-text) !important;
 }
 
 html[data-ac-theme="dark"] .app-modal-panel.register-modal :is(
@@ -839,7 +840,8 @@ html[data-ac-theme="dark"] {
   --ac-accent-soft: #65432d;
   --ac-success: #9ed5a7;
   --ac-success-bg: #294b34;
-  --ac-warning: #f2c879;
+  --ac-warning: #f0ddc8;
+  --ac-warning-text: var(--ac-warning);
   --ac-warning-bg: #58421e;
   --ac-danger: #f0a29b;
   --ac-danger-hover: #ffbeb5;
@@ -1206,6 +1208,53 @@ html[data-ac-theme="dark"] .aestheticare-app :is(.swal2-popup, .swal2-modal) :is
   color: var(--ac-text-secondary) !important;
 }
 
+/* Logout SweetAlert dialogs are mounted under body, outside .aestheticare-app.
+   Give their custom light-theme styles an explicit dark-theme counterpart. */
+html[data-ac-theme="dark"] .swal2-container .swal2-popup.swal-logout-popup {
+  border-color: var(--ac-border-strong) !important;
+  background: linear-gradient(145deg, var(--ac-surface-soft), var(--ac-bg)) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .swal2-popup.swal-logout-popup :is(
+  .swal2-title.swal-logout-title, .swal2-html-container.swal-logout-text
+) {
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .swal2-popup.swal-logout-popup .swal2-title.swal-logout-title {
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .swal2-popup.swal-logout-popup .swal2-icon.swal-logout-icon.swal2-question {
+  border-color: var(--ac-accent) !important;
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .swal2-popup.swal-logout-popup :is(
+  .swal2-confirm.swal-logout-confirm, .swal2-cancel.swal-logout-cancel
+) {
+  border-color: var(--ac-border-strong) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .swal2-popup.swal-logout-popup .swal2-confirm.swal-logout-confirm {
+  background: var(--ac-primary) !important;
+}
+
+html[data-ac-theme="dark"] .swal2-popup.swal-logout-popup .swal2-confirm.swal-logout-confirm:hover {
+  background: var(--ac-primary-hover) !important;
+}
+
+html[data-ac-theme="dark"] .swal2-popup.swal-logout-popup .swal2-cancel.swal-logout-cancel {
+  background: var(--ac-surface-muted) !important;
+}
+
+html[data-ac-theme="dark"] .swal2-popup.swal-logout-popup .swal2-cancel.swal-logout-cancel:hover {
+  background: var(--ac-surface-soft) !important;
+}
+
 html[data-ac-theme="dark"] .aestheticare-app :is(.swal2-popup, .swal2-modal) :is(
   input, select, textarea
 ) {
@@ -1490,7 +1539,7 @@ html[data-ac-theme="dark"] .aestheticare-app .login-form-panel :is(
   a.text-gold-700, button.text-gold-700,
   .text-gold-700
 ) {
-  color: #dfb287 !important;
+  color: var(--ac-warning-text) !important;
 }
 
 html[data-ac-theme="dark"] .aestheticare-app :is(
@@ -2587,4 +2636,42 @@ html[data-ac-theme="dark"] .aestheticare-app :is(.add-staff-select, .finance-pag
 html[data-ac-theme="dark"] .app-modal-panel.finance-dialog select option:checked {
   background: var(--ac-primary) !important;
   color: var(--ac-on-primary) !important;
+}
+
+/* Shared async feedback for any native form submit action. Keep the button's
+   own label intact while showing progress consistently across application roles. */
+form[aria-busy="true"] :is(button[type="submit"], button:not([type])) {
+  cursor: wait !important;
+  pointer-events: none;
+}
+
+form[aria-busy="true"] :is(button[type="submit"], button:not([type])):not(.messenger-send)::before,
+button.app-form-action[aria-busy="true"]::before {
+  content: "";
+  display: inline-block;
+  width: .95em;
+  height: .95em;
+  flex: 0 0 .95em;
+  margin-inline-end: .55em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -.12em;
+  animation: ac-form-submit-spin .7s linear infinite;
+}
+
+button.app-form-action[aria-busy="true"] {
+  cursor: wait !important;
+  pointer-events: none;
+}
+
+@keyframes ac-form-submit-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  form[aria-busy="true"] :is(button[type="submit"], button:not([type]))::before,
+  button.app-form-action[aria-busy="true"]::before {
+    animation-duration: 1.8s;
+  }
 }

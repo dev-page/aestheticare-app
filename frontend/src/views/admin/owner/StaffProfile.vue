@@ -639,7 +639,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         </template>
 
         <template #body>
-          <form id="employee-edit-form" class="employee-edit-form space-y-4" @submit.prevent="saveStaff">
+          <form id="employee-edit-form" class="employee-edit-form space-y-4" @submit.prevent="saveStaff" :aria-busy="savingEmployee">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label class="block text-slate-400 mb-1">First Name</label>
@@ -737,7 +737,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         <template #footer>
           <div class="flex flex-col sm:flex-row justify-end sm:space-x-2 space-y-2 sm:space-y-0">
             <button type="button" :disabled="savingEmployee" @click="showEditModal = false" class="employee-edit-cancel">Cancel</button>
-            <button type="submit" form="employee-edit-form" :disabled="savingEmployee || loadingSpecialty || licenseOcrBusy || !!specialtyError" class="employee-edit-save">{{ savingEmployee ? 'Saving...' : 'Update Employee' }}</button>
+            <button type="submit" form="employee-edit-form" :aria-busy="savingEmployee" :disabled="savingEmployee || loadingSpecialty || licenseOcrBusy || !!specialtyError" class="employee-edit-save app-form-action">{{ savingEmployee ? 'Saving...' : 'Update Employee' }}</button>
           </div>
         </template>
       </Modal>

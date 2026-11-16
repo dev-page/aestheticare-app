@@ -38,7 +38,7 @@
             Loading your leave form...
           </div>
 
-          <form v-else class="mt-6 space-y-6" @submit.prevent="submitLeaveRequest">
+          <form v-else class="mt-6 space-y-6" @submit.prevent="submitLeaveRequest" :aria-busy="saving">
             <div class="grid gap-6 md:grid-cols-2">
               <div>
                 <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Leave Payment Type</label>

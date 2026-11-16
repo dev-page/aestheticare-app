@@ -30,6 +30,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const branches = ref([])
     const staffOptions = ref([])
     const showEditModal = ref(false)
+    const savingBranch = ref(false)
     const showPolicyModal = ref(false)
     const activeMenuBranchId = ref('')
     const policyBranch = ref(null)
@@ -325,6 +326,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const updateBranch = async () => {
+      if (savingBranch.value) return
       if (!currentBranch.value.clinicBranch || !currentBranch.value.clinicBranch.trim()) {
         toast.error('Branch name is required')
         return
@@ -334,6 +336,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('Branch location is required')
         return
       }
+      savingBranch.value = true
       try {
         const user = auth.currentUser
         if (!user) {
@@ -387,6 +390,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       } catch (error) {
         console.error('Error updating branch:', error)
         toast.error('Failed to update branch. Please try again.')
+      } finally {
+        savingBranch.value = false
       }
     }
 
@@ -431,6 +436,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       archivedBranches,
       canManageMultipleBranches,
       showEditModal,
+      savingBranch,
       showPolicyModal,
       activeMenuBranchId,
       policyBranch,
@@ -583,7 +589,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           </div>
         </template>
         <template #body>
-          <form id="branch-edit-form" class="branch-edit-form" @submit.prevent="updateBranch">
+          <form id="branch-edit-form" class="branch-edit-form" @submit.prevent="updateBranch" :aria-busy="savingBranch">
             <div class="branch-field">
               <label for="branch-edit-name">Branch Name</label>
               <input id="branch-edit-name" v-model="currentBranch.clinicBranch" type="text" placeholder="Enter branch name" />
@@ -613,7 +619,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         <template #footer>
           <div class="branch-dialog-actions">
             <button type="button" class="branch-dialog-button branch-dialog-button-secondary" @click="showEditModal = false">Cancel</button>
-            <button type="submit" form="branch-edit-form" class="branch-dialog-button branch-dialog-button-primary">Update Branch</button>
+            <button type="submit" form="branch-edit-form" class="branch-dialog-button branch-dialog-button-primary app-form-action" :aria-busy="savingBranch" :disabled="savingBranch">{{ savingBranch ? 'Updating branch…' : 'Update Branch' }}</button>
           </div>
         </template>
       </Modal>

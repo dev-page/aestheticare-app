@@ -13,7 +13,7 @@
         </div>
 
         <section class="mt-6 rounded-[1.75rem] border border-[#ead8c4] bg-[#fffdfa] p-6 shadow-[0_18px_42px_rgba(76,45,25,0.10)]">
-          <form class="space-y-5" @submit.prevent="handleChangePassword">
+          <form class="space-y-5" @submit.prevent="handleChangePassword" :aria-busy="isSubmitting">
             <div class="grid gap-5 md:grid-cols-2">
               <label class="block md:col-span-2">
                 <span class="mb-2 block text-sm font-medium text-[#5c4533]">Current Password</span>
@@ -99,9 +99,10 @@
             <div class="flex justify-end">
               <button
                 type="submit"
+                :disabled="isSubmitting"
                 class="rounded-xl border border-[#7b4f37] bg-[#7b4f37] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#68402e]"
               >
-                {{ showOtp ? 'Verify OTP and Update Password' : 'Send OTP' }}
+                {{ isSubmitting ? (showOtp ? 'Updating password…' : 'Sending OTP…') : (showOtp ? 'Verify OTP and Update Password' : 'Send OTP') }}
               </button>
             </div>
 
@@ -143,6 +144,7 @@ export default {
     const enteredOtp = ref('')
     const generatedOtp = ref('')
     const showOtp = ref(false)
+    const isSubmitting = ref(false)
 
     const passwordVisible = ref(false)
     const confirmPasswordVisible = ref(false)
@@ -177,6 +179,7 @@ export default {
     }
 
     const handleChangePassword = async () => {
+      if (isSubmitting.value) return
       if (!showOtp.value) {
         if (!currentPassword.value || !newPassword.value || !confirmPassword.value) {
           toast.error('Please fill in all password fields.')
@@ -188,14 +191,18 @@ export default {
         }
         if (!validatePassword(newPassword.value)) return
 
-        generatedOtp.value = generateOtp()
-        const result = await sendOtpEmail(auth.currentUser.email, generatedOtp.value)
-
-        if (result.success) {
-          showOtp.value = true
-          toast.info('OTP sent to your email. Please verify.')
-        } else {
-          toast.error(result.error || 'Failed to send OTP email.')
+        isSubmitting.value = true
+        try {
+          generatedOtp.value = generateOtp()
+          const result = await sendOtpEmail(auth.currentUser.email, generatedOtp.value)
+          if (result.success) {
+            showOtp.value = true
+            toast.info('OTP sent to your email. Please verify.')
+          } else {
+            toast.error(result.error || 'Failed to send OTP email.')
+          }
+        } finally {
+          isSubmitting.value = false
         }
         return
       }
@@ -205,6 +212,7 @@ export default {
         return
       }
 
+      isSubmitting.value = true
       try {
         const user = auth.currentUser
         const credential = EmailAuthProvider.credential(user.email, currentPassword.value)
@@ -239,6 +247,8 @@ export default {
           return
         }
         toast.error(`Failed to change password: ${err.message}`)
+      } finally {
+        isSubmitting.value = false
       }
     }
 
@@ -249,6 +259,7 @@ export default {
       currentPasswordVisible,
       enteredOtp,
       handleChangePassword,
+      isSubmitting,
       newPassword,
       passwordVisible,
       showOtp,

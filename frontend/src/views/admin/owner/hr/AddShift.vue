@@ -27,6 +27,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const branches = ref([])
     const shifts = ref([])
     const shiftsLoading = ref(false)
+    const saving = ref(false)
     const editingShiftId = ref('')
     const breakCustomized = ref(false)
 
@@ -362,8 +363,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const saveShift = async () => {
+      if (saving.value) return
       if (!validateShiftInput()) return
 
+      saving.value = true
       try {
         const isEditing = Boolean(editingShiftId.value)
         const existingShift = isEditing ? shifts.value.find((shift) => shift.id === editingShiftId.value) : null
@@ -437,6 +440,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       } catch (err) {
         console.error('Error adding shift:', err)
         toast.error('Failed to add shift.')
+      } finally {
+        saving.value = false
       }
     }
 
@@ -518,6 +523,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       formatTime,
       shifts,
       shiftsLoading,
+      saving,
       editingShiftId,
       saveShift,
       resetForm,
@@ -538,7 +544,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       <h1 v-if="!embedded" class="text-2xl font-bold mb-6">Add Shift</h1>
 
       <div class="bg-slate-800 rounded-xl shadow-lg p-6 md:p-8 border border-slate-700 max-w-2xl mx-auto">
-        <form class="space-y-4">
+        <form class="space-y-4" @submit.prevent="saveShift" :aria-busy="saving">
           <div v-if="editingShiftId" class="rounded-lg border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             Editing a reusable template. Assigned templates keep their name and times; use Copy to create a replacement, move employees to it, then archive the old template.
           </div>
@@ -645,11 +651,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               Cancel
             </button>
             <button
-              type="button"
-              @click="saveShift"
+              type="submit"
+              :disabled="saving"
               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition"
             >
-              {{ editingShiftId ? 'Save Changes' : 'Add Shift' }}
+              {{ saving ? 'Saving shift…' : editingShiftId ? 'Save Changes' : 'Add Shift' }}
             </button>
           </div>
         </form>

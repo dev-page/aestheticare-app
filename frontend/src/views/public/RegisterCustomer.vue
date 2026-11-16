@@ -1260,7 +1260,7 @@ onBeforeUnmount(() => {
           <span class="form-side-bubble f-bubble-2 hidden lg:block" aria-hidden="true"></span>
           <span class="form-side-bubble f-bubble-3 hidden lg:block" aria-hidden="true"></span>
 
-          <form class="space-y-4 w-full max-w-[560px]" @submit.prevent="register">
+          <form class="space-y-4 w-full max-w-[560px]" @submit.prevent="register" :aria-busy="isSubmitting">
             <div class="mb-2">
               <button
                 type="button"

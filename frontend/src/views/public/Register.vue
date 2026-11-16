@@ -2800,7 +2800,7 @@ const handleRegistrationSubmit = () => {
           <span class="form-side-bubble f-bubble-2 hidden lg:block" aria-hidden="true"></span>
           <span class="form-side-bubble f-bubble-3 hidden lg:block" aria-hidden="true"></span>
 
-          <form class="space-y-4 w-full max-w-[680px] pt-3 lg:pt-5" @submit.prevent="handleRegistrationSubmit">
+          <form class="space-y-4 w-full max-w-[680px] pt-3 lg:pt-5" @submit.prevent="handleRegistrationSubmit" :aria-busy="isSubmitting || isSubmittingDocuments">
             <div v-if="approvalRedirecting" class="fixed inset-0 z-50 flex items-center justify-center bg-charcoal-900/60 backdrop-blur">
               <div class="w-[90%] max-w-md rounded-2xl border border-gold-200/80 bg-white/90 p-6 text-center shadow-2xl">
                 <div class="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-gold-600 border-t-transparent"></div>
@@ -3544,7 +3544,8 @@ const handleRegistrationSubmit = () => {
                 <button
                   type="button"
                   :disabled="isSubmittingDocuments || hasAnyDocumentUploadInProgress"
-                  class="flex-1 h-12 px-5 rounded-xl bg-gold-700 text-white font-semibold hover:bg-gold-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  :aria-busy="isSubmittingDocuments"
+                  class="app-form-action flex-1 h-12 px-5 rounded-xl bg-gold-700 text-white font-semibold hover:bg-gold-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
                   @click="submitDocuments"
                 >
                   {{ isSubmittingDocuments ? 'Submitting...' : (hasAnyDocumentUploadInProgress ? 'Finish Uploads First' : 'Submit Documents') }}

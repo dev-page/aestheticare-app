@@ -271,3 +271,117 @@ html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(button, a, inpu
   outline-color: var(--ac-accent) !important;
   box-shadow: 0 0 0 3px rgba(217, 154, 108, .24) !important;
 }
+
+/* Discovery, appointment, and shared customer support pages contain several
+   page-specific light surfaces that do not use the common card class names. */
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .discovery-filter-bar, .appointments-tabs, .support-header, .support-panel,
+  .notifications-header, .notifications-panel, .notifications-item,
+  .notifications-select-all, .notifications-toolbar
+) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  background-image: none !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .discovery-filter-secondary, .support-upload-box, .notifications-toolbar,
+  .notifications-select-all, .notifications-icon-button,
+  .appointments-table-wrap, .appointments-table
+) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-soft) !important;
+  background-image: none !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .center-pill, .center-tag, .center-tag-muted, .support-display-field,
+  .table-primary, .appointment-menu-trigger
+) {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-soft) !important;
+  background-image: none !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .center-tag-muted, .table-secondary, .table-empty-cell,
+  .support-field-label,
+  .support-subtitle, .support-note, .support-upload-note,
+  .support-preview-copy, .support-remove-file, .notifications-subtitle,
+  .notifications-toolbar, .notifications-item-message,
+  .notifications-item-date, .notifications-empty
+) {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .support-main, .notifications-main, .prescriptions-main, .center-main
+) {
+  background: linear-gradient(155deg, #1b100a 0%, #24180f 58%, #2f1e14 100%) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .status-badge-primary, .status-badge-muted
+) {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme .status-badge-warning {
+  border-color: var(--ac-warning) !important;
+  background: var(--ac-warning-bg) !important;
+  color: var(--ac-warning) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme .status-badge-danger {
+  border-color: var(--ac-danger) !important;
+  background: var(--ac-danger-bg) !important;
+  color: var(--ac-danger) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme .appointments-table td::before {
+  color: var(--ac-text-muted) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .appointment-menu-trigger, .support-submit-button,
+  .notifications-delete-button, .notifications-view-button
+) {
+  border-color: var(--ac-primary) !important;
+  background: var(--ac-primary) !important;
+  background-image: none !important;
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .appointment-menu-trigger, .support-submit-button,
+  .notifications-delete-button, .notifications-view-button
+) * {
+  color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
+  .appointments-table tbody tr, .appointments-table tbody tr:hover
+) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+/* Amber, yellow, and gold utilities may still style backgrounds and borders,
+   but their text always uses a readable mocha/cream foreground. */
+html[data-ac-theme] [class*="text-amber-"],
+html[data-ac-theme] [class*="text-yellow-"],
+html[data-ac-theme] [class*="text-gold-"],
+html[data-ac-theme] [class*="text-orange-"],
+html:not([data-ac-theme]) [class*="text-amber-"],
+html:not([data-ac-theme]) [class*="text-yellow-"],
+html:not([data-ac-theme]) [class*="text-gold-"],
+html:not([data-ac-theme]) [class*="text-orange-"] {
+  color: var(--ac-warning-text) !important;
+}

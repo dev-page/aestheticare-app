@@ -132,12 +132,11 @@
           <p class="report-section-label">Status history</p>
           <div v-for="(entry, index) in selectedIssue.statusHistory" :key="`${entry.status}-${index}`" class="report-history-entry"><strong>{{ entry.status }}</strong><span>by {{ entry.byName || 'Admin' }} · {{ formatDate(entry.at) }}</span></div>
         </section>
-        <p v-if="statusMessage" class="report-success" role="status">{{ statusMessage }}</p>
         <p v-if="statusError" class="report-error" role="alert">{{ statusError }}</p>
       </div>
     </template>
     <template #footer>
-      <div class="report-modal-actions"><span class="report-help">Changes are saved to this report.</span><button type="button" class="report-primary" :disabled="savingStatus" @click="saveStatus">{{ savingStatus ? 'Saving...' : 'Save Report' }}</button></div>
+      <div class="report-modal-actions"><span class="report-help">Changes are saved to this report.</span><button type="button" class="report-primary app-form-action" :aria-busy="savingStatus" :disabled="savingStatus" @click="saveStatus">{{ savingStatus ? 'Saving...' : 'Save Report' }}</button></div>
     </template>
   </Modal>
 </template>
@@ -147,6 +146,7 @@ import { usePageLoading } from '@/composables/usePageLoading'
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { addDoc, arrayUnion, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import Swal from 'sweetalert2'
 import { auth, db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
@@ -166,9 +166,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     let unsubscribe = null
     const showModal = ref(false)
     const selectedIssue = ref(null)
-    const statusDraft = ref('Open')
+    const statusDraft = ref('Under Review')
     const savingStatus = ref(false)
-    const statusMessage = ref('')
     const statusError = ref('')
     const search = ref('')
     const currentPage = ref(1)
@@ -178,7 +177,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const internalNote = ref('')
     const resolutionNote = ref('')
     const reporterResponse = ref('')
-    const reportStatuses = ['Open', 'Under Review', 'In Progress', 'Awaiting User Response', 'Resolved', 'Dismissed', 'Escalated']
+    const reportStatuses = ['Under Review', 'In Progress', 'Resolved', 'Dismissed']
     const reportCategories = ['Bug/Error', 'Data Issue', 'Performance', 'Billing/Payments', 'Clinic Complaint', 'Service Complaint', 'Employee Complaint', 'Feature Request', 'Other']
 
     const formatDate = (value) => {
@@ -201,18 +200,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const statusLabel = (status) => {
-      const normalized = String(status || '').trim()
-      return normalized || 'Open'
+      const normalized = String(status || '').trim().toLowerCase()
+      if (normalized === 'resolved' || normalized === 'dismissed' || normalized === 'in progress') {
+        return normalized.replace(/\b\w/g, (letter) => letter.toUpperCase())
+      }
+      if (normalized === 'escalated' || normalized === 'awaiting user response') return 'In Progress'
+      return 'Under Review'
     }
 
     const statusClass = (status) => {
-      const normalized = String(status || '').toLowerCase()
+      const normalized = statusLabel(status).toLowerCase()
       if (normalized === 'resolved') return 'report-badge report-badge-success'
       if (normalized === 'dismissed') return 'report-badge report-badge-neutral'
       if (normalized === 'under review') return 'report-badge report-badge-review'
       if (normalized === 'in progress') return 'report-badge report-badge-warning'
-      if (normalized === 'awaiting user response') return 'report-badge report-badge-info'
-      if (normalized === 'escalated') return 'report-badge report-badge-danger'
       return 'report-badge report-badge-neutral'
     }
 
@@ -287,7 +288,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       internalNote.value = issue.internalNote || ''
       resolutionNote.value = issue.resolutionNote || ''
       reporterResponse.value = issue.reporterResponse || ''
-      statusMessage.value = ''
       statusError.value = ''
       showModal.value = true
     }
@@ -295,7 +295,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const closeIssue = () => {
       showModal.value = false
       selectedIssue.value = null
-      statusMessage.value = ''
       statusError.value = ''
       internalNote.value = ''
       resolutionNote.value = ''
@@ -303,9 +302,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const saveStatus = async () => {
-      if (!selectedIssue.value) return
+      if (!selectedIssue.value || savingStatus.value) return
       savingStatus.value = true
-      statusMessage.value = ''
       statusError.value = ''
       try {
         if (['Resolved', 'Dismissed'].includes(statusDraft.value) && !resolutionNote.value) {
@@ -321,18 +319,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           statusHistory: arrayUnion({ status: statusDraft.value, byId: auth.currentUser?.uid || '', byName: adminName, at: new Date() }),
           updatedAt: serverTimestamp()
         })
-        if (selectedIssue.value.userId) {
-          await addDoc(collection(db, 'notifications'), {
-            recipientUserId: selectedIssue.value.userId,
-            senderId: auth.currentUser?.uid || 'superadmin',
-            type: 'support_issue_status',
-            title: 'Issue Status Updated',
-            message: reporterResponse.value || `Your reported issue is now marked as ${statusDraft.value}.`,
-            link: '/notifications',
-            read: false,
-            createdAt: serverTimestamp()
-          })
-        }
         const updates = {
           status: statusDraft.value,
           internalNote: internalNote.value,
@@ -341,7 +327,28 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
         refreshIssueInList(selectedIssue.value.id, updates)
         refreshSelectedIssue(updates)
-        statusMessage.value = 'Status updated.'
+        if (selectedIssue.value.userId) {
+          try {
+            await addDoc(collection(db, 'notifications'), {
+              recipientUserId: selectedIssue.value.userId,
+              senderId: auth.currentUser?.uid || 'superadmin',
+              type: 'support_issue_status',
+              title: 'Issue Status Updated',
+              message: reporterResponse.value || `Your reported issue is now marked as ${statusDraft.value}.`,
+              link: '/notifications',
+              read: false,
+              createdAt: serverTimestamp()
+            })
+          } catch (notificationError) {
+            console.warn('Report was updated, but the reporter notification could not be sent:', notificationError)
+          }
+        }
+        await Swal.fire({
+          icon: 'success',
+          title: 'Changes saved',
+          text: 'The report has been updated successfully.',
+          confirmButtonText: 'Done'
+        })
       } catch (err) {
         console.error('Failed to update issue status:', err)
         statusError.value = 'Failed to update status.'
@@ -376,7 +383,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       reporterResponse,
       statusDraft,
       savingStatus,
-      statusMessage,
       statusError,
       openIssue,
       closeIssue,

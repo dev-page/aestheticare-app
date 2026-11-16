@@ -22,6 +22,7 @@ export default {
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const branches = ref([])
+    const saving = ref(false)
     const createBranch = async (payload) => {
       const token = await auth.currentUser?.getIdToken()
       if (!token) throw new Error('Please sign in again before adding a branch.')
@@ -517,6 +518,7 @@ export default {
     }
 
     const saveBranch = async () => {
+      if (saving.value) return
       if (branchNameError.value) {
         toast.error(branchNameError.value)
         return
@@ -534,6 +536,7 @@ export default {
         return
       }
 
+      saving.value = true
       try {
         const result = await Swal.fire({
           title: 'Confirm Addition',
@@ -579,12 +582,15 @@ export default {
       } catch (error) {
         console.error('Error saving branch:', error)
         toast.error('Failed to save branch. Please try again.')
+      } finally {
+        saving.value = false
       }
     }
 
     return {
       branches,
       currentBranch,
+      saving,
       caviteLocations,
       showLocationModal,
       locationSearchQuery,
@@ -618,7 +624,7 @@ export default {
       <h1 class="mb-6 text-2xl font-bold">Add Branch</h1>
 
       <div class="mx-auto max-w-2xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8">
-        <form class="space-y-4">
+        <form class="space-y-4" @submit.prevent="saveBranch" :aria-busy="saving">
           <div>
             <label class="mb-1 block text-slate-400">Branch</label>
             <input
@@ -717,11 +723,11 @@ export default {
 
           <div class="flex justify-end pt-4">
             <button
-              type="button"
-              @click="saveBranch"
+              type="submit"
+              :disabled="saving"
               class="rounded bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700"
             >
-              Add Branch
+              {{ saving ? 'Adding branch…' : 'Add Branch' }}
             </button>
           </div>
         </form>
