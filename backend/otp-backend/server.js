@@ -4588,12 +4588,19 @@ registerSubscriptionReminders(app, subscriptionReminderDependencies)
 registerSubscriptionTrial(app, { admin, requireAuth, loadUserContext })
 
 app.get('/auth/profile', requireAuth, async (req, res) => {
+  if (!adminReady) {
+    return res.status(503).json({ success: false, error: 'Profile service is temporarily unavailable.' })
+  }
   try {
     const user = await admin.firestore().collection('users').doc(req.user.uid).get()
     if (!user.exists) return res.status(404).json({ success: false, error: 'User profile not found.' })
     return res.json({ success: true, data: user.data() || {} })
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Unable to load the authenticated profile.' })
+    console.error('Authenticated profile lookup failed:', {
+      code: error?.code || null,
+      name: error?.name || null,
+    })
+    return res.status(503).json({ success: false, error: 'Profile service is temporarily unavailable.' })
   }
 })
 
