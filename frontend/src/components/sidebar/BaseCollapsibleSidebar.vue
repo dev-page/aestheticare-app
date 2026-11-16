@@ -5,6 +5,7 @@
   >
     <button
       v-if="isSmallScreen && mobileDrawer && !mobileDrawerOpen"
+      ref="mobileMenuTrigger"
       type="button"
       class="customer-mobile-menu-trigger fixed left-3 top-3 z-50 flex h-11 w-11 items-center justify-center rounded-xl border border-[#765039] bg-[#2a180f] text-[#f3e7e0] shadow-lg transition-colors duration-200 hover:bg-[#3a2417] hover:text-white"
       aria-label="Open navigation menu"
@@ -35,9 +36,9 @@
     </button>
 
     <aside
+      ref="sidebarPanel"
       :id="mobileDrawer ? 'customer-sidebar-panel' : undefined"
       :style="asideStyle"
-      :aria-hidden="isSmallScreen && mobileDrawer && !mobileDrawerOpen ? 'true' : 'false'"
       :inert="isSmallScreen && mobileDrawer && !mobileDrawerOpen"
       :class="[
         'app-sidebar readonly-exempt z-40 h-full bg-[#1f120b] border border-[#3a2417] rounded-tr-2xl rounded-br-2xl shadow-2xl flex flex-col overflow-hidden',
@@ -312,7 +313,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getFirestore, collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore'
-import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth'
+import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { Icon } from '@iconify/vue'
 import Swal from 'sweetalert2'
 import { useAuth } from '@/composables/useAuth'
@@ -343,7 +344,7 @@ export default {
     const route = useRoute()
     const db = getFirestore()
     const auth = getAuth()
-    const { isLoading } = useAuth()
+    const { isLoading, logout: logoutSession } = useAuth()
     const { hasFeature, initSubscription, activePlan, isSuspended, isLoading: subscriptionLoading } = useSubscription()
     const { hasPermission, effectivePermissions, loading: permissionsLoading, userRole } = usePermissions()
 
@@ -357,6 +358,8 @@ export default {
     const displayName = ref(props.defaultName)
     const displayEmail = ref(props.defaultEmail)
     const openGroups = ref({})
+    const sidebarPanel = ref(null)
+    const mobileMenuTrigger = ref(null)
     const sidebarNav = ref(null)
     const sidebarScrollStorageKey = `sidebar:${props.panelKey}:scroll-top`
     const notificationsUnread = ref(0)
@@ -733,6 +736,26 @@ export default {
       syncMobileBodyScroll
     )
 
+    // The panel becomes inert when the mobile drawer closes. Move
+    // focus out synchronously before Vue applies those attributes, then return
+    // it to the menu trigger once that trigger is rendered.
+    watch(
+      () => isSmallScreen.value && props.mobileDrawer && !mobileDrawerOpen.value,
+      (isHidden, wasHidden) => {
+        if (!isHidden || wasHidden) return
+
+        const activeElement = typeof document !== 'undefined' ? document.activeElement : null
+        if (sidebarPanel.value?.contains(activeElement)) activeElement.blur?.()
+
+        nextTick(() => {
+          if (isSmallScreen.value && props.mobileDrawer && !mobileDrawerOpen.value) {
+            mobileMenuTrigger.value?.focus({ preventScroll: true })
+          }
+        })
+      },
+      { flush: 'sync' }
+    )
+
     let mobileEscapeHandler = null
 
     const handleItemNavigation = () => {
@@ -943,25 +966,7 @@ export default {
 
       openGroups.value = {}
       persistGroups()
-      clearSidebarTransientState()
-
-      window.dispatchEvent(
-        new CustomEvent('app-process-loading', {
-          detail: { active: true, label: 'Logging out...' }
-        })
-      )
-
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 600))
-        await signOut(auth)
-        await router.push('/login')
-      } finally {
-        window.dispatchEvent(
-          new CustomEvent('app-process-loading', {
-            detail: { active: false }
-          })
-        )
-      }
+      await logoutSession()
     }
 
     let unsubscribe = null
@@ -1075,6 +1080,8 @@ export default {
     })
 
     return {
+      sidebarPanel,
+      mobileMenuTrigger,
       sidebarNav,
       collapsed,
       sidebarCollapsed,

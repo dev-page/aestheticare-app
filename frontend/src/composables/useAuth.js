@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { nextTick, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { auth } from '@/config/firebaseConfig'
 import { signOut } from 'firebase/auth'
@@ -86,6 +86,8 @@ export function useAuth() {
       clearCache()
       try { window.localStorage.removeItem(LAST_ACTIVITY_KEY) } catch (_error) {}
       await router.replace('/login?expired=inactivity')
+      // Keep the process overlay up until Vue has rendered the login route.
+      await nextTick()
       window.dispatchEvent(new CustomEvent('toast', {
         detail: { message: 'Session has expired due to inactivity. Please log in again.', type: 'info' }
       }))
@@ -154,11 +156,12 @@ export function useAuth() {
     setLoggingOut(true)
     setProcessLoading(true, 'Logging out...')
     try {
-      await new Promise((resolve) => setTimeout(resolve, 600))
       await signOut(auth)
       clearCache()
       try { window.localStorage.removeItem(LAST_ACTIVITY_KEY) } catch (_error) {}
-      await router.push('/login')
+      await router.replace('/login')
+      // Do not reveal the protected page between sign-out and login rendering.
+      await nextTick()
     } catch (error) {
       console.error('Logout error:', error)
     } finally {
