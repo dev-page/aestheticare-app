@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aestheticare-v4'
+const CACHE_NAME = 'aestheticare-v5'
 const APP_SHELL = [
   '/',
   '/manifest.json',
@@ -40,6 +40,22 @@ const cacheResponse = (key, request, response) => {
     .catch(() => undefined)
 }
 
+const offlineResponse = (request) => {
+  const isNavigation = request?.mode === 'navigate'
+  const body = isNavigation
+    ? '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connection unavailable</title><body style="margin:0;padding:3rem;font:16px system-ui,sans-serif;background:#24160f;color:#fff5e8"><main style="max-width:36rem;margin:auto"><h1>Connection unavailable</h1><p>AesthetiCare could not load this page. Check your connection and try again.</p></main></body></html>'
+    : 'This resource is temporarily unavailable. Check your connection and try again.'
+
+  return new Response(body, {
+    status: 503,
+    statusText: 'Service Unavailable',
+    headers: {
+      'Cache-Control': 'no-store',
+      'Content-Type': isNavigation ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8',
+    },
+  })
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
@@ -62,20 +78,26 @@ self.addEventListener('fetch', (event) => {
           void cacheResponse('/', request, response)
           return response
         })
-        .catch(() => caches.match('/')),
+        .catch(async () => {
+          try {
+            return (await caches.match('/')) || offlineResponse(request)
+          } catch {
+            return offlineResponse(request)
+          }
+        }),
     )
     return
   }
 
   event.respondWith(
     caches.match(request).then((cached) => {
-      if (request.headers.has('range')) return fetch(request)
+      if (request.headers.has('range')) return fetch(request).catch(() => offlineResponse(request))
       if (cached) return cached
 
       return fetch(request).then((response) => {
         void cacheResponse(request, request, response)
         return response
-      })
+      }).catch(() => offlineResponse(request))
     }),
   )
 })
